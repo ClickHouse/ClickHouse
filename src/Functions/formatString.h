@@ -77,8 +77,8 @@ struct FormatStringImpl
         for (size_t i = 1; i < substrings.size(); ++i)
             final_size += data[index_positions[i - 1]]->size();
 
-        res_data.resize(final_size);
-        res_offsets.resize(input_rows_count);
+        res_data.resize_exact(final_size);
+        res_offsets.resize_exact(input_rows_count);
 
         UInt64 offset = 0;
         for (UInt64 i = 0; i < input_rows_count; ++i)

@@ -82,8 +82,8 @@ struct SoundexImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        res_data.resize(input_rows_count * length);
-        res_offsets.resize(input_rows_count);
+        res_data.resize_exact(input_rows_count * length);
+        res_offsets.resize_exact(input_rows_count);
 
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
