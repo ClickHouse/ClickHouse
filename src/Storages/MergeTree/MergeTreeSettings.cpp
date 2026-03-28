@@ -1838,7 +1838,7 @@ namespace ErrorCodes
     Enable persisting column _block_number for each row.
     )", 0, allow_experimental_block_number_column) \
     DECLARE(Bool, enable_block_offset_column, false, R"(
-    Persists virtual column `_block_number` on merges.
+    Persists virtual column `_block_offset` on merges.
     )", 0) \
     DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
     When enabled, min-max (skipping) indices are added for all numeric columns
