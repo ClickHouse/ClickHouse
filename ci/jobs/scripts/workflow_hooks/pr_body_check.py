@@ -2,6 +2,7 @@ import re
 import sys
 
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
+    BOT_AUTHORS,
     NO_CHANGELOG_REQUIRED_LABELS,
     find_category,
     get_category,
@@ -71,6 +72,12 @@ if __name__ == "__main__":
 
     if "release" in labels or "release-lts" in labels:
         print("NOTE: Release PR detected, skipping changelog entry check")
+        sys.exit(0)
+
+    if Info().user_name in BOT_AUTHORS:
+        print(
+            f"NOTE: PR by bot author '{Info().user_name}', skipping changelog entry check"
+        )
         sys.exit(0)
 
     error, category = get_category(body)

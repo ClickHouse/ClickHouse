@@ -125,7 +125,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
                             queries_headers[query_number]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
 
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {

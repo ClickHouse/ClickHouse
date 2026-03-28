@@ -477,19 +477,40 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 void TableJoin::setUsedColumns(const Names & column_names)
 {
     std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> left_columns_idx;
+    std::unordered_map<std::string_view, size_t> left_columns_max_count;
     for (auto it = columns_from_left_table.begin(); it != columns_from_left_table.end(); ++it)
+    {
         left_columns_idx[it->name] = it;
+        ++left_columns_max_count[it->name];
+    }
 
     std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> right_columns_idx;
+    std::unordered_map<std::string_view, size_t> right_columns_max_count;
     for (auto it = columns_from_joined_table.begin(); it != columns_from_joined_table.end(); ++it)
+    {
         right_columns_idx[it->name] = it;
+        ++right_columns_max_count[it->name];
+    }
+
+    /// `column_names` may contain duplicates (e.g., from `ActionsDAG::getRequiredColumnsNames`
+    /// when the DAG has multiple input nodes with the same name). We must not add more entries
+    /// to `result_columns_from_left_table` / `columns_added_by_join` than actually exist
+    /// in the input columns, otherwise `HashJoin::getNonJoinedBlocks` will see a count mismatch.
+    std::unordered_map<std::string_view, size_t> left_seen_count;
+    std::unordered_map<std::string_view, size_t> right_seen_count;
 
     for (const auto & column_name : column_names)
     {
         if (auto lit = left_columns_idx.find(column_name); lit != left_columns_idx.end())
-            setUsedColumn(*lit->second, JoinTableSide::Left);
+        {
+            if (++left_seen_count[column_name] <= left_columns_max_count[column_name])
+                setUsedColumn(*lit->second, JoinTableSide::Left);
+        }
         else if (auto rit = right_columns_idx.find(column_name); rit != right_columns_idx.end())
-            setUsedColumn(*rit->second, JoinTableSide::Right);
+        {
+            if (++right_seen_count[column_name] <= right_columns_max_count[column_name])
+                setUsedColumn(*rit->second, JoinTableSide::Right);
+        }
         else
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                 "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,

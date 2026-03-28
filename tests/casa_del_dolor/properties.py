@@ -1110,6 +1110,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
         replicated_settings = {
             "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views": true_false_lambda,
             "check_consistency": true_false_lambda,
+            "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
             "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),

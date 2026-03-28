@@ -1,70 +1,69 @@
 -- { echoOn }
 -- ascii
-select tokens('a_b a_3 a_ _a __a_b_3_', 'unicode_word');
+select tokens('a_b a_3 a_ _a __a_b_3_', 'unicodeWord');
 ['a_b','a_3','a_','_a','__a_b_3_']
-select tokens('3_b 3_3 3_ _3 __3_4_3_', 'unicode_word');
+select tokens('3_b 3_3 3_ _3 __3_4_3_', 'unicodeWord');
 ['3_b','3_3','3_','_3','__3_4_3_']
-select tokens('___ _3___a_ _a__a_b_c_ ___', 'unicode_word');
+select tokens('___ _3___a_ _a__a_b_c_ ___', 'unicodeWord');
 ['_3___a_','_a__a_b_c_']
-select tokens('a:b a:3 a: :a ::a:b:3:', 'unicode_word');
+select tokens('a:b a:3 a: :a ::a:b:3:', 'unicodeWord');
 ['a:b','a','3','a','a','a:b','3']
-select tokens('3:b 3:3 3: :3 ::3:4:3:', 'unicode_word');
+select tokens('3:b 3:3 3: :3 ::3:4:3:', 'unicodeWord');
 ['3','b','3','3','3','3','3','4','3']
-select tokens('::: :3:::a: :a::a:b:c: :::', 'unicode_word');
+select tokens('::: :3:::a: :a::a:b:c: :::', 'unicodeWord');
 ['3','a','a','a:b:c']
-select tokens($$a'b a'3 a' 'a ''a'b'3'$$, 'unicode_word');
+select tokens($$a'b a'3 a' 'a ''a'b'3'$$, 'unicodeWord');
 ['a\'b','a','3','a','a','a\'b','3']
-select tokens($$3'b 3'3 3' '3 ''3'4'3'$$, 'unicode_word');
+select tokens($$3'b 3'3 3' '3 ''3'4'3'$$, 'unicodeWord');
 ['3','b','3\'3','3','3','3\'4\'3']
-select tokens($$''' '3'''a' 'a''a'b'c' '''$$, 'unicode_word');
+select tokens($$''' '3'''a' 'a''a'b'c' '''$$, 'unicodeWord');
 ['3','a','a','a\'b\'c']
-select tokens($$a.b a.3 a. .a ..a.b.3.$$, 'unicode_word');
+select tokens($$a.b a.3 a. .a ..a.b.3.$$, 'unicodeWord');
 ['a.b','a','3','a','a','a.b','3']
-select tokens($$3.b 3.3 3. .3 ..3.4.3.$$, 'unicode_word');
+select tokens($$3.b 3.3 3. .3 ..3.4.3.$$, 'unicodeWord');
 ['3','b','3.3','3','3','3.4.3']
-select tokens($$... .3...a. .a..a.b.c. ...$$, 'unicode_word');
+select tokens($$... .3...a. .a..a.b.c. ...$$, 'unicodeWord');
 ['3','a','a','a.b.c']
 -- ascii and Chinese
-select tokens('错误503', 'unicode_word');
+select tokens('错误503', 'unicodeWord');
 ['错','误','503']
-select tokens('taichi张三丰in the house', 'unicode_word');
+select tokens('taichi张三丰in the house', 'unicodeWord');
 ['taichi','张','三','丰','in','the','house']
 -- edge cases
-select tokens('', 'unicode_word');                               -- empty string
+select tokens('', 'unicodeWord');                               -- empty string
 []
-select tokens('test', 'unicode_word', 'not_an_array'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select tokensForLikePattern('%abc', 'unicode_word');            -- wildcard before token
+select tokensForLikePattern('%abc', 'unicodeWord');            -- wildcard before token
 []
-select tokensForLikePattern('abc%', 'unicode_word');            -- token before wildcard
+select tokensForLikePattern('abc%', 'unicodeWord');            -- token before wildcard
 []
-select tokensForLikePattern('a_b%c_d', 'unicode_word');         -- wildcard in between
+select tokensForLikePattern('a_b%c_d', 'unicodeWord');         -- wildcard in between
 []
-select tokensForLikePattern('a\%b a\_c', 'unicode_word');       -- escaped % breaks token (not alnum), escaped _ joins token
+select tokensForLikePattern('a\%b a\_c', 'unicodeWord');       -- escaped % breaks token (not alnum), escaped _ joins token
 ['a','b','a_c']
-select tokensForLikePattern('a\_b%c', 'unicode_word');          -- mix escaped _ and unescaped %
+select tokensForLikePattern('a\_b%c', 'unicodeWord');          -- mix escaped _ and unescaped %
 []
-select tokensForLikePattern('a\_b\%c', 'unicode_word');         -- all escaped wildcards
+select tokensForLikePattern('a\_b\%c', 'unicodeWord');         -- all escaped wildcards
 ['a_b','c']
-select tokensForLikePattern('_a c%', 'unicode_word');           -- leading and trailing wildcards
+select tokensForLikePattern('_a c%', 'unicodeWord');           -- leading and trailing wildcards
 []
-select tokensForLikePattern($$a:b%cd\_e.f'g$$, 'unicode_word'); -- mix colon, dot, single quote, wildcard, escaped _
+select tokensForLikePattern($$a:b%cd\_e.f'g$$, 'unicodeWord'); -- mix colon, dot, single quote, wildcard, escaped _
 []
-select tokensForLikePattern('%%__abc', 'unicode_word');         -- multiple leading wildcards
+select tokensForLikePattern('%%__abc', 'unicodeWord');         -- multiple leading wildcards
 []
-select tokensForLikePattern('', 'unicode_word');                -- empty string
+select tokensForLikePattern('', 'unicodeWord');                -- empty string
 []
-select tokensForLikePattern('%%__', 'unicode_word');            -- only wildcards
+select tokensForLikePattern('%%__', 'unicodeWord');            -- only wildcards
 []
-select tokensForLikePattern('你', 'unicode_word');              -- single Unicode char
+select tokensForLikePattern('你', 'unicodeWord');              -- single Unicode char
 ['你']
-select tokensForLikePattern('abc你好', 'unicode_word');         -- ASCII then Unicode
+select tokensForLikePattern('abc你好', 'unicodeWord');         -- ASCII then Unicode
 ['abc','你','好']
-select tokensForLikePattern('你好%世界', 'unicode_word');       -- Unicode token with wildcards
+select tokensForLikePattern('你好%世界', 'unicodeWord');       -- Unicode token with wildcards
 ['你','好','世','界']
 set enable_analyzer = 1;
 set enable_full_text_index = 1;
 drop table if exists tab;
-create table tab (key UInt64, str String, index text_idx(str) type text(tokenizer = unicode_word)) engine MergeTree order by key;
+create table tab (key UInt64, str String, index text_idx(str) type text(tokenizer = unicodeWord)) engine MergeTree order by key;
 insert into tab values (1, 'hello错误502需要处理kitty');
 explain estimate select * from tab where str like '%错误502需要%';
 default	tab	1	1	1

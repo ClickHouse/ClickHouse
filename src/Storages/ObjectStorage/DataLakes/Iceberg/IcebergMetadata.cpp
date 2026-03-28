@@ -295,9 +295,12 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
 }
 
 Int32 IcebergMetadata::parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
+    const Poco::JSON::Object::Ptr & metadata_object,
+    IcebergSchemaProcessor & schema_processor,
+    LoggerPtr metadata_logger)
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
+
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);

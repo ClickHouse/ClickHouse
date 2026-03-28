@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import traceback
 from pathlib import Path
@@ -152,6 +153,13 @@ class Runner:
     def _pre_run(self, workflow, job, local_run=False):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             GH.print_actions_debug_info()
+        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        if dirty:
+            print(f"NOTE: Dirty repo state before job start:\n{dirty}")
+            print("NOTE: Cleaning repo")
+            Shell.check("git clean -ffd", verbose=True)
+        else:
+            print("NOTE: Repo state is clean before job start")
         env = _Environment.get()
 
         result = Result(
@@ -288,7 +296,10 @@ class Runner:
         if job.enable_gh_auth:
             _GH_Auth(workflow=workflow)
 
+        print("INFO: disk status before running a job:")
+        Shell.run("df -h")
         if job.run_in_docker and not no_docker:
+            Shell.run("docker system df")
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
                 job.run_in_docker.split("+")[1:],
@@ -374,7 +385,35 @@ class Runner:
             for p_ in [path, path_1]:
                 if p_ and Path(p_).exists() and p_.startswith("/"):
                     extra_mounts += f" --volume {p_}:{p_}"
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume ./:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+
+            # PRAKTIKA_HOST_WORKDIR overrides the host-side path used in
+            # --volume for the working directory mount.  Two main use cases:
+            #   1. Point the mount at an arbitrary host directory.
+            #   2. Docker-in-Docker: the inner Docker daemon needs the real
+            #      host path (not the outer container's CWD) for volume mounts.
+            #      This variable makes it more flexible to set the real host path.
+            # When unset, defaults to "./" (current directory).
+            host_dir = os.environ.get("PRAKTIKA_HOST_WORKDIR", "./")
+            host_dir_q = shlex.quote(host_dir)
+
+            # Rewrite relative host paths in user-supplied --volume settings
+            # so that they resolve correctly when PRAKTIKA_HOST_WORKDIR is set
+            # (e.g. in Docker-in-Docker scenarios).
+            if host_dir != "./":
+                rewritten_settings = []
+                for s in settings:
+                    if s.startswith("--volume="):
+                        vol_arg = s.removeprefix("--volume=")
+                        src, sep, rest = vol_arg.partition(":")
+                        if src == ".":
+                            src = host_dir.rstrip("/")
+                        elif src.startswith("./"):
+                            src = host_dir.rstrip("/") + src[1:]
+                        s = f"--volume={src}{sep}{rest}"
+                    rewritten_settings.append(s)
+                settings = rewritten_settings
+
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -452,6 +491,9 @@ class Runner:
                     ).set_info("---")
             result.dump()
 
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
+
         # When running Docker containers as root (non-rootless mode), any files created
         # by the job will be owned by root. This causes issues when:
         # 1. Files need to be read/compressed/uploaded by subsequent steps
@@ -462,7 +504,7 @@ class Runner:
             # Get host user's UID and GID (not from inside the container)
             uid = os.getuid()
             gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
             Shell.run(chown_cmd)
 
         return exit_code
@@ -531,35 +573,8 @@ class Runner:
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
-        if job.post_hooks:
-            sw_ = Utils.Stopwatch()
-            results_ = []
-            for check in job.post_hooks:
-                if callable(check):
-                    name = check.__name__
-                else:
-                    name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
-            result.results.append(
-                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
-            )
-
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
-
-        # run after post hooks as they might modify workflow kv data
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        if is_initial_job:
-            output = dataclasses.asdict(env)
-            output["pipeline_status"] = "success"
-        else:
-            output = job_outputs
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(output)}",
-                file=f,
-            )
 
         if run_exit_code == 0 or result.do_not_block_pipeline_on_failure():
             providing_artifacts = []
@@ -623,6 +638,33 @@ class Runner:
                         s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
+
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(Result.from_commands_run(name=name, command=check))
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(output)}",
+                file=f,
+            )
 
         ci_db = None
         if workflow.enable_cidb:
@@ -835,6 +877,12 @@ class Runner:
                 except Exception as e:
                     traceback.print_exc()
                     print(f"ERROR: failed to notify Slack users: {e}")
+
+        dirty = Shell.get_output("git status --short", verbose=False) or ""
+        if dirty:
+            print(f"NOTE: Dirty repo state after job:\n{dirty}")
+        else:
+            print("NOTE: Repo state is clean after job")
 
         return is_ok
 

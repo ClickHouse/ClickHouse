@@ -35,6 +35,7 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return dictionary_type->cannotBeStoredInTables(); }
+    bool hasDynamicStructure() const override { return dictionary_type->hasDynamicStructure(); }
     bool shouldAlignRightInPrettyFormats() const override { return dictionary_type->shouldAlignRightInPrettyFormats(); }
     bool textCanContainOnlyValidUTF8() const override { return dictionary_type->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return dictionary_type->isComparable(); }
