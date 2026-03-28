@@ -11,8 +11,12 @@ class SerializationFixedString : public ISerialization
 private:
     size_t n;
 
-public:
     explicit SerializationFixedString(size_t n_) : n(n_) {}
+
+public:
+    static UInt128 getHash(size_t n_);
+    static SerializationPtr create(size_t n_);
+
     size_t getN() const { return n; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;

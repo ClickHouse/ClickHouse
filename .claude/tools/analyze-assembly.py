@@ -916,6 +916,65 @@ def resolve_source_location(
     return matches
 
 
+def _parse_hex_address(identifier: str) -> int | None:
+    """Return integer address if identifier looks like a hex address, else None."""
+    s = identifier.strip()
+    try:
+        if s.startswith("0x") or s.startswith("0X"):
+            return int(s, 16)
+        # Also accept plain hex if it's long enough (>= 6 hex digits) to avoid
+        # matching short symbol names that happen to be valid hex.
+        if len(s) >= 6 and all(c in "0123456789abcdefABCDEF" for c in s):
+            return int(s, 16)
+    except ValueError:
+        pass
+    return None
+
+
+def resolve_by_address(
+    binary: BinaryInfo,
+    address: int,
+    tools: dict[str, ToolInfo],
+    timeout: int,
+    no_cache: bool,
+    rebuild_cache: bool,
+    stats: RunStats,
+) -> list[SymbolCandidate]:
+    """Find the symbol that contains the given address."""
+    raw_lines, dem_lines = _load_symbol_lines(
+        binary, tools, timeout, no_cache, rebuild_cache, stats,
+    )
+    all_candidates = _parse_symbol_candidates(raw_lines, dem_lines)
+    # all_candidates is sorted by address
+    # Find the symbol whose [address, address+size) contains the target
+    best: SymbolCandidate | None = None
+    for c in all_candidates:
+        if c.address <= address < c.address + c.size:
+            # Prefer the tightest enclosing symbol
+            if best is None or c.size < best.size:
+                best = c
+        elif c.address > address:
+            break
+    if best is not None:
+        offset = address - best.address
+        verbose(f"address 0x{address:x} resolved to `{best.demangled}` +0x{offset:x}")
+        return [best]
+    # No enclosing symbol found — create a synthetic candidate using the next
+    # symbol to bound the range
+    for c in all_candidates:
+        if c.address > address:
+            size = c.address - address
+            verbose(f"address 0x{address:x}: no enclosing symbol, using {size} bytes until next symbol")
+            return [SymbolCandidate(
+                mangled=f"<0x{address:x}>",
+                demangled=f"<0x{address:x}>",
+                address=address,
+                size=size,
+            )]
+    verbose(f"address 0x{address:x}: no symbol found")
+    return []
+
+
 def resolve_identifier_candidates(
     binary: BinaryInfo,
     identifier: str,
@@ -928,6 +987,12 @@ def resolve_identifier_candidates(
     rebuild_cache: bool,
     stats: RunStats,
 ) -> list[SymbolCandidate]:
+    # Check for hex address before other resolution methods
+    addr = _parse_hex_address(identifier)
+    if addr is not None and not search_mode and not fuzzy_mode:
+        return resolve_by_address(
+            binary, addr, tools, timeout, no_cache, rebuild_cache, stats,
+        )
     if source_location and not search_mode and not fuzzy_mode:
         return resolve_source_location(
             binary,

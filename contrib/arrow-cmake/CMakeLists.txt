@@ -595,7 +595,7 @@ target_link_libraries(_parquet
         OpenSSL::Crypto OpenSSL::SSL
         ch_contrib::rapidjson)
 
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)
     target_compile_options(_arrow PRIVATE -fno-sanitize=undefined)
 endif ()

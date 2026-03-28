@@ -11,7 +11,7 @@ DROP FUNCTION IF EXISTS digest_csv;
 DROP FUNCTION IF EXISTS digest_tsv;
 DROP FUNCTION IF EXISTS digest_json;
 DROP FUNCTION IF EXISTS always_returns_ten_rows;
-DROP FUNCTION IF EXISTS wasm_get_block_size15;
+DROP FUNCTION IF EXISTS wasm_get_block_size;
 DELETE FROM system.webassembly_modules WHERE name = 'buffered_abi';
 
 EOF
@@ -23,20 +23,22 @@ cat ${CUR_DIR}/wasm/buffered_abi.wasm | ${CLICKHOUSE_CLIENT} --query "INSERT INT
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << EOF
 
+SET webassembly_udf_max_fuel = 1000000;
+
 CREATE OR REPLACE FUNCTION digest_csv
     LANGUAGE WASM ABI BUFFERED_V1 FROM 'buffered_abi' :: 'digest_newline_rows'
     ARGUMENTS (s String, n UInt64, arr Array(Int64)) RETURNS UInt64
-    SETTINGS serialization_format = 'CSV', max_fuel = 1_000_000;
+    SETTINGS serialization_format = 'CSV';
 
 CREATE OR REPLACE FUNCTION digest_tsv
     LANGUAGE WASM ABI BUFFERED_V1 FROM 'buffered_abi' :: 'digest_newline_rows'
     ARGUMENTS (s String, n UInt64, arr Array(Int64)) RETURNS String
-    SETTINGS serialization_format = 'TSV', max_fuel = 1_000_000;
+    SETTINGS serialization_format = 'TSV';
 
 CREATE OR REPLACE FUNCTION digest_json
     LANGUAGE WASM ABI BUFFERED_V1 FROM 'buffered_abi' :: 'digest_json_rows'
     ARGUMENTS (s String, n UInt64, arr Array(Int64)) RETURNS Array(UInt64)
-    SETTINGS serialization_format = 'JSONEachRow', max_fuel = 1_000_000;
+    SETTINGS serialization_format = 'JSONEachRow';
 
 DROP TABLE IF EXISTS test_data;
 CREATE TABLE IF NOT EXISTS test_data (s String, n UInt64, arr Array(Int64)) ENGINE = Memory;
@@ -55,8 +57,8 @@ SELECT digest_json(a, b, c) FROM (SELECT s as a, n as b, arr as c FROM test_data
 CREATE OR REPLACE FUNCTION always_returns_ten_rows LANGUAGE WASM ABI BUFFERED_V1 FROM 'buffered_abi' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
 SELECT always_returns_ten_rows(number) FROM numbers(1); -- { serverError WASM_ERROR }
 
-CREATE OR REPLACE FUNCTION wasm_get_block_size15 LANGUAGE WASM ABI BUFFERED_V1 FROM 'buffered_abi' :: 'get_block_size' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV', max_input_block_size = 15;
-SELECT min(wasm_get_block_size15(number) AS v), max(v) FROM numbers(10000) SETTINGS max_block_size = 65000;
-SELECT min(wasm_get_block_size15(number) AS v), max(v) FROM numbers(8) SETTINGS max_block_size = 65000;
+CREATE OR REPLACE FUNCTION wasm_get_block_size LANGUAGE WASM ABI BUFFERED_V1 FROM 'buffered_abi' :: 'get_block_size' ARGUMENTS (value UInt64) RETURNS UInt64 SETTINGS serialization_format  = 'CSV';
+SELECT min(wasm_get_block_size(number) AS v), max(v) FROM numbers(10000) SETTINGS max_block_size = 65000, webassembly_udf_max_input_block_size = 15;
+SELECT min(wasm_get_block_size(number) AS v), max(v) FROM numbers(8) SETTINGS max_block_size = 65000, webassembly_udf_max_input_block_size = 15;
 
 EOF

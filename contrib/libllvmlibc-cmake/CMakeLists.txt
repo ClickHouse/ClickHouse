@@ -5,7 +5,6 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     return()
 endif()
 
-# List of exported functions should be also updated in ci/jobs/compatibility_check.py
 set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/common_constants.cpp"
 
@@ -16,10 +15,19 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/atan2.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cbrt.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ceill.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/copysignl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cos.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp2.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/explogxf.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/expm1.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fabs.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fabsl.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/floor.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/floorl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fma.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fmod.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fmodl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexpl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/hypot.cpp"
@@ -27,11 +35,20 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/llround.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/log.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/log10.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/log1p.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/log2.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/logf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/lround.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/modf.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nan.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nanf.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nanl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/nextafter.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/pow.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbn.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/scalbnl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrt.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/sqrtf.cpp"
@@ -45,6 +62,7 @@ set(LLVMLIBC_DEFS_COMMON
     LIBC_MATH_HAS_NO_ERRNO=1
     LIBC_MATH_HAS_NO_EXCEPT=1
     LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1
+    LIBC_ERRNO_MODE=6
 )
 
 if (ARCH_AMD64)
