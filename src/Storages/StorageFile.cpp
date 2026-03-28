@@ -280,7 +280,13 @@ void listFilesWithRegexpMatchingOnDisk(
     }
 
     const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
-    const std::string suffix_with_globs = for_match.substr(end_of_path_without_globs);
+
+    /// When there is no directory separator before the glob (e.g. "glob_test_*.csv"),
+    /// the entire for_match is the glob at the top level. We prepend '/' to match
+    /// the format expected by the regex matching below (file_name = "/" + entry_name).
+    const std::string suffix_with_globs = end_of_path_without_globs == std::string::npos
+        ? "/" + for_match
+        : for_match.substr(end_of_path_without_globs);
 
     const size_t next_slash_after_glob_pos = suffix_with_globs.find('/', 1);
     const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
@@ -295,7 +301,9 @@ void listFilesWithRegexpMatchingOnDisk(
     if (!recursive)
         recursive = current_glob == "/**";
 
-    const std::string prefix_without_globs = dir_path + for_match.substr(0, end_of_path_without_globs + 1);
+    const std::string prefix_without_globs = end_of_path_without_globs == std::string::npos
+        ? dir_path
+        : dir_path + for_match.substr(0, end_of_path_without_globs + 1);
 
     if (!disk->existsDirectory(prefix_without_globs))
         return;
@@ -2146,10 +2154,9 @@ void StorageFile::read(
         else
             p = &paths;
 
-        bool file_exists = user_files_volume
+        if (p->size() == 1 && !(user_files_volume
             ? findDiskForPath(p->at(0), user_files_volume->getDisks()) != nullptr
-            : fs::exists(p->at(0));
-        if (p->size() == 1 && !file_exists)
+            : fs::exists(p->at(0))))
         {
             if (!context->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
