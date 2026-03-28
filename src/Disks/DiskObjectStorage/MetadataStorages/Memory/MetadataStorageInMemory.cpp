@@ -457,7 +457,21 @@ void MetadataStorageInMemoryTransaction::moveDirectory(const std::string & path_
             }
         }
         for (auto & [new_path, entry] : to_move)
+        {
+            auto it_existing = metadata_storage.files.find(new_path);
+            if (it_existing != metadata_storage.files.end())
+            {
+                auto & old_group = it_existing->second.blob_group;
+                old_group->ref_count -= 1;
+                if (old_group->ref_count == 0)
+                {
+                    for (const auto & obj : old_group->objects)
+                        objects_to_remove.push_back(obj);
+                }
+                metadata_storage.files.erase(it_existing);
+            }
             metadata_storage.files[new_path] = std::move(entry);
+        }
 
         /// Move directories
         std::vector<std::string> dirs_to_add;

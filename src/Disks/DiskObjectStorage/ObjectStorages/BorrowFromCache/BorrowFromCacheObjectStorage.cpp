@@ -4,7 +4,9 @@
 #include <IO/copyData.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <filesystem>
@@ -100,15 +102,57 @@ std::unique_ptr<WriteBufferFromFileBase> BorrowFromCacheObjectStorage::writeObje
 
 void BorrowFromCacheObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    std::lock_guard lock(mutex);
-    entries.erase(object.remote_path);
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+
+    Stopwatch watch;
+    {
+        std::lock_guard lock(mutex);
+        entries.erase(object.remote_path);
+    }
+
+    if (blob_storage_log)
+    {
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            /* bucket */ name,
+            /* remote_path */ object.remote_path,
+            /* local_path */ object.local_path,
+            /* data_size */ object.bytes_size,
+            /* elapsed_microseconds */ watch.elapsedMicroseconds(),
+            /* error_code */ 0,
+            /* error_message */ "");
+    }
 }
 
 void BorrowFromCacheObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
-    std::lock_guard lock(mutex);
-    for (const auto & object : objects)
-        entries.erase(object.remote_path);
+    auto blob_storage_log = BlobStorageLogWriter::create(name);
+
+    Stopwatch watch;
+    {
+        std::lock_guard lock(mutex);
+        for (const auto & object : objects)
+            entries.erase(object.remote_path);
+    }
+
+    if (blob_storage_log)
+    {
+        auto elapsed = watch.elapsedMicroseconds();
+        auto time_now = std::chrono::system_clock::now();
+        for (const auto & object : objects)
+        {
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Delete,
+                /* bucket */ name,
+                /* remote_path */ object.remote_path,
+                /* local_path */ object.local_path,
+                /* data_size */ object.bytes_size,
+                /* elapsed_microseconds */ objects.size() > 0 ? elapsed / objects.size() : elapsed,
+                /* error_code */ 0,
+                /* error_message */ "",
+                time_now);
+        }
+    }
 }
 
 ObjectMetadata BorrowFromCacheObjectStorage::getObjectMetadata(const std::string & path, bool /* with_tags */) const
