@@ -176,6 +176,26 @@ When reading diffs, scan for these classes of bugs:
 - **Partial / asymmetric fixes:** when a behavior is changed in one code path, check whether symmetric paths need the same change. Examples: fixing `SYSTEM STOP MERGES` for merge selection but not mutation selection; fixing `ReplicatedMergeTree` but not `SharedMergeTree`. Use `grep` to find all related call sites.
 - **Multi-instance resource selection:** when a PR adds support for multiple instances of a resource (e.g. auxiliary ZooKeeper clusters, secondary storage backends), grep for every place that accesses the resource and verify the correct instance is selected — not just in the newly added code paths.
 
+**10) Trust boundary expansion — looking beyond the diff**
+
+Trigger: a PR wraps existing internal code for a wider audience (library function → SQL function, CLI tool → server endpoint, internal reader → table function, background-only path → user-reachable query). The wrapper diff may look fine, but the callee was written with assumptions about its original callers that no longer hold.
+
+**The single most important rule: when you find something suspicious in callee code, you MUST pick a concrete minimal input and trace execution step by step, writing out every variable value at every iteration. Never dismiss a finding by reasoning about it abstractly — the whole point is that abstract reasoning ("this is technically safe because...") is how real bugs get missed. A 5-line trace with concrete values catches what paragraphs of analysis miss.**
+
+Workflow:
+
+1. **Read the core callee(s)** — full implementation, not just signatures.
+
+2. **Compare existing callers vs. the PR.** Grep for ALL call sites. For each parameter, compare what existing callers pass against what the PR passes. Flag any parameter where the PR passes a weaker, degenerate, or no-op value (callback, validator, filter, flag). These are "degraded integration" bugs.
+
+3. **Grep the callee for dangerous patterns.** Run actual Grep commands — do not scan visually. Look for: relative indexing (accessing neighbors of current position), assertions used as guards (`assert`/`chassert` compile out in release), pointer arithmetic without size checks, end-relative access on possibly-empty ranges, and unbounded allocation proportional to input.
+
+4. **For every match: trace with a concrete boundary input.** This step is mandatory and non-negotiable. Pick the shortest input that reaches the dangerous code. Write out the trace: for each iteration, state the line, the expression, the concrete value, and whether it is safe or not. Track every pointer/index/flag — a condition that *looks* protective may execute *after* the dangerous access within the same iteration. Choose inputs at extremes: empty, length 1, length 2, first element of each type the code branches on.
+
+   **Anti-pattern to avoid:** finding a suspicious access, writing "this is technically safe because [memory layout / padding / practical likelihood]", and moving on. If you cannot prove safety via a concrete trace, report it. Pre-existing bugs that were harmless in the old calling context become exploitable under user-controlled input — that is the whole point of this checklist.
+
+5. **Verify test coverage.** The PR's tests must include adversarial edge cases that the original caller would never produce: empty inputs, minimal-length inputs, malformed inputs, NULLs, maximum-length inputs.
+
 
 CLICKHOUSE RULES (MANDATORY)
 - **Deletion logging**
@@ -188,7 +208,7 @@ CLICKHOUSE RULES (MANDATORY)
   Do **not** delete or relax existing tests. New behavior requires **new tests**.
   Tests replace random database names with `default` in output normalization. Do **not** flag hardcoded `default.` or `default_` prefixes in expected test output as incorrect or suggest using `${CLICKHOUSE_DATABASE}` – this is by design.
 - **Experimental gate**
-  New features/behaviors must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA.
+  Features that introduce genuinely new or risky behavior — new engines, new query execution strategies, new replication mechanisms, new on-disk formats, or features whose incorrect implementation could cause data loss or corruption — must be gated behind an **experimental** setting (e.g. `allow_experimental_simd_acceleration`) until proven safe. The gate can later be made ineffective at GA. Thin wrappers that expose already-stable internal code as SQL functions, simple utility functions, or low-risk additive features do **not** need a gate.
 - **No magic constants**
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**
@@ -208,7 +228,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - New races, deadlocks, or serious concurrency issues.
 - Breaking compatibility (serialization formats, protocols, behavior, settings) without a versioned migration path or a setting to restore previous behavior.
 - Deletion events not logged.
-- New feature without an experimental gate.
+- Risky new feature (new engine, execution strategy, replication mechanism, on-disk format) without an experimental gate.
 - Significant performance regression in a hot path.
 - Security or privilege issues, or license incompatibility.
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
