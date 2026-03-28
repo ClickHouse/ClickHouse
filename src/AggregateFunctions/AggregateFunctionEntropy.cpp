@@ -85,7 +85,7 @@ struct EntropyData
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = Float64(pair.getMapped()) / total_value;
+            Float64 frequency = static_cast<Float64>(pair.getMapped()) / static_cast<Float64>(total_value);
             shannon_entropy -= frequency * log2(frequency);
         }
 
@@ -207,7 +207,7 @@ SELECT entropy(vals), entropy(strings) FROM entropy
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("entropy", {createAggregateFunctionEntropy, {}, documentation});
+    factory.registerFunction("entropy", {createAggregateFunctionEntropy, documentation, {}});
 }
 
 }

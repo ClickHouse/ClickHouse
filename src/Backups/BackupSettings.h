@@ -103,7 +103,11 @@ struct BackupSettings
     std::optional<size_t> data_file_name_prefix_length;
 
     /// Should we back up data from refreshable materialized view targets?
-    /// Targets of views with APPEND refresh strategy are always backed up.
+    ///
+    /// Data is skipped only for targets of refreshable views that fully
+    /// replace the table on each refresh (without APPEND), as they contain
+    /// transient data that can be recomputed. Targets with APPEND or regular
+    /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
 
     /// Internal, should not be specified by user.

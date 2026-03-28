@@ -1,2 +1,62 @@
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> id UInt32 : 0
+         INPUT : 1 -> vec.1 FixedString(2) : 1
+         INPUT : 2 -> vec.2 FixedString(2) : 2
+         INPUT : 3 -> vec.3 FixedString(2) : 3
+         INPUT : 4 -> vec.4 FixedString(2) : 4
+         COLUMN Const(UInt8) -> 16_UInt8 UInt8 : 5
+         COLUMN Const(Array(BFloat16)) -> _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,... Array(BFloat16) : 6
+         ALIAS id :: 0 -> __table1.id UInt32 : 7
+         ALIAS vec.1 :: 1 -> __table1.vec.1 FixedString(2) : 0
+         ALIAS vec.2 :: 2 -> __table1.vec.2 FixedString(2) : 1
+         ALIAS vec.3 :: 3 -> __table1.vec.3 FixedString(2) : 2
+         ALIAS vec.4 :: 4 -> __table1.vec.4 FixedString(2) : 3
+         ALIAS __table1.id :: 7 -> id UInt32 : 4
+         FUNCTION L2DistanceTransposed(__table1.vec.1 :: 0, __table1.vec.2 :: 1, __table1.vec.3 :: 2, __table1.vec.4 :: 3, 16_UInt8 :: 5, _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,... :: 6) -> L2DistanceTransposed(__table1.vec.1, __table1.vec.2, __table1.vec.3, __table1.vec.4, 16_UInt8, _CAST... Float64 : 7
+         ALIAS L2DistanceTransposed(__table1.vec.1, __table1.vec.2, __table1.vec.3, __table1.vec.4, 16_UInt8, _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), \'Array(BFloat16)\'_String)) :: 7 -> dist Float64 : 6
+Positions: 4 6
+  ReadFromMemoryStorage
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> id UInt32 : 0
+         INPUT : 1 -> vec.1 FixedString(2) : 1
+         INPUT : 2 -> vec.2 FixedString(2) : 2
+         INPUT : 3 -> vec.3 FixedString(2) : 3
+         INPUT : 4 -> vec.4 FixedString(2) : 4
+         COLUMN Const(UInt8) -> 16_UInt8 UInt8 : 5
+         COLUMN Const(Array(BFloat16)) -> _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,... Array(BFloat16) : 6
+         ALIAS id :: 0 -> __table1.id UInt32 : 7
+         ALIAS vec.1 :: 1 -> __table1.vec.1 FixedString(2) : 0
+         ALIAS vec.2 :: 2 -> __table1.vec.2 FixedString(2) : 1
+         ALIAS vec.3 :: 3 -> __table1.vec.3 FixedString(2) : 2
+         ALIAS vec.4 :: 4 -> __table1.vec.4 FixedString(2) : 3
+         ALIAS __table1.id :: 7 -> id UInt32 : 4
+         FUNCTION cosineDistanceTransposed(__table1.vec.1 :: 0, __table1.vec.2 :: 1, __table1.vec.3 :: 2, __table1.vec.4 :: 3, 16_UInt8 :: 5, _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,... :: 6) -> cosineDistanceTransposed(__table1.vec.1, __table1.vec.2, __table1.vec.3, __table1.vec.4, 16_UInt8, _... Float64 : 7
+         ALIAS cosineDistanceTransposed(__table1.vec.1, __table1.vec.2, __table1.vec.3, __table1.vec.4, 16_UInt8, _CAST(arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), \'Array(BFloat16)\'_String)) :: 7 -> dist Float64 : 6
+Positions: 4 6
+  ReadFromMemoryStorage
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> id UInt32 : 0
+         INPUT : 1 -> vec QBit(BFloat16, 16) : 1
+         COLUMN Const(Array(UInt16)) -> arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1... Array(UInt16) : 2
+         COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 3
+         ALIAS id :: 0 -> __table1.id UInt32 : 4
+         ALIAS vec :: 1 -> __table1.vec QBit(BFloat16, 16) : 0
+         ALIAS __table1.id :: 4 -> id UInt32 : 1
+         FUNCTION L2DistanceTransposed(__table1.vec :: 0, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1... :: 2, 4_UInt8 :: 3) -> L2DistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5... Float64 : 4
+         ALIAS L2DistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), 4_UInt8) :: 4 -> dist Float64 : 3
+Positions: 1 3
+  ReadFromMemoryStorage
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+Actions: INPUT : 0 -> id UInt32 : 0
+         INPUT : 1 -> vec QBit(BFloat16, 16) : 1
+         COLUMN Const(Array(UInt16)) -> arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1... Array(UInt16) : 2
+         COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 3
+         ALIAS id :: 0 -> __table1.id UInt32 : 4
+         ALIAS vec :: 1 -> __table1.vec QBit(BFloat16, 16) : 0
+         ALIAS __table1.id :: 4 -> id UInt32 : 1
+         FUNCTION cosineDistanceTransposed(__table1.vec :: 0, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1... :: 2, 4_UInt8 :: 3) -> cosineDistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, ... Float64 : 4
+         ALIAS cosineDistanceTransposed(__table1.vec, arrayMap(i UInt8 -> multiply(i, 2_UInt8), _CAST([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]_Array(UInt8), \'Array(UInt8)\'_String)), 4_UInt8) :: 4 -> dist Float64 : 3
+Positions: 1 3
+  ReadFromMemoryStorage
 1	2
 1	2

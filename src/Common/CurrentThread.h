@@ -86,8 +86,8 @@ public:
 
     /// Returns a non-empty string if the thread is attached to a query
 
-    /// Returns attached query context
-    static ContextPtr getQueryContext();
+    /// Returns attached query context or nullptr if there is no query context
+    static ContextPtr tryGetQueryContext();
 
     static std::string_view getQueryId();
 
@@ -106,17 +106,6 @@ public:
     static void attachWriteThrottler(const ThrottlerPtr & throttler);
     static void detachWriteThrottler();
     static ThrottlerPtr getWriteThrottler();
-
-    /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
-    struct QueryScope : private boost::noncopyable
-    {
-        explicit QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        explicit QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
-        ~QueryScope();
-
-        void logPeakMemoryUsage();
-        bool log_peak_memory_usage_in_destructor = true;
-    };
 
     /// Scoped attach/detach of IO resource links
     struct IOSchedulingScope : private boost::noncopyable

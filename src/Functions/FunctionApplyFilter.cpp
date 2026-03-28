@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <IO/WriteHelpers.h>
 #include <Common/CurrentThread.h>
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {
@@ -19,18 +20,21 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
+/// Special function for JOIN runtime filtering
+/// Syntax: __applyFilter(filter_name, key)
+/// - filter_name: Internal name of runtime filter. It is built by BuildRuntimeFilterStep. String
+/// - key: Value of any type that is checked to be present in the filter.
+/// Returns false if the key should be filtered
 class FunctionApplyFilter : public IFunction
 {
 public:
     static constexpr auto name = "__applyFilter";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionApplyFilter>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
@@ -61,6 +65,7 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -81,9 +86,12 @@ public:
                     "First argument of function '{}' must be a String filter name",
                     getName());
 
-        /// Query context contains filter lookup where per-query filters are stored
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::tryGetQueryContext();
+        if (!query_context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for {}", getName());
         auto filter_lookup = query_context->getRuntimeFilterLookup();
+        if (!filter_lookup)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");
         auto filter = filter_lookup->find(filter_name);
 
         /// If filter is not present all rows pass
@@ -98,18 +106,7 @@ public:
 
 REGISTER_FUNCTION(FilterContains)
 {
-    FunctionDocumentation::Description description = R"(Special function for JOIN runtime filtering.)";
-    FunctionDocumentation::Syntax syntax = "__applyFilter(filter_name, key)";
-    FunctionDocumentation::Arguments arguments = {
-        {"filter_name", "Internal name of runtime filter. It is built by BuildRuntimeFilterStep.", {"String"}},
-        {"key", "Value of any type that is checked to be present in the filter", {}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"False if the key should be filtered", {"Bool"}};
-    FunctionDocumentation::Examples examples = {{"Example", "This function is not supposed to be used in user queries. It might be added to query plan during optimization. ", ""}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-
-    factory.registerFunction<FunctionApplyFilter>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category}, FunctionFactory::Case::Sensitive);
+    factory.registerFunction<FunctionApplyFilter>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS, FunctionFactory::Case::Sensitive);
 }
 
 }

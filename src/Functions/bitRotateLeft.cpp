@@ -25,8 +25,9 @@ struct BitRotateLeftImpl
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bit rotate is not implemented for big integers");
         else
-            return (static_cast<Result>(a) << static_cast<Result>(b))
-                | (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));
+            return static_cast<Result>(
+                (static_cast<Result>(a) << static_cast<Result>(b))
+                | (static_cast<Result>(a) >> static_cast<Result>((sizeof(Result) * 8) - static_cast<Result>(b))));
     }
 
 #if USE_EMBEDDED_COMPILER

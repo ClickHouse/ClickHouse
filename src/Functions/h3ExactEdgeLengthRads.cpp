@@ -7,10 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
-#include <constants.h>
 #include <h3api.h>
 
 
@@ -79,7 +76,8 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-            Float64 res = exactEdgeLengthRads(index);
+            double res = 0;
+            edgeLengthRads(index, &res);
             dst_data[row] = res;
         }
 

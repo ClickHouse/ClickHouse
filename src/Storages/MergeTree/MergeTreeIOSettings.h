@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <Compression/ICompressionCodec.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context_fwd.h>
@@ -40,8 +41,8 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
-    /// True if we read stream for structure of Dynamic/Object type.
-    bool is_dynamic_or_object_structure = false;
+    /// True if we read stream that contains some metadata and will be read as a whole at once.
+    bool is_metadata_file = false;
     /// True if data may be compressed by different codecs in one stream.
     bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
@@ -60,7 +61,6 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
-    bool query_condition_cache_store_conditions_as_plaintext = false;
     bool use_deserialization_prefixes_cache = false;
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;
@@ -69,6 +69,10 @@ struct MergeTreeReaderSettings
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
+    /// If true, only column sample with 0 rows will be read.
+    /// This information can be used for more optimal reading of
+    /// columns prefixes.
+    bool read_only_column_sample = false;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
@@ -119,6 +123,10 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSerializationVersion object_serialization_version;
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     size_t object_shared_data_buckets = 1;
+    size_t max_buckets_in_map = 1;
+    MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+    double map_buckets_coefficient = 1.0;
+    size_t map_buckets_min_avg_size = 0;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;

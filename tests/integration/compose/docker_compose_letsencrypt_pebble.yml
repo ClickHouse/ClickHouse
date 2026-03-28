@@ -1,6 +1,6 @@
 services:
   pebble:
-    image: ghcr.io/letsencrypt/pebble:latest
+    image: ghcr.io/letsencrypt/pebble:2.9.0
     command: -config test/config/pebble-config.json -strict -dnsserver 10.5.11.3:8053
     environment:
       - PEBBLE_WFE_NONCEREJECT=0
@@ -13,7 +13,7 @@ services:
         ipv4_address: 10.5.11.2
     cpus: 3
   challtestsrv:
-    image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:2.9.0
     command: -defaultIPv6 "" -defaultIPv4 10.5.11.3
     ports:
       - ${LE_PEBBLE_CHALSRV_EXTERNAL_API_PORT:-8055}:${LE_PEBBLE_CHALSRV_INTERNAL_API_PORT:-8055}

@@ -17,12 +17,15 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <base/getThreadId.h>
 #include <base/types.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -52,6 +55,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
+
 using namespace DB;
 
 
@@ -62,6 +66,8 @@ namespace DB::ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int PATH_ACCESS_DENIED;
+extern const int LOGICAL_ERROR;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -73,6 +79,11 @@ namespace DB::DataLakeStorageSetting
     extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 }
 
+namespace DB::Setting
+{
+extern const SettingsString iceberg_metadata_compression_method;
+}
+
 namespace ProfileEvents
 {
     extern const Event IcebergVersionHintUsed;
@@ -80,6 +91,7 @@ namespace ProfileEvents
 
 namespace DB::Setting
 {
+    extern const SettingsUInt64 iceberg_metadata_staleness_ms;
     extern const SettingsUInt64 output_format_compression_level;
 }
 
@@ -91,7 +103,7 @@ namespace DB::Iceberg
 {
 
 using namespace DB;
-static CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
+CompressionMethod getCompressionMethodFromMetadataFile(const String & path)
 {
     constexpr std::string_view metadata_suffix = ".metadata.json";
 
@@ -110,11 +122,14 @@ static CompressionMethod getCompressionMethodFromMetadataFile(const String & pat
 
 static bool isTemporaryMetadataFile(const String & file_name)
 {
-    String substring = String(file_name.begin(), file_name.begin() + file_name.find_first_of('.'));
+    auto string_position = file_name.find_first_of('.');
+    if (string_position == String::npos)
+        return true;
+    String substring = String(file_name.begin(), file_name.begin() + string_position);
     return Poco::UUID{}.tryParse(substring);
 }
 
-static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
+static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
     if (isTemporaryMetadataFile(file_name))
@@ -137,9 +152,53 @@ static Iceberg::MetadataFileWithInfo getMetadataFileAndVersion(const std::string
             ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: '{}'. Expected vN.metadata.json where N is a number", file_name);
 
     return MetadataFileWithInfo{
-        .version = std::stoi(version_str),
-        .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
+}
+
+/// Resolve metadata filename from version hint content.
+/// Version hint may contain just a version number (e.g. "1") or a full filename (e.g. "v1.metadata.json").
+/// When only a version number is given, we try to find the actual file, which may have a compression suffix.
+static std::optional<String> resolveMetadataFilenameFromVersionHint(
+    const String & version_hint_content,
+    const String & table_path,
+    const ObjectStoragePtr & object_storage,
+    CompressionMethod known_compression_method,
+    const ContextPtr & local_context)
+{
+    String metadata_file = version_hint_content;
+    if (metadata_file.ends_with(".metadata.json"))
+        return metadata_file;
+
+    if (!std::all_of(metadata_file.begin(), metadata_file.end(), isdigit))
+        return metadata_file + ".metadata.json";
+
+    /// Version hint is a number. Try to find the actual file.
+    String version_number = metadata_file;
+
+    /// First try without compression.
+    String candidate = "v" + version_number + ".metadata.json";
+    auto candidate_path = std::filesystem::path(table_path) / "metadata" / candidate;
+    if (object_storage->exists(StoredObject(candidate_path)))
+        return candidate;
+
+    /// Try with known compression method.
+    auto compression_method = known_compression_method;
+    if (compression_method == CompressionMethod::None)
+    {
+        auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+        compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+    }
+    if (compression_method != CompressionMethod::None)
+    {
+        auto suffix = toContentEncodingName(compression_method);
+        String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
+        auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
+        if (object_storage->exists(StoredObject(compressed_path)))
+            return compressed_candidate;
+    }
+
+    /// Nothing found via direct checks.
+    return std::nullopt;
 }
 
 
@@ -172,21 +231,29 @@ void writeMessageToFile(
 }
 
 bool writeMetadataFileAndVersionHint(
-    const std::string & metadata_file_path,
+    const IcebergPathResolver & resolver,
+    const GeneratedMetadataFileWithInfo & metadata_file_info,
     const std::string & metadata_file_content,
-    const std::string & version_hint_path,
-    std::string version_hint_content,
+    const IcebergPathFromMetadata & version_hint_path,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    DB::CompressionMethod compression_method,
     bool try_write_version_hint)
 {
+    auto storage_metadata_path = resolver.resolve(metadata_file_info.path);
+    auto storage_version_hint_path = resolver.resolve(version_hint_path);
     try
     {
-        if (object_storage->exists(StoredObject(metadata_file_path)))
+        if (object_storage->exists(StoredObject(storage_metadata_path)))
             return false;
 
-        Iceberg::writeMessageToFile(metadata_file_content, metadata_file_path, object_storage, context, /* write-if-none-match */ "*", "", compression_method);
+        Iceberg::writeMessageToFile(
+            metadata_file_content,
+            storage_metadata_path,
+            object_storage,
+            context,
+            /* write-if-none-match */ "*",
+            "",
+            metadata_file_info.compression_method);
     }
     catch (...)
     {
@@ -196,13 +263,10 @@ bool writeMetadataFileAndVersionHint(
 
     if (try_write_version_hint)
     {
-        if (version_hint_content.starts_with('/'))
-            version_hint_content = version_hint_content.substr(1);
-
         size_t i = 0;
         while (i < MAX_TRANSACTION_RETRIES)
         {
-            StoredObject object_info(version_hint_path);
+            StoredObject object_info(storage_version_hint_path);
             std::string version_hint_value;
             std::string etag;
             std::string write_if_none_match = "*";
@@ -210,17 +274,35 @@ bool writeMetadataFileAndVersionHint(
             {
                 auto [object_data, object_metadata] = object_storage->readSmallObjectAndGetObjectMetadata(object_info, context->getReadSettings(), MAX_HINT_FILE_SIZE);
                 version_hint_value = object_data;
+                boost::algorithm::trim(version_hint_value);
                 etag = object_metadata.etag;
                 write_if_none_match.clear();
             }
 
-            auto [old_version, _1, _2] = getMetadataFileAndVersion(version_hint_value);
-            auto [new_version, _3, _4] = getMetadataFileAndVersion(version_hint_content);
-            if (old_version < new_version)
+            Int32 old_version = 0;
+            if (!version_hint_value.empty())
+            {
+                if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
+                {
+                    old_version = std::stoi(version_hint_value);
+                }
+                else
+                {
+                    old_version = getMetadataFileAndVersion(version_hint_value).version;
+                }
+            }
+            if (old_version < metadata_file_info.version)
             {
                 try
                 {
-                    Iceberg::writeMessageToFile(version_hint_content, version_hint_path, object_storage, context, write_if_none_match, /* write-if-match */ etag);
+                    /// Write just the version number for Spark/spec compatibility.
+                    Iceberg::writeMessageToFile(
+                        std::to_string(metadata_file_info.version),
+                        storage_version_hint_path,
+                        object_storage,
+                        context,
+                        write_if_none_match,
+                        /* write-if-match */ etag);
                     break;
                 }
                 catch (...)
@@ -294,78 +376,6 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
     return std::nullopt;
 }
 
-// This function is used to get the file path inside the directory which corresponds to iceberg table from the full blob path which is written in manifest and metadata files.
-// For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
-// Common path should end with "<table_name>" or "<table_name>/".
-std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location)
-{
-    auto trim_backward_slash = [](std::string_view str) -> std::string_view
-    {
-        if (str.ends_with('/'))
-        {
-            return str.substr(0, str.size() - 1);
-        }
-        return str;
-    };
-    auto trim_forward_slash = [](std::string_view str) -> std::string_view
-    {
-        if (str.starts_with('/'))
-        {
-            return str.substr(1);
-        }
-        return str;
-    };
-    common_path = trim_backward_slash(common_path);
-    table_location = trim_backward_slash(table_location);
-
-    if (data_path.starts_with(table_location) && table_location.ends_with(common_path))
-    {
-        return std::filesystem::path{common_path} / trim_forward_slash(data_path.substr(table_location.size()));
-    }
-
-
-    auto pos = data_path.find(common_path);
-    /// Valid situation when data and metadata files are stored in different directories.
-    if (pos == std::string::npos)
-    {
-        /// connection://bucket
-        auto prefix = table_location.substr(0, table_location.size() - common_path.size());
-        return std::string{data_path.substr(prefix.size())};
-    }
-
-    size_t good_pos = std::string::npos;
-    while (pos != std::string::npos)
-    {
-        auto potential_position = pos + common_path.size();
-        if ((std::string_view(data_path.data() + potential_position, 6) == "/data/")
-            || (std::string_view(data_path.data() + potential_position, 10) == "/metadata/"))
-        {
-            good_pos = pos;
-            break;
-        }
-        size_t new_pos = data_path.find(common_path, pos + 1);
-        if (new_pos == std::string::npos)
-        {
-            break;
-        }
-        pos = new_pos;
-    }
-
-
-    if (good_pos != std::string::npos)
-    {
-        return std::string{data_path.substr(good_pos)};
-    }
-    else if (pos != std::string::npos)
-    {
-        return std::string{data_path.substr(pos)};
-    }
-    else
-    {
-        throw ::DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Expected to find '{}' in data path: '{}'", common_path, data_path);
-    }
-}
-
 enum class MostRecentMetadataFileSelectionWay
 {
     BY_LAST_UPDATED_MS_FIELD,
@@ -387,7 +397,7 @@ std::string normalizeUuid(const std::string & uuid)
     {
         if (std::isalnum(c))
         {
-            result.push_back(std::tolower(c));
+            result.push_back(static_cast<char>(std::tolower(c)));
         }
     }
     return result;
@@ -694,63 +704,161 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     return {result, partition_iter};
 }
 
-std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
+static String parseColumnArgument(const ASTPtr & arg_ast, const String & clickhouse_name, const String & error_suffix)
 {
-    if (auto * identifier = object->as<ASTIdentifier>(); identifier)
-        return {"identity", identifier->name()};
+    const auto * identifier = arg_ast ? arg_ast->as<ASTIdentifier>() : nullptr;
+    if (!identifier)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid iceberg sort order function {}: {}",
+            clickhouse_name, error_suffix);
+    return identifier->name();
+}
 
-    static const std::unordered_map<String, String> clickhouse_name_to_iceberg = {
-        {"identity", "identity"},
-        {"icebergBucket", "bucket"},
-        {"icebergTruncate", "truncate"},
-        {"toYearNumSinceEpoch", "year"},
-        {"toMonthNumSinceEpoch", "month"},
-        {"toRelativeDayNum", "day"},
-        {"toRelativeHourNum", "hour"}
-    };
+static std::pair<String, String> parseFunction(const ASTPtr & func_object)
+{
+    const static std::unordered_map<String, String> clickhouse_name_to_iceberg = {
+            {"identity", "identity"},
+            {"icebergBucket", "bucket"},
+            {"icebergTruncate", "truncate"},
+            {"toYearNumSinceEpoch", "year"},
+            {"toMonthNumSinceEpoch", "month"},
+            {"toRelativeDayNum", "day"},
+            {"toRelativeHourNum", "hour"}
+        };
 
-    auto parse_function = [] (ASTPtr func_object) -> std::pair<String, String> {
-        auto * func = func_object->as<ASTFunction>();
-        String clickhouse_name = func->name;
-        auto args = func->children[0]->children;
-        std::optional<size_t> arg;
-        String column_name;
-        if (args.size() == 2)
-        {
-            arg = args[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
-            column_name = args[1]->as<ASTIdentifier>()->name();
-        }
-        else
-            column_name = args[0]->as<ASTIdentifier>()->name();
+    const auto * func = func_object ? func_object->as<ASTFunction>() : nullptr;
+    if (!func)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression, expected a function");
 
-        if (!clickhouse_name_to_iceberg.contains(clickhouse_name))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
-        const auto & transform_base = clickhouse_name_to_iceberg.at(clickhouse_name);
+    const String & clickhouse_name = func->name;
+    const auto it = clickhouse_name_to_iceberg.find(clickhouse_name);
+    if (it == clickhouse_name_to_iceberg.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
 
-        String transform = transform_base;
-        if (arg.has_value())
-            transform += "[" + std::to_string(arg.value()) + "]";
+    const auto * args_list = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+    if (!args_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order function {}: arguments are missing", clickhouse_name);
+    const auto & args = args_list->children;
 
-        return {transform, column_name};
-    };
+    std::optional<size_t> arg;
+    String column_name;
 
-    if (auto * func = object->as<ASTFunction>(); func->name != "tuple")
+    if (args.size() == 1)
     {
-        return parse_function(object);
+        column_name = parseColumnArgument(args[0], clickhouse_name, "expected a column identifier as an argument");
+    }
+    else if (args.size() == 2)
+    {
+        const auto * literal = args[0] ? args[0]->as<ASTLiteral>() : nullptr;
+        if (!literal)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order function {}: expected (integer_literal, column_identifier), but there is no integer_literal",
+                clickhouse_name);
+
+        column_name = parseColumnArgument(args[1], clickhouse_name, "expected (integer_literal, column_identifier), but there is no column_identifier");
+
+        UInt64 u_param = 0;
+        Int64 i_param = 0;
+        if (literal->value.tryGet(u_param))
+            arg = static_cast<size_t>(u_param);
+        else if (literal->value.tryGet(i_param) && i_param >= 0)
+            arg = static_cast<size_t>(i_param);
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order function {}: expected a non-negative integer literal as first argument",
+                clickhouse_name);
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid iceberg sort order function {}: expected 1 or 2 arguments, but got {}",
+            clickhouse_name, args.size());
     }
 
-    chassert(!object->children.empty());
-    chassert(object->children[0]->as<ASTExpressionList>());
-    auto function_desc = object->children[0]->children[i];
-    if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
+    String transform = it->second;
+    if (arg.has_value())
+        transform += "[" + std::to_string(arg.value()) + "]";
+
+    return {transform, column_name};
+}
+
+static ASTPtr unwrapOrderByElement(ASTPtr ast)
+{
+    if (!ast)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression");
+    if (const auto * elem = ast->as<ASTStorageOrderByElement>())
+    {
+        if (elem->children.size() != 1 || !elem->children.front())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order expression");
+        return elem->children.front();
+    }
+    return ast;
+}
+
+
+/// Parse transform and argument from input parameter
+/// "x" -> {"identity", "x"}
+/// "identity(x)" -> {"identity", "x"}
+/// "bucket(16, x)" -> {"bucket[16]", "x"}
+static std::pair<String, String> parseTransformAndColumnElement(ASTPtr element)
+{
+    element = unwrapOrderByElement(element);
+
+    if (const auto * identifier = element->as<ASTIdentifier>())
         return {"identity", identifier->name()};
 
-    chassert(!function_desc->children.empty());
-    function_desc = function_desc->children[0];
-    if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
-        return {"identity", identifier->name()};
+    if (const auto * func = element->as<ASTFunction>(); func && func->name != "tuple")
+        return parseFunction(element);
 
-    return parse_function(function_desc);
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Invalid iceberg sort order expression '{}', expected a column identifier or a supported function",
+        element->getColumnName());
+}
+
+static std::vector<std::pair<String, String>> parseTransformAndColumnPairs(ASTPtr object)
+{
+    if (!object)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid iceberg sort order expression");
+
+    std::vector<std::pair<String, String>> result;
+
+    if (const auto * expression_list = object->as<ASTExpressionList>())
+    {
+        result.reserve(expression_list->children.size());
+        for (const auto & child : expression_list->children)
+        {
+            result.push_back(parseTransformAndColumnElement(child));
+        }
+        return result;
+    }
+
+    if (const auto * identifier = object->as<ASTIdentifier>())
+    {
+        result.push_back({"identity", identifier->name()});
+        return result;
+    }
+
+    if (const auto * func = object->as<ASTFunction>(); func && func->name == "tuple")
+    {
+        const auto * args_list = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+        if (!args_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid iceberg sort order tuple expression");
+
+        result.reserve(args_list->children.size());
+        for (const auto & child : args_list->children)
+        {
+            result.push_back(parseTransformAndColumnElement(child));
+        }
+        return result;
+    }
+
+    result.push_back(parseTransformAndColumnElement(object));
+    return result;
 }
 
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -835,11 +943,18 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         Names sort_columns = sort_columns_key_description.column_names;
         std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
 
+        auto transform_and_column_pairs = parseTransformAndColumnPairs(order_by);
+        if (transform_and_column_pairs.size() != sort_columns.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid iceberg sort order: expected {} elements, but got {}",
+                sort_columns.size(), transform_and_column_pairs.size());
+
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
-        for (size_t i = 0; i < sort_columns.size(); ++i)
+        for (size_t i = 0; i < transform_and_column_pairs.size(); ++i)
         {
+            const auto & [transform_name, column_name] = transform_and_column_pairs[i];
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
-            auto [transform_name, column_name] = parseTransformAndColumn(sort_columns_key_description.definition_ast, i);
             sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
             sorting_field->set(f_transform, transform_name);
             if (reverse_flags.empty() || !reverse_flags[i])
@@ -865,7 +980,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
 }
 
-
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
@@ -882,99 +996,139 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     std::optional<String> table_uuid,
-    bool use_table_uuid_for_metadata_file_selection)
+    bool use_table_uuid_for_metadata_file_selection,
+    bool force_fetch_latest_metadata)
 {
-    auto log = getLogger("IcebergMetadataFileResolver");
-    MostRecentMetadataFileSelectionWay selection_way
-        = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
-        ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
-        : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
-    bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-        || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-    const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
-    if (metadata_files.empty())
+    auto load_fn = [&]()
     {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
-    }
-    std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
-    metadata_files_with_versions.reserve(metadata_files.size());
-    for (const auto & path : metadata_files)
-    {
-        String filename = std::filesystem::path(path).filename();
-        if (isTemporaryMetadataFile(filename))
-            continue;
-        auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
-
-        if (need_all_metadata_files_parsing)
+        auto log = getLogger("IcebergMetadataFileResolver");
+        MostRecentMetadataFileSelectionWay selection_way
+            = data_lake_settings[DataLakeStorageSetting::iceberg_recent_metadata_file_by_last_updated_ms_field].value
+            ? MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD
+            : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
+        bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+            || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
+        const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+        if (metadata_files.empty())
         {
-            auto metadata_file_object = getMetadataJSONObject(
-                metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
-            if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
+        }
+        std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
+        metadata_files_with_versions.reserve(metadata_files.size());
+        for (const auto & path : metadata_files)
+        {
+            String filename = std::filesystem::path(path).filename();
+            if (isTemporaryMetadataFile(filename))
+                continue;
+            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+
+            if (need_all_metadata_files_parsing)
             {
-                if (metadata_file_object->has(Iceberg::f_table_uuid))
+                auto metadata_file_object = getMetadataJSONObject(
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
-                    auto current_table_uuid = metadata_file_object->getValue<String>(Iceberg::f_table_uuid);
-                    if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
+                    if (metadata_file_object->has(Iceberg::f_table_uuid))
                     {
-                        metadata_files_with_versions.emplace_back(
-                            version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                        auto current_table_uuid = metadata_file_object->getValue<String>(Iceberg::f_table_uuid);
+                        if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
+                        {
+                            metadata_files_with_versions.emplace_back(
+                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                        }
+                    }
+                    else
+                    {
+                        Int64 format_version = metadata_file_object->getValue<Int64>(Iceberg::f_format_version);
+                        throw Exception(
+                            format_version == 1 ? ErrorCodes::BAD_ARGUMENTS : ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                            "Table UUID is not specified in some metadata files for table by path {}",
+                            metadata_file_path);
                     }
                 }
                 else
                 {
-                    Int64 format_version = metadata_file_object->getValue<Int64>(Iceberg::f_format_version);
-                    throw Exception(
-                        format_version == 1 ? ErrorCodes::BAD_ARGUMENTS : ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Table UUID is not specified in some metadata files for table by path {}",
-                        metadata_file_path);
+                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
                 }
             }
             else
             {
-                metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
             }
         }
-        else
-        {
-            metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
-        }
-    }
 
-    if (metadata_files_with_versions.empty())
-    {
-        if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+        if (metadata_files_with_versions.empty())
         {
+            if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
+            {
+                throw Exception(
+                    ErrorCodes::FILE_DOESNT_EXIST,
+                    "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
+                    table_path,
+                    table_uuid.value());
+            }
             throw Exception(
                 ErrorCodes::FILE_DOESNT_EXIST,
-                "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
-                table_path,
-                table_uuid.value());
+                "The metadata file for Iceberg table with path {} doesn't exist",
+                table_path);
         }
+
+        /// Get the latest version of metadata file: v<V>.metadata.json
+        const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
+        {
+            if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
+            {
+                return *std::max_element(
+                    metadata_files_with_versions.begin(),
+                    metadata_files_with_versions.end(),
+                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
+            }
+            else
+            {
+                return *std::max_element(
+                    metadata_files_with_versions.begin(),
+                    metadata_files_with_versions.end(),
+                    [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
+            }
+        }();
+        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+    };
+
+    /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
+    size_t tolerated_staleness_ms = static_cast<size_t>(local_context->getSettingsRef()[Setting::iceberg_metadata_staleness_ms]);
+    /// If the force is been requested (normally it's required by certain types of operations), the tolerance will be 0 and we'll go to the remote catalog
+    if (force_fetch_latest_metadata)
+        tolerated_staleness_ms = 0;
+
+    if (metadata_cache)
+    {
+        return metadata_cache->getOrSetLatestMetadataVersion(
+            table_path,
+            table_uuid,
+            load_fn,
+            tolerated_staleness_ms
+        )->latest_metadata;
+    }
+    return load_fn();
+}
+
+static String resolveContained(const std::filesystem::path & base, const std::filesystem::path & relative)
+{
+    auto norm_base = base.lexically_normal();
+    auto combined = (norm_base / relative).lexically_normal();
+
+    auto rel = combined.lexically_relative(norm_base);
+
+    if (rel.empty() || rel.begin()->string() == "..")
+    {
         throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "The metadata file for Iceberg table with path {} doesn't exist",
-            table_path);
+            ErrorCodes::PATH_ACCESS_DENIED,
+            "Explicit metadata file path `{}` should be in the table path directory : `{}`",
+            relative.string(),
+            base.string());
     }
 
-    /// Get the latest version of metadata file: v<V>.metadata.json
-    const ShortMetadataFileInfo & latest_metadata_file_info = [&]()
-    {
-        if (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
-        {
-            return *std::max_element(
-                metadata_files_with_versions.begin(),
-                metadata_files_with_versions.end(),
-                [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.last_updated_ms < b.last_updated_ms; });
-        }
-        else
-        {
-            return *std::max_element(
-                metadata_files_with_versions.begin(),
-                metadata_files_with_versions.end(),
-                [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
-        }
-    }();
-    return {latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+    return combined.string();
 }
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -984,29 +1138,25 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     Poco::Logger * log,
-    const std::optional<String> & table_uuid)
+    const std::optional<String> & table_uuid,
+    CompressionMethod known_compression_method,
+    bool force_fetch_latest_metadata)
 {
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        try
+        if (explicit_metadata_path.find('\0') != String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
+        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
+        std::filesystem::path p(explicit_metadata_path);
+        auto it = p.begin();
+        if (it != p.end())
         {
-            LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
-            std::filesystem::path p(explicit_metadata_path);
-            auto it = p.begin();
-            if (it != p.end())
-            {
-                if (*it == "." || *it == "..")
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
-            }
-            if (!explicit_metadata_path.starts_with(table_path))
-                explicit_metadata_path = std::filesystem::path(table_path) / explicit_metadata_path;
-            return getMetadataFileAndVersion(explicit_metadata_path);
+            if (*it == "." || *it == "..")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
         }
-        catch (const std::exception & ex)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid path {} specified for iceberg_metadata_file_path: '{}'", explicit_metadata_path, ex.what());
-        }
+        String resolved_path = resolveContained(table_path, explicit_metadata_path);
+        return getMetadataFileAndVersion(resolved_path);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
@@ -1028,7 +1178,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -1037,22 +1187,20 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         StoredObject version_hint(version_hint_path);
         auto buf = object_storage->readObject(version_hint, ReadSettings{});
         readString(metadata_file, *buf);
-        if (!metadata_file.ends_with(".metadata.json"))
+        auto resolved
+            = resolveMetadataFilenameFromVersionHint(metadata_file, table_path, object_storage, known_compression_method, local_context);
+        if (resolved.has_value())
         {
-            if (std::all_of(metadata_file.begin(), metadata_file.end(), isdigit))
-                metadata_file = "v" + metadata_file + ".metadata.json";
-            else
-                metadata_file = metadata_file + ".metadata.json";
+            LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", *resolved);
+            ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
+            return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(*resolved).filename());
         }
-        LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
-        ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
-
-        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename());
+        LOG_WARNING(log, "Version hint content '{}' could not be resolved to a metadata file, falling back to listing", metadata_file);
     }
-    else
+
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
     }
 }
 

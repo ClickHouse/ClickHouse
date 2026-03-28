@@ -1,5 +1,6 @@
 -- Tags: long, no-fasttest, no-parallel, no-tsan, no-msan, no-asan
 
+set optimize_trivial_insert_select = 0;
 set output_format_parquet_use_custom_encoder = 1;
 set output_format_parquet_row_group_size = 1000;
 set output_format_parquet_data_page_size = 800;

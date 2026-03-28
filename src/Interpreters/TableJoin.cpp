@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
@@ -188,6 +189,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , max_joined_block_bytes(settings.max_joined_block_size_bytes)
     , joined_block_split_single_row(settings.joined_block_split_single_row)
+    , parallel_non_joined_rows_processing(settings.parallel_non_joined_rows_processing)
     , join_algorithms(settings.join_algorithms)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
@@ -341,9 +343,7 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
         dedup_columns.push_back(column);
         auto & inserted = dedup_columns.back();
 
-        /// Also qualify unusual column names - that does not look like identifiers.
-
-        if (left_table_columns.contains(column.name) || !isValidIdentifierBegin(column.name.at(0)))
+        if (left_table_columns.contains(column.name))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -376,7 +376,7 @@ NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns
 
 ASTPtr TableJoin::leftKeysList() const
 {
-    ASTPtr keys_list = std::make_shared<ASTExpressionList>();
+    ASTPtr keys_list = make_intrusive<ASTExpressionList>();
     keys_list->children = key_asts_left;
 
     for (const auto & clause : clauses)
@@ -389,7 +389,7 @@ ASTPtr TableJoin::leftKeysList() const
 
 ASTPtr TableJoin::rightKeysList() const
 {
-    ASTPtr keys_list = std::make_shared<ASTExpressionList>();
+    ASTPtr keys_list = make_intrusive<ASTExpressionList>();
 
     if (hasOn())
         keys_list->children = key_asts_right;
@@ -477,19 +477,40 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
 void TableJoin::setUsedColumns(const Names & column_names)
 {
     std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> left_columns_idx;
+    std::unordered_map<std::string_view, size_t> left_columns_max_count;
     for (auto it = columns_from_left_table.begin(); it != columns_from_left_table.end(); ++it)
+    {
         left_columns_idx[it->name] = it;
+        ++left_columns_max_count[it->name];
+    }
 
     std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> right_columns_idx;
+    std::unordered_map<std::string_view, size_t> right_columns_max_count;
     for (auto it = columns_from_joined_table.begin(); it != columns_from_joined_table.end(); ++it)
+    {
         right_columns_idx[it->name] = it;
+        ++right_columns_max_count[it->name];
+    }
+
+    /// `column_names` may contain duplicates (e.g., from `ActionsDAG::getRequiredColumnsNames`
+    /// when the DAG has multiple input nodes with the same name). We must not add more entries
+    /// to `result_columns_from_left_table` / `columns_added_by_join` than actually exist
+    /// in the input columns, otherwise `HashJoin::getNonJoinedBlocks` will see a count mismatch.
+    std::unordered_map<std::string_view, size_t> left_seen_count;
+    std::unordered_map<std::string_view, size_t> right_seen_count;
 
     for (const auto & column_name : column_names)
     {
         if (auto lit = left_columns_idx.find(column_name); lit != left_columns_idx.end())
-            setUsedColumn(*lit->second, JoinTableSide::Left);
+        {
+            if (++left_seen_count[column_name] <= left_columns_max_count[column_name])
+                setUsedColumn(*lit->second, JoinTableSide::Left);
+        }
         else if (auto rit = right_columns_idx.find(column_name); rit != right_columns_idx.end())
-            setUsedColumn(*rit->second, JoinTableSide::Right);
+        {
+            if (++right_seen_count[column_name] <= right_columns_max_count[column_name])
+                setUsedColumn(*rit->second, JoinTableSide::Right);
+        }
         else
             throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
                 "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
