@@ -9,8 +9,8 @@ doc_type: 'guide'
 
 # How to Build ClickHouse on Linux
 
-:::info You don't have to build ClickHouse yourself!
-You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/docs/get-started/quick-start).
+:::info This build guide is for contributors modifying ClickHouse itself.
+If you are not changing ClickHouse source code, you can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/docs/get-started/quick-start).
 :::
 
 ClickHouse can be build on the following platforms:
