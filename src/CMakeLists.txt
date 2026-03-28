@@ -452,7 +452,7 @@ endif()
 
 if (TARGET ch_contrib::crc32-vpmsum)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::crc32-vpmsum)
- endif()
+endif()
 
 if (TARGET ch_contrib::jwt-cpp)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
@@ -615,7 +615,7 @@ if (TARGET ch_contrib::aws_s3)
 endif()
 
 if (TARGET ch_contrib::aws_sdk_sqs)
-    dbms_target_link_libraries(PRIVATE ch_contrib::aws_sdk_sqs)
+    target_link_libraries(dbms PRIVATE ch_contrib::aws_sdk_sqs)
 endif ()
 
 if (TARGET ch_contrib::azure_sdk)
