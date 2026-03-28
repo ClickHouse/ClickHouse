@@ -341,7 +341,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
             /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it
             /// as a String, so parsing won't fail.
-            if (field[0] == '0' && field.size() != 1)
+            /// When allow_number_leading_zeros is set (for hive partitioning), skip this check
+            /// because hive partitioning handles leading zeros
+            if (field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros)
                 return std::make_shared<DataTypeString>();
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);

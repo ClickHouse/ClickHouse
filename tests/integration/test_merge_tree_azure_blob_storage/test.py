@@ -3,6 +3,7 @@ import os
 import time
 
 import pytest
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
@@ -608,6 +609,10 @@ def test_endpoint(cluster):
     port = cluster.azurite_port
 
     container_client = cluster.blob_service_client.get_container_client(container_name)
+    try:
+        container_client.delete_container()
+    except ResourceNotFoundError:
+        pass
     container_client.create_container()
 
     azure_query(

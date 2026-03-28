@@ -147,7 +147,7 @@ def test_number_of_marks_read(
             node.query(f"SYSTEM SYNC REPLICA {table_name} STRICT")
 
     query = _create_query(query_tmpl, table_name)
-    query_id = f"{table_name}_{randint(0, 1e9)}"
+    query_id = f"{table_name}_{randint(0, 10**9)}"
 
     assert _get_result_with_parallel_replicas(
         query, query_id, cluster_name, parallel_replicas_mark_segment_size

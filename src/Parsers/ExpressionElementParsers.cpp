@@ -1,7 +1,8 @@
 #include <cerrno>
-#include <cstdlib>
-#include <Poco/String.h>
 #include <cmath>
+#include <cstdlib>
+#include <limits>
+#include <Poco/String.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -189,6 +190,33 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 make_intrusive<ASTLiteral>(settings_str));
             result_node = buildSelectFromTableFunction(view_explain);
         }
+    }
+    else if (ParserKeyword(Keyword::VALUES).ignore(pos, expected))
+    {
+        /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
+        /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
+        auto args = make_intrusive<ASTExpressionList>();
+        ParserExpression expr_parser;
+
+        ASTPtr value_expr;
+        if (!expr_parser.parse(pos, value_expr, expected))
+            return false;
+        args->children.push_back(std::move(value_expr));
+
+        while (pos->type == TokenType::Comma)
+        {
+            ++pos;
+            if (!expr_parser.parse(pos, value_expr, expected))
+                return false;
+            args->children.push_back(std::move(value_expr));
+        }
+
+        auto values_func = make_intrusive<ASTFunction>();
+        values_func->name = "SQLStandardValues";
+        values_func->arguments = args;
+        values_func->children.push_back(values_func->arguments);
+
+        result_node = buildSelectFromTableFunction(values_func);
     }
     else
     {
@@ -1102,6 +1130,12 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (negative)
                 float_value = -float_value;
 
+            /// Canonicalize NaN to a single representation, because negative NaN has
+            /// a different bit pattern but formats identically to positive NaN ("nan"),
+            /// breaking the AST formatting roundtrip consistency check.
+            if (std::isnan(float_value))
+                float_value = std::numeric_limits<Float64>::quiet_NaN();
+
             res = float_value;
 
             auto literal = make_intrusive<ASTLiteral>(res);
@@ -1633,6 +1667,7 @@ const char * ParserAlias::restricted_keywords[] =
     "LEFT",
     "LIKE",
     "LIMIT",
+    "NATURAL",
     "NOT",
     "OFFSET",
     "ON",

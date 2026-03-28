@@ -78,7 +78,7 @@ TableFunctionPtr TableFunctionFactory::tryGet(
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, name);
     }
