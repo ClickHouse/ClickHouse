@@ -3616,6 +3616,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         processors.emplace_back(processor);
 
     pipeline.init(std::move(pipe));
+
+    /// If the actual number of streams is less than what was originally requested,
+    /// the read step deliberately reduced streams (e.g. because data is small).
+    /// Downstream steps like AggregatingStep use this to avoid expanding the pipeline
+    /// back to max_threads, which would create overhead from mostly-empty streams.
+    if (pipeline.getNumStreams() < requested_num_streams)
+        pipeline.setReadStreamCountWasReduced(true);
+
     pipeline.addContext(context);
     // Attach QueryIdHolder if needed
     if (query_id_holder)

@@ -28,10 +28,10 @@ Fetch PR metadata using `gh` if available, otherwise use `WebFetch` on the GitHu
 gh pr view "$PR_NUMBER" --json number,title,body,headRefName,baseRefName,state,mergeable,mergeStateStatus,author,url,headRepository,headRepositoryOwner,statusCheckRollup,reviews,comments,reviewRequests
 ```
 
-If `gh` is not available or not authenticated, use WebFetch to get the data:
+If `gh` is not available or not authenticated, use WebFetch to get the data. Append `?per_page=100` and follow the `Link` header for pagination (the `rel="next"` URL) to fetch all pages:
 - `https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$PR_NUMBER`
-- `https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$PR_NUMBER/reviews`
-- `https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$PR_NUMBER/comments`
+- `https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$PR_NUMBER/reviews?per_page=100`
+- `https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$PR_NUMBER/comments?per_page=100`
 
 Report the PR title, author, branch, and current state to the user.
 
@@ -41,32 +41,39 @@ Determine whether the PR branch is in the main repository or in the author's for
 
 **If the branch is in the main repository (`ClickHouse/ClickHouse`):**
 ```bash
-git fetch origin <head_branch>
-git checkout <head_branch>
-git pull origin <head_branch>
+git fetch origin "$HEAD_BRANCH"
+git checkout -b "$HEAD_BRANCH" "origin/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
+git pull origin "$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
+
+Derive the fork clone URL from the PR metadata (`headRepository.url` or `headRepository.owner.login` + `headRepository.name`) rather than hardcoding the repository name (forks can be renamed). Use a `pr-` prefixed remote name to avoid colliding with existing remotes like `origin`:
+
 ```bash
-git remote add <author_login> https://github.com/<author_login>/ClickHouse.git 2>/dev/null || git remote set-url <author_login> https://github.com/<author_login>/ClickHouse.git
-git fetch <author_login> <head_branch>
-git checkout -b <head_branch> <author_login>/<head_branch> 2>/dev/null || git checkout <head_branch>
-git pull <author_login> <head_branch>
+REMOTE_NAME="pr-$AUTHOR_LOGIN"
+FORK_URL="https://github.com/$FORK_OWNER/$FORK_REPO.git"  # from headRepository in PR metadata
+git remote add "$REMOTE_NAME" "$FORK_URL" 2>/dev/null || git remote set-url "$REMOTE_NAME" "$FORK_URL"
+git fetch "$REMOTE_NAME" "$HEAD_BRANCH"
+git checkout -b "$HEAD_BRANCH" "$REMOTE_NAME/$HEAD_BRANCH" 2>/dev/null || git checkout "$HEAD_BRANCH"
+git pull "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
-### 3. Resolve conflicts with master (if any)
+### 3. Resolve conflicts with the base branch (if any)
+
+Use the PR's actual base branch from metadata (`baseRefName`) instead of hardcoding `master` — this ensures backport PRs targeting other branches are handled correctly.
 
 Check if the PR has conflicts with the base branch:
 
 ```bash
-git fetch origin master
-git merge-base --is-ancestor origin/master HEAD || echo "needs merge"
+git fetch origin "$BASE_BRANCH"
+git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind master or has conflicts, merge master:
+If the branch is behind the base branch or has conflicts, merge:
 
 ```bash
-git merge origin/master
+git merge "origin/$BASE_BRANCH"
 ```
 
 If there are merge conflicts:
@@ -134,6 +141,7 @@ while true; do
         reviewThreads(first: 100${AFTER_CLAUSE}) {
           pageInfo { hasNextPage endCursor }
           nodes {
+            id
             isResolved
             comments(first: 100) {
               pageInfo { hasNextPage endCursor }
@@ -156,7 +164,28 @@ while true; do
 done
 ```
 
-If any thread has `comments.pageInfo.hasNextPage == true`, issue a follow-up GraphQL query for that thread to fetch remaining comments.
+If any thread has `comments.pageInfo.hasNextPage == true`, issue a follow-up GraphQL query using the thread's `id` and the `endCursor` to fetch remaining comments:
+
+```bash
+gh api graphql -f query="
+{
+  node(id: \"<thread_id>\") {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: \"<end_cursor>\") {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          author { login }
+          body
+          path
+          line
+        }
+      }
+    }
+  }
+}"
+```
+
+Repeat until `hasNextPage` is `false`.
 
 **If `gh` is not available (WebFetch fallback):**
 
@@ -165,6 +194,8 @@ The GraphQL API for review threads requires authentication, so unresolved-thread
 2. Group comments by `pull_request_review_id` and `in_reply_to_id` to reconstruct threads
 3. Treat all threads as potentially unresolved (since resolution status is only available via GraphQL)
 4. Note in the output that thread resolution status could not be determined without `gh` authentication
+
+Filter out resolved threads before processing — only consider threads where `isResolved == false`. Skip resolved threads entirely to avoid reintroducing already-addressed feedback.
 
 For each unresolved review thread:
 1. Read the comment and understand what the reviewer is asking for
@@ -178,8 +209,8 @@ For each unresolved review thread:
 After all fixes are applied, review the complete diff of the PR:
 
 ```bash
-git diff origin/master...HEAD --stat
-git log origin/master..HEAD --oneline
+git diff "origin/$BASE_BRANCH"...HEAD --stat
+git log "origin/$BASE_BRANCH"..HEAD --oneline
 ```
 
 Evaluate the changes holistically:
@@ -196,12 +227,12 @@ Determine where to push based on step 2:
 
 **If the branch is in the main repository:**
 ```bash
-git push origin <head_branch>
+git push origin "$HEAD_BRANCH"
 ```
 
 **If the branch is in the author's fork:**
 ```bash
-git push <author_login> <head_branch>
+git push "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
 Report the result and provide the PR URL.
@@ -222,3 +253,28 @@ Report the result and provide the PR URL.
 - Use Allman-style braces in any C++ code changes
 - When building ClickHouse after changes, redirect output to a log file in the build directory and use a subagent to analyze it
 - When running tests, redirect output to a log file and use a subagent to analyze it
+
+## 8. Fix unrelated CI failures
+
+After completing all work on the current PR (steps 1–7), review the CI failures that were identified as unrelated in step 4 — i.e., failures proven not caused by this PR's changes and not already being fixed by other open PRs.
+
+For each such unrelated failure:
+
+1. **Switch to master** and create a new branch:
+   ```bash
+   git checkout master
+   git pull origin master
+   git checkout -b fix/<descriptive-name>
+   ```
+
+2. **Investigate and fix** the failure: download logs, read the failing test and exercised code, and make the fix. Each fix goes on its own branch with its own PR.
+
+3. **Push and open a PR:**
+   ```bash
+   git push -u origin fix/<descriptive-name>
+   ```
+   Create a PR using `gh pr create` following the project's PR template (`.github/PULL_REQUEST_TEMPLATE.md`). Link to the open issue if one exists. Use the "CI Fix or improvement" changelog category.
+
+4. **Repeat** for each unrelated failure, one PR per fix.
+
+After all fixes are submitted, switch back to the original PR branch and report the list of new PRs created.
