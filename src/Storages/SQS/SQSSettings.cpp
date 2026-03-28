@@ -35,7 +35,7 @@ namespace ErrorCodes
     DECLARE(UInt64, sqs_visibility_timeout, 30, "Visibility timeout in seconds: how long a received message is hidden from other consumers.", 0) \
     DECLARE(UInt64, sqs_wait_time_seconds, 0, "Long-polling wait time in seconds (0 disables long polling, max 20).", 0) \
     /* Message lifecycle */ \
-    DECLARE(Bool, sqs_auto_delete, false, "Automatically delete messages after successful processing.", 0) \
+    DECLARE(Bool, sqs_auto_delete, true, "Automatically delete messages from the queue after successful processing.", 0) \
     DECLARE(String, sqs_dead_letter_queue_url, "", "URL of the Dead Letter Queue for messages that exceed the max receive count.", 0) \
     DECLARE(UInt64, sqs_max_receive_count, 3, "Maximum number of receive attempts before a message is moved to the DLQ.", 0) \
     /* Error handling */ \

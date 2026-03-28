@@ -185,8 +185,10 @@ Chunk SQSSource::generate()
 
 void SQSSource::deleteProcessedMessages()
 {
-    if (!consumer)
+    if (!consumer) {
+        LOG_ERROR(getLogger("SQSSource"), "Error deleting processed SQS messages: SQS Consumer was not initialized");
         return;
+    }
 
     SQSConsumer::Message msg;
     while (pending_ack.tryPop(msg))

@@ -75,14 +75,24 @@ bool SQSConsumer::receive()
         return false;
 
     auto request = makeReceiveMessageRequest();
-
     auto outcome = client.ReceiveMessage(request);
 
     if (!outcome.IsSuccess())
     {
         const auto & error = outcome.GetError();
-        if (error.GetErrorType() == Aws::SQS::SQSErrors::REQUEST_TIMEOUT)
+        const auto error_type = error.GetErrorType();
+
+        if (error_type == Aws::SQS::SQSErrors::REQUEST_TIMEOUT)
             return false;
+
+        /// The queue may not exist yet or may have been deleted — log and retry later.
+        if (error_type == Aws::SQS::SQSErrors::QUEUE_DOES_NOT_EXIST
+            || error_type == Aws::SQS::SQSErrors::QUEUE_DELETED_RECENTLY)
+        {
+            LOG_WARNING(log, "SQS queue {} does not exist or was recently deleted: {} ({}). Will retry.",
+                queue_url, error.GetMessage(), error.GetExceptionName());
+            return false;
+        }
 
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_SQS,

@@ -28,6 +28,8 @@
 
 #if USE_AWS_SQS
 
+#include <IO/S3/Client.h>
+
 #include <aws/core/auth/AWSCredentialsProvider.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
@@ -88,6 +90,11 @@ VirtualColumnsDescription StorageSQS::createVirtuals()
 
 std::shared_ptr<Aws::SQS::SQSClient> StorageSQS::createClient() const
 {
+    /// Ensure the AWS SDK is initialized before constructing ClientConfiguration.
+    /// ClickHouse initializes the SDK lazily via S3::ClientFactory; calling instance()
+    /// here guarantees Aws::InitAPI has been called even when no S3 storage is in use.
+    [[maybe_unused]] auto & _ = DB::S3::ClientFactory::instance();
+
     Aws::Client::ClientConfiguration config;
     config.region = (*sqs_settings)[SQSSetting::sqs_aws_region].value;
     config.verifySSL = (*sqs_settings)[SQSSetting::sqs_verify_ssl].value;
@@ -329,7 +336,27 @@ bool StorageSQS::tryStreamToViews()
     if (view_dependencies.empty())
         return false;
 
+    auto insert = make_intrusive<ASTInsertQuery>();
+    insert->table_id = table_id;
+
+    auto insert_context = Context::createCopy(getContext());
+    insert_context->makeQueryContext();
+    InterpreterInsertQuery interpreter(
+        insert,
+        insert_context,
+        /* allow_materialized */ false,
+        /* no_squash */ true,
+        /* no_destination */ true,
+        /* async_insert */ false);
+
+    auto block_io = interpreter.execute();
+
+    /// Derive column names from the pipeline header so that virtual columns
+    /// requested by a materialized view are included in the SQSSource sample block.
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    auto column_names = block_io.pipeline.getHeader().getNames();
+    auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
+
     const size_t num_consumers = (*sqs_settings)[SQSSetting::sqs_num_consumers].value;
 
     const UInt64 flush_ms = (*sqs_settings)[SQSSetting::sqs_flush_interval_ms].totalMilliseconds();
@@ -348,7 +375,7 @@ bool StorageSQS::tryStreamToViews()
             *this,
             storage_snapshot,
             (*sqs_settings)[SQSSetting::sqs_format].value,
-            storage_snapshot->metadata->getSampleBlock(),
+            sample_block,
             (*sqs_settings)[SQSSetting::sqs_max_block_size].value
                 ? (*sqs_settings)[SQSSetting::sqs_max_block_size].value
                 : getContext()->getSettingsRef()[Setting::max_block_size].value,
@@ -363,20 +390,6 @@ bool StorageSQS::tryStreamToViews()
         pipes.emplace_back(source);
     }
 
-    auto insert = make_intrusive<ASTInsertQuery>();
-    insert->table_id = table_id;
-
-    auto insert_context = Context::createCopy(getContext());
-    insert_context->makeQueryContext();
-    InterpreterInsertQuery interpreter(
-        insert,
-        insert_context,
-        /* allow_materialized */ false,
-        /* no_squash */ true,
-        /* no_destination */ true,
-        /* async_insert */ false);
-
-    auto block_io = interpreter.execute();
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
     bool write_failed = false;
