@@ -2,6 +2,7 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Core/Block.h>
+#include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageInMemoryMetadata.h>
 

@@ -115,8 +115,7 @@ SettingsChanges SQSSettings::getFormatSettings() const
 
 bool SQSSettings::hasBuiltin(std::string_view name)
 {
-    auto it = SQSSettingsTraits::findIndex(name);
-    return it != SQSSettingsTraits::npos;
+    return SQSSettingsImpl::hasBuiltin(name);
 }
 
 }
