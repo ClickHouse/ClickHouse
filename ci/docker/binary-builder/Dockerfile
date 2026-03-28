@@ -25,6 +25,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
 
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
+    && apt-get upgrade --yes \
     && apt-get install --yes \
         binutils-dev \
         build-essential \
