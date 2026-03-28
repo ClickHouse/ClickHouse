@@ -9,10 +9,19 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+ContextPtr getQueryOrGlobalContext()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext(); query_context != nullptr)
+        return query_context;
+    return Context::getGlobalContextInstance();
+}
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_lake>::executeImpl(

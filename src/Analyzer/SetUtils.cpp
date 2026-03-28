@@ -386,7 +386,9 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                 element_type = low_cardinality_type->getDictionaryType();
         }
 
-        DataTypePtr nested_tuple_type = std::make_shared<DataTypeTuple>(nested_tuple_element_types);
+        DataTypePtr nested_tuple_type = lhs_tuple_type->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(nested_tuple_element_types, lhs_tuple_type->getElementNames())
+            : std::make_shared<DataTypeTuple>(nested_tuple_element_types);
         lhs_unpacked_types = {std::make_shared<DataTypeNullable>(nested_tuple_type)};
     }
 

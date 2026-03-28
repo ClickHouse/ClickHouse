@@ -66,6 +66,9 @@ StaticThreadPool & getFetchPartitionThreadPool();
 /// ThreadPool used for the loading of Outdated data parts for MergeTree tables.
 StaticThreadPool & getActivePartsLoadingThreadPool();
 
+/// ThreadPool used for commit snapshot.
+StaticThreadPool & getSnapshotCommitThreadPool();
+
 /// ThreadPool used for deleting data parts for MergeTree tables.
 StaticThreadPool & getPartsCleaningThreadPool();
 

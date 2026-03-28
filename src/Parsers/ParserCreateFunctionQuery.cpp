@@ -216,6 +216,10 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
             create_function_query->setSettings(std::move(changes));
         }
 
+        /// The parser accepts clauses in any order, so children were added
+        /// in parse order. Normalize to the canonical order that formatImpl uses.
+        create_function_query->normalizeChildrenOrder();
+
         node = create_function_query;
         return true;
     }
