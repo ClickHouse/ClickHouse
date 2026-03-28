@@ -179,7 +179,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
 
     if (!table_function_ptr)
     {
-        auto [database_name, table_name] = extractDatabaseAndTableNameForParametrizedView(table_function_name, current_context);
+        auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_context);
         auto table_id = getContext()->resolveStorageID({database_name, table_name});
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
         auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
@@ -190,7 +190,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
             {
                 auto query = storage_view->getInMemoryMetadataPtr()->getSelectQuery().inner_query->clone();
                 NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
-                StorageView::replaceQueryParametersIfParametrizedView(query, parameterized_view_values);
+                StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
                 fillColumnsFromSubqueryImpl(query, current_context);
                 return;
             }

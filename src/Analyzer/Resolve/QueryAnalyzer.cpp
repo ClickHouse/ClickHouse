@@ -3889,7 +3889,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, scope_context);
     if (!table_function_ptr)
     {
-        auto [database_name, table_name] = extractDatabaseAndTableNameForParametrizedView(table_function_name, scope_context);
+        auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, scope_context);
 
         /// Collect parameterized view arguments
         NameToNameMap view_params;

@@ -51,6 +51,8 @@ public:
             const auto & table_function_name = table_node->getTableFunctionName();
             const auto & context = planner_context.getQueryContext();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_name, context);
+            if (!table_function_ptr)
+                return;
             auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(node, context);
 
             const auto & table_function_arguments = table_node->getArguments().getNodes();

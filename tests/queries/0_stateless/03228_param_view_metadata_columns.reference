@@ -4,6 +4,7 @@ number	UInt64
 \'Biba\'	String					
 CAST(dummy, \'Int\')	Int32					
 CAST(dummy, \'String\')	String					
+CAST(dummy, \'Int64\')	Variant(Int64, UInt64)					
 0
 0
 55

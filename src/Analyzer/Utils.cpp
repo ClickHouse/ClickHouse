@@ -1108,7 +1108,7 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNo
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
 }
 
-std::pair<String, String> extractDatabaseAndTableNameForParametrizedView(const String & table_function_name, const ContextPtr & context)
+std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context)
 {
     String database_name = context->getCurrentDatabase();
     String table_name;
