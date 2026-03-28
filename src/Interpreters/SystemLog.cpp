@@ -429,6 +429,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -471,6 +473,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }

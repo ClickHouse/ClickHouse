@@ -63,6 +63,9 @@
 #include <Disks/registerDisks.h>
 
 /// A minimal file used when the keeper is run without installation
+///
+/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
+/// make a scratch build.
 constexpr unsigned char keeper_resource_embedded_xml[] =
 {
 #embed "keeper_embedded.xml"
