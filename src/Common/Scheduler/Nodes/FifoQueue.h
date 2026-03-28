@@ -9,6 +9,7 @@
 #include <boost/intrusive/list.hpp>
 
 #include <mutex>
+#include <vector>
 
 
 namespace DB
@@ -18,17 +19,33 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
+    extern const int SERVER_OVERLOADED;
 }
 
 /*
  * FIFO queue to hold pending resource requests
  */
-class FifoQueue : public ISchedulerQueue
+class FifoQueue final : public ISchedulerQueue
 {
 public:
     FifoQueue(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : ISchedulerQueue(event_queue_, config, config_prefix)
     {}
+
+    FifoQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerQueue(event_queue_, info_)
+    {}
+
+    ~FifoQueue() override
+    {
+        purgeQueue();
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("fifo");
+        return type_name;
+    }
 
     bool equals(ISchedulerNode * other) override
     {
@@ -42,6 +59,11 @@ public:
     void enqueueRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
+        if (is_not_usable)
+            throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue is about to be destructed");
+
+        if (requests.size() >= static_cast<size_t>(info.queue_size))
+            throw Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {} of {}", requests.size(), info.queue_size);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
         requests.push_back(*request);
@@ -57,7 +79,10 @@ public:
         ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())
+        {
             busy_periods++;
+            event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
+        }
         queue_cost -= result->cost;
         incrementDequeued(result->cost);
         return {result, !requests.empty()};
@@ -66,6 +91,8 @@ public:
     bool cancelRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
+        if (is_not_usable)
+            return false; // Any request should already be failed or executed
         if (request->is_linked())
         {
             // It's impossible to check that `request` is indeed inserted to this queue and not another queue.
@@ -79,13 +106,39 @@ public:
             requests.erase(requests.iterator_to(*request));
 
             if (requests.empty())
+            {
                 busy_periods++;
+                event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
+            }
             queue_cost -= request->cost;
             canceled_requests++;
             canceled_cost += request->cost;
             return true;
         }
         return false;
+    }
+
+    void purgeQueue() override
+    {
+        // Collect requests to fail while holding the lock, but call failed() outside the lock
+        // to avoid potential deadlock with CPULeaseAllocation::mutex (lock order inversion)
+        std::vector<ResourceRequest *> requests_to_fail;
+        {
+            std::lock_guard lock(mutex);
+            is_not_usable = true;
+            while (!requests.empty())
+            {
+                ResourceRequest * request = &requests.front();
+                requests.pop_front();
+                requests_to_fail.push_back(request);
+            }
+            event_queue->cancelActivation(this);
+        }
+        // Now notify all collected requests about the failure without holding the mutex
+        auto exception = std::make_exception_ptr(
+            Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed"));
+        for (ResourceRequest * request : requests_to_fail)
+            request->failed(exception);
     }
 
     bool isActive() override
@@ -131,6 +184,7 @@ private:
     std::mutex mutex;
     Int64 queue_cost = 0;
     boost::intrusive::list<ResourceRequest> requests;
+    bool is_not_usable = false;
 };
 
 }

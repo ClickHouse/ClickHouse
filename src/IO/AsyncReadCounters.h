@@ -1,9 +1,11 @@
 #pragma once
-#include <Core/Types.h>
-#include <Columns/ColumnMap.h>
+
+#include <mutex>
 
 namespace DB
 {
+
+class IColumn;
 
 /// Metrics for asynchronous reading feature.
 struct AsyncReadCounters

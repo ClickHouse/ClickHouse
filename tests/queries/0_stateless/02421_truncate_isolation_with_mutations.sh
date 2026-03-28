@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database, long, no-encrypted-storage
 
 set -e -o pipefail
 
@@ -10,6 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/transactions.lib
 # shellcheck source=./parts.lib
 . "$CURDIR"/parts.lib
+
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --apply_mutations_on_fly 0"
 
 function reset_table()
 {

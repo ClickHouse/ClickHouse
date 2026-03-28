@@ -1,5 +1,7 @@
 #include <Processors/Transforms/finalizeChunk.h>
+
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/Block.h>
 
 namespace DB
 {

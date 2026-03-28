@@ -3,6 +3,9 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/FormatFactory.h>
@@ -12,7 +15,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -34,7 +37,7 @@ namespace
             return;
         }
         constexpr std::string_view bad_delimiters = " \t\"'.UL";
-        if (bad_delimiters.find(delimiter) != std::string_view::npos)
+        if (bad_delimiters.contains(delimiter))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "CSV format may not work correctly with delimiter '{}'. Try use CustomSeparated format instead",
@@ -43,7 +46,7 @@ namespace
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -55,7 +58,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -71,14 +74,15 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::move(format_reader_),
-        format_settings_.csv.try_detect_header),
+        format_settings_.csv.try_detect_header,
+        format_settings_.csv.allow_variable_number_of_columns),
     buf(std::move(in_))
 {
     checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -93,7 +97,8 @@ CSVRowInputFormat::CSVRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<CSVFormatReader>(*in_, format_settings_),
-        format_settings_.csv.try_detect_header),
+        format_settings_.csv.try_detect_header,
+        format_settings_.csv.allow_variable_number_of_columns),
     buf(std::move(in_))
 {
     checkBadDelimiter(format_settings_.csv.delimiter, format_settings_.csv.allow_whitespace_or_tab_as_delimiter);
@@ -350,11 +355,6 @@ bool CSVFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
     return true;
 }
 
-bool CSVFormatReader::allowVariableNumberOfColumns() const
-{
-    return format_settings.csv.allow_variable_number_of_columns;
-}
-
 bool CSVFormatReader::readField(
     IColumn & column,
     const DataTypePtr & type,
@@ -378,8 +378,23 @@ bool CSVFormatReader::readField(
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
-        column.insertDefault();
-        return false;
+        ///
+        /// Exception: `Nullable(Tuple())` with zero elements serializes to
+        /// an empty field in CSV, so an empty value is its only valid
+        /// representation. Let it fall through to normal deserialization
+        /// instead of inserting NULL as the default.
+        bool is_nullable_empty_tuple = false;
+        if (type->isNullable())
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get()))
+                is_nullable_empty_tuple = tuple_type->getElements().empty();
+        }
+
+        if (!is_nullable_empty_tuple)
+        {
+            column.insertDefault();
+            return false;
+        }
     }
 
     if (format_settings.csv.use_default_on_bad_values)
@@ -505,7 +520,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<CSVRowInputFormat>(sample, buf, std::move(params), with_names, with_types, settings);
+            return std::make_shared<CSVRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, settings);
         });
     };
 

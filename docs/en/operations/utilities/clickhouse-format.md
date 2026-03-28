@@ -1,7 +1,11 @@
 ---
-slug: /en/operations/utilities/clickhouse-format
-title: clickhouse-format
+description: 'Guide to using the format utility for working with ClickHouse data formats'
+slug: /operations/utilities/clickhouse-format
+title: 'clickhouse-format'
+doc_type: 'reference'
 ---
+
+# clickhouse-format utility
 
 Allows formatting input queries.
 
@@ -9,7 +13,7 @@ Keys:
 
 - `--help` or`-h` — Produce help message.
 - `--query` — Format queries of any length and complexity.
-- `--hilite` — Add syntax highlight with ANSI terminal escape sequences.
+- `--hilite` or `--highlight` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
 - `--max_line_length` — Format in single line queries with length less than specified.
 - `--comments` — Keep comments in the output.
@@ -18,6 +22,7 @@ Keys:
 - `--obfuscate` — Obfuscate instead of formatting.
 - `--seed <string>` — Seed arbitrary string that determines the result of obfuscation.
 - `--backslash` — Add a backslash at the end of each line of the formatted query. Can be useful when you copy a query from web or somewhere else with multiple lines, and want to execute it in command line.
+- `--semicolons_inline` — In multiquery mode, write semicolons on last line of query instead of a new line.
 
 ## Examples {#examples}
 
@@ -56,7 +61,7 @@ $ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(numbe
 
 Result:
 
-```
+```sql
 SELECT min(number)
 FROM numbers(5)
 ;
@@ -75,7 +80,7 @@ $ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWE
 
 Result:
 
-```
+```sql
 SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
 ```
 
@@ -87,7 +92,7 @@ $ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWE
 
 Result:
 
-```
+```sql
 SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
 ```
 
@@ -99,7 +104,7 @@ $ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELE
 
 Result:
 
-```
+```sql
 SELECT * \
 FROM  \
 ( \

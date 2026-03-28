@@ -36,15 +36,15 @@ join (
     where d1.id  > 0
     order by d1.id
 ) s0 using id;
-SELECT id
+SELECT d0.id
 FROM t1_distr AS d0
-GLOBAL ALL INNER JOIN
+ALL INNER JOIN
 (
-    SELECT id
+    SELECT d1.id
     FROM t1_distr AS d1
-    GLOBAL ALL INNER JOIN t2_distr AS d2 ON id = d2.id
-    WHERE id > 0
-    ORDER BY id ASC
+    ALL INNER JOIN t2_distr AS d2 ON d1.id = d2.id
+    WHERE d1.id > 0
+    ORDER BY d1.id ASC
 ) AS s0 USING (id)
 -- Force using local mode
 set distributed_product_mode = 'local';
@@ -66,15 +66,15 @@ join (
     where d1.id  > 0
     order by d1.id
 ) s0 using id;
-SELECT id
+SELECT d0.id
 FROM t1_distr AS d0
 ALL INNER JOIN
 (
-    SELECT id
-    FROM test_01824.t1_shard AS d1
-    ALL INNER JOIN test_01824.t2_shard AS d2 ON id = d2.id
-    WHERE id > 0
-    ORDER BY id ASC
+    SELECT d1.id
+    FROM t1_distr AS d1
+    ALL INNER JOIN t2_distr AS d2 ON d1.id = d2.id
+    WHERE d1.id > 0
+    ORDER BY d1.id ASC
 ) AS s0 USING (id)
 DROP TABLE t1_shard;
 DROP TABLE t2_shard;

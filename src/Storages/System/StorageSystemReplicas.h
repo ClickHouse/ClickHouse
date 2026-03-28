@@ -8,13 +8,17 @@ namespace DB
 {
 
 class Context;
-class StorageSystemReplicasImpl;
+template <typename T, typename ...Ts>
+class StatusRequestsPools;
+class StorageReplicatedMergeTree;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
 class StorageSystemReplicas final : public IStorage
 {
 public:
+    using TPools = StatusRequestsPools<StorageReplicatedMergeTree>;
+
     explicit StorageSystemReplicas(const StorageID & table_id_);
     ~StorageSystemReplicas() override;
 
@@ -33,7 +37,7 @@ public:
     bool isSystemStorage() const override { return true; }
 
 private:
-    std::shared_ptr<StorageSystemReplicasImpl> impl;
+    std::shared_ptr<TPools> pools;
 };
 
 }

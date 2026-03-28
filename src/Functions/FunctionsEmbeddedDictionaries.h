@@ -14,7 +14,6 @@
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
-#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
@@ -122,7 +121,7 @@ struct IdentityDictionaryGetter
     static Dst & get(Src & src, const std::string & key)
     {
         if (key.empty())
-            return src;
+            return src;  /// NOLINT(bugprone-return-const-ref-from-parameter)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary doesn't support 'point of view' keys.");
     }
 };
@@ -634,8 +633,8 @@ public:
 
             for (unsigned int region_id : region_ids)
             {
-                const StringRef & name_ref = dict.getRegionName(region_id, language);
-                col_to->insertData(name_ref.data, name_ref.size);
+                std::string_view name_ref = dict.getRegionName(region_id, language);
+                col_to->insertData(name_ref.data(), name_ref.size());
             }
 
             return col_to;

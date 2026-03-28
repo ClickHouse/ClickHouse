@@ -1,0 +1,97 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "149ecc15-7afc-4311-86b3-3a4c8d4ec08e",
+  "location" : "s3a://test/field_ids_struct_test/metadata/field_ids_struct_test",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1753959190403,
+  "last-column-id" : 6,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "col-1",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 2,
+      "name" : "col-2",
+      "required" : false,
+      "type" : {
+        "type" : "struct",
+        "fields" : [ {
+          "id" : 4,
+          "name" : "col-3",
+          "required" : false,
+          "type" : "string"
+        }, {
+          "id" : 5,
+          "name" : "col-4",
+          "required" : false,
+          "type" : "timestamptz"
+        }, {
+          "id" : 6,
+          "name" : "col-5",
+          "required" : false,
+          "type" : "timestamptz"
+        } ]
+      }
+    }, {
+      "id" : 3,
+      "name" : "col-6",
+      "required" : false,
+      "type" : "long"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "scanhex12",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 2512638186869817292,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 2512638186869817292,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 2512638186869817292,
+    "timestamp-ms" : 1753959190403,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1753959147673",
+      "added-data-files" : "1",
+      "added-records" : "1",
+      "added-files-size" : "1623",
+      "changed-partition-count" : "1",
+      "total-records" : "1",
+      "total-files-size" : "1623",
+      "total-data-files" : "1",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://test/field_ids_struct_test/metadata/field_ids_struct_test/metadata/snap-2512638186869817292-1-ec467367-15a4-4610-8ea8-cf76797afb03.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1753959190403,
+    "snapshot-id" : 2512638186869817292
+  } ],
+  "metadata-log" : [ ]
+}

@@ -6,12 +6,17 @@
 #include <memory>
 #include <chrono>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 namespace CurrentMetrics
 {
     extern const Metric QueryPreempted;
 }
 
+namespace ProfileEvents
+{
+extern const Event QueryPreempted;
+}
 
 namespace DB
 {
@@ -32,6 +37,7 @@ class QueryPriorities
 {
 public:
     using Priority = size_t;
+    using WaitTimeMs = std::chrono::milliseconds;
 
 private:
     friend struct Handle;
@@ -74,7 +80,7 @@ private:
             return;
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
-
+        ProfileEvents::increment(ProfileEvents::QueryPreempted);
         /// Spurious wakeups are Ok. We allow to wait less than requested.
         condvar.wait_for(lock, timeout);
     }
@@ -85,10 +91,12 @@ public:
     private:
         QueryPriorities & parent;
         QueryPriorities::Container::value_type & value;
+        // The wait time in millisecond
+        WaitTimeMs wait_time;
 
     public:
-        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_)
-            : parent(parent_), value(value_) {}
+        HandleImpl(QueryPriorities & parent_, QueryPriorities::Container::value_type & value_, WaitTimeMs wait_time_)
+            : parent(parent_), value(value_), wait_time(wait_time_) {}
 
         ~HandleImpl()
         {
@@ -99,10 +107,9 @@ public:
             parent.condvar.notify_all();
         }
 
-        template <typename Duration>
-        void waitIfNeed(Duration timeout)
+        void waitIfNeed()
         {
-            parent.waitIfNeed(value.first, timeout);
+            parent.waitIfNeed(value.first, wait_time);
         }
     };
 
@@ -111,7 +118,7 @@ public:
     /** Register query with specified priority.
       * Returns an object that remove record in destructor.
       */
-    Handle insert(Priority priority)
+    Handle insert(Priority priority, WaitTimeMs wait_time)
     {
         if (0 == priority)
             return {};
@@ -119,7 +126,7 @@ public:
         std::lock_guard lock(mutex);
         auto it = container.emplace(priority, 0).first;
         ++it->second;
-        return std::make_shared<HandleImpl>(*this, *it);
+        return std::make_shared<HandleImpl>(*this, *it, wait_time);
     }
 };
 

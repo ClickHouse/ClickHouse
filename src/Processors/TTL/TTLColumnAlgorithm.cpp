@@ -31,7 +31,7 @@ TTLColumnAlgorithm::TTLColumnAlgorithm(
 
 void TTLColumnAlgorithm::execute(Block & block)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     /// If we read not all table columns. E.g. while mutation.
@@ -42,9 +42,17 @@ void TTLColumnAlgorithm::execute(Block & block)
     if (!isMinTTLExpired())
         return;
 
-    /// Later drop full column
+    auto & column_with_type = block.getByName(column_name);
+
+    /// Reset the column to its default state so that dependent skip indices or
+    /// projections can correctly recalculate using it.
     if (isMaxTTLExpired() && !is_compact_part)
+    {
+        auto empty_column = column_with_type.column->cloneEmpty();
+        empty_column->insertManyDefaults(block.rows());
+        column_with_type.column = std::move(empty_column);
         return;
+    }
 
     auto default_column = executeExpressionAndGetColumn(default_expression, block, default_column_name);
     if (default_column)
@@ -52,14 +60,13 @@ void TTLColumnAlgorithm::execute(Block & block)
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
 
-    auto & column_with_type = block.getByName(column_name);
     const IColumn * values_column = column_with_type.column.get();
     MutableColumnPtr result_column = values_column->cloneEmpty();
     result_column->reserve(block.rows());
 
     for (size_t i = 0; i < block.rows(); ++i)
     {
-        UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+        Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
         if (isTTLExpired(cur_ttl))
         {
             if (default_column)

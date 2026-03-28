@@ -1,0 +1,23 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- To verify it works with compatibility values too (as long as they don't change tiers)
+                In 24.10 allow_experimental_reverse_key was introduced as experimental and it's added to compatibility
+                but it's disabled in all cases
+            -->
+            <compatibility>24.10</compatibility>
+
+            <allow_experimental_time_series_table>0</allow_experimental_time_series_table>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections>1</show_named_collections>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+        </default>
+    </users>
+</clickhouse>

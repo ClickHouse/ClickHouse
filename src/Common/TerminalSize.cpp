@@ -4,6 +4,7 @@
 #  include <sys/termios.h>
 #endif
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/TerminalSize.h>
 #include <boost/program_options.hpp>
 
@@ -13,7 +14,7 @@ namespace DB::ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-uint16_t getTerminalWidth(int in_fd, int err_fd)
+std::pair<uint16_t, uint16_t> getTerminalSize(int in_fd, int err_fd)
 {
     struct winsize terminal_size {};
     if (isatty(in_fd))
@@ -27,7 +28,12 @@ uint16_t getTerminalWidth(int in_fd, int err_fd)
             throw DB::ErrnoException(DB::ErrorCodes::SYSTEM_ERROR, "Cannot obtain terminal window size (ioctl TIOCGWINSZ)");
     }
     /// Default - 0.
-    return terminal_size.ws_col;
+    return {terminal_size.ws_col, terminal_size.ws_row};
+}
+
+uint16_t getTerminalWidth(int in_fd, int err_fd)
+{
+    return getTerminalSize(in_fd, err_fd).first;
 }
 
 po::options_description createOptionsDescription(const std::string & caption, uint16_t terminal_width)

@@ -5,7 +5,16 @@
                 <type>s3</type>
                 <endpoint>https://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+
+                <!--
+                    We need to set request timeout for the test because throttling duration is limited by half of the timeout
+                    But for remote read tests we use 1MBps default bandwidth, and read in 1MB chunks, so such read may be throttled for 1 second.
+                    We increase request timeout from 500ms to 60 seconds to avoid throttling duration capping.
+                    In real situations 1MBps is too low, so this should not be a problem.
+                -->
+                <request_timeout_ms>60000</request_timeout_ms>
+                <use_adaptive_timeouts>false</use_adaptive_timeouts>
             </s3>
         </disks>
         <policies>
@@ -23,7 +32,7 @@
         <s3>
             <url>https://minio1:9001/root/data/</url>
             <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </s3>
     </named_collections>
 

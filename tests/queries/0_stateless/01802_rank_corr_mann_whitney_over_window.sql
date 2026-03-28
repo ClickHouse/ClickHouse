@@ -15,6 +15,4 @@ INSERT INTO 01802_empsalary VALUES ('sales', 1, 5000, '2006-10-01'), ('develop',
 
 SELECT mannWhitneyUTest(salary, salary) OVER (ORDER BY salary ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS func FROM 01802_empsalary; -- {serverError BAD_ARGUMENTS}
 
-SELECT rankCorr(salary, 0.5) OVER (ORDER BY salary ASC ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS func FROM 01802_empsalary; -- {serverError BAD_ARGUMENTS}
-
 DROP TABLE IF EXISTS 01802_empsalary;

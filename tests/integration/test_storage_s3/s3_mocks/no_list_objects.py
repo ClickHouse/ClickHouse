@@ -1,12 +1,10 @@
 import http.client
 import http.server
-import random
 import socketserver
 import sys
 import urllib.parse
 
 UPSTREAM_HOST = "minio1:9001"
-random.seed("No list objects/1.0")
 
 list_request_counter = 0
 list_request_max_number = 10

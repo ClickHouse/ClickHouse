@@ -16,6 +16,7 @@ namespace
 struct DivideDecimalsImpl
 {
     static constexpr auto name = "divideDecimal";
+    static constexpr auto suitable_for_short_circuit = true;
 
     template <typename FirstType, typename SecondType>
     static Decimal256
@@ -58,54 +59,44 @@ struct DivideDecimalsImpl
 
 REGISTER_FUNCTION(DivideDecimals)
 {
-    factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(FunctionDocumentation{
-            .description = R"(
-Performs division on two decimals. Result value will be of type [Decimal256](../../sql-reference/data-types/decimal.md).
+    FunctionDocumentation::Description description = R"(
+Performs division on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
 :::note
 These function work significantly slower than usual `divide`.
 In case you don't really need controlled precision and/or need fast computation, consider using [divide](#divide).
-:::)",
-            .syntax = "divideDecimal(a, b[, result_scale])",
-            .arguments = {
-                {"a", "First value: [Decimal](../../sql-reference/data-types/decimal.md)"},
-                {"b", "Second value: [Decimal](../../sql-reference/data-types/decimal.md)."}
-            },
-            .returned_value = "The result of division with given scale. Type: [Decimal256](../../sql-reference/data-types/decimal.md).",
-            .examples = {
-                {"", "divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)",
-R"(
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "divideDecimal(x, y[, result_scale])";
+    FunctionDocumentation::Argument argument1 = {"x", "First value: [Decimal](/sql-reference/data-types/decimal)."};
+    FunctionDocumentation::Argument argument2 =   {"y", "Second value: [Decimal](/sql-reference/data-types/decimal)."};
+    FunctionDocumentation::Argument argument3 = {"result_scale", "Scale of result. Type [Int/UInt](/sql-reference/data-types/int-uint)."};
+    FunctionDocumentation::Arguments arguments = {argument1, argument2, argument3};
+    FunctionDocumentation::ReturnedValue returned_value = {"The result of division with given scale.", {"Decimal256"}};
+    FunctionDocumentation::Example example1 = {"Example 1", "divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)", R"(
 ┌─divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)─┐
 │                                                -5.7142857142 │
 └──────────────────────────────────────────────────────────────┘
-)"}, {"Difference to regular division",
-
-R"(
+    )"};
+    FunctionDocumentation::Example example2 = {"Example 2",
+    R"(
 SELECT toDecimal64(-12, 1) / toDecimal32(2.1, 1);
 SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
-)",
-R"(
+    )",
+    R"(
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
 ┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
 │ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-)"
-},
-                {"",
-R"(
-SELECT toDecimal64(-12, 0) / toDecimal32(2.1, 1);
-SELECT toDecimal64(-12, 0) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1), divideDecimal(a, b, 5);
-)",
-R"(
-DB::Exception: Decimal result's scale is less than argument's one: While processing toDecimal64(-12, 0) / toDecimal32(2.1, 1). (ARGUMENT_OUT_OF_BOUND)
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 0), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
-)"}
-    }});
+    )"};
+    FunctionDocumentation::Examples examples = {example1, example2};
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionsDecimalArithmetics<DivideDecimalsImpl>>(documentation);
 }
 
 }

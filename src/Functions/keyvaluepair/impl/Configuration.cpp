@@ -13,19 +13,38 @@ namespace ErrorCodes
 namespace extractKV
 {
 
-Configuration::Configuration(char key_value_delimiter_, char quoting_character_, std::vector<char> pair_delimiters_)
-    : key_value_delimiter(key_value_delimiter_), quoting_character(quoting_character_), pair_delimiters(std::move(pair_delimiters_))
+Configuration::Configuration(
+    char key_value_delimiter_,
+    char quoting_character_,
+    std::vector<char> pair_delimiters_,
+    UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy_)
+    : key_value_delimiter(key_value_delimiter_),
+    quoting_character(quoting_character_),
+    pair_delimiters(std::move(pair_delimiters_)),
+    unexpected_quoting_character_strategy(unexpected_quoting_character_strategy_)
 {
 }
 
-Configuration ConfigurationFactory::createWithoutEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
+Configuration ConfigurationFactory::createWithoutEscaping(
+    char key_value_delimiter,
+    char quoting_character,
+    std::vector<char> pair_delimiters,
+    Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy)
 {
     validate(key_value_delimiter, quoting_character, pair_delimiters);
 
-    return Configuration(key_value_delimiter, quoting_character, pair_delimiters);
+    return Configuration(
+        key_value_delimiter,
+        quoting_character,
+        pair_delimiters,
+        unexpected_quoting_character_strategy);
 }
 
-Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)
+Configuration ConfigurationFactory::createWithEscaping(
+    char key_value_delimiter,
+    char quoting_character,
+    std::vector<char> pair_delimiters,
+    Configuration::UnexpectedQuotingCharacterStrategy unexpected_quoting_character_strategy)
 {
     static constexpr char ESCAPE_CHARACTER = '\\';
 
@@ -39,7 +58,11 @@ Configuration ConfigurationFactory::createWithEscaping(char key_value_delimiter,
             ESCAPE_CHARACTER);
     }
 
-    return createWithoutEscaping(key_value_delimiter, quoting_character, pair_delimiters);
+    return createWithoutEscaping(
+        key_value_delimiter,
+        quoting_character,
+        pair_delimiters,
+        unexpected_quoting_character_strategy);
 }
 
 void ConfigurationFactory::validate(char key_value_delimiter, char quoting_character, std::vector<char> pair_delimiters)

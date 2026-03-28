@@ -1,5 +1,5 @@
-
--- Tags: long, replica, no-replicated-database, no-parallel
+-- Tags: long, replica, no-replicated-database, no-parallel, no-shared-merge-tree
+-- no-shared-merge-tree: depend on events for replicatied merge tree
 
 DROP TABLE IF EXISTS part_log_profile_events_r1 SYNC;
 DROP TABLE IF EXISTS part_log_profile_events_r2 SYNC;
@@ -25,13 +25,13 @@ INSERT INTO part_log_profile_events_r1 SELECT number FROM numbers(1000);
 
 SYSTEM SYNC REPLICA part_log_profile_events_r2;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     count() > 1
     AND SUM(ProfileEvents['ZooKeeperTransactions']) >= 4
 FROM system.part_log
-WHERE event_time > now() - INTERVAL 10 MINUTE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND event_time > now() - INTERVAL 10 MINUTE
     AND database == currentDatabase() AND table == 'part_log_profile_events_r2'
     AND event_type == 'DownloadPart'
 ;

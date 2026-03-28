@@ -33,7 +33,7 @@ Object::Object(int options):
 
 Object::Object(const Object& other) : _values(other._values),
 	_preserveInsOrder(other._preserveInsOrder),
-	_escapeUnicode(other._escapeUnicode),
+	_escapeUnicode(other._escapeUnicode.load()),
 	_pStruct(!other._modified ? other._pStruct : 0),
 	_modified(other._modified)
 {
@@ -48,7 +48,7 @@ Object::Object(Object&& other) :
 	_values(std::move(other._values)),
 	_keys(std::move(other._keys)),
 	_preserveInsOrder(other._preserveInsOrder),
-	_escapeUnicode(other._escapeUnicode),
+	_escapeUnicode(other._escapeUnicode.load()),
 	_pStruct(!other._modified ? other._pStruct : 0),
 	_modified(other._modified)
 {
@@ -63,7 +63,7 @@ Object &Object::operator= (Object &&other)
 		_values = other._values;
 		_preserveInsOrder = other._preserveInsOrder;
 		syncKeys(other._keys);
-		_escapeUnicode = other._escapeUnicode;
+		_escapeUnicode = other._escapeUnicode.load();
 		_pStruct = !other._modified ? other._pStruct : 0;
 		_modified = other._modified;
 		other.clear();
@@ -87,7 +87,7 @@ Object &Object::operator= (const Object &other)
 		_values = other._values;
 		_keys = other._keys;
 		_preserveInsOrder = other._preserveInsOrder;
-		_escapeUnicode = other._escapeUnicode;
+		_escapeUnicode = other._escapeUnicode.load();
 		_pStruct = !other._modified ? other._pStruct : 0;
 		_modified = other._modified;
 	}

@@ -1,5 +1,5 @@
-#include "AggregateFunctionForEach.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionForEach.h>
 
 #include <Common/typeid_cast.h>
 
@@ -19,6 +19,8 @@ class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombin
 {
 public:
     String getName() const override { return "ForEach"; }
+
+    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

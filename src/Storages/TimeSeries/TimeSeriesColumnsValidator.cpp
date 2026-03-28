@@ -71,7 +71,7 @@ void TimeSeriesColumnsValidator::validateColumnsImpl(const ColumnsDescription & 
     const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         validateColumnForTagValue(get_column_description(column_name));
     }
@@ -135,7 +135,7 @@ void TimeSeriesColumnsValidator::validateTargetColumnsImpl(ViewTarget::Kind targ
             const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
             for (const auto & tag_name_and_column_name : tags_to_columns)
             {
-                const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
                 const auto & column_name = tuple.at(1).safeGet<String>();
                 validateColumnForTagValue(get_column_description(column_name));
             }

@@ -9,9 +9,9 @@ views:                ['default.matview_a_to_b','default.matview_b_to_c']
 sleep_calls:          200
 sleep_us:             300
 profile_select_rows:  300
-profile_select_bytes: 3600
+profile_select_bytes: 3500
 profile_insert_rows:  201
-profile_insert_bytes: 2808
+profile_insert_bytes: 3508
 Row 1:
 ──────
 stage:                Depending views
@@ -25,9 +25,9 @@ written_rows:         100
 sleep_calls:          100
 sleep_us:             100
 profile_select_rows:  100
-profile_select_bytes: 2000
+profile_select_bytes: 1900
 profile_insert_rows:  100
-profile_insert_bytes: 800
+profile_insert_bytes: 1600
 
 Row 2:
 ──────

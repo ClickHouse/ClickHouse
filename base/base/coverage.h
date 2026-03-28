@@ -2,6 +2,7 @@
 
 #include <span>
 #include <cstdint>
+#include <string>
 
 /// Flush coverage report to file, depending on coverage system
 /// proposed by compiler (llvm for clang and gcov for gcc).

@@ -1,40 +1,12 @@
-SELECT
-    date,
-    id,
-    name,
-    value
-FROM
-(
-    SELECT *
-    FROM default.test
-    HAVING id = 1
-) AS test_view
+SELECT *
+FROM test_view
 WHERE id = 1
-SELECT
-    date,
-    id,
-    name,
-    value
-FROM
-(
-    SELECT *
-    FROM default.test
-    HAVING id = 2
-) AS test_view
+SELECT *
+FROM test_view
 WHERE id = 2
 SELECT id
-FROM
-(
-    SELECT *
-    FROM default.test
-    HAVING id = 1
-) AS test_view
+FROM test_view
 WHERE id = 1
-SELECT id
-FROM
-(
-    SELECT *
-    FROM default.test
-    HAVING id = 1
-) AS s
-WHERE id = 1
+SELECT s.id
+FROM test_view AS s
+WHERE s.id = 1

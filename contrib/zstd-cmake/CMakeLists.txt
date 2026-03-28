@@ -35,7 +35,7 @@ SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib")
 INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_DIR} "${LIBRARY_DIR}/common")
 
 # cd contrib/zstd/lib
-# find . -name '*.c' -or -name '*.S' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
+# find . -name '*.c' -or -name '*.S' | grep -vP 'deprecated|legacy' | sort | sed -e 's/^\./        \"\${LIBRARY_DIR\}/;s/$/"/'
 SET(Sources
         "${LIBRARY_DIR}/common/debug.c"
         "${LIBRARY_DIR}/common/entropy_common.c"
@@ -58,6 +58,7 @@ SET(Sources
         "${LIBRARY_DIR}/compress/zstd_ldm.c"
         "${LIBRARY_DIR}/compress/zstdmt_compress.c"
         "${LIBRARY_DIR}/compress/zstd_opt.c"
+        "${LIBRARY_DIR}/compress/zstd_preSplit.c"
         "${LIBRARY_DIR}/decompress/huf_decompress_amd64.S"
         "${LIBRARY_DIR}/decompress/huf_decompress.c"
         "${LIBRARY_DIR}/decompress/zstd_ddict.c"
@@ -66,11 +67,13 @@ SET(Sources
         "${LIBRARY_DIR}/dictBuilder/cover.c"
         "${LIBRARY_DIR}/dictBuilder/divsufsort.c"
         "${LIBRARY_DIR}/dictBuilder/fastcover.c"
-        "${LIBRARY_DIR}/dictBuilder/zdict.c")
+        "${LIBRARY_DIR}/dictBuilder/zdict.c"
+)
 
 # cd contrib/zstd/lib
-# find . -name '*.h' | grep -vP 'deprecated|legacy' | sort | sed 's/^\./        "${LIBRARY_DIR}/"'
+# find . -name '*.h' | grep -vP 'deprecated|legacy' | sort | sed -e 's/^\./        \"\${LIBRARY_DIR\}/;s/$/"/'
 SET(Headers
+        "${LIBRARY_DIR}/common/allocations.h"
         "${LIBRARY_DIR}/common/bits.h"
         "${LIBRARY_DIR}/common/bitstream.h"
         "${LIBRARY_DIR}/common/compiler.h"
@@ -101,6 +104,7 @@ SET(Headers
         "${LIBRARY_DIR}/compress/zstd_ldm.h"
         "${LIBRARY_DIR}/compress/zstdmt_compress.h"
         "${LIBRARY_DIR}/compress/zstd_opt.h"
+        "${LIBRARY_DIR}/compress/zstd_preSplit.h"
         "${LIBRARY_DIR}/decompress/zstd_ddict.h"
         "${LIBRARY_DIR}/decompress/zstd_decompress_block.h"
         "${LIBRARY_DIR}/decompress/zstd_decompress_internal.h"
@@ -108,7 +112,8 @@ SET(Headers
         "${LIBRARY_DIR}/dictBuilder/divsufsort.h"
         "${LIBRARY_DIR}/zdict.h"
         "${LIBRARY_DIR}/zstd_errors.h"
-        "${LIBRARY_DIR}/zstd.h")
+        "${LIBRARY_DIR}/zstd.h"
+)
 
 SET(ZSTD_LEGACY_SUPPORT true)
 

@@ -10,6 +10,9 @@ from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_wi
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node_default",
+    main_configs=[
+        "configs/config.xml",
+    ],
     stay_alive=True,
 )
 
@@ -35,9 +38,9 @@ def test_system_logs_exists():
         ("system.error_log", 1),
     ]
 
-    node.query("SYSTEM FLUSH LOGS")
     for table, exists in system_logs:
-        q = "SELECT * FROM {}".format(table)
+        node.query(f"SYSTEM FLUSH LOGS {table}")
+        q = f"SELECT * FROM {table}"
         if exists:
             node.query(q)
         else:
@@ -180,3 +183,11 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
     node.exec_in_container(
         ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
+
+
+def test_system_warnings(start_cluster):
+    if node.is_debug_build():
+        assert node.query("SELECT count() > 1 FROM system.warnings") == "1\n"
+
+    node.query("TRUNCATE TABLE system.warnings")
+    assert node.query("SELECT count() FROM system.warnings") == "0\n"

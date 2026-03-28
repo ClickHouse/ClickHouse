@@ -6,7 +6,7 @@
 namespace DB
 {
 
-ReadFromRecursiveCTEStep::ReadFromRecursiveCTEStep(Block output_header_, QueryTreeNodePtr recursive_cte_union_node_)
+ReadFromRecursiveCTEStep::ReadFromRecursiveCTEStep(SharedHeader output_header_, QueryTreeNodePtr recursive_cte_union_node_)
     : ISourceStep(std::move(output_header_))
     , recursive_cte_union_node(std::move(recursive_cte_union_node_))
 {

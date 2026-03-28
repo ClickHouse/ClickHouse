@@ -25,22 +25,10 @@ target_link_libraries (compact_array PRIVATE clickhouse_common_io clickhouse_com
 clickhouse_add_executable (radix_sort radix_sort.cpp)
 target_link_libraries (radix_sort PRIVATE clickhouse_common_io clickhouse_common_config ch_contrib::pdqsort)
 
-clickhouse_add_executable (arena_with_free_lists arena_with_free_lists.cpp)
-target_link_libraries (arena_with_free_lists PRIVATE dbms)
-
-clickhouse_add_executable (lru_hash_map_perf lru_hash_map_perf.cpp)
-target_link_libraries (lru_hash_map_perf PRIVATE dbms)
-
 if (OS_LINUX)
     clickhouse_add_executable (thread_creation_latency thread_creation_latency.cpp)
     target_link_libraries (thread_creation_latency PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 endif()
-
-clickhouse_add_executable (array_cache array_cache.cpp)
-target_link_libraries (array_cache PRIVATE clickhouse_common_io clickhouse_common_config)
-
-clickhouse_add_executable (space_saving space_saving.cpp)
-target_link_libraries (space_saving PRIVATE dbms clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
 target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
@@ -75,15 +63,15 @@ clickhouse_add_executable (shell_command_inout shell_command_inout.cpp)
 target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io clickhouse_common_config)
 
 clickhouse_add_executable (executable_udf executable_udf.cpp)
-target_link_libraries (executable_udf PRIVATE dbms)
+target_link_libraries (executable_udf PRIVATE clickhouse_common_io clickhouse_common_config)
 
 if (ENABLE_HIVE)
     clickhouse_add_executable (hive_metastore_client hive_metastore_client.cpp)
-    target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift)
+    target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift clickhouse_common_config)
 endif()
 
 clickhouse_add_executable (interval_tree interval_tree.cpp)
-target_link_libraries (interval_tree PRIVATE dbms)
+target_link_libraries (interval_tree PRIVATE clickhouse_common_io clickhouse_common_config)
 
 if (ENABLE_SSL)
     clickhouse_add_executable (encrypt_decrypt encrypt_decrypt.cpp)
@@ -95,5 +83,5 @@ target_link_libraries (check_pointer_valid PRIVATE clickhouse_common_io clickhou
 
 if (TARGET ch_contrib::icu)
     clickhouse_add_executable (utf8_upper_lower utf8_upper_lower.cpp)
-    target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu)
+    target_link_libraries (utf8_upper_lower PRIVATE ch_contrib::icu clickhouse_common_io clickhouse_common_config)
 endif ()

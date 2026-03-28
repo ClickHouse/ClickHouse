@@ -13,16 +13,26 @@ String ASTDataType::getID(char delim) const
 
 ASTPtr ASTDataType::clone() const
 {
-    auto res = std::make_shared<ASTDataType>(*this);
+    auto res = make_intrusive<ASTDataType>(*this);
+    const auto & arguments = getArguments();
     res->children.clear();
 
     if (arguments)
-    {
-        res->arguments = arguments->clone();
-        res->children.push_back(res->arguments);
-    }
+        res->children.push_back(arguments->clone());
 
     return res;
+}
+
+ASTPtr ASTDataType::getArguments() const
+{
+    if (!children.empty())
+        return children[0];
+    return nullptr;
+}
+
+void ASTDataType::resetArguments()
+{
+    children.clear();
 }
 
 void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
@@ -32,13 +42,14 @@ void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
     /// Children are hashed automatically.
 }
 
-void ASTDataType::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_function : "") << name;
+    ostr << name;
 
+    const auto & arguments = getArguments();
     if (arguments && !arguments->children.empty())
     {
-        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
+        ostr << '(';
 
         if (!settings.one_line && settings.print_pretty_type_names && name == "Tuple")
         {
@@ -47,21 +58,19 @@ void ASTDataType::formatImpl(const FormatSettings & settings, FormatState & stat
             for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
             {
                 if (i != 0)
-                    settings.ostr << ',';
-                settings.ostr << indent_str;
-                arguments->children[i]->formatImpl(settings, state, frame);
+                    ostr << ',';
+                ostr << indent_str;
+                arguments->children[i]->format(ostr, settings, state, frame);
             }
         }
         else
         {
             frame.expression_list_prepend_whitespace = false;
-            arguments->formatImpl(settings, state, frame);
+            arguments->format(ostr, settings, state, frame);
         }
 
-        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
+        ostr << ')';
     }
-
-    settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 }

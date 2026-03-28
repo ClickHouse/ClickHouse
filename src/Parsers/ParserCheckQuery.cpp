@@ -15,7 +15,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_check_table(Keyword::CHECK_ALL_TABLES);
     if (s_check_table.ignore(pos, expected))
     {
-        auto query = std::make_shared<ASTCheckAllTablesQuery>();
+        auto query = make_intrusive<ASTCheckAllTablesQuery>();
         node = query;
         return true;
     }
@@ -36,7 +36,7 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
     if (!s_check_table.ignore(pos, expected))
         return false;
 
-    auto query = std::make_shared<ASTCheckTableQuery>();
+    auto query = make_intrusive<ASTCheckTableQuery>();
 
     if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
         return false;
@@ -55,7 +55,7 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
         const auto * ast_literal = ast_part_name->as<ASTLiteral>();
         if (!ast_literal || ast_literal->value.getType() != Field::Types::String)
             return false;
-        query->part_name = ast_literal->value.safeGet<const String &>();
+        query->part_name = ast_literal->value.safeGet<String>();
     }
 
     if (query->database)

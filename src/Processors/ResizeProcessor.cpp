@@ -1,10 +1,20 @@
 #include <Processors/ResizeProcessor.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+/// TODO Check that there is non zero number of inputs and outputs.
+ResizeProcessor::ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    , current_input(inputs.begin())
+    , current_output(outputs.begin())
+{
 }
 
 ResizeProcessor::Status ResizeProcessor::prepare()
@@ -146,7 +156,7 @@ ResizeProcessor::Status ResizeProcessor::prepare()
         if (input == inputs.end())
             return get_status_if_no_inputs();
 
-        output->push(input->pull());
+        output->pushData(input->pullData());
     }
 
     if (is_end_input())

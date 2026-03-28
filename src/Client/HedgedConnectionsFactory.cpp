@@ -3,6 +3,7 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents
 {
@@ -281,7 +282,7 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallbac
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    replicas[index].connection_establisher->resume();
+    replicas[index].connection_establisher->resumeConnectionWithForceOption(/*force_connected_*/ shuffled_pools[index].error_count != 0);
 
     if (replicas[index].connection_establisher->isCancelled())
         return State::CANNOT_CHOOSE;

@@ -1,14 +1,49 @@
 #pragma once
 
+#include <Core/MergeTreeSerializationEnums.h>
+
+class SipHash;
+
 namespace DB
 {
 
+class IDataType;
+
 struct SerializationInfoSettings
 {
-    const double ratio_of_defaults_for_sparse = 1.0;
-    const bool choose_kind = false;
+    double ratio_of_defaults_for_sparse = 1.0;
+    bool choose_kind = false;
+
+    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
+    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
+    MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
+    MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
+    bool propagate_types_serialization_versions_to_nested_types = false;
+
+    SerializationInfoSettings() = default;
+
+    SerializationInfoSettings(
+        double ratio_of_defaults_for_sparse_,
+        bool choose_kind_,
+        MergeTreeSerializationInfoVersion version_,
+        MergeTreeStringSerializationVersion string_serialization_version_,
+        MergeTreeNullableSerializationVersion nullable_serialization_version_,
+        MergeTreeMapSerializationVersion map_serialization_version_,
+        bool propagate_types_serialization_versions_to_nested_types_);
+
+    /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
+    void tryDowngradeToBasic();
 
     bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
+
+    bool canUseSparseSerialization(const IDataType & type) const;
+
+    void updateHash(SipHash & hash) const;
+
+    /// Build a settings object that enables the broadest set of serialization capabilities. This is intended for
+    /// readers that operate on in-memory state (e.g. NativeReader), which must handle all serialization variants.
+    /// Additional serialization versions can be added here in the future.
+    static SerializationInfoSettings enableAllSupportedSerializations();
 };
 
 }

@@ -3,6 +3,7 @@
 import argparse
 import functools
 import itertools
+import json
 import logging
 import math
 import os
@@ -86,6 +87,21 @@ parser.add_argument(
     help="Space-separated list of server port(s). Corresponds to '--host' options.",
 )
 parser.add_argument(
+    "--user",
+    default="default",
+    help="Username for ClickHouse authentication.",
+)
+parser.add_argument(
+    "--password",
+    default="",
+    help="Password for ClickHouse authentication.",
+)
+parser.add_argument(
+    "--secure",
+    action="store_true",
+    help="Use SSL/TLS connection.",
+)
+parser.add_argument(
     "--runs", type=int, default=1, help="Number of query runs per server."
 )
 parser.add_argument(
@@ -143,6 +159,7 @@ args = parser.parse_args()
 reportStageEnd("start")
 
 test_name = os.path.splitext(os.path.basename(args.file[0].name))[0]
+xml_dir = os.path.dirname(os.path.abspath(args.file[0].name))
 
 tree = et.parse(args.file[0])
 root = tree.getroot()
@@ -186,11 +203,116 @@ def substitute_parameters(query_templates, other_templates=[]):
         return query_results
 
 
-# Build a list of test queries, substituting parameters to query templates,
+def split_sql_statements(sql):
+    """Split SQL into statements on semicolons, respecting quoted literals/identifiers, -- and # comments, and /* block comments */."""
+    statements = []
+    current = []
+    quote_char = ""
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        next_ch = sql[i + 1] if i + 1 < len(sql) else ""
+        if in_line_comment:
+            current.append(ch)
+            if ch == "\n":
+                in_line_comment = False
+        elif in_block_comment:
+            current.append(ch)
+            if ch == "*" and next_ch == "/":
+                current.append("/")
+                i += 1
+                in_block_comment = False
+        elif quote_char:
+            current.append(ch)
+            if ch == quote_char and next_ch == quote_char:
+                current.append(quote_char)
+                i += 1
+            elif ch == quote_char:
+                quote_char = ""
+        elif (ch == "-" and next_ch == "-") or (ch == "#"):
+            in_line_comment = True
+            current.append(ch)
+        elif ch == "/" and next_ch == "*":
+            in_block_comment = True
+            current.append(ch)
+        elif ch in ("'", '"', "`"):
+            quote_char = ch
+            current.append(ch)
+        elif ch == ";":
+            stmt = "".join(current).strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    stmt = "".join(current).strip()
+    if stmt:
+        statements.append(stmt)
+    return statements
+
+
+def first_keyword(sql):
+    """Return the first SQL keyword from a statement, skipping --, #, and /* */ comments."""
+    i = 0
+    while i < len(sql):
+        ch = sql[i]
+        next_ch = sql[i + 1] if i + 1 < len(sql) else ""
+        if ch in (" ", "\t", "\n", "\r"):
+            i += 1
+        elif (ch == "-" and next_ch == "-") or ch == "#":
+            nl = sql.find("\n", i)
+            i = nl + 1 if nl != -1 else len(sql)
+        elif ch == "/" and next_ch == "*":
+            end = sql.find("*/", i + 2)
+            i = end + 2 if end != -1 else len(sql)
+        else:
+            # Found start of a token → read until whitespace or special chars
+            j = i
+            while j < len(sql) and sql[j] not in (" ", "\t", "\n", "\r", "(", ";"):
+                j += 1
+            return sql[i:j].upper()
+    return ""
+
+
+def load_settings_file(xml_root, base_dir):
+    """Load settings from a JSON file referenced by <settings file="..."/> attribute."""
+    elem = xml_root.find("settings")
+    if elem is None or "file" not in elem.attrib:
+        return {}
+    path = os.path.join(base_dir, elem.attrib["file"])
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)["settings"]
+
+
+# Build a list of test queries, substituting parameters to query templates.
+# Queries can be specified inline or loaded from external files via the "file" attribute.
+# Multi-statement files (e.g. TPC-H Q15: CREATE VIEW; SELECT; DROP VIEW) are split:
+# CREATE/DROP become global setup/teardown queries, and only the SELECT becomes the timed test query. 
+# This is a simplification: the setup/teardown is shared across all queries, not per-query.
+# This works, but will break if two query files create views with the same name. 
+# Not worth fixing properly unless we have such scenario, the whole perf test suite needs a rewrite.
+extra_create_queries = []
+extra_drop_queries = []
 test_queries = []
 for e in root.findall("query"):
-    new_queries = substitute_parameters([e.text])
-    test_queries += new_queries
+    if "file" in e.attrib:
+        query_path = os.path.join(xml_dir, e.attrib["file"])
+        with open(query_path, "r", encoding="utf-8") as f:
+            full_text = f.read().strip()
+        statements = split_sql_statements(full_text)
+        for stmt in statements:
+            keyword = first_keyword(stmt)
+            if keyword in ("CREATE", "ALTER"):
+                extra_create_queries.append(stmt)
+            elif keyword in ("DROP", "TRUNCATE"):
+                extra_drop_queries.append(stmt)
+            else:
+                test_queries += substitute_parameters([stmt])
+    else:
+        test_queries += substitute_parameters([e.text])
 
 # If we're given a list of queries to run, check that it makes sense.
 for i in args.queries_to_run or []:
@@ -210,6 +332,10 @@ if args.print_queries:
 # for clickhouse-benchmark, so we print them as command line arguments, e.g.
 # '--max_memory_usage=10000000'.
 if args.print_settings:
+    # Settings from JSON file: <settings file="path/to/settings.json"/>
+    for key, value in load_settings_file(root, xml_dir).items():
+        print(f"--{key}={value}")
+    # Inline settings: <settings><key>value</key></settings> (can override file settings)
     for s in root.findall("settings/*"):
         print(f"--{s.tag}={s.text}")
 
@@ -232,7 +358,7 @@ reportStageEnd("before-connect")
 
 # Open connections
 servers = [
-    {"host": host or args.host[0], "port": port or args.port[0]}
+    { "host": host or args.host[0], "port": port or args.port[0], "user": args.user, "password": args.password, "secure": args.secure }
     for (host, port) in itertools.zip_longest(args.host, args.port)
 ]
 # Force settings_is_important to fail queries on unknown settings.
@@ -241,7 +367,8 @@ all_connections = [
 ]
 
 for i, s in enumerate(servers):
-    print(f'server\t{i}\t{s["host"]}\t{s["port"]}')
+    ssl_status = "SSL" if s["secure"] else "no-SSL"
+    print(f'server\t{i}\t{s["host"]}\t{s["port"]}\t{s["user"]}\t{ssl_status}')
 
 reportStageEnd("connect")
 
@@ -250,6 +377,7 @@ if not args.use_existing_tables:
     # because clickhouse_driver disconnects on error (this is not configurable),
     # and the new connection loses the changes in settings.
     drop_query_templates = [q.text for q in root.findall("drop_query")]
+    drop_query_templates += extra_drop_queries
     drop_queries = substitute_parameters(drop_query_templates)
     for conn_index, c in enumerate(all_connections):
         for q in drop_queries:
@@ -261,12 +389,14 @@ if not args.use_existing_tables:
 
     reportStageEnd("drop-1")
 
-# Apply settings.
-settings = root.findall("settings/*")
+# First apply JSON settings (<settings file="..."/>), then inline (<settings><key>value</key></settings>).
+# Inline settings override file settings.
+file_settings = load_settings_file(root, xml_dir)
+inline_settings = root.findall("settings/*")
 for conn_index, c in enumerate(all_connections):
-    for s in settings:
-        # requires clickhouse-driver >= 1.1.5 to accept arbitrary new settings
-        # (https://github.com/mymarilyn/clickhouse-driver/pull/142)
+    for key, value in file_settings.items():
+        c.settings[key] = str(value)
+    for s in inline_settings:
         c.settings[s.tag] = s.text
     # We have to perform a query to make sure the settings work. Otherwise an
     # unknown setting will lead to failing precondition check, and we will skip
@@ -283,6 +413,7 @@ if not args.use_existing_tables:
     create_query_templates = [
         q.text for q in root.findall("./*") if q.tag in ("create_query", "fill_query")
     ]
+    create_query_templates += extra_create_queries
     create_queries = substitute_parameters(create_query_templates)
 
     # Disallow temporary tables, because the clickhouse_driver reconnects on
@@ -478,6 +609,8 @@ for query_index in queries_to_run:
 
     client_seconds = time.perf_counter() - start_seconds
     print(f"client-time\t{query_index}\t{client_seconds}\t{server_seconds}")
+    median = [statistics.median(t) for t in all_server_times]
+    print(f"median\t{query_index}\t{median[0]}")
 
     # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
@@ -491,7 +624,6 @@ for query_index in queries_to_run:
     pvalue = stats.ttest_ind(
         all_server_times[0], all_server_times[1], equal_var=False
     ).pvalue
-    median = [statistics.median(t) for t in all_server_times]
     # Keep this consistent with the value used in report. Should eventually move
     # to (median[1] - median[0]) / min(median), which is compatible with "times"
     # difference we use in report (max(median) / min(median)).

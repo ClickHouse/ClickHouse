@@ -1,0 +1,9 @@
+<clickhouse>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <level>test</level>
+    </text_log>
+</clickhouse>

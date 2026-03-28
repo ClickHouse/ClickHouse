@@ -5,7 +5,6 @@
 #include <Common/Scheduler/ResourceLink.h>
 
 #include <memory>
-#include <string>
 #include <string_view>
 
 
@@ -87,8 +86,8 @@ public:
 
     /// Returns a non-empty string if the thread is attached to a query
 
-    /// Returns attached query context
-    static ContextPtr getQueryContext();
+    /// Returns attached query context or nullptr if there is no query context
+    static ContextPtr tryGetQueryContext();
 
     static std::string_view getQueryId();
 
@@ -100,49 +99,102 @@ public:
     static void detachWriteResource();
     static ResourceLink getWriteResourceLink();
 
-    /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
-    struct QueryScope : private boost::noncopyable
-    {
-        explicit QueryScope(ContextMutablePtr query_context, std::function<void()> fatal_error_callback = {});
-        explicit QueryScope(ContextPtr query_context, std::function<void()> fatal_error_callback = {});
-        ~QueryScope();
-
-        void logPeakMemoryUsage();
-        bool log_peak_memory_usage_in_destructor = true;
-    };
+    // For IO Throttling
+    static void attachReadThrottler(const ThrottlerPtr & throttler);
+    static void detachReadThrottler();
+    static ThrottlerPtr getReadThrottler();
+    static void attachWriteThrottler(const ThrottlerPtr & throttler);
+    static void detachWriteThrottler();
+    static ThrottlerPtr getWriteThrottler();
 
     /// Scoped attach/detach of IO resource links
-    struct IOScope : private boost::noncopyable
+    struct IOSchedulingScope : private boost::noncopyable
     {
-        explicit IOScope(ResourceLink read_resource_link, ResourceLink write_resource_link)
+        IOSchedulingScope(ResourceLink read_resource_link, ResourceLink write_resource_link)
         {
-            if (read_resource_link)
-            {
-                attachReadResource(read_resource_link);
-                read_attached = true;
-            }
-            if (write_resource_link)
-            {
-                attachWriteResource(write_resource_link);
-                write_attached = true;
-            }
+            readResource(read_resource_link);
+            writeResource(write_resource_link);
         }
 
-        explicit IOScope(const IOSchedulingSettings & settings)
-            : IOScope(settings.read_resource_link, settings.write_resource_link)
+        explicit IOSchedulingScope(const IOSchedulingSettings & settings)
+            : IOSchedulingScope(settings.read_resource_link, settings.write_resource_link)
         {}
 
-        ~IOScope()
+        ~IOSchedulingScope()
         {
-            if (read_attached)
+            if (read_resource_attached)
                 detachReadResource();
-            if (write_attached)
+            if (write_resource_attached)
                 detachWriteResource();
         }
 
-        bool read_attached = false;
-        bool write_attached = false;
+    private:
+        void readResource(ResourceLink link)
+        {
+            if (link)
+            {
+                attachReadResource(link);
+                read_resource_attached = true;
+            }
+        }
+
+        void writeResource(ResourceLink link)
+        {
+            if (link)
+            {
+                attachWriteResource(link);
+                write_resource_attached = true;
+            }
+        }
+
+        bool read_resource_attached = false;
+        bool write_resource_attached = false;
     };
+
+    /// Scoped attach/detach of read throttler
+    struct ReadThrottlingScope : private boost::noncopyable
+    {
+        explicit ReadThrottlingScope(const ThrottlerPtr & read_throttler_)
+        {
+            if (read_throttler_)
+            {
+                attachReadThrottler(read_throttler_);
+                read_throttler_attached = true;
+            }
+        }
+
+        ~ReadThrottlingScope()
+        {
+            if (read_throttler_attached)
+                detachReadThrottler();
+        }
+
+    private:
+        bool read_throttler_attached = false;
+    };
+
+    /// Scoped attach/detach of write throttler
+    struct WriteThrottlingScope : private boost::noncopyable
+    {
+        explicit WriteThrottlingScope(const ThrottlerPtr & write_throttler_)
+        {
+            if (write_throttler_)
+            {
+                attachWriteThrottler(write_throttler_);
+                write_throttler_attached = true;
+            }
+        }
+
+        ~WriteThrottlingScope()
+        {
+            if (write_throttler_attached)
+                detachWriteThrottler();
+        }
+
+    private:
+        bool write_throttler_attached = false;
+    };
+
 };
 
 }

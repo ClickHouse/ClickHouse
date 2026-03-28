@@ -9,6 +9,7 @@ namespace DB
 using Strings = std::vector<String>;
 using DatabaseAndTableName = std::pair<String, String>;
 class ASTFunction;
+class ASTSnapshotQuery;
 
 
 /** BACKUP { TABLE [db.]table_name [AS [db.]table_name_in_backup] [PARTITION[S] partition_expr [,...]] |
@@ -76,6 +77,8 @@ public:
     static void setCurrentDatabase(Elements & elements, const String & current_database);
     void setCurrentDatabase(const String & current_database) { setCurrentDatabase(elements, current_database); }
 
+    static ASTPtr fromSnapshotQuery(const ASTSnapshotQuery & query);
+
     Elements elements;
 
     ASTFunction * backup_name = nullptr;
@@ -86,19 +89,23 @@ public:
     /// so this setting allows to make an incremental backup.
     ASTFunction * base_backup_name = nullptr;
 
+    /// Base snapshot for lightweight snapshot-based backups. Specified using the FROM_SNAPSHOT clause.
+    ASTFunction * base_snapshot_name = nullptr;
+
     /// List of cluster's hosts' IDs if this is a BACKUP/RESTORE ON CLUSTER command.
     ASTPtr cluster_host_ids;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatQueryImpl(const FormatSettings & fs, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & fs, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
     QueryKind getQueryKind() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&backup_name));
-        f(reinterpret_cast<void **>(&base_backup_name));
+        f(reinterpret_cast<IAST **>(&backup_name), nullptr);
+        f(reinterpret_cast<IAST **>(&base_backup_name), nullptr);
+        f(reinterpret_cast<IAST **>(&base_snapshot_name), nullptr);
     }
 };
 

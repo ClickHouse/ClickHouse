@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BlockNameMap.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -10,7 +11,7 @@ namespace DB
 class MySQLDumpRowInputFormat final : public IRowInputFormat
 {
 public:
-    MySQLDumpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "MySQLDumpRowInputFormat"; }
     void readPrefix() override;
@@ -25,7 +26,7 @@ private:
 
     String table_name;
     DataTypes types;
-    Block::NameMap column_indexes_by_names;
+    BlockNameMap column_indexes_by_names;
     const FormatSettings format_settings;
 };
 

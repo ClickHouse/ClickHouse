@@ -40,7 +40,35 @@ public:
 
 REGISTER_FUNCTION(InitialQueryID)
 {
-    factory.registerFunction<FunctionInitialQueryID>();
+    FunctionDocumentation::Description description = R"(
+Returns the ID of the initial current query.
+Other parameters of a query can be extracted from field `initial_query_id` in [`system.query_log`](../../operations/system-tables/query_log.md).
+
+In contrast to [`queryID`](/sql-reference/functions/other-functions#queryID) function, `initialQueryID` returns the same results on different shards.
+)";
+    FunctionDocumentation::Syntax syntax = "initialQueryID()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the ID of the initial current query.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE tmp (str String) ENGINE = Log;
+INSERT INTO tmp (*) VALUES ('a');
+SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
+        )",
+        R"(
+┌─count(DISTINCT t)─┐
+│                 1 │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionInitialQueryID>(documentation);
     factory.registerAlias("initial_query_id", FunctionInitialQueryID::name, FunctionFactory::Case::Insensitive);
 }
 }

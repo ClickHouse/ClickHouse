@@ -1,7 +1,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <Common/Exception.h>
-#include "IO/ReadBufferFromFileBase.h"
-#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 namespace DB
 {
@@ -88,11 +87,6 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
 
 }
 
-ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
-{
-    finalize();
-}
-
 void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
 {
     if (first_write)
@@ -103,18 +97,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
     }
     else
     {
-        try
-        {
-            finalizeBefore();
-            out->finalize();
-            finalizeAfter();
-        }
-        catch (...)
-        {
-            /// Do not try to flush next time after exception.
-            out->position() = out->buffer().begin();
-            throw;
-        }
+        finalizeBefore();
+        out->finalize();
+        finalizeAfter();
     }
 }
 
@@ -165,6 +150,9 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
 {
+    if (!cctx)
+        return;
+
     try
     {
         size_t err = ZSTD_freeCCtx(cctx);
@@ -179,6 +167,8 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeZstd()
         /// since all data already written to the stream.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    cctx = nullptr;
 }
 
 void ZstdDeflatingAppendableWriteBuffer::addEmptyBlock()
@@ -221,4 +211,13 @@ bool ZstdDeflatingAppendableWriteBuffer::isNeedToAddEmptyBlock()
     return false;
 }
 
+void ZstdDeflatingAppendableWriteBuffer::cancelImpl() noexcept
+{
+    BufferWithOwnMemory<WriteBuffer>::cancelImpl();
+
+    out->cancel();
+
+    /// To free cctx
+    finalizeZstd();
+}
 }

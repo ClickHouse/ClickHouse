@@ -74,18 +74,44 @@ public:
 
 REGISTER_FUNCTION(GenerateULID)
 {
-    factory.registerFunction<FunctionGenerateULID>(FunctionDocumentation
+    /// generateULID documentation
+    FunctionDocumentation::Description description = R"(
+Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](https://github.com/ulid/spec).
+    )";
+    FunctionDocumentation::Syntax syntax = "generateULID([x])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a ULID.", {"FixedString(26)"}};
+    FunctionDocumentation::Examples examples = {
     {
-        .description=R"(
-Generates a Universally Unique Lexicographically Sortable Identifier (ULID).
-This function takes an optional argument, the value of which is discarded to generate different values in case the function is called multiple times.
-The function returns a value of type FixedString(26).
-)",
-        .examples{
-            {"ulid", "SELECT generateULID()", ""},
-            {"multiple", "SELECT generateULID(1), generateULID(2)", ""}},
-        .categories{"ULID"}
-    });
+        "Usage example",
+        R"(
+SELECT generateULID()
+        )",
+        R"(
+┌─generateULID()─────────────┐
+│ 01GNB2S2FGN2P93QPXDNB4EN2R │
+└────────────────────────────┘
+        )"
+    },
+    {
+        "Usage example if it is needed to generate multiple values in one row",
+        R"(
+SELECT generateULID(1), generateULID(2)
+        )",
+        R"(
+┌─generateULID(1)────────────┬─generateULID(2)────────────┐
+│ 01GNB2SGG4RHKVNT9ZGA4FFMNP │ 01GNB2SGG4V0HMQVH4VBVPSSRB │
+└────────────────────────────┴────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::ULID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGenerateULID>(documentation);
 }
 
 }

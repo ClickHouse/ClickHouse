@@ -1,7 +1,8 @@
 #include <Interpreters/applyTableOverride.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <iostream>
 #include <gtest/gtest.h>
@@ -50,7 +51,7 @@ TEST_P(TableOverrideTest, applyOverrides)
         ASSERT_NE(nullptr, override_table_ast);
         applyTableOverrideToCreateQuery(*override_table_ast, table);
     }
-    EXPECT_EQ(expected_query, serializeAST(*table));
+    EXPECT_EQ(expected_query, table->formatWithSecretsOneLine());
 }
 
 INSTANTIATE_TEST_SUITE_P(ApplyTableOverrides, TableOverrideTest,
@@ -68,17 +69,17 @@ INSTANTIATE_TEST_SUITE_P(ApplyTableOverrides, TableOverrideTest,
     {
         "CREATE DATABASE db TABLE OVERRIDE t (COLUMNS (id UInt64 CODEC(Delta), shard UInt8 ALIAS modulo(id, 16)) PARTITION BY shard)",
         "CREATE TABLE db.t (id Int64) ENGINE=MergeTree",
-        "CREATE TABLE db.t (`id` UInt64 CODEC(Delta), `shard` UInt8 ALIAS id % 16) ENGINE = MergeTree PARTITION BY shard"
+        "CREATE TABLE db.t (`id` UInt64 CODEC(Delta), `shard` UInt8 ALIAS modulo(id, 16)) ENGINE = MergeTree PARTITION BY shard"
     },
     {
         "CREATE DATABASE db TABLE OVERRIDE a (PARTITION BY modulo(id, 3)), TABLE OVERRIDE b (PARTITION BY modulo(id, 5))",
         "CREATE TABLE db.a (id Int64) ENGINE=MergeTree",
-        "CREATE TABLE db.a (`id` Int64) ENGINE = MergeTree PARTITION BY id % 3"
+        "CREATE TABLE db.a (`id` Int64) ENGINE = MergeTree PARTITION BY modulo(id, 3)"
     },
     {
         "CREATE DATABASE db TABLE OVERRIDE a (PARTITION BY modulo(id, 3)), TABLE OVERRIDE b (PARTITION BY modulo(id, 5))",
         "CREATE TABLE db.b (id Int64) ENGINE=MergeTree",
-        "CREATE TABLE db.b (`id` Int64) ENGINE = MergeTree PARTITION BY id % 5"
+        "CREATE TABLE db.b (`id` Int64) ENGINE = MergeTree PARTITION BY modulo(id, 5)"
     },
     {
         "CREATE DATABASE db TABLE OVERRIDE `tbl` (PARTITION BY toYYYYMM(created))",

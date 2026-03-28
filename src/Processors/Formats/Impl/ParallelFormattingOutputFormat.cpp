@@ -1,13 +1,14 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
-#include <Common/setThreadName.h>
+#include <Processors/Port.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
 
 namespace DB
 {
     void ParallelFormattingOutputFormat::finalizeImpl()
     {
-        need_flush = true;
         /// Don't throw any background_exception here, because we want to finalize the execution.
         /// Exception will be checked after main thread is finished.
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
@@ -34,6 +35,9 @@ namespace DB
         /// So, in case of exception after finalize we could still not output prefix/suffix or finalize underlying format.
 
         if (collected_prefix && collected_suffix && collected_finalize)
+            return;
+
+        if (out.isCanceled())
             return;
 
         auto formatter = internal_formatter_creator(out);
@@ -125,13 +129,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        setThreadName("Collector");
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR);
 
         try
         {
@@ -157,8 +155,8 @@ namespace DB
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
-                if (need_flush.exchange(false) || auto_flush)
-                    IOutputFormat::flush();
+                if (auto_flush || need_flush.exchange(false) || unit.type == ProcessingUnitType::FINALIZE)
+                    out.next();
 
                 ++collector_unit_number;
                 rows_collected += unit.rows_num;
@@ -196,13 +194,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        setThreadName("Formatter");
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER);
 
         try
         {
@@ -260,7 +252,7 @@ namespace DB
                 }
             }
 
-            /// Flush all the data to handmade buffer.
+            /// Flush all the data to the handmade buffer.
             formatter->flush();
             formatter->finalizeBuffers();
             out_buffer.finalize();

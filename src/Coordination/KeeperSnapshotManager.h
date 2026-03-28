@@ -1,6 +1,11 @@
 #pragma once
-#include <Coordination/KeeperStorage.h>
+#include "config.h"
+
 #include <Common/CopyableAtomic.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Coordination/ACLMap.h>
+#include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <libnuraft/nuraft.hxx>
 
 namespace DB
@@ -29,9 +34,10 @@ enum SnapshotVersion : uint8_t
     V4 = 4, /// add Node size to snapshots
     V5 = 5, /// add ZXID and digest to snapshots
     V6 = 6, /// remove is_sequential, per node size, data length
+    V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
 };
 
-static constexpr auto CURRENT_SNAPSHOT_VERSION = SnapshotVersion::V6;
+static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V7;
 
 /// What is stored in binary snapshot
 template<typename Storage>
@@ -43,6 +49,10 @@ struct SnapshotDeserializationResult
     SnapshotMetadataPtr snapshot_meta;
     /// Cluster config
     ClusterConfigPtr cluster_config;
+    /// container with all the paths stored in snapshot
+    /// used if we don't want to load entire storage from snapshot
+    /// which can be useful for analyzing snapshot files
+    std::vector<std::string> paths;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
@@ -63,10 +73,10 @@ struct KeeperStorageSnapshot
 #endif
 
 public:
-    KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_ = nullptr);
+    KeeperStorageSnapshot(Storage * storage_, uint64_t up_to_log_idx_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_);
 
     KeeperStorageSnapshot(
-        Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_ = nullptr);
+        Storage * storage_, const SnapshotMetadataPtr & snapshot_meta_, const ClusterConfigPtr & cluster_config_, SnapshotVersion version_);
 
     KeeperStorageSnapshot(const KeeperStorageSnapshot<Storage>&) = delete;
     KeeperStorageSnapshot(KeeperStorageSnapshot<Storage>&&) = default;
@@ -75,11 +85,11 @@ public:
 
     static void serialize(const KeeperStorageSnapshot<Storage> & snapshot, WriteBuffer & out, KeeperContextPtr keeper_context);
 
-    static void deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context);
+    static void deserialize(SnapshotDeserializationResult<Storage> & deserialization_result, ReadBuffer & in, KeeperContextPtr keeper_context, bool load_full_storage = true);
 
     Storage * storage;
 
-    SnapshotVersion version = CURRENT_SNAPSHOT_VERSION;
+    SnapshotVersion version;
     /// Snapshot metadata
     SnapshotMetadataPtr snapshot_meta;
     /// Max session id
@@ -94,7 +104,7 @@ public:
     /// Sessions credentials
     Storage::SessionAndAuth session_and_auth;
     /// ACLs cache for better performance. Without we cannot deserialize storage.
-    std::unordered_map<uint64_t, Coordination::ACLs> acl_map;
+    std::unordered_map<ACLId, Coordination::ACLs> acl_map;
     /// Cluster config from snapshot, can be empty
     ClusterConfigPtr cluster_config;
     /// Last committed ZXID
@@ -112,7 +122,6 @@ struct SnapshotFileInfo
 
     std::string path;
     DiskPtr disk;
-    mutable std::atomic<size_t> size{0};
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;
@@ -148,7 +157,7 @@ public:
     /// Serialize snapshot directly to disk
     SnapshotFileInfoPtr serializeSnapshotToDisk(const KeeperStorageSnapshot<Storage> & snapshot);
 
-    SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
+    SnapshotDeserializationResult<Storage> deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, bool load_full_storage = true) const;
 
     /// Deserialize snapshot with log index up_to_log_idx from disk into compressed nuraft buffer.
     nuraft::ptr<nuraft::buffer> deserializeSnapshotBufferFromDisk(uint64_t up_to_log_idx) const;

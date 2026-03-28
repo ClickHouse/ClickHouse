@@ -1,4 +1,4 @@
-#include "insertPostgreSQLValue.h"
+#include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #if USE_LIBPQXX
 #include <Columns/ColumnNullable.h>
@@ -50,7 +50,7 @@ void insertPostgreSQLValue(
             else if (value == "f")
                 assert_cast<ColumnUInt8 &>(column).insertValue(0);
             else
-                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(pqxx::from_string<uint16_t>(value)));
             break;
         }
         case ExternalResultDescription::ValueType::vtUInt16:
@@ -63,7 +63,7 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt64 &>(column).insertValue(pqxx::from_string<uint64_t>(value));
             break;
         case ExternalResultDescription::ValueType::vtInt8:
-            assert_cast<ColumnInt8 &>(column).insertValue(pqxx::from_string<int16_t>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(pqxx::from_string<int16_t>(value)));
             break;
         case ExternalResultDescription::ValueType::vtInt16:
             assert_cast<ColumnInt16 &>(column).insertValue(pqxx::from_string<int16_t>(value));
@@ -128,7 +128,9 @@ void insertPostgreSQLValue(
             pqxx::array_parser parser{value};
             std::pair<pqxx::array_parser::juncture, std::string> parsed = parser.get_next();
 
-            size_t dimension = 0, max_dimension = 0, expected_dimensions = array_info.at(idx).num_dimensions;
+            size_t dimension = 0;
+            size_t max_dimension = 0;
+            size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
             std::vector<Row> dimensions(expected_dimensions + 1);
 
@@ -191,7 +193,16 @@ void preparePostgreSQLArrayInfo(
     WhichDataType which(nested);
     std::function<Field(std::string & fields)> parser;
 
-    if (which.isUInt8() || which.isUInt16())
+    if (which.isUInt8())
+        parser = [](std::string & field) -> Field
+        {
+            if (field == "t")
+                return UInt8(1);
+            else if (field == "f")
+                return UInt8(0);
+            return pqxx::from_string<uint16_t>(field);
+        };
+    else if (which.isUInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
     else if (which.isInt8() || which.isInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int16_t>(field); };
@@ -213,6 +224,8 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
+    else if (which.isDate32())
+        parser = [](std::string & field) -> Field { return Int32{LocalDate{field}.getExtenedDayNum()}; };
     else if (which.isDateTime())
         parser = [nested](std::string & field) -> Field
         {

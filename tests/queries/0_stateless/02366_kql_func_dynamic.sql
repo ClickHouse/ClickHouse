@@ -4,6 +4,7 @@ CREATE TABLE array_test (floats Array(Float64),
                          nullable_strings Array(Nullable(String))
                          ) ENGINE=Memory;
 INSERT INTO array_test VALUES([1.0, 2.5], ['a', 'c'], ['A', NULL, 'C']);
+set allow_experimental_kusto_dialect=1;
 set dialect = 'kusto';
 print '-- constant index value';
 array_test | project floats[0], strings[1], nullable_strings;

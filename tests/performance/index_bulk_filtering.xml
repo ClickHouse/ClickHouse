@@ -1,0 +1,41 @@
+<test>
+    <create_query>
+        CREATE TABLE test_set_index
+        (
+            x UInt64,
+            INDEX idx_x (x) TYPE set(10)
+        )
+        ENGINE = MergeTree
+        ORDER BY ()
+        SETTINGS index_granularity = 5;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_minmax_index
+        (
+        x UInt64,
+        INDEX idx_x (x) TYPE minmax
+        )
+        ENGINE = MergeTree
+        ORDER BY ()
+        SETTINGS index_granularity = 5;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_set_index
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SELECT * FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO test_minmax_index
+        SETTINGS max_insert_threads = 64, max_insert_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1
+        SELECT * FROM numbers(1000000);
+    </fill_query>
+
+    <query>SELECT * FROM test_set_index WHERE x IN (1, 100000, 500000)</query>
+    <query>SELECT * FROM test_set_index WHERE SHA256(x::String) = SHA256(999999::String)</query>
+    <query>SELECT count() FROM test_minmax_index WHERE x BETWEEN 123456 AND 789012</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_set_index;</drop_query>
+</test>

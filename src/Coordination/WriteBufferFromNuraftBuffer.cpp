@@ -1,4 +1,5 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -43,6 +44,8 @@ void WriteBufferFromNuraftBuffer::finalizeImpl()
 
     /// Prevent further writes.
     set(nullptr, 0);
+
+    WriteBuffer::finalizeImpl();
 }
 
 nuraft::ptr<nuraft::buffer> WriteBufferFromNuraftBuffer::getBuffer()

@@ -1,0 +1,14 @@
+1
+Actions: INPUT : 0 -> __text_index_idx_text_hasToken_425d21a9e64c3b652fe967bc06aca4fc UInt8 : 0
+Name: idx_text
+1
+1
+Actions: INPUT : 0 -> __text_index_idx_text_hasAllTokens_7a7a737e1ade44463de66430e2c21507 UInt8 : 0
+Name: idx_text
+1
+1
+Actions: INPUT : 0 -> __text_index_idx_text_hasToken_b62d561255328e2b7a6fbfbceec36f9b UInt8 : 0
+Name: idx_text
+1
+Actions: INPUT : 0 -> __text_index_idx_text_hasAllTokens_458a6f0c95f141515db966345d9a0f2e UInt8 : 0
+Name: idx_text

@@ -31,7 +31,7 @@ int main(int, char **)
             }
             stopwatch.stop();
             std::cout << "Writing done (1). Elapsed: " << stopwatch.elapsedSeconds()
-                << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+                << ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
                 << std::endl;
         }
 
@@ -53,7 +53,7 @@ int main(int, char **)
             }
             stopwatch.stop();
             std::cout << "Reading done (1). Elapsed: " << stopwatch.elapsedSeconds()
-                << ", " << (compressed_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+                << ", " << (static_cast<double>(compressed_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
                 << std::endl;
         }
     }

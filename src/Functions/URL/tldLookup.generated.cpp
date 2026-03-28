@@ -24,6 +24,8 @@
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #pragma GCC diagnostic ignored "-Wunused-macros"
+// NOLINTBEGIN(modernize-macro-to-enum)
+
 #include <cstring>
 
 #define TOTAL_KEYWORDS 5045
@@ -110735,4 +110737,6 @@ const char * TopLevelDomainLookupHash::isValid(const char * str, size_t len)
     }
     return nullptr;
 }
+// NOLINTEND(modernize-macro-to-enum)
+
 #line 5060 "tldLookup.gperf"

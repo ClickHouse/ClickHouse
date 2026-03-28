@@ -1,7 +1,6 @@
 #include <Common/KnownObjectNames.h>
 #include <Poco/String.h>
 
-
 namespace DB
 {
 
@@ -27,8 +26,15 @@ void KnownObjectNames::add(const String & name, bool case_insensitive)
     std::lock_guard lock{mutex};
     if (case_insensitive)
         case_insensitive_names.emplace(Poco::toLower(name));
-    else
-        names.emplace(name);
+
+    // Store the original name as well.
+    names.emplace(name);
+}
+
+std::vector<String> KnownObjectNames::getAllRegisteredNames() const
+{
+    std::lock_guard lock{mutex};
+    return std::vector<String>(names.begin(), names.end());
 }
 
 

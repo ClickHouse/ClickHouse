@@ -1,5 +1,5 @@
 #pragma once
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
@@ -13,9 +13,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
-#include <IO/WriteHelpers.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/Context.h>
 
 #include <mutex>
 #include <filesystem>
@@ -92,16 +90,25 @@ protected:
     {
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-        if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
+        if (const auto * object = symbol_index.thisObject())
         {
+#if defined(OS_DARWIN)
+            if (!object->dsym)
+                return {object->name};
+            auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->dsym).first;
+            /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
+            uintptr_t dwarf_addr = addr - object->slide;
+#else
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
+            uintptr_t dwarf_addr = addr;
+#endif
 
             Dwarf::LocationInfo location;
             std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
             ResultT result;
-            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, locationInfoMode, frames))
+            if (dwarf_it->second.findAddress(dwarf_addr, location, locationInfoMode, frames))
             {
                 setResult(result, location, frames);
                 return result;

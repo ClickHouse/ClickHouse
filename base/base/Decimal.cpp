@@ -1,4 +1,5 @@
 #include <base/Decimal.h>
+#include <base/defines.h>
 #include <base/extended_types.h>
 
 namespace DB
@@ -72,13 +73,15 @@ template <typename T> Decimal<T> operator- (const Decimal<T> & x, const Decimal<
 template <typename T> Decimal<T> operator* (const Decimal<T> & x, const Decimal<T> & y) { return x.value * y.value; }
 template <typename T> Decimal<T> operator/ (const Decimal<T> & x, const Decimal<T> & y) { return x.value / y.value; }
 template <typename T> Decimal<T> operator- (const Decimal<T> & x) { return -x.value; }
+template <typename T> Decimal<T> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<T> & x) { return -x.value; }
 
 #define DISPATCH(TYPE) \
 template Decimal<TYPE> operator+ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 template Decimal<TYPE> operator- (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 template Decimal<TYPE> operator* (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
 template Decimal<TYPE> operator/ (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \
-template Decimal<TYPE> operator- (const Decimal<TYPE> & x);
+template Decimal<TYPE> operator- (const Decimal<TYPE> & x); \
+template Decimal<TYPE> NO_SANITIZE_UNDEFINED negateOverflow (const Decimal<TYPE> & x);
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 

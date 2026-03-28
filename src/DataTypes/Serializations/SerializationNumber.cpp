@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 
 #include <Columns/ColumnConst.h>
@@ -27,7 +28,13 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
     T x;
 
     if constexpr (is_integer<T> && is_arithmetic_v<T>)
-        readIntTextUnsafe(x, istr);
+    {
+        /// readIntTextUnsafe treats a leading '0' as the complete value zero, but readIntText tolerates it
+        if (settings.allow_number_leading_zeros)
+            readIntText(x, istr);
+        else
+            readIntTextUnsafe(x, istr);
+    }
     else
         readText(x, istr);
 
@@ -213,8 +220,9 @@ void SerializationNumber<T>::serializeBinaryBulk(const IColumn & column, WriteBu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double /*avg_value_size_hint*/) const
 {
+    istr.ignore(sizeof(typename ColumnVector<T>::ValueType) * rows_offset);
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     const size_t initial_size = x.size();
     x.resize(initial_size + limit);
@@ -224,6 +232,20 @@ void SerializationNumber<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer 
     if constexpr (std::endian::native == std::endian::big && sizeof(T) >= 2)
         for (size_t i = initial_size; i < x.size(); ++i)
             transformEndianness<std::endian::big, std::endian::little>(x[i]);
+}
+
+template <typename T>
+UInt128 SerializationNumber<T>::getHash()
+{
+    SipHash hash;
+    hash.update(TypeName<T>);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationNumber<T>::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationNumber<T>(); });
 }
 
 template class SerializationNumber<UInt8>;
@@ -238,6 +260,7 @@ template class SerializationNumber<Int32>;
 template class SerializationNumber<Int64>;
 template class SerializationNumber<Int128>;
 template class SerializationNumber<Int256>;
+template class SerializationNumber<BFloat16>;
 template class SerializationNumber<Float32>;
 template class SerializationNumber<Float64>;
 

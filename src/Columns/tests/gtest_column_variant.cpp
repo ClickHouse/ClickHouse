@@ -20,7 +20,7 @@ TEST(ColumnVariant, CreateFromEmptyColumnsWithLocalOrder)
     MutableColumns columns;
     columns.push_back(ColumnUInt32::create());
     columns.push_back(ColumnString::create());
-    std::vector<ColumnVariant::Discriminator> local_to_global_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global_discriminators;
     local_to_global_discriminators.push_back(1);
     local_to_global_discriminators.push_back(0);
     auto column = ColumnVariant::create(std::move(columns), local_to_global_discriminators);
@@ -57,7 +57,7 @@ MutableColumnPtr createDiscriminators1()
     return discriminators_column;
 }
 
-void reorderColumns(const std::vector<ColumnVariant::Discriminator> & local_to_global_order, MutableColumns & columns)
+void reorderColumns(const VectorWithMemoryTracking<ColumnVariant::Discriminator> & local_to_global_order, MutableColumns & columns)
 {
     MutableColumns res;
     for (auto global_discr : local_to_global_order)
@@ -66,10 +66,10 @@ void reorderColumns(const std::vector<ColumnVariant::Discriminator> & local_to_g
 }
 
 template <typename Ptr>
-void reorderDiscriminators(const std::vector<ColumnVariant::Discriminator> & local_to_global_order, Ptr & discriminators)
+void reorderDiscriminators(const VectorWithMemoryTracking<ColumnVariant::Discriminator> & local_to_global_order, Ptr & discriminators)
 {
-    std::vector<ColumnVariant::Discriminator> global_to_local_order(local_to_global_order.size());
-    for (size_t i = 0; i != local_to_global_order.size(); ++i)
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> global_to_local_order(local_to_global_order.size());
+    for (ColumnVariant::Discriminator i = 0; i != local_to_global_order.size(); ++i)
         global_to_local_order[local_to_global_order[i]] = i;
 
     auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators *>(discriminators.get())->getData();
@@ -91,9 +91,9 @@ MutableColumnPtr createOffsets1()
     return offsets;
 }
 
-std::vector<ColumnVariant::Discriminator> createLocalToGlobalOrder1()
+VectorWithMemoryTracking<ColumnVariant::Discriminator> createLocalToGlobalOrder1()
 {
-    std::vector<ColumnVariant::Discriminator> local_to_global_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global_discriminators;
     local_to_global_discriminators.push_back(1);
     local_to_global_discriminators.push_back(2);
     local_to_global_discriminators.push_back(0);
@@ -256,7 +256,7 @@ TEST(ColumnVariant, CloneResizedToLarge)
     }
 
     const auto & discriminators = resized_column_variant->getLocalDiscriminators();
-    std::vector<size_t> null_indexes = {2, 4, 5, 6};
+    VectorWithMemoryTracking<size_t> null_indexes = {2, 4, 5, 6};
     for (size_t i : null_indexes)
         ASSERT_EQ(discriminators[i], ColumnVariant::NULL_DISCRIMINATOR);
     ASSERT_EQ(resized_column_variant->getVariantByLocalDiscriminator(0).size(), 1);
@@ -424,9 +424,9 @@ MutableColumnPtr createDiscriminators2()
     return discriminators_column;
 }
 
-std::vector<ColumnVariant::Discriminator> createLocalToGlobalOrder2()
+VectorWithMemoryTracking<ColumnVariant::Discriminator> createLocalToGlobalOrder2()
 {
-    std::vector<ColumnVariant::Discriminator> local_to_global_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> local_to_global_discriminators;
     local_to_global_discriminators.push_back(2);
     local_to_global_discriminators.push_back(0);
     local_to_global_discriminators.push_back(1);
@@ -540,9 +540,9 @@ TEST(ColumnVariant, FilterOneColumnNoNulls)
 {
     auto column = createVariantWithOneFullColumNoNulls(3, false);
     IColumn::Filter filter;
-    filter.push_back(1);
-    filter.push_back(0);
-    filter.push_back(1);
+    filter.push_back(true);
+    filter.push_back(false);
+    filter.push_back(true);
     auto filtered_column = column->filter(filter, -1);
     ASSERT_EQ(filtered_column->size(), 2);
     ASSERT_EQ((*filtered_column)[0].safeGet<UInt64>(), 0);
@@ -553,13 +553,13 @@ TEST(ColumnVariant, FilterGeneral)
 {
     auto column = ColumnVariant::create(createDiscriminators2(), createColumns2());
     IColumn::Filter filter;
-    filter.push_back(0);
-    filter.push_back(1);
-    filter.push_back(1);
-    filter.push_back(0);
-    filter.push_back(0);
-    filter.push_back(1);
-    filter.push_back(0);
+    filter.push_back(false);
+    filter.push_back(true);
+    filter.push_back(true);
+    filter.push_back(false);
+    filter.push_back(false);
+    filter.push_back(true);
+    filter.push_back(false);
     auto filtered_column = column->filter(filter, -1);
     ASSERT_EQ(filtered_column->size(), 3);
     ASSERT_EQ((*filtered_column)[0].safeGet<String>(), "Hello");

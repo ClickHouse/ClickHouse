@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -35,6 +35,9 @@ namespace DB
 {
 
 class Elf;
+#if defined(OS_DARWIN)
+class MachO;
+#endif
 
 /**
  * DWARF record parser.
@@ -67,6 +70,11 @@ class Dwarf final
 public:
     /** Create a DWARF parser around an ELF file. */
     explicit Dwarf(const std::shared_ptr<Elf> & elf);
+
+#if defined(OS_DARWIN)
+    /** Create a DWARF parser around a Mach-O file (typically from a dSYM bundle). */
+    explicit Dwarf(const std::shared_ptr<MachO> & macho);
+#endif
 
     /**
      * More than one location info may exist if current frame is an inline
@@ -147,6 +155,7 @@ public:
         bool has_file_and_line = false;
         Path file;
         uint64_t line = 0;
+        uint64_t column = 0;
     };
 
     /**
@@ -173,6 +182,9 @@ private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);
 
     std::shared_ptr<const Elf> elf_; /// NOLINT
+#if defined(OS_DARWIN)
+    std::shared_ptr<const MachO> macho_; /// NOLINT
+#endif
 
     // DWARF section made up of chunks, each prefixed with a length header.
     // The length indicates whether the chunk is DWARF-32 or DWARF-64, which
@@ -266,7 +278,7 @@ private:
         // The beginning of the offsets table (immediately following the
         // header) of the CU's contribution to .debug_rnglists
         std::optional<uint64_t> rnglists_base; // DW_AT_rnglists_base (DWARF 5)
-        // Points to the first string offset of the compilation unit’s
+        // Points to the first string offset of the compilation unit's
         // contribution to the .debug_str_offsets (or .debug_str_offsets.dwo) section.
         std::optional<uint64_t> str_offsets_base; // DW_AT_str_offsets_base (DWARF 5)
 
@@ -303,7 +315,7 @@ private:
             std::string_view debugStr,
             std::string_view debugLineStr);
 
-        bool findAddress(uintptr_t target, Path & file, uint64_t & line);
+        bool findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column);
 
         /** Gets full file name at given index including directory. */
         Path getFullFileName(uint64_t index) const;

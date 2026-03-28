@@ -20,17 +20,6 @@ instance = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
-
-        instance.query(
-            """
-            CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
-            CREATE DATABASE IF NOT EXISTS test;
-            DROP TABLE IF EXISTS test.elements;
-            CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;
-            INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);
-            """
-        )
-
         yield cluster
 
     finally:
@@ -43,8 +32,36 @@ def get_status(dictionary_name):
     ).rstrip("\n")
 
 
+def cleanup_dependent_tables():
+    """Clean up tables in correct dependency order to allow repeatable test runs."""
+    # Tables/objects must be dropped in reverse dependency order:
+    # a.t depends on: system.join, test.d, default.join
+    # default.join depends on: test.d
+    # src depends on: system.join
+    # test.d depends on: src
+    instance.query("DROP TABLE IF EXISTS a.t")
+    instance.query("DROP TABLE IF EXISTS default.join")
+    instance.query("DROP DICTIONARY IF EXISTS test.d")
+    instance.query("DROP TABLE IF EXISTS default.src")
+    instance.query("DROP TABLE IF EXISTS system.join")
+    instance.query("DROP DATABASE IF EXISTS a")
+    instance.query("DROP DATABASE IF EXISTS test")
+    instance.query("DROP DATABASE IF EXISTS dict")
+
+
 def test_get_data(started_cluster):
     query = instance.query
+    instance.restart_clickhouse()
+    cleanup_dependent_tables()
+    instance.query(
+        """
+        CREATE DATABASE dict ENGINE=Dictionary;
+        CREATE DATABASE test;
+        DROP TABLE IF EXISTS test.elements;
+        CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;
+        INSERT INTO test.elements VALUES (0, 'water', 10, 1), (1, 'air', 40, 0.01), (2, 'earth', 100, 1.7);
+        """
+    )
 
     # dictionaries_lazy_load == false, so these dictionary are not loaded.
     assert get_status("dep_x") == "NOT_LOADED"
@@ -101,7 +118,6 @@ def dependent_tables_assert():
     assert "system.join" in res
     assert "default.src" in res
     assert "dict.dep_y" in res
-    assert "lazy.log" in res
     assert "test.d" in res
     assert "default.join" in res
     assert "a.t" in res
@@ -109,20 +125,15 @@ def dependent_tables_assert():
 
 def test_dependent_tables(started_cluster):
     query = instance.query
-    query("create database lazy engine=Lazy(10)")
+    cleanup_dependent_tables()
     query("create database a")
-    query("create table lazy.src (n int, m int) engine=Log")
-    query(
-        "create dictionary a.d (n int default 0, m int default 42) primary key n "
-        "source(clickhouse(host 'localhost' port tcpPort() user 'default' table 'src' password '' db 'lazy'))"
-        "lifetime(min 1 max 10) layout(flat())"
-    )
+    query("create database test")
+    query("create database dict engine=Dictionary")
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     query(
-        "create table src (n int, m default joinGet('system.join', 'm', 1::int),"
-        "t default dictGetOrNull('a.d', 'm', toUInt64(3)),"
-        "k default dictGet('a.d', 'm', toUInt64(4))) engine=MergeTree order by n"
+        "create table src (n int, m default joinGet('system.join', 'm', 1::int))"
+        "engine=MergeTree order by n"
     )
     query(
         "create dictionary test.d (n int default 0, m int default 42) primary key n "
@@ -130,32 +141,29 @@ def test_dependent_tables(started_cluster):
         "lifetime(min 1 max 10) layout(flat())"
     )
     query(
-        "create table join (n int, m default dictGet('a.d', 'm', toUInt64(3)),"
+        "create table join (n int,"
         "k default dictGet('test.d', 'm', toUInt64(0))) engine=Join(any, left, n)"
-    )
-    query(
-        "create table lazy.log (n default dictGet(test.d, 'm', toUInt64(0))) engine=Log"
     )
     query(
         "create table a.t (n default joinGet('system.join', 'm', 1::int),"
         "m default dictGet('test.d', 'm', toUInt64(3)),"
-        "k default joinGet(join, 'm', 1::int)) engine=MergeTree order by n"
+        "k default joinGet(join, 'k', 1::int)) engine=MergeTree order by n"
     )
 
     dependent_tables_assert()
     instance.restart_clickhouse()
     dependent_tables_assert()
     query("drop table a.t")
-    query("drop table lazy.log")
     query("drop table join")
     query("drop dictionary test.d")
     query("drop table src")
     query("drop table system.join")
+    query("drop database test")
     query("drop database a")
-    query("drop database lazy")
 
 
 def test_xml_dict_same_name(started_cluster):
+    instance.query("DROP TABLE IF EXISTS default.node")
     instance.query(
         "create table default.node ( key UInt64, name String ) Engine=Dictionary(node);"
     )

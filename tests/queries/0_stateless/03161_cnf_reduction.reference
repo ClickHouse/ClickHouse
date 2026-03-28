@@ -1,7 +1,7 @@
 -- Expected plan with analyzer:
 SELECT id
 FROM `03161_table`
-WHERE f
+WHERE f AND ((NOT f) OR f)
 SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, enable_analyzer = 1
 
 -- Expected result with analyzer:

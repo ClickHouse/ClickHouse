@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -27,7 +26,7 @@ public:
       * to parse and interpret expressions in other rows (in most cases it's faster
       * than interpreting expressions in each row separately, but it's still slower than streaming parsing)
       */
-    ValuesBlockInputFormat(ReadBuffer & in_, const Block & header_, const RowInputFormatParams & params_,
+    ValuesBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
     String getName() const override { return "ValuesBlockInputFormat"; }
@@ -37,7 +36,7 @@ public:
     void resetReadBuffer() override;
 
     /// TODO: remove context somehow.
-    void setContext(const ContextPtr & context_) { context = Context::createCopy(context_); }
+    void setContext(const ContextPtr & context_);
     void setQueryParameters(const NameToNameMap & parameters);
 
     const BlockMissingValues * getMissingValues() const override { return &block_missing_values; }
@@ -47,7 +46,7 @@ public:
     static bool skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance);
 
 private:
-    ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
+    ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, const RowInputFormatParams & params_,
                            const FormatSettings & format_settings_);
 
     enum class ParserType : uint8_t

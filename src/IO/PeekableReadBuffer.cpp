@@ -100,6 +100,10 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
 
     assert(checkpoint);
 
+    /// Reset canceled flag since the purpose of rollback is to retry reading from the beginning.
+    /// This is important for schema detection where we try multiple formats and expect some to fail.
+    canceled = false;
+
     if (recursive_checkpoints_offsets.empty())
     {
         if (checkpointInOwnMemory() == currentlyReadFromOwnMemory())

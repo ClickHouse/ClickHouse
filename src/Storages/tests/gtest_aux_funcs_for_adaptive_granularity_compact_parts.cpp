@@ -4,6 +4,7 @@
 
 // I know that inclusion of .cpp is not good at all
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp> // NOLINT
+#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 
 using namespace DB;
 
@@ -13,7 +14,7 @@ TEST(IndexGranularityCompactParts, FillGranularitySequenceOfBlocks)
         size_t rows = 8;
         size_t granularity = 32;
 
-        MergeTreeIndexGranularity index_granularity;
+        MergeTreeIndexGranularityAdaptive index_granularity;
         size_t index_offset = 0;
         size_t rows_written = 0;
         for (size_t i = 0; i < 3; ++i)
@@ -34,7 +35,7 @@ TEST(IndexGranularityCompactParts, FillGranularitySequenceOfBlocks)
         size_t rows2 = 8;
         size_t granularity = 32;
 
-        MergeTreeIndexGranularity index_granularity;
+        MergeTreeIndexGranularityAdaptive index_granularity;
         size_t index_offset = 0;
 
         fillIndexGranularityImpl(index_granularity, index_offset, granularity, rows1);
@@ -51,7 +52,7 @@ TEST(IndexGranularityCompactParts, FillGranularitySequenceOfBlocks)
         size_t rows2 = 25;
         size_t granularity = 32;
 
-        MergeTreeIndexGranularity index_granularity;
+        MergeTreeIndexGranularityAdaptive index_granularity;
         size_t index_offset = 0;
 
         fillIndexGranularityImpl(index_granularity, index_offset, granularity, rows1);
@@ -68,7 +69,7 @@ TEST(IndexGranularityCompactParts, FillGranularitySequenceOfBlocks)
         size_t rows = 40;
         size_t granularity = 32;
 
-        MergeTreeIndexGranularity index_granularity;
+        MergeTreeIndexGranularityAdaptive index_granularity;
         size_t index_offset = 0;
 
         for (size_t i = 0; i < 3; ++i)

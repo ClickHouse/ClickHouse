@@ -86,6 +86,12 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
     return outcome == AddPartOutcome::Added;
 }
 
+ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::tryAdd(const String & name, String * out_reason)
+{
+    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
+    return addImpl(part_info, name, nullptr, out_reason);
+}
+
 
 ActiveDataPartSet::AddPartOutcome ActiveDataPartSet::addImpl(const MergeTreePartInfo & part_info, const String & name, Strings * out_replaced_parts, String * out_reason)
 {
@@ -263,6 +269,21 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfosCoveredBy(const Me
     return covered;
 }
 
+Strings ActiveDataPartSet::getPartsWithLimit(size_t limit) const
+{
+    Strings res;
+    res.reserve(limit);
+    for (const auto & kv : part_info_to_name)
+    {
+        res.push_back(kv.second);
+        if (res.size() >= limit)
+            break;
+    }
+
+    return res;
+
+}
+
 Strings ActiveDataPartSet::getParts() const
 {
     Strings res;
@@ -283,9 +304,46 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfos() const
     return res;
 }
 
+std::vector<MergeTreePartInfo> ActiveDataPartSet::getPatchPartInfos() const
+{
+    std::vector<MergeTreePartInfo> res;
+    res.reserve(part_info_to_name.size());
+
+    for (const auto & kv : part_info_to_name)
+    {
+        if (kv.first.isPatch())
+            res.push_back(kv.first);
+    }
+
+    return res;
+}
+
+bool ActiveDataPartSet::isEmpty() const
+{
+    return part_info_to_name.empty();
+}
+
+bool ActiveDataPartSet::hasSome() const
+{
+    return !isEmpty();
+}
+
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();
+}
+
+bool ActiveDataPartSet::hasPartitionId(const String & partition_id) const
+{
+    MergeTreePartInfo info;
+    info.setPartitionId(partition_id);
+
+    if (auto it = part_info_to_name.lower_bound(info); it == part_info_to_name.end())
+        return false;
+    else if (it->first.getPartitionId() != partition_id)
+        return false;
+    else
+        return true;
 }
 
 }

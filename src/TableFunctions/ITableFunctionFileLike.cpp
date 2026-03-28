@@ -1,17 +1,14 @@
-#include <TableFunctions/ITableFunctionFileLike.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
-#include <Parsers/ASTFunction.h>
+#include <Storages/StorageFile.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
-
-#include <Storages/StorageFile.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/VirtualColumnUtils.h>
-
-#include <Interpreters/evaluateConstantExpression.h>
-
 #include <Formats/FormatFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <TableFunctions/ITableFunctionFileLike.h>
 
 namespace DB
 {
@@ -88,41 +85,7 @@ void ITableFunctionFileLike::parseArgumentsImpl(ASTs & args, const ContextPtr & 
         compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
 }
 
-void ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure, const String & format, const ContextPtr & context)
-{
-    if (args.empty() || args.size() > getMaxNumberOfArguments())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function, got {}", getMaxNumberOfArguments(), args.size());
-
-    auto format_literal = std::make_shared<ASTLiteral>(format);
-    auto structure_literal = std::make_shared<ASTLiteral>(structure);
-
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
-
-    /// f(filename)
-    if (args.size() == 1)
-    {
-        args.push_back(format_literal);
-        args.push_back(structure_literal);
-    }
-    /// f(filename, format)
-    else if (args.size() == 2)
-    {
-        if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
-            args.back() = format_literal;
-        args.push_back(structure_literal);
-    }
-    /// f(filename, format, structure) or f(filename, format, structure, compression)
-    else if (args.size() >= 3)
-    {
-        if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
-            args[1] = format_literal;
-        if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
-            args[2] = structure_literal;
-    }
-}
-
-StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool /*is_insert_query*/) const
+StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     ColumnsDescription columns;
     if (structure != "auto")
@@ -130,7 +93,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & /*ast_function*/, 
     else if (!structure_hint.empty())
         columns = structure_hint;
 
-    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method);
+    StoragePtr storage = getStorage(filename, format, columns, context, table_name, compression_method, is_insert_query);
     storage->startup();
     return storage;
 }

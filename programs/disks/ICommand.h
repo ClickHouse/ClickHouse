@@ -1,5 +1,7 @@
 #pragma once
 
+#include <config.h>
+
 #include <optional>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
@@ -8,16 +10,16 @@
 #include <boost/program_options.hpp>
 
 #include <Poco/Util/Application.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/Config/ConfigProcessor.h>
 
 #include <boost/program_options/positional_options.hpp>
 
-#include "DisksApp.h"
+#include <DisksApp.h>
 
-#include "DisksClient.h"
+#include <DisksClient.h>
 
-#include "ICommand_fwd.h"
+#include <ICommand_fwd.h>
 
 namespace DB
 {
@@ -35,15 +37,15 @@ namespace ErrorCodes
 class ICommand
 {
 public:
-    explicit ICommand() = default;
+    explicit ICommand(String logger_name) : log(getLogger(logger_name)) { }
 
     virtual ~ICommand() = default;
 
-    void execute(const Strings & commands, DisksClient & client);
+    void execute(const Strings & arguments, DisksClient & client);
 
     virtual void executeImpl(const CommandLineOptions & options, DisksClient & client) = 0;
 
-    CommandLineOptions processCommandLineArguments(const Strings & commands);
+    CommandLineOptions processCommandLineArguments(const Strings & arguments);
 
 protected:
     template <typename T>
@@ -62,7 +64,7 @@ protected:
     template <typename T>
     static T getValueFromCommandLineOptionsThrow(const CommandLineOptions & options, const String & name)
     {
-        if (options.count(name))
+        if (options.contains(name))
             return getValueFromCommandLineOptions<T>(options, name);
 
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
@@ -71,7 +73,7 @@ protected:
     template <typename T>
     static T getValueFromCommandLineOptionsWithDefault(const CommandLineOptions & options, const String & name, const T & default_value)
     {
-        if (options.count(name))
+        if (options.contains(name))
             return getValueFromCommandLineOptions<T>(options, name);
 
         return default_value;
@@ -80,7 +82,7 @@ protected:
     template <typename T>
     static std::optional<T> getValueFromCommandLineOptionsWithOptional(const CommandLineOptions & options, const String & name)
     {
-        if (options.count(name))
+        if (options.contains(name))
             return std::optional{getValueFromCommandLineOptions<T>(options, name)};
 
         return std::nullopt;
@@ -112,6 +114,7 @@ public:
 
 protected:
     PositionalProgramOptionsDescription positional_options_description;
+    LoggerPtr log;
 };
 
 DB::CommandPtr makeCommandCopy();
@@ -128,7 +131,7 @@ DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
 DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 DB::CommandPtr makeCommandTouch();
-#ifdef CLICKHOUSE_CLOUD
+#if CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
 #endif
 }

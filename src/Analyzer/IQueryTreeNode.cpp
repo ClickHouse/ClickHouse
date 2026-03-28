@@ -39,6 +39,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
         case QueryTreeNodeType::QUERY: return "QUERY";
         case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
+        case QueryTreeNodeType::CROSS_JOIN: return "CROSS_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
     }
@@ -296,6 +297,15 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
             weak_pointers_to_update_after_clone.push_back(&weak_pointer);
         }
     }
+
+    /** Ensure all replacement_map entries are in old_pointer_to_new_pointer.
+      * When a node is replaced, its children are not traversed and thus not added
+      * to old_pointer_to_new_pointer. If those children are also in the replacement_map
+      * (e.g., inner column sources of an ARRAY_JOIN being replaced), their entries
+      * must be available for weak pointer updates below.
+      */
+    for (const auto & [old_ptr, new_ptr] : replacement_map)
+        old_pointer_to_new_pointer.emplace(old_ptr, new_ptr);
 
     /** Update weak pointers to new pointers if they were changed during clone.
       * To do this we check old pointer to new pointer map, if weak pointer

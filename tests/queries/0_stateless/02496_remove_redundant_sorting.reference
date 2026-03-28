@@ -332,13 +332,12 @@ SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it d
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
-      Filter ((WHERE + (Projection + Before ORDER BY)))
-        Filter (HAVING)
-          Aggregating
-            Expression ((Before GROUP BY + Projection))
-              Sorting (Sorting for ORDER BY)
-                Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
-                  ReadFromSystemNumbers
+      Filter (((WHERE + (Projection + Before ORDER BY)) + HAVING))
+        Aggregating
+          Expression ((Before GROUP BY + Projection))
+            Sorting (Sorting for ORDER BY)
+              Expression ((Before ORDER BY + (Projection + Before ORDER BY)))
+                ReadFromSystemNumbers
 -- execute
 1
 2
@@ -394,11 +393,11 @@ Expression ((Projection + Before ORDER BY))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -426,11 +425,11 @@ Expression ((Projection + Before ORDER BY))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
@@ -458,11 +457,11 @@ Expression ((Projection + Before ORDER BY))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
           Expression ((Before ORDER BY + (Conversion before UNION + (Projection + Before ORDER BY))))
-            ReadFromStorage (SystemOne)
+            ReadFromSystemOne
 -- execute
 Float64	9007199254740994
 -- presence of an inner OFFSET retains the ORDER BY

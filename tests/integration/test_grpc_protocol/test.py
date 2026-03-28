@@ -35,7 +35,7 @@ config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/grpc_config.xml"],
+    main_configs=["configs/config.xml"],
     # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
     env_variables={
         "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
@@ -267,7 +267,7 @@ def test_insert_default_column():
     )
 
 
-def test_insert_splitted_row():
+def test_insert_split_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(", "3),(5),(4),(6)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
@@ -364,7 +364,7 @@ def test_logs():
     )
     assert query in logs
     assert "Read 1000000 rows" in logs
-    assert "Peak memory usage" in logs
+    assert "Query peak memory usage" in logs
 
 
 def test_progress():

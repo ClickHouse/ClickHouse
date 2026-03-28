@@ -41,7 +41,7 @@ private:
 
         if (prompt.size() <= name.size() + mistake_factor && prompt.size() + mistake_factor >= name.size())
         {
-            size_t distance = levenshteinDistance(prompt, name);
+            size_t distance = levenshteinDistanceCaseInsensitive(prompt, name);
             if (distance <= mistake_factor)
             {
                 queue.emplace(distance, ind);

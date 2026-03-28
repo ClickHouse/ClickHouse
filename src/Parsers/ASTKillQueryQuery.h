@@ -24,7 +24,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTKillQueryQuery>(*this);
+        auto clone = make_intrusive<ASTKillQueryQuery>(*this);
         if (where_expression)
         {
             clone->where_expression = where_expression->clone();
@@ -36,7 +36,7 @@ public:
 
     String getID(char) const override;
 
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override
     {

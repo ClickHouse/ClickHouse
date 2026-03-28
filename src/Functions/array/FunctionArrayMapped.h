@@ -1,13 +1,12 @@
 #pragma once
 
-#include <type_traits>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
@@ -17,7 +16,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -59,7 +58,7 @@ namespace ErrorCodes
   *
   * See the example of Impl template parameter in arrayMap.cpp
   */
-template <typename Impl, typename Name>
+template <typename Impl, typename Name, bool IsDeterministic = true>
 class FunctionArrayMapped : public IFunction
 {
 public:
@@ -73,6 +72,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isDeterministic() const override { return IsDeterministic; }
+    bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -282,7 +283,9 @@ public:
             if (!column_with_type_and_name.column)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
-            const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
+            auto column_function_materialized = column_with_type_and_name.column->convertToFullColumnIfConst();
+
+            const auto * column_function = typeid_cast<const ColumnFunction *>(column_function_materialized.get());
             if (!column_function)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
@@ -384,8 +387,7 @@ public:
             if (lambda_result.column->lowCardinality())
                 lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
-            if (const auto * const_column = checkAndGetColumnConst<ColumnLowCardinality>(lambda_result.column.get()))
-                lambda_result.column = const_column->removeLowCardinality();
+            lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
             if (Impl::needBoolean())
             {

@@ -24,12 +24,14 @@ SELECT
 FROM
 (
     SELECT 1 AS a
+    FROM system.one
 )
 ANY LEFT JOIN
 (
     SELECT
         1 AS a,
         1 AS b
+    FROM system.one
 ) USING (a)
 WHERE b = 0
 SELECT
@@ -40,10 +42,12 @@ FROM
     SELECT
         1 AS a,
         1 AS b
+    FROM system.one
 )
 ANY RIGHT JOIN
 (
     SELECT 1 AS a
+    FROM system.one
 ) USING (a)
 WHERE b = 0
 SELECT
@@ -52,12 +56,14 @@ SELECT
 FROM
 (
     SELECT 1 AS a
+    FROM system.one
 )
 ANY FULL OUTER JOIN
 (
     SELECT
         1 AS a,
         1 AS b
+    FROM system.one
 ) USING (a)
 WHERE b = 0
 SELECT
@@ -68,10 +74,12 @@ FROM
     SELECT
         1 AS a,
         1 AS b
+    FROM system.one
 )
 ANY FULL OUTER JOIN
 (
     SELECT 1 AS a
+    FROM system.one
 ) USING (a)
 WHERE b = 0
 -------Need push down-------
@@ -79,56 +87,61 @@ SELECT toString(value) AS value
 FROM
 (
     SELECT 1 AS value
+    FROM system.one
 )
+WHERE value = \'1\'
 1
-SELECT id
+SELECT *
 FROM
 (
-    SELECT 1 AS id
+    (
+        SELECT 1 AS id
+        FROM system.one
+    )
     UNION ALL
-    SELECT 2 AS `--predicate_optimizer_0`
-    WHERE 0
+    (
+        SELECT 2
+        FROM system.one
+    )
+)
+WHERE id = 1
+1
+SELECT *
+FROM
+(
+    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
+    FROM system.one
 )
 WHERE id = 1
 1
 SELECT id
 FROM
 (
-    SELECT arrayJoin([1, 2, 3]) AS id
-    WHERE id = 1
+    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
+    FROM system.one
 )
 WHERE id = 1
 1
-SELECT id
-FROM
-(
-    SELECT arrayJoin([1, 2, 3]) AS id
-    WHERE id = 1
-)
-WHERE id = 1
-1
-SELECT
-    id,
-    subquery
+SELECT *
 FROM
 (
     SELECT
         1 AS id,
-        __scalarSubqueryResult(_CAST(1, \'Nullable(UInt8)\')) AS subquery
-    WHERE subquery = 1
+        (
+            SELECT 1
+            FROM system.one
+        ) AS subquery
+    FROM system.one
 )
 WHERE subquery = 1
 1	1
-SELECT
-    a,
-    b
+SELECT *
 FROM
 (
     SELECT
-        toUInt64(sum(id) AS b) AS a,
-        b
+        toUInt64(b) AS a,
+        sum(id) AS b
     FROM test_00597
-    HAVING a = 3
 )
 WHERE a = 3
 3	3
@@ -149,97 +162,52 @@ FROM
         date,
         name,
         value
-    HAVING id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    a,
-    b
+SELECT *
 FROM
 (
     SELECT
-        toUInt64(sum(id) AS b) AS a,
-        b
+        toUInt64(b) AS a,
+        sum(id) AS b
     FROM test_00597 AS table_alias
-    HAVING b = 3
 ) AS outer_table_alias
-WHERE b = 3
+WHERE outer_table_alias.b = 3
 3	3
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
-    WHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-        WHERE id = 1
     )
-    WHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT b.*
     FROM
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-        WHERE id = 1
     ) AS b
-    WHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
     SELECT
@@ -248,15 +216,10 @@ FROM
         name,
         value
     FROM test_00597
-    WHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
     SELECT
@@ -272,59 +235,31 @@ FROM
             name,
             value
         FROM test_00597
-        WHERE id = 1
     )
-    WHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
-    WHERE id = 1
 ) AS b
-WHERE id = 1
+WHERE b.id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-        WHERE id = 1
     ) AS a
-    WHERE id = 1
 ) AS b
-WHERE id = 1
+WHERE b.id = 1
 2000-01-01	1	test string 1	1
-SELECT
-    id,
-    date,
-    value
+SELECT *
 FROM
 (
     SELECT
@@ -332,165 +267,96 @@ FROM
         date,
         min(value) AS value
     FROM test_00597
-    WHERE id = 1
     GROUP BY
         id,
         date
 )
 WHERE id = 1
 1	2000-01-01	1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
-    FROM test_00597
-    WHERE id = 1
+    (
+        SELECT *
+        FROM test_00597
+    )
     UNION ALL
-    SELECT
-        date,
-        id,
-        name,
-        value
-    FROM test_00597
-    WHERE id = 1
+    (
+        SELECT *
+        FROM test_00597
+    )
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value,
-    date,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
-    WHERE id = 1
 )
 ANY LEFT JOIN
 (
-    SELECT id
+    SELECT *
     FROM test_00597
 ) USING (id)
 WHERE id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
-SELECT
-    id,
-    date,
-    name,
-    value
+SELECT *
 FROM
 (
     SELECT toInt8(1) AS id
+    FROM system.one
 )
-ANY LEFT JOIN
-(
-    SELECT
-        date,
-        id,
-        name,
-        value
-    FROM test_00597
-) AS test_00597 USING (id)
+ANY LEFT JOIN test_00597 USING (id)
 WHERE value = 1
 1	2000-01-01	test string 1	1
-SELECT value
+SELECT b.value
 FROM
 (
     SELECT toInt8(1) AS id
+    FROM system.one
 )
 ANY LEFT JOIN test_00597 AS b USING (id)
 WHERE value = 1
 1
-SELECT
-    date,
-    id,
-    name,
-    value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value,
-        date,
-        name,
-        value
+    SELECT *
     FROM
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-        WHERE id = 1
     )
     ANY LEFT JOIN
     (
-        SELECT id
+        SELECT *
         FROM test_00597
     ) USING (id)
-    WHERE id = 1
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value,
-    b.date,
-    b.name,
-    b.value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
 )
 ANY LEFT JOIN
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
 ) AS b USING (id)
 WHERE b.id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
-SELECT
-    id,
-    date,
-    name,
-    value
+SELECT *
 FROM
 (
     SELECT
@@ -501,95 +367,44 @@ FROM
 )
 ANY LEFT JOIN
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
 ) AS b USING (date, id)
 WHERE b.date = toDate(\'2000-01-01\')
 1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value,
-    `b.date`,
-    `b.id`,
-    `b.name`,
-    `b.value`
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value,
-        b.date,
-        b.id,
-        b.name,
-        b.value
+    SELECT *
     FROM
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-        WHERE id = 1
     ) AS a
     ANY LEFT JOIN
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-    ) AS b ON id = b.id
-    WHERE id = 1
+    ) AS b ON a.id = b.id
 )
 WHERE id = 1
 2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1
-SELECT
-    date,
-    id,
-    name,
-    value,
-    r.date,
-    r.name,
-    r.value
+SELECT *
 FROM
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM test_00597
 )
 SEMI LEFT JOIN
 (
-    SELECT
-        date,
-        id,
-        name,
-        value
+    SELECT *
     FROM
     (
-        SELECT
-            date,
-            id,
-            name,
-            value
+        SELECT *
         FROM test_00597
-        WHERE id = 1
     )
-    WHERE id = 1
 ) AS r USING (id)
 WHERE r.id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
@@ -599,11 +414,10 @@ SELECT value + t1.value AS expr
 FROM
 (
     SELECT
-        value,
+        t0.value,
         t1.value
     FROM test_00597 AS t0
     ALL FULL OUTER JOIN test_00597 AS t1 USING (date)
-    WHERE (value + `t1.value`) < 3
 )
 WHERE expr < 3
 2

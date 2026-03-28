@@ -1,4 +1,5 @@
 #include <Processors/Transforms/CheckSortedTransform.h>
+#include <Columns/IColumn.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/quoteString.h>
 #include <Core/SortDescription.h>
@@ -12,11 +13,11 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-CheckSortedTransform::CheckSortedTransform(const Block & header, const SortDescription & sort_description)
+CheckSortedTransform::CheckSortedTransform(SharedHeader header, const SortDescription & sort_description)
     : ISimpleTransform(header, header, false)
 {
     for (const auto & column_description : sort_description)
-        sort_description_map.emplace_back(column_description, header.getPositionByName(column_description.column_name));
+        sort_description_map.emplace_back(column_description, header->getPositionByName(column_description.column_name));
 }
 
 void CheckSortedTransform::transform(Chunk & chunk)
@@ -57,7 +58,7 @@ void CheckSortedTransform::transform(Chunk & chunk)
     /// ColumnVector tries to cast the rhs column to the same type (ColumnVector) in compareAt method.
     /// And it doesn't care about the possible incompatibilities in data types
     /// (for example in case when the right column is ColumnSparse)
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
 
     const auto & chunk_columns = chunk.getColumns();
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <pcg_random.hpp>
 
@@ -36,6 +36,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
     static String generateRandomStructure(size_t seed, const ContextPtr & context);
+    static String generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types);
 
 private:
     bool allow_suspicious_lc_types;

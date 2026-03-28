@@ -21,6 +21,7 @@
 #include "Poco/Foundation.h"
 #include <Poco/Types.h>
 
+#include <array>
 
 namespace Poco
 {

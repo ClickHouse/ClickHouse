@@ -240,6 +240,7 @@ AccessRestorerFromBackup::AccessRestorerFromBackup(
     , creation_mode(restore_settings_.create_access)
     , skip_unresolved_dependencies(restore_settings_.skip_unresolved_access_dependencies)
     , update_dependents(restore_settings_.update_access_entities_dependents)
+    , restore_with_current_grants(restore_settings_.restore_access_entities_with_current_grants)
     , log(getLogger("AccessRestorerFromBackup"))
 {
 }
@@ -354,14 +355,16 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case User::TYPE:
             {
                 const auto & user = typeid_cast<const User &>(*entity);
-                res.emplace_back(AccessType::CREATE_USER);
-                auto elements = user.access.getElements();
-                for (auto & element : elements)
+                res.emplace_back(AccessType::CREATE_USER, user.getName());
+                if (!restore_with_current_grants)
                 {
-                    if (element.is_partial_revoke)
-                        continue;
-                    element.grant_option = true;
-                    res.emplace_back(element);
+                    auto elements = user.access.getElements();
+                    for (auto & element : elements)
+                    {
+                        if (!element.is_partial_revoke)
+                            element.grant_option = true;
+                        res.emplace_back(element);
+                    }
                 }
                 if (!user.granted_roles.isEmpty())
                     res.emplace_back(AccessType::ROLE_ADMIN);
@@ -371,14 +374,16 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
             case Role::TYPE:
             {
                 const auto & role = typeid_cast<const Role &>(*entity);
-                res.emplace_back(AccessType::CREATE_ROLE);
-                auto elements = role.access.getElements();
-                for (auto & element : elements)
+                res.emplace_back(AccessType::CREATE_ROLE, role.getName());
+                if (!restore_with_current_grants)
                 {
-                    if (element.is_partial_revoke)
-                        continue;
-                    element.grant_option = true;
-                    res.emplace_back(element);
+                    auto elements = role.access.getElements();
+                    for (auto & element : elements)
+                    {
+                        if (!element.is_partial_revoke)
+                            element.grant_option = true;
+                        res.emplace_back(element);
+                    }
                 }
                 if (!role.granted_roles.isEmpty())
                     res.emplace_back(AccessType::ROLE_ADMIN);

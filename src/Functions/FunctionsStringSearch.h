@@ -13,7 +13,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -140,7 +142,7 @@ public:
         const auto & haystack_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
         const auto & needle_type = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1] : arguments[0];
 
-        if (!isStringOrFixedString(haystack_type))
+        if (!(isStringOrFixedString(haystack_type) || isEnum(haystack_type)))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
@@ -175,8 +177,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const ColumnPtr & column_haystack = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0].column : arguments[1].column;
+        auto & haystack_argument = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[0] : arguments[1];
+        ColumnPtr column_haystack = haystack_argument.column;
         const ColumnPtr & column_needle = (argument_order == ArgumentOrder::HaystackNeedle) ? arguments[1].column : arguments[0].column;
+
+        if (isEnum(haystack_argument.type))
+            column_haystack = castColumn(haystack_argument, std::make_shared<DataTypeString>());
 
         ColumnPtr column_start_pos = nullptr;
         if (arguments.size() >= 3)

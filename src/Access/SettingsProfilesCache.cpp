@@ -135,8 +135,8 @@ void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & ena
             merged_settings.emplace_back(new_element);
         }
 
-    merged_settings.merge(enabled.params.settings_from_enabled_roles);
-    merged_settings.merge(enabled.params.settings_from_user);
+    merged_settings.merge(enabled.params.settings_from_enabled_roles, /* normalize= */ false);
+    merged_settings.merge(enabled.params.settings_from_user, /* normalize= */ false);
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 

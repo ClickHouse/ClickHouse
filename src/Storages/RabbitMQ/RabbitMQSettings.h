@@ -35,6 +35,7 @@ struct RabbitMQSettingsImpl;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -53,6 +54,8 @@ struct RabbitMQSettings
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
     SettingsChanges getFormatSettings() const;
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<RabbitMQSettingsImpl> impl;

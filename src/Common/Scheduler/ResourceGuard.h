@@ -7,11 +7,11 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/Scheduler/ResourceLink.h>
 
-#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
 #include <condition_variable>
+#include <exception>
 #include <mutex>
 
 
@@ -109,13 +109,18 @@ public:
             dequeued_cv.notify_one();
         }
 
-        void wait()
+        // This function is executed inside scheduler thread and wakes thread that issued this `request`.
+        // That thread will throw an exception.
+        void failed(const std::exception_ptr & ptr) override
         {
-            CurrentMetrics::Increment scheduled(metrics->scheduled_count);
-            auto timer = CurrentThread::getProfileEvents().timer(metrics->wait_microseconds);
             std::unique_lock lock(mutex);
-            dequeued_cv.wait(lock, [this] { return state == Dequeued; });
+            chassert(state == Enqueued);
+            state = Dequeued;
+            exception = ptr;
+            dequeued_cv.notify_one();
         }
+
+        void wait();
 
         void finish(ResourceCost real_cost_, ResourceLink link_)
         {
@@ -151,6 +156,7 @@ public:
         std::mutex mutex;
         std::condition_variable dequeued_cv;
         RequestState state = Finished;
+        std::exception_ptr exception;
     };
 
     /// Creates pending request for resource; blocks while resource is not available (unless `Lock::Defer`)

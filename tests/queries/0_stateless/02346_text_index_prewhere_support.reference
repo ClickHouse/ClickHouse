@@ -1,0 +1,166 @@
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse')
+9
+9
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 0
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database'])
+12
+12
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasAnyTokens_12c047f4b3dd26289deedcb3914ac50f UInt8 : 0
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store'])
+4
+4
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasAllTokens_67ce908c110da22e8dfabdc5b2461e7e UInt8 : 0
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text2, 'fastio')
+3
+3
+Actions: INPUT : 0 -> __text_index_inv_idx2_hasToken_bd0a73d0c30edda02a64e2343897fa8a UInt8 : 0
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasAnyTokens(text2, ['search', 'index'])
+8
+8
+Actions: INPUT : 0 -> __text_index_inv_idx2_hasAnyTokens_30ca92657d5a26f7d718ae98d687d947 UInt8 : 0
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasAllTokens(text2, ['merge', 'tree'])
+2
+2
+Actions: INPUT : 0 -> __text_index_inv_idx2_hasAllTokens_518cab706843eae694663ae410afb96a UInt8 : 0
+Name: inv_idx2
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') AND a > 0
+9
+9
+INPUT : 1 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database']) AND id BETWEEN 10 AND 100
+9
+9
+INPUT : 1 -> __text_index_inv_idx1_hasAnyTokens_12c047f4b3dd26289deedcb3914ac50f UInt8 : 3
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) AND (a % 2) = 0
+4
+4
+INPUT : 1 -> __text_index_inv_idx1_hasAllTokens_67ce908c110da22e8dfabdc5b2461e7e UInt8 : 3
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'analytics') OR a < 0
+4
+4
+INPUT : 1 -> __text_index_inv_idx1_hasToken_204a3f4264c08cddce6e739e7cc2ac5e UInt8 : 2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (hasAnyTokens(text1, ['log', 'event']) OR hasToken(text2, 'error')) AND id > 0
+5
+5
+INPUT : 1 -> __text_index_inv_idx1_hasAnyTokens_1b6ddaa1516ebfd4d0bbd70a7fbf0955 UInt8 : 2
+INPUT : 2 -> __text_index_inv_idx2_hasToken_80aec043c4d3cd5c1fd62ec9f28fc548 UInt8 : 3
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (a > 100 AND hasToken(text1, 'hot')) OR (a <= 100 AND hasAnyTokens(text2, ['cold', 'warm']))
+0
+0
+INPUT : 1 -> __text_index_inv_idx1_hasToken_fa43ee0e78013d1beccc5ea73a314542 UInt8 : 2
+INPUT : 2 -> __text_index_inv_idx2_hasAnyTokens_f72df8660da2ff9863231cc88793beec UInt8 : 3
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') AND hasAnyTokens(text1, ['clickhouse', 'database'])
+9
+9
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 0
+INPUT : 1 -> __text_index_inv_idx1_hasAnyTokens_12c047f4b3dd26289deedcb3914ac50f UInt8 : 1
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['clickhouse', 'database']) AND NOT hasToken(text1, 'mysql')
+12
+12
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasAnyTokens_12c047f4b3dd26289deedcb3914ac50f UInt8 : 0
+INPUT : 1 -> __text_index_inv_idx1_hasToken_3684479f77734e8e477ada41a51ca47a UInt8 : 1
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) OR hasAnyTokens(text1, ['olap', 'analytics'])
+8
+8
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasAllTokens_67ce908c110da22e8dfabdc5b2461e7e UInt8 : 0
+INPUT : 1 -> __text_index_inv_idx1_hasAnyTokens_778991886a3005f3baf85723d2df46a2 UInt8 : 1
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') AND hasToken(text2, 'fastio')
+3
+3
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 0
+INPUT : 1 -> __text_index_inv_idx2_hasToken_bd0a73d0c30edda02a64e2343897fa8a UInt8 : 1
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAnyTokens(text1, ['search', 'query']) OR hasAllTokens(text2, ['index', 'optimize'])
+14
+14
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasAnyTokens_d545aaf68c1f9146a8180f9e86a0335c UInt8 : 0
+INPUT : 1 -> __text_index_inv_idx2_hasAllTokens_680ff84c43352c06274f4f9525af9933 UInt8 : 1
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (hasToken(text1, 'user') AND hasAnyTokens(text2, ['login', 'logout'])) OR (a >= 0 AND a <= 10)
+12
+12
+INPUT : 1 -> __text_index_inv_idx1_hasToken_85f3d1efe3123ac9bb86f9aae3dd003d UInt8 : 3
+INPUT : 2 -> __text_index_inv_idx2_hasAnyTokens_de94e14627f7cac2310406565b3f6b14 UInt8 : 4
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE NOT hasToken(text1, 'debug') AND hasAnyTokens(text2, ['info', 'warn', 'error'])
+2
+2
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasToken_0e7394b6b4305035b4f2769a86ce79cf UInt8 : 0
+INPUT : 1 -> __text_index_inv_idx2_hasAnyTokens_2a7d7afe87cda6ccdfe6fb9190379413 UInt8 : 1
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE NOT hasAllTokens(text1, ['internal', 'test']) AND a > 0 AND hasToken(text2, 'prod')
+2
+2
+INPUT : 1 -> __text_index_inv_idx1_hasAllTokens_1e46f6f1fffc22edbb5eb5c456409089 UInt8 : 2
+INPUT : 2 -> __text_index_inv_idx2_hasToken_fa1607a88660ff1938d7de6128c971f8 UInt8 : 3
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE NOT (hasAnyTokens(text1, ['drop', 'truncate']) OR hasToken(text2, 'danger')) AND id IN (1, 2, 3, 4)
+4
+4
+INPUT : 1 -> __text_index_inv_idx1_hasAnyTokens_152811574e204e114891a456fa3549eb UInt8 : 2
+INPUT : 2 -> __text_index_inv_idx2_hasToken_c9480586a627a4e19f67999f849c5bbf UInt8 : 3
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (a > 10 AND hasToken(text1, 'clickhouse')) OR (a <= 10 AND hasAnyTokens(text2, ['mysql', 'postgres']))
+8
+8
+INPUT : 1 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 2
+INPUT : 2 -> __text_index_inv_idx2_hasAnyTokens_28c81820cbc8fc809ac01ed7a94b9f27 UInt8 : 3
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (hasAllTokens(text1, ['column', 'store']) AND a BETWEEN 1 AND 100) OR (hasAnyTokens(text2, ['lake', 'warehouse']) AND id > 1000)
+2
+2
+INPUT : 2 -> __text_index_inv_idx1_hasAllTokens_67ce908c110da22e8dfabdc5b2461e7e UInt8 : 5
+INPUT : 3 -> __text_index_inv_idx2_hasAnyTokens_4ab65505a9827c6f159c723110afe4ab UInt8 : 6
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE (NOT hasToken(text1, 'archived') AND a > 0) OR (hasAnyTokens(text2, ['active', 'online']) AND id % 5 = 0)
+128
+128
+INPUT : 2 -> __text_index_inv_idx1_hasToken_eb33dfc4c4a7b6c38aa8ac853b4c155f UInt8 : 4
+INPUT : 3 -> __text_index_inv_idx2_hasAnyTokens_3048c776cfda056f6a2e9f7c7b18e6c4 UInt8 : 5
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') WHERE a > 0
+9
+9
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 0
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) WHERE a NOT IN (150, 160) AND id != 15
+4
+4
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasAllTokens_67ce908c110da22e8dfabdc5b2461e7e UInt8 : 0
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasToken(text1, 'clickhouse') WHERE hasToken(text2, 'fastio')
+3
+3
+Actions: INPUT : 0 -> __text_index_inv_idx1_hasToken_41322c936a4537f9edab965eabbbc82b UInt8 : 0
+Name: inv_idx2
+Name: inv_idx1
+SELECT count() FROM tab PREWHERE hasAllTokens(text1, ['column', 'store']) WHERE hasAnyTokens(text1, ['olap', 'analytics'])
+1
+1
+INPUT : 1 -> __text_index_inv_idx1_hasAllTokens_67ce908c110da22e8dfabdc5b2461e7e UInt8 : 1
+Name: inv_idx1

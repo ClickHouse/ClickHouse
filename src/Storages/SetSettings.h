@@ -32,6 +32,7 @@ struct SetSettingsImpl;
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -51,6 +52,8 @@ struct SetSettings
     SET_SETTINGS_SUPPORTED_TYPES(SetSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
     void loadFromQuery(ASTStorage & storage_def);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<SetSettingsImpl> impl;

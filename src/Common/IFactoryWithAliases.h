@@ -120,7 +120,7 @@ public:
         auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
         if (it != case_insensitive_name_mapping.end())
             return it->second;
-        return name;
+        return name;  /// NOLINT(bugprone-return-const-ref-from-parameter)
     }
 
     ~IFactoryWithAliases() override = default;

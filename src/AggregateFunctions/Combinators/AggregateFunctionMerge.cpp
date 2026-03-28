@@ -1,6 +1,7 @@
-#include "AggregateFunctionMerge.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionMerge.h>
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
@@ -12,6 +13,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+void AggregateFunctionMerge::add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const
+{
+    nested_func->merge(place, assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num], arena);
+}
+
 namespace
 {
 
@@ -19,6 +25,8 @@ class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinat
 {
 public:
     String getName() const override { return "Merge"; }
+
+    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

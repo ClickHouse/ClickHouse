@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <string>
 #include <vector>
 #include <unordered_set>
 #include <base/strong_typedef.h>
@@ -21,6 +20,7 @@ using Int128 = wide::integer<128, signed>;
 using UInt128 = wide::integer<128, unsigned>;
 using Int256 = wide::integer<256, signed>;
 using UInt256 = wide::integer<256, unsigned>;
+class BFloat16;
 
 namespace DB
 {

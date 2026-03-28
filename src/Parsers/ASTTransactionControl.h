@@ -23,12 +23,14 @@ public:
     explicit ASTTransactionControl(QueryType action_) : action(action_) {}
 
     String getID(char /*delimiter*/) const override { return "ASTTransactionControl"; }
-    ASTPtr clone() const override { return std::make_shared<ASTTransactionControl>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTTransactionControl>(*this); }
 
-    void formatImpl(const FormatSettings & format, FormatState & /*state*/, FormatStateStacked /*frame*/) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
     QueryKind getQueryKind() const override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState & /*state*/, FormatStateStacked /*frame*/) const override;
 };
 
 }

@@ -1,7 +1,16 @@
 ---
-slug: /en/operations/system-tables/text_log
+description: 'System table containing logging entries.'
+keywords: ['system table', 'text_log']
+slug: /operations/system-tables/text_log
+title: 'system.text_log'
+doc_type: 'reference'
 ---
-# text_log
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.text_log
+
+<SystemTableCloud/>
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 
@@ -15,14 +24,14 @@ Columns:
 - `thread_name` (String) — Name of the thread from which the logging was done.
 - `thread_id` (UInt64) — OS thread ID.
 - `level` (`Enum8`) — Entry level. Possible values:
-    - `1` or `'Fatal'`.
-    - `2` or `'Critical'`.
-    - `3` or `'Error'`.
-    - `4` or `'Warning'`.
-    - `5` or `'Notice'`.
-    - `6` or `'Information'`.
-    - `7` or `'Debug'`.
-    - `8` or `'Trace'`.
+  - `1` or `'Fatal'`.
+  - `2` or `'Critical'`.
+  - `3` or `'Error'`.
+  - `4` or `'Warning'`.
+  - `5` or `'Notice'`.
+  - `6` or `'Information'`.
+  - `7` or `'Debug'`.
+  - `8` or `'Trace'`.
 - `query_id` (String) — ID of the query.
 - `logger_name` (LowCardinality(String)) — Name of the logger (i.e. `DDLWorker`).
 - `message` (String) — The message itself.
@@ -43,11 +52,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.text_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                clickhouse.eu-central1.internal

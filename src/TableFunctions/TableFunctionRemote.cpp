@@ -1,4 +1,4 @@
-#include "TableFunctionRemote.h"
+#include <TableFunctions/TableFunctionRemote.h>
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
@@ -20,7 +20,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
+#include <Access/Common/AccessFlags.h>
 
 
 namespace DB
@@ -54,8 +55,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = args_func.at(0)->children;
 
     /**
-     * Number of arguments for remote function is 4.
-     * Number of arguments for cluster function is 6.
+     * Number of arguments for remote function is 6.
+     * Number of arguments for cluster function is 4.
      * For now named collection can be used only for remote as cluster does not require credentials.
      */
     size_t max_args = is_cluster_function ? 4 : 6;
@@ -115,8 +116,10 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         /// cluster('cluster_name')
         /// cluster('cluster_name', db.table)
         /// cluster('cluster_name', 'db', 'table')
+        /// cluster('cluster_name', table_function())
         /// cluster('cluster_name', db.table, sharding_key)
         /// cluster('cluster_name', 'db', 'table', sharding_key)
+        /// cluster('cluster_name', table_function(), sharding_key)
         ///
         /// clusterAllReplicas() - same as cluster()
 
@@ -133,7 +136,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             if (lit->value.getType() != Field::Types::String)
                 return false;
 
-            res = lit->value.safeGet<const String &>();
+            res = lit->value.safeGet<String>();
             return true;
         };
 
@@ -168,6 +171,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {
                 remote_table_function_ptr = args[arg_num];
                 ++arg_num;
+
+                /// Cluster function may have sharding key for insert
+                if (is_cluster_function && arg_num < args.size())
+                {
+                    sharding_key = args[arg_num];
+                    ++arg_num;
+                }
             }
             else
             {
@@ -256,10 +266,15 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         std::vector<std::vector<String>> names;
         names.reserve(shards.size());
         for (const auto & shard : shards)
-            names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
+        {
+            auto replicas = parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses);
+            if (replicas.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
+            names.push_back(std::move(replicas));
+        }
 
         if (names.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard list is empty after parsing first argument");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard list is empty after parsing the first argument");
 
         auto maybe_secure_port = context->getTCPPortSecure();
 
@@ -287,6 +302,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             treat_local_as_remote,
             treat_local_port_as_remote,
             secure,
+            /* bind_host= */ "",
             /* priority= */ Priority{1},
             /* cluster_name= */ "",
             /* cluster_secret= */ ""
@@ -309,6 +325,22 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
         cached_columns = getActualTableStructure(context, is_insert_query);
 
     assert(cluster);
+
+    bool has_local_shard = false;
+    for (const auto & shard_info : cluster->getShardsInfo())
+    {
+        if (shard_info.isLocal())
+        {
+            has_local_shard = true;
+            break;
+        }
+    }
+
+    if (has_local_shard && !is_insert_query)
+        context->checkAccess(AccessType::SELECT, remote_table_id);
+    else if (has_local_shard)
+        context->checkAccess(AccessType::INSERT, remote_table_id);
+
     StoragePtr res = std::make_shared<StorageDistributed>(
             StorageID(getDatabaseName(), table_name),
             cached_columns,
@@ -347,16 +379,16 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
         name,
         is_cluster_function ? 0 : 1,
         is_cluster_function ? 4 : 6,
-        is_cluster_function ? "[<cluster name or default if not specify>, <name of remote database>, <name of remote table>] [, sharding_key]"
+        is_cluster_function ? "[<cluster name or default if not specified>, [<database.table> | [<name of remote database>, <name of remote table>] | <table function>]] [, sharding_key]"
                             : "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]");
 }
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
-    factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
-    factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
-    factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {.documentation = {}, .allow_readonly = true}});
-    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {.documentation = {}, .allow_readonly = true}});
+    factory.registerFunction("remote", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); }, {}});
+    factory.registerFunction("remoteSecure", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); }, {}});
+    factory.registerFunction("cluster", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); }, {}, {.allow_readonly = true}});
+    factory.registerFunction("clusterAllReplicas", {[] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("clusterAllReplicas"); }, {}, {.allow_readonly = true}});
 }
 
 }

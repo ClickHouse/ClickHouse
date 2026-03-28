@@ -3,6 +3,7 @@
 
 #if USE_HIVE
 
+#include <Poco/URI.h>
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>

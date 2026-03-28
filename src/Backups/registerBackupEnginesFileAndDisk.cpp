@@ -1,13 +1,14 @@
+#include <filesystem>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
-#include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <filesystem>
 #include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -19,6 +20,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace Setting
+{
+extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 }
 
 
@@ -157,6 +163,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
+            archive_params.adaptive_buffer_max_size = params.context->getSettingsRef()[Setting::archive_adaptive_buffer_max_size_bytes];
         }
         else
         {
@@ -171,15 +178,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 reader = std::make_shared<BackupReaderFile>(path, params.read_settings, params.write_settings);
             else
                 reader = std::make_shared<BackupReaderDisk>(disk, path, params.read_settings, params.write_settings);
-            return std::make_unique<BackupImpl>(
-                params.backup_info,
-                archive_params,
-                params.base_backup_info,
-                reader,
-                params.context,
-                params.is_internal_backup,
-                params.use_same_s3_credentials_for_base_backup,
-                params.use_same_password_for_base_backup);
+            return std::make_unique<BackupImpl>(params, archive_params, reader);
         }
 
         std::shared_ptr<IBackupWriter> writer;
@@ -187,18 +186,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
         else
             writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
-        return std::make_unique<BackupImpl>(
-            params.backup_info,
-            archive_params,
-            params.base_backup_info,
-            writer,
-            params.context,
-            params.is_internal_backup,
-            params.backup_coordination,
-            params.backup_uuid,
-            params.deduplicate_files,
-            params.use_same_s3_credentials_for_base_backup,
-            params.use_same_password_for_base_backup);
+        return std::make_unique<BackupImpl>(params, archive_params, writer);
     };
 
     factory.registerBackupEngine("File", creator_fn);

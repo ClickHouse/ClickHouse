@@ -81,7 +81,7 @@ struct CustomWeekTransformImpl
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 DateTime64 dt64;
-                ReadBufferFromString buf(sources->getDataAt(i).toView());
+                ReadBufferFromString buf(sources->getDataAt(i));
                 parseDateTime64BestEffort(dt64, 0, buf, time_zone, utc_time_zone);
                 col_to->getData()[i] = static_cast<ToDataType::FieldType>(transform.execute(dt64, week_mode, time_zone));
             }

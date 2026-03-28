@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MutationCommands.h>
-#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB
@@ -24,6 +23,8 @@ struct MutationContext;
 class MutateTask
 {
 public:
+    static constexpr auto TEMP_DIRECTORY_PREFIX = "tmp_mut_";
+
     MutateTask(
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
@@ -40,6 +41,8 @@ public:
         bool need_prefix_);
 
     bool execute();
+    void cancel() noexcept;
+
     void updateProfileEvents() const;
 
     std::future<MergeTreeData::MutableDataPartPtr> getFuture()

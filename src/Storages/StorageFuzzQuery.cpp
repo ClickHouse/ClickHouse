@@ -1,14 +1,14 @@
 #include <Storages/StorageFuzzQuery.h>
 
-#include <optional>
-#include <unordered_set>
 #include <Columns/ColumnString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -49,12 +49,11 @@ ColumnPtr FuzzQuerySource::createColumn()
             continue;
         }
 
-        IColumn::Offset next_offset = offset + fuzzed_text.size() + 1;
+        IColumn::Offset next_offset = offset + fuzzed_text.size();
         data_to.resize(next_offset);
 
         std::copy(fuzzed_text.begin(), fuzzed_text.end(), &data_to[offset]);
 
-        data_to[offset + fuzzed_text.size()] = 0;
         offsets_to[row_num] = next_offset;
 
         offset = next_offset;
@@ -105,7 +104,7 @@ Pipe StorageFuzzQuery::read(
     auto query = parseQuery(parser, begin, end, "", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<FuzzQuerySource>(max_block_size, block_header, config, query));
+        pipes.emplace_back(std::make_shared<FuzzQuerySource>(max_block_size, std::make_shared<const Block>(block_header), config, query));
 
     return Pipe::unitePipes(std::move(pipes));
 }

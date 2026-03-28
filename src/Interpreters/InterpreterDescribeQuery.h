@@ -37,7 +37,6 @@ private:
 
     std::vector<ColumnDescription> columns;
     std::vector<ColumnDescription> virtual_columns;
-    StorageSnapshotPtr storage_snapshot;
 };
 
 

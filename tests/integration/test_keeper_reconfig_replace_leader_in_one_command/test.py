@@ -48,7 +48,7 @@ def started_cluster():
 
 
 def get_fake_zk(node):
-    return ku.get_fake_zk(cluster, node)
+    return ku.get_fake_zk(cluster, node.name)
 
 
 def get_config_str(zk):

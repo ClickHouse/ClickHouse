@@ -17,7 +17,7 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_log_quries_probability_one(start_cluster):
+def test_log_queries_probability_one(start_cluster):
     for i in range(100):
         node1.query("SELECT 12345", settings={"log_queries_probability": 0.5})
 
@@ -45,7 +45,7 @@ def test_log_quries_probability_one(start_cluster):
     node1.query("TRUNCATE TABLE system.query_log")
 
 
-def test_log_quries_probability_two(start_cluster):
+def test_log_queries_probability_two(start_cluster):
     for i in range(100):
         node1.query(
             "SELECT 12345 FROM remote('node2', system, one)",
