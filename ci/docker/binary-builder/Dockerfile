@@ -25,8 +25,8 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
 
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
-    && apt-get upgrade --yes \
-    && apt-get install --yes \
+    && apt-get -o Dpkg::Options::="--force-overwrite" upgrade --yes \
+    && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
         python3-boto3 \
