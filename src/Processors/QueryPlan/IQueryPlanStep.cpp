@@ -1,3 +1,4 @@
+#include <string_view>
 #include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
@@ -5,6 +6,7 @@
 #include <Common/CurrentThread.h>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -13,6 +15,87 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace QueryPlanFormat
+{
+    std::string_view trimColumnIdentifier(std::string_view name)
+    {
+        if (name.find("__table") == std::string_view::npos)
+            return name;
+
+        auto dot_pos = name.rfind('.');
+        if (dot_pos != std::string_view::npos)
+            return name.substr(dot_pos + 1);
+
+        return name;
+    }
+
+    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    {
+        const auto & input_headers = step.getInputHeaders();
+        if (input_headers.size() != 2 || !input_headers[0] || !input_headers[1])
+            return;
+
+        out << prefix << "Output:\n";
+
+        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        {
+            out << prefix << "  Left:  Empty\n";
+            out << prefix << "  Right: Empty\n";
+            return;
+        }
+
+        const auto & output = *step.getOutputHeader();
+        const auto & left_input = *input_headers[0];
+        const auto & right_input = *input_headers[1];
+
+        std::vector<std::string_view> left_columns;
+        std::vector<std::string_view> right_columns;
+
+        for (const auto & col : output)
+        {
+            auto trimmed = trimColumnIdentifier(col.name);
+            if (left_input.has(col.name))
+                left_columns.push_back(trimmed);
+            else if (right_input.has(col.name))
+                right_columns.push_back(trimmed);
+        }
+
+        out << prefix << "  Left:  ";
+        if (left_columns.empty())
+            out << "Empty";
+        else
+            out << fmt::format("{}", fmt::join(left_columns, ", "));
+        out << "\n";
+
+        out << prefix << "  Right: ";
+        if (right_columns.empty())
+            out << "Empty";
+        else
+            out << fmt::format("{}", fmt::join(right_columns, ", "));
+        out << "\n";
+    }
+
+    void formatOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix)
+    {
+        if (!step.hasOutputHeader() || step.getOutputHeader()->empty())
+        {
+            out << prefix << "Output: Empty\n";
+            return;
+        }
+
+        out << prefix << "Output: ";
+        bool first = true;
+        for (const auto & elem : *step.getOutputHeader())
+        {
+            if (!first)
+                out << ", ";
+            first = false;
+            out << trimColumnIdentifier(elem.name);
+        }
+        out << '\n';
+    }
 }
 
 IQueryPlanStep::IQueryPlanStep()

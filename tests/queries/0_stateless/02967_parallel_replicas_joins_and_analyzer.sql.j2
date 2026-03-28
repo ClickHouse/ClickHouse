@@ -20,6 +20,7 @@ set enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_paralle
 SET optimize_read_in_order = 1, optimize_sorting_by_input_stream_properties = 1;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET enable_join_runtime_filters = 1; -- Changes the plan (BuildRuntimeFilter node)
 
 {% for use_global_in in [0, 1] -%}
 
