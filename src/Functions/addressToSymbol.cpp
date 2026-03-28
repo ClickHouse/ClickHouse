@@ -1,18 +1,12 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #   define HAS_SYMBOL_INDEX 1
 #elif defined(OS_DARWIN)
-#   define HAS_DLADDR 1
+#   define HAS_SYMBOL_INDEX 1
 #endif
 
-#if defined(HAS_SYMBOL_INDEX) || defined(HAS_DLADDR)
+#if defined(HAS_SYMBOL_INDEX)
 
-#ifdef HAS_SYMBOL_INDEX
 #include <Common/SymbolIndex.h>
-#endif
-
-#ifdef HAS_DLADDR
-#include <dlfcn.h>
-#endif
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -83,7 +77,6 @@ public:
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
 
-#ifdef HAS_SYMBOL_INDEX
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -93,16 +86,6 @@ public:
             else
                 result_column->insertDefault();
         }
-#elif defined(HAS_DLADDR)
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            Dl_info info;
-            if (dladdr(reinterpret_cast<const void *>(data[i]), &info) != 0 && info.dli_sname)
-                result_column->insertData(info.dli_sname, strlen(info.dli_sname));
-            else
-                result_column->insertDefault();
-        }
-#endif
 
         return result_column;
     }

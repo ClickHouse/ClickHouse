@@ -1,7 +1,9 @@
 #pragma once
 
+#include "config.h"
+
 #include <IO/CompressionMethod.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <Poco/UUIDGenerator.h>
 
@@ -10,24 +12,25 @@ namespace DB
 
 #if USE_AVRO
 
+struct GeneratedMetadataFileWithInfo
+{
+    Iceberg::IcebergPathFromMetadata path;
+    Int32 version;
+    CompressionMethod compression_method;
+};
+
+/// Generates Iceberg metadata paths (IcebergPathFromMetadata) for new files.
+///
+/// All generated paths use table_location as prefix, ensuring they are
+/// always in the correct format for writing into Iceberg metadata files.
+/// To get the actual storage path for I/O, pass the result through
+/// IcebergPathResolver::resolve().
 class FileNamesGenerator
 {
 public:
-    struct Result
-    {
-        /// Path recorded in the Iceberg metadata files.
-        /// If `write_full_path_in_iceberg_metadata` is disabled, it will be a simple relative path (e.g., /a/b/c.avro).
-        /// Otherwise, it will include a prefix indicating the file system type (e.g., s3://a/b/c.avro).
-        String path_in_metadata;
-
-        /// Actual path to the object in the storage (e.g., /a/b/c.avro).
-        String path_in_storage;
-    };
-
     FileNamesGenerator() = default;
     explicit FileNamesGenerator(
-        const String & table_dir_,
-        const String & storage_dir_,
+        const String & table_location_,
         bool use_uuid_in_metadata_,
         CompressionMethod compression_method_,
         const String & format_name_);
@@ -35,29 +38,24 @@ public:
     FileNamesGenerator(const FileNamesGenerator & other);
     FileNamesGenerator & operator=(const FileNamesGenerator & other);
 
-    Result generateDataFileName();
-    Result generateManifestEntryName();
-    Result generateManifestListName(Int64 snapshot_id, Int32 format_version);
-    Result generateMetadataName();
-    Result generateVersionHint();
-    Result generatePositionDeleteFile();
-
-    String convertMetadataPathToStoragePath(const String & metadata_path) const;
+    /// All generate* methods return IcebergPathFromMetadata.
+    /// These paths are ready to be written into Iceberg metadata files.
+    /// To get a storage path for actual I/O, use IcebergPathResolver::resolve().
+    Iceberg::IcebergPathFromMetadata generateDataFileName();
+    Iceberg::IcebergPathFromMetadata generateManifestEntryName();
+    Iceberg::IcebergPathFromMetadata generateManifestListName(Int64 snapshot_id, Int32 format_version);
+    GeneratedMetadataFileWithInfo generateMetadataPathWithInfo();
+    Iceberg::IcebergPathFromMetadata generateVersionHint();
+    Iceberg::IcebergPathFromMetadata generatePositionDeleteFile();
 
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
 private:
     Poco::UUIDGenerator uuid_generator;
-    String table_dir;
-    String storage_dir;
-
-    String data_dir;
-    String metadata_dir;
-    String storage_data_dir;
-    String storage_metadata_dir;
-    bool use_uuid_in_metadata;
-    CompressionMethod compression_method;
+    String table_location;
+    bool use_uuid_in_metadata = false;
+    CompressionMethod compression_method = CompressionMethod::None;
     String format_name;
 
     Int32 initial_version = 0;

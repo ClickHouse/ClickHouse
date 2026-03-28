@@ -29,8 +29,7 @@ from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell, Utils
 
-TIMEOUT_MASTER = 60 * 60  # 60 minutes for nightly/master runs
-TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
+TIMEOUT = 60 * 60  # 60 minutes
 NO_CHANGES_MSG = "Nothing to run"
 RUNNER_OUTPUT = "/test_output"
 
@@ -396,8 +395,6 @@ def main():
         "clickhouse/stateless-test"
     ).pull_image()
 
-    is_master = info.pr_number == 0 and info.git_branch == "master"
-
     fuzzers_path = temp_path
     download_corpus(fuzzers_path)
 
@@ -418,11 +415,7 @@ def main():
         check_name, run_by_hash_num, run_by_hash_total
     )
 
-    timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
-    additional_envs.append(f"TIMEOUT={timeout}")
-
-    if not is_master:
-        additional_envs.append("SKIP_MERGE=1")
+    additional_envs.append(f"TIMEOUT={TIMEOUT}")
 
     run_command = get_run_command(
         fuzzers_path,
@@ -435,7 +428,7 @@ def main():
 
     if Shell.run(run_command) == 0:
         logging.info("Run successfully")
-        if is_master:
+        if info.pr_number == 0 and info.git_branch == "master":
             logging.info("Uploading corpus - running in master")
             upload_corpus(fuzzers_path)
         else:
