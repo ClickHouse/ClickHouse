@@ -72,11 +72,12 @@ bool MergeTreeLeaderElection::isLeader() const
         return false;
 
     /// Protect against stalled heartbeat thread: if the last successful renewal
-    /// was too long ago (more than session_timeout), we cannot be sure the lease
-    /// is still valid.
+    /// was too long ago, we cannot be sure the lease is still valid.
+    /// We use 2x heartbeat interval as the threshold — this gives a comfortable margin
+    /// for scheduling jitter while being well within the session timeout.
     auto elapsed = std::chrono::steady_clock::now() - last_renewal_time.load(std::memory_order_acquire);
     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    return static_cast<UInt64>(elapsed_ms) < session_timeout_ms;
+    return static_cast<UInt64>(elapsed_ms) < heartbeat_interval_ms * 2;
 }
 
 void MergeTreeLeaderElection::assertIsLeader() const

@@ -2165,7 +2165,7 @@ namespace ErrorCodes
     )", BETA) \
     DECLARE(Seconds, leader_election_session_timeout, 30, R"(
     Session timeout in seconds for leader election. If the leader does not renew its lease within this period,
-    a follower will assume that the leader is dead and try to claim leadership. Must be greater than
+    a follower will assume that the leader is dead and try to claim leadership. Must be at least 3x
     `leader_election_heartbeat_interval`. Only takes effect when `leader_election` is enabled.
     )", BETA) \
 
@@ -2497,11 +2497,11 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock.value);
     }
 
-    if (leader_election && leader_election_session_timeout.totalSeconds() <= leader_election_heartbeat_interval.totalSeconds())
+    if (leader_election && leader_election_session_timeout.totalSeconds() < leader_election_heartbeat_interval.totalSeconds() * 3)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The value of `leader_election_session_timeout` ({} s) must be greater than"
+            "The value of `leader_election_session_timeout` ({} s) must be at least 3x"
             " the value of `leader_election_heartbeat_interval` ({} s)",
             leader_election_session_timeout.totalSeconds(),
             leader_election_heartbeat_interval.totalSeconds());
