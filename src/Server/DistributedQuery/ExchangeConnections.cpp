@@ -52,6 +52,16 @@ FutureConnectionPtr ExchangeConnections::getConnection(const String & query_id, 
     {
         /// addConnection hasn't been called yet, create a new FutureConnection
         /// It will be populated by addConnection later
+        LOG_WARNING(log, "getConnection: key ({}, {}) not found in map. Map has {} entries: [{}]",
+            query_id, exchange_stream_id,
+            pending_connections.size(),
+            [&]()
+            {
+                String s;
+                for (const auto & [k, _] : pending_connections)
+                    s += fmt::format("({},{})", k.first, k.second);
+                return s;
+            }());
         auto & element = pending_connections[connection_key];
         chassert(!element);
         element = std::make_shared<FutureConnection>();
