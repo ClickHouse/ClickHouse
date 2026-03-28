@@ -22,13 +22,13 @@ function create_and_populate()
 {
     $CLICKHOUSE_CLIENT --query "
         CREATE DATABASE IF NOT EXISTS $DB ENGINE = Replicated('$ZK_PATH', 's0', 'r0');
-    " 2>/dev/null
+    " > /dev/null 2>&1
 
     # Create several tables to advance max_log_ptr.
     for i in $(seq 1 5); do
         $CLICKHOUSE_CLIENT --query "
             CREATE TABLE IF NOT EXISTS $DB.t_$i (x UInt64) ENGINE = MergeTree ORDER BY x;
-        " 2>/dev/null
+        " > /dev/null 2>&1
     done
 }
 
@@ -36,20 +36,21 @@ function drop_and_recreate()
 {
     while true; do
         [[ $SECONDS -gt $TIMEOUT ]] && break
-        $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" 2>/dev/null
+        $CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1
         create_and_populate
     done
 }
 
 function do_backups()
 {
+    local WORKER_ID=$BASHPID
     local I=0
     while true; do
         [[ $SECONDS -gt $TIMEOUT ]] && break
         I=$((I + 1))
         $CLICKHOUSE_CLIENT --query "
-            BACKUP DATABASE $DB TO Disk('backups', '${CLICKHOUSE_DATABASE}_recreate_$I')
-            SETTINGS id = '${CLICKHOUSE_DATABASE}_recreate_$I' ASYNC
+            BACKUP DATABASE $DB TO Disk('backups', '${CLICKHOUSE_DATABASE}_recreate_${WORKER_ID}_$I')
+            SETTINGS id = '${CLICKHOUSE_DATABASE}_recreate_${WORKER_ID}_$I' ASYNC
         " > /dev/null 2>&1
     done
 }
@@ -72,7 +73,7 @@ $CLICKHOUSE_CLIENT --query "
     $CLICKHOUSE_CLIENT --query "SYSTEM UNFREEZE WITH ID = '$backup_id'" > /dev/null 2>&1
 done
 
-$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" 2>/dev/null
+$CLICKHOUSE_CLIENT --query "DROP DATABASE IF EXISTS $DB SYNC" > /dev/null 2>&1
 
 # The main assertion: the server is alive and no logical errors occurred.
 $CLICKHOUSE_CLIENT --query "SELECT 1"
