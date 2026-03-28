@@ -13,13 +13,10 @@ using namespace DB;
 /// applyPatchesToBlock was called with a patch part whose column type
 /// had diverged from the result block type due to schema evolution.
 ///
-/// Without the type->equals() guard the patch was applied blindly,
-/// causing insertFrom to reinterpret ColumnString memory as
-/// ColumnVector (or vice-versa) → SIGSEGV at a garbage pointer.
-///
-/// With the guard the mismatched patch is skipped and the result
-/// block retains its original data for that column.
-TEST(ApplyPatches, TypeMismatchSkipsPatch)
+/// The fix uses castColumn to convert the mismatched patch data to
+/// the result type, preserving values instead of silently dropping them.
+/// UInt64 42 is cast to String "42" and applied.
+TEST(ApplyPatches, TypeMismatchCastsPatch)
 {
     /// ---------- result block (current schema: String column) ----------
     auto result_col = ColumnString::create();
@@ -61,11 +58,11 @@ TEST(ApplyPatches, TypeMismatchSkipsPatch)
 
     /// ---------- verify ----------
     /// The patch has UInt64 type while the result has String type.
-    /// The guard must skip the patch, so row 1 keeps its original value.
+    /// castColumn converts UInt64 42 → String "42" and applies the patch.
     const auto & col = result_block.getByName("value").column;
     ASSERT_EQ(col->size(), 3u);
     EXPECT_EQ((*col)[0].safeGet<String>(), "aaa");
-    EXPECT_EQ((*col)[1].safeGet<String>(), "bbb");   /// NOT "42" or garbled
+    EXPECT_EQ((*col)[1].safeGet<String>(), "42");   /// UInt64 42 cast to String "42"
     EXPECT_EQ((*col)[2].safeGet<String>(), "ccc");
 }
 
@@ -113,9 +110,9 @@ TEST(ApplyPatches, SameTypeAppliesPatch)
     EXPECT_EQ((*col)[2].safeGet<UInt64>(), 300u);
 }
 
-/// When multiple patch sources exist and only some have mismatched types,
-/// the compatible sources must still be applied (per-source filtering).
-TEST(ApplyPatches, MixedTypeSourcesAppliesCompatibleOnes)
+/// When multiple patch sources exist and some have mismatched types,
+/// all patches are applied — mismatched ones are cast to the result type.
+TEST(ApplyPatches, MixedTypeSourcesCastsAll)
 {
     /// Result block: String column with 4 rows.
     auto result_col = ColumnString::create();
@@ -134,7 +131,7 @@ TEST(ApplyPatches, MixedTypeSourcesAppliesCompatibleOnes)
     result_block.insert({result_col->getPtr(), std::make_shared<DataTypeString>(), "value"});
     result_block.insert({version_col->getPtr(), std::make_shared<DataTypeUInt64>(), PartDataVersionColumn::name});
 
-    /// Patch 1: INCOMPATIBLE — UInt64 type, wants to update row 1.
+    /// Patch 1: MISMATCHED — UInt64 type, wants to update row 1. Will be cast to String.
     auto p1_value = ColumnUInt64::create();
     p1_value->insert(42u);
     auto p1_version = ColumnUInt64::create();
@@ -172,7 +169,7 @@ TEST(ApplyPatches, MixedTypeSourcesAppliesCompatibleOnes)
     const auto & col = result_block.getByName("value").column;
     ASSERT_EQ(col->size(), 4u);
     EXPECT_EQ((*col)[0].safeGet<String>(), "a");
-    EXPECT_EQ((*col)[1].safeGet<String>(), "b");        /// incompatible patch skipped
+    EXPECT_EQ((*col)[1].safeGet<String>(), "42");        /// UInt64 42 cast to String "42"
     EXPECT_EQ((*col)[2].safeGet<String>(), "updated");   /// compatible patch applied
     EXPECT_EQ((*col)[3].safeGet<String>(), "d");
 }

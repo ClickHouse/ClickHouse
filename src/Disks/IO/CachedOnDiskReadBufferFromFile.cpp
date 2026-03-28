@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int UNKNOWN_FILE_SIZE;
+    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
 }
 
 CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
@@ -100,6 +101,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , use_external_buffer(use_external_buffer_)
     , cache_log(settings_.enable_filesystem_cache_log ? cache_log_ : nullptr)
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
+    , skip_cache_on_disk_failure(cache_->skipCacheOnDiskFailure())
     , info(
         cache_key_,
         source_file_path_,
@@ -686,6 +688,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
     size_t offset,
     ReadFromFileSegmentState & state,
     ReadInfo & info,
+    bool skip_cache_on_disk_failure,
     LoggerPtr log)
 {
     OpenTelemetry::SpanHolder span("CachedOnDiskReadBufferFromFile::predownload");
@@ -811,6 +814,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                     size,
                     current_write_offset,
                     file_segment,
+                    skip_cache_on_disk_failure,
                     log);
 
                 if (continue_predownload)
@@ -927,6 +931,7 @@ bool CachedOnDiskReadBufferFromFile::writeCache(
     size_t size,
     size_t offset,
     FileSegment & file_segment,
+    bool skip_on_disk_failure,
     LoggerPtr log)
 {
     Stopwatch watch(CLOCK_MONOTONIC);
@@ -941,10 +946,19 @@ bool CachedOnDiskReadBufferFromFile::writeCache(
         if (code == /* No space left on device */28 || code == /* Quota exceeded */122)
         {
             LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
+            chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             return false;
         }
         chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
-        throw;
+        if (skip_on_disk_failure)
+        {
+            LOG_ERROR(log, "Insert into cache is skipped due to disk IO error. ({})", e.displayText());
+            return false;
+        }
+        throw Exception(ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK,
+            "Filesystem cache disk IO error (errno {}): {}. "
+            "Consider setting skip_cache_on_disk_failure=true in cache config.",
+            code, e.displayText());
     }
 
     watch.stop();
@@ -1080,6 +1094,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             *state,
             info,
             implementation_buffer_can_be_reused,
+            skip_cache_on_disk_failure,
             log);
 
         chassert(state->buf->buffer().begin() == internal_buffer.begin());
@@ -1112,6 +1127,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     ReadFromFileSegmentState & state,
     ReadInfo & info,
     bool & implementation_buffer_can_be_reused,
+    bool skip_cache_on_disk_failure,
     LoggerPtr log)
 {
     LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
@@ -1122,7 +1138,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     size_t size = 0;
     if (state.bytes_to_predownload)
     {
-        if (!predownloadForFileSegment(file_segment, offset, state, info, log))
+        if (!predownloadForFileSegment(file_segment, offset, state, info, skip_cache_on_disk_failure, log))
         {
             chassert(!state.buf->available());
             chassert(state.read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE);
@@ -1229,7 +1245,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             {
                 chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(state.buf->getPosition()));
 
-                success = writeCache(state.buf->buffer().begin(), size, offset, file_segment, log);
+                success = writeCache(state.buf->buffer().begin(), size, offset, file_segment, skip_cache_on_disk_failure, log);
                 if (success)
                 {
                     chassert(file_segment.getCurrentWriteOffset() <= file_segment.range().right + 1);
@@ -1483,6 +1499,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             *current_state,
             current_info,
             implementation_buffer_can_be_reused,
+            skip_cache_on_disk_failure,
             log);
 
         LOG_TEST(

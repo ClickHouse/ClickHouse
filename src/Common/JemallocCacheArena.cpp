@@ -11,6 +11,7 @@
 
 #include <fmt/format.h>
 #include <string>
+#include <atomic>
 
 namespace ProfileEvents
 {
@@ -31,8 +32,12 @@ namespace ErrorCodes
 namespace DB::JemallocCacheArena
 {
 
+std::atomic<bool> enabled{true};
+
 namespace
 {
+
+bool arena_created = false;
 
 unsigned createArena()
 {
@@ -41,19 +46,37 @@ unsigned createArena()
     int err = je_mallctl("arenas.create", &arena_index, &arena_index_size, nullptr, 0);
     if (err)
         throw DB::Exception(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "JemallocCacheArena: Failed to create jemalloc arena, error: {}", err);
+    arena_created = true;
     return arena_index;
 }
 
 }
 
+void setEnabled(bool value)
+{
+    chassert(!arena_created || value);
+    enabled.store(value, std::memory_order_relaxed);
+}
+
+bool isEnabled()
+{
+    return enabled.load(std::memory_order_relaxed);
+}
+
 unsigned getArenaIndex()
 {
+    if (!enabled.load(std::memory_order_relaxed))
+        return 0;
+
     static unsigned index = createArena();
     return index;
 }
 
 void purge()
 {
+    if (!enabled.load(std::memory_order_relaxed))
+        return;
+
     static Jemalloc::MibCache<unsigned> purge_mib(fmt::format("arena.{}.purge", getArenaIndex()).c_str());
 
     Stopwatch watch;
@@ -69,6 +92,8 @@ void purge()
 namespace DB::JemallocCacheArena
 {
 
+void setEnabled(bool) {}
+bool isEnabled() { return false; }
 unsigned getArenaIndex() { return 0; }
 void purge() {}
 

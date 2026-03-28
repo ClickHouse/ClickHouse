@@ -210,12 +210,6 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
-        if (input_rows_count == 0)
-        {
-            /// We are not sure if it is const column or not if has_nullable is true.
-            return result_type->createColumn();
-        }
-
         bool all_columns_constant = true;
         bool all_numeric_types = true;
         for (const auto & arg: args)
@@ -232,6 +226,16 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             WhichDataType which(removeNullable(arg.type));
             if (!which.isNumber() && !which.isEnum() && !which.isDateOrDate32OrDateTimeOrDateTime64() && !which.isInterval())
                 all_numeric_types = false;
+        }
+
+        if (input_rows_count == 0 && !all_columns_constant)
+        {
+            /// With 0 rows and non-constant columns, we cannot determine the result's constness,
+            /// so return a non-constant empty column. When all columns ARE constant, we fall through
+            /// to the normal paths (all_columns_constant or all_numeric_types) which correctly
+            /// produce a constant result, preserving constness consistency between
+            /// ExpressionActions::execute and ActionsDAG::updateHeader.
+            return result_type->createColumn();
         }
 
         if (all_columns_constant || all_numeric_types)
