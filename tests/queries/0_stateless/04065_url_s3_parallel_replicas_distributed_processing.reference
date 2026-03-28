@@ -1,0 +1,8 @@
+--- url with parallel replicas ---
+1
+--- s3 with parallel replicas ---
+3
+--- s3 with parallel replicas, verify data ---
+1	a
+2	b
+3	c
