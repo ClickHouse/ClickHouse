@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTLiteral.h>
@@ -93,6 +94,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
+    extern const SettingsBool use_statistics_for_part_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -666,7 +668,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     {
         auto description = minmax_idx_condition->getDescription();
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::MinMax,
+            .type = ReadFromMergeTree::IndexType::PartitionMinMax,
             .condition = std::move(description.condition),
             .used_keys = std::move(description.used_keys),
             .num_parts_after = part_filter_counters.num_parts_after_minmax,
@@ -686,6 +688,80 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     }
 
     return res;
+}
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Disable statistics-based pruning when:
+    /// 1. The setting is disabled
+    /// 2. The query uses FINAL
+    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    if (!settings[Setting::use_statistics_for_part_pruning]
+        || query_info.isFinal()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+    {
+        return parts;
+    }
+
+    if (!query_info.filter_actions_dag)
+        return parts;
+
+    const auto & filter_node = *query_info.filter_actions_dag->getOutputs().front();
+    StatisticsPartPruner statistics_pruner(metadata_snapshot, filter_node, context);
+
+    if (statistics_pruner.isUseless())
+        return parts;
+
+    RangesInDataParts res_parts;
+    size_t total_parts_before = parts.size();
+
+    for (const auto & part : parts)
+    {
+        try
+        {
+            auto estimates = part.data_part->getEstimates();
+            if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+            {
+                LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+                continue;
+            }
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Failed to use statistics for part {}, skipping statistics pruning for this part",
+                part.data_part->name), LogsLevel::debug);
+        }
+        res_parts.push_back(part);
+    }
+
+    if (res_parts.size() < total_parts_before)
+    {
+        size_t total_granules_after = 0;
+        for (const auto & part : res_parts)
+        {
+            total_granules_after += part.data_part->index_granularity->getMarksCountWithoutFinal();
+        }
+
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Statistics,
+            .used_keys = statistics_pruner.getUsedColumns(),
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Statistics pruning: {} parts -> {} parts", total_parts_before, res_parts.size());
+    }
+
+    return res_parts;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(IndexAnalysisContext & filter_context, RangesInDataParts parts_with_ranges, ReadFromMergeTree::IndexStats & index_stats)
@@ -758,6 +834,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
+
+    /// Tracks granules dropped by each skip index, keyed by index identity (not loop position).
+    /// Used to report only indices that actually filtered something in query_log.skip_indices.
+    std::vector<std::atomic<size_t>> index_dropped_granules(skip_indexes.useful_indices.size());
+    for (auto & counter : index_dropped_granules)
+        counter.store(0, std::memory_order_relaxed);
 
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
@@ -936,7 +1018,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
-                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    const size_t dropped = total_granules - ranges.ranges.getNumberOfMarks();
+                    stat.granules_dropped.fetch_add(dropped, std::memory_order_relaxed);
+                    index_dropped_granules[index_idx].fetch_add(dropped, std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -951,8 +1035,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
-
-            }
+           }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization)
@@ -1093,6 +1176,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const auto num_indices = skip_indexes.useful_indices.size();
+
+    if (!skip_indexes.useful_indices.empty() && context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        for (size_t idx = 0; idx < num_indices; ++idx)
+            if (index_dropped_granules[idx].load(std::memory_order_relaxed) > 0)
+                query_context->addSkipIndexAccessInfo(
+                    filter_context.storage_id.getFullTableName(),
+                    skip_indexes.useful_indices[idx].index->index.name);
+    }
 
     const auto part_stats_granularity = settings[Setting::per_part_index_stats] ? original_num_parts : 1;
     for (size_t part_index = 0; part_index < part_stats_granularity; ++part_index)
