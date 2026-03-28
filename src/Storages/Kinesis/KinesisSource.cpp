@@ -55,7 +55,6 @@ Chunk KinesisSource::generate()
     if (!consumer || is_finished)
         return {};
 
-    /// Each call to generate() produces at most one block
     is_finished = true;
 
     size_t total_rows = 0;

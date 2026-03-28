@@ -62,7 +62,6 @@ String KinesisConsumer::getOrRefreshIterator(const String & shard_id, KinesisSha
 
     if (!state.last_sequence.empty())
     {
-        /// Resume after last successfully consumed record
         request.SetShardIteratorType(Aws::Kinesis::Model::ShardIteratorType::AFTER_SEQUENCE_NUMBER);
         request.SetStartingSequenceNumber(state.last_sequence);
     }

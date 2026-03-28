@@ -35,6 +35,8 @@ public:
 
     String getName() const override { return "KinesisSource"; }
 
+    KinesisConsumerPtr getConsumer() const { return consumer; }
+
     ~KinesisSource() override;
 
 protected:

@@ -90,6 +90,10 @@ void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory);
 #endif
 
+#if USE_AWS_KINESIS
+void registerStorageKinesis(StorageFactory & factory);
+#endif
+
 #if USE_ROCKSDB
 void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 #endif
@@ -197,6 +201,10 @@ void registerStorages()
 
 #if USE_NATSIO
     registerStorageNATS(factory);
+#endif
+
+#if USE_AWS_KINESIS
+    registerStorageKinesis(factory);
 #endif
 
 #if USE_ROCKSDB
