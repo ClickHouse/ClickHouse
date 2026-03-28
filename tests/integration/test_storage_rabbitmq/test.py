@@ -41,7 +41,6 @@ def get_last_event_time(logger_name, message):
     return datetime.datetime.fromisoformat(ts)
 
 
-@pytest.mark.skip(reason="There is data race in Rabbit MQ storage when shutting down")
 def test_shutdown_rabbitmq_with_materialized_view(started_cluster):
     """
     Test that restarting server during active RabbitMQ consumption

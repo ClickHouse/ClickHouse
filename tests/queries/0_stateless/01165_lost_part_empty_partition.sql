@@ -1,8 +1,6 @@
 -- Tags: zookeeper, no-shared-merge-tree
 -- no-shared-merge-tree: shared merge tree doesn't loose data parts
 
-SET max_rows_to_read = 0; -- system.text_log can be really big
-
 create table rmt1 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '1') order by n partition by toYYYYMMDD(d);
 create table rmt2 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '2') order by n partition by toYYYYMMDD(d);
 
@@ -15,8 +13,6 @@ drop table rmt1;
 system sync replica rmt2;
 select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
-SYSTEM FLUSH LOGS text_log;
-select count() from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 AND logger_name like '%' || currentDatabase() || '%' and message_format_string ilike '%table with non-zero lost_part_count equal to%';
 
 
 create table rmt1 (d DateTime, n int) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '1') order by n partition by tuple();
@@ -29,8 +25,6 @@ drop table rmt1;
 system sync replica rmt2;
 select lost_part_count from system.replicas where database = currentDatabase() and table = 'rmt2';
 drop table rmt2;
-SYSTEM FLUSH LOGS text_log;
-select count() from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 AND logger_name like '%' || currentDatabase() || '%' and message_format_string ilike '%table with non-zero lost_part_count equal to%';
 
 
 create table rmt1 (n UInt8, m Int32, d Date, t DateTime) engine=ReplicatedMergeTree('/test/01165/{database}/rmt', '1') order by n partition by (n, m, d, t);

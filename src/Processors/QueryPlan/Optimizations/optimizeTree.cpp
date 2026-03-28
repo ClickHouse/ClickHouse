@@ -82,6 +82,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
+        optimization_settings.read_in_order,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -104,6 +105,18 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 ++frame.next_child;
                 continue;
             }
+        }
+
+        /// An optimization applied to a child node may have changed a grandchild's
+        /// output header (e.g., filter push-down modifies a filter step's DAG, which
+        /// changes its output constness). The intermediate child step's cached input
+        /// header becomes stale. Refresh it before running optimizations on this node,
+        /// so that steps like mergeExpressions see consistent headers.
+        for (size_t i = 0; i < frame.node->children.size(); ++i)
+        {
+            auto child_output = frame.node->children[i]->step->getOutputHeader();
+            if (!blocksHaveEqualStructure(*frame.node->step->getInputHeaders()[i], *child_output))
+                frame.node->step->updateInputHeader(std::move(child_output), i);
         }
 
         size_t max_update_depth = 0;
@@ -179,6 +192,7 @@ void optimizeTreeSecondPass(
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
+        optimization_settings.read_in_order,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -336,6 +350,7 @@ void optimizeTreeSecondPass(
             if (auto applied_projection = optimizeUseNormalProjections(
                 stack,
                 nodes,
+                optimization_settings,
                 optimization_settings.is_parallel_replicas_initiator_with_projection_support,
                 optimization_settings.max_step_description_length))
             {

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/IndicesDescription.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -245,12 +246,60 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     }
 }
 
-ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
+ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseRaw(const String & s)
 {
     ReplicatedMergeTreeTableMetadata metadata;
     ReadBufferFromString buf(s);
     metadata.read(buf);
     return metadata;
+}
+
+ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+    const String & s,
+    const ColumnsDescription & columns,
+    bool add_minmax_index_for_numeric_columns,
+    bool add_minmax_index_for_string_columns,
+    ContextPtr context)
+{
+    auto result = parseRaw(s);
+
+    /// Backward compatibility: older replicas (before 25.12) stored implicit indices in Keeper
+    /// metadata. Newer replicas only store explicit indices. Strip implicit indices from the
+    /// parsed metadata so that all downstream comparisons work against the new format.
+    if (result.skip_indices.empty()
+        || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
+        return result;
+
+    constexpr bool escape_index_filenames = true; /// Does not matter here, we re-serialize the parsed result
+    auto parsed = IndicesDescription::parse(result.skip_indices, columns, escape_index_filenames, context);
+
+    bool has_implicit = false;
+    for (auto & index : parsed)
+    {
+        if (!index.name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+            continue;
+
+        String column_name = index.name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+        if (!columns.has(column_name))
+            continue;
+
+        const auto & col_type = columns.get(column_name).type;
+
+        /// Only `add_minmax_index_for_numeric_columns` and `add_minmax_index_for_string_columns`
+        /// need to be checked here. The temporal setting (`add_minmax_index_for_temporal_columns`)
+        /// was introduced in 26.2 and never stored implicit indices in Keeper metadata.
+        if ((add_minmax_index_for_numeric_columns && isNumber(col_type))
+            || (add_minmax_index_for_string_columns && isString(col_type)))
+        {
+            index.is_implicitly_created = true;
+            has_implicit = true;
+        }
+    }
+
+    if (has_implicit)
+        result.skip_indices = parsed.explicitToString();
+
+    return result;
 }
 
 static void handleTableMetadataMismatch(
@@ -372,18 +421,14 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
+    /// Implicit indices are stripped from Keeper metadata during `parseAndNormalize`,
+    /// so at this point `from_zk.skip_indices` only contains explicit indices.
     constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).explicitToString();
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
     if (skip_indices != parsed_zk_skip_indices)
     {
-        String all_parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
-        // Backward compatibility: older replicas included implicit indices in metadata,
-        // while newer ones exclude them. This check allows comparison between both formats.
-        if (skip_indices != all_parsed_zk_skip_indices)
-        {
-            handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
-            is_equal = false;
-        }
+        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+        is_equal = false;
     }
 
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();

@@ -15,6 +15,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static bool isTTLExpired(time_t ttl, time_t current_time)
+{
+    return ttl && (ttl <= current_time);
+}
+
 static TTLExpressions buildTTLExpressions(
     const TTLDescription & ttl_descr,
     PreparedSets::Subqueries & subqueries_for_sets,
@@ -41,73 +46,61 @@ SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & head
     return std::make_shared<const Block>(std::move(result));
 }
 
-TTLDeleteFilterTransform::TTLDeleteFilterTransform(
+std::pair<std::shared_ptr<const TTLDeleteFilterTransform::SharedState>, PreparedSets::Subqueries>
+TTLDeleteFilterTransform::build(
     const ContextPtr & context,
-    const SharedHeader & header_,
-    const StorageMetadataPtr & metadata_snapshot_,
-    const IMergeTreeDataPart::TTLInfos & old_ttl_infos_,
-    time_t current_time_,
-    bool force_,
-    const MergeTreeMutableDataPartPtr & data_part_)
-    : ISimpleTransform(header_, transformHeader(header_), /*skip_empty_chunks=*/ false)
-    , current_time(current_time_)
-    , force(force_)
-    , date_lut(DateLUT::instance())
-    , data_part(data_part_)
+    const StorageMetadataPtr & metadata_snapshot,
+    const IMergeTreeDataPart::TTLInfos & old_ttl_infos,
+    time_t current_time,
+    bool force)
 {
-    if (metadata_snapshot_->hasRowsTTL())
+    auto state = std::make_shared<SharedState>();
+    state->current_time = current_time;
+
+    PreparedSets::Subqueries subqueries;
+
+    if (metadata_snapshot->hasRowsTTL())
     {
-        const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
-        auto expressions = buildTTLExpressions(rows_ttl, subqueries_for_sets, context);
+        const auto & rows_ttl = metadata_snapshot->getRowsTTL();
 
-        DeleteTTLEntry entry;
-        entry.expressions = std::move(expressions);
-        entry.description = rows_ttl;
-        entry.old_ttl_info = old_ttl_infos_.table_ttl;
-
-        if (!isMinTTLExpired(entry.old_ttl_info))
-            entry.new_ttl_info = entry.old_ttl_info;
-        if (isTTLExpired(entry.old_ttl_info.max))
-            entry.new_ttl_info.ttl_finished = true;
-
-        if (isMinTTLExpired(entry.old_ttl_info)
-            && isTTLExpired(entry.old_ttl_info.max)
-            && !rows_ttl.where_expression_ast)
+        if (force || isTTLExpired(old_ttl_infos.table_ttl.min, current_time))
         {
-            all_data_dropped = true;
+            auto expressions = buildTTLExpressions(rows_ttl, subqueries, context);
+
+            if (isTTLExpired(old_ttl_infos.table_ttl.max, current_time) && !rows_ttl.where_expression_ast)
+                state->all_data_dropped = true;
+
+            state->entries.push_back({std::move(expressions), rows_ttl});
         }
-
-        delete_ttl_entries.emplace_back(std::move(entry));
     }
 
-    for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
+    if (!state->all_data_dropped)
     {
-        auto expressions = buildTTLExpressions(where_ttl, subqueries_for_sets, context);
+        for (const auto & where_ttl : metadata_snapshot->getRowsWhereTTLs())
+        {
+            IMergeTreeDataPart::TTLInfo old_ttl_info;
+            auto it = old_ttl_infos.rows_where_ttl.find(where_ttl.result_column);
+            if (it != old_ttl_infos.rows_where_ttl.end())
+                old_ttl_info = it->second;
 
-        DeleteTTLEntry entry;
-        entry.expressions = std::move(expressions);
-        entry.description = where_ttl;
-        auto it = old_ttl_infos_.rows_where_ttl.find(where_ttl.result_column);
-        if (it != old_ttl_infos_.rows_where_ttl.end())
-            entry.old_ttl_info = it->second;
+            if (!force && !isTTLExpired(old_ttl_info.min, current_time))
+                continue;
 
-        if (!isMinTTLExpired(entry.old_ttl_info))
-            entry.new_ttl_info = entry.old_ttl_info;
-        if (isTTLExpired(entry.old_ttl_info.max))
-            entry.new_ttl_info.ttl_finished = true;
-
-        delete_ttl_entries.emplace_back(std::move(entry));
+            auto expressions = buildTTLExpressions(where_ttl, subqueries, context);
+            state->entries.push_back({std::move(expressions), where_ttl});
+        }
     }
+
+    return {std::move(state), std::move(subqueries)};
 }
 
-bool TTLDeleteFilterTransform::isTTLExpired(time_t ttl) const
+TTLDeleteFilterTransform::TTLDeleteFilterTransform(
+    const SharedHeader & header_,
+    std::shared_ptr<const SharedState> shared_state_)
+    : ISimpleTransform(header_, transformHeader(header_), /*skip_empty_chunks=*/ false)
+    , shared_state(std::move(shared_state_))
+    , date_lut(DateLUT::instance())
 {
-    return ttl && (ttl <= current_time);
-}
-
-bool TTLDeleteFilterTransform::isMinTTLExpired(const IMergeTreeDataPart::TTLInfo & info) const
-{
-    return force || isTTLExpired(info.min);
 }
 
 void TTLDeleteFilterTransform::extractTimestamps(const IColumn * ttl_column, size_t num_rows)
@@ -168,7 +161,7 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();
 
-    if (all_data_dropped)
+    if (shared_state->all_data_dropped)
     {
         chunk.addColumn(ColumnUInt8::create(num_rows, UInt8(0)));
         return;
@@ -185,11 +178,8 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
-    for (auto & entry : delete_ttl_entries)
+    for (const auto & entry : shared_state->entries)
     {
-        if (!isMinTTLExpired(entry.old_ttl_info))
-            continue;
-
         /// Phase 1: extract typed TTL column into a flat Int64 timestamp array.
         auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
             entry.expressions.expression, block, entry.description.result_column);
@@ -205,44 +195,15 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
                 continue;
 
             bool where_filter_passed = !where_column || where_column->getBool(i);
-            if (isTTLExpired(timestamps[i]) && where_filter_passed)
+            if (isTTLExpired(timestamps[i], shared_state->current_time) && where_filter_passed)
             {
                 filter_vec[i] = 0;
-            }
-            else if (where_filter_passed)
-            {
-                entry.new_ttl_info.update(timestamps[i]);
             }
         }
     }
 
     chunk = Chunk(block.getColumns(), num_rows);
     chunk.addColumn(std::move(filter_data));
-}
-
-void TTLDeleteFilterTransform::finalize()
-{
-    if (finalized)
-        return;
-    finalized = true;
-
-    for (const auto & entry : delete_ttl_entries)
-    {
-        if (entry.expressions.where_expression)
-            data_part->ttl_infos.rows_where_ttl[entry.description.result_column] = entry.new_ttl_info;
-        else
-            data_part->ttl_infos.table_ttl = entry.new_ttl_info;
-
-        data_part->ttl_infos.updatePartMinMaxTTL(entry.new_ttl_info.min, entry.new_ttl_info.max);
-    }
-}
-
-IProcessor::Status TTLDeleteFilterTransform::prepare()
-{
-    auto status = ISimpleTransform::prepare();
-    if (status == Status::Finished)
-        finalize();
-    return status;
 }
 
 }

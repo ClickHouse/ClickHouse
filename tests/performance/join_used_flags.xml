@@ -1,6 +1,16 @@
 <test>
     <create_query>CREATE TABLE test_join_used_flags (i64 Int64, i32 Int32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE probe_used_flags (key Int64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE build_used_flags (key Int64) ENGINE = Memory</create_query>
+
     <fill_query>INSERT INTO test_join_used_flags SELECT number AS i64, rand32() AS i32 FROM numbers_mt(1500000)</fill_query>
+    <fill_query>INSERT INTO probe_used_flags SELECT number % 1111 FROM numbers(250000000)</fill_query>
+    <fill_query>INSERT INTO build_used_flags SELECT number FROM numbers(1000)</fill_query>
+
     <query>SELECT l.i64, r.i64, l.i32, r.i32 FROM test_join_used_flags l RIGHT JOIN test_join_used_flags r USING i64 format Null</query>
+    <query>SELECT l.key, r.key FROM probe_used_flags l RIGHT JOIN build_used_flags r ON l.key = r.key FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS test_join_used_flags</drop_query>
+    <drop_query>DROP TABLE IF EXISTS probe_used_flags</drop_query>
+    <drop_query>DROP TABLE IF EXISTS build_used_flags</drop_query>
 </test>

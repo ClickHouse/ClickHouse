@@ -12,7 +12,7 @@ namespace
 {
     void formatRenameTo(const String & new_short_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        ostr << " RENAME TO " << backQuote(new_short_name);
+        ostr << " RENAME TO " << backQuoteIfNeed(new_short_name);
     }
 
 
