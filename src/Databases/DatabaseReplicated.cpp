@@ -2195,7 +2195,9 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         /// since we can no longer add ops to the already-committed transaction. Tables that were
         /// only ever created locally (temp tables) will simply have no node to remove.
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        txn->getZooKeeper()->tryRemove(metadata_zk_path);
+        auto code = txn->getZooKeeper()->tryRemove(metadata_zk_path);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(code, metadata_zk_path);
     }
 
     auto table = tryGetTable(table_name, getContext());
@@ -2215,7 +2217,10 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     else if (txn && txn->isCreateOrReplaceQuery() && txn->isExecuted() && !is_recovering)
     {
         /// Directly update the per-replica digest in ZK for the same reason as above.
-        txn->getZooKeeper()->trySet(replica_path + "/digest", toString(new_digest));
+        auto digest_path = replica_path + "/digest";
+        auto code = txn->getZooKeeper()->trySet(digest_path, toString(new_digest));
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperException::fromPath(code, digest_path);
     }
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
