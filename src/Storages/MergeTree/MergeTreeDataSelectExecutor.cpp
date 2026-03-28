@@ -835,6 +835,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
+    /// Tracks granules dropped by each skip index, keyed by index identity (not loop position).
+    /// Used to report only indices that actually filtered something in query_log.skip_indices.
+    std::vector<std::atomic<size_t>> index_dropped_granules(skip_indexes.useful_indices.size());
+    for (auto & counter : index_dropped_granules)
+        counter.store(0, std::memory_order_relaxed);
+
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> top_k_elapsed_us = 0;
@@ -1012,7 +1018,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             log);
                     }
 
-                    stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                    const size_t dropped = total_granules - ranges.ranges.getNumberOfMarks();
+                    stat.granules_dropped.fetch_add(dropped, std::memory_order_relaxed);
+                    index_dropped_granules[index_idx].fetch_add(dropped, std::memory_order_relaxed);
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1027,8 +1035,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
-
-            }
+           }
 
             /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
             if (perform_top_k_optimization)
@@ -1169,6 +1176,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const auto num_indices = skip_indexes.useful_indices.size();
+
+    if (!skip_indexes.useful_indices.empty() && context->hasQueryContext())
+    {
+        auto query_context = context->getQueryContext();
+        for (size_t idx = 0; idx < num_indices; ++idx)
+            if (index_dropped_granules[idx].load(std::memory_order_relaxed) > 0)
+                query_context->addSkipIndexAccessInfo(
+                    filter_context.storage_id.getFullTableName(),
+                    skip_indexes.useful_indices[idx].index->index.name);
+    }
 
     const auto part_stats_granularity = settings[Setting::per_part_index_stats] ? original_num_parts : 1;
     for (size_t part_index = 0; part_index < part_stats_granularity; ++part_index)
