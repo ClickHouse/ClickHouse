@@ -140,6 +140,11 @@ private:
         {
             plain = disk->readFile(data_path, read_settings_.adjustBufferSize(file_size));
 
+            /// Limit reads to the file size that was snapshotted under the read lock.
+            /// The file may have grown since (due to concurrent inserts after lock release),
+            /// but we must not read beyond the snapshotted range.
+            plain->setReadUntilPosition(file_size);
+
             if (offset)
                 plain->seek(offset, SEEK_SET);
 

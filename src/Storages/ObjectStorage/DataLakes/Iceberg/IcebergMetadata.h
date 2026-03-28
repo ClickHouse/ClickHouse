@@ -44,8 +44,10 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
-        const ContextPtr & context_,
-        IcebergMetadataFilesCachePtr cache_ptr);
+        Iceberg::PersistentTableComponents && persistent_components_,
+        ContextPtr context_);
+
+    ~IcebergMetadata() override;
 
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
@@ -76,7 +78,9 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
+        const Poco::JSON::Object::Ptr & metadata_object,
+        Iceberg::IcebergSchemaProcessor & schema_processor,
+        LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
@@ -143,8 +147,12 @@ public:
     void drop(ContextPtr context) override;
 
 private:
-    Iceberg::PersistentTableComponents initializePersistentTableComponents(
-        StorageObjectStorageConfigurationPtr configuration, IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_);
+    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
+        ObjectStoragePtr object_storage,
+        StorageObjectStorageConfigurationPtr configuration,
+        IcebergMetadataFilesCachePtr cache_ptr,
+        ContextPtr context_,
+        LoggerPtr log);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
@@ -156,14 +164,18 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context) const;
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    DB::Iceberg::PersistentTableComponents persistent_components;
+    const DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
+    BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
+
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
+
+    void backgroundMetadataPrefetcherThread();
 };
 }
 

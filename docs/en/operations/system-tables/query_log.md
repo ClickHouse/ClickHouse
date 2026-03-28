@@ -69,8 +69,8 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the columns present in the query.
 - `partitions` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the partitions present in the query.
 - `projections` ([String](../../sql-reference/data-types/string.md)) — Names of the projections used during the query execution.
-- `skip_indices` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of any data skipping indices that were used during query execution
 - `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the (materialized or live) views present in the query.
+- `skip_indices` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of any data skipping indices that were used during query execution
 - `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 - `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.

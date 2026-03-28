@@ -472,7 +472,7 @@ uint64_t updateJemallocEpoch()
 {
     uint64_t value = 0;
     size_t size = sizeof(value);
-    mallctl("epoch", &value, &size, &value, size);
+    je_mallctl("epoch", &value, &size, &value, size);
     return value;
 }
 
@@ -1148,6 +1148,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     saveJemallocMetricImpl<size_t>(new_values, "arenas.dirty_decay_ms", "jemalloc.arenas.dirty_decay_ms");
 
     /// Per-arena metrics for the dedicated cache arena (mark cache, uncompressed cache).
+    if (JemallocCacheArena::isEnabled())
     {
         unsigned cache_arena = JemallocCacheArena::getArenaIndex();
         saveJemallocMetricImpl<size_t>(new_values,

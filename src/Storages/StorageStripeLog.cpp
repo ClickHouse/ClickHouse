@@ -170,6 +170,12 @@ private:
 
             String data_file_path = storage->table_path + "data.bin";
             data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
+
+            /// Limit reads to the file size that was snapshotted under the read lock.
+            /// The file may have grown since (due to concurrent inserts after lock release),
+            /// but we must not read beyond the snapshotted range that the index covers.
+            data_in->setReadUntilPosition(file_size);
+
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }

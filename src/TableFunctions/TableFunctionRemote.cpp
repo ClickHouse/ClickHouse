@@ -55,8 +55,8 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = args_func.at(0)->children;
 
     /**
-     * Number of arguments for remote function is 4.
-     * Number of arguments for cluster function is 6.
+     * Number of arguments for remote function is 6.
+     * Number of arguments for cluster function is 4.
      * For now named collection can be used only for remote as cluster does not require credentials.
      */
     size_t max_args = is_cluster_function ? 4 : 6;
@@ -116,8 +116,10 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
         /// cluster('cluster_name')
         /// cluster('cluster_name', db.table)
         /// cluster('cluster_name', 'db', 'table')
+        /// cluster('cluster_name', table_function())
         /// cluster('cluster_name', db.table, sharding_key)
         /// cluster('cluster_name', 'db', 'table', sharding_key)
+        /// cluster('cluster_name', table_function(), sharding_key)
         ///
         /// clusterAllReplicas() - same as cluster()
 
@@ -169,6 +171,13 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
             {
                 remote_table_function_ptr = args[arg_num];
                 ++arg_num;
+
+                /// Cluster function may have sharding key for insert
+                if (is_cluster_function && arg_num < args.size())
+                {
+                    sharding_key = args[arg_num];
+                    ++arg_num;
+                }
             }
             else
             {
@@ -370,7 +379,7 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_
         name,
         is_cluster_function ? 0 : 1,
         is_cluster_function ? 4 : 6,
-        is_cluster_function ? "[<cluster name or default if not specify>, <name of remote database>, <name of remote table>] [, sharding_key]"
+        is_cluster_function ? "[<cluster name or default if not specified>, [<database.table> | [<name of remote database>, <name of remote table>] | <table function>]] [, sharding_key]"
                             : "<addresses pattern> [, <name of remote database>, <name of remote table>] [, username[, password], sharding_key]");
 }
 

@@ -91,7 +91,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"partitions", array_low_cardinality_string, "Names of the partitions present in the query."},
         {"projections", array_low_cardinality_string, "Names of the projections used during the query execution."},
         {"views", array_low_cardinality_string, "Names of the (materialized or live) views present in the query."},
-        {"skip_indices", array_low_cardinality_string, "Names of the skip indexes used during the query execution."},
+        {"skip_indices", array_low_cardinality_string, "Names of the skip indices used during the query execution."},
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of an exception."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},

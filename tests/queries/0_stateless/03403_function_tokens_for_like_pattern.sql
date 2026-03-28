@@ -34,3 +34,14 @@ SELECT tokens('\\\\%test'), tokensForLikePattern('\\\\%test');
 SELECT tokens('abc%d'), tokensForLikePattern('abc%d');
 SELECT tokens('%%%%'), tokensForLikePattern('%%%%');
 SELECT tokens('____'), tokensForLikePattern('____');
+
+-- unicodeWord tokenizer
+SELECT 'unicodeWord:';
+SELECT tokens('hello', 'unicodeWord'), tokensForLikePattern('hello', 'unicodeWord');
+SELECT tokens('你好世界', 'unicodeWord'), tokensForLikePattern('你好世界', 'unicodeWord');
+SELECT tokens('hello', 'unicodeWord'), tokensForLikePattern('%hello%', 'unicodeWord');
+SELECT tokens('hello_world', 'unicodeWord'), tokensForLikePattern('hello\_world%', 'unicodeWord');
+SELECT tokens('你好世界', 'unicodeWord'), tokensForLikePattern('%你好%世界%', 'unicodeWord');
+SELECT tokens('a:bc.d', 'unicodeWord'), tokensForLikePattern('a:b%c.d', 'unicodeWord');
+SELECT tokens('测试数据', 'unicodeWord'), tokensForLikePattern('%测试，数据%', 'unicodeWord');
+SELECT tokens('test_data', 'unicodeWord'), tokensForLikePattern('test\_%data', 'unicodeWord');
