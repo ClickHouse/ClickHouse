@@ -55,3 +55,89 @@
 = PARTITION BY sorting-key column is still prunable =
 --- FINAL WHERE x != 1 (partition pruning is safe here)
 2	bbb	1
+
+= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =
+--- toDate(time) row policy: only row filter deferred, not prewhere
+        Deferred filters (applied after FINAL)
+          Deferred row level filter column: equals(toDate(time), \'2024-01-01\'_String)
+= compound row policy: sorting-key atom should be used for index analysis =
+--- FINAL: x>1 atom should still participate in primary key analysis
+2	eee	2
+3	ccc	1
+--- EXPLAIN indexes: x > 1 should appear in PrimaryKey condition
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+      ReadFromMergeTree (default.tab_compound)
+      Indexes:
+        PrimaryKey
+          Keys:
+            x
+          Condition: (x in [2, +Inf))
+          Parts: 2/2
+          Granules: 2/2
+          Search Algorithm: binary search
+        Ranges: 2
+
+= compound PREWHERE: sorting-key atom should be used for index analysis =
+--- FINAL PREWHERE y != ddd AND x > 1: x>1 atom should still participate in primary key analysis
+2	eee	2
+3	ccc	1
+--- EXPLAIN indexes: x > 1 should appear in PrimaryKey condition
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+      ReadFromMergeTree (default.tab_compound_pw)
+      Indexes:
+        PrimaryKey
+          Keys:
+            x
+          Condition: (x in [2, +Inf))
+          Parts: 2/2
+          Granules: 2/2
+          Search Algorithm: binary search
+        Ranges: 2
+--- EXPLAIN actions: prewhere should be deferred
+        Deferred filters (applied after FINAL)
+          Deferred prewhere filter column: and(notEquals(y, \'ddd\'_String), greater(x, 1_UInt8))
+
+= nested AND in row policy: both sorting-key atoms should be used for index analysis =
+--- FINAL with nested AND row policy
+2	fff	250	2
+3	ccc	300	1
+--- EXPLAIN indexes: both x > 1 and x < 5 should appear in PrimaryKey condition
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+      ReadFromMergeTree (default.tab_nested_and)
+      Indexes:
+        PrimaryKey
+          Keys:
+            x
+          Condition: and((x in (-Inf, 4]), (x in [2, +Inf)))
+          Parts: 2/2
+          Granules: 2/2
+          Search Algorithm: binary search
+        Ranges: 2
+
+= nested AND in PREWHERE: both sorting-key atoms should be used for index analysis =
+--- FINAL PREWHERE (y != eee AND x > 1) AND x < 5
+2	fff	250	2
+3	ccc	300	1
+--- EXPLAIN indexes: both x > 1 and x < 5 should appear in PrimaryKey condition
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+      ReadFromMergeTree (default.tab_nested_and_pw)
+      Indexes:
+        PrimaryKey
+          Keys:
+            x
+          Condition: and((x in (-Inf, 4]), (x in [2, +Inf)))
+          Parts: 2/2
+          Granules: 2/2
+          Search Algorithm: binary search
+        Ranges: 2
+--- EXPLAIN actions: prewhere should be deferred
+        Deferred filters (applied after FINAL)
+          Deferred prewhere filter column: and(and(notEquals(y, \'eee\'_String), greater(x, 1_UInt8)), less(x, 5_UInt8))

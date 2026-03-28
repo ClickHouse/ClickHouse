@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <initializer_list>
 #include <random>
 #include <tuple>
 #include <unordered_map>
@@ -156,12 +158,10 @@ public:
         "a\"a",
         "b\\tb",
         "c\\nc",
-        "d\\'d",
         "e e",
         "",
         "😉",
         "\"",
-        "\\'",
         "\\t",
         "\\n",
         "--",
@@ -363,6 +363,10 @@ public:
     String nextIPv4();
 
     String nextIPv6();
+
+    /// Weighted random dispatch: picks one option proportional to its weight and calls its action.
+    /// Options with weight 0 are skipped. At least one weight must be non-zero.
+    void pickWeighted(std::initializer_list<std::pair<uint32_t, std::function<void()>>> options);
 };
 
 class FuzzConfig;

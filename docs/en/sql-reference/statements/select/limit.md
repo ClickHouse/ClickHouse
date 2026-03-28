@@ -120,6 +120,25 @@ SELECT * FROM (
 
 Row 6 is included because it has the same value (`2`) as row 5.
 
+The same applies when the offset is specified with the `OFFSET` keyword:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Skipping the first 2 rows and taking 3 would normally return `1, 1, 2`, but the second `2` is included because it ties with the last row.
+
 :::note
 `WITH TIES` is not supported with negative limits.
 :::

@@ -23,7 +23,8 @@ extern const int UNSUPPORTED_METHOD;
 class LibArchiveReader::StreamInfo
 {
 public:
-    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_) : read_buffer(std::move(read_buffer_)) { }
+    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0)
+        : read_buffer(std::move(read_buffer_)), archive_size(archive_size_) { }
 
     static ssize_t read(struct archive *, void * client_data, const void ** buff)
     {
@@ -41,6 +42,31 @@ public:
         }
     }
 
+    static la_int64_t seek(struct archive *, void * client_data, la_int64_t offset, int whence)
+    {
+        auto * read_stream = reinterpret_cast<StreamInfo *>(client_data);
+        try
+        {
+            if (whence == SEEK_END)
+            {
+                /// Convert SEEK_END to SEEK_SET because not all SeekableReadBuffer
+                /// implementations support SEEK_END (e.g. ReadBufferFromMemory).
+                /// When archive_size is known, compute the absolute position;
+                /// otherwise fall back to the buffer's native SEEK_END support.
+                if (read_stream->archive_size > 0)
+                    return read_stream->read_buffer->seek(static_cast<la_int64_t>(read_stream->archive_size) + offset, SEEK_SET);
+                return read_stream->read_buffer->seek(offset, SEEK_END);
+            }
+            return read_stream->read_buffer->seek(offset, whence);
+        }
+        catch (...)
+        {
+            if (!read_stream->stored_exception)
+                read_stream->stored_exception = std::current_exception();
+            return ARCHIVE_FATAL;
+        }
+    }
+
     void rethrowIfNeeded()
     {
         if (stored_exception)
@@ -52,6 +78,7 @@ public:
     }
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
+    size_t archive_size;
     char buf[DBMS_DEFAULT_BUFFER_SIZE];
     std::exception_ptr stored_exception;
 };
@@ -65,10 +92,10 @@ public:
         current_archive = openWithPath(path_to_archive);
     }
 
-    explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_)
-        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), lock_on_reading(lock_on_reading_)
+    explicit Handle(std::string path_to_archive_, bool lock_on_reading_, const ReadArchiveFunction & archive_read_function_, size_t archive_size_)
+        : path_to_archive(std::move(path_to_archive_)), archive_read_function(archive_read_function_), archive_size(archive_size_), lock_on_reading(lock_on_reading_)
     {
-        read_stream = std::make_unique<StreamInfo>(archive_read_function());
+        read_stream = std::make_unique<StreamInfo>(archive_read_function(), archive_size);
         current_archive = openWithReader(read_stream.get());
     }
 
@@ -78,6 +105,7 @@ public:
         , current_archive(other.current_archive)
         , current_entry(other.current_entry)
         , archive_read_function(std::move(other.archive_read_function))
+        , archive_size(other.archive_size)
         , lock_on_reading(other.lock_on_reading)
 
     {
@@ -135,7 +163,7 @@ public:
     std::vector<std::string> getAllFiles(NameFilter filter)
     {
         std::unique_ptr<LibArchiveReader::StreamInfo> rs
-            = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function()) : nullptr;
+            = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function(), archive_size) : nullptr;
         auto * archive = rs ? openWithReader(rs.get()) : openWithPath(path_to_archive);
 
         SCOPE_EXIT(close(archive););
@@ -238,6 +266,7 @@ private:
             archive_read_support_format_7zip(archive);
             archive_read_support_format_zip(archive);
 
+            archive_read_set_seek_callback(archive, StreamInfo::seek);
             if (archive_read_open(archive, read_stream_, nullptr, StreamInfo::read, nullptr) != ARCHIVE_OK)
             {
                 read_stream_->rethrowIfNeeded();
@@ -318,6 +347,7 @@ private:
     Entry current_entry = nullptr;
     bool valid = true;
     IArchiveReader::ReadArchiveFunction archive_read_function;
+    size_t archive_size = 0;
 
     /// for some archive types when we are reading headers static variables are used
     /// which are not thread-safe
@@ -395,16 +425,18 @@ private:
 };
 
 LibArchiveReader::LibArchiveReader(std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_)
-    : archive_name(std::move(archive_name_)), lock_on_reading(lock_on_reading_), path_to_archive(std::move(path_to_archive_))
+    : archive_name(std::move(archive_name_)), lock_on_reading(lock_on_reading_), path_to_archive(std::move(path_to_archive_)), archive_size(0)
 {
 }
 
 LibArchiveReader::LibArchiveReader(
-    std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_, const ReadArchiveFunction & archive_read_function_)
+    std::string archive_name_, bool lock_on_reading_, std::string path_to_archive_,
+    const ReadArchiveFunction & archive_read_function_, size_t archive_size_)
     : archive_name(std::move(archive_name_))
     , lock_on_reading(lock_on_reading_)
     , path_to_archive(std::move(path_to_archive_))
     , archive_read_function(archive_read_function_)
+    , archive_size(archive_size_)
 {
 }
 
@@ -523,7 +555,7 @@ void LibArchiveReader::setPassword(const String & password_)
 LibArchiveReader::Handle LibArchiveReader::acquireHandle()
 {
     std::lock_guard lock{mutex};
-    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function}
+    return archive_read_function ? Handle{path_to_archive, lock_on_reading, archive_read_function, archive_size}
                                  : Handle{path_to_archive, lock_on_reading};
 }
 

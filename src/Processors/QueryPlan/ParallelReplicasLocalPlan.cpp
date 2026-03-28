@@ -3,6 +3,8 @@
 #include <base/sleep.h>
 #include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -86,7 +88,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
 }
 
 std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
-    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
     const Block & header,
     ContextPtr context,
     QueryProcessingStage::Enum processed_stage,
@@ -100,11 +102,12 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     if (processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
         processed_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
-    /// Do not apply AST optimizations, because query
-    /// is already optimized and some optimizations
-    /// can be applied only for non-distributed tables
-    /// and we can produce query, inconsistent with remote plans.
-    auto select_query_options = SelectQueryOptions(processed_stage).ignoreASTOptimizations();
+    /// Since we're passing a pre-analyzed query tree (not AST), the interpreter won't run
+    /// query tree passes anyway. We must NOT set ignoreASTOptimizations() here because it
+    /// causes isASTLevelOptimizationAllowed() to return false in PlannerContext, which changes
+    /// how constant node names are generated (using source expression instead of _CAST wrapper),
+    /// leading to column name mismatches with the expected header.
+    auto select_query_options = SelectQueryOptions(processed_stage);
 
     /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
     /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
@@ -112,7 +115,47 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto new_context = Context::createCopy(context);
     new_context->setSetting("enable_positional_arguments", Field(false));
     new_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-    auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
+
+    /// Clone the query tree and disable parallel replicas in ALL QueryNode/UnionNode contexts.
+    /// Each node gets a copy of its own context with parallel replicas disabled.
+    /// This is necessary because the Planner extracts the context from each QueryNode,
+    /// and the original query_tree has contexts with parallel replicas enabled.
+    /// Without updating all nodes, nested subqueries (e.g. in JOINs) would still have
+    /// parallel replicas enabled in their contexts, causing the Planner to create
+    /// additional `ParallelReplicasReadingCoordinator` instances.
+    auto local_query_tree = query_tree->clone();
+    {
+        std::vector<IQueryTreeNode *> nodes_to_visit;
+        nodes_to_visit.push_back(local_query_tree.get());
+        while (!nodes_to_visit.empty())
+        {
+            auto * current = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            if (auto * query_node = current->as<QueryNode>())
+            {
+                auto node_context = Context::createCopy(query_node->getContext());
+                node_context->setSetting("enable_positional_arguments", Field(false));
+                node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                query_node->getMutableContext() = std::move(node_context);
+            }
+            else if (auto * union_node = current->as<UnionNode>())
+            {
+                auto node_context = Context::createCopy(union_node->getContext());
+                node_context->setSetting("enable_positional_arguments", Field(false));
+                node_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                union_node->getMutableContext() = std::move(node_context);
+            }
+
+            for (auto & child : current->getChildren())
+            {
+                if (child)
+                    nodes_to_visit.push_back(child.get());
+            }
+        }
+    }
+
+    auto interpreter = InterpreterSelectQueryAnalyzer(local_query_tree, new_context, select_query_options);
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     auto * node = findReadingStep<ReadFromMergeTree>(query_plan->getRootNode());
