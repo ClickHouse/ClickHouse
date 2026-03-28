@@ -7633,7 +7633,7 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_pipe_syntax, true, R"(
+    DECLARE(Bool, allow_experimental_pipe_syntax, false, R"(
 Allow to use pipelined SQL syntax with |> operator proposed by Google.
     )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
