@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -199,8 +200,15 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         /// (e.g. `s3Cluster`) and prepend the cluster name argument. This ensures that on the shard,
         /// `TableFunctionObjectStorageCluster::executeImpl` is called, which correctly handles
         /// `distributed_processing` for task-based file distribution from the initiator.
-        args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
-        table_function->name += "Cluster";
+        ///
+        /// Some table functions (e.g. `paimonLocal`, `deltaLakeLocal`) do not have a Cluster variant,
+        /// so we only rename when the target function actually exists.
+        const String cluster_function_name = table_function->name + "Cluster";
+        if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
+        {
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+            table_function->name = cluster_function_name;
+        }
     }
     else
     {
