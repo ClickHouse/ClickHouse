@@ -9,6 +9,7 @@
 #include <base/scope_guard.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/validateColumnType.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
@@ -1536,8 +1537,8 @@ struct FunctionsStressTestThread
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned nullptr column");
         if (column->size() != expected_rows)
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned unexpected number of rows: {} instead of {}", column->size(), expected_rows);
-        if (column->getDataType() != data_type->getColumnType())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", magic_enum::enum_name<TypeIndex>(column->getDataType()), magic_enum::enum_name<TypeIndex>(data_type->getColumnType()));
+        if (!columnMatchesType(*column, *data_type))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", column->getName(), data_type->getName());
 
         auto apply = [&](IColumn & col)
         {
