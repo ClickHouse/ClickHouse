@@ -217,6 +217,12 @@ public:
         return concurrency_control;
     }
 
+    /// Whether the read step deliberately reduced the number of streams below max_threads
+    /// (e.g. ReadFromMergeTree chose fewer streams because the data is small).
+    /// This is used by AggregatingStep to decide whether to cap post-aggregation resize.
+    void setReadStreamCountWasReduced(bool value) { read_stream_count_was_reduced = value; }
+    bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
+
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
@@ -236,6 +242,7 @@ private:
     size_t max_threads = 0;
 
     bool concurrency_control = false;
+    bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;
