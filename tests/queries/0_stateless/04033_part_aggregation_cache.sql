@@ -1,6 +1,6 @@
 -- Tags: no-parallel
 
-SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1;
+SET allow_experimental_analyzer = 0, allow_experimental_part_aggregation_cache = 1, optimize_aggregation_in_order = 0, enable_memory_bound_merging_of_aggregation_results = 0;
 
 SYSTEM DROP PART AGGREGATION CACHE;
 
