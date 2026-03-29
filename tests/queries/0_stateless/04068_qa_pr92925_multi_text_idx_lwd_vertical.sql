@@ -1,8 +1,5 @@
-```sql
 -- Tags: no-fasttest
--- Description: Multiple text indexes + LWD + vertical merge - combines three fixes from PR 92925
 
-SET max_execution_time=30;
 SET enable_full_text_index = 1;
 SET mutations_sync = 1;
 SET use_skip_indexes_on_data_read = 1;
@@ -43,4 +40,3 @@ OPTIMIZE TABLE t_multi_text_idx_lwd_vertical FINAL;
 SELECT count() FROM t_multi_text_idx_lwd_vertical WHERE hasAllTokens(c1, 'c1_15') AND hasAllTokens(c2, 'c2_16') ORDER BY 1;
 
 DROP TABLE IF EXISTS t_multi_text_idx_lwd_vertical;
-```
