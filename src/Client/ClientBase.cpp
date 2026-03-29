@@ -100,6 +100,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <csignal>
+#include <poll.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -1824,6 +1825,24 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
         throw;
     }
 }
+
+/// Non-blocking check whether stdin has data available.
+/// Uses poll(timeout=0) on the fd to avoid blocking on empty pipes.
+/// Also checks the ReadBuffer's internal buffer for already-read data.
+bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
+{
+    if (std_in.hasPendingData())
+        return true;
+
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    int ret = poll(&pfd, 1, 0);
+    if (ret < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll stdin (fd {})", fd);
+    return ret > 0 && (pfd.revents & POLLIN);
+}
 }
 
 
@@ -1930,14 +1949,20 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    /// When the INSERT already has a primary data source (inline data or INFILE),
-    /// skip the stdin check. The blocking read in isStdinNotEmptyAndValid can hang
-    /// indefinitely when stdin is a pipe without data/EOF (stress tests, CI, Docker,
-    /// --queries-file). For the common case without inline data or INFILE,
-    /// sendDataFromStdin is called unconditionally below.
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
-        && !parsed_insert_query->data && !parsed_insert_query->infile
-        && isStdinNotEmptyAndValid(*std_in);
+    /// When INSERT already has a primary data source (inline data or INFILE),
+    /// use a non-blocking poll to check whether stdin also has data.
+    /// The blocking read in isStdinNotEmptyAndValid can hang indefinitely when stdin
+    /// is a pipe without data/EOF (stress tests, CI, Docker, --queries-file).
+    /// When there is no other data source, use the blocking check as before.
+    bool have_data_in_stdin = false;
+    if (!is_interactive && !stdin_is_a_tty)
+    {
+        if (parsed_insert_query->data || parsed_insert_query->infile)
+            have_data_in_stdin = isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+                && isStdinNotEmptyAndValid(*std_in);
+        else
+            have_data_in_stdin = isStdinNotEmptyAndValid(*std_in);
+    }
 
     if (need_render_progress)
     {
@@ -2387,12 +2412,16 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            /// Only check INFILE here. We skip the stdin check because the blocking read
-            /// can hang when stdin is a pipe without data/EOF (stress tests, CI, Docker).
-            /// Since is_async_insert_with_inlined_data is true, the INSERT already has inline data.
-            if (insert->infile)
+            /// Use non-blocking poll to check stdin — the blocking read in
+            /// isStdinNotEmptyAndValid hangs when stdin is an empty pipe (CI, Docker).
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
+                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+                && isStdinNotEmptyAndValid(*std_in);
+            bool have_external_data = have_data_in_stdin || insert->infile;
+
+            if (have_external_data)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Processing async inserts with both inlined and external data (from infile) is not supported");
+                    "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
         }
 
         String query;
