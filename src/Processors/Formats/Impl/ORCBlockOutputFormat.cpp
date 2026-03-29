@@ -602,6 +602,7 @@ void registerOutputFormatORC(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerOutputFormatORC(FormatFactory &);
     void registerOutputFormatORC(FormatFactory &)
     {
     }

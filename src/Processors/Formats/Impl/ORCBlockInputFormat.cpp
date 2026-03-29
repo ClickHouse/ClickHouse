@@ -261,6 +261,8 @@ void registerORCSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerInputFormatORC(FormatFactory &);
+    void registerORCSchemaReader(FormatFactory &);
     void registerInputFormatORC(FormatFactory &)
     {
     }
