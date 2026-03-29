@@ -31,6 +31,7 @@ add_library(aws_sdk_kinesis STATIC ${AWS_SDK_KINESIS_SRC})
 add_library(ch_contrib::aws_sdk_kinesis ALIAS aws_sdk_kinesis)
 
 target_include_directories(aws_sdk_kinesis SYSTEM PUBLIC "${AWS_SDK_KINESIS_DIR}/include/")
+target_include_directories(aws_sdk_kinesis SYSTEM PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/aws-c-event-stream/include/")
 
 target_compile_options(aws_sdk_kinesis PRIVATE
     -Wno-documentation

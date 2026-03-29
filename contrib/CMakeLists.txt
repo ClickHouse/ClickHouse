@@ -134,6 +134,7 @@ add_contrib (aws-cmake
     aws-cmake
 )
 
+add_contrib (aws-sdk-cpp-kinesis)
 add_contrib (base64-cmake base64)
 add_contrib (simdjson-cmake simdjson)
 add_contrib (rapidjson-cmake rapidjson)
