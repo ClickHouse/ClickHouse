@@ -30,3 +30,24 @@ TEST(WebIndexOriginComparison, RejectsDifferentEffectivePorts)
 
     ASSERT_FALSE(DB::WebIndexPage::isSameOrigin(source, candidate));
 }
+
+
+TEST(WebIndexOriginComparison, TreatsDefaultPortVariantAsSameListingPrefix)
+{
+    Poco::URI listing("http://example.com/data/2025/");
+    Poco::URI candidate("http://example.com:80/data/2025/part1.tsv");
+
+    ASSERT_TRUE(DB::WebIndexPage::isSameOrigin(listing, candidate));
+    ASSERT_TRUE(DB::WebIndexPage::hasPathPrefix(candidate, listing));
+}
+
+
+TEST(WebIndexOriginComparison, BuildsRelativePathAcrossDefaultPortVariants)
+{
+    Poco::URI base("http://example.com/");
+    Poco::URI candidate("http://example.com:80/data/2025/part1.tsv?download=1#frag");
+
+    ASSERT_EQ(
+        DB::WebIndexPage::getRelativePathWithQueryAndFragment(candidate, base),
+        "data/2025/part1.tsv?download=1#frag");
+}

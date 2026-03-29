@@ -178,6 +178,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     std::vector<std::string> result;
     std::unordered_set<std::string> seen_relative;
     const auto & regex = getURLRegex();
+    const Poco::URI listing_uri(listing_url, false);
     re2::StringPiece input(page_body);
     re2::StringPiece match;
     bool found_valid_href_url = false;
@@ -213,15 +214,10 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
             continue;
 
-        auto candidate_str = candidate_uri.toString();
-        if (!startsWith(candidate_str, listing_url))
+        if (!WebIndexPage::hasPathPrefix(candidate_uri, listing_uri))
             continue;
 
-        const auto base_prefix = base_uri.toString();
-        if (!candidate_str.starts_with(base_prefix))
-            continue;
-
-        auto relative = candidate_str.substr(base_prefix.size());
+        auto relative = WebIndexPage::getRelativePathWithQueryAndFragment(candidate_uri, base_uri);
         if (relative.empty())
             continue;
 
@@ -266,15 +262,10 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
                 continue;
 
-            auto candidate_str = candidate_uri.toString();
-            if (!startsWith(candidate_str, listing_url))
+            if (!WebIndexPage::hasPathPrefix(candidate_uri, listing_uri))
                 continue;
 
-            const auto base_prefix = base_uri.toString();
-            if (!candidate_str.starts_with(base_prefix))
-                continue;
-
-            auto relative = candidate_str.substr(base_prefix.size());
+            auto relative = WebIndexPage::getRelativePathWithQueryAndFragment(candidate_uri, base_uri);
             if (relative.empty())
                 continue;
 
