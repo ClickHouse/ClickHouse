@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool allow_experimental_pipe_syntax;
 }
 
 namespace ErrorCodes
@@ -965,7 +966,7 @@ namespace
         query_text = std::move(*(query_info.mutable_query()));
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
-        ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
+        ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], false, settings[Setting::allow_experimental_pipe_syntax]);
         ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
         /// Choose input format.
