@@ -15,7 +15,9 @@
 namespace DB
 {
 
-ASTPtr wrapInSubquery(ASTPtr current_query, size_t /*seqno*/)
+namespace
+{
+ASTPtr wrapInSubquery(ASTPtr current_query, size_t seqno)
 {
     auto subquery = make_intrusive<ASTSubquery>();
     auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
@@ -27,7 +29,7 @@ ASTPtr wrapInSubquery(ASTPtr current_query, size_t /*seqno*/)
     inner_union->children.push_back(inner_list);
 
     subquery->children.push_back(inner_union);
-    // subquery->setAlias(fmt::format("_pipe_subquery_{}", seqno));
+    subquery->setAlias(fmt::format("_pipe_subquery_{}", seqno));
 
     auto table_expr = make_intrusive<ASTTableExpression>();
     table_expr->subquery = subquery;
@@ -59,23 +61,13 @@ bool startsWithJoinClause(const IParser::Pos & pos)
         return ParserKeyword(keyword).ignore(lookahead, expected);
     };
 
-    return
-        starts_with_keyword(Keyword::JOIN)
-        || starts_with_keyword(Keyword::GLOBAL)
-        || starts_with_keyword(Keyword::LOCAL)
-        || starts_with_keyword(Keyword::NATURAL)
-        || starts_with_keyword(Keyword::ANY)
-        || starts_with_keyword(Keyword::ALL)
-        || starts_with_keyword(Keyword::ASOF)
-        || starts_with_keyword(Keyword::SEMI)
-        || starts_with_keyword(Keyword::ANTI)
-        || starts_with_keyword(Keyword::ONLY)
-        || starts_with_keyword(Keyword::INNER)
-        || starts_with_keyword(Keyword::LEFT)
-        || starts_with_keyword(Keyword::RIGHT)
-        || starts_with_keyword(Keyword::FULL)
-        || starts_with_keyword(Keyword::CROSS)
+    return starts_with_keyword(Keyword::JOIN) || starts_with_keyword(Keyword::GLOBAL) || starts_with_keyword(Keyword::LOCAL)
+        || starts_with_keyword(Keyword::NATURAL) || starts_with_keyword(Keyword::ANY) || starts_with_keyword(Keyword::ALL)
+        || starts_with_keyword(Keyword::ASOF) || starts_with_keyword(Keyword::SEMI) || starts_with_keyword(Keyword::ANTI)
+        || starts_with_keyword(Keyword::ONLY) || starts_with_keyword(Keyword::INNER) || starts_with_keyword(Keyword::LEFT)
+        || starts_with_keyword(Keyword::RIGHT) || starts_with_keyword(Keyword::FULL) || starts_with_keyword(Keyword::CROSS)
         || starts_with_keyword(Keyword::PASTE);
+}
 }
 
 bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -175,7 +167,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else if (startsWithJoinClause(pos))
         {
-            if (has_limit)
+            if (has_group_by || has_order_by || has_limit)
                 wrap_current_query();
 
             if (!pipe_join_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
