@@ -493,6 +493,8 @@ namespace
     Enable a FIFO admission queue for query concurrency control.
     When enabled, queries that exceed `max_concurrent_queries` wait in a strict FIFO queue
     with precise per-waiter wakeups, eliminating the thundering herd problem.
+    The wait timeout is determined by the query-level `queue_max_wait_ms` setting;
+    if that is 0, it falls back to `max_execution_time`, then to the default receive timeout (300s).
     When disabled, the legacy broadcast condvar is used.
     )", 0) \
     DECLARE(UInt64, admission_queue_alive_check_interval_ms, 5000, R"(

@@ -166,6 +166,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (needs_admission && admission_running >= max_size)
         {
+            /// Timeout fallback: queue_max_wait_ms → max_execution_time → default receive timeout (300s).
             UInt64 effective_wait_ms = queue_max_wait_ms
                 ? queue_max_wait_ms
                 : settings[Setting::max_execution_time].totalMilliseconds();

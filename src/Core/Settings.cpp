@@ -376,6 +376,8 @@ If it's enabled, in hedged requests we can start new connection until receiving 
 )", 0) \
     DECLARE(Milliseconds, queue_max_wait_ms, 0, R"(
 The wait time in the request queue, if the number of concurrent requests exceeds the maximum.
+
+When the FIFO admission queue is enabled (`enable_query_admission_queue`), a value of 0 means the timeout falls back to `max_execution_time`, then to the default receive timeout (300s).
 )", 0) \
     DECLARE(Milliseconds, connection_pool_max_wait_ms, 0, R"(
 The wait time in milliseconds for a connection when the connection pool is full.
