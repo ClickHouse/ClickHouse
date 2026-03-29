@@ -279,6 +279,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
+            {"DROP PART AGGREGATION CACHE", Type::CLEAR_PART_AGGREGATION_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
             {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
@@ -620,6 +621,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->query_result_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
+            break;
+        }
+        case Type::CLEAR_PART_AGGREGATION_CACHE:
+        {
             break;
         }
         case Type::CLEAR_FILESYSTEM_CACHE:

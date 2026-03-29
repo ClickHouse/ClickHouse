@@ -371,6 +371,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::CLEAR_PART_AGGREGATION_CACHE:
+        {
+            break;
+        }
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");
