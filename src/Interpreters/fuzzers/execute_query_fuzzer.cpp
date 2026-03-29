@@ -27,6 +27,8 @@
 using namespace DB;
 namespace fs = std::filesystem;
 
+extern "C" int LLVMFuzzerInitialize(int *, char ***);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 {

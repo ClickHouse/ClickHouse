@@ -517,6 +517,8 @@ void StackTrace::tryCapture()
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
@@ -551,6 +553,8 @@ static String collapseDemangledNames(std::optional<std::string_view> file, Strin
 
     return symbol_name;
 }
+
+#endif
 
 struct StackTraceRefTriple
 {

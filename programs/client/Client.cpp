@@ -2,6 +2,9 @@
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+
+/// musl defines stderr as (stderr) which is a self-referential macro
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
