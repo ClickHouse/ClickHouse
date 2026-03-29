@@ -2,7 +2,6 @@
     <settings>
         <allow_experimental_analyzer>0</allow_experimental_analyzer>
         <allow_experimental_part_aggregation_cache>1</allow_experimental_part_aggregation_cache>
-        <max_threads>1</max_threads>
     </settings>
 
     <create_query>
