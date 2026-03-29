@@ -84,7 +84,7 @@ VirtualColumnsDescription StorageSQS::createVirtuals()
     desc.addEphemeral("_sent_timestamp", std::make_shared<DataTypeUInt64>(), "Unix timestamp (seconds) when the message was sent");
     desc.addEphemeral("_message_group_id", std::make_shared<DataTypeString>(), "FIFO queue message group ID");
     desc.addEphemeral("_message_deduplication_id", std::make_shared<DataTypeString>(), "FIFO queue message deduplication ID");
-    desc.addEphemeral("_sequence_number", std::make_shared<DataTypeUInt64>(), "FIFO queue sequence number");
+    desc.addEphemeral("_sequence_number", std::make_shared<DataTypeString>(), "FIFO queue sequence number");
     return desc;
 }
 

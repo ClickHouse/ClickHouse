@@ -118,10 +118,12 @@ bool SQSConsumer::receive()
             switch (attr_name)
             {
                 case Aws::SQS::Model::MessageSystemAttributeName::ApproximateReceiveCount:
-                    try { m.receive_count = std::stoul(attr_value); } catch (...) { m.receive_count = 1; }
+                    try { m.receive_count = std::stoul(attr_value); }
+                    catch (...) { m.receive_count = 1; tryLogCurrentException(log, "Failed to parse ApproximateReceiveCount"); }
                     break;
                 case Aws::SQS::Model::MessageSystemAttributeName::SentTimestamp:
-                    try { m.sent_timestamp = std::stoull(attr_value) / 1000; } catch (...) { m.sent_timestamp = 0; }
+                    try { m.sent_timestamp = std::stoull(attr_value) / 1000; }
+                    catch (...) { m.sent_timestamp = 0; tryLogCurrentException(log, "Failed to parse SentTimestamp"); }
                     break;
                 case Aws::SQS::Model::MessageSystemAttributeName::MessageGroupId:
                     m.message_group_id = attr_value;
@@ -130,7 +132,7 @@ bool SQSConsumer::receive()
                     m.message_deduplication_id = attr_value;
                     break;
                 case Aws::SQS::Model::MessageSystemAttributeName::SequenceNumber:
-                    try { m.sequence_number = std::stoul(attr_value); } catch (...) { m.sequence_number = 0; }
+                    m.sequence_number = attr_value;
                     break;
                 default:
                     break;

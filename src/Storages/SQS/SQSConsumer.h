@@ -31,7 +31,7 @@ public:
         UInt64 sent_timestamp = 0; /// Unix timestamp in seconds
         String message_group_id;
         String message_deduplication_id;
-        UInt64 sequence_number = 0;
+        String sequence_number;
     };
 
     SQSConsumer(

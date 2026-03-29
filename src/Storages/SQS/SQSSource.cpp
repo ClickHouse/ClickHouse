@@ -163,7 +163,7 @@ Chunk SQSSource::generate()
                     result_columns[i]->insert(message.message_deduplication_id);
             else if (col_name == "_sequence_number")
                 for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.sequence_number);
+                    result_columns[i]->insertData(message.sequence_number.data(), message.sequence_number.size());
             else
             {
                 /// Find matching column in chunk by position (non-virtual columns come first)
