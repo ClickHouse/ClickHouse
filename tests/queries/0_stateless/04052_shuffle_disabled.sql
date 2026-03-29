@@ -6,5 +6,4 @@ LIMIT 1;
 
 SELECT number
 FROM numbers(3)
-SHUFFLE
-LIMIT 1;
+SHUFFLE; -- { serverError SUPPORT_IS_DISABLED }

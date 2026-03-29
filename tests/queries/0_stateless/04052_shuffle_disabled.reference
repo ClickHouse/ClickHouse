@@ -1,4 +1,4 @@
 SELECT number
-FROM numbers(10) AS SHUFFLE
+FROM numbers(10)
+SHUFFLE
 LIMIT 1
-0
