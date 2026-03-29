@@ -36,35 +36,10 @@ uint32_t maskedCrc32c(const char * data, size_t size)
 
 }
 
-SnappyWriteBuffer::SnappyWriteBuffer(std::unique_ptr<WriteBuffer> out_, size_t buf_size, char * existing_memory, size_t alignment)
-    : SnappyWriteBuffer(*out_, buf_size, existing_memory, alignment)
-{
-    out_holder = std::move(out_);
-}
-
-SnappyWriteBuffer::SnappyWriteBuffer(WriteBuffer & out_, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(&out_)
-{
-}
-
 void SnappyWriteBuffer::writeStreamIdentifier()
 {
-    writeRaw(reinterpret_cast<const char *>(STREAM_IDENTIFIER), sizeof(STREAM_IDENTIFIER));
+    out->write(reinterpret_cast<const char *>(STREAM_IDENTIFIER), sizeof(STREAM_IDENTIFIER));
     header_written = true;
-}
-
-void SnappyWriteBuffer::writeRaw(const char * data, size_t size)
-{
-    while (size > 0)
-    {
-        out->nextIfAtEnd();
-        size_t capacity = out->buffer().end() - out->position();
-        size_t to_write = std::min(size, capacity);
-        memcpy(out->position(), data, to_write);
-        out->position() += to_write;
-        data += to_write;
-        size -= to_write;
-    }
 }
 
 void SnappyWriteBuffer::writeCompressedChunk(const char * data, size_t size)
@@ -103,7 +78,7 @@ void SnappyWriteBuffer::writeCompressedChunk(const char * data, size_t size)
     header[2] = static_cast<uint8_t>((chunk_data_size >> 8) & 0xff);
     header[3] = static_cast<uint8_t>((chunk_data_size >> 16) & 0xff);
 
-    writeRaw(reinterpret_cast<const char *>(header), 4);
+    out->write(reinterpret_cast<const char *>(header), 4);
 
     /// Masked CRC-32C, little-endian.
     uint8_t crc_bytes[4];
@@ -111,9 +86,9 @@ void SnappyWriteBuffer::writeCompressedChunk(const char * data, size_t size)
     crc_bytes[1] = static_cast<uint8_t>((crc >> 8) & 0xff);
     crc_bytes[2] = static_cast<uint8_t>((crc >> 16) & 0xff);
     crc_bytes[3] = static_cast<uint8_t>((crc >> 24) & 0xff);
-    writeRaw(reinterpret_cast<const char *>(crc_bytes), 4);
+    out->write(reinterpret_cast<const char *>(crc_bytes), 4);
 
-    writeRaw(payload, payload_size);
+    out->write(payload, payload_size);
 }
 
 void SnappyWriteBuffer::nextImpl()
@@ -137,16 +112,9 @@ void SnappyWriteBuffer::nextImpl()
     }
 }
 
-void SnappyWriteBuffer::cancelImpl() noexcept
+void SnappyWriteBuffer::finalFlushBefore()
 {
-    Base::cancelImpl();
-    out->cancel();
-}
-
-void SnappyWriteBuffer::finalizeImpl()
-{
-    Base::finalizeImpl();
-    out->finalize();
+    next();
 }
 
 }

@@ -15,8 +15,8 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&enable_http_compression=1" -H 'Accept
 RESPONSE=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_http_compression=1" -H 'Accept-Encoding: snappy' \
     -d 'SELECT number FROM system.numbers LIMIT 5' | od -A n -t x1 -N 10 | tr -d ' \n')
 
-EXPECTED="ff06000073"  # first 5 bytes of the stream identifier (ff 06 00 00 73='s')
-ACTUAL="${RESPONSE:0:10}"
+EXPECTED="ff060000734e61507059"  # full 10-byte stream identifier: ff 06 00 00 "sNaPpY"
+ACTUAL="${RESPONSE:0:20}"
 
 if [ "$ACTUAL" = "$EXPECTED" ]; then
     echo "OK: snappy framing stream identifier found"
