@@ -115,6 +115,7 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Server/HTTP/HTTP2/setHTTP2Alpn.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
@@ -2613,9 +2614,10 @@ try
             {
                 auto http_context = httpContext();
                 Poco::Timespan keep_alive_timeout(server_settings[ServerSetting::keep_alive_timeout].value.seconds(), 0);
-                Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-                http_params->setTimeout(http_context->getReceiveTimeout());
-                http_params->setKeepAliveTimeout(keep_alive_timeout);
+                Poco::Net::HTTPServerParams::Ptr http1_params = new Poco::Net::HTTPServerParams;
+                http1_params->setTimeout(http_context->getReceiveTimeout());
+                http1_params->setKeepAliveTimeout(keep_alive_timeout);
+                HTTP2ServerParams::Ptr http2_params = HTTP2ServerParams::fromConfig(config());
 
                 Poco::Net::ServerSocket socket;
                 auto address = socketBindListen(server_settings, socket, listen_host, port);
@@ -2631,7 +2633,8 @@ try
                             *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
                         server_pool,
                         socket,
-                        http_params));
+                        http1_params,
+                        http2_params));
             });
         }
 #else
@@ -3212,7 +3215,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const ServerSettings & server_settings,
     const std::string & protocol,
-    Poco::Net::HTTPServerParams::Ptr http_params,
+    Poco::Net::HTTPServerParams::Ptr http1_params,
+    HTTP2ServerParams::Ptr http2_params,
+    Poco::ThreadPool & thread_pool,
     AsynchronousMetrics & async_metrics,
     bool & is_secure)
 {
@@ -3246,19 +3251,19 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), thread_pool, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")
         {
             const std::string handler_name = server_settings[ServerSetting::prometheus_keeper_metrics_only] ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, handler_name), thread_pool, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
         }
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http1_params, http2_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), thread_pool, ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
 
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol configuration error, unknown protocol name '{}'", type);
@@ -3317,11 +3322,12 @@ void Server::createServers(
 {
     const Settings & settings = global_context->getSettingsRef();
 
-    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(settings[Setting::http_receive_timeout]);
-    http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
-    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
-    http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+    Poco::Net::HTTPServerParams::Ptr http1_params = new Poco::Net::HTTPServerParams;
+    http1_params->setTimeout(settings[Setting::http_receive_timeout]);
+    http1_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
+    http1_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
+    http1_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+    HTTP2ServerParams::Ptr http2_params = HTTP2ServerParams::fromConfig(config);
 
     Poco::Util::AbstractConfiguration::Keys protocols;
     config.keys("protocols", protocols);
@@ -3357,7 +3363,7 @@ void Server::createServers(
         for (const auto & host : hosts)
         {
             bool is_secure = false;
-            auto stack = buildProtocolStackFromConfig(config, server_settings, protocol, http_params, async_metrics, is_secure);
+            auto stack = buildProtocolStackFromConfig(config, server_settings, protocol, http1_params, http2_params, server_pool, async_metrics, is_secure);
 
             if (stack->empty())
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' stack empty", protocol);
@@ -3403,7 +3409,7 @@ void Server::createServers(
                     port_name,
                     "http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), server_pool, socket, http1_params, http2_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
             });
         }
 
@@ -3418,12 +3424,14 @@ void Server::createServers(
                 auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
                 socket.setSendTimeout(settings[Setting::http_send_timeout]);
+                if (setHTTP2Alpn(socket, http2_params))
+                    LOG_INFO(&logger(), "Enabled HTTP/2 via ALPN for {}", address.toString());
                 return ProtocolServerAdapter(
                     listen_host,
                     port_name,
                     "https://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http1_params, http2_params, connection_filter, ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes));
 #else
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
@@ -3645,7 +3653,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http1_params, http2_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
             });
         }
     }
@@ -3664,10 +3672,11 @@ void Server::createInterserverServers(
 {
     const Settings & settings = global_context->getSettingsRef();
 
-    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-    http_params->setTimeout(settings[Setting::http_receive_timeout]);
-    http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
-    http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+    Poco::Net::HTTPServerParams::Ptr http1_params = new Poco::Net::HTTPServerParams;
+    http1_params->setTimeout(settings[Setting::http_receive_timeout]);
+    http1_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
+    http1_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+    HTTP2ServerParams::Ptr http2_params = HTTP2ServerParams::fromConfig(config);
 
     /// Now iterate over interserver_listen_hosts
     for (const auto & interserver_listen_host : interserver_listen_hosts)
@@ -3693,7 +3702,8 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
-                        http_params,
+                        http1_params,
+                        http2_params,
                         nullptr,
                         ProfileEvents::InterfaceInterserverReceiveBytes,
                         ProfileEvents::InterfaceInterserverSendBytes));
@@ -3719,7 +3729,8 @@ void Server::createInterserverServers(
                         createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPSHandler-factory"),
                         server_pool,
                         socket,
-                        http_params,
+                        http1_params,
+                        http2_params,
                         nullptr,
                         ProfileEvents::InterfaceInterserverReceiveBytes,
                         ProfileEvents::InterfaceInterserverSendBytes));

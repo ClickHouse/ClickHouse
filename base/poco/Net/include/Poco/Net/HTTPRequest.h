@@ -51,6 +51,11 @@ namespace Net
         HTTPRequest(const std::string & method, const std::string & uri, const std::string & version);
         /// Creates a HTTP request with the given method, URI and version.
 
+        HTTPRequest(const HTTPRequest &) = default;
+        HTTPRequest & operator=(const HTTPRequest &) = default;
+        HTTPRequest(HTTPRequest &&) = default;
+        HTTPRequest & operator=(HTTPRequest &&) = default;
+
         virtual ~HTTPRequest();
         /// Destroys the HTTPRequest.
 
@@ -179,9 +184,6 @@ namespace Net
 
         std::string _method;
         std::string _uri;
-
-        HTTPRequest(const HTTPRequest &);
-        HTTPRequest & operator=(const HTTPRequest &);
     };
 
 

@@ -19,7 +19,7 @@ private:
 public:
     explicit IndexRequestHandler(IServer & server_) : server(server_) {}
     IndexRequestHandler(IServer & server_, const std::unordered_map<String, String> & http_response_headers_override_);
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 }

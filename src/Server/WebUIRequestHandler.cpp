@@ -6,7 +6,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <ClickStackResources.generated.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -50,7 +49,7 @@ constexpr unsigned char resource_jemalloc_html[] =
 namespace DB
 {
 
-static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html,
+static void handle(HTTPServerRequest & request, HTTPServerResponseBase & response, std::string_view html,
                    std::unordered_map<String, String> http_response_headers_override = {})
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
@@ -59,19 +58,19 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response);
+    response.setResponseDefaultHeaders();
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto wb = response.makeStream();
+    wb->write(html.data(), html.size());
+    wb->finalize();
 }
 
-void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_play_html), std::size(resource_play_html)}, http_response_headers_override);
 }
 
-void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     std::string html(reinterpret_cast<const char *>(resource_dashboard_html), std::size(resource_dashboard_html));
 
@@ -89,17 +88,17 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     handle(request, response, html, http_response_headers_override);
 }
 
-void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_binary_html), std::size(resource_binary_html)}, http_response_headers_override);
 }
 
-void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_merges_html), std::size(resource_merges_html)}, http_response_headers_override);
 }
 
-void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     if (request.getURI() == "/js/uplot.js")
     {
@@ -112,11 +111,13 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
     else
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
+        auto wb = response.makeStream();
+        *wb << "Not found.\n";
+        wb->finalize();
     }
 }
 
-void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     handle(request, response, {reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html)}, http_response_headers_override);
 }
@@ -156,7 +157,7 @@ std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri)
     return path_str + ".html";
 }
 
-void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     // Get the resource path from URI
     std::string resource_path = getResourcePath(request.getURI());
@@ -175,7 +176,9 @@ void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTP
     if (it == ClickStack::embedded_resources.end() || it->path != resource_path)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
+        auto wb = response.makeStream();
+        *wb << "Not found.\n";
+        wb->finalize();
         return;
     }
 

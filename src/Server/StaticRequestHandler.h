@@ -30,7 +30,7 @@ public:
         const std::unordered_map<String, String> & http_response_headers_override_,
         int status_ = 200);
 
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
+    void handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response) override;
 };
 
 }

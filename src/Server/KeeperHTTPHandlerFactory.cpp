@@ -8,7 +8,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
@@ -236,8 +235,7 @@ KeeperHTTPReadinessHandler::KeeperHTTPReadinessHandler(std::shared_ptr<KeeperDis
 {
 }
 
-void KeeperHTTPReadinessHandler::handleRequest(
-    HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void KeeperHTTPReadinessHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponseBase & response)
 {
     try
     {
@@ -264,7 +262,7 @@ void KeeperHTTPReadinessHandler::handleRequest(
         if (!status)
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE);
 
-        *response.send() << oss.str();
+        response.makeStream()->sendBufferAndFinalize(oss.str());
     }
     catch (...)
     {
@@ -274,10 +272,12 @@ void KeeperHTTPReadinessHandler::handleRequest(
         {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
-            if (!response.sent())
+            if (!response.sendStarted())
             {
                 /// We have not sent anything yet and we don't even know if we need to compress response.
-                *response.send() << getCurrentExceptionMessage(false) << '\n';
+                auto wb = response.makeStream();
+                *wb << getCurrentExceptionMessage(false) << '\n';
+                wb->finalize();
             }
         }
         catch (...)
@@ -296,8 +296,7 @@ KeeperHTTPCommandsHandler::KeeperHTTPCommandsHandler(
 {
 }
 
-void KeeperHTTPCommandsHandler::handleRequest(
-    HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & /*write_event*/)
+void KeeperHTTPCommandsHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponseBase & response)
 try
 {
     std::vector<std::string> uri_segments;
@@ -310,7 +309,7 @@ try
     catch (const std::exception &)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
-        *response.send() << "Could not parse request path.\n";
+        response.makeStream()->sendBufferAndFinalize("Could not parse request path.\n");
         return;
     }
 
@@ -329,11 +328,11 @@ try
     if (command.empty())
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Invalid command");
-        *response.send() << "Invalid command\n";
+        response.makeStream()->sendBufferAndFinalize("Invalid command\n");
         return;
     }
 
-    setResponseDefaultHeaders(response);
+    response.setResponseDefaultHeaders();
 
     Poco::JSON::Object response_json;
     response.setContentType("application/json");
@@ -372,7 +371,7 @@ try
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(response_json, oss);
 
-    *response.send() << oss.str();
+    response.makeStream()->sendBufferAndFinalize(oss.str());
 }
 catch (...)
 {
@@ -382,10 +381,12 @@ catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
-        if (!response.sent())
+        if (!response.sendStarted())
         {
             /// We have not sent anything yet and we don't even know if we need to compress response.
-            *response.send() << getCurrentExceptionMessage(false) << '\n';
+            auto wb = response.makeStream();
+            *wb << getCurrentExceptionMessage(false) << '\n';
+            wb->finalize();
         }
     }
     catch (...)

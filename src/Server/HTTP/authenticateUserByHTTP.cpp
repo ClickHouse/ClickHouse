@@ -6,7 +6,7 @@
 #include <Server/HTTPHandler.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/HTTP/HTMLForm.h>
-#include <Server/HTTP/HTTPServerResponse.h>
+#include <Server/HTTP/HTTPServerResponseBase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 
@@ -58,7 +58,7 @@ namespace
 bool authenticateUserByHTTP(
     const HTTPServerRequest & request,
     const HTMLForm & params,
-    HTTPServerResponse & response,
+    HTTPServerResponseBase & response,
     Session & session,
     std::unique_ptr<Credentials> & request_credentials,
     const HTTPHandlerConnectionConfig & connection_config,
@@ -214,7 +214,7 @@ bool authenticateUserByHTTP(
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: 'Negotiate' HTTP Authorization failure");
 
             response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
-            response.send();
+            response.makeStream()->finalize();
             /// Keep the credentials for next HTTP request. A client can handle HTTP_UNAUTHORIZED and send us more credentials with the next HTTP request.
             request_credentials = std::move(current_credentials);
             return false;
@@ -273,7 +273,7 @@ bool authenticateUserByHTTP(
             response.set("WWW-Authenticate", "Basic realm=\"" + required_credentials.getRealm() + "\"");
 
         response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
-        response.send();
+        response.makeStream()->finalize();
         /// Keep the credentials for next HTTP request. A client can handle HTTP_UNAUTHORIZED and send us more credentials with the next HTTP request.
         request_credentials = std::move(current_credentials);
         return false;
@@ -288,7 +288,7 @@ bool authenticateUserByHTTP(
             response.set("WWW-Authenticate", "Negotiate realm=\"" + required_credentials.getRealm() + "\"");
 
         response.setStatusAndReason(HTTPResponse::HTTP_UNAUTHORIZED);
-        response.send();
+        response.makeStream()->finalize();
         /// Keep the credentials for next HTTP request. A client can handle HTTP_UNAUTHORIZED and send us more credentials with the next HTTP request.
         request_credentials = std::move(current_credentials);
         return false;

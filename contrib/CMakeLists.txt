@@ -253,6 +253,8 @@ add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
 
+add_contrib (nghttp2-cmake nghttp2)
+
 add_contrib (libcotp-cmake libcotp)
 
 add_contrib (clickstack-cmake clickstack)

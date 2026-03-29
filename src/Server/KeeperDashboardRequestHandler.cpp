@@ -3,7 +3,6 @@
 #if USE_NURAFT
 
 #include <Coordination/KeeperStorage.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -30,7 +29,7 @@ namespace DB
 {
 
 void KeeperDashboardWebUIRequestHandler::handleRequest(
-    HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+    HTTPServerRequest & request, HTTPServerResponseBase & response)
 {
     std::string_view html(reinterpret_cast<const char *>(resource_keeper_dashboard_html), std::size(resource_keeper_dashboard_html));
 
@@ -38,15 +37,14 @@ void KeeperDashboardWebUIRequestHandler::handleRequest(
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response);
+    response.setResponseDefaultHeaders();
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto wb = response.makeStream();
+    wb->write(html.data(), html.size());
+    wb->finalize();
 }
 
-void KeeperDashboardContentRequestHandler::handleRequest(
-    HTTPServerRequest & /*request*/, HTTPServerResponse & response, const ProfileEvents::Event &)
+void KeeperDashboardContentRequestHandler::handleRequest(HTTPServerRequest & /*request*/, HTTPServerResponseBase & response)
 try
 {
     Poco::JSON::Object response_json;
@@ -73,7 +71,7 @@ try
     Poco::JSON::Stringifier::stringify(response_json, oss);
 
     response.setContentType("application/json");
-    *response.send() << oss.str();
+    response.makeStream()->sendBufferAndFinalize(oss.str());
 }
 catch (...)
 {
@@ -83,10 +81,12 @@ catch (...)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
 
-        if (!response.sent())
+        if (!response.sendStarted())
         {
             /// We have not sent anything yet and we don't even know if we need to compress response.
-            *response.send() << getCurrentExceptionMessage(false) << '\n';
+            auto wb = response.makeStream();
+            *wb << getCurrentExceptionMessage(false) << '\n';
+            wb->finalize();
         }
     }
     catch (...)

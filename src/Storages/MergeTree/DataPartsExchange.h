@@ -38,7 +38,7 @@ public:
     Service & operator=(const Service &) = delete;
 
     std::string getId(const std::string & node_id) const override;
-    void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) override;
+    void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponseBase & response) override;
 
 private:
     MergeTreeData::DataPartPtr findPart(const String & name);
