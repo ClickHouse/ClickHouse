@@ -155,8 +155,8 @@ void optimizeUsePartAggregationCache(
         extra_hash.update(query_hash.high64);
         for (const auto & action : intermediate_actions)
         {
-            for (const auto & col : action.actions->getResultColumns())
-                extra_hash.update(col.name);
+            for (const auto * node : action.actions->getActionsDAG().getOutputs())
+                extra_hash.update(node->result_name);
             if (!action.filter_column_name.empty())
                 extra_hash.update(action.filter_column_name);
         }
