@@ -2,6 +2,7 @@
 #include <Storages/SQS/StorageSQS.h>
 
 #include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -106,11 +107,6 @@ Chunk SQSSource::generate()
             format_error = true;
         }
 
-        if (!chunk.hasRows())
-        {
-            continue;
-        }
-
         if (format_error)
         {
             if (!dead_letter_queue_url.empty())
@@ -135,6 +131,9 @@ Chunk SQSSource::generate()
             }
             continue;
         }
+
+        if (!chunk.hasRows())
+            continue;
 
         /// Append chunk rows to result_columns.
         /// Virtual columns are handled by StorageSnapshot - they will appear in sample_block

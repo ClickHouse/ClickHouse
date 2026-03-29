@@ -7512,6 +7512,11 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
 - 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_sqs_table, false, R"(
+Allows creation of tables with the SQS table engine. Possible values:
+- 0 — the SQS table engine is disabled.
+- 1 — the SQS table engine is enabled.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \

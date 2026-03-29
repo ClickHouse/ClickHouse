@@ -4,7 +4,7 @@
 #include <Processors/ISource.h>
 #include <IO/ReadBuffer.h>
 #include <Core/Block.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>

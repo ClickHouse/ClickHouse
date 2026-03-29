@@ -21,6 +21,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
+#include <Core/StreamingHandleErrorMode.h>
 
 #include <Poco/URI.h>
 
@@ -43,11 +44,14 @@ namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_SQS;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsBool allow_experimental_sqs_table;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsMilliseconds stream_flush_interval_ms;
 }
 
@@ -96,7 +100,7 @@ std::shared_ptr<Aws::SQS::SQSClient> StorageSQS::createClient() const
     config.region = (*sqs_settings)[SQSSetting::sqs_aws_region].value;
     config.verifySSL = (*sqs_settings)[SQSSetting::sqs_verify_ssl].value;
     config.endpointOverride = endpoint_override;
-    config.scheme = Aws::Http::Scheme::HTTP;
+    config.scheme = endpoint_override.starts_with("http://") ? Aws::Http::Scheme::HTTP : Aws::Http::Scheme::HTTPS;
 
     Aws::Auth::AWSCredentials credentials(
         (*sqs_settings)[SQSSetting::sqs_aws_access_key_id].value,
@@ -120,6 +124,16 @@ StorageSQS::StorageSQS(
     , log(getLogger("StorageSQS(" + table_id.table_name + ")"))
     , semaphore(0, static_cast<int>((*sqs_settings)[SQSSetting::sqs_num_consumers].value))
 {
+    if (!context_->getSettingsRef()[Setting::allow_experimental_sqs_table])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "SQS table engine is experimental. "
+            "Enable it with the setting 'allow_experimental_sqs_table'.");
+
+    if ((*sqs_settings)[SQSSetting::sqs_handle_error_mode] == StreamingHandleErrorMode::STREAM)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "STREAM error mode is not yet supported for SQS engine. "
+            "Use 'sqs_skip_broken_messages' or 'sqs_dead_letter_queue_url' instead.");
+
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);

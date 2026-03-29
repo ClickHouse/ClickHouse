@@ -1,6 +1,7 @@
 #include <Storages/SQS/SQSSink.h>
 
 #include <Columns/IColumn.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Formats/FormatFactory.h>
