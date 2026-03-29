@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Processors/QueryPlan/Optimizations/optimizeUsePartAggregationCache.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -318,6 +319,9 @@ void optimizeTreeSecondPass(
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
+
+                /// Part aggregation cache optimization: reuse cached per-part aggregation states.
+                optimizeUsePartAggregationCache(*frame.node, nodes);
             }
 
             /// Traverse all children first.
