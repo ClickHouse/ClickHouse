@@ -1232,7 +1232,32 @@ ExpressionActionsPtr getCombinedIndicesExpression(
             combined_expr_list->children.push_back(index_expr->clone());
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::Kind::AllPhysical).withSubcolumns()));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    auto dag = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActionsDAG(false);
+
+    /// The key's data_types were fixed when the key was originally created (during CREATE TABLE
+    /// or ALTER). Settings-dependent functions (e.g. toMonday with enable_extended_results_for_datetime_functions)
+    /// may return different types when re-evaluated with a different context. If the expression
+    /// output types don't match the key's expected types, add CAST operations to ensure consistency.
+    /// Without this, the MergeTree part writer would crash with "Bad cast" when serializing the
+    /// primary index, because the serialization types (from key metadata) don't match the actual
+    /// column types (from the re-evaluated expression).
+    const auto & key_types = key.data_types;
+    const auto & key_names = key.column_names;
+    auto & dag_outputs = dag.getOutputs();
+
+    for (size_t i = 0; i < key_names.size() && i < key_types.size(); ++i)
+    {
+        for (auto & output : dag_outputs)
+        {
+            if (output->result_name == key_names[i] && !output->result_type->equals(*key_types[i]))
+            {
+                output = &dag.addCast(*output, key_types[i], key_names[i], context);
+                break;
+            }
+        }
+    }
+
+    return std::make_shared<ExpressionActions>(std::move(dag));
 }
 
 }
