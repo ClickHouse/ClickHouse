@@ -56,6 +56,8 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/JSONBuilder.h>
+
+#include <cmath>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
