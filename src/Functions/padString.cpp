@@ -59,12 +59,14 @@ namespace
             const size_t step = numCharsInPadString();
             while (true)
             {
+                const size_t bytes = numCharsToNumBytes(num_chars <= step ? num_chars : step);
+                /// Use memcpy instead of memcpySmallAllowReadWriteOverflow15 (via writeSlice)
+                /// because pad_string is a regular std::string without 15-byte overflow padding.
+                res_sink.elements.resize(res_sink.current_offset + bytes);
+                memcpy(&res_sink.elements[res_sink.current_offset], pad_string.data(), bytes);
+                res_sink.current_offset += bytes;
                 if (num_chars <= step)
-                {
-                    writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
                     break;
-                }
-                writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
                 num_chars -= step;
             }
         }
