@@ -36,7 +36,7 @@ public:
 
     SQSConsumer(
         const String & queue_url_,
-        const Aws::SQS::SQSClient & client_,
+        std::shared_ptr<Aws::SQS::SQSClient> client_,
         size_t max_messages_per_receive_,
         int visibility_timeout_,
         int wait_time_seconds_,
@@ -69,7 +69,7 @@ private:
 
     const UInt32 consumer_id;
     const String queue_url;
-    const Aws::SQS::SQSClient & client;
+    std::shared_ptr<Aws::SQS::SQSClient> client;
     const size_t max_messages_per_receive;
     const int visibility_timeout;
     const int wait_time_seconds;

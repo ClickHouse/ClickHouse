@@ -43,6 +43,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h
     $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
     $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
+    $ROOT_PATH/src/Storages/SQS/SQSSettings.cpp
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
     $ROOT_PATH/src/Storages/SetSettings.cpp
     $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp

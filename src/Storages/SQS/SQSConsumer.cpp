@@ -28,7 +28,7 @@ namespace
 
 SQSConsumer::SQSConsumer(
     const String & queue_url_,
-    const Aws::SQS::SQSClient & client_,
+    std::shared_ptr<Aws::SQS::SQSClient> client_,
     size_t max_messages_per_receive_,
     int visibility_timeout_,
     int wait_time_seconds_,
@@ -37,7 +37,7 @@ SQSConsumer::SQSConsumer(
     size_t internal_queue_size_)
     : consumer_id(consumer_id_counter.fetch_add(1))
     , queue_url(queue_url_)
-    , client(client_)
+    , client(std::move(client_))
     , max_messages_per_receive(max_messages_per_receive_)
     , visibility_timeout(visibility_timeout_)
     , wait_time_seconds(wait_time_seconds_)
@@ -75,7 +75,7 @@ bool SQSConsumer::receive()
         return false;
 
     auto request = makeReceiveMessageRequest();
-    auto outcome = client.ReceiveMessage(request);
+    auto outcome = client->ReceiveMessage(request);
 
     if (!outcome.IsSuccess())
     {
@@ -175,7 +175,7 @@ void SQSConsumer::deleteMessage(const String & receipt_handle)
     request.SetQueueUrl(queue_url);
     request.SetReceiptHandle(receipt_handle);
 
-    auto outcome = client.DeleteMessage(request);
+    auto outcome = client->DeleteMessage(request);
     if (!outcome.IsSuccess())
     {
         const auto & error = outcome.GetError();
@@ -233,7 +233,7 @@ void SQSConsumer::moveMessageToDLQ(const Message & message)
 
         request.SetMessageAttributes(attributes);
 
-        auto outcome = client.SendMessage(request);
+        auto outcome = client->SendMessage(request);
         if (!outcome.IsSuccess())
         {
             const auto & error = outcome.GetError();

@@ -17,12 +17,11 @@ This engine allows integrating ClickHouse with [Amazon Simple Queue Service (SQS
 - Publish rows from ClickHouse into an SQS queue.
 - Process incoming message streams using materialized views.
 
-:::note
+## Note
 The SQS table engine is experimental. Enable it with:
 ```sql
 SET allow_experimental_sqs_table = 1;
 ```
-:::
 
 ## Creating a table {#creating-a-table}
 

@@ -157,32 +157,37 @@ Chunk SQSSource::generate()
 
         if (format_error)
         {
-            if (total_rows > rows_before_message)
+            const bool had_partial_rows = total_rows > rows_before_message;
+
+            /// Rollback any rows written from this message before the parse error.
+            if (had_partial_rows)
             {
                 for (auto & col : result_columns)
                     col->popBack(total_rows - rows_before_message);
                 total_rows = rows_before_message;
             }
-
-            if (!dead_letter_queue_url.empty())
+            if (!had_partial_rows)
             {
-                consumer->moveMessageToDLQ(message);
-            }
-            else if (skip_broken_messages)
-            {
-                ++broken_count;
-                if (broken_count > skip_broken_messages_count && skip_broken_messages_count > 0)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQS: Too many broken messages (more than {})", skip_broken_messages_count);
-                consumer->deleteMessage(message.receipt_handle);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "SQS: Failed to parse message {}. "
-                    "Use sqs_skip_broken_messages to skip broken messages or "
-                    "sqs_dead_letter_queue_url to route them to a DLQ.",
-                    message.message_id);
+                if (!dead_letter_queue_url.empty())
+                {
+                    consumer->moveMessageToDLQ(message);
+                }
+                else if (skip_broken_messages)
+                {
+                    ++broken_count;
+                    if (broken_count > skip_broken_messages_count && skip_broken_messages_count > 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQS: Too many broken messages (more than {})", skip_broken_messages_count);
+                    consumer->deleteMessage(message.receipt_handle);
+                }
+                else
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "SQS: Failed to parse message {}. "
+                        "Use sqs_skip_broken_messages to skip broken messages or "
+                        "sqs_dead_letter_queue_url to route them to a DLQ.",
+                        message.message_id);
+                }
             }
             continue;
         }

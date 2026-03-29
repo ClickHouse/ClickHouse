@@ -222,7 +222,7 @@ SQSConsumerPtr StorageSQS::createConsumer()
 {
     return std::make_shared<SQSConsumer>(
         (*sqs_settings)[SQSSetting::sqs_queue_url].value,
-        *client,
+        client,
         (*sqs_settings)[SQSSetting::sqs_max_messages_per_receive].value,
         static_cast<int>((*sqs_settings)[SQSSetting::sqs_visibility_timeout].value),
         static_cast<int>((*sqs_settings)[SQSSetting::sqs_wait_time_seconds].value),
