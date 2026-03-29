@@ -1,0 +1,42 @@
+<test>
+    <settings>
+        <allow_experimental_analyzer>0</allow_experimental_analyzer>
+        <allow_experimental_part_aggregation_cache>1</allow_experimental_part_aggregation_cache>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE perf_part_agg_cache (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k
+    </create_query>
+
+    <!-- Create 10 parts with 1M rows each -->
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 1000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 2000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 3000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 4000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 5000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 6000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 7000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 8000000 FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO perf_part_agg_cache SELECT number % 1000, number + 9000000 FROM numbers(1000000)</fill_query>
+
+    <!-- Populate cache -->
+    <fill_query>
+        SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
+    </fill_query>
+
+    <!-- Baseline: no cache -->
+    <query>
+        SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
+        SETTINGS enable_reads_from_part_aggregation_cache = 0, enable_writes_to_part_aggregation_cache = 0
+    </query>
+
+    <!-- With cache: all parts cached -->
+    <query>
+        SELECT k, sum(v), avg(v), count() FROM perf_part_agg_cache GROUP BY k FORMAT Null
+        SETTINGS enable_reads_from_part_aggregation_cache = 1, enable_writes_to_part_aggregation_cache = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_part_agg_cache</drop_query>
+</test>

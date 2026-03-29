@@ -184,28 +184,31 @@ void optimizeUsePartAggregationCache(
 
     bool enable_writes = settings[Setting::enable_writes_to_part_aggregation_cache];
 
-    if (cached_entries.empty() && enable_writes)
+    /// Populate cache for uncached parts (both cold and partially warm cache).
+    if (enable_writes && !uncached_parts.empty())
     {
         const auto & aggregator_header = *aggregating->getInputHeaders().front();
 
         populatePartAggregationCache(
-            cache, query_hash, table_id, parts, params,
+            cache, query_hash, table_id, uncached_parts, params,
             aggregator_header,
             reading->getMergeTreeData(),
             reading->getStorageSnapshot(),
             context,
             intermediate_actions);
 
-        uncached_parts.clear();
-        for (const auto & part : parts)
+        /// Re-check: move newly cached parts from uncached to cached.
+        RangesInDataParts still_uncached;
+        for (const auto & part : uncached_parts)
         {
             PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
-            auto entry = cache->get(key);
+            auto entry = enable_reads ? cache->get(key) : nullptr;
             if (entry)
                 cached_entries.push_back(std::move(entry));
             else
-                uncached_parts.push_back(part);
+                still_uncached.push_back(part);
         }
+        uncached_parts = std::move(still_uncached);
     }
 
     if (cached_entries.empty())

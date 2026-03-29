@@ -1414,7 +1414,7 @@ public:
     void clearQueryResultCache(const std::optional<String> & tag) const;
 
     void setPartAggregationCache(size_t max_size_in_bytes);
-    void updatePartAggregationCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updatePartAggregationCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<PartAggregationCache> getPartAggregationCache() const;
     void clearPartAggregationCache() const;
 

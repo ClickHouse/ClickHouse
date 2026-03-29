@@ -2472,6 +2472,7 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePartAggregationCacheConfiguration(config(), max_cache_size_in_bytes);
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
