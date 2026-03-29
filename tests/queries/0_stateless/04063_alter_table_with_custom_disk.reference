@@ -1,0 +1,9 @@
+1	foo	2026-03-29
+2	bar	2026-03-29
+CREATE TABLE default.`04063_data`\n(\n    `key` Int32,\n    `val` String,\n    `dt` Date DEFAULT \'2026-03-29\'\n)\nENGINE = MergeTree\nORDER BY key\nSETTINGS disk = disk(name = \'04063_disk_default\', type = s3_plain_rewritable, endpoint = \'[HIDDEN]\', access_key_id = \'[HIDDEN]\', secret_access_key = \'[HIDDEN]\'), index_granularity = 8192, min_bytes_for_wide_part = 1000\nCOMMENT \'with comment\'
+# reject replacement of custom disk with its own name
+OK
+# reject replacement of custom disk parameters
+OK
+# reject replacement of custom disk with another custom disk
+OK

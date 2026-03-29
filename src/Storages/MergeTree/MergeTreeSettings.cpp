@@ -2225,6 +2225,37 @@ static void validateTableDisk(const DiskPtr & disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
 }
 
+static ASTPtr getDiskFunctionAST(const Field & value)
+{
+    CustomType custom;
+    if (!value.tryGet<CustomType>(custom) || strcmp(custom.getTypeName(), "AST") != 0)
+        return nullptr;
+
+    auto ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+    if (!ast || !isDiskFunction(ast))
+        return nullptr;
+
+    return ast;
+}
+
+SettingsChanges MergeTreeSettings::normalizeSettingsChanges(const SettingsChanges & changes, ContextPtr context)
+{
+    auto normalized_changes = changes;
+
+    for (auto & [name, value] : normalized_changes)
+    {
+        if (name != "disk")
+            continue;
+
+        if (auto disk_function_ast = getDiskFunctionAST(value))
+            value = DiskFromAST::getCustomDisk(disk_function_ast, context);
+        else
+            DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
+    }
+
+    return normalized_changes;
+}
+
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
 void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
@@ -2241,16 +2272,11 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             auto changes = storage_def.settings->changes;
             for (auto & [name, value] : changes)
             {
-                CustomType custom;
                 if (name == "disk")
                 {
-                    ASTPtr value_as_custom_ast = nullptr;
-                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-                        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-                    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+                    if (auto disk_function_ast = getDiskFunctionAST(value))
                     {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(disk_function_ast, context, is_attach);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }

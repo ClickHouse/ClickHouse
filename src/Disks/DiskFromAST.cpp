@@ -24,7 +24,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::string getOrCreateCustomDisk(
+struct CustomDiskConfiguration
+{
+    String name;
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config;
+    UInt128 settings_hash;
+};
+
+CustomDiskConfiguration getCustomDiskConfiguration(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -55,7 +62,7 @@ std::string getOrCreateCustomDisk(
             include_from_path,
             /* throw_on_bad_incl= */!attach,
             dom_parser,
-            getLogger("getOrCreateCustomDisk"),
+            getLogger("getCustomDiskInfo"),
             /*contributing_zk_paths=*/ {},
             /*contributing_files=*/ {},
             &zk_node_cache);
@@ -92,25 +99,26 @@ std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
-        auto result = DiskFactory::instance().create(
-            disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
-        /// Mark that disk can be used without storage policy.
-        result->markDiskAsCustom(disk_settings_hash);
-        return result;
-    });
+    return CustomDiskConfiguration{disk_name, config, disk_settings_hash};
+}
 
+void validateCustomDisk(
+    const DiskPtr & disk,
+    const UInt128 expected_settings_hash,
+    ContextPtr context,
+    bool attach)
+{
     if (!disk->isCustomDisk())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Disk `{}` already exists and is described by the config."
             " It is impossible to redefine it.",
-            disk_name);
+            disk->getName());
 
-    if (disk->getCustomDiskSettings() != disk_settings_hash && !attach)
+    if (disk->getCustomDiskSettings() != expected_settings_hash && !attach)
         throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
-                disk_name);
+                disk->getName());
 
     if (!attach && !disk->isRemote() && disk->getName() != "backup")
     {
@@ -129,8 +137,6 @@ std::string getOrCreateCustomDisk(
                 "Path of the custom local disk must be inside `{}` directory",
                 disk_path_expected_prefix);
     }
-
-    return disk_name;
 }
 
 class DiskConfigurationFlattener
@@ -140,6 +146,7 @@ public:
     {
         ContextPtr context;
         bool attach;
+        bool get_or_create;
     };
 
     static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
@@ -152,8 +159,33 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
-            auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
-            ast = make_intrusive<ASTLiteral>(disk_name);
+            auto disk_conf = getCustomDiskConfiguration(function_args, disk_setting_string, data.context, data.attach);
+
+            DiskPtr disk;
+            if (data.get_or_create)
+            {
+                disk = data.context->getOrCreateDisk(disk_conf.name, [&](const DisksMap & disks_map) -> DiskPtr {
+                    auto result = DiskFactory::instance().create(
+                        disk_conf.name, *disk_conf.config, /* config_prefix */"", data.context, disks_map, /* attach */data.attach, /* custom_disk */true);
+                    /// Mark that disk can be used without storage policy.
+                    result->markDiskAsCustom(disk_conf.settings_hash);
+                    return result;
+                });
+            }
+            else
+            {
+                auto disks = data.context->getDisksMap();
+                auto it = disks.find(disk_conf.name);
+                if (it == disks.end())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The disk `{}` is not found",
+                        disk_conf.name);
+                disk = it->second;
+            }
+
+            validateCustomDisk(disk, disk_conf.settings_hash, data.context, data.attach);
+            ast = make_intrusive<ASTLiteral>(disk_conf.name);
         }
     }
 };
@@ -167,7 +199,21 @@ std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, Cont
     auto ast = disk_function_ast->clone();
 
     using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
-    FlattenDiskConfigurationVisitor::Data data{context, attach};
+    FlattenDiskConfigurationVisitor::Data data{context, attach, true};
+    FlattenDiskConfigurationVisitor{data}.visit(ast);
+
+    return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
+}
+
+std::string DiskFromAST::getCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context)
+{
+    if (!isDiskFunction(disk_function_ast))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
+
+    auto ast = disk_function_ast->clone();
+
+    using FlattenDiskConfigurationVisitor = InDepthNodeVisitor<DiskConfigurationFlattener, false>;
+    FlattenDiskConfigurationVisitor::Data data{context, false, false};
     FlattenDiskConfigurationVisitor{data}.visit(ast);
 
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();

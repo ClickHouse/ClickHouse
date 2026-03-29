@@ -101,6 +101,12 @@ struct MergeTreeSettings
     static Field castValueUtil(std::string_view name, const Field & value);
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
+    /// Normalizes settings changes before comparison and validation.
+    ///
+    /// MergeTreeSettings may differ from original DDL, e.g. `disk` may be represented
+    /// as `disk(...)` in DDL query, while `MergeTreeSettings` already contains only the
+    /// resolved disk name. Normalization is intended to eliminate this discrepancy.
+    static SettingsChanges normalizeSettingsChanges(const SettingsChanges & changes, ContextPtr context);
     static bool hasBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static bool isReadonlySetting(const String & name);
