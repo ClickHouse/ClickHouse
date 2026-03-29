@@ -15,10 +15,15 @@ INSERT INTO x1 SELECT number FROM numbers(1000);
 
 OPTIMIZE TABLE x1 FINAL;
 
-SYSTEM SYNC REPLICA x2;
-
+-- Query x1 projections first (local data, no replication dependency)
 SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 'x1' AND name = 'p1';
 SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 'x1' AND name = 'p2';
+
+-- Increase timeout for SYSTEM SYNC REPLICA: on slow builds (TSAN/debug/ARM) under
+-- parallel test load, replication can take longer than the default 300s receive_timeout
+SET receive_timeout = 600;
+
+SYSTEM SYNC REPLICA x2;
 
 DETACH TABLE x2 SYNC;
 ATTACH TABLE x2;
