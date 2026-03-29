@@ -95,6 +95,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/deep/",
             "/data/empty/",
             "/data/query/",
+            "/data/invalid_href_fallback/",
             "/data/oversize/",
             "/data/glob/",
             "/data/order/",
@@ -201,6 +202,15 @@ class RequestHandler(BaseHTTPRequestHandler):
                 "<a href=\"part3.tsv?download=1\">part3.tsv?download=1</a>\n"
                 "<a href=\"part4.tsv#frag\">part4.tsv#frag</a>\n"
                 "<a href=\"part5.tsv\">part5.tsv</a>\n"
+            )
+            self._send_html(body)
+            return
+        if path == "/data/invalid_href_fallback/":
+            body = (
+                "<a href=\"#\">top</a>\n"
+                "<a href=\"javascript:void(0)\">noop</a>\n"
+                "http://resolver:8087/data/2025/part1.tsv\n"
+                "http://resolver:8087/data/2025/part2.tsv\n"
             )
             self._send_html(body)
             return

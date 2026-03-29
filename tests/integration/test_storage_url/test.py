@@ -173,6 +173,15 @@ def test_url_wildcard_query_fragment_matching():
     assert result.strip() == "6"
 
 
+def test_url_wildcard_falls_back_to_plain_url_scan_when_href_links_are_invalid():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/invalid_href_fallback/part*.tsv', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "12"
+
+
 def test_url_wildcard_with_headers():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url("

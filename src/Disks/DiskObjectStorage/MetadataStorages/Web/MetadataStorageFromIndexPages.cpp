@@ -186,14 +186,13 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     const auto & regex = getURLRegex();
     re2::StringPiece input(page_body);
     re2::StringPiece match;
-    bool used_href_extraction = false;
+    bool found_valid_href_url = false;
 
     static const re2::RE2 href_regex(R"((?i)(?:href|src)\s*=\s*['"]([^'"]+)['"])");
     re2::StringPiece href_input(page_body);
     re2::StringPiece href_match;
     while (re2::RE2::FindAndConsume(&href_input, href_regex, &href_match))
     {
-        used_href_extraction = true;
         std::string url_candidate(href_match.data(), href_match.size());
 
         Poco::URI candidate_uri;
@@ -238,11 +237,12 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         if (!seen_relative.emplace(relative).second)
             continue;
 
+        found_valid_href_url = true;
         result.push_back(relative);
 
     }
 
-    if (!used_href_extraction)
+    if (!found_valid_href_url)
     {
         while (re2::RE2::FindAndConsume(&input, regex, &match))
         {
