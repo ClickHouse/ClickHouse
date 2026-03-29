@@ -1970,6 +1970,9 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
     /// Use non-blocking check to avoid hanging when stdin is a pipe with no data and no EOF
     /// (e.g. when running with --queries-file in a non-interactive environment).
+    /// Note: poll(timeout=0) is a point-in-time snapshot, so very-late-arriving stdin data could be missed.
+    /// This only affects the rare combined-source case (INSERT with INFILE or inline data + additional stdin data).
+    /// For the common case (INSERT without inline data), sendDataFromStdin is called unconditionally below.
     bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in, /* non_blocking= */ true);
 
     if (need_render_progress)
@@ -2420,6 +2423,7 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
+            /// Non-blocking: same trade-off as in sendData — avoids hang on pipes without data/EOF.
             bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in, /* non_blocking= */ true);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
