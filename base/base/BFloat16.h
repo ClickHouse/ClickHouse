@@ -240,14 +240,14 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator<=(const BFloat16 & a, const T & b)
 {
-    return Float32(a) <= static_cast<BFloat16CommonType<T>>(b);
+    return static_cast<BFloat16CommonType<T>>(Float32(a)) <= static_cast<BFloat16CommonType<T>>(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator<=(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) <= Float32(b);
+    return static_cast<BFloat16CommonType<T>>(a) <= static_cast<BFloat16CommonType<T>>(Float32(b));
 }
 
 constexpr inline bool operator<=(BFloat16 a, BFloat16 b)
@@ -259,14 +259,14 @@ template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator>=(const BFloat16 & a, const T & b)
 {
-    return Float32(a) >= static_cast<BFloat16CommonType<T>>(b);
+    return static_cast<BFloat16CommonType<T>>(Float32(a)) >= static_cast<BFloat16CommonType<T>>(b);
 }
 
 template <typename T>
 requires(!std::is_same_v<T, BFloat16>)
 constexpr bool operator>=(const T & a, const BFloat16 & b)
 {
-    return static_cast<BFloat16CommonType<T>>(a) >= Float32(b);
+    return static_cast<BFloat16CommonType<T>>(a) >= static_cast<BFloat16CommonType<T>>(Float32(b));
 }
 
 constexpr inline bool operator>=(BFloat16 a, BFloat16 b)
