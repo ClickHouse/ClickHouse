@@ -1235,8 +1235,8 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 Disabled by default.
 )", 0) \
     DECLARE(UInt64, output_format_float_precision, 0, R"(
-Number of decimal digits after the decimal point for floating-point output (`Float32`, `Float64`, `BFloat16`).
-If set to 0 (the default), uses the shortest round-trip representation.
+When non-zero, round floating-point output (`Float32`, `Float64`, `BFloat16`) to this many digits after the decimal point.
+When 0 (the default), use the shortest round-trip representation.
 )", 0) \
     DECLARE(Bool, output_format_trim_fixed_string, false, R"(
 Trim trailing null bytes from FixedString values in text output formats. E.g. `toFixedString('John', 8)` is printed as `John` instead of `John\0\0\0\0`.

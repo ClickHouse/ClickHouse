@@ -16,6 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 template <typename IteratorSrc, typename IteratorDst>
@@ -190,18 +192,49 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
         return;
     }
 
-    if (settings.float_precision > 60)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-            "Too high precision requested for Float, must not be more than 60, got {}", settings.float_precision);
+    using Converter = double_conversion::DoubleToStringConverter;
+    const int max_fixed_digits = Converter::kMaxFixedDigitsAfterPoint;
+    if (settings.float_precision > max_fixed_digits)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Too high precision requested for Float, must not be more than {}, got {}",
+            max_fixed_digits, static_cast<int>(settings.float_precision));
+
+    /// ToFixed returns false for values with magnitude >= 10^kMaxFixedDigitsBeforePoint.
+    /// Fall back to the default shortest round-trip representation for such values.
+    const double x_double = static_cast<double>(x);
+    if (std::abs(x_double) >= 1e60)
+    {
+        writeFloatText(x, buf);
+        return;
+    }
 
     DoubleConverter<false>::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
     const auto result = DoubleConverter<false>::instance()
-        .ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder);
+        .ToFixed(x_double, static_cast<int>(settings.float_precision), &builder);
     if (!result)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER,
-            "Cannot print floating point number");
-    buf.write(buffer, builder.position());
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot print floating point number: ToFixed failed unexpectedly");
+
+    /// Strip trailing zeros after the decimal point (and the point itself if unneeded).
+    int len = builder.position();
+    int decimal_pos = -1;
+    for (int i = 0; i < len; ++i)
+    {
+        if (buffer[i] == '.')
+        {
+            decimal_pos = i;
+            break;
+        }
+    }
+    if (decimal_pos >= 0)
+    {
+        while (len > decimal_pos + 1 && buffer[len - 1] == '0')
+            --len;
+        if (len == decimal_pos + 1)
+            --len;
+    }
+    buf.write(buffer, len);
 }
 
 template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
