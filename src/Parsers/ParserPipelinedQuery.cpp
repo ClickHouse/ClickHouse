@@ -138,7 +138,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     {
         if (s_where.ignore(pos, expected))
         {
-            if (has_limit || has_group_by)
+            if (has_limit || has_group_by || has_order_by)
                 wrap_current_query();
 
             if (!pipe_where_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
