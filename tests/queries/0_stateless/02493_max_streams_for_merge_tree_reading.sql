@@ -1,10 +1,11 @@
 -- Tags: no-random-merge-tree-settings
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
+SET optimize_sorting_by_input_stream_properties = 1;
 
 drop table if exists t;
 create table t (x UInt64) engine = MergeTree order by x;
-insert into t select number from numbers_mt(10000000) settings max_insert_threads=8;
+insert into t select number from numbers_mt(10000000) settings max_insert_threads=8, min_insert_block_size_rows=10000000;
 
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
@@ -23,7 +24,7 @@ select * from (explain pipeline select sum(x) from t settings max_threads=4, max
 select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1;
 select * from (explain pipeline select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1) where explain like '%Resize%' or explain like '%MergeTreeSelect%';
 
--- With asynchronous_read, read using max_streams * max_streams_to_max_threads_ratio async streams, resize to max_streams_for_merge_tree_reading outp[ut streams, resize to max_threads after aggregation
+-- With asynchronous_read, read using max_streams * max_streams_to_max_threads_ratio async streams, resize to max_streams_for_merge_tree_reading output streams, resize to max_threads after aggregation
 select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8;
 select * from (explain pipeline select sum(x) from t settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8) where explain like '%Resize%' or explain like '%MergeTreeSelect%';
 
