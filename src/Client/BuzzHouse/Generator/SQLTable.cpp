@@ -19,7 +19,7 @@ static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain 
     {
         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
-        tp = lc->subtype.get();
+        tp = lc->subtype;
     }
     if ((flags & collect_generated) != 0 && tp
         && (tp->getTypeClass() == SQLTypeClass::NULLABLE || tp->getTypeClass() == SQLTypeClass::TUPLE))
@@ -48,7 +48,7 @@ void collectColumnPaths(
     {
         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
-        tp = lc->subtype.get();
+        tp = lc->subtype;
         is_lcard = true;
     }
     if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
@@ -56,7 +56,7 @@ void collectColumnPaths(
         /// JSON type can be inside nullable
         Nullable * nl = dynamic_cast<Nullable *>(tp);
 
-        tp = nl->subtype.get();
+        tp = nl->subtype;
     }
     if (tp && (flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
     {
@@ -70,7 +70,7 @@ void collectColumnPaths(
             ArrayType * at2 = at;
             ArrayType * at3 = nullptr;
 
-            while (at && (at = dynamic_cast<ArrayType *>(at->subtype.get())))
+            while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
             {
                 next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
                 paths.push_back(next);
@@ -78,25 +78,25 @@ void collectColumnPaths(
                 i++;
             }
             /// Array null values
-            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype.get())))
+            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype)))
             {
                 at2 = at3;
             }
             if (at2)
             {
-                collectNullable(at2->subtype.get(), flags, next, paths);
+                collectNullable(at2->subtype, flags, next, paths);
             }
         }
         else
         {
             MapType * mt = dynamic_cast<MapType *>(tp);
 
-            next.path.emplace_back(ColumnPathChainEntry("keys", mt->key.get()));
+            next.path.emplace_back(ColumnPathChainEntry("keys", mt->key));
             paths.push_back(next);
             next.path.pop_back();
-            next.path.emplace_back(ColumnPathChainEntry("values", mt->value.get()));
+            next.path.emplace_back(ColumnPathChainEntry("values", mt->value));
             paths.push_back(next);
-            collectNullable(mt->value.get(), flags, next, paths);
+            collectNullable(mt->value, flags, next, paths);
             next.path.pop_back();
         }
     }
@@ -109,7 +109,7 @@ void collectColumnPaths(
         {
             collectColumnPaths(
                 entry.cname.has_value() ? ("c" + std::to_string(entry.cname.value())) : std::to_string(i),
-                entry.subtype.get(),
+                entry.subtype,
                 flags,
                 next,
                 paths);
@@ -124,11 +124,11 @@ void collectColumnPaths(
         {
             const String nsub = "c" + std::to_string(entry.cname);
 
-            collectColumnPaths(nsub, entry.subtype.get(), flags, next, paths);
+            collectColumnPaths(nsub, entry.subtype, flags, next, paths);
             if ((flags & collect_generated) != 0)
             {
                 /// The size entry also exists for nested cols
-                next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype.get()));
+                next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype));
                 next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
                 paths.push_back(next);
                 next.path.pop_back();
@@ -142,7 +142,7 @@ void collectColumnPaths(
 
         for (const auto & entry : jt->subcols)
         {
-            next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype.get()));
+            next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype));
             paths.push_back(next);
             next.path.pop_back();
         }
@@ -150,7 +150,7 @@ void collectColumnPaths(
     else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::QBIT)
     {
         QBitType * qbit = dynamic_cast<QBitType *>(tp);
-        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype.get());
+        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
         static const std::unordered_map<uint32_t, DB::Strings> qentries
             = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
 
@@ -191,7 +191,7 @@ void StatementGenerator::flatTableColumnPath(
         {
             ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
-            collectColumnPaths("c" + std::to_string(key), val.tp.get(), flags, cpc, res);
+            collectColumnPaths("c" + std::to_string(key), val.tp, flags, cpc, res);
         }
     }
 }
@@ -1539,13 +1539,13 @@ void StatementGenerator::addTableColumnInternal(
     SQLColumn & col,
     ColumnDef * cd)
 {
-    std::unique_ptr<SQLType> tp;
+    SQLType * tp = nullptr;
 
     col.cname = cname;
     cd->mutable_col()->mutable_col()->set_column("c" + std::to_string(cname));
     if (special == ColumnSpecial::SIGN || special == ColumnSpecial::IS_DELETED)
     {
-        tp = std::make_unique<IntType>(8, special == ColumnSpecial::IS_DELETED);
+        tp = new IntType(8, special == ColumnSpecial::IS_DELETED);
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(
             special == ColumnSpecial::IS_DELETED ? Integers::UInt8 : Integers::Int8);
     }
@@ -1610,11 +1610,12 @@ void StatementGenerator::addTableColumnInternal(
     {
         tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
     }
-    col.tp = std::move(tp);
+    delete col.tp;
+    col.tp = tp;
     col.special = special;
     if (special != ColumnSpecial::TTL_COL && special != ColumnSpecial::ID_COL)
     {
-        if (!modify && special == ColumnSpecial::NONE && col.tp->isNullable() && rg.nextSmallNumber() < 3)
+        if (!modify && special == ColumnSpecial::NONE && tp->isNullable() && rg.nextSmallNumber() < 3)
         {
             cd->set_nullable(rg.nextBool());
             col.nullable = std::optional<bool>(cd->nullable());
@@ -1761,20 +1762,20 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 t.cols,
                 [&](const SQLColumn & c)
                 {
-                    SQLType * tp = c.tp.get();
+                    SQLType * tp = c.tp;
 
                     if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
                     {
                         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
-                        tp = lc->subtype.get();
+                        tp = lc->subtype;
                     }
                     if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
                     {
                         /// JSON type can be inside nullable
                         Nullable * nl = dynamic_cast<Nullable *>(tp);
 
-                        tp = nl->subtype.get();
+                        tp = nl->subtype;
                     }
                     const SQLTypeClass tc = tp->getTypeClass();
 
@@ -2735,10 +2736,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         if (!has_hierarchical && rg.nextSmallNumber() < 8)
         {
             /// Hierarchical is only valid once, on an integer-type value column
-            const SQLType * eff_tp = next.cols[ncname].tp.get();
+            const SQLType * eff_tp = next.cols[ncname].tp;
 
             if (eff_tp && eff_tp->getTypeClass() == SQLTypeClass::NULLABLE)
-                eff_tp = static_cast<const Nullable *>(eff_tp)->subtype.get();
+                eff_tp = static_cast<const Nullable *>(eff_tp)->subtype;
             dc->set_hierarchical((eff_tp && eff_tp->getTypeClass() == SQLTypeClass::INT) || rg.nextSmallNumber() < 2);
             has_hierarchical |= dc->hierarchical();
         }

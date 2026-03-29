@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
@@ -33,18 +32,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-
-UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_)
-{
-    SipHash hash;
-    hash.update("Variant");
-    hash.update(variant_name_.size());
-    hash.update(variant_name_);
-    for (const auto & serialization : variant_serializations_)
-        hash.update(serialization->getHash());
-    return hash.get128();
-}
-
 struct SerializeBinaryBulkStateVariant : public ISerialization::SerializeBinaryBulkState
 {
     explicit SerializeBinaryBulkStateVariant(UInt64 mode) : discriminators_mode(mode)
@@ -71,16 +58,6 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
     }
 };
 
-SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_)
-{
-    for (const auto & serialization : variant_serializations_)
-    {
-        if (!serialization->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_));
-    }
-    return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
-}
-
 SerializationVariant::SerializationVariant(
     const DataTypes & variant_types_,
     const VariantSerializations & variant_serializations_,
@@ -104,7 +81,7 @@ void SerializationVariant::enumerateStreams(
     const auto * column_variant = data.column ? &assert_cast<const ColumnVariant &>(*data.column) : nullptr;
     const auto * variant_deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateVariant>(data.deserialize_state) : nullptr;
 
-    auto discriminators_serialization = SerializationNamed::create(SerializationNumber<ColumnVariant::Discriminator>::create(), "discr", SubstreamType::NamedVariantDiscriminators);
+    auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
 
     if (settings.use_specialized_prefixes_and_suffixes_substreams)
@@ -155,7 +132,7 @@ void SerializationVariant::enumerateStreams(
     /// Nullable column is created during deserialization of a variant subcolumn according to the discriminators, so we don't have actual Nullable
     /// serialization with null map subcolumn. To be able to read null map subcolumn from the variant subcolumn we use special serialization
     /// SerializationVariantElementNullMap.
-    auto null_map_data = SubstreamData(SerializationNumber<UInt8>::create())
+    auto null_map_data = SubstreamData(std::make_shared<SerializationNumber<UInt8>>())
                              .withType(type_variant ? std::make_shared<DataTypeUInt8>() : nullptr)
                              .withColumn(column_variant ? ColumnUInt8::create() : nullptr);
 
@@ -284,7 +261,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state,
-    UnorderedMapWithMemoryTracking<String, size_t> & variants_statistics,
+    std::unordered_map<String, size_t> & variants_statistics,
     size_t & total_size_of_variants) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
@@ -406,7 +383,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         /// If local and global discriminators are the same, just serialize the column as is.
         if (col.hasGlobalVariantsOrder())
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->serializeBinaryBulk(col.getLocalDiscriminatorsColumn(), *discriminators_stream, offset, limit);
+            SerializationNumber<ColumnVariant::Discriminator>().serializeBinaryBulk(col.getLocalDiscriminatorsColumn(), *discriminators_stream, offset, limit);
         }
         /// If local and global discriminators are different, we should convert local to global before serializing (because we don't serialize the mapping).
         else
@@ -509,7 +486,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkSettings & settings,
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
-    UnorderedMapWithMemoryTracking<String, size_t> tmp_statistics;
+    std::unordered_map<String, size_t> tmp_statistics;
     size_t tmp_size;
     serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }
@@ -565,7 +542,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         /// We will apply rows_offset on discriminators later.
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(
                 *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
         }
         else
@@ -789,7 +766,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
+            SerializationNumber<ColumnVariant::Discriminator>().deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
             size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
@@ -1348,27 +1325,6 @@ void SerializationVariant::serializeTextXML(const IColumn & column, size_t row_n
         SerializationNullable::serializeNullXML(ostr);
     else
         variant_serializations[global_discr]->serializeTextXML(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
-}
-
-size_t SerializationVariant::allocatedBytes() const
-{
-    size_t bytes = sizeof(*this);
-    bytes += variant_serializations.capacity() * sizeof(SerializationPtr);
-    bytes += variant_names.capacity() * sizeof(String);
-    for (const auto & name : variant_names)
-        bytes += name.capacity();
-    bytes += variant_types.capacity() * sizeof(DataTypePtr);
-    bytes += deserialize_text_order.capacity() * sizeof(size_t);
-    bytes += variant_name.capacity();
-    return bytes;
-}
-
-bool SerializationVariant::supportsPooling() const
-{
-    for (const auto & variant : variant_serializations)
-        if (!variant->supportsPooling())
-            return false;
-    return true;
 }
 
 }

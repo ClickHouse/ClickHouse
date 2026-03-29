@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3602
+personal_ws-1.1 en 3599
 AArch
 ABIs
 ACLs
@@ -300,7 +300,6 @@ DockerHub
 DoubleDelta
 Doxygen
 Dresseler
-DuckDB
 Durre
 ECMA
 ETag
@@ -787,7 +786,6 @@ OKLab
 OLAP
 OLTP
 ORCCompression
-ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1834,7 +1832,6 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
-defragmentation
 delim
 deltaLake
 deltaLakeCluster
@@ -3132,7 +3129,6 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
-strikethrough
 stringBytesEntropy
 stringBytesUniq
 stringCompare

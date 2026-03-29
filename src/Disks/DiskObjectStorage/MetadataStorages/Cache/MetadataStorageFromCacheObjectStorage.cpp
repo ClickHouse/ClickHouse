@@ -1,5 +1,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
 
+#include <limits>
+#include <ranges>
 
 namespace DB
 {
@@ -193,8 +195,11 @@ IMetadataStorage::BlobsToRemove MetadataStorageFromCacheObjectStorage::getBlobsT
 {
     std::lock_guard guard(removed_objects_mutex);
 
+    if (max_count == 0)
+        max_count = std::numeric_limits<int64_t>::max();
+
     BlobsToRemove blobs_to_remove;
-    for (const auto & blob : objects_to_remove.takeFirst(max_count))
+    for (const auto & blob : objects_to_remove | std::views::take(max_count))
         blobs_to_remove[blob] = {cluster->getLocalLocation()};
 
     return blobs_to_remove;
@@ -203,16 +208,12 @@ IMetadataStorage::BlobsToRemove MetadataStorageFromCacheObjectStorage::getBlobsT
 int64_t MetadataStorageFromCacheObjectStorage::recordAsRemoved(const StoredObjects & blobs)
 {
     std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.markAsRemoved(blobs);
-}
 
-bool MetadataStorageFromCacheObjectStorage::hasPendingRemovalBlobs(const StoredObjects & blobs) const
-{
-    if (underlying->hasPendingRemovalBlobs(blobs))
-        return true;
+    int64_t recorded_count = 0;
+    for (const auto & removed_blob : blobs)
+        recorded_count += objects_to_remove.erase(removed_blob);
 
-    std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
+    return recorded_count;
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
@@ -267,7 +268,7 @@ void MetadataStorageFromCacheObjectStorageTransaction::commit(const TransactionC
 
     {
         std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+        metadata_storage.objects_to_remove.insert_range(underlying->getSubmittedForRemovalBlobs());
     }
 }
 
@@ -278,7 +279,7 @@ TransactionCommitOutcomeVariant MetadataStorageFromCacheObjectStorageTransaction
     if (isSuccessfulOutcome(result))
     {
         std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(underlying->getSubmittedForRemovalBlobs());
+        metadata_storage.objects_to_remove.insert_range(underlying->getSubmittedForRemovalBlobs());
     }
 
     return result;

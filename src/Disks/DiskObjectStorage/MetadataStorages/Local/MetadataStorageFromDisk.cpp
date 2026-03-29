@@ -8,6 +8,8 @@
 
 #include <Common/logger_useful.h>
 
+#include <limits>
+#include <ranges>
 #include <memory>
 #include <shared_mutex>
 
@@ -149,8 +151,11 @@ IMetadataStorage::BlobsToRemove MetadataStorageFromDisk::getBlobsToRemove(const 
 {
     std::lock_guard guard(removed_objects_mutex);
 
+    if (max_count == 0)
+        max_count = std::numeric_limits<int64_t>::max();
+
     BlobsToRemove blobs_to_remove;
-    for (const auto & blob : objects_to_remove.takeFirst(max_count))
+    for (const auto & blob : objects_to_remove | std::views::take(max_count))
         blobs_to_remove[blob] = {cluster->getLocalLocation()};
 
     return blobs_to_remove;
@@ -159,13 +164,12 @@ IMetadataStorage::BlobsToRemove MetadataStorageFromDisk::getBlobsToRemove(const 
 int64_t MetadataStorageFromDisk::recordAsRemoved(const StoredObjects & blobs)
 {
     std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.markAsRemoved(blobs);
-}
 
-bool MetadataStorageFromDisk::hasPendingRemovalBlobs(const StoredObjects & blobs) const
-{
-    std::lock_guard guard(removed_objects_mutex);
-    return objects_to_remove.containsAny(blobs);
+    int64_t recorded_count = 0;
+    for (const auto & removed_blob : blobs)
+        recorded_count += objects_to_remove.erase(removed_blob);
+
+    return recorded_count;
 }
 
 MetadataStorageFromDiskTransaction::MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_)
@@ -187,7 +191,7 @@ void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVa
 
     {
         std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.submitForRemoval(objects_to_remove);
+        metadata_storage.objects_to_remove.insert_range(objects_to_remove);
     }
 }
 

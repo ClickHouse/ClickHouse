@@ -46,10 +46,7 @@ def run_s3_mocks(started_cluster, args=[]):
 CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
-
-
-def get_glue_local_url(cluster):
-    return f"http://localhost:{cluster.glue_catalog_port}"
+BASE_URL_LOCAL_HOST = "http://localhost:3000"
 
 def generate_decimal(precision=9, scale=2):
     max_value = 10**(precision - scale) - 1
@@ -101,9 +98,9 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_databases(started_cluster):
+def list_databases():
     client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
     )
     databases = client.get_databases()
     return databases
@@ -114,7 +111,7 @@ def load_catalog_impl(started_cluster):
         CATALOG_NAME,  # name is not important
         **{
             "type": "glue",
-            "glue.endpoint": get_glue_local_url(started_cluster),
+            "glue.endpoint": BASE_URL_LOCAL_HOST,
             "glue.region": "us-east-1",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
@@ -742,7 +739,7 @@ def test_table_without_metadata_location(started_cluster):
     table.append(df)
 
     glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
     )
 
     table_response = glue_client.get_table(

@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
-
-#include <base/defines.h>
 
 namespace DB
 {
@@ -70,7 +67,6 @@ public:
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
-    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override;
@@ -86,8 +82,8 @@ public:
 private:
     const MetadataStoragePtr underlying;
 
-    mutable std::mutex removed_objects_mutex;
-    InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
+    std::mutex removed_objects_mutex;
+    StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 };
 
 class MetadataStorageFromCacheObjectStorageTransaction : public IMetadataTransaction

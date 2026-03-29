@@ -657,18 +657,14 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                 n += 1;
                 ++i;
             }
-            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown]
+            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown, _stage_idx = stage_idx]
             {
                 std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
-                    /// ReadManager may already be destroyed at this point — the destructor
-                    /// calls shutdown->shutdown() which only waits for in-flight tasks (shared
-                    /// lock holders), not for queued tasks. Accessing `this` here would be a
-                    /// use-after-free. The batches_in_progress decrement is unnecessary because:
-                    /// - In normal completion (read() calls shutdown), no tasks are queued
-                    ///   (all row groups reached Deallocated before shutdown was called).
-                    /// - In abnormal destruction (~ReadManager), nobody checks the counter.
+                {
+                    stages.at(size_t(_stage_idx)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
                     return;
+                }
                 runBatchOfTasks(_batch);
             });
         }

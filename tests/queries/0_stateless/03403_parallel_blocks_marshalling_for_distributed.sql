@@ -1,5 +1,4 @@
 set serialize_query_plan = 0;
-set enable_parallel_blocks_marshalling = 1; -- EXPLAIN output includes BlocksMarshalling node when enabled
 
 CREATE TABLE t(a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
 
