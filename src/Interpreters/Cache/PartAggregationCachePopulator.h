@@ -24,6 +24,7 @@ struct IntermediateStepAction
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
     const IASTHash & query_hash,
+    const String & table_id,
     const RangesInDataParts & parts,
     const Aggregator::Params & params,
     const Block & aggregator_header,

@@ -5382,7 +5382,7 @@ Possible values:
 
 - Any string
 )", 0) \
-    DECLARE(Bool, use_part_aggregation_cache, false, R"(
+    DECLARE(Bool, allow_experimental_part_aggregation_cache, false, R"(
 If turned on, intermediate per-part aggregation states for `GROUP BY` queries over `MergeTree` tables are cached.
 On subsequent executions of the same query, cached states are reused for parts that still exist, and only new or changed parts need to be aggregated from scratch.
 This is useful for time-series workloads where older data is immutable and only recent data changes.

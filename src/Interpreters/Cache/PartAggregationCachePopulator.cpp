@@ -20,6 +20,7 @@ namespace DB
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
     const IASTHash & query_hash,
+    const String & table_id,
     const RangesInDataParts & parts,
     const Aggregator::Params & params,
     const Block & aggregator_header,
@@ -46,7 +47,7 @@ void populatePartAggregationCache(
 
     for (const auto & part : parts)
     {
-        PartAggregationCache::Key key{query_hash, part.data_part->name};
+        PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
 
         if (cache->get(key))
             continue;

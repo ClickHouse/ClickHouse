@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Common/SipHash.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -21,7 +22,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool use_part_aggregation_cache;
+    extern const SettingsBool allow_experimental_part_aggregation_cache;
     extern const SettingsBool enable_reads_from_part_aggregation_cache;
     extern const SettingsBool enable_writes_to_part_aggregation_cache;
 }
@@ -115,7 +116,7 @@ void optimizeUsePartAggregationCache(
         return;
 
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::use_part_aggregation_cache])
+    if (!settings[Setting::allow_experimental_part_aggregation_cache])
         return;
 
     auto cache = context->getPartAggregationCache();
@@ -145,6 +146,25 @@ void optimizeUsePartAggregationCache(
     IASTHash query_hash = PartAggregationCache::calculateQueryHash(
         params.keys, params.aggregates, filter_dag_for_hash);
 
+    /// Include intermediate ExpressionStep actions in the hash to distinguish
+    /// queries with same GROUP BY but different column transformations.
+    if (!intermediate_actions.empty())
+    {
+        SipHash extra_hash;
+        extra_hash.update(query_hash.low64);
+        extra_hash.update(query_hash.high64);
+        for (const auto & action : intermediate_actions)
+        {
+            for (const auto & col : action.actions->getResultColumns())
+                extra_hash.update(col.name);
+            if (!action.filter_column_name.empty())
+                extra_hash.update(action.filter_column_name);
+        }
+        query_hash = getSipHash128AsPair(extra_hash);
+    }
+
+    String table_id = reading->getMergeTreeData().getStorageID().getFullTableName();
+
     bool enable_reads = settings[Setting::enable_reads_from_part_aggregation_cache];
 
     RangesInDataParts uncached_parts;
@@ -152,7 +172,7 @@ void optimizeUsePartAggregationCache(
 
     for (const auto & part : parts)
     {
-        PartAggregationCache::Key key{query_hash, part.data_part->name};
+        PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
         auto entry = enable_reads ? cache->get(key) : nullptr;
 
         if (entry)
@@ -168,7 +188,7 @@ void optimizeUsePartAggregationCache(
         const auto & aggregator_header = *aggregating->getInputHeaders().front();
 
         populatePartAggregationCache(
-            cache, query_hash, parts, params,
+            cache, query_hash, table_id, parts, params,
             aggregator_header,
             reading->getMergeTreeData(),
             reading->getStorageSnapshot(),
@@ -178,7 +198,7 @@ void optimizeUsePartAggregationCache(
         uncached_parts.clear();
         for (const auto & part : parts)
         {
-            PartAggregationCache::Key key{query_hash, part.data_part->name};
+            PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
             auto entry = cache->get(key);
             if (entry)
                 cached_entries.push_back(std::move(entry));

@@ -52,7 +52,7 @@ IASTHash PartAggregationCache::calculateQueryHash(
 
 bool PartAggregationCache::Key::operator==(const Key & other) const
 {
-    return query_hash == other.query_hash && part_name == other.part_name;
+    return query_hash == other.query_hash && table_id == other.table_id && part_name == other.part_name;
 }
 
 size_t PartAggregationCache::KeyHasher::operator()(const Key & key) const
@@ -60,6 +60,7 @@ size_t PartAggregationCache::KeyHasher::operator()(const Key & key) const
     SipHash hash;
     hash.update(key.query_hash.low64);
     hash.update(key.query_hash.high64);
+    hash.update(key.table_id);
     hash.update(key.part_name);
     return hash.get64();
 }
@@ -200,6 +201,15 @@ void PartAggregationCache::removeEntry(const Key & key)
     current_size_in_bytes -= it->second.entry->sizeInBytes();
     lru_list.erase(it->second.lru_iterator);
     cache.erase(it);
+
+    auto idx_it = part_name_to_keys.find(key.part_name);
+    if (idx_it != part_name_to_keys.end())
+    {
+        auto & keys = idx_it->second;
+        keys.erase(std::remove(keys.begin(), keys.end(), key), keys.end());
+        if (keys.empty())
+            part_name_to_keys.erase(idx_it);
+    }
 }
 
 }

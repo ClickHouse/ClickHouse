@@ -32,6 +32,7 @@ public:
     struct Key
     {
         IASTHash query_hash;
+        String table_id;
         String part_name;
 
         bool operator==(const Key & other) const;

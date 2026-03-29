@@ -627,6 +627,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::CLEAR_PART_AGGREGATION_CACHE:
         {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
             break;
         }
         case Type::CLEAR_FILESYSTEM_CACHE:
