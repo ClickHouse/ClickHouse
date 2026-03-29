@@ -322,6 +322,7 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatMsgPack(FormatFactory &);
 void registerOutputFormatMsgPack(FormatFactory &)
 {
 }

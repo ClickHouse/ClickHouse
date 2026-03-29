@@ -174,6 +174,8 @@ void registerProtobufListSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatProtobufList(FormatFactory &);
+void registerProtobufListSchemaReader(FormatFactory &);
 void registerInputFormatProtobufList(FormatFactory &) {}
 void registerProtobufListSchemaReader(FormatFactory &) {}
 }

@@ -83,6 +83,7 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerOutputFormatProtobuf(FormatFactory &);
     void registerOutputFormatProtobuf(FormatFactory &) {}
 }
 

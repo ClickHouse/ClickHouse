@@ -162,6 +162,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatArrow(FormatFactory &);
 void registerOutputFormatArrow(FormatFactory &)
 {
 }

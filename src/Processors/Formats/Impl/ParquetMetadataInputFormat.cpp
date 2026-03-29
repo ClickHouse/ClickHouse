@@ -534,6 +534,8 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatParquetMetadata(FormatFactory &);
+void registerParquetMetadataSchemaReader(FormatFactory &);
 void registerInputFormatParquetMetadata(FormatFactory &)
 {
 }

@@ -1540,6 +1540,8 @@ void registerParquetSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatParquet(FormatFactory &);
+void registerParquetSchemaReader(FormatFactory &);
 void registerInputFormatParquet(FormatFactory &)
 {
 }

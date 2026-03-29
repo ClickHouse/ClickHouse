@@ -184,6 +184,8 @@ void registerCapnProtoSchemaReader(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerInputFormatCapnProto(FormatFactory &);
+    void registerCapnProtoSchemaReader(FormatFactory &);
     void registerInputFormatCapnProto(FormatFactory &) {}
     void registerCapnProtoSchemaReader(FormatFactory &) {}
 }

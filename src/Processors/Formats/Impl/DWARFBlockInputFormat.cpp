@@ -1033,6 +1033,8 @@ void registerInputFormatDWARF(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatDWARF(FormatFactory &);
+void registerDWARFSchemaReader(FormatFactory &);
 void registerInputFormatDWARF(FormatFactory &)
 {
 }

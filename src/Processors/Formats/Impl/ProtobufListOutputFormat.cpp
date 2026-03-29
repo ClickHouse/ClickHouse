@@ -74,6 +74,7 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatProtobufList(FormatFactory &);
 void registerOutputFormatProtobufList(FormatFactory &) {}
 }
 

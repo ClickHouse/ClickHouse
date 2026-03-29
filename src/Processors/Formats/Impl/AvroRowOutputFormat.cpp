@@ -640,6 +640,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatAvro(FormatFactory &);
 void registerOutputFormatAvro(FormatFactory &)
 {
 }

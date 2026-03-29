@@ -730,6 +730,8 @@ void registerMsgPackSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerInputFormatMsgPack(FormatFactory &);
+void registerMsgPackSchemaReader(FormatFactory &);
 void registerInputFormatMsgPack(FormatFactory &)
 {
 }

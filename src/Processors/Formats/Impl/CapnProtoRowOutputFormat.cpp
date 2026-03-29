@@ -74,6 +74,7 @@ void registerOutputFormatCapnProto(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatCapnProto(FormatFactory &);
 void registerOutputFormatCapnProto(FormatFactory &) {}
 }
 
