@@ -1957,6 +1957,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
+
+        /// Command-line options injected into config by argsToConfig
+        "config-file",
+        "pid-file",
+        "log-file",
+        "errorlog-file",
     };
 
     /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
@@ -1966,6 +1972,41 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "http_handlers",
         "users_",
     };
+
+    /// Collect top-level keys referenced by config:// in http_handlers response_content/response_expression.
+    /// These are user-defined config sections used by StaticRequestHandler and must not be rejected.
+    std::unordered_set<String> config_referenced_keys;
+    {
+        static const String config_prefix = "config://";
+        Poco::Util::AbstractConfiguration::Keys handler_groups;
+        config.keys("", handler_groups);
+        for (const auto & group : handler_groups)
+        {
+            if (!group.starts_with("http_handlers"))
+                continue;
+            Poco::Util::AbstractConfiguration::Keys rules;
+            config.keys(group, rules);
+            for (const auto & rule : rules)
+            {
+                for (const auto & field : {"handler.response_content", "handler.response_expression"})
+                {
+                    String path = group + "." + rule + "." + field;
+                    if (!config.has(path))
+                        continue;
+                    String value = config.getString(path);
+                    if (value.starts_with(config_prefix))
+                    {
+                        String ref = value.substr(config_prefix.size());
+                        auto dot_pos = ref.find('.');
+                        if (dot_pos != String::npos)
+                            ref.resize(dot_pos);
+                        if (!ref.empty())
+                            config_referenced_keys.insert(ref);
+                    }
+                }
+            }
+        }
+    }
 
     Poco::Util::AbstractConfiguration::Keys top_level_keys;
     config.keys("", top_level_keys);
@@ -1977,7 +2018,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         if (bracket_pos != String::npos)
             key.resize(bracket_pos);
 
-        if (known_keys.contains(key) || known_complex_sections.contains(key))
+        if (known_keys.contains(key) || known_complex_sections.contains(key) || config_referenced_keys.contains(key))
             continue;
 
         bool matches_prefix = false;
