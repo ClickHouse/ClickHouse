@@ -79,8 +79,6 @@ struct ArrayResultBuilder
 
     size_t getSourceRowBegin() const { return previous_array_offset; }
 
-    size_t getTotalGeneratedElements() const { return total_generated_elements; }
-
     size_t getRemainingElementBudget(size_t max_elements) const
     {
         chassert(total_generated_elements <= max_elements);
