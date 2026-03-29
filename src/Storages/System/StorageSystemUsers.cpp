@@ -54,7 +54,6 @@ namespace
 
     /// Extract user names from the predicate for O(1) lookups.
     /// Handles `name = 'literal'`, `name IN ('a', 'b')`, and `AND` conjunctions.
-    /// Returns std::nullopt for any other predicate shape — the caller falls back to the full scan.
     void extractNamesFromPredicateImpl(const ActionsDAG::Node & node, std::unordered_set<String> & names, ContextPtr context)
     {
         if (node.type != ActionsDAG::ActionType::FUNCTION)
