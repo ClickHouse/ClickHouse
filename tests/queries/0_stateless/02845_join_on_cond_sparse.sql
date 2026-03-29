@@ -1,3 +1,5 @@
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
