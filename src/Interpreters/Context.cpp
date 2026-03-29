@@ -71,6 +71,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -548,6 +549,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable PartAggregationCachePtr part_aggregation_cache TSA_GUARDED_BY(mutex);    /// Cache of per-part aggregation states.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -4406,6 +4408,40 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
         cache->clear(tag);
 }
 
+void Context::setPartAggregationCache(size_t max_size_in_bytes)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->part_aggregation_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part aggregation cache has been already created.");
+
+    shared->part_aggregation_cache = std::make_shared<PartAggregationCache>(max_size_in_bytes);
+}
+
+void Context::updatePartAggregationCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->part_aggregation_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part aggregation cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("part_aggregation_cache.max_size_in_bytes", 256 * 1024 * 1024);
+    shared->part_aggregation_cache->updateConfiguration(max_size_in_bytes);
+}
+
+PartAggregationCachePtr Context::getPartAggregationCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->part_aggregation_cache;
+}
+
+void Context::clearPartAggregationCache() const
+{
+    PartAggregationCachePtr cache = getPartAggregationCache();
+    if (cache)
+        cache->clear();
+}
+
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
@@ -4453,6 +4489,9 @@ void Context::clearCaches() const
     if (!shared->query_condition_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
     shared->query_condition_cache->clear();
+
+    if (shared->part_aggregation_cache)
+        shared->part_aggregation_cache->clear();
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }

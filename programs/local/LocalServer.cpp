@@ -1015,6 +1015,9 @@ void LocalServer::processConfig()
     /// Initialize a dummy query result cache.
     global_context->setQueryResultCache(0, 0, 0, 0);
 
+    /// Initialize a dummy part aggregation cache.
+    global_context->setPartAggregationCache(0);
+
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
 

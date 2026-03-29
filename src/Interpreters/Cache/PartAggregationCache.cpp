@@ -1,0 +1,223 @@
+#include <Interpreters/Cache/PartAggregationCache.h>
+
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Common/SipHash.h>
+
+#include <algorithm>
+
+
+namespace DB
+{
+
+IASTHash PartAggregationCache::calculateQueryHash(
+    const Names & keys,
+    const AggregateDescriptions & aggregates,
+    const ActionsDAG * filter_dag)
+{
+    SipHash hash;
+
+    /// Hash GROUP BY keys in sorted order for determinism.
+    Names sorted_keys = keys;
+    std::sort(sorted_keys.begin(), sorted_keys.end());
+    for (const auto & key : sorted_keys)
+        hash.update(key);
+
+    /// Hash aggregate function signatures: function name + argument column names.
+    /// Sort by column_name for determinism.
+    std::vector<size_t> agg_indices(aggregates.size());
+    std::iota(agg_indices.begin(), agg_indices.end(), 0);
+    std::sort(agg_indices.begin(), agg_indices.end(), [&](size_t a, size_t b)
+    {
+        return aggregates[a].column_name < aggregates[b].column_name;
+    });
+
+    for (size_t idx : agg_indices)
+    {
+        const auto & agg = aggregates[idx];
+        hash.update(agg.function->getName());
+        for (const auto & arg : agg.argument_names)
+            hash.update(arg);
+        /// Hash parameters (e.g. quantile(0.9) vs quantile(0.5)).
+        for (const auto & param : agg.parameters)
+            hash.update(param.dump());
+    }
+
+    /// Hash the filter expression (WHERE/PREWHERE) if present.
+    if (filter_dag)
+    {
+        /// Use the DAG's output column names as a proxy for the filter structure.
+        auto outputs = filter_dag->getOutputs();
+        for (const auto * output : outputs)
+            hash.update(output->result_name);
+    }
+
+    return getSipHash128AsPair(hash);
+}
+
+
+bool PartAggregationCache::Key::operator==(const Key & other) const
+{
+    return query_hash == other.query_hash && part_name == other.part_name;
+}
+
+size_t PartAggregationCache::KeyHasher::operator()(const Key & key) const
+{
+    SipHash hash;
+    hash.update(key.query_hash.low64);
+    hash.update(key.query_hash.high64);
+    hash.update(key.part_name);
+    return hash.get64();
+}
+
+size_t PartAggregationCache::Entry::sizeInBytes() const
+{
+    return block.allocatedBytes();
+}
+
+PartAggregationCache::PartAggregationCache(size_t max_size_in_bytes_)
+    : max_size_in_bytes(max_size_in_bytes_)
+{
+}
+
+PartAggregationCache::EntryPtr PartAggregationCache::get(const Key & key) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it = cache.find(key);
+    if (it == cache.end())
+        return nullptr;
+
+    /// Move to front of LRU list (most recently used).
+    lru_list.splice(lru_list.begin(), lru_list, it->second.lru_iterator);
+
+    return it->second.entry;
+}
+
+void PartAggregationCache::set(const Key & key, Block block)
+{
+    auto new_entry = std::make_shared<Entry>(Entry{.block = std::move(block)});
+    size_t entry_bytes = new_entry->sizeInBytes();
+
+    /// Don't cache entries that are larger than the entire cache.
+    if (entry_bytes > max_size_in_bytes)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// If key already exists, remove the old entry first.
+    auto existing_it = cache.find(key);
+    if (existing_it != cache.end())
+        removeEntry(key);
+
+    /// Evict old entries until we have enough space.
+    while (current_size_in_bytes + entry_bytes > max_size_in_bytes && !lru_list.empty())
+        evictIfNeeded();
+
+    /// Insert new entry at the front of LRU list.
+    lru_list.push_front(key);
+    cache[key] = CacheEntry{.entry = std::move(new_entry), .lru_iterator = lru_list.begin()};
+    current_size_in_bytes += entry_bytes;
+
+    /// Update secondary index for fast invalidation by part name.
+    part_name_to_keys[key.part_name].push_back(key);
+}
+
+void PartAggregationCache::clear()
+{
+    std::lock_guard lock(mutex);
+    cache.clear();
+    lru_list.clear();
+    part_name_to_keys.clear();
+    current_size_in_bytes = 0;
+}
+
+void PartAggregationCache::invalidateByPartName(const String & part_name)
+{
+    std::lock_guard lock(mutex);
+
+    auto it = part_name_to_keys.find(part_name);
+    if (it == part_name_to_keys.end())
+        return;
+
+    /// Copy the keys vector because removeEntry modifies part_name_to_keys.
+    auto keys_to_remove = std::move(it->second);
+    part_name_to_keys.erase(it);
+
+    for (const auto & key : keys_to_remove)
+    {
+        auto cache_it = cache.find(key);
+        if (cache_it != cache.end())
+        {
+            current_size_in_bytes -= cache_it->second.entry->sizeInBytes();
+            lru_list.erase(cache_it->second.lru_iterator);
+            cache.erase(cache_it);
+        }
+    }
+}
+
+size_t PartAggregationCache::sizeInBytes() const
+{
+    std::lock_guard lock(mutex);
+    return current_size_in_bytes;
+}
+
+size_t PartAggregationCache::entryCount() const
+{
+    std::lock_guard lock(mutex);
+    return cache.size();
+}
+
+std::vector<PartAggregationCache::DumpEntry> PartAggregationCache::dump() const
+{
+    std::lock_guard lock(mutex);
+
+    std::vector<DumpEntry> result;
+    result.reserve(cache.size());
+
+    for (const auto & [key, cache_entry] : cache)
+    {
+        result.push_back(DumpEntry{
+            .key = key,
+            .size_in_bytes = cache_entry.entry->sizeInBytes(),
+            .rows = cache_entry.entry->block.rows(),
+        });
+    }
+
+    return result;
+}
+
+void PartAggregationCache::updateConfiguration(size_t max_size_in_bytes_)
+{
+    std::lock_guard lock(mutex);
+    max_size_in_bytes = max_size_in_bytes_;
+    while (current_size_in_bytes > max_size_in_bytes && !lru_list.empty())
+        evictIfNeeded();
+}
+
+void PartAggregationCache::evictIfNeeded()
+{
+    /// Evict the least recently used entry (back of the list).
+    if (lru_list.empty())
+        return;
+
+    const Key & evict_key = lru_list.back();
+    removeEntry(evict_key);
+}
+
+void PartAggregationCache::removeEntry(const Key & key)
+{
+    auto it = cache.find(key);
+    if (it == cache.end())
+        return;
+
+    current_size_in_bytes -= it->second.entry->sizeInBytes();
+    lru_list.erase(it->second.lru_iterator);
+    cache.erase(it);
+
+    /// Note: we don't clean up part_name_to_keys here to avoid O(N) scan.
+    /// Stale entries in the secondary index are harmless — they just point to
+    /// keys that no longer exist in the cache.
+}
+
+}
