@@ -306,6 +306,9 @@ void HTTPHandler::processQuery(
     /// (To track as much allocations as possible)
     query_scope = QueryScope::create(context);
 
+    /// For admission queue disconnect detection.
+    context->setConnectionAliveCheck([&request]() -> bool { return request.checkPeerConnected(); });
+
     const auto & settings = context->getSettingsRef();
 
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.

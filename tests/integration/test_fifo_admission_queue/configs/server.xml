@@ -1,0 +1,12 @@
+<clickhouse>
+    <max_concurrent_queries>2</max_concurrent_queries>
+    <enable_query_admission_queue>true</enable_query_admission_queue>
+    <admission_queue_alive_check_interval_ms>500</admission_queue_alive_check_interval_ms>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+</clickhouse>

@@ -1,4 +1,5 @@
 #include <Server/MySQLHandler.h>
+#include <Server/SocketAliveCheck.h>
 
 #include <optional>
 #include <Core/MySQL/Authentication.h>
@@ -534,6 +535,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
         QueryScope query_scope = QueryScope::create(query_context);
+
+        /// For admission queue disconnect detection.
+        query_context->setConnectionAliveCheck(makeSocketAliveCheckCallback(socket()));
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();

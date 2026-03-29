@@ -355,6 +355,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
     extern const ServerSettingsBool use_separate_cache_arena;
+    extern const ServerSettingsBool enable_query_admission_queue;
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
@@ -2312,6 +2313,7 @@ try
                 concurrency_control_scheduler);
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
+            global_context->getProcessList().setEnableAdmissionQueue(new_server_settings[ServerSetting::enable_query_admission_queue]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
             global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings[ServerSetting::max_concurrent_select_queries]);
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
@@ -2769,6 +2771,7 @@ try
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(server_settings[ServerSetting::max_concurrent_queries]);
+    global_context->getProcessList().setEnableAdmissionQueue(server_settings[ServerSetting::enable_query_admission_queue]);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());

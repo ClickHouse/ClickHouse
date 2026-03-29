@@ -489,6 +489,20 @@ namespace
     This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
     :::
     )", 0) \
+    DECLARE(Bool, enable_query_admission_queue, true, R"(
+    Enable a FIFO admission queue for query concurrency control.
+    When enabled, queries that exceed `max_concurrent_queries` wait in a strict FIFO queue
+    with precise per-waiter wakeups, eliminating the thundering herd problem.
+    When disabled, the legacy broadcast condvar is used.
+    )", 0) \
+    DECLARE(UInt64, admission_queue_alive_check_interval_ms, 5000, R"(
+    Interval in milliseconds between connection alive checks while a query is waiting in the admission control queue.
+    When a query is waiting for a slot (controlled by `max_concurrent_queries`), the server
+    periodically checks whether the client is still connected. If the client has disconnected, the waiting query is
+    cancelled early instead of occupying a queue slot until timeout.
+
+    The value is clamped to `[500, 10000]` ms internally.
+    )", 0) \
     \
     DECLARE(Double, cache_size_to_ram_max_ratio, 0.5, R"(Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.)", 0) \
     DECLARE(String, uncompressed_cache_policy, DEFAULT_UNCOMPRESSED_CACHE_POLICY, R"(Uncompressed cache policy name.)", 0) \

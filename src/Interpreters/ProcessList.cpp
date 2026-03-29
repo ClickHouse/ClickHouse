@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -10,9 +11,12 @@
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
@@ -24,7 +28,14 @@ namespace CurrentMetrics
 {
     extern const Metric Query;
     extern const Metric QueryNonInternal;
+    extern const Metric QueryAdmissionQueueLength;
 }
+
+namespace ProfileEvents
+{
+    extern const Event QueryAdmissionQueueWaitMicroseconds;
+}
+
 
 namespace DB
 {
@@ -57,6 +68,11 @@ namespace Setting
     extern const SettingsBool trace_profile_events;
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 admission_queue_alive_check_interval_ms;
 }
 
 namespace ErrorCodes
@@ -136,21 +152,135 @@ ProcessList::EntryPtr ProcessList::insert(
         }
     }
 
+    bool got_admission_slot = false;
+
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
         IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-        if (!is_unlimited_query && max_size && non_internal_processes >= max_size)
+
+        /// --- FIFO admission control (see ProcessList.h for design overview) ---
+        bool needs_admission = !is_unlimited_query && max_size && admission_queue_enabled;
+
+        if (needs_admission && admission_running >= max_size)
         {
-            if (queue_max_wait_ms)
-                LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
-            if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                    [&]{ return non_internal_processes < max_size; }))
-                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous queries. Maximum: {}",
-                                max_size);
+            UInt64 effective_wait_ms = queue_max_wait_ms
+                ? queue_max_wait_ms
+                : settings[Setting::max_execution_time].totalMilliseconds();
+
+            if (effective_wait_ms == 0)
+                effective_wait_ms = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC * 1000;
+
+            auto is_alive = query_context->getConnectionAliveCheck();
+            const auto alive_check_interval_ms = std::clamp(static_cast<UInt64>(
+                query_context->getServerSettings()[ServerSetting::admission_queue_alive_check_interval_ms]),
+                UInt64(500), UInt64(10000));
+
+            /// Stack-allocate a waiter and enqueue it (FIFO).
+            AdmissionWaiter waiter;
+            admission_queue.push_back(&waiter);
+
+            /// Guard: on exception, clean up our deque entry or release a
+            /// slot that was granted to us just before the throw.
+            SCOPE_EXIT({
+                if (!got_admission_slot)
+                {
+                    if (waiter.granted)
+                    {
+                        /// We were granted but are throwing — release the slot.
+                        releaseAdmissionSlotLocked(lock);
+                    }
+                    else
+                    {
+                        std::erase(admission_queue, &waiter);
+                    }
+                }
+            });
+
+            CurrentMetrics::Increment queue_length_increment(CurrentMetrics::QueryAdmissionQueueLength);
+            Stopwatch admission_watch;
+
+            /// Predicate: the releaser has granted us the slot.
+            auto my_turn = [&] { return waiter.granted; };
+
+            if (is_alive && alive_check_interval_ms > 0)
+            {
+                /// Periodic alive-check loop.
+                auto deadline = std::chrono::steady_clock::now()
+                    + std::chrono::milliseconds(effective_wait_ms);
+
+                while (!my_turn())
+                {
+                    auto now = std::chrono::steady_clock::now();
+                    if (now >= deadline)
+                    {
+                        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                        "Too many simultaneous queries. Maximum: {}. Waited {} ms.",
+                                        max_size, effective_wait_ms);
+                    }
+
+                    auto chunk = std::min(
+                        std::chrono::milliseconds(alive_check_interval_ms),
+                        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
+
+                    waiter.cv.wait_for(lock, chunk, my_turn);
+
+                    if (!my_turn() && is_alive && !is_alive())
+                    {
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                        "Query admission cancelled: client disconnected while waiting in queue");
+                    }
+                }
+            }
+            else
+            {
+                /// Simple wait with timeout, no alive check.
+                if (!waiter.cv.wait_for(lock, std::chrono::milliseconds(effective_wait_ms), my_turn))
+                {
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous queries. Maximum: {}. Waited {} ms.",
+                                    max_size, effective_wait_ms);
+                }
+            }
+
+            ProfileEvents::increment(ProfileEvents::QueryAdmissionQueueWaitMicroseconds, admission_watch.elapsedMicroseconds());
+
+            /// Slot was transferred to us by the releaser (no counter change).
+            got_admission_slot = true;
+        }
+        else if (needs_admission)
+        {
+            /// Slot available immediately — take it.
+            ++admission_running;
+            got_admission_slot = true;
+        }
+
+        /// Guard: if any subsequent check throws (max_insert_queries_amount,
+        /// max_concurrent_queries_for_all_users, etc.), release the admission slot.
+        scope_guard admission_rollback([&]
+        {
+            if (got_admission_slot)
+            {
+                releaseAdmissionSlotLocked(lock);
+                got_admission_slot = false;
+            }
+        });
+
+        if (!is_unlimited_query && max_size && !admission_queue_enabled)
+        {
+            /// Legacy path: broadcast condvar (admission queue disabled).
+            if (non_internal_processes >= max_size)
+            {
+                if (queue_max_wait_ms)
+                    LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
+                if (!queue_max_wait_ms || !query_finished.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
+                        [&]{ return non_internal_processes < max_size; }))
+                    throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                    "Too many simultaneous queries. Maximum: {}",
+                                    max_size);
+            }
         }
 
         if (!is_unlimited_query)
@@ -232,7 +362,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
 
                     const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
-                    if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
+                    if (!replace_running_query_max_wait_ms || !query_finished.wait_for(lock, std::chrono::milliseconds(replace_running_query_max_wait_ms),
                         [&]
                         {
                             running_query = user_process_list->second.queries.find(client_info.current_query_id);
@@ -341,11 +471,15 @@ ProcessList::EntryPtr ProcessList::insert(
                 settings[Setting::priority],
                 std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
             std::move(query_slot),
+            got_admission_slot,
             std::move(thread_group),
             query_kind,
             settings,
             watch_start_nanoseconds,
             is_internal);
+
+        /// QueryStatus now owns the admission slot — dismiss the rollback guard.
+        admission_rollback.release();
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -462,7 +596,15 @@ ProcessListEntry::~ProcessListEntry()
         std::terminate();
     }
 
-    parent.have_space.notify_all();
+    /// Release admission slot (if still held) via the FIFO mechanism.
+    if (process_list_element_ptr->holds_admission_slot)
+    {
+        process_list_element_ptr->holds_admission_slot = false;
+        parent.releaseAdmissionSlotLocked(lock.getUnderlyingLock());
+    }
+
+    /// Broadcast to `replace_running_query` waiters (they use `query_finished`).
+    parent.query_finished.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker.
     if (user_process_list.queries.empty())
@@ -477,6 +619,7 @@ QueryStatus::QueryStatus(
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
     QuerySlotPtr && query_slot_,
+    bool holds_admission_slot_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -487,6 +630,7 @@ QueryStatus::QueryStatus(
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
     , query_slot(std::move(query_slot_))
+    , holds_admission_slot(holds_admission_slot_)
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -970,6 +1114,50 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     if (found == query_kind_amounts.end())
         return 0;
     return found->second;
+}
+
+/// --- Admission control helpers ---
+
+void ProcessList::releaseAdmissionSlotLocked(Lock & /* acquired_lock */)
+{
+    chassert(admission_running > 0);
+
+    if (!admission_queue.empty())
+    {
+        /// Transfer the slot to the front waiter (FIFO).
+        AdmissionWaiter * front = admission_queue.front();
+        admission_queue.pop_front();
+        front->granted = true;
+        front->cv.notify_one();
+    }
+    else
+    {
+        /// No waiters — just free the slot.
+        --admission_running;
+    }
+}
+
+void QueryStatus::releaseAdmissionSlot()
+{
+    if (!holds_admission_slot)
+        return;
+
+    /// We need ProcessList::mutex because all admission fields are guarded by it.
+    auto entry = getProcessListEntry();
+    if (!entry)
+        return;
+
+    ProcessList & process_list = entry->getProcessList();
+    {
+        LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> locker(process_list.getMutex());
+        auto & lock = locker.getUnderlyingLock();
+
+        if (!holds_admission_slot)
+            return; /// Double-check under lock.
+
+        holds_admission_slot = false;
+        process_list.releaseAdmissionSlotLocked(lock);
+    }
 }
 
 }

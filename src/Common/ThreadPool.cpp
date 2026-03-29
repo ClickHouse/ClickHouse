@@ -627,7 +627,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::it
     /// no parallelism is expected here. So the only valid transition for the start method is Preparing to Running.
     chassert(thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing);
     thread_it = it;
-    thread_state.store(ThreadState::Running, std::memory_order_relaxed); /// now worker can start executing the main loop
+    thread_state.store(ThreadState::Running, std::memory_order_release); /// now worker can start executing the main loop
+    thread_state.notify_one();
 }
 
 template <typename Thread>
@@ -657,7 +658,8 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 
     // If the worker was still waiting in the loop for thread initialization,
     // signal it to terminate and be destroyed now.
-    thread_state.store(ThreadState::Destructing, std::memory_order_relaxed);
+    thread_state.store(ThreadState::Destructing, std::memory_order_release);
+    thread_state.notify_one();
 
     join();
 
@@ -677,13 +679,12 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     DENY_ALLOCATIONS_IN_SCOPE;
 
     // wait until the thread will be started
-    while (thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing)
-    {
-        std::this_thread::yield();  // let's try to yield to avoid consuming too much CPU in the busy-loop
-    }
+    // Use atomic wait instead of busy-yield to avoid scheduler churn under load.
+    while (thread_state.load(std::memory_order_acquire) == ThreadState::Preparing)
+        thread_state.wait(ThreadState::Preparing, std::memory_order_acquire);
 
     // If the thread transitions to Destructing, exit
-    if (thread_state.load(std::memory_order_relaxed) == ThreadState::Destructing)
+    if (thread_state.load(std::memory_order_acquire) == ThreadState::Destructing)
         return;
 
     CurrentMetrics::Increment metric_pool_threads(parent_pool.metric_threads);

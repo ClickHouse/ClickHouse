@@ -24,6 +24,7 @@
 #include <base/defines.h>
 
 #include <condition_variable>
+#include <deque>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -102,6 +103,10 @@ protected:
 
     /// Query slot scheduling for workloads
     QuerySlotPtr query_slot;
+
+    /// Whether this query holds an admission slot (for early release).
+    /// Protected by ProcessList::mutex.
+    bool holds_admission_slot = false;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -204,6 +209,7 @@ public:
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         QuerySlotPtr && query_slot_,
+        bool holds_admission_slot_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
@@ -283,6 +289,9 @@ public:
 
     /// Manually release query slot (if any).
     void releaseQuerySlot() { query_slot.reset(); }
+
+    /// Manually release admission slot (if any). Acquires ProcessList::mutex.
+    void releaseAdmissionSlot();
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -358,6 +367,8 @@ public:
 
     QueryStatusPtr getQueryStatus() { return *it; }
     QueryStatusPtr getQueryStatus() const { return *it; }
+
+    ProcessList & getProcessList() { return parent; }
 };
 
 /** List of currently executing queries.
@@ -388,11 +399,13 @@ public:
 
 protected:
     friend class ProcessListEntry;
+    friend class QueryStatus;
     friend struct ::OvercommitTracker;
     friend struct ::UserOvercommitTracker;
     friend struct ::GlobalOvercommitTracker;
 
-    mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
+    /// Notified when any query finishes; used by replace_running_query.
+    mutable std::condition_variable query_finished;
     mutable Mutex mutex;
 
     /// List of queries
@@ -401,6 +414,35 @@ protected:
 
     /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
     mutable std::condition_variable cancelled_cv;
+
+    /// --- Admission control (FIFO deque, per-waiter CV) ---
+    /// All fields below are protected by `mutex`.
+    ///
+    /// `admission_running` tracks queries holding a slot — separate from
+    /// `non_internal_processes` because unlimited queries skip admission
+    /// and slots can be released early via `releaseAdmissionSlot`.
+    ///
+    /// When all slots are occupied, new queries join a FIFO deque. Each waiter
+    /// waits on its own CV. On release, the front waiter receives the slot
+    /// directly (transferred, not freed-then-reacquired) and is notified via
+    /// `notify_one` on its own CV.
+
+    /// Stack-allocated by the waiting thread; pointer lives in `admission_queue`.
+    struct AdmissionWaiter
+    {
+        bool granted = false;
+        std::condition_variable cv;
+    };
+
+    size_t admission_running = 0;
+    std::deque<AdmissionWaiter *> admission_queue;
+
+    /// When disabled, falls back to legacy `non_internal_processes` counting.
+    bool admission_queue_enabled = true;
+
+    /// Grant the front waiter (if any) or decrement `admission_running`.
+    /// Caller must hold `mutex`.
+    void releaseAdmissionSlotLocked(Lock & acquired_lock);
 
     size_t max_size = 0;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
 
@@ -480,6 +522,12 @@ public:
     {
         Lock lock(mutex);
         return max_size;
+    }
+
+    void setEnableAdmissionQueue(bool value)
+    {
+        Lock lock(mutex);
+        admission_queue_enabled = value;
     }
 
     void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
