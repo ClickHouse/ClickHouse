@@ -47,8 +47,15 @@ bool isValidWebSocketKey(const String & key)
 {
     if (key.empty() || key.size() > 128)
         return false;
-    String decoded = base64Decode(key);
-    return decoded.size() == 16;
+    try
+    {
+        String decoded = base64Decode(key);
+        return decoded.size() == 16;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 /// Send all bytes to the socket, handling partial writes.
@@ -152,6 +159,13 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
 
     /// RSV1/RSV2/RSV3 must be zero (no extensions negotiated)
     if (header[0] & 0x70)
+    {
+        frame.protocol_error = true;
+        return frame;
+    }
+
+    /// Reject reserved opcodes per RFC 6455 Section 5.2
+    if ((frame.opcode >= 0x03 && frame.opcode <= 0x07) || frame.opcode >= 0x0B)
     {
         frame.protocol_error = true;
         return frame;
@@ -396,8 +410,18 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// Wait for the first WebSocket text message containing auth credentials:
     /// {"type":"auth","user":"...","password":"..."}
     /// Set a receive timeout to prevent indefinite blocking before authentication.
+    WebSocketFrame auth_frame;
     socket.setReceiveTimeout(Poco::Timespan(5, 0)); /// 5 seconds for auth
-    WebSocketFrame auth_frame = readWebSocketFrame(socket);
+    try
+    {
+        auth_frame = readWebSocketFrame(socket);
+    }
+    catch (...)
+    {
+        LOG_DEBUG(log, "Auth frame read failed: {}", getCurrentExceptionMessage(false));
+        try { sendWebSocketClose(socket, 1002, "Auth timeout"); } catch (...) {}
+        return;
+    }
     socket.setReceiveTimeout(Poco::Timespan(0)); /// Clear timeout for the main loop
     if (auth_frame.protocol_error)
     {
