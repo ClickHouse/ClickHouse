@@ -1289,7 +1289,7 @@ class JobConfigs:
     )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
-        runs_on=RunnerLabels.AMD_SMALL,
+        runs_on=RunnerLabels.ARM_SMALL,
         run_in_docker="clickhouse/test-base",
         requires=[
             ArtifactNames.CH_LLVM_COVERAGE_BUILD,

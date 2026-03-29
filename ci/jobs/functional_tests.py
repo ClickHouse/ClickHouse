@@ -188,7 +188,7 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "llvm_coverage" in to:
+        if "llvm_coverage" in to and "no-llvm-coverage" not in to:
             is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True

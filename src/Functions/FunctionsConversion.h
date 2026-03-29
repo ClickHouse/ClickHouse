@@ -1818,7 +1818,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
             BFloat16* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if !defined(OS_DARWIN) && !defined(WITH_COVERAGE)
+#if !defined(OS_DARWIN) && !WITH_COVERAGE
             _Pragma("clang diagnostic push")
             _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
@@ -1829,7 +1829,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 float f = static_cast<float>(tmp);
                 d[j] = BFloat16(f);
             }
-#if !defined(OS_DARWIN) && !defined(WITH_COVERAGE)
+#if !defined(OS_DARWIN) && !WITH_COVERAGE
             _Pragma("clang diagnostic pop")
 #endif
 
@@ -1842,7 +1842,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
             Float32* __restrict d = &vec_to[i];
             size_t remaining = input_rows_count - i;
 
-#if !defined(OS_DARWIN) && !defined(WITH_COVERAGE)
+#if !defined(OS_DARWIN) && !WITH_COVERAGE
             _Pragma("clang diagnostic push")
             _Pragma("clang diagnostic ignored \"-Wpass-failed\"")
             _Pragma("clang loop vectorize_width(4) interleave_count(2)")
@@ -1852,7 +1852,7 @@ static ColumnPtr NO_SANITIZE_UNDEFINED convertNumericGeneral(
                 double tmp = static_cast<double>(s[j]);
                 d[j] = Float32(tmp);
             }
-#if !defined(OS_DARWIN) && !defined(WITH_COVERAGE)
+#if !defined(OS_DARWIN) && !WITH_COVERAGE
             _Pragma("clang diagnostic pop")
 #endif
 
