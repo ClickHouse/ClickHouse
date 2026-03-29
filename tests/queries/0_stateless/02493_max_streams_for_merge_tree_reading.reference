@@ -26,7 +26,7 @@ select * from (explain pipeline select sum(x) from t settings max_threads=4, max
   Resize 16 → 4
         Resize 32 → 16
           MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 32 0 → 1
--- For read-in-order, disable everything
+-- For read-in-order, disable extra streams (except with max_streams_to_max_threads_ratio which enables parallel read-in-order)
 set query_plan_remove_redundant_sorting=0; -- to keep reading in order
 select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, optimize_read_in_order=1, query_plan_read_in_order=1;
 49999995000000
@@ -35,4 +35,3 @@ select * from (explain pipeline select sum(x) from (select x from t order by x) 
 select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8, optimize_read_in_order=1, query_plan_read_in_order=1;
 49999995000000
 select * from (explain pipeline select sum(x) from (select x from t order by x) settings max_threads=4, max_streams_for_merge_tree_reading=16, allow_asynchronous_read_from_io_pool_for_merge_tree=1, max_streams_to_max_threads_ratio=8, optimize_read_in_order=1, query_plan_read_in_order=1) where explain like '%Resize%';
-  Resize 1 → 4
