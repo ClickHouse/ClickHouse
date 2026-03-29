@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <memory>
 #include <unordered_set>
+#include <fmt/ranges.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Coordination/CoordinationSettings.h>
@@ -37,6 +38,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -580,13 +582,28 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
         }
 
         /// Pass 2: Build parent-child relationships for non-orphan nodes only
-        for (const auto & itr : storage.container)
+        if (orphan_paths.empty())
         {
-            if (itr.key != "/" && !orphan_paths.contains(std::string(itr.key)))
+            for (const auto & itr : storage.container)
             {
-                auto parent_path = Coordination::parentNodePath(itr.key);
-                storage.container.updateValue(
-                    parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                if (itr.key != "/")
+                {
+                    auto parent_path = Coordination::parentNodePath(itr.key);
+                    storage.container.updateValue(
+                        parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                }
+            }
+        }
+        else
+        {
+            for (const auto & itr : storage.container)
+            {
+                if (itr.key != "/" && !orphan_paths.contains(std::string(itr.key)))
+                {
+                    auto parent_path = Coordination::parentNodePath(itr.key);
+                    storage.container.updateValue(
+                        parent_path, [path = itr.key](typename Storage::Node & value) { value.addChild(Coordination::getBaseNodeName(path)); });
+                }
             }
         }
 
@@ -600,10 +617,22 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
             if (can_remove)
             {
+                /// Identify orphan roots for concise logging
+                std::vector<std::string> orphan_roots;
+                for (const auto & p : orphan_paths)
+                {
+                    auto parent = std::string(Coordination::parentNodePath(p));
+                    if (!orphan_paths.contains(parent))
+                        orphan_roots.push_back(p);
+                }
+                std::sort(orphan_roots.begin(), orphan_roots.end());
+
                 LOG_WARNING(
                     getLogger("KeeperSnapshotManager"),
-                    "Removing {} orphaned nodes from snapshot",
-                    orphan_paths.size());
+                    "Removing {} orphaned nodes ({} orphan roots) from snapshot. Roots: [{}]",
+                    orphan_paths.size(),
+                    orphan_roots.size(),
+                    fmt::join(orphan_roots, ", "));
 
                 for (const auto & orphan : orphan_paths)
                 {
@@ -629,6 +658,20 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
 
                     storage.container.erase(orphan);
                 }
+
+                /// Fix stale numChildren for all surviving nodes.
+                /// Children were rebuilt from scratch in Pass 2 but numChildren comes from the serialized snapshot,
+                /// so they can diverge when orphaned nodes were present.
+                for (const auto & itr : storage.container)
+                {
+                    auto actual = static_cast<int32_t>(itr.value.getChildren().size());
+                    if (itr.value.numChildren() != actual)
+                    {
+                        storage.container.updateValue(
+                            itr.key,
+                            [actual](typename Storage::Node & value) { value.setNumChildren(actual); });
+                    }
+                }
             }
             else
             {
@@ -637,7 +680,7 @@ void KeeperStorageSnapshot<Storage>::deserialize(SnapshotDeserializationResult<S
                     : "digest is enabled (set digest_enabled=false)";
 
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
+                    ErrorCodes::CORRUPTED_DATA,
                     "Found {} orphaned nodes in snapshot but cannot remove them: {}. "
                     "Set 'keeper_server.remove_orphaned_nodes_on_startup' to true and "
                     "'keeper_server.digest_enabled' to false to allow removal",

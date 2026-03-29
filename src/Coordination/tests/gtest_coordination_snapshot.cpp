@@ -934,4 +934,89 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedEphemeralCleanup)
     EXPECT_EQ(restored_storage->committed_ephemeral_nodes, 0);
 }
 
+/// Test that deserialization throws when orphans exist and digest is enabled (even if removal is enabled).
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesThrowsWhenDigestEnabled)
+{
+    using Storage = typename TestFixture::Storage;
+    if constexpr (Storage::use_rocksdb)
+        return; /// Orphan detection only applies to memory storage
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/hello1", "world");
+
+    /// Insert orphaned node
+    using Node = typename Storage::Node;
+    Node orphan;
+    orphan.setData("orphan_data");
+    storage.container.insertOrReplace("/missing/child", orphan);
+
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Removal enabled but digest also enabled — should throw
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(true);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    EXPECT_THROW(manager.deserializeSnapshotFromBuffer(debuf), DB::Exception);
+}
+
+/// Test that stale numChildren on surviving ancestors is fixed after orphan removal.
+TYPED_TEST(CoordinationTest, TestSnapshotOrphanedAncestorNumChildren)
+{
+    using Storage = typename TestFixture::Storage;
+    if constexpr (Storage::use_rocksdb)
+        return; /// Orphan detection only applies to memory storage
+
+    ChangelogDirTest test("./snapshots");
+    this->setSnapshotDirectory("./snapshots");
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
+
+    Storage storage(500, "", this->keeper_context);
+    addNode(storage, "/a", "data");
+
+    /// Simulate stale numChildren: /a had a child /a/missing that is now absent from the snapshot.
+    /// Set numChildren=1 to reflect that stale state.
+    storage.container.updateValue("/a", [](typename Storage::Node & value) { value.setNumChildren(1); });
+
+    /// Insert orphaned node under the missing path
+    using Node = typename Storage::Node;
+    Node orphan;
+    orphan.setData("orphan_data");
+    storage.container.insertOrReplace("/a/missing/child", orphan);
+
+    DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 0);
+
+    /// Deserialize with orphan removal enabled
+    this->keeper_context->setRemoveOrphanedNodesOnStartup(true);
+    this->keeper_context->setDigestEnabled(false);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(0);
+    auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
+    const auto & restored_storage = deser_result.storage;
+
+    /// Orphan should be removed
+    EXPECT_EQ(restored_storage->container.find("/a/missing/child"), restored_storage->container.end());
+
+    /// /a should have numChildren fixed to match actual children count (0, since /a/missing doesn't exist)
+    auto a_it = restored_storage->container.find("/a");
+    ASSERT_NE(a_it, restored_storage->container.end());
+    EXPECT_EQ(a_it->value.numChildren(), static_cast<int32_t>(a_it->value.getChildren().size()));
+}
+
 #endif
