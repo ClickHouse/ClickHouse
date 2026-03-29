@@ -85,10 +85,14 @@ public:
         // Stores the position of the thread in the parent thread pool list
         typename std::list<std::unique_ptr<ThreadFromThreadPool>>::iterator thread_it;
 
+        /// Per-thread condition variable for LIFO idle thread scheduling.
+        /// Each idle thread waits on its own CV, so the scheduler can wake
+        /// exactly the most recently idle thread without spurious wakeups.
+        std::condition_variable idle_cv;
+
         /// LIFO idle thread scheduling flag.
         /// When a new job is scheduled, the most recently idle thread is selected
         /// from the LIFO stack and this flag is set to give it priority.
-        /// The thread is woken via the shared new_job_or_shutdown CV.
         bool idle_wakeup_flag = false;
 
         /// Index of this thread in the idle_thread_stack, or -1 if not in the stack.
@@ -179,7 +183,6 @@ private:
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
-    std::condition_variable new_job_or_shutdown;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -227,8 +230,14 @@ private:
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with the mutex locked.
     void startNewThreadsNoLock();
 
-    /// Wake all threads in the idle stack. Must be called with mutex held.
+    /// Wake all threads in the idle stack and set their wakeup flags (for shutdown).
+    /// Must be called with mutex held.
     void wakeUpAllIdleThreadsNoLock();
+
+    /// Notify all idle threads without setting wakeup flags (for wait/resize).
+    /// Threads will re-evaluate their loop conditions and go back to sleep if not needed.
+    /// Must be called with mutex held.
+    void notifyAllIdleThreadsNoLock();
 
     void finalize();
     void onDestroy();
