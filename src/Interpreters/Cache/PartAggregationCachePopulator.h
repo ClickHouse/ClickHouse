@@ -2,6 +2,7 @@
 
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -12,20 +13,23 @@ class MergeTreeData;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
-/// Eagerly populates the PartAggregationCache for a set of MergeTree parts.
-/// For each part, reads the data via MergeTreeSequentialSource, runs aggregation
-/// (final=false), and stores the intermediate aggregation state in the cache.
-///
-/// Called from the query plan optimization when cache writes are enabled
-/// but the cache is cold for the given query.
+/// Describes one intermediate step between ReadFromMergeTree and AggregatingStep.
+/// Can be either an expression (pure transformation) or a filter (transformation + row filtering).
+struct IntermediateStepAction
+{
+    ExpressionActionsPtr actions;
+    String filter_column_name; /// non-empty means this is a filter step
+};
+
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
     const IASTHash & query_hash,
     const RangesInDataParts & parts,
     const Aggregator::Params & params,
-    const Block & input_header,
+    const Block & aggregator_header,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const std::vector<IntermediateStepAction> & intermediate_actions = {});
 
 }

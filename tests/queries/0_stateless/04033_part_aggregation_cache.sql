@@ -37,4 +37,10 @@ SELECT k, sum(v) FROM t_part_agg_cache GROUP BY k ORDER BY k
 SYSTEM DROP PART AGGREGATION CACHE;
 SELECT count() FROM system.part_aggregation_cache;
 
+-- Test with WHERE: only rows with v > 10 should be aggregated.
+-- k=1: 30+40+100=170, k=2: 20+50+200=270
+SELECT k, sum(v) FROM t_part_agg_cache WHERE v > 10 GROUP BY k ORDER BY k
+    SETTINGS use_part_aggregation_cache = 1;
+
 DROP TABLE t_part_agg_cache;
+SYSTEM DROP PART AGGREGATION CACHE;

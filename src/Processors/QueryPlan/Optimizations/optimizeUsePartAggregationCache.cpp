@@ -3,6 +3,8 @@
 #include <Interpreters/Cache/PartAggregationCache.h>
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -42,15 +44,41 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
+/// Collect all ExpressionStep/FilterStep actions between AggregatingStep and ReadFromMergeTree.
+/// Returned in bottom-up order (ReadFromMergeTree → AggregatingStep).
+static std::vector<IntermediateStepAction> collectIntermediateActions(QueryPlan::Node & node)
+{
+    std::vector<IntermediateStepAction> actions;
+    QueryPlan::Node * current = &node;
+
+    while (current)
+    {
+        IQueryPlanStep * step = current->step.get();
+
+        if (typeid_cast<ReadFromMergeTree *>(step))
+            break;
+
+        if (auto * expr = typeid_cast<ExpressionStep *>(step))
+            actions.push_back({std::make_shared<ExpressionActions>(expr->getExpression().clone()), {}});
+        else if (auto * filter = typeid_cast<FilterStep *>(step))
+            actions.push_back({std::make_shared<ExpressionActions>(filter->getExpression().clone()), filter->getFilterColumnName()});
+
+        if (current->children.size() != 1)
+            break;
+        current = current->children.front();
+    }
+
+    std::reverse(actions.begin(), actions.end());
+    return actions;
+}
+
 static const ActionsDAG * findFilterDAG(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * filter = typeid_cast<FilterStep *>(step))
         return &filter->getExpression();
-
     if (node.children.size() == 1)
         return findFilterDAG(*node.children.front());
-
     return nullptr;
 }
 
@@ -100,9 +128,22 @@ void optimizeUsePartAggregationCache(
 
     const auto & params = aggregating->getParams();
 
-    const ActionsDAG * filter_dag = findFilterDAG(*node.children.front());
+    auto intermediate_actions = collectIntermediateActions(*node.children.front());
+
+    /// If ReadFromMergeTree has a prewhere/where filter, convert it to an IntermediateStepAction
+    /// so the populator applies it when reading data.
+    auto prewhere = reading->getPrewhereInfo();
+    const ActionsDAG * filter_dag_for_hash = nullptr;
+    if (prewhere)
+    {
+        filter_dag_for_hash = &prewhere->prewhere_actions;
+        intermediate_actions.insert(intermediate_actions.begin(), IntermediateStepAction{
+            std::make_shared<ExpressionActions>(prewhere->prewhere_actions.clone()),
+            prewhere->prewhere_column_name});
+    }
+
     IASTHash query_hash = PartAggregationCache::calculateQueryHash(
-        params.keys, params.aggregates, filter_dag);
+        params.keys, params.aggregates, filter_dag_for_hash);
 
     bool enable_reads = settings[Setting::enable_reads_from_part_aggregation_cache];
 
@@ -124,12 +165,15 @@ void optimizeUsePartAggregationCache(
 
     if (cached_entries.empty() && enable_writes)
     {
+        const auto & aggregator_header = *aggregating->getInputHeaders().front();
+
         populatePartAggregationCache(
             cache, query_hash, parts, params,
-            *reading->getOutputHeader(),
+            aggregator_header,
             reading->getMergeTreeData(),
             reading->getStorageSnapshot(),
-            context);
+            context,
+            intermediate_actions);
 
         uncached_parts.clear();
         for (const auto & part : parts)

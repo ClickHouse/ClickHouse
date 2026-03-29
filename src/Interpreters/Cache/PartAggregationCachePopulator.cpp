@@ -1,6 +1,8 @@
 #include <Interpreters/Cache/PartAggregationCachePopulator.h>
 
+#include <Columns/FilterDescription.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -20,19 +22,24 @@ void populatePartAggregationCache(
     const IASTHash & query_hash,
     const RangesInDataParts & parts,
     const Aggregator::Params & params,
-    const Block & input_header,
+    const Block & aggregator_header,
     const MergeTreeData & storage,
     const StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::vector<IntermediateStepAction> & intermediate_actions)
 {
     auto log = getLogger("PartAggregationCachePopulator");
 
+    /// Collect all columns needed: aggregation keys + aggregate args + columns required by intermediate actions.
     Names columns_to_read;
     for (const auto & key : params.keys)
         columns_to_read.push_back(key);
     for (const auto & agg : params.aggregates)
         for (const auto & arg : agg.argument_names)
             columns_to_read.push_back(arg);
+    for (const auto & action : intermediate_actions)
+        for (const auto & col : action.actions->getRequiredColumnsWithTypes())
+            columns_to_read.push_back(col.name);
 
     std::sort(columns_to_read.begin(), columns_to_read.end());
     columns_to_read.erase(std::unique(columns_to_read.begin(), columns_to_read.end()), columns_to_read.end());
@@ -68,7 +75,7 @@ void populatePartAggregationCache(
             auto params_copy = params;
             params_copy.only_merge = false;
 
-            Aggregator aggregator(input_header, params_copy);
+            Aggregator aggregator(aggregator_header, params_copy);
             AggregatedDataVariants data_variants;
             ColumnRawPtrs key_columns(params.keys_size);
             Aggregator::AggregateColumns aggregate_columns(params.aggregates_size);
@@ -79,6 +86,38 @@ void populatePartAggregationCache(
             {
                 if (block.rows() == 0)
                     continue;
+
+                /// Apply intermediate steps (expressions and filters) to transform
+                /// the block from ReadFromMergeTree format to AggregatingStep input format.
+                for (const auto & action : intermediate_actions)
+                {
+                    action.actions->execute(block);
+
+                    if (!action.filter_column_name.empty())
+                    {
+                        const auto & filter_col = block.getByName(action.filter_column_name).column;
+                        FilterDescription filter_desc(*filter_col);
+
+                        if (filter_desc.countBytesInFilter() == 0)
+                        {
+                            block = aggregator_header.cloneEmpty();
+                            break;
+                        }
+
+                        Block filtered_block;
+                        for (const auto & col : block)
+                            filtered_block.insert({filter_desc.filter(*col.column, -1), col.type, col.name});
+
+                        block = std::move(filtered_block);
+
+                        if (block.has(action.filter_column_name))
+                            block.erase(action.filter_column_name);
+                    }
+                }
+
+                if (block.rows() == 0)
+                    continue;
+
                 aggregator.executeOnBlock(block, data_variants, key_columns, aggregate_columns, no_more_keys);
             }
 
