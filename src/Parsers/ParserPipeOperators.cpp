@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
+    extern const int ROW_AND_ROWS_TOGETHER;
+}
+
 bool ParserPipeWhere::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const
 {
     ASTPtr condition;
@@ -132,29 +138,107 @@ bool ParserPipeOrderBy::parse(IParser::Pos & pos, ASTSelectQuery & query, Expect
 bool ParserPipeLimit::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const
 {
     ParserExpressionWithOptionalAlias exp_elem(false);
+    ParserNotEmptyExpressionList exp_list(false);
     ParserToken s_comma(TokenType::Comma);
     ParserKeyword s_offset(Keyword::OFFSET);
+    ParserKeyword s_by(Keyword::BY);
+    ParserKeyword s_with_ties(Keyword::WITH_TIES);
+    ParserKeyword s_all(Keyword::ALL);
 
     ASTPtr limit_length;
+    ASTPtr limit_by_length;
     ASTPtr limit_offset;
+    ASTPtr limit_by_offset;
+    ASTPtr limit_by_expression_list;
 
     if (!exp_elem.parse(pos, limit_length, expected))
         return false;
+
+    bool limit_with_ties_occurred = false;
 
     if (s_comma.ignore(pos, expected))
     {
         limit_offset = limit_length;
         if (!exp_elem.parse(pos, limit_length, expected))
             return false;
+
+        if (s_with_ties.ignore(pos, expected))
+        {
+            limit_with_ties_occurred = true;
+            query.limit_with_ties = true;
+        }
     }
     else if (s_offset.ignore(pos, expected))
     {
         if (!exp_elem.parse(pos, limit_offset, expected))
             return false;
+
+        if (s_with_ties.ignore(pos, expected))
+        {
+            limit_with_ties_occurred = true;
+            query.limit_with_ties = true;
+        }
+    }
+    else if (s_with_ties.ignore(pos, expected))
+    {
+        limit_with_ties_occurred = true;
+        query.limit_with_ties = true;
+    }
+
+    if (s_by.ignore(pos, expected))
+    {
+        if (limit_with_ties_occurred)
+            throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
+
+
+        limit_by_length = limit_length;
+        limit_by_offset = limit_offset;
+        limit_length = nullptr;
+        limit_offset = nullptr;
+
+        if (s_all.ignore(pos, expected))
+        {
+            query.limit_by_all = true;
+            limit_by_expression_list = make_intrusive<ASTExpressionList>();
+        }
+        else
+        {
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
+                return false;
+        }
+    }
+    
+    query.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
+    query.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
+    query.setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
+    query.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
+    query.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
+    return true;
+}
+
+bool ParserPipeOffset::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const
+{
+    ParserExpressionWithOptionalAlias exp_elem(false);
+    ParserKeyword s_row(Keyword::ROW);
+    ParserKeyword s_rows(Keyword::ROWS);
+
+    ASTPtr limit_offset;
+
+    if (!exp_elem.parse(pos, limit_offset, expected))
+        return false;
+
+    bool has_row = false;
+
+    if (s_row.ignore(pos, expected))
+        has_row = true;
+
+    if (s_rows.ignore(pos, expected))
+    {
+        if (has_row)
+            throw Exception(ErrorCodes::ROW_AND_ROWS_TOGETHER, "Can not use ROW and ROWS together");
     }
 
     query.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
-    query.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));
     return true;
 }
 
@@ -183,6 +267,18 @@ bool ParserPipeJoin::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected 
 bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const
 {
     ParserKeyword s_group_by(Keyword::GROUP_BY);
+    ParserKeyword s_with(Keyword::WITH);
+    ParserKeyword s_rollup(Keyword::ROLLUP);
+    ParserKeyword s_cube(Keyword::CUBE);
+    ParserKeyword s_grouping_sets(Keyword::GROUPING_SETS);
+    ParserKeyword s_all(Keyword::ALL);
+    ParserKeyword s_totals(Keyword::TOTALS);
+
+    ParserToken open_bracket(TokenType::OpeningRoundBracket);
+    ParserToken close_bracket(TokenType::ClosingRoundBracket);
+
+    ParserNotEmptyExpressionList exp_list(false);
+    ParserGroupingSetsExpressionList grouping_sets_list;
 
     ASTPtr select_expression_list;
     ASTPtr group_expression_list;
@@ -192,8 +288,53 @@ bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expe
 
     if (s_group_by.ignore(pos, expected))
     {
-        if (!ParserNotEmptyExpressionList(false).parse(pos, group_expression_list, expected))
+        if (s_rollup.ignore(pos, expected))
+            query.group_by_with_rollup = true;
+        else if (s_cube.ignore(pos, expected))
+            query.group_by_with_cube = true;
+        else if (s_grouping_sets.ignore(pos, expected))
+            query.group_by_with_grouping_sets = true;
+        else if (s_all.ignore(pos, expected))
+            query.group_by_all = true;
+
+        if ((query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets)
+            && !open_bracket.ignore(pos, expected))
             return false;
+
+        if (query.group_by_with_grouping_sets)
+        {
+            if (!grouping_sets_list.parse(pos, group_expression_list, expected))
+                return false;
+        }
+        else if (!query.group_by_all)
+        {
+            if (!exp_list.parse(pos, group_expression_list, expected))
+                return false;
+        }
+
+        if ((query.group_by_with_rollup || query.group_by_with_cube || query.group_by_with_grouping_sets)
+            && !close_bracket.ignore(pos, expected))
+            return false;
+    }
+
+    if (s_with.ignore(pos, expected))
+    {
+        if (s_rollup.ignore(pos, expected))
+            query.group_by_with_rollup = true;
+        else if (s_cube.ignore(pos, expected))
+            query.group_by_with_cube = true;
+        else if (s_totals.ignore(pos, expected))
+            query.group_by_with_totals = true;
+        else
+            return false;
+    }
+
+    if (s_with.ignore(pos, expected))
+    {
+        if (query.group_by_with_totals || !s_totals.ignore(pos, expected))
+            return false;
+
+        query.group_by_with_totals = true;
     }
 
     query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));

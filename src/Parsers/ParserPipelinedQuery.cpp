@@ -82,6 +82,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword s_order_by(Keyword::ORDER_BY);
     ParserKeyword s_aggregate(Keyword::AGGREGATE);
     ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKeyword s_offset(Keyword::OFFSET);
 
     ParserToken s_pipe_arrow(TokenType::PipeArrow);
 
@@ -125,6 +126,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     ParserPipeWhere pipe_where_parser;
     ParserPipeOrderBy pipe_order_by_parser;
     ParserPipeLimit pipe_limit_parser;
+    ParserPipeOffset pipe_offset_parser;
     ParserPipeJoin pipe_join_parser;
     ParserPipeAggregate pipe_aggregate_parser;
 
@@ -156,6 +158,15 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
                 wrap_current_query();
 
             if (!pipe_limit_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
+                return false;
+
+            has_limit = true;
+        }
+        else if (s_offset.ignore(pos, expected)) {
+            if (has_limit)
+                wrap_current_query();
+
+            if (!pipe_offset_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
             has_limit = true;

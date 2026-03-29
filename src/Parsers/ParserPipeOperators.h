@@ -25,6 +25,12 @@ public:
     bool parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const;
 };
 
+class ParserPipeOffset
+{
+public:
+    bool parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const;
+};
+
 class ParserPipeJoin
 {
 public:
