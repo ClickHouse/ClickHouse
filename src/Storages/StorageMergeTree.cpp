@@ -9,6 +9,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskType.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -218,13 +219,18 @@ StorageMergeTree::StorageMergeTree(
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
-        /// Leader election requires a remote object storage disk (S3, Azure, GCS)
-        /// that supports conditional writes (If-Match / If-None-Match).
-        if (!getDisks().front()->isRemote())
+        /// Leader election relies on conditional writes (If-Match / If-None-Match) on object storage
+        /// to implement the lease protocol. Only S3 and Azure backends support these operations.
+        /// Other remote backends (HDFS, Web) do not, so we check the storage type explicitly.
+        auto description = getDisks().front()->getDataSourceDescription();
+        if (description.object_storage_type != ObjectStorageType::S3
+            && description.object_storage_type != ObjectStorageType::Azure)
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `leader_election` setting requires a remote object storage disk (S3, Azure, GCS), "
-                "but the primary disk '{}' is local",
+                "The `leader_election` setting requires an S3 or Azure object storage disk "
+                "that supports conditional writes, but the primary disk '{}' uses a different backend",
                 getDisks().front()->getName());
+        }
     }
 }
 

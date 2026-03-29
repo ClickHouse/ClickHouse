@@ -95,7 +95,12 @@ void MergeTreeLeaderElection::run()
         bool became_leader = false;
 
         /// Try to read the existing lease file.
+        /// Disable filesystem cache for lease reads — the lease file is tiny and
+        /// must not go through CachedOnDiskReadBufferFromFile, which can cause
+        /// use-after-free during table shutdown when the cache is destroyed
+        /// before the background task fully stops.
         auto read_settings = context->getReadSettings();
+        read_settings.enable_filesystem_cache = false;
         auto result = object_storage->tryGetObjectMetadata(lease_path, /* with_tags= */ false);
 
         if (!result)

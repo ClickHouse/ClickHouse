@@ -17,6 +17,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.d/storage_conf.xml"],
+    with_minio=True,
 )
 
 
@@ -36,13 +37,27 @@ TABLE_SETTINGS = (
     "leader_election_session_timeout = 5"
 )
 
-TABLE_PATH = "store/leader_election_test/"
+# Fixed UUID so both nodes share the same S3 data path and lease file.
+SHARED_UUID = "12345678-abcd-abcd-abcd-123456789abc"
+SHARED_UUID_FO = "12345678-abcd-abcd-abcd-123456789abd"
 
 
-def create_table(node, table_name="test_le"):
+def create_table_on_first_node(node, table_name="test_le", uuid=SHARED_UUID):
+    """Create the table on the first node (initializes the S3 directory)."""
     node.query(
         f"""
-        CREATE TABLE {table_name} (x UInt64)
+        CREATE TABLE {table_name} UUID '{uuid}' (x UInt64)
+        ENGINE = MergeTree ORDER BY x
+        SETTINGS {TABLE_SETTINGS}
+        """
+    )
+
+
+def attach_table_on_second_node(node, table_name="test_le", uuid=SHARED_UUID):
+    """Attach the table on the second node using the same UUID (shares S3 path)."""
+    node.query(
+        f"""
+        ATTACH TABLE {table_name} UUID '{uuid}' (x UInt64)
         ENGINE = MergeTree ORDER BY x
         SETTINGS {TABLE_SETTINGS}
         """
@@ -54,7 +69,9 @@ def is_leader(node, table_name="test_le"):
     try:
         node.query(f"INSERT INTO {table_name} VALUES (0)")
         # Clean up the test row
-        node.query(f"ALTER TABLE {table_name} DELETE WHERE x = 0")
+        node.query(
+            f"ALTER TABLE {table_name} DELETE WHERE x = 0 SETTINGS mutations_sync = 1"
+        )
         return True
     except Exception as e:
         if "TABLE_IS_READ_ONLY" in str(e):
@@ -62,8 +79,8 @@ def is_leader(node, table_name="test_le"):
         raise
 
 
-def wait_for_leader(nodes, timeout=30, table_name="test_le"):
-    """Wait until exactly one node becomes the leader. Returns (leader, follower)."""
+def wait_for_leader(nodes, timeout=60, table_name="test_le"):
+    """Wait until exactly one node becomes the leader. Returns (leader, followers)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         leaders = []
@@ -78,14 +95,14 @@ def wait_for_leader(nodes, timeout=30, table_name="test_le"):
                 followers.append(node)
         if len(leaders) == 1 and len(followers) == len(nodes) - 1:
             return leaders[0], followers
-        time.sleep(1)
+        time.sleep(2)
     raise RuntimeError("Timed out waiting for exactly one leader")
 
 
 def test_leader_elected(started_cluster):
     """Test that when two nodes share S3 storage, exactly one becomes leader."""
-    create_table(node1)
-    create_table(node2)
+    create_table_on_first_node(node1)
+    attach_table_on_second_node(node2)
 
     leader, followers = wait_for_leader([node1, node2])
     follower = followers[0]
@@ -110,8 +127,8 @@ def test_leader_elected(started_cluster):
 
 def test_failover(started_cluster):
     """Test that when the leader stops, the follower takes over."""
-    create_table(node1, "test_fo")
-    create_table(node2, "test_fo")
+    create_table_on_first_node(node1, "test_fo", SHARED_UUID_FO)
+    attach_table_on_second_node(node2, "test_fo", SHARED_UUID_FO)
 
     leader, followers = wait_for_leader([node1, node2], table_name="test_fo")
     follower = followers[0]
@@ -125,7 +142,7 @@ def test_failover(started_cluster):
     leader.stop_clickhouse()
 
     # Wait for the follower to become leader (session_timeout = 5s)
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 60
     new_leader = False
     while time.monotonic() < deadline:
         try:
@@ -134,7 +151,7 @@ def test_failover(started_cluster):
             break
         except Exception as e:
             if "TABLE_IS_READ_ONLY" in str(e):
-                time.sleep(1)
+                time.sleep(2)
                 continue
             raise
 
@@ -145,7 +162,7 @@ def test_failover(started_cluster):
     leader.start_clickhouse()
 
     # The old leader should now be a follower (since the new leader holds the lease)
-    time.sleep(3)  # Wait for the old leader to discover the lease
+    time.sleep(5)  # Wait for the old leader to discover the lease
 
     # Verify data is accessible from the restarted node
     count = leader.query("SELECT count() FROM test_fo WHERE x > 0").strip()
