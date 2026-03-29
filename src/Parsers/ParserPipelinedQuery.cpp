@@ -108,14 +108,16 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     current_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select));
 
     size_t subquery_seqno = 0;
-    bool has_group_by = false;
+    bool has_where = false;
+    bool has_aggregate = false;
     bool has_order_by = false;
     bool has_limit = false;
 
     auto wrap_current_query = [&]()
     {
         current_query = wrapInSubquery(current_query, subquery_seqno++)->as<ASTSelectQuery>();
-        has_group_by = false;
+        has_where = false;
+        has_aggregate = false;
         has_order_by = false;
         has_limit = false;
     };
@@ -130,11 +132,13 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     {
         if (s_where.ignore(pos, expected))
         {
-            if (has_limit || has_group_by || has_order_by)
+            if (has_limit || has_aggregate || has_order_by)
                 wrap_current_query();
 
             if (!pipe_where_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
+
+            has_where = true;
         }
         else if (s_order_by.ignore(pos, expected))
         {
@@ -163,11 +167,11 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             if (!pipe_aggregate_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
-            has_group_by = current_query->as<ASTSelectQuery &>().groupBy() != nullptr;
+            has_aggregate = true;
         }
         else if (startsWithJoinClause(pos))
         {
-            if (has_group_by || has_order_by || has_limit)
+            if (has_where || has_aggregate || has_order_by || has_limit)
                 wrap_current_query();
 
             if (!pipe_join_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
