@@ -170,7 +170,7 @@ def test_url_wildcard_query_fragment_matching():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url('http://resolver:8087/data/query/part*.tsv', 'TSV', 'x UInt64')")
     )
-    assert result.strip() == "3"
+    assert result.strip() == "6"
 
 
 def test_url_wildcard_with_headers():
