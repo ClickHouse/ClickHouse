@@ -29,13 +29,9 @@ class ActionsDAG;
 class PartAggregationCache
 {
 public:
-    /// Identifies a cached aggregation result for a specific (query, part) pair.
     struct Key
     {
-        /// Hash of the normalized query AST (GROUP BY keys, aggregate functions, WHERE clause).
         IASTHash query_hash;
-        /// Name of the data part. Since parts are immutable, the name uniquely identifies content.
-        /// If a part is merged or mutated, a new part with a different name is created.
         String part_name;
 
         bool operator==(const Key & other) const;
@@ -46,11 +42,8 @@ public:
         size_t operator()(const Key & key) const;
     };
 
-    /// A cached per-part aggregation result.
     struct Entry
     {
-        /// Block containing columns with intermediate aggregate states (ColumnAggregateFunction).
-        /// Produced by `Aggregator::convertToBlocks(data_variants, final=false)`.
         Block block;
 
         size_t sizeInBytes() const;
@@ -58,8 +51,6 @@ public:
 
     using EntryPtr = std::shared_ptr<const Entry>;
 
-    /// Compute a stable hash for the aggregation query, used as part of the cache key.
-    /// The hash captures GROUP BY keys, aggregate function signatures, and the filter expression.
     static IASTHash calculateQueryHash(
         const Names & keys,
         const AggregateDescriptions & aggregates,
@@ -67,23 +58,14 @@ public:
 
     explicit PartAggregationCache(size_t max_size_in_bytes_);
 
-    /// Look up a cached aggregation result for the given (query, part) pair.
-    /// Returns nullptr if not found.
     EntryPtr get(const Key & key) const;
-
-    /// Store an aggregation result for the given (query, part) pair.
     void set(const Key & key, Block block);
-
-    /// Remove all entries from the cache.
     void clear();
-
-    /// Remove all entries associated with a specific part (e.g. after merge or mutation).
     void invalidateByPartName(const String & part_name);
 
     size_t sizeInBytes() const;
     size_t entryCount() const;
 
-    /// Dump all cache entries for introspection (e.g. for the system table).
     struct DumpEntry
     {
         Key key;
@@ -95,7 +77,6 @@ public:
     void updateConfiguration(size_t max_size_in_bytes_);
 
 private:
-    /// LRU eviction: most recently used entries are at the front of the list.
     using LRUList = std::list<Key>;
     using LRUIterator = LRUList::iterator;
 
@@ -111,7 +92,6 @@ private:
     size_t max_size_in_bytes;
     size_t current_size_in_bytes = 0;
 
-    /// Secondary index: part_name -> set of keys, for fast invalidation.
     std::unordered_map<String, std::vector<Key>> part_name_to_keys;
 
     void evictIfNeeded();

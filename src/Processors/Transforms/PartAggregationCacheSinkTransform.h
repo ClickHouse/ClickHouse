@@ -6,9 +6,6 @@
 namespace DB
 {
 
-/// A passthrough transform that stores intermediate aggregation blocks into the PartAggregationCache.
-/// Placed after per-part aggregation to cache the result before it is merged with other parts.
-/// Expects a single block per part (produced by AggregatingTransform with final=false).
 class PartAggregationCacheSinkTransform : public ISimpleTransform
 {
 public:
@@ -27,7 +24,6 @@ public:
 protected:
     void transform(Chunk & chunk) override
     {
-        /// Store the block in cache. The chunk passes through unchanged.
         Block block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         cache->set(key, std::move(block));
     }

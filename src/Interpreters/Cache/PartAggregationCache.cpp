@@ -17,14 +17,11 @@ IASTHash PartAggregationCache::calculateQueryHash(
 {
     SipHash hash;
 
-    /// Hash GROUP BY keys in sorted order for determinism.
     Names sorted_keys = keys;
     std::sort(sorted_keys.begin(), sorted_keys.end());
     for (const auto & key : sorted_keys)
         hash.update(key);
 
-    /// Hash aggregate function signatures: function name + argument column names.
-    /// Sort by column_name for determinism.
     std::vector<size_t> agg_indices(aggregates.size());
     std::iota(agg_indices.begin(), agg_indices.end(), 0);
     std::sort(agg_indices.begin(), agg_indices.end(), [&](size_t a, size_t b)
@@ -38,15 +35,12 @@ IASTHash PartAggregationCache::calculateQueryHash(
         hash.update(agg.function->getName());
         for (const auto & arg : agg.argument_names)
             hash.update(arg);
-        /// Hash parameters (e.g. quantile(0.9) vs quantile(0.5)).
         for (const auto & param : agg.parameters)
             hash.update(param.dump());
     }
 
-    /// Hash the filter expression (WHERE/PREWHERE) if present.
     if (filter_dag)
     {
-        /// Use the DAG's output column names as a proxy for the filter structure.
         auto outputs = filter_dag->getOutputs();
         for (const auto * output : outputs)
             hash.update(output->result_name);
@@ -88,7 +82,6 @@ PartAggregationCache::EntryPtr PartAggregationCache::get(const Key & key) const
     if (it == cache.end())
         return nullptr;
 
-    /// Move to front of LRU list (most recently used).
     lru_list.splice(lru_list.begin(), lru_list, it->second.lru_iterator);
 
     return it->second.entry;
@@ -99,27 +92,22 @@ void PartAggregationCache::set(const Key & key, Block block)
     auto new_entry = std::make_shared<Entry>(Entry{.block = std::move(block)});
     size_t entry_bytes = new_entry->sizeInBytes();
 
-    /// Don't cache entries that are larger than the entire cache.
     if (entry_bytes > max_size_in_bytes)
         return;
 
     std::lock_guard lock(mutex);
 
-    /// If key already exists, remove the old entry first.
     auto existing_it = cache.find(key);
     if (existing_it != cache.end())
         removeEntry(key);
 
-    /// Evict old entries until we have enough space.
     while (current_size_in_bytes + entry_bytes > max_size_in_bytes && !lru_list.empty())
         evictIfNeeded();
 
-    /// Insert new entry at the front of LRU list.
     lru_list.push_front(key);
     cache[key] = CacheEntry{.entry = std::move(new_entry), .lru_iterator = lru_list.begin()};
     current_size_in_bytes += entry_bytes;
 
-    /// Update secondary index for fast invalidation by part name.
     part_name_to_keys[key.part_name].push_back(key);
 }
 
@@ -140,7 +128,6 @@ void PartAggregationCache::invalidateByPartName(const String & part_name)
     if (it == part_name_to_keys.end())
         return;
 
-    /// Copy the keys vector because removeEntry modifies part_name_to_keys.
     auto keys_to_remove = std::move(it->second);
     part_name_to_keys.erase(it);
 
@@ -197,7 +184,6 @@ void PartAggregationCache::updateConfiguration(size_t max_size_in_bytes_)
 
 void PartAggregationCache::evictIfNeeded()
 {
-    /// Evict the least recently used entry (back of the list).
     if (lru_list.empty())
         return;
 
@@ -214,10 +200,6 @@ void PartAggregationCache::removeEntry(const Key & key)
     current_size_in_bytes -= it->second.entry->sizeInBytes();
     lru_list.erase(it->second.lru_iterator);
     cache.erase(it);
-
-    /// Note: we don't clean up part_name_to_keys here to avoid O(N) scan.
-    /// Stale entries in the secondary index are harmless — they just point to
-    /// keys that no longer exist in the cache.
 }
 
 }

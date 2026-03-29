@@ -27,7 +27,6 @@ void populatePartAggregationCache(
 {
     auto log = getLogger("PartAggregationCachePopulator");
 
-    /// Determine which columns we need to read: GROUP BY keys + aggregate function arguments.
     Names columns_to_read;
     for (const auto & key : params.keys)
         columns_to_read.push_back(key);
@@ -35,7 +34,6 @@ void populatePartAggregationCache(
         for (const auto & arg : agg.argument_names)
             columns_to_read.push_back(arg);
 
-    /// Deduplicate column names.
     std::sort(columns_to_read.begin(), columns_to_read.end());
     columns_to_read.erase(std::unique(columns_to_read.begin(), columns_to_read.end()), columns_to_read.end());
 
@@ -43,13 +41,11 @@ void populatePartAggregationCache(
     {
         PartAggregationCache::Key key{query_hash, part.data_part->name};
 
-        /// Skip if already cached.
         if (cache->get(key))
             continue;
 
         try
         {
-            /// Create a sequential source for this part.
             auto alter_conversions = std::make_shared<AlterConversions>();
 
             auto pipe = createMergeTreeSequentialSource(
@@ -66,11 +62,9 @@ void populatePartAggregationCache(
                 /* read_with_direct_io = */ false,
                 /* prefetch = */ false);
 
-            /// Create a pipeline and executor.
             QueryPipeline pipeline(std::move(pipe));
             PullingPipelineExecutor executor(pipeline);
 
-            /// Create an aggregator for this part.
             auto params_copy = params;
             params_copy.only_merge = false;
 
@@ -80,7 +74,6 @@ void populatePartAggregationCache(
             Aggregator::AggregateColumns aggregate_columns(params.aggregates_size);
             bool no_more_keys = false;
 
-            /// Read and aggregate all blocks from the part.
             Block block;
             while (executor.pull(block))
             {
@@ -89,12 +82,10 @@ void populatePartAggregationCache(
                 aggregator.executeOnBlock(block, data_variants, key_columns, aggregate_columns, no_more_keys);
             }
 
-            /// Convert to intermediate blocks (final=false) and store in cache.
             auto blocks = aggregator.convertToBlocks(data_variants, /* final = */ false);
 
             if (!blocks.empty())
             {
-                /// Merge all blocks into a single block for caching.
                 Block result_block = blocks.front();
                 for (auto it = std::next(blocks.begin()); it != blocks.end(); ++it)
                 {
@@ -115,7 +106,6 @@ void populatePartAggregationCache(
         }
         catch (...)
         {
-            /// If caching fails for a part, log and continue.
             tryLogCurrentException(log, "Failed to populate cache for part " + part.data_part->name);
         }
     }
