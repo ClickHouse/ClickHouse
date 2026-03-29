@@ -473,10 +473,9 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
 
         if (query_context)
         {
-            String master_thread_resource_name = query_context->getWorkloadEntityStorage().getMasterThreadResourceName();
+            auto [master_thread_resource_name, worker_thread_resource_name] = query_context->getCPUThreadResourceNames();
             if (!master_thread_resource_name.empty())
                 master_thread_link = query_context->getWorkloadClassifier()->get(master_thread_resource_name);
-            String worker_thread_resource_name = query_context->getWorkloadEntityStorage().getWorkerThreadResourceName();
             if (!worker_thread_resource_name.empty())
                 worker_thread_link = query_context->getWorkloadClassifier()->get(worker_thread_resource_name);
             workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();

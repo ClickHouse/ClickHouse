@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <base/types.h>
 #include <base/scope_guard.h>
 
@@ -90,6 +92,10 @@ public:
 
     /// Returns the name of resource used for CPU scheduling of the additional query threads
     virtual String getWorkerThreadResourceName() = 0;
+
+    /// Returns the names of resources used for CPU scheduling of master and worker threads.
+    /// Fetches both values under a single lock acquisition.
+    virtual std::pair<String, String> getCPUThreadResourceNames() = 0;
 
     /// Returns the name of resource used for query slot scheduling
     virtual String getQueryResourceName() = 0;

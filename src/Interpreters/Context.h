@@ -576,6 +576,10 @@ protected:
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
 
+    /// CPU resource names resolved once at first pipeline execution and cached for the lifetime of the query.
+    /// Both names are fetched under a single lock to avoid multiple acquisitions of WorkloadEntityStorageBase::mutex.
+    mutable std::optional<std::pair<String, String>> cpu_thread_resource_names;
+
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
@@ -877,6 +881,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Returns (master_thread_resource_name, worker_thread_resource_name).
+    /// Result is cached after the first call; subsequent calls are lock-free on the fast path.
+    std::pair<String, String> getCPUThreadResourceNames() const;
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);

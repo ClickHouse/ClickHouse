@@ -50,6 +50,7 @@ public:
 
     String getMasterThreadResourceName() override;
     String getWorkerThreadResourceName() override;
+    std::pair<String, String> getCPUThreadResourceNames() override;
     String getQueryResourceName() override;
 
 protected:

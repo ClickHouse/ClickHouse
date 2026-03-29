@@ -2226,6 +2226,17 @@ ClassifierPtr Context::getWorkloadClassifier() const
     return classifier;
 }
 
+std::pair<String, String> Context::getCPUThreadResourceNames() const
+{
+    std::lock_guard lock(mutex);
+    // CPU resource names are fixed for the lifetime of a query (workload configuration cannot change after query start).
+    // We cache them here so that PipelineExecutor::allocateCPU only acquires WorkloadEntityStorageBase::mutex once
+    // per query instead of once per pipeline execution.
+    if (!cpu_thread_resource_names)
+        cpu_thread_resource_names = getWorkloadEntityStorage().getCPUThreadResourceNames();
+    return *cpu_thread_resource_names;
+}
+
 void Context::releaseQuerySlot() const
 {
     if (auto elem = getProcessListElementSafe())

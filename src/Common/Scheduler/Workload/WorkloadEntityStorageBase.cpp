@@ -612,6 +612,12 @@ String WorkloadEntityStorageBase::getWorkerThreadResourceName()
     return worker_thread_resource;
 }
 
+std::pair<String, String> WorkloadEntityStorageBase::getCPUThreadResourceNames()
+{
+    std::lock_guard lock{mutex};
+    return {master_thread_resource, worker_thread_resource};
+}
+
 String WorkloadEntityStorageBase::getQueryResourceName()
 {
     std::lock_guard lock{mutex};
