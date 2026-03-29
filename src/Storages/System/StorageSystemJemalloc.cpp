@@ -87,7 +87,7 @@ static void fillJemallocBins(MutableColumns & res_columns)
 
 #else
 
-void fillJemallocBins(MutableColumns &)
+static void fillJemallocBins(MutableColumns &)
 {
     LOG_INFO(getLogger("StorageSystemJemallocBins"), "jemalloc is not enabled");
 }

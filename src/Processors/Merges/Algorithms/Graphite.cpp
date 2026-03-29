@@ -253,7 +253,7 @@ std::ostream & operator<<(std::ostream & stream, const Pattern & a)
     return stream;
 }
 
-static std::string buildTaggedRegex(std::string regexp_str)
+std::string buildTaggedRegex(std::string regexp_str)
 {
     /*
     * tags list in format (for name or any value can use regexp, alphabet sorting not needed)
