@@ -505,28 +505,111 @@ pub extern "C" fn cellAreaM2(h: H3Index) -> f64 {
     try_cell(h).map_or(0.0, |c| c.area_m2())
 }
 
+/// Average hexagon area in km² for each resolution 0–15.
+/// Values from the C H3 library lookup table (contrib/h3/src/h3lib/lib/latLng.c)
+/// to preserve backward-compatible semantics.
+static HEXAGON_AREA_AVG_KM2: [f64; 16] = [
+    4.357449416078383e+06,
+    6.097884417941332e+05,
+    8.680178039899720e+04,
+    1.239343465508816e+04,
+    1.770347654491307e+03,
+    2.529038581819449e+02,
+    3.612906216441245e+01,
+    5.161293359717191e+00,
+    7.373275975944177e-01,
+    1.053325134272067e-01,
+    1.504750190766435e-02,
+    2.149643129451879e-03,
+    3.070918756316060e-04,
+    4.387026794728296e-05,
+    6.267181135324313e-06,
+    8.953115907605790e-07,
+];
+
+/// Average hexagon area in m² for each resolution 0–15.
+static HEXAGON_AREA_AVG_M2: [f64; 16] = [
+    4.357449416078390e+12,
+    6.097884417941339e+11,
+    8.680178039899731e+10,
+    1.239343465508818e+10,
+    1.770347654491309e+09,
+    2.529038581819452e+08,
+    3.612906216441250e+07,
+    5.161293359717198e+06,
+    7.373275975944188e+05,
+    1.053325134272069e+05,
+    1.504750190766437e+04,
+    2.149643129451882e+03,
+    3.070918756316063e+02,
+    4.387026794728301e+01,
+    6.267181135324322e+00,
+    8.953115907605802e-01,
+];
+
 #[no_mangle]
 pub extern "C" fn getHexagonAreaAvgKm2(res: i32) -> f64 {
-    try_resolution(res).map_or(0.0, |r| r.area_km2())
+    if (0..=15).contains(&res) { HEXAGON_AREA_AVG_KM2[res as usize] } else { 0.0 }
 }
 
 #[no_mangle]
 pub extern "C" fn getHexagonAreaAvgM2(res: i32) -> f64 {
-    try_resolution(res).map_or(0.0, |r| r.area_m2())
+    if (0..=15).contains(&res) { HEXAGON_AREA_AVG_M2[res as usize] } else { 0.0 }
 }
 
 // ---------------------------------------------------------------------------
 // Edge length functions
 // ---------------------------------------------------------------------------
 
+/// Average hexagon edge length in km for each resolution 0–15.
+/// Values from the C H3 library lookup table to preserve backward compatibility.
+static HEXAGON_EDGE_LENGTH_AVG_KM: [f64; 16] = [
+    1281.256011,
+    483.0568391,
+    182.5129565,
+    68.97922179,
+    26.07175968,
+    9.854090990,
+    3.724532667,
+    1.406475763,
+    0.531414010,
+    0.200786148,
+    0.075863783,
+    0.028663897,
+    0.010830188,
+    0.004092010,
+    0.001546100,
+    0.000584169,
+];
+
+/// Average hexagon edge length in m for each resolution 0–15.
+static HEXAGON_EDGE_LENGTH_AVG_M: [f64; 16] = [
+    1281256.011,
+    483056.8391,
+    182512.9565,
+    68979.22179,
+    26071.75968,
+    9854.090990,
+    3724.532667,
+    1406.475763,
+    531.4140101,
+    200.7861476,
+    75.86378287,
+    28.66389748,
+    10.83018784,
+    4.092010473,
+    1.546099657,
+    0.584168630,
+];
+
 #[no_mangle]
 pub extern "C" fn getHexagonEdgeLengthAvgKm(res: i32) -> f64 {
-    try_resolution(res).map_or(0.0, |r| r.edge_length_km())
+    if (0..=15).contains(&res) { HEXAGON_EDGE_LENGTH_AVG_KM[res as usize] } else { 0.0 }
 }
 
 #[no_mangle]
 pub extern "C" fn getHexagonEdgeLengthAvgM(res: i32) -> f64 {
-    try_resolution(res).map_or(0.0, |r| r.edge_length_m())
+    if (0..=15).contains(&res) { HEXAGON_EDGE_LENGTH_AVG_M[res as usize] } else { 0.0 }
 }
 
 #[no_mangle]
@@ -645,7 +728,7 @@ pub unsafe extern "C" fn getIcosahedronFaces(h3: H3Index, out: *mut i32) {
 use h3o::geom::ToCells;
 
 #[no_mangle]
-pub unsafe extern "C" fn maxPolygonToCellsSize(geo_polygon: *const GeoPolygon, res: i32) -> i32 {
+pub unsafe extern "C" fn maxPolygonToCellsSize(geo_polygon: *const GeoPolygon, res: i32) -> i64 {
     let Some(resolution) = try_resolution(res) else {
         return 0;
     };
@@ -654,7 +737,9 @@ pub unsafe extern "C" fn maxPolygonToCellsSize(geo_polygon: *const GeoPolygon, r
         return 0;
     };
     let config = h3o::geom::PolyfillConfig::new(resolution);
-    polygon.max_cells_count(config) as i32
+    let count = polygon.max_cells_count(config);
+    // Clamp to i64::MAX to prevent truncation on extremely large polygons.
+    if count > i64::MAX as usize { i64::MAX } else { count as i64 }
 }
 
 #[no_mangle]
