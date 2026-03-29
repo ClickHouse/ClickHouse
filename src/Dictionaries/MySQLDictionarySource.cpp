@@ -156,6 +156,31 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 .bg_reconnect = config.getBool(settings_config_prefix + ".background_reconnect", false),
             });
 
+            if (created_from_ddl)
+            {
+                if (config.has(settings_config_prefix + ".replica"))
+                {
+                    Poco::Util::AbstractConfiguration::Keys replica_keys;
+                    config.keys(settings_config_prefix, replica_keys);
+                    for (const auto & replica_key : replica_keys)
+                    {
+                        if (replica_key.starts_with("replica"))
+                        {
+                            const auto replica_prefix = settings_config_prefix + "." + replica_key;
+                            global_context->getRemoteHostFilter().checkHostAndPort(
+                                config.getString(replica_prefix + ".host"),
+                                toString(config.getInt(replica_prefix + ".port", 3306)));
+                        }
+                    }
+                }
+                else
+                {
+                    global_context->getRemoteHostFilter().checkHostAndPort(
+                        config.getString(settings_config_prefix + ".host"),
+                        toString(config.getInt(settings_config_prefix + ".port", 3306)));
+                }
+            }
+
             pool = std::make_shared<mysqlxx::PoolWithFailover>(
                 mysqlxx::PoolFactory::instance().get(config, settings_config_prefix));
         }

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/DWARFBlockInputFormat.h>
+#include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <llvm/DebugInfo/DWARF/DWARFFormValue.h>

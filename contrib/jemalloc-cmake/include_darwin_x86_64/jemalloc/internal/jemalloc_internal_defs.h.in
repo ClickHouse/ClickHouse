@@ -7,7 +7,7 @@
  * multiple allocators simultaneously.
  */
 #define JEMALLOC_PREFIX "je_"
-#define JEMALLOC_CPREFIX "JE_"
+#define JEMALLOC_CPREFIX ""
 
 /*
  * Define overrides for non-standard allocator-related functions if they are

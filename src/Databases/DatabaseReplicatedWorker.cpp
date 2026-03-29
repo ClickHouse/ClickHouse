@@ -142,6 +142,24 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
 void DatabaseReplicatedDDLWorker::shutdown()
 {
     DDLWorker::shutdown();
+
+    /// Explicitly remove the active node before the destructor runs.
+    /// The EphemeralNodeHolder destructor also calls tryRemove, but if it fails
+    /// (e.g. due to a transient ZK connection issue), the exception is silently caught
+    /// and the ephemeral node persists until the shared ZK session expires.
+    /// This can cause SYSTEM DROP DATABASE REPLICA to spuriously fail with "is active".
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicatedDDLWorker::shutdown");
+    if (active_node_holder_zookeeper && !active_node_holder_zookeeper->expired())
+    {
+        String active_path = fs::path(database->replica_path) / "active";
+        active_node_holder_zookeeper->tryRemove(active_path);
+    }
+
+    if (active_node_holder)
+        active_node_holder->setAlreadyRemoved();
+    active_node_holder.reset();
+    active_node_holder_zookeeper.reset();
+
     wait_current_task_change.notify_all();
 }
 

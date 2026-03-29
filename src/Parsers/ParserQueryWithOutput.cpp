@@ -22,6 +22,7 @@
 #include <Parsers/ParserShowFunctionsQuery.h>
 #include <Parsers/ParserShowIndexesQuery.h>
 #include <Parsers/ParserShowSettingQuery.h>
+#include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
@@ -66,6 +67,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
+    ParserSnapshotQuery snapshot_p;
 
     ASTPtr query;
 
@@ -96,7 +98,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected)
-        || backup_p.parse(pos, query, expected);
+        || backup_p.parse(pos, query, expected)
+        || snapshot_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;

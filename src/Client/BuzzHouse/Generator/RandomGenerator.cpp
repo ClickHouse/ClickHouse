@@ -535,4 +535,25 @@ String RandomGenerator::nextIPv6()
         hexDigits[hex_digits_dist(generator)]);
 }
 
+void RandomGenerator::pickWeighted(std::initializer_list<std::pair<uint32_t, std::function<void()>>> options)
+{
+    uint32_t prob_space = 0;
+    for (const auto & [w, f] : options)
+        prob_space += w;
+    chassert(prob_space > 0, "At least one option must have a non-zero weight");
+    std::uniform_int_distribution<uint32_t> dist(1, prob_space);
+    const uint32_t nopt = dist(generator);
+    uint32_t cumulative = 0;
+    for (const auto & [w, f] : options)
+    {
+        cumulative += w;
+        if (w != 0 && nopt <= cumulative)
+        {
+            f();
+            return;
+        }
+    }
+    UNREACHABLE();
+}
+
 }

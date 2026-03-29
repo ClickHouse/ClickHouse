@@ -52,20 +52,24 @@ WasmValKind getWasmValKind(const WasmVal & val);
 class WasmFunctionDeclaration
 {
 public:
-    WasmFunctionDeclaration(std::string_view function_name_,
+    WasmFunctionDeclaration(std::string_view module_name_,
+        std::string_view function_name_,
         std::vector<WasmValKind> argument_types_,
         std::optional<WasmValKind> return_type_)
-        : function_name(std::move(function_name_))
+        : module_name(module_name_)
+        , function_name(std::move(function_name_))
         , argument_types(std::move(argument_types_))
         , return_type(return_type_)
     {
     }
 
+    std::string_view getModuleName() const { return module_name; }
     std::string_view getName() const { return function_name; }
     const std::vector<WasmValKind> & getArgumentTypes() const { return argument_types; }
     std::optional<WasmValKind> getReturnType() const { return return_type; }
 
 private:
+    std::string module_name;
     std::string function_name;
     std::vector<WasmValKind> argument_types;
     std::optional<WasmValKind> return_type;
