@@ -162,7 +162,8 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
             has_limit = true;
         }
-        else if (s_offset.ignore(pos, expected)) {
+        else if (s_offset.ignore(pos, expected))
+        {
             if (has_limit)
                 wrap_current_query();
 

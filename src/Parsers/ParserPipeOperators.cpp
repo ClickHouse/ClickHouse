@@ -16,8 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
-    extern const int ROW_AND_ROWS_TOGETHER;
+extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED;
+extern const int ROW_AND_ROWS_TOGETHER;
 }
 
 bool ParserPipeWhere::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected & expected) const
@@ -207,7 +207,7 @@ bool ParserPipeLimit::parse(IParser::Pos & pos, ASTSelectQuery & query, Expected
                 return false;
         }
     }
-    
+
     query.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
     query.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
     query.setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
