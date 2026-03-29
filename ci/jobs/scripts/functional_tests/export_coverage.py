@@ -69,7 +69,7 @@ class CoverageExporter:
                 )
                 res = Shell.check(
                     f'cd {self.src.run_path0} && clickhouse local {command_args} {path_arg} --query "{query}" {command_args_post}',
-                    verbose=False,  # IMPORTANT: do not change
+                    verbose=True,  # IMPORTANT: do not change
                 )
             else:
                 query = (

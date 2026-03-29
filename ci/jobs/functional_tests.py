@@ -717,6 +717,8 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Collect coverage",
+                with_log=True,
+                with_info=True,
                 command=lambda: CoverageExporter(
                     src=CH,
                     dest=cidb_cluster,
