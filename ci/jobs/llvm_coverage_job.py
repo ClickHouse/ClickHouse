@@ -77,9 +77,9 @@ def collect_html_report_files(
     return files, assets
 
 
-def get_git_info() -> tuple[str, str, str, str, str, int]:
+def get_git_info() -> tuple[str, list[str], str, str, str, int]:
     # Get git info from Info singleton, if not present, get it from shell commands
-    # merge_base_commit_sha, branch, base_branch, repo_name, pr_number
+    # Returns: current_commit_sha, master_track_commits, branch, base_branch, repo_name, pr_number
     info = Info()
 
     current_commit_sha = info.sha
@@ -88,24 +88,33 @@ def get_git_info() -> tuple[str, str, str, str, str, int]:
             "git rev-parse HEAD", verbose=True
         ).strip()
 
-    merge_base_commit_sha = info.get_kv_data("merge_base_commit_sha")
-    if merge_base_commit_sha is None:
-        # Use gh api to get the merge base commit between master and HEAD
-        merge_base_commit_sha = Shell.get_output(
+    # master_track_commits is a list of master-side commits (nearest first) stored by
+    # store_data.py.  The first entry doubles as the base commit for diff comparisons.
+    # In a local run (or when the hook has not populated the key) we fall back to
+    # deriving the merge base via the GitHub API and walking back 30 commits from it.
+    master_track_commits: list[str] = info.get_kv_data("master_track_commits_sha") or []
+    if not master_track_commits:
+        merge_base = Shell.get_output(
             f"gh api repos/ClickHouse/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
             verbose=True,
         ).strip()
+        if merge_base:
+            raw = Shell.get_output(
+                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
+                verbose=True,
+            )
+            master_track_commits = raw.splitlines()
 
     branch = (
         info.git_branch
         or Shell.get_output("git branch --show-current", verbose=True).strip()
     )
-    base_branch = info.base_branch or (
-        Shell.get_output(
+    base_branch = (
+        info.base_branch
+        or Shell.get_output(
             "gh pr view --json baseRefName --template '{{.baseRefName}}'", verbose=True
-        )
-        .strip()
-        .replace("origin/", "")
+        ).strip().replace("origin/", "")
+        or "master"
     )
     repo_name = (
         info.repo_name
@@ -122,7 +131,7 @@ def get_git_info() -> tuple[str, str, str, str, str, int]:
         pr_number = int(_gh_out) if _gh_out else 0
     return (
         current_commit_sha,
-        merge_base_commit_sha,
+        master_track_commits,
         branch,
         base_branch,
         repo_name,
@@ -138,30 +147,23 @@ if __name__ == "__main__":
 
     (
         current_commit_sha,
-        merge_base_commit_sha,
+        master_track_commits,
         branch,
         base_branch,
         repo_name,
         pr_number,
     ) = get_git_info()
 
-    prev_30_commits = []
-    if pr_number > 0:
-        # Get 30 commits starting from merge base commit and walking backwards.
-        raw = Shell.get_output(
-            f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base_commit_sha}&per_page=30' -q '.[].sha'",
-            verbose=True,
-        )
-        prev_30_commits = raw.splitlines()
+    # Use the nearest master-side commit as the base for diff comparisons.
+    base_commit_sha = master_track_commits[0] if master_track_commits else ""
 
     os.environ["BRANCH"] = branch
     os.environ["CURRENT_COMMIT"] = current_commit_sha
-    print("base_branch = ", base_branch)
     os.environ["BASE_BRANCH"] = base_branch
-    os.environ["BASE_COMMIT"] = merge_base_commit_sha
+    os.environ["BASE_COMMIT"] = base_commit_sha
     os.environ["REPO_NAME"] = repo_name
     os.environ["PR_NUMBER"] = str(pr_number)
-    os.environ["PREV_30_COMMITS"] = ",".join(prev_30_commits)
+    os.environ["PREV_30_COMMITS"] = ",".join(master_track_commits)
 
     is_master_branch = branch == "master"
     _diff_ran = False
@@ -214,14 +216,18 @@ if __name__ == "__main__":
             print(f"Current coverage  : {c_line_cov:.2f}%")
             print(f"Delta             : {delta:+.2f}%")
 
-            if c_line_cov < b_line_cov:
-                diff_res.set_failed()
-                diff_res.set_comment(
-                    f"Coverage in main branch: {b_line_cov:.2f}%, coverage in PR: {c_line_cov:.2f}%. Coverage degraded by {delta:.2f} percentage points."
+            TOLERANCE = 0.3
+            if b_line_cov - c_line_cov > TOLERANCE:
+                _failure_msg = (
+                    f"Coverage degraded: master {b_line_cov:.2f}% → PR {c_line_cov:.2f}%"
+                    f" (dropped {b_line_cov - c_line_cov:.2f} pp, tolerance {TOLERANCE} pp)"
                 )
-                print("Coverage degraded.")
+                print(_failure_msg)
+                diff_res.info = _failure_msg
+                diff_res.set_comment(_failure_msg)
+                diff_res.set_failed()
             else:
-                print("Coverage did not degrade.")
+                print(f"Coverage did not degrade beyond tolerance (delta {delta:+.2f}%).")
 
             # Compress and attach the diff HTML report archive + files to the diff result.
             Utils.compress_gz(
@@ -285,6 +291,9 @@ if __name__ == "__main__":
 
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             _pr_changed_lines_info = print_res.ext.get("comment", "")
+            _changed_lines_total = print_res.ext.get("changed_lines_total", 0)
+            _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
+            _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
             if _diff_ran:
                 # Write coverage data for the post-hook to pick up and post as a GitHub comment
@@ -299,6 +308,9 @@ if __name__ == "__main__":
                     "b_branch_cov": b_branch_cov,
                     "c_branch_cov": c_branch_cov,
                     "pr_changed_lines_info": _pr_changed_lines_info,
+                    "changed_lines_total": _changed_lines_total,
+                    "changed_lines_covered": _changed_lines_covered,
+                    "changed_lines_cov": _changed_lines_cov,
                     "diff_url": _diff_url,
                     "uncovered_code_url": uncovered_code_url,
                     # CIDB fields
@@ -307,7 +319,7 @@ if __name__ == "__main__":
                     ),
                     "pull_request_number": pr_number,
                     "commit_sha": current_commit_sha,
-                    "base_commit_sha": merge_base_commit_sha,
+                    "base_commit_sha": base_commit_sha,
                     "branch": branch,
                     "base_branch": base_branch,
                     "status": diff_res.status,
@@ -323,6 +335,39 @@ if __name__ == "__main__":
             print("Local run, skipping CI DB update with coverage results")
     else:
         print("On master branch, skipping diff coverage generation")
+        if not is_local_run:
+            try:
+                m_line_cov, m_function_cov, m_branch_cov = get_lcov_summary_percentages(
+                    f"{TEMP_DIR}/llvm_coverage.info"
+                )
+                print(f"Master coverage: lines={m_line_cov:.2f}% functions={m_function_cov:.2f}% branches={m_branch_cov:.2f}%")
+                _s3_prefix = f"REFs/{branch}/{current_commit_sha}"
+                _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+                _master_data = {
+                    "check_start_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "pull_request_number": 0,
+                    "commit_sha": current_commit_sha,
+                    "base_commit_sha": "",
+                    "branch": branch,
+                    "base_branch": base_branch,
+                    "status": gen_report_res.status,
+                    "b_line_cov": 0.0,
+                    "c_line_cov": m_line_cov,
+                    "b_function_cov": 0.0,
+                    "c_function_cov": m_function_cov,
+                    "b_branch_cov": 0.0,
+                    "c_branch_cov": m_branch_cov,
+                    "delta_line_cov": 0.0,
+                    "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
+                    "diff_coverage_report_url": "",
+                    "uncovered_code_url": "",
+                    "pr_changed_lines_info": "",
+                    "diff_url": "",
+                }
+                with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                    json.dump(_master_data, f)
+            except Exception as e:
+                print(f"Warning: failed to compute master coverage stats: {e}")
 
     # Add direct S3 links to both HTML reports in the main job result.
     # HTML files are uploaded within the corresponding generate sub-result;

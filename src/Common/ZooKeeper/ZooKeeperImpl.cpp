@@ -2018,7 +2018,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
-void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component)
+void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component, bool is_subrequest)
 {
     chassert(response);
 
@@ -2031,7 +2031,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Respons
         if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
         {
             current_aggregated_zookeeper_log->observe(
-                session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error, component);
+                session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error, component, is_subrequest);
         }
         else
         {
@@ -2040,7 +2040,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Respons
         return;
     }
 
-    current_aggregated_zookeeper_log->observe(session_id, request->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error, component);
+    current_aggregated_zookeeper_log->observe(session_id, request->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error, component, is_subrequest);
 
     const auto * multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
 
@@ -2054,7 +2054,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Respons
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request.requests, multi_response->responses))
     {
-        observeOperation(subrequest.get(), subresponse.get(), elapsed_microseconds, component);
+        observeOperation(subrequest.get(), subresponse.get(), /*elapsed_microseconds=*/0, component, /*is_subrequest=*/true);
     }
 }
 

@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ObjectStorageKey.h>
 
@@ -256,7 +257,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     /// NOTE: For background operations settings are not propagated from session or query. They are taken from
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.
-    if (auto query_context = CurrentThread::getQueryContext();
+    if (auto query_context = CurrentThread::tryGetQueryContext();
         query_context && !query_context->isBackgroundContext())
     {
         const auto & settings = query_context->getSettingsRef();

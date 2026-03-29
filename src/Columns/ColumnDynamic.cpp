@@ -144,14 +144,14 @@ void extendVariantColumn(
     IColumn & variant_column,
     const DataTypePtr & old_variant_type,
     const DataTypePtr & new_variant_type,
-    std::unordered_map<String, UInt8> old_variant_name_to_discriminator)
+    UnorderedMapWithMemoryTracking<String, UInt8> old_variant_name_to_discriminator)
 {
     const DataTypes & current_variants =  assert_cast<const DataTypeVariant *>(old_variant_type.get())->getVariants();
     const DataTypes & new_variants = assert_cast<const DataTypeVariant *>(new_variant_type.get())->getVariants();
 
-    std::vector<std::pair<MutableColumnPtr, ColumnVariant::Discriminator>> new_variant_columns_and_discriminators_to_add;
+    VectorWithMemoryTracking<std::pair<MutableColumnPtr, ColumnVariant::Discriminator>> new_variant_columns_and_discriminators_to_add;
     new_variant_columns_and_discriminators_to_add.reserve(new_variants.size() - current_variants.size());
-    std::vector<ColumnVariant::Discriminator> current_to_new_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> current_to_new_discriminators;
     current_to_new_discriminators.resize(current_variants.size());
 
     for (ColumnVariant::Discriminator discr = 0; discr != new_variants.size(); ++discr)
@@ -173,9 +173,11 @@ void ColumnDynamic::updateVariantInfoAndExpandVariantColumn(const DataTypePtr & 
 
     /// Clear mappings cache because now with new Variant we will have new mappings.
     variant_mappings_cache.clear();
+    /// Invalidate statistics because they refer to the old set of variants.
+    statistics.reset();
 }
 
-std::vector<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const ColumnDynamic::VariantInfo & other_variant_info)
+VectorWithMemoryTracking<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const ColumnDynamic::VariantInfo & other_variant_info)
 {
     /// Check if we already have global discriminators mapping for other Variant in cache.
     /// It's used to not calculate the same mapping each call of insertFrom with the same columns.
@@ -216,7 +218,7 @@ std::vector<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const
     }
 
     /// Create a global discriminators mapping for other variant.
-    std::vector<ColumnVariant::Discriminator> other_to_new_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> other_to_new_discriminators;
     other_to_new_discriminators.reserve(other_variants.size());
     for (size_t i = 0; i != other_variants.size(); ++i)
         other_to_new_discriminators.push_back(variant_info.variant_name_to_discriminator[other_variant_info.variant_names[i]]);
@@ -489,7 +491,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     /// all other variants will be inserted into shared variant.
     const auto & src_variants = assert_cast<const DataTypeVariant &>(*dynamic_src.variant_info.variant_type).getVariants();
     /// Mapping from global discriminators of src_variant to the new variant we will create.
-    std::vector<ColumnVariant::Discriminator> other_to_new_discriminators;
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> other_to_new_discriminators;
     other_to_new_discriminators.reserve(dynamic_src.variant_info.variant_names.size());
 
     /// Check if we cannot add any more new variants. In this case we will insert all new variants into shared variant.
@@ -509,7 +511,7 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     else
     {
         /// Create list of pairs <size, discriminator> and sort it.
-        std::vector<std::pair<size_t, ColumnVariant::Discriminator>> new_variants_with_sizes;
+        VectorWithMemoryTracking<std::pair<size_t, ColumnVariant::Discriminator>> new_variants_with_sizes;
         new_variants_with_sizes.reserve(dynamic_src.variant_info.variant_names.size());
         const auto & src_variant_column = dynamic_src.getVariantColumn();
         for (const auto & [name, discr] : dynamic_src.variant_info.variant_name_to_discriminator)
@@ -1024,7 +1026,7 @@ ColumnPtr ColumnDynamic::compress(bool force_compression) const
 
 ColumnCheckpointPtr ColumnDynamic::getCheckpoint() const
 {
-    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+    UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints;
     for (const auto & [name, discr] : variant_info.variant_name_to_discriminator)
         variants_checkpoints[name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).getCheckpoint();
     return std::make_shared<DynamicColumnCheckpoint>(size(), variants_checkpoints);
@@ -1119,7 +1121,7 @@ void ColumnDynamic::getAllTypeNamesInto(UnorderedSetWithMemoryTracking<String> &
     }
 }
 
-void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1142,7 +1144,7 @@ void ColumnDynamic::prepareForSquashing(const Columns & source_columns, size_t f
     prepareVariantsForSquashing(source_columns, factor);
 }
 
-void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, size_t factor)
+void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
     /// Internal variants of source dynamic columns may differ.
     /// We want to preallocate memory for all variants we will have after squashing.
@@ -1150,7 +1152,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     /// exceed the limit, in this case we will choose the most frequent variants.
 
     /// Collect all variants and their total sizes.
-    std::unordered_map<String, size_t> total_variant_sizes;
+    UnorderedMapWithMemoryTracking<String, size_t> total_variant_sizes;
     DataTypes all_variants;
 
     auto add_variants = [&](const ColumnDynamic & source_dynamic)
@@ -1199,7 +1201,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
             result_variants.push_back(variant);
 
         /// Create list of remaining variants with their sizes and sort it.
-        std::vector<std::pair<size_t, DataTypePtr>> variants_with_sizes;
+        VectorWithMemoryTracking<std::pair<size_t, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(all_variants.size() - variant_info.variant_names.size());
         for (const auto & variant : all_variants)
         {
@@ -1233,7 +1235,7 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns, 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
     {
-        Columns source_variant_columns;
+        VectorWithMemoryTracking<ColumnPtr> source_variant_columns;
         source_variant_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
         {
@@ -1258,10 +1260,10 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "chooseDynamicStructureForMerge should be called only on empty Dynamic column");
 
     /// During serialization of Dynamic column in MergeTree all Dynamic columns
     /// in single part must have the same structure (the same variants). During merge
@@ -1270,13 +1272,14 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     /// but only from subset of them, and as a result some variants could be missing
     /// and structures of resulting column may differ.
     /// To solve this problem, before merge we create empty resulting column and use this method
-    /// to take dynamic structure from all source column even if we won't insert
+    /// to take dynamic structure from all source columns even if we won't insert
     /// rows from some of them.
 
     /// We want to construct resulting variant with most frequent variants from source columns and convert the rarest
     /// variants to single String variant if we exceed the limit of variants.
     /// First, collect all variants from all source columns and calculate total sizes.
-    std::unordered_map<String, size_t> total_sizes;
+    /// We read source statistics to make variant selection decisions, but do not update statistics in the result.
+    UnorderedMapWithMemoryTracking<String, size_t> total_sizes;
     DataTypes all_variants;
     /// Add shared variant type in advance;
     all_variants.push_back(getSharedVariantDataType());
@@ -1289,7 +1292,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         const auto & source_variant_info = source_dynamic.getVariantInfo();
         const auto & source_variants = assert_cast<const DataTypeVariant &>(*source_variant_info.variant_type).getVariants();
         /// During deserialization from MergeTree we will have variant sizes statistics from the whole data part.
-        const auto & source_statistics = source_dynamic.getStatistics();
+        const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
         for (size_t i = 0; i != source_variants.size(); ++i)
         {
             const auto & variant_name = source_variant_info.variant_names[i];
@@ -1301,43 +1304,36 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
                 it = total_sizes.emplace(variant_name, 0).first;
             }
             size_t size = source_variant_column.getVariantByGlobalDiscriminator(i).size();
-            if (source_statistics)
-            {
-                auto statistics_it = source_statistics->variants_statistics.find(variant_name);
-                if (statistics_it != source_statistics->variants_statistics.end())
-                    size = statistics_it->second;
-            }
+            auto statistics_it = source_statistics->variants_statistics.find(variant_name);
+            if (statistics_it != source_statistics->variants_statistics.end())
+                size = statistics_it->second;
 
             it->second += size;
         }
 
-        /// Use add variants from shared variant statistics. It can help extracting
+        /// Add variants from shared variant statistics. It can help extracting
         /// frequent variants from shared variant to usual variants.
-        if (source_statistics)
+        for (const auto & [variant_name, size] : source_statistics->shared_variants_statistics)
         {
-            for (const auto & [variant_name, size] : source_statistics->shared_variants_statistics)
+            auto it = total_sizes.find(variant_name);
+            /// Add this variant to the list of all variants if we didn't see it yet.
+            if (it == total_sizes.end())
             {
-                auto it = total_sizes.find(variant_name);
-                /// Add this variant to the list of all variants if we didn't see it yet.
-                if (it == total_sizes.end())
-                {
-                    all_variants.push_back(DataTypeFactory::instance().get(variant_name));
-                    it = total_sizes.emplace(variant_name, 0).first;
-                }
-                it->second += size;
+                all_variants.push_back(DataTypeFactory::instance().get(variant_name));
+                it = total_sizes.emplace(variant_name, 0).first;
             }
+            it->second += size;
         }
     }
 
     DataTypePtr result_variant_type;
-    Statistics new_statistics(Statistics::Source::MERGE);
     /// Reset max_dynamic_types to global_max_dynamic_types or max_dynamic_subcolumns if set.
     max_dynamic_types = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_types) : global_max_dynamic_types;
     /// Check if the number of all dynamic types exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
     {
         /// Create a list of variants with their sizes and names and then sort it.
-        std::vector<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
+        VectorWithMemoryTracking<std::tuple<size_t, String, DataTypePtr>> variants_with_sizes;
         variants_with_sizes.reserve(all_variants.size());
         for (const auto & variant : all_variants)
         {
@@ -1347,7 +1343,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         }
         std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
 
-        /// Take first max_dynamic_types variants from sorted list and fill shared_variants_statistics with the rest.
+        /// Take first max_dynamic_types variants from sorted list.
         DataTypes result_variants;
         result_variants.reserve(max_dynamic_types + 1); /// +1 for shared variant.
         /// Add shared variant.
@@ -1357,11 +1353,6 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
             /// Add variant to the resulting variants list until we reach max_dynamic_types.
             if (canAddNewVariant(result_variants.size()))
                 result_variants.push_back(variant_type);
-            /// Add all remaining variants into shared_variants_statistics until we reach its max size.
-            else if (new_statistics.shared_variants_statistics.size() < Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE)
-                new_statistics.shared_variants_statistics[variant_name] = size;
-            else
-                break;
         }
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
@@ -1371,12 +1362,8 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         result_variant_type = std::make_shared<DataTypeVariant>(all_variants);
     }
 
-    /// Now we have resulting Variant and can fill variant info and create merge statistics.
+    /// Now we have resulting Variant and can set variant info.
     setVariantType(result_variant_type);
-    new_statistics.variants_statistics.reserve(variant_info.variant_names.size());
-    for (const auto & variant_name : variant_info.variant_names)
-        new_statistics.variants_statistics[variant_name] = total_sizes[variant_name];
-    statistics = std::make_shared<const Statistics>(std::move(new_statistics));
 
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
     /// to extend selected variants on inserts into this column during merges.
@@ -1386,8 +1373,8 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
     /// Now we have the resulting Variant that will be used in all merged columns.
     /// Variants can also contain Dynamic columns inside, we should collect
     /// all source variants that will be used in the resulting merged column
-    /// and call takeDynamicStructureFromSourceColumns on all resulting variants.
-    std::vector<Columns> variants_source_columns;
+    /// and call `chooseDynamicStructureForMerge` on all resulting variants.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
     variants_source_columns.resize(variant_info.variant_names.size());
     for (const auto & source_column : source_columns)
     {
@@ -1397,36 +1384,36 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
         {
             /// Try to find this variant in current source column.
             auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
-            if (it != source_variant_info.variant_name_to_discriminator.end())        /// Add shared variant.
+            if (it != source_variant_info.variant_name_to_discriminator.end())
                 variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
         }
     }
 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
+        variant_col.getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
 {
     if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromColumn should be called only on empty Dynamic column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Dynamic column");
 
-    const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+    const auto & source_dynamic = assert_cast<const ColumnDynamic &>(source);
     variant_column = source_dynamic.getVariantColumn().cloneEmpty();
     variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     variant_info = source_dynamic.getVariantInfo();
-    statistics = source_dynamic.getStatistics();
     /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
     /// to extend selected variants on inserts into this column.
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
 
-    /// Run takeDynamicStructureFromColumn recursively for variants.
+    /// Run `takeExactDynamicStructureFrom` recursively for variants.
     const auto & source_variant_column = source_dynamic.getVariantColumn();
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant_column.getVariantPtrByGlobalDiscriminator(i));
+        variant_col.getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(
+            source_variant_column.getVariantByGlobalDiscriminator(i));
 }
 
 void ColumnDynamic::fixDynamicStructure()
@@ -1436,6 +1423,104 @@ void ColumnDynamic::fixDynamicStructure()
     /// -1 because we don't count shared variant in the limit.
     max_dynamic_types = variant_info.variant_names.size() - 1;
     getVariantColumn().fixDynamicStructure();
+}
+
+ColumnDynamic::StatisticsPtr ColumnDynamic::getOrCalculateStatistics() const
+{
+    if (statistics)
+        return statistics;
+
+    auto calculated_statistics = std::make_shared<Statistics>();
+    for (const auto & [variant_name, discr] : variant_info.variant_name_to_discriminator)
+        calculated_statistics->variants_statistics[variant_name] = variant_column_ptr->getVariantByGlobalDiscriminator(discr).size();
+
+    const auto & shared_variant = getSharedVariant();
+    for (size_t i = 0; i != shared_variant.size(); ++i)
+    {
+        auto value = shared_variant.getDataAt(i);
+        ReadBufferFromMemory buf(value);
+        auto type = decodeDataType(buf);
+        auto type_name = type->getName();
+        if (auto it = calculated_statistics->shared_variants_statistics.find(type_name); it != calculated_statistics->shared_variants_statistics.end())
+            ++it->second;
+        else if (calculated_statistics->shared_variants_statistics.size() < Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE)
+            calculated_statistics->shared_variants_statistics.emplace(type_name, 1);
+    }
+
+    return calculated_statistics;
+}
+
+void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    /// Assumes dynamic structure has already been set by `takeExactDynamicStructureFrom` or `chooseDynamicStructureForMerge`.
+    Statistics new_statistics;
+    /// Collect total sizes for variants that are not in our structure (candidates for shared variant statistics).
+    UnorderedMapWithMemoryTracking<String, size_t> shared_variant_candidates;
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_dynamic = assert_cast<const ColumnDynamic &>(*source_column);
+        const auto & source_statistics = source_dynamic.getOrCalculateStatistics();
+
+        /// For variant statistics: if the variant is in our dynamic structure, add directly;
+        /// otherwise accumulate in shared variant candidates.
+        for (const auto & [variant_name, size] : source_statistics->variants_statistics)
+        {
+            if (variant_info.variant_name_to_discriminator.contains(variant_name))
+                new_statistics.variants_statistics[variant_name] += size;
+            else
+                shared_variant_candidates[variant_name] += size;
+        }
+
+        /// For shared variant statistics: if the variant got promoted to a regular variant
+        /// in the merged structure, add to variants_statistics; otherwise accumulate in candidates.
+        for (const auto & [variant_name, size] : source_statistics->shared_variants_statistics)
+        {
+            if (variant_info.variant_name_to_discriminator.contains(variant_name))
+                new_statistics.variants_statistics[variant_name] += size;
+            else
+                shared_variant_candidates[variant_name] += size;
+        }
+    }
+
+    /// Select top MAX_SHARED_VARIANT_STATISTICS_SIZE candidates by total size.
+    if (shared_variant_candidates.size() <= Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE)
+    {
+        new_statistics.shared_variants_statistics = std::move(shared_variant_candidates);
+    }
+    else
+    {
+        VectorWithMemoryTracking<std::pair<size_t, std::string_view>> candidates_with_sizes;
+        candidates_with_sizes.reserve(shared_variant_candidates.size());
+        for (const auto & [variant_name, size] : shared_variant_candidates)
+            candidates_with_sizes.emplace_back(size, variant_name);
+        std::sort(candidates_with_sizes.begin(), candidates_with_sizes.end(), std::greater());
+        for (size_t i = 0; i < Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE; ++i)
+            new_statistics.shared_variants_statistics.emplace(candidates_with_sizes[i].second, candidates_with_sizes[i].first);
+    }
+
+    statistics = std::make_shared<const Statistics>(std::move(new_statistics));
+
+    /// Recursively update statistics for nested variants.
+    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
+    variants_source_columns.resize(variant_info.variant_names.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_dynamic_column = assert_cast<const ColumnDynamic &>(*source_column);
+        const auto & source_variant_info = source_dynamic_column.getVariantInfo();
+        for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+        {
+            auto it = source_variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
+            if (it != source_variant_info.variant_name_to_discriminator.end())
+                variants_source_columns[i].push_back(source_dynamic_column.getVariantColumn().getVariantPtrByGlobalDiscriminator(it->second));
+        }
+    }
+
+    auto & variant_col = getVariantColumn();
+    for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
+    {
+        if (!variants_source_columns[i].empty())
+            variant_col.getVariantByGlobalDiscriminator(i).takeOrCalculateStatisticsFrom(variants_source_columns[i]);
+    }
 }
 
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

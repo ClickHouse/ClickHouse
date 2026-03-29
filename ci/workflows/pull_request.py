@@ -22,7 +22,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
         for substr in (
             "_debug, parallel",
             "_binary, parallel",
-            "_asan, distributed plan, parallel",
+            "_asan_ubsan, distributed plan, parallel",
             "_tsan, parallel",
         )
     )
@@ -46,6 +46,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
+        JobConfigs.code_review,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -62,7 +63,7 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
-        *JobConfigs.build_llvm_coverage_job,
+        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
         JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
@@ -136,7 +137,18 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
+        # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
+        # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
+        JobConfigs.keeper_stress_job
+            .set_name("Keeper Stress Tests (PR)")
+            .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
+        # TODO: uncomment when praktika supports depends-on-all-jobs;
+        # currently set_dependency requires an explicit list, but CI Results Review
+        # should only run after every other job has finished.
+        # JobConfigs.ci_results_review.set_dependency(
+        #     FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        # ),
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,

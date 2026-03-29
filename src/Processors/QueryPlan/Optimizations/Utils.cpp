@@ -113,12 +113,16 @@ FilterResult filterResultForNotMatchedRows(
         filter_input.emplace(input, std::move(constant_column_with_type_and_name));
     }
 
+    const auto * filter_node = filter_dag.tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return FilterResult::UNKNOWN;
+
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             filter_input,
-            { filter_dag.tryFindInOutputs(filter_column_name) },
+            { filter_node },
             /*input_rows_count=*/1,
             { .skip_materialize = true, .allow_unknown_function_arguments = allow_unknown_function_arguments }
         );

@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -42,13 +43,82 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
         const IDataType * type = &original_type;
         if (const DataTypeLowCardinality * t = typeid_cast<const DataTypeLowCardinality *>(type))
             type = t->getDictionaryType().get();
+        bool is_nullable = false;
         if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
+        {
+            is_nullable = true;
             type = t->getNestedType().get();
+        }
 
-        /// If the input is signed, assume monotonic.
-        /// Not fully correct because of the corner case -INT64_MIN == INT64_MIN and similar.
+        /// For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable.
+        if (!type->isValueRepresentedByNumber())
+            return {};
+
+        /// `negate(NULL) = NULL` stays at the bottom of the sort order instead of
+        /// flipping to the top, so negate is not monotonic on ranges that include NULL.
+        /// For Nullable types, a null left bound indicates the range starts from NULL.
+        if (is_nullable && left.isNull())
+            return {};
+
         if (!type->isValueRepresentedByUnsignedInteger())
+        {
+            /// For signed integers, `negate(TYPE_MIN)` overflows to TYPE_MIN, breaking monotonicity.
+            /// Only claim monotonic if the range provably excludes the type minimum.
+            if (type->isValueRepresentedByInteger())
+            {
+                /// -Inf means the range starts from the very minimum, which is TYPE_MIN.
+                if (left.isNegativeInfinity())
+                    return {};
+
+                /// Check if the left bound equals the type's minimum value.
+                bool left_is_type_min = false;
+                WhichDataType which(*type);
+                if (left.getType() == Field::Types::Int64)
+                {
+                    Int64 v = left.safeGet<Int64>();
+                    if (which.isInt8())
+                        left_is_type_min = (v == std::numeric_limits<Int8>::min());
+                    else if (which.isInt16())
+                        left_is_type_min = (v == std::numeric_limits<Int16>::min());
+                    else if (which.isInt32())
+                        left_is_type_min = (v == std::numeric_limits<Int32>::min());
+                    else if (which.isInt64())
+                        left_is_type_min = (v == std::numeric_limits<Int64>::min());
+                }
+                else if (left.getType() == Field::Types::Int128)
+                    left_is_type_min = (left.safeGet<Int128>() == std::numeric_limits<Int128>::min());
+                else if (left.getType() == Field::Types::Int256)
+                    left_is_type_min = (left.safeGet<Int256>() == std::numeric_limits<Int256>::min());
+
+                if (left_is_type_min)
+                    return {};
+            }
+
+            /// For floating-point types, `negate(NaN) = NaN` stays at the same sort
+            /// position instead of flipping to the top, breaking monotonicity.
+            if (!type->isValueRepresentedByInteger())
+            {
+                /// Infinity means the range could include NaN (which sorts at the
+                /// extremes depending on `nan_direction_hint`).
+                if (left.isNegativeInfinity() || right.isPositiveInfinity())
+                    return {};
+
+                /// Check actual bound values for NaN.
+                auto isNaNField = [](const Field & f) -> bool
+                {
+                    if (f.isNull())
+                        return false;
+                    return std::isnan(applyVisitor(FieldVisitorConvertToNumber<Float64>(), f));
+                };
+                if (isNaNField(left) || isNaNField(right))
+                    return {};
+            }
             return { .is_monotonic = true, .is_positive = false, .is_strict = true };
+        }
+
+        /// For unsigned integers, negate overflows at the midpoint (e.g. 2^63 for UInt64).
+        if (left.isNull())
+            return {};
 
         /// negate(UInt64) -> Int64:
         ///  * monotonically decreases on [0, 2^63] (no overflow),
@@ -61,7 +131,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
         {
             switch (f.getType())
             {
-                case Field::Types::UInt64: return f.safeGet<UInt64>() > 1ul << 63;
+                case Field::Types::UInt64: return f.safeGet<UInt64>() > UInt64(1) << 63;
                 case Field::Types::UInt128: return f.safeGet<UInt128>() > UInt128(1) << 127;
                 case Field::Types::UInt256: return f.safeGet<UInt256>() > UInt256(1) << 255;
                 default: break;
