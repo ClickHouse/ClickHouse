@@ -1832,11 +1832,22 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in, bool non_blocking = false)
             pfd.events = POLLIN;
             pfd.revents = 0;
 
-            int ret = poll(&pfd, 1, 0);
-            if (ret <= 0)
+            int ret;
+            do
+            {
+                ret = poll(&pfd, 1, 0);
+            }
+            while (ret == -1 && errno == EINTR);
+
+            if (ret == -1)
+                throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll stdin");
+
+            /// No data available right now.
+            if (ret == 0)
                 return false;
+
             if (pfd.revents & (POLLERR | POLLNVAL))
-                return false;
+                throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Error while polling stdin (revents={})", int(pfd.revents));
         }
     }
 
