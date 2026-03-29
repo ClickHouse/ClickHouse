@@ -215,6 +215,13 @@ StorageMergeTree::StorageMergeTree(
     loadMutations();
     loadDeduplicationLog();
     prewarmCaches(getActivePartsLoadingThreadPool().get(), getCachesToPrewarm(0));
+
+    if ((*getSettings())[MergeTreeSetting::leader_election])
+    {
+        /// Validate early that the primary disk supports object storage.
+        /// getObjectStorage throws NOT_IMPLEMENTED for local disks.
+        getDisks().front()->getObjectStorage();
+    }
 }
 
 
