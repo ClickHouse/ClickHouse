@@ -48,6 +48,11 @@ namespace ErrorCodes
 
 namespace
 {
+    bool isRemovedConfigEntry(const Poco::Util::AbstractConfiguration & config, const String & entry_path)
+    {
+        return config.has(entry_path + "[@remove]") || config.has(entry_path + ".@remove");
+    }
+
     template <typename T>
     void parseGrant(T & entity, const String & string_query, const std::unordered_set<UUID> & role_ids_from_users_config, const AccessControl & access_control, LoggerPtr log)
     {
@@ -681,12 +686,20 @@ std::vector<AccessEntityPtr> UsersConfigParser::parseUsers(
     Poco::Util::AbstractConfiguration::Keys user_names;
     config.keys("users", user_names);
 
+    Poco::Util::AbstractConfiguration::Keys filtered_user_names;
+    filtered_user_names.reserve(user_names.size());
+    for (const auto & user_name : user_names)
+    {
+        if (!isRemovedConfigEntry(config, "users." + user_name))
+            filtered_user_names.push_back(user_name);
+    }
+
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
     std::vector<AccessEntityPtr> users;
-    users.reserve(user_names.size());
-    for (const auto & user_name : user_names)
+    users.reserve(filtered_user_names.size());
+    for (const auto & user_name : filtered_user_names)
     {
         try
         {
