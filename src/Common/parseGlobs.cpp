@@ -155,38 +155,43 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
 
-    /// Replace `**/` with a placeholder before character-by-character processing.
-    /// `**/` means "match zero or more directory components".
-    static constexpr std::string_view double_star_slash = "**/";
-    static constexpr std::string_view double_star_slash_replacement = "\x01";
-    for (size_t pos = almost_res.find(double_star_slash); pos != std::string::npos; pos = almost_res.find(double_star_slash, pos))
-        almost_res.replace(pos, double_star_slash.size(), double_star_slash_replacement);
-
     WriteBufferFromOwnString buf_final_processing;
-    char previous = ' ';
-    for (const auto & letter : almost_res)
+    for (size_t i = 0; i < almost_res.size(); ++i)
     {
-        if (letter == '\x01')
+        const char letter = almost_res[i];
+
+        if (letter == '*' && i + 1 < almost_res.size() && almost_res[i + 1] == '*')
         {
-            /// `**/` → match zero or more path segments (each ending with `/`).
-            buf_final_processing << "([^{}]*/)*";
-            previous = '/';
+            if (i + 2 < almost_res.size() && almost_res[i + 2] == '/')
+            {
+                /// `**/` → match zero or more path segments (each ending with `/`).
+                buf_final_processing << "([^{}]*/)*";
+                i += 2;
+            }
+            else
+            {
+                /// `**` at end or not followed by `/` → match any characters across directories.
+                buf_final_processing << "[^/]*[^{}]*";
+                i += 1;
+            }
             continue;
         }
-        if (previous == '*' && letter == '*')
+
+        if (letter == '*')
         {
-            buf_final_processing << "[^{}]";
+            buf_final_processing << "[^/]*"; /// '*' matches any characters except '/'
+            continue;
         }
-        else if ((letter == '?') || (letter == '*'))
+
+        if (letter == '?')
         {
-            buf_final_processing << "[^/]"; /// '?' is any symbol except '/'
-            if (letter == '?')
-                continue;
+            buf_final_processing << "[^/]"; /// '?' is any single symbol except '/'
+            continue;
         }
-        else if ((letter == '.') || (letter == '{') || (letter == '}'))
+
+        if (letter == '.' || letter == '{' || letter == '}')
             buf_final_processing << '\\';
         buf_final_processing << letter;
-        previous = letter;
     }
     return buf_final_processing.str();
 }
