@@ -1838,9 +1838,20 @@ bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
     pfd.fd = fd;
     pfd.events = POLLIN;
     pfd.revents = 0;
-    int ret = poll(&pfd, 1, 0);
+
+    int ret;
+    do
+    {
+        ret = poll(&pfd, 1, 0);
+    }
+    while (ret < 0 && errno == EINTR);
+
     if (ret < 0)
         throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot poll stdin (fd {})", fd);
+
+    if (ret > 0 && (pfd.revents & (POLLERR | POLLNVAL)))
+        throw Exception(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "poll on stdin (fd {}) returned error revents={}", fd, int(pfd.revents));
+
     return ret > 0 && (pfd.revents & POLLIN);
 }
 }
