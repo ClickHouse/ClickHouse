@@ -1707,8 +1707,40 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
     if (!flag_per_row)
     {
-        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held
-        size_t expected_columns_count = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
+        /// With multiple disjuncts, all keys are in sample_block_with_columns_to_add, so invariant is not held.
+        ///
+        /// After join side swapping (e.g., LEFT ANTI → RIGHT ANTI), a column name
+        /// can appear in both the left block and sample_block_with_columns_to_add.
+        /// During joinBlock, AddedColumns skips right-side columns whose (renamed) name
+        /// already exists in the left block, so result_sample_block has fewer columns
+        /// than the naive sum. We must subtract this cross-side overlap.
+        size_t cross_side_overlap = 0;
+        {
+            NameSet left_names;
+            if (canRemoveColumnsFromLeftBlock())
+                for (const auto & col : table_join->getOutputColumns(JoinTableSide::Left))
+                    left_names.insert(col.name);
+            else
+                for (const auto & col : left_sample_block)
+                    left_names.insert(col.name);
+
+            for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
+            {
+                auto renamed = table_join->renamedRightColumnName(sample_block_with_columns_to_add.getByPosition(i).name);
+                if (left_names.count(renamed))
+                    ++cross_side_overlap;
+            }
+
+            for (size_t i = 0; i < required_right_keys.columns(); ++i)
+            {
+                auto renamed = table_join->renamedRightColumnName(required_right_keys.getByPosition(i).name);
+                if (left_names.count(renamed))
+                    ++cross_side_overlap;
+            }
+        }
+
+        size_t expected_columns_count = left_columns_count + required_right_keys.columns()
+            + sample_block_with_columns_to_add.columns() - cross_side_overlap;
         if (expected_columns_count != result_sample_block.columns())
         {
             Names left_block_names;
