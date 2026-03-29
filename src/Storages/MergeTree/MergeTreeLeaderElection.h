@@ -86,6 +86,7 @@ private:
     UInt64 session_timeout_ms;
 
     std::atomic<bool> is_leader{false};
+    std::atomic<bool> stopped{false};
 
     /// Monotonic time of the last successful lease renewal.
     /// Used to detect stalled heartbeat threads.

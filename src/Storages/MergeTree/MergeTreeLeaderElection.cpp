@@ -58,6 +58,8 @@ void MergeTreeLeaderElection::start()
 
 void MergeTreeLeaderElection::stop()
 {
+    stopped.store(true, std::memory_order_release);
+
     if (task)
         task->deactivate();
 
@@ -136,6 +138,13 @@ void MergeTreeLeaderElection::run()
             }
         }
 
+        /// Check the stopped flag before updating leadership state.
+        /// This prevents a race where stop() has already deactivated the task and
+        /// relinquished leadership, but run() was already in-flight and could
+        /// re-acquire leadership and invoke the callback after shutdown began.
+        if (stopped.load(std::memory_order_acquire))
+            return;
+
         bool was_leader = is_leader.exchange(became_leader, std::memory_order_acq_rel);
 
         if (became_leader && !was_leader)
@@ -165,7 +174,8 @@ void MergeTreeLeaderElection::run()
         tryLogCurrentException(log, "Error in leader election heartbeat");
     }
 
-    task->scheduleAfter(heartbeat_interval_ms);
+    if (!stopped.load(std::memory_order_acquire))
+        task->scheduleAfter(heartbeat_interval_ms);
 }
 
 bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const String & if_none_match)

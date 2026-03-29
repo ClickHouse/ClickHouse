@@ -218,9 +218,13 @@ StorageMergeTree::StorageMergeTree(
 
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
-        /// Validate early that the primary disk supports object storage.
-        /// getObjectStorage throws NOT_IMPLEMENTED for local disks.
-        getDisks().front()->getObjectStorage();
+        /// Leader election requires a remote object storage disk (S3, Azure, GCS)
+        /// that supports conditional writes (If-Match / If-None-Match).
+        if (!getDisks().front()->isRemote())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The `leader_election` setting requires a remote object storage disk (S3, Azure, GCS), "
+                "but the primary disk '{}' is local",
+                getDisks().front()->getName());
     }
 }
 
@@ -242,7 +246,6 @@ void StorageMergeTree::startup()
     if ((*getSettings())[MergeTreeSetting::leader_election])
     {
         /// The first disk should be the main data disk.
-        /// getObjectStorage will throw if it's not an object storage disk.
         ObjectStoragePtr object_storage = getDisks().front()->getObjectStorage();
 
         auto heartbeat_ms = (*getSettings())[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
