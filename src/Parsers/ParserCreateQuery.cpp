@@ -900,7 +900,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_rparen.ignore(pos, expected))
             return false;
 
-        auto storage_parse_result = parse_storage();
+        parse_storage();
 
         /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
         try_parse_empty_or_clone();
@@ -908,26 +908,30 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         try_parse_empty_or_clone();
 
         /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
-        bool has_as = false;
-        if (is_create_empty || is_clone_as)
+        bool has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
+        if ((is_create_empty || is_clone_as) && !has_as)
         {
-            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
-                return false;
-            has_as = true;
+            return false;
         }
-        else
-            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
 
-        if ((storage_parse_result || is_temporary) && has_as)
+        if (is_temporary && has_as)
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
         }
 
-        if (!storage_parse_result && !is_temporary && has_as)
+        if (!is_temporary && has_as)
         {
-            if (!table_function_p.parse(pos, as_table_function, expected))
-                return false;
+            if (!select_p.parse(pos, select, expected))
+            {
+                // ATTACH ... ENGINE = ... AS table_function() queries not allowed
+                if ((!attach || !storage) && !table_function_p.parse(pos, as_table_function, expected))
+                    return false;
+
+                /// Optional - ENGINE can be specified.
+                if (!attach && !storage)
+                    parse_storage();
+            }
         }
 
         /// Will set default table engine if Storage clause was not parsed
@@ -961,8 +965,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         {
             if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
-                /// ENGINE can not be specified for table functions.
-                if (storage || !table_function_p.parse(pos, as_table_function, expected))
+                // ATTACH ... ENGINE = ... AS table_function() queries not allowed
+                if ((!attach || !storage) && !table_function_p.parse(pos, as_table_function, expected))
                 {
                     /// AS [db.]table
                     if (!name_p.parse(pos, as_table, expected))
@@ -974,11 +978,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                         if (!name_p.parse(pos, as_table, expected))
                             return false;
                     }
-
-                    /// Optional - ENGINE can be specified.
-                    if (!storage)
-                        parse_storage();
                 }
+
+                /// Optional - ENGINE can be specified for CREATE queries.
+                if (!attach && !storage)
+                    parse_storage();
             }
         }
     }

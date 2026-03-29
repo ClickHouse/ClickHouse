@@ -73,10 +73,10 @@ For both features, you can specify a different engine for the table. If the engi
 ### From a Table Function {#from-a-table-function}
 
 ```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function() [ENGINE = engine]
 ```
 
-Creates a table with the same result as that of the [table function](/sql-reference/table-functions) specified. The created table will also work in the same way as the corresponding table function that was specified.
+If an engine is not specified, creates a table with the same structure and behavior as the specified [table function](/sql-reference/table-functions). Otherwise, the table function's engine is overridden, and only the table structure is inferred from the table function.
 
 ### From SELECT query {#from-select-query}
 
