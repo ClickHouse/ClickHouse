@@ -219,6 +219,23 @@ ActionsDAG analyzeExpressionToActionsDAG(
             rename_pairs.emplace_back(outputs[i]->result_name, ast_column_names[i]);
 
         actions.addAliases(rename_pairs);
+
+        /// Preserve source columns in the output — the old ExpressionAnalyzer
+        /// with remove_unused_result=false kept all input columns in the output.
+        for (const auto * input : actions.getInputs())
+        {
+            bool already_in_outputs = false;
+            for (const auto * output : outputs)
+            {
+                if (output == input)
+                {
+                    already_in_outputs = true;
+                    break;
+                }
+            }
+            if (!already_in_outputs)
+                outputs.push_back(input);
+        }
     }
     else
     {
