@@ -496,6 +496,7 @@ namespace
     The wait timeout is determined by the query-level `queue_max_wait_ms` setting;
     if that is 0, it falls back to `max_execution_time`, then to the default receive timeout (300s).
     When disabled, the legacy broadcast condvar is used.
+    Requires server restart to take effect.
     )", 0) \
     DECLARE(UInt64, admission_queue_alive_check_interval_ms, 5000, R"(
     Interval in milliseconds between connection alive checks while a query is waiting in the admission control queue.
