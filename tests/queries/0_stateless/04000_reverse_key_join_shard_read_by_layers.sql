@@ -1,0 +1,17 @@
+-- { echo ON }
+-- Tags: no-random-settings
+
+-- Bugfix validation for readByLayers() hardcoding ReadType::InOrder.
+-- With read_in_order_use_virtual_row=1 and enable_join_runtime_filters=0,
+-- optimizeJoinByShards splits a reverse-key table into layers and each layer
+-- must read in InReverseOrder — not InOrder — to produce ascending output.
+
+DROP TABLE IF EXISTS t_reverse_key;
+
+CREATE TABLE t_reverse_key (c0 Int) ENGINE = MergeTree() ORDER BY (c0 DESC) SETTINGS index_granularity = 1, allow_experimental_reverse_key = 1;
+
+INSERT INTO t_reverse_key SELECT number FROM numbers(10);
+
+SELECT c0 FROM t_reverse_key JOIN t_reverse_key tx USING (c0) ORDER BY c0 SETTINGS query_plan_join_shard_by_pk_ranges = 1, max_threads = 2, query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1, enable_join_runtime_filters = 0;
+
+DROP TABLE t_reverse_key;
