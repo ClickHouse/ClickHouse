@@ -22,8 +22,9 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 -- Verify correctness: output must be sorted.
+-- Check that no adjacent pair violates ordering using neighbor().
 SELECT 'correctness';
-SELECT count() FROM (
+SELECT count(), countIf(path < neighbor(path, -1)) as violations FROM (
     SELECT path FROM t_prefetching_concat
     WHERE path LIKE '%file.log'
     ORDER BY path
