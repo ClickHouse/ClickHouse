@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-random-merge-tree-settings
 
 -- Test that ALTER TABLE operations don't cause primary key type mismatches
 -- when settings-dependent functions are used in the ORDER BY expression.
