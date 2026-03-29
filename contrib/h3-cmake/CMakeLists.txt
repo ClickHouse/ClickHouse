@@ -8,13 +8,9 @@ endif()
 # ENABLE_H3O is declared here (in addition to rust/workspace/CMakeLists.txt) because
 # contrib/ is processed before rust/, and CMake option() is idempotent — the first
 # call wins, so the later declaration becomes a no-op.
-# Default to ENABLE_RUST so that h3o is used whenever Rust is available.
-if(ENABLE_RUST)
-    set(_H3O_DEFAULT ${ENABLE_LIBRARIES})
-else()
-    set(_H3O_DEFAULT OFF)
-endif()
-option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" ${_H3O_DEFAULT})
+# Default to OFF: h3o changes user-visible semantics for average area/edge-length
+# functions, so it must be explicitly opted into until full parity is confirmed.
+option(ENABLE_H3O "Enable h3o (Rust H3 implementation)" OFF)
 
 if(ENABLE_H3O)
     message(STATUS "Not using C H3 library (Rust h3o is enabled instead)")
