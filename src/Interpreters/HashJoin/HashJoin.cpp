@@ -1727,14 +1727,14 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
             for (size_t i = 0; i < sample_block_with_columns_to_add.columns(); ++i)
             {
                 auto renamed = table_join->renamedRightColumnName(sample_block_with_columns_to_add.getByPosition(i).name);
-                if (left_names.count(renamed))
+                if (left_names.contains(renamed))
                     ++cross_side_overlap;
             }
 
             for (size_t i = 0; i < required_right_keys.columns(); ++i)
             {
                 auto renamed = table_join->renamedRightColumnName(required_right_keys.getByPosition(i).name);
-                if (left_names.count(renamed))
+                if (left_names.contains(renamed))
                     ++cross_side_overlap;
             }
         }

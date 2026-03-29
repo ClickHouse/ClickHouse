@@ -32,7 +32,7 @@ WHERE ((NULL >= (multiply((* GLOBAL IN (k)), 257) NOT IN (k)))
     <= toInt64(materialize(9223372036854775807))
 FORMAT Null
 SETTINGS enable_analyzer = 1
-" 2>&1 | grep -v -c 'LOGICAL_ERROR' > /dev/null
+" 2>&1 | { ! grep -q 'LOGICAL_ERROR'; }
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test_overlap"
 
@@ -59,7 +59,7 @@ WHERE toUInt8(multiIf(
     IN (1025, toInt128(materialize(9223372036854775806)))
 FORMAT Null
 SETTINGS enable_analyzer = 1
-" 2>&1 | grep -v -c 'LOGICAL_ERROR' > /dev/null
+" 2>&1 | { ! grep -q 'LOGICAL_ERROR'; }
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test_overlap2"
 
