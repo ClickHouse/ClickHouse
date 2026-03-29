@@ -103,7 +103,7 @@ def sqs_check_result(result, reference):
 
 
 def test_sqs_basic(started_cluster):
-    """Test basic INSERT/SELECT round-trp through SQS."""
+    """Test basic INSERT/SELECT round-trip through SQS."""
     queue_name = "basic_test"
     create_queue(queue_name)
 
