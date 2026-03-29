@@ -2448,15 +2448,29 @@ try
             global_context->updateStorageConfiguration(config());
             global_context->updateInterserverCredentials(config());
 
-            global_context->updateUncompressedCacheConfiguration(config());
-            global_context->updateMarkCacheConfiguration(config());
-            global_context->updatePrimaryIndexCacheConfiguration(config());
-            global_context->updateIndexUncompressedCacheConfiguration(config());
-            global_context->updateIndexMarkCacheConfiguration(config());
-            global_context->updateVectorSimilarityIndexCacheConfiguration(config());
-            global_context->updateMMappedFileCacheConfiguration(config());
-            global_context->updateQueryResultCacheConfiguration(config());
-            global_context->updateQueryConditionCacheConfiguration(config());
+            {
+                const size_t max_cache_size_in_bytes = static_cast<size_t>(
+                    static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
+
+                global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateTextIndexTokensCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateTextIndexHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateTextIndexPostingsCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_AVRO
+                global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
+#endif
+#if USE_PARQUET
+                global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
+#endif
+            }
 
 #if USE_SSL
             CertificateReloader::instance().tryReloadAll(config());

@@ -1,7 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 
 #include <Parsers/ASTFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunctionHelper.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <boost/math/special_functions/sign.hpp>
 #include <numbers>
@@ -106,7 +106,7 @@ SQLQueryPiece applyOneArgumentMathFunction(
         return makeASTFunction(impl_info->ch_function_name, std::move(x));
     };
 
-    auto res = applySimpleFunctionHelper(function_node, context, apply_function_to_ast, std::move(arguments));
+    auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));
     return dropMetricName(std::move(res), context);
 }
 
