@@ -73,3 +73,4 @@ allow_statistics_optimize
 allow_unrestricted_reads_from_keeper
 enable_vector_similarity_index
 allow_nullable_tuple_in_extracted_subcolumns
+allow_experimental_pipe_syntax
