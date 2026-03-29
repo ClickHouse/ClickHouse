@@ -4534,9 +4534,8 @@ void Context::updatePartAggregationCacheConfiguration(const Poco::Util::Abstract
     if (!shared->part_aggregation_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part aggregation cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("part_aggregation_cache.max_size_in_bytes", 256 * 1024 * 1024);
-    if (max_size_in_bytes > max_cache_size)
-        max_size_in_bytes = max_cache_size;
+    size_t max_size_in_bytes = std::min(
+        config.getUInt64("part_aggregation_cache.max_size_in_bytes", 256 * 1024 * 1024), max_cache_size);
     shared->part_aggregation_cache->updateConfiguration(max_size_in_bytes);
 }
 
