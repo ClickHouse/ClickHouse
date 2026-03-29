@@ -523,6 +523,7 @@ This mirrors the [`auto.evolve` feature](https://docs.confluent.io/kafka-connect
 - **STRUCT mapped to JSON (opt-in)** - By default, non-union STRUCT fields cannot be auto-evolved because they could map to Tuple, JSON, or Nested. Set `auto.evolve.struct.to.json=true` to automatically create STRUCT fields as [JSON](/sql-reference/data-types/json) columns. Without this flag, pre-create the column with the desired type manually. The connector supports STRUCT for *insertion* into existing columns regardless of this flag.
 - **Schema Registry recommended** - For best results, use a [Schema Registry](https://docs.confluent.io/platform/current/schema-registry/index.html) with BACKWARD or FULL compatibility mode. This ensures new fields are always optional (nullable), which is the safest mode for auto-evolution.
 - **Table must exist** - Auto-evolution adds columns to existing tables. It does not create new tables.
+- **Last record schema check** - The connector checks only the last record in each batch for new fields. If a single batch contains multiple schema versions (e.g., records with schema V1 followed by V2 followed by V1), only the last record's schema is evaluated. In practice this is rarely an issue because schema changes are infrequent and Kafka partitions preserve ordering, so the last record typically carries the newest schema. If you use `ignorePartitionsWhenBatching=true` with producers at different schema versions, consider evolving the table manually before deploying the new schema.
 
 #### Configuration {#schema-evolution-configuration}
 
@@ -553,7 +554,7 @@ Sink connector properties:
 
 #### How it works {#how-schema-evolution-works}
 
-1. For each batch of records, the connector compares the record schema against the table's column list.
+1. For each batch of records, the connector checks the last record's schema against the table's column list.
 2. If new fields are detected, it maps the Kafka Connect types to ClickHouse types and issues `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` with all missing columns in a single DDL statement.
 3. DDL is executed with [`alter_sync=1`](/sql-reference/statements/alter#synchronicity-of-alter-queries) to wait for the local replica to apply the change.
 4. After DDL, the connector retries `DESCRIBE TABLE` (configurable via `auto.evolve.ddl.refresh.retries`, default 3 retries with 200ms backoff) to verify the new columns are visible.
