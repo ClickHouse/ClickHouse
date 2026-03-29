@@ -4,9 +4,8 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
-#include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -60,7 +59,6 @@ void ExchangeServer::stop()
 void ExchangeServer::run()
 {
     setThreadName(ThreadName::EXCHANGE_SERVER);
-    DB::ThreadStatus thread_status;
 
     while (!stopped)
     {
@@ -97,7 +95,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 {
     LOG_WARNING(log, "Connection from {}", socket.peerAddress().toString());
 
-    ReadBufferFromPocoSocketChunked in(socket);
+    ReadBufferFromPocoSocket in(socket);
 
     UInt64 packet_type = 0;
     readIntBinary(packet_type, in);
