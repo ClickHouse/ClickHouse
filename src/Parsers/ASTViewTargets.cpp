@@ -356,7 +356,7 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
     {
         auto target_obj = arr->getObject(i);
         if (!target_obj)
-            continue;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'targets' array during AST JSON deserialization", i);
         ViewTarget target;
         String kind_str = target_obj->getValue<String>("kind");
         parseFromString(target.kind, kind_str);

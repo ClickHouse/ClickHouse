@@ -118,7 +118,11 @@ public:
         {
             auto param_ast = readChild("parametrised_alias");
             if (param_ast)
+            {
                 node.parametrised_alias = boost::dynamic_pointer_cast<ASTQueryParameter>(param_ast);
+                if (!node.parametrised_alias)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTQueryParameter for 'parametrised_alias' during AST JSON deserialization");
+            }
         }
     }
 

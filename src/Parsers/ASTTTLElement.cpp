@@ -13,6 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -93,6 +94,8 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto child_obj = arr->getObject(i);
+            if (!child_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'group_by_key' array during AST JSON deserialization", i);
             group_by_key.push_back(IAST::createFromJSON(*child_obj));
         }
     }
@@ -103,6 +106,8 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto child_obj = arr->getObject(i);
+            if (!child_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'group_by_assignments' array during AST JSON deserialization", i);
             group_by_assignments.push_back(IAST::createFromJSON(*child_obj));
         }
     }

@@ -31,7 +31,7 @@ const char * toString(SelectUnionMode mode)
         case SelectUnionMode::INTERSECT_ALL:
             return "INTERSECT_ALL";
         case SelectUnionMode::INTERSECT_DISTINCT:
-            return "INTERSECT_DEFAULT";
+            return "INTERSECT_DISTINCT";
     }
 }
 
