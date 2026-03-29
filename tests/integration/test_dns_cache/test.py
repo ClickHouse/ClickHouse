@@ -62,7 +62,8 @@ node8 = cluster.add_instance(
     "node8",
     main_configs=[
         "configs/remote_servers_with_disable_dns_setting.xml",
-        "configs/listen_host.xml"
+        "configs/listen_host.xml",
+        "configs/dns_update_short.xml",
     ],
     # Disable `with_remote_database_disk` as the `test_reload_cluster_config_if_host_address_change` may simulate DNS service outage, causing it to fail to start.
     with_remote_database_disk=False,
@@ -521,7 +522,7 @@ def test_reload_cluster_config_if_host_address_change(cluster_ready):
     node.exec_in_container(["bash", "-c", f"echo '{resolv_conf_bak}' > /etc/resolv.conf"], privileged=True, user="root")
     node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
     # Wait a bit until dns cache will be updated
-    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1")
+    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1", retry_count=60)
 
     # Change the resolved IPs of node8
     node.exec_in_container(["bash", "-c", f"echo -e '127.0.0.1 node8\n192.168.1.1 node8\n192.168.1.2 node8' > /etc/hosts"], privileged=True, user="root")
