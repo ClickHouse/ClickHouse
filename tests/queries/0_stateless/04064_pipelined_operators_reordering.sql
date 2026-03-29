@@ -41,3 +41,14 @@ FROM numbers(2) |> AGGREGATE count() AS c |> JOIN numbers(2) AS r ON 1;
 
 -- Pipe order is preserved for WHERE and AGGREGATE
 FROM numbers(3) |> AGGREGATE count() AS c |> WHERE c = 3;
+
+-- Multiple AGGREGATE and WHERE test
+FROM numbers(10) |> AGGREGATE number % 3 AS k, count() AS c GROUP BY k |> WHERE c > 3 |> AGGREGATE sum(c) AS s;
+
+-- AGGREGATE -> ORDER BY -> WHERE must preserve pipe order
+FROM numbers(5) |> AGGREGATE count() AS c |> ORDER BY c |> WHERE c = 5;
+
+-- Multiple joins test
+FROM numbers(2) AS l |> JOIN numbers(2) AS r ON 1 |> JOIN numbers(2) AS z ON 1 |> AGGREGATE count() AS c;
+
+FROM numbers(10) |> ORDER BY number DESC |> LIMIT 3 |> JOIN numbers(1) AS r ON 1 |> WHERE number > 7 |> ORDER BY number;
