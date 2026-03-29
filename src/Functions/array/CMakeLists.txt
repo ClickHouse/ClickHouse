@@ -27,3 +27,7 @@ set_source_files_properties(array.cpp PROPERTIES COMPILE_FLAGS "-U_LIBCPP_HARDEN
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
     target_compile_options(clickhouse_functions_array PRIVATE "-g1")
 endif()
+
+if (ENABLE_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
