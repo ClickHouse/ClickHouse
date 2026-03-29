@@ -209,7 +209,17 @@ ASTPtr IAST::createFromJSON(const String & json)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse JSON for AST deserialization: {}", e.displayText());
     }
-    const auto & obj = result.extract<Poco::JSON::Object::Ptr>();
+
+    Poco::JSON::Object::Ptr obj;
+    try
+    {
+        obj = result.extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Poco::Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization, got a different type");
+    }
+
     if (!obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a JSON object for AST deserialization");
     return createFromJSON(*obj);
