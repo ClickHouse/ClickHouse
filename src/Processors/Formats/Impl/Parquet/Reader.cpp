@@ -495,6 +495,9 @@ void Reader::prepareBloomFilterCondition()
             if (!hashes.has_value())
                 return std::nullopt;
 
+            if (hashes->empty())
+                return hashes;
+
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
             column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
