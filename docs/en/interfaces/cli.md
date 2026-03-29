@@ -633,7 +633,7 @@ clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
 If the username, password or database was specified in the connection string, it cannot be specified using `--user`, `--password` or `--database` (and vice versa).
 
 The host component can either be a hostname or an IPv4 or IPv6 address.
-IPv6 addresses should be in square brackets:
+IPv6 addresses should be in `[]`:
 
 ```text
 clickhouse://[2001:db8::1234]
