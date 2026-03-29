@@ -2103,9 +2103,8 @@ try
 
     /// Part aggregation cache: caches per-part intermediate aggregation states for partial GROUP BY reuse.
     {
-        size_t part_aggregation_cache_max_size = server_settings[ServerSetting::part_aggregation_cache_max_size_in_bytes];
-        if (part_aggregation_cache_max_size > max_cache_size)
-            part_aggregation_cache_max_size = max_cache_size;
+        size_t part_aggregation_cache_max_size = std::min<size_t>(
+            server_settings[ServerSetting::part_aggregation_cache_max_size_in_bytes], max_cache_size);
         global_context->setPartAggregationCache(part_aggregation_cache_max_size);
     }
 
