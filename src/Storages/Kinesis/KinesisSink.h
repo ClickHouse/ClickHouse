@@ -20,7 +20,7 @@ class KinesisSink final : public SinkToStorage
 public:
     KinesisSink(
         StorageMetadataPtr metadata_snapshot,
-        const Aws::Kinesis::KinesisClient & client,
+        std::shared_ptr<Aws::Kinesis::KinesisClient> client,
         const String & stream_name,
         const String & format_name,
         size_t max_rows_per_message,
@@ -35,7 +35,7 @@ private:
 
     static String generatePartitionKey(const String & data);
 
-    const Aws::Kinesis::KinesisClient & client;
+    std::shared_ptr<Aws::Kinesis::KinesisClient> client;
     const String stream_name;
     const String format_name;
     const size_t max_rows_per_message;

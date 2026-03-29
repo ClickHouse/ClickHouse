@@ -41,7 +41,7 @@ public:
 
     KinesisConsumer(
         const String & stream_name_,
-        const Aws::Kinesis::KinesisClient & client_,
+        std::shared_ptr<Aws::Kinesis::KinesisClient> client_,
         std::map<String, KinesisShardState> shard_states_,
         size_t max_records_per_request_,
         Aws::Kinesis::Model::ShardIteratorType starting_position_type_,
@@ -67,7 +67,7 @@ private:
     String getOrRefreshIterator(const String & shard_id, KinesisShardState & state);
 
     const String stream_name;
-    const Aws::Kinesis::KinesisClient & client;
+    std::shared_ptr<Aws::Kinesis::KinesisClient> client;
     const size_t max_records_per_request;
     const Aws::Kinesis::Model::ShardIteratorType starting_position_type;
     const UInt64 at_timestamp;

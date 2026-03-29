@@ -23,14 +23,14 @@ namespace ErrorCodes
 
 KinesisConsumer::KinesisConsumer(
     const String & stream_name_,
-    const Aws::Kinesis::KinesisClient & client_,
+    std::shared_ptr<Aws::Kinesis::KinesisClient> client_,
     std::map<String, KinesisShardState> shard_states_,
     size_t max_records_per_request_,
     Aws::Kinesis::Model::ShardIteratorType starting_position_type_,
     UInt64 at_timestamp_,
     size_t internal_queue_size_)
     : stream_name(stream_name_)
-    , client(client_)
+    , client(std::move(client_))
     , shard_states(std::move(shard_states_))
     , max_records_per_request(max_records_per_request_)
     , starting_position_type(starting_position_type_)
@@ -75,7 +75,7 @@ String KinesisConsumer::getOrRefreshIterator(const String & shard_id, KinesisSha
         }
     }
 
-    auto outcome = client.GetShardIterator(request);
+    auto outcome = client->GetShardIterator(request);
     if (!outcome.IsSuccess())
     {
         const auto & error = outcome.GetError();
@@ -122,7 +122,7 @@ bool KinesisConsumer::receive()
         request.SetShardIterator(iterator);
         request.SetLimit(static_cast<int>(max_records_per_request));
 
-        auto outcome = client.GetRecords(request);
+        auto outcome = client->GetRecords(request);
 
         if (!outcome.IsSuccess())
         {

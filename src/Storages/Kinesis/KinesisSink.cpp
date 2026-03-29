@@ -27,13 +27,13 @@ namespace ErrorCodes
 
 KinesisSink::KinesisSink(
     StorageMetadataPtr metadata_snapshot,
-    const Aws::Kinesis::KinesisClient & client_,
+    std::shared_ptr<Aws::Kinesis::KinesisClient> client_,
     const String & stream_name_,
     const String & format_name_,
     size_t max_rows_per_message_,
     ContextPtr context_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot->getSampleBlock()))
-    , client(client_)
+    , client(std::move(client_))
     , stream_name(stream_name_)
     , format_name(format_name_)
     , max_rows_per_message(max_rows_per_message_)
@@ -93,7 +93,7 @@ void KinesisSink::sendRecord(const String & data, const String & partition_key)
         reinterpret_cast<const unsigned char *>(data.data()),
         data.size()));
 
-    auto outcome = client.PutRecord(request);
+    auto outcome = client->PutRecord(request);
     if (!outcome.IsSuccess())
     {
         const auto & error = outcome.GetError();

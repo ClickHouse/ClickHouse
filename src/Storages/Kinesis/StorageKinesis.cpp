@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
@@ -31,6 +32,7 @@
 #include <IO/S3/Client.h>
 
 #include <aws/core/auth/AWSCredentialsProvider.h>
+#include <aws/core/auth/AWSCredentialsProviderChain.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/kinesis/KinesisClient.h>
@@ -46,6 +48,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_KINESIS;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -112,12 +115,20 @@ std::shared_ptr<Aws::Kinesis::KinesisClient> StorageKinesis::createClient() cons
     if (!endpoint.empty())
         config.endpointOverride = endpoint;
 
-    Aws::Auth::AWSCredentials credentials(
-        (*kinesis_settings)[KinesisSetting::kinesis_aws_access_key_id].value,
-        (*kinesis_settings)[KinesisSetting::kinesis_aws_secret_access_key].value);
+    const String & access_key = (*kinesis_settings)[KinesisSetting::kinesis_aws_access_key_id].value;
+    const String & secret_key = (*kinesis_settings)[KinesisSetting::kinesis_aws_secret_access_key].value;
+
+    if (!access_key.empty() && !secret_key.empty())
+    {
+        Aws::Auth::AWSCredentials credentials(access_key, secret_key);
+        return std::make_shared<Aws::Kinesis::KinesisClient>(
+            credentials,
+            Aws::MakeShared<Aws::Kinesis::KinesisEndpointProvider>("KinesisEndpointProvider"),
+            config);
+    }
 
     return std::make_shared<Aws::Kinesis::KinesisClient>(
-        credentials,
+        std::make_shared<Aws::Auth::DefaultAWSCredentialsProviderChain>(),
         Aws::MakeShared<Aws::Kinesis::KinesisEndpointProvider>("KinesisEndpointProvider"),
         config);
 }
@@ -142,6 +153,10 @@ StorageKinesis::StorageKinesis(
 
     if ((*kinesis_settings)[KinesisSetting::kinesis_stream_name].value.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "kinesis_stream_name setting is required for storage Kinesis");
+
+    if ((*kinesis_settings)[KinesisSetting::kinesis_handle_error_mode] == StreamingHandleErrorMode::STREAM)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "kinesis_handle_error_mode = STREAM is not supported for Kinesis storage");
 
     try
     {
@@ -282,7 +297,7 @@ KinesisConsumerPtr StorageKinesis::createConsumer(std::map<String, KinesisShardS
 {
     return std::make_shared<KinesisConsumer>(
         (*kinesis_settings)[KinesisSetting::kinesis_stream_name].value,
-        *client,
+        client,
         std::move(shard_states),
         (*kinesis_settings)[KinesisSetting::kinesis_max_records_per_request].value,
         parseStartingPosition((*kinesis_settings)[KinesisSetting::kinesis_starting_position].value),
@@ -379,7 +394,7 @@ SinkToStoragePtr StorageKinesis::write(
 
     return std::make_shared<KinesisSink>(
         metadata_snapshot,
-        *client,
+        client,
         (*kinesis_settings)[KinesisSetting::kinesis_stream_name].value,
         (*kinesis_settings)[KinesisSetting::kinesis_format].value,
         (*kinesis_settings)[KinesisSetting::kinesis_max_rows_per_message].value,

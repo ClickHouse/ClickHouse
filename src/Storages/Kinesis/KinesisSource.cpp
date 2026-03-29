@@ -84,22 +84,57 @@ Chunk KinesisSource::generate()
         auto read_buf = std::make_unique<ReadBufferFromString>(message.data);
         auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
-        Chunk chunk;
         bool format_error = false;
 
-        try
+        /// A single message may produce more rows than max_block_size, so exhaust the format.
+        while (true)
         {
-            chunk = input_format->read();
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(getLogger("KinesisSource"), "Error parsing Kinesis record {}/{}: {}",
-                message.shard_id, message.sequence_number, e.message());
-            format_error = true;
-        }
+            Chunk chunk;
+            try
+            {
+                chunk = input_format->read();
+            }
+            catch (const Exception & e)
+            {
+                LOG_ERROR(getLogger("KinesisSource"), "Error parsing Kinesis record {}/{}: {}",
+                    message.shard_id, message.sequence_number, e.message());
+                format_error = true;
+                break;
+            }
 
-        if (!chunk.hasRows())
-            continue;
+            if (!chunk.hasRows())
+                break;
+
+            const auto & chunk_columns = chunk.getColumns();
+            const size_t num_rows = chunk.getNumRows();
+
+            size_t data_col_index = 0;
+            for (size_t i = 0; i < result_columns.size(); ++i)
+            {
+                const auto & col_name = sample_block.getByPosition(i).name;
+
+                if (col_name == "_sequence_number")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.sequence_number);
+                else if (col_name == "_partition_key")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.partition_key);
+                else if (col_name == "_shard_id")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.shard_id);
+                else if (col_name == "_approximate_arrival_timestamp")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.approximate_arrival_timestamp);
+                else
+                {
+                    if (data_col_index < chunk_columns.size())
+                        result_columns[i]->insertRangeFrom(*chunk_columns[data_col_index], 0, num_rows);
+                    ++data_col_index;
+                }
+            }
+
+            total_rows += num_rows;
+        }
 
         if (format_error)
         {
@@ -113,34 +148,7 @@ Chunk KinesisSource::generate()
             if (skip_broken_messages_count > 0 && broken_count > skip_broken_messages_count)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Kinesis: Too many broken messages (more than {})", skip_broken_messages_count);
-
-            continue;
         }
-
-        const auto & chunk_columns = chunk.getColumns();
-        const size_t num_rows = chunk.getNumRows();
-
-        for (size_t i = 0; i < result_columns.size(); ++i)
-        {
-            const auto & col_name = sample_block.getByPosition(i).name;
-
-            if (col_name == "_sequence_number")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.sequence_number);
-            else if (col_name == "_partition_key")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.partition_key);
-            else if (col_name == "_shard_id")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.shard_id);
-            else if (col_name == "_approximate_arrival_timestamp")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.approximate_arrival_timestamp);
-            else if (i < chunk_columns.size())
-                result_columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
-        }
-
-        total_rows += num_rows;
     }
 
     if (total_rows == 0)
