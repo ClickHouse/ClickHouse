@@ -104,6 +104,14 @@ SELECT
    ) as e
 FROM clusterAllReplicas('test_shard_localhost', currentDatabase(), ts_data) SETTINGS enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1, prefer_localhost_replica = 0;
 
+-- Disable parallel replicas for the remaining queries. The explicit parallel replicas
+-- test is above (clusterAllReplicas query). The queries below test AggregatingMergeTree
+-- serialization and batch processing — when the CI randomizer enables parallel replicas
+-- + serialize_query_plan, the initializeAggregation call below fails because aggregate
+-- function parameters (stored as Decimal64 by the constructor) are not correctly handled
+-- during plan deserialization on the remote replica.
+SET enable_parallel_replicas = 0;
+
 -- Test for returning multiple rows in batch
 SELECT intDiv(toUnixTimestamp(timestamp), 130)*130 as fake_key, timeSeriesResampleToGridWithStaleness(100, 200, 10, 15)(timestamp, value) FROM ts_data GROUP BY fake_key ORDER BY fake_key;
 
