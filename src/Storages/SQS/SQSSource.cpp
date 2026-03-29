@@ -120,6 +120,7 @@ Chunk SQSSource::generate()
             /// if the user requested them, but the format only fills non-virtual columns.
             const auto & chunk_columns = chunk.getColumns();
             const size_t num_rows = chunk.getNumRows();
+            size_t data_col_index = 0;
 
             for (size_t i = 0; i < result_columns.size(); ++i)
             {
@@ -145,9 +146,9 @@ Chunk SQSSource::generate()
                         result_columns[i]->insertData(message.sequence_number.data(), message.sequence_number.size());
                 else
                 {
-                    /// Find matching column in chunk by position (non-virtual columns come first)
-                    if (i < chunk_columns.size())
-                        result_columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
+                    if (data_col_index < chunk_columns.size())
+                        result_columns[i]->insertRangeFrom(*chunk_columns[data_col_index], 0, num_rows);
+                    ++data_col_index;
                 }
             }
 
