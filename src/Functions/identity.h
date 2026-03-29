@@ -2,7 +2,6 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Exception.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -17,22 +16,19 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+struct IdentityName
+{
+    static constexpr auto name = "identity";
+};
+
+template<typename Name>
 class FunctionIdentityBase : public IFunction
 {
 public:
-    FunctionIdentityBase(const char * name_, [[maybe_unused]] bool is_identity_)
-        : function_name(name_)
-#if USE_EMBEDDED_COMPILER
-        , is_identity(is_identity_)
-#endif
-    {}
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentityBase<Name>>(); }
 
-    static FunctionPtr create(ContextPtr, const char * name, bool is_identity)
-    {
-        return std::make_shared<FunctionIdentityBase>(name, is_identity);
-    }
-
-    String getName() const override { return function_name; }
+    String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -50,7 +46,7 @@ public:
 #if USE_EMBEDDED_COMPILER
     bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
     {
-        return is_identity && canBeNativeType(result_type);
+        return Name::name == IdentityName::name && canBeNativeType(result_type);
     }
 
     llvm::Value *
@@ -59,28 +55,26 @@ public:
         return arguments[0].value;
     }
 #endif
-
-private:
-    const char * function_name;
-#if USE_EMBEDDED_COMPILER
-    bool is_identity;
-#endif
 };
 
 
-/// Default-constructible identity function, used as a template argument in FunctionMapToArrayAdapter
-class FunctionIdentity : public FunctionIdentityBase
+struct ScalarSubqueryResultName
 {
-public:
-    FunctionIdentity() : FunctionIdentityBase("identity", true) {}
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIdentity>(); }
+    static constexpr auto name = "__scalarSubqueryResult";
 };
 
+using FunctionIdentity = FunctionIdentityBase<IdentityName>;
+using FunctionScalarSubqueryResult = FunctionIdentityBase<ScalarSubqueryResultName>;
 
-class FunctionActionName : public FunctionIdentityBase
+struct ActionNameName
+{
+    static constexpr auto name = "__actionName";
+};
+
+class FunctionActionName : public FunctionIdentityBase<ActionNameName>
 {
 public:
-    FunctionActionName() : FunctionIdentityBase("__actionName", false) {}
+    using FunctionIdentityBase::FunctionIdentityBase;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionActionName>(); }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
@@ -99,7 +93,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
         }
 
-        return FunctionIdentityBase::getReturnTypeImpl(arguments);
+        return FunctionIdentityBase<ActionNameName>::getReturnTypeImpl(arguments);
     }
 };
 

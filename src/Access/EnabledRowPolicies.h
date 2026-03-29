@@ -22,8 +22,7 @@ struct RowPolicyFilter
     std::shared_ptr<const std::pair<String, String>> database_and_table_name;
     std::vector<RowPolicyPtr> policies;
 
-    bool isAlwaysTrue() const;
-    bool isAlwaysFalse() const;
+    bool empty() const;
 };
 
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;

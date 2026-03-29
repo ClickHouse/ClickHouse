@@ -55,7 +55,6 @@ public:
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
     using QueueEntryType = FileCacheQueueEntryType;
-    using KeyType = FileSegmentKeyType;
 
     FileSegment(
         const Key & key_,

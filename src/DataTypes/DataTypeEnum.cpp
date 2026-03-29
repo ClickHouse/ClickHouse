@@ -195,9 +195,9 @@ bool DataTypeEnum<Type>::contains(const IDataType & rhs) const
 }
 
 template <typename Type>
-SerializationPtr DataTypeEnum<Type>::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeEnum<Type>::doGetDefaultSerialization() const
 {
-    return SerializationEnum<Type>::create(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
+    return std::make_shared<SerializationEnum<Type>>(std::static_pointer_cast<const DataTypeEnum<Type>>(shared_from_this()));
 }
 
 

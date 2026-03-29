@@ -5,7 +5,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
-#include <Common/Logger_fwd.h>
 #include <map>
 #include <mutex>
 
@@ -55,7 +54,8 @@ public:
     BackupImpl(
         const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_);
+        std::shared_ptr<IBackupReader> reader_,
+        std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_);
 
     ~BackupImpl() override;
 
@@ -89,6 +89,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
 
 private:
     void open();
@@ -138,6 +139,7 @@ private:
     std::shared_ptr<IBackupReader> reader;
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
     SnapshotReaderCreator lightweight_snapshot_reader_creator;
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.

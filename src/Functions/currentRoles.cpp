@@ -26,30 +26,19 @@ namespace
         DEFAULT_ROLES,
     };
 
-    String toString(Kind kind)
-    {
-        switch (kind)
-        {
-            case Kind::CURRENT_ROLES: return "currentRoles";
-            case Kind::ENABLED_ROLES: return "enabledRoles";
-            case Kind::DEFAULT_ROLES: return "defaultRoles";
-        }
-    }
-
+    template <Kind kind>
     class FunctionCurrentRoles : public IFunction
     {
     public:
-        static FunctionPtr create(const ContextPtr & context, Kind kind)
-        {
-            return std::make_shared<FunctionCurrentRoles>(context, kind);
-        }
+        static constexpr auto name = (kind == Kind::CURRENT_ROLES) ? "currentRoles" : ((kind == Kind::ENABLED_ROLES) ? "enabledRoles" : "defaultRoles");
+        static FunctionPtr create(const ContextPtr & context) { return std::make_shared<FunctionCurrentRoles>(context); }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        String getName() const override { return toString(kind); }
+        String getName() const override { return name; }
 
-        explicit FunctionCurrentRoles(const ContextPtr & context_, Kind kind_)
-            : context(context_), kind(kind_)
+        explicit FunctionCurrentRoles(const ContextPtr & context_)
+            : context(context_)
         {}
 
         size_t getNumberOfArguments() const override { return 0; }
@@ -76,21 +65,20 @@ namespace
     private:
         void initialize() const
         {
-            switch (kind)
+            if constexpr (kind == Kind::CURRENT_ROLES)
             {
-                case Kind::CURRENT_ROLES:
-                    role_names = context->getRolesInfo()->getCurrentRolesNames();
-                    break;
-                case Kind::ENABLED_ROLES:
-                    role_names = context->getRolesInfo()->getEnabledRolesNames();
-                    break;
-                case Kind::DEFAULT_ROLES:
-                {
-                    const auto & manager = context->getAccessControl();
-                    if (const auto user = context->getAccess()->tryGetUser())
-                        role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
-                    break;
-                }
+                role_names = context->getRolesInfo()->getCurrentRolesNames();
+            }
+            else if constexpr (kind == Kind::ENABLED_ROLES)
+            {
+                role_names = context->getRolesInfo()->getEnabledRolesNames();
+            }
+            else
+            {
+                static_assert(kind == Kind::DEFAULT_ROLES);
+                const auto & manager = context->getAccessControl();
+                if (const auto user = context->getAccess()->tryGetUser())
+                    role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
             }
 
             /// We sort the names because the result of the function should not depend on the order of UUIDs.
@@ -99,7 +87,6 @@ namespace
 
         mutable std::once_flag initialized_flag;
         ContextPtr context;
-        Kind kind;
         mutable Strings role_names;
     };
 }
@@ -175,9 +162,9 @@ SELECT defaultRoles();
     FunctionDocumentation::Category category_defaultRoles = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_defaultRoles = {description_defaultRoles, syntax_defaultRoles, arguments_defaultRoles, {}, returned_value_defaultRoles, examples_defaultRoles, introduced_in_defaultRoles, category_defaultRoles};
 
-    factory.registerFunction("currentRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::CURRENT_ROLES); }, documentation_currentRoles);
-    factory.registerFunction("enabledRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::ENABLED_ROLES); }, documentation_enabledRoles);
-    factory.registerFunction("defaultRoles", [](ContextPtr context){ return FunctionCurrentRoles::create(context, Kind::DEFAULT_ROLES); }, documentation_defaultRoles);
+    factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>(documentation_currentRoles);
+    factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>(documentation_enabledRoles);
+    factory.registerFunction<FunctionCurrentRoles<Kind::DEFAULT_ROLES>>(documentation_defaultRoles);
 }
 
 }

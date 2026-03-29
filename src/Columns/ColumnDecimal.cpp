@@ -1,5 +1,5 @@
+#include <Common/Arena.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -11,17 +11,13 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
-#include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
-
-
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <base/TypeName.h>
@@ -323,13 +319,6 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
-{
-    if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(data[n], scale);
-}
-
-template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     return permuteImpl(*this, perm, limit);
@@ -540,7 +529,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = this->create(0, scale);
-    if (size == 0 || offsets.back() == 0)
+    if (0 == size)
         return res;
 
     typename Self::Container & res_data = res->getData();
@@ -589,24 +578,24 @@ ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
-    if (start >= end)
+    if (data.empty())
     {
         min = NearestFieldType<T>(T(0), scale);
         max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
-    T cur_min = data[start];
-    T cur_max = data[start];
+    T cur_min = data[0];
+    T cur_max = data[0];
 
-    for (size_t i = start + 1; i < end; ++i)
+    for (const T & x : data)
     {
-        if (data[i] < cur_min)
-            cur_min = data[i];
-        else if (data[i] > cur_max)
-            cur_max = data[i];
+        if (x < cur_min)
+            cur_min = x;
+        else if (x > cur_max)
+            cur_max = x;
     }
 
     min = NearestFieldType<T>(cur_min, scale);

@@ -158,8 +158,6 @@ public:
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();
 
-    Columns detachColumns();
-
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);
     Block cloneWithColumns(MutableColumns && columns) const;

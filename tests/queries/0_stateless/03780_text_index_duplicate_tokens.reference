@@ -1,0 +1,6 @@
+1
+Filter column: or(and(__text_index_idx_s_like_c305058f11a5516ef44493a7cfb61e2e, like(__table1.s, \'%Hello%\'_String)), and(__text_index_idx_s_like_c305058f11a5516ef44493a7cfb61e2e, like(__table1.s, \'%hello%\'_String))) (removed)
+1
+Filter column: or(like(__table1.s, \'%Hello%\'_String), like(__table1.s, \'%hello%\'_String)) (removed)
+1
+Filter column: or(and(__text_index_idx_s_startsWith_b7277e8eb6394ebe778469bf968cb40f, startsWith(__table1.s, \'Hello,\'_String)), and(__text_index_idx_s_startsWith_b7277e8eb6394ebe778469bf968cb40f, startsWith(__table1.s, \'hello,\'_String))) (removed)
