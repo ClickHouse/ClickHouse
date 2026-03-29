@@ -163,6 +163,10 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
+    /// Reserve enough capacity so that emplace_back never reallocates and
+    /// invalidates the raw pointers stored by readRawChild.
+    children.reserve(23);
+
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
