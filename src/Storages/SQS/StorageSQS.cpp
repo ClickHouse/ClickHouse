@@ -32,6 +32,7 @@
 #include <IO/S3/Client.h>
 
 #include <aws/core/auth/AWSCredentialsProvider.h>
+#include <aws/core/auth/AWSCredentialsProviderChain.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/sqs/SQSClient.h>
@@ -102,12 +103,17 @@ std::shared_ptr<Aws::SQS::SQSClient> StorageSQS::createClient() const
     config.endpointOverride = endpoint_override;
     config.scheme = endpoint_override.starts_with("http://") ? Aws::Http::Scheme::HTTP : Aws::Http::Scheme::HTTPS;
 
-    Aws::Auth::AWSCredentials credentials(
-        (*sqs_settings)[SQSSetting::sqs_aws_access_key_id].value,
-        (*sqs_settings)[SQSSetting::sqs_aws_secret_access_key].value);
+    const String & key_id = (*sqs_settings)[SQSSetting::sqs_aws_access_key_id].value;
+    const String & secret = (*sqs_settings)[SQSSetting::sqs_aws_secret_access_key].value;
+
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
+    if (!key_id.empty() && !secret.empty())
+        credentials_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(key_id, secret);
+    else
+        credentials_provider = std::make_shared<Aws::Auth::DefaultAWSCredentialsProviderChain>();
 
     return std::make_shared<Aws::SQS::SQSClient>(
-        credentials,
+        credentials_provider,
         Aws::MakeShared<Aws::SQS::SQSEndpointProvider>("SQSEndpointProvider"),
         config);
 }

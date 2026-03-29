@@ -94,21 +94,75 @@ Chunk SQSSource::generate()
         read_buf = std::make_unique<ReadBufferFromString>(message.data);
         auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
 
-        Chunk chunk;
         bool format_error = false;
+        const size_t rows_before_message = total_rows;
 
-        try
+        /// Read the message to exhaustion before acknowledging it.
+        while (true)
         {
-            chunk = input_format->read();
-        }
-        catch (const Exception & e)
-        {
-            LOG_ERROR(getLogger("SQSSource"), "Error parsing SQS message {}: {}", message.message_id, e.message());
-            format_error = true;
+            Chunk chunk;
+            try
+            {
+                chunk = input_format->read();
+            }
+            catch (const Exception & e)
+            {
+                LOG_ERROR(getLogger("SQSSource"), "Error parsing SQS message {}: {}", message.message_id, e.message());
+                format_error = true;
+                break;
+            }
+
+            if (!chunk.hasRows())
+                break;
+
+            /// Append chunk rows to result_columns.
+            /// Virtual columns are handled by StorageSnapshot - they will appear in sample_block
+            /// if the user requested them, but the format only fills non-virtual columns.
+            const auto & chunk_columns = chunk.getColumns();
+            const size_t num_rows = chunk.getNumRows();
+
+            for (size_t i = 0; i < result_columns.size(); ++i)
+            {
+                const auto & col_name = sample_block.getByPosition(i).name;
+
+                if (col_name == "_message_id")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.message_id);
+                else if (col_name == "_receive_count")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.receive_count);
+                else if (col_name == "_sent_timestamp")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.sent_timestamp);
+                else if (col_name == "_message_group_id")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.message_group_id);
+                else if (col_name == "_message_deduplication_id")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insert(message.message_deduplication_id);
+                else if (col_name == "_sequence_number")
+                    for (size_t r = 0; r < num_rows; ++r)
+                        result_columns[i]->insertData(message.sequence_number.data(), message.sequence_number.size());
+                else
+                {
+                    /// Find matching column in chunk by position (non-virtual columns come first)
+                    if (i < chunk_columns.size())
+                        result_columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
+                }
+            }
+
+            total_rows += num_rows;
         }
 
         if (format_error)
         {
+            if (total_rows > rows_before_message)
+            {
+                for (auto & col : result_columns)
+                    col->popBack(total_rows - rows_before_message);
+                total_rows = rows_before_message;
+            }
+
             if (!dead_letter_queue_url.empty())
             {
                 consumer->moveMessageToDLQ(message);
@@ -132,47 +186,10 @@ Chunk SQSSource::generate()
             continue;
         }
 
-        if (!chunk.hasRows())
+        if (total_rows == rows_before_message)
             continue;
 
-        /// Append chunk rows to result_columns.
-        /// Virtual columns are handled by StorageSnapshot - they will appear in sample_block
-        /// if the user requested them, but the format only fills non-virtual columns.
-        const auto & chunk_columns = chunk.getColumns();
-        const size_t num_rows = chunk.getNumRows();
-
-        for (size_t i = 0; i < result_columns.size(); ++i)
-        {
-            const auto & col_name = sample_block.getByPosition(i).name;
-
-            if (col_name == "_message_id")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.message_id);
-            else if (col_name == "_receive_count")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.receive_count);
-            else if (col_name == "_sent_timestamp")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.sent_timestamp);
-            else if (col_name == "_message_group_id")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.message_group_id);
-            else if (col_name == "_message_deduplication_id")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insert(message.message_deduplication_id);
-            else if (col_name == "_sequence_number")
-                for (size_t r = 0; r < num_rows; ++r)
-                    result_columns[i]->insertData(message.sequence_number.data(), message.sequence_number.size());
-            else
-            {
-                /// Find matching column in chunk by position (non-virtual columns come first)
-                if (i < chunk_columns.size())
-                    result_columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
-            }
-        }
-
         [[maybe_unused]] bool pushed = pending_ack.tryPush(message);
-        total_rows += num_rows;
     }
 
     if (total_rows == 0)
