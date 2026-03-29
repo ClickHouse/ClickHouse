@@ -202,10 +202,10 @@ private:
         }
 
         Float64 num_bytes_with_decimals = base * static_cast<Float64>(iter->second);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
-#pragma clang diagnostic pop
+        /// Note: static_cast<Float64>(UInt64::max) rounds up to 2^64, so using `>` would let
+        /// values equal to 2^64 slip through, causing UB in the subsequent cast to UInt64.
+        /// Compare with `>=` against 2^64 directly to avoid this.
+        if (num_bytes_with_decimals >= 0x1p64)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
