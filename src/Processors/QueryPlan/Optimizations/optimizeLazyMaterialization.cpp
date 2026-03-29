@@ -76,6 +76,10 @@ std::vector<bool> getRequiredHeaderPositions(const ActionsDAG & dag, const Block
     std::unordered_set<const ActionsDAG::Node *> required_nodes;
     std::stack<const ActionsDAG::Node *> stack;
 
+    /// Resize to match the DAG outputs if the vector is smaller (extra positions default to not required).
+    if (required_output_positions.size() < dag.getOutputs().size())
+        required_output_positions.resize(dag.getOutputs().size(), false);
+
     for (size_t i = 0; i < dag.getOutputs().size(); ++i)
     {
         if (required_output_positions[i])
@@ -126,6 +130,10 @@ void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_posit
             break;
     }
 
+    /// Ensure the vector is large enough to accommodate the filter column position.
+    if (required_output_positions.size() <= i)
+        required_output_positions.resize(i + 1, false);
+
     if (filter_step.removesFilterColumn())
     {
         required_output_positions.push_back(false);
@@ -173,6 +181,9 @@ SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_
     const auto & expression = expression_step.getExpression();
     const auto & outputs = expression.getOutputs();
 
+    if (required_output_positions.size() < outputs.size())
+        required_output_positions.resize(outputs.size(), false);
+
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
     for (size_t i = 0; i < outputs.size(); ++i)
     {
@@ -201,6 +212,9 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
 
     updateRequiredColumnsForFilterDAG(required_output_positions, filter_step);
+
+    if (required_output_positions.size() < outputs.size())
+        required_output_positions.resize(outputs.size(), false);
 
     for (size_t i = 0; i < outputs.size(); ++i)
     {
