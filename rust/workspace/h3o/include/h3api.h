@@ -142,7 +142,7 @@ int maxFaceCount(H3Index h3);
 void getIcosahedronFaces(H3Index h3, int *out);
 
 /* Polygon */
-int maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res);
+int64_t maxPolygonToCellsSize(const GeoPolygon *geoPolygon, int res);
 void polygonToCells(const GeoPolygon *geoPolygon, int res, H3Index *out);
 
 #ifdef __cplusplus
