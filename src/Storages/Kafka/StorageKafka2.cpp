@@ -131,6 +131,7 @@ extern const int REPLICA_ALREADY_EXISTS;
 extern const int TABLE_IS_DROPPED;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -415,13 +416,16 @@ private:
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
 
-        /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
+        /// Use the actual number of created consumers, not the configured num_consumers.
+        /// Some consumers may have failed to create during startup; iterating over the
+        /// configured count would cause acquireConsumer to throw for missing indices.
         Pipes pipes;
-        pipes.reserve(kafka_storage.num_consumers);
+        auto actual_consumers = kafka_storage.num_created_consumers;
+        pipes.reserve(actual_consumers);
         auto modified_context = Context::createCopy(getContext());
         modified_context->applySettingsChanges(kafka_storage.settings_adjustments);
 
-        for (size_t i = 0; i < kafka_storage.num_consumers; ++i)
+        for (size_t i = 0; i < actual_consumers; ++i)
         {
             /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
             auto source = std::make_shared<Kafka2Source>(
@@ -1213,15 +1217,29 @@ StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t i
     if (idx >= consumers.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
 
-    /// Wait until the consumer is free. This prevents concurrent use of the same consumer
-    /// by multiple direct SELECTs or by a direct SELECT and MV streaming simultaneously.
+    /// Wait until the consumer is free, with a timeout to prevent deadlocks.
+    /// Two concurrent direct SELECTs each create a source per consumer. If the query engine
+    /// schedules them so that Query A holds consumer 0 and waits for consumer 1 while Query B
+    /// holds consumer 1 and waits for consumer 0, we get a deadlock. The timeout breaks it
+    /// by failing one of the queries, allowing the other to proceed.
+    static constexpr auto ACQUIRE_TIMEOUT = std::chrono::seconds(30);
+    auto deadline = std::chrono::steady_clock::now() + ACQUIRE_TIMEOUT;
+
     /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
-    cv.wait(
+    bool ready = cv.wait_until(
         lock.getUnderlyingLock(),
+        deadline,
         [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !consumers[idx]->isInUse() || shutdown_called; });
 
     if (shutdown_called)
         throw Exception(ErrorCodes::ABORTED, "Table is detached");
+
+    if (!ready)
+        throw Exception(
+            ErrorCodes::TIMEOUT_EXCEEDED,
+            "Timed out waiting for Kafka consumer {} to become available. "
+            "This may happen when multiple direct SELECTs run concurrently on the same Kafka2 table.",
+            idx);
 
     auto consumer = consumers[idx];
     const auto created_consumer = consumer->startUsing([&](IKafkaExceptionInfoSinkPtr exception_sink)
@@ -1239,7 +1257,8 @@ void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
 {
     std::lock_guard lock{consumers_mutex};
     consumer_ptr->stopUsing();
-    cv.notify_one();
+    /// Use notify_all so that all threads waiting for different consumer indices get a chance to check.
+    cv.notify_all();
     CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
 }
 
