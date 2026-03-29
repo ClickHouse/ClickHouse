@@ -296,6 +296,8 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("changes"))
     {
         auto arr = r.getArray("changes");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'changes' is not an array during AST JSON deserialization");
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto change_obj = arr->getObject(i);
@@ -319,6 +321,8 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
     if (r.has("query_parameters"))
     {
         auto arr = r.getArray("query_parameters");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'query_parameters' is not an array during AST JSON deserialization");
         for (unsigned int i = 0; i < arr->size(); ++i)
         {
             auto param_obj = arr->getObject(i);
