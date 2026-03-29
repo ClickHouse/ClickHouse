@@ -257,6 +257,15 @@
             background-repeat: no-repeat;
         }
 
+        .table-icon
+        {
+            width: 1em;
+            height: 1em;
+            vertical-align: -0.1em;
+            margin-right: 0.25em;
+            flex-shrink: 0;
+        }
+
         .table-addendum
         {
             position: absolute;
@@ -2097,6 +2106,123 @@ async function loadDatabases(server_address, user, password) {
     }
 }
 
+function makeSVG(viewBox, ...paths)
+{
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', viewBox);
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.classList.add('table-icon');
+    for (const d of paths)
+    {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        svg.appendChild(path);
+    }
+    return svg;
+}
+
+function getTableIcon(engine)
+{
+    const e = engine.replace(/^Replicated|^Shared/, '');
+
+    /// Aggregating/Summing - sigma
+    if (/^(Summing|Aggregating)MergeTree/.test(e))
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M6 4 H18',    // top bar
+            'M18 4 L8 12',  // upper diagonal
+            'M8 12 L18 20', // lower diagonal
+            'M6 20 H18'    // bottom bar
+        );
+        return svg;
+    }
+
+    /// Memory - microchip
+    if (e === 'Memory')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M6 4 h12 v16 h-12 z',  // chip body
+            'M9 4 v-2', 'M12 4 v-2', 'M15 4 v-2',   // top pins
+            'M9 20 v2', 'M12 20 v2', 'M15 20 v2',    // bottom pins
+            'M6 9 h-2', 'M6 12 h-2', 'M6 15 h-2',    // left pins
+            'M18 9 h2', 'M18 12 h2', 'M18 15 h2'     // right pins
+        );
+        return svg;
+    }
+
+    /// View - eye
+    if (e === 'View')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 12 C5 5, 19 5, 23 12 C19 19, 5 19, 1 12 Z',  // eye outline
+            'M12 9 a3 3 0 1 0 0 6 a3 3 0 1 0 0 -6'             // pupil
+        );
+        return svg;
+    }
+
+    /// MaterializedView - eye over table
+    if (e === 'MaterializedView')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 8 C5 2, 19 2, 23 8 C19 14, 5 14, 1 8 Z',  // eye
+            'M12 5.5 a2.5 2.5 0 1 0 0 5 a2.5 2.5 0 1 0 0 -5', // pupil
+            'M4 17 h16', 'M4 21 h16'                        // table lines
+        );
+        return svg;
+    }
+
+    /// Merge - three overlaid tables
+    if (e === 'Merge')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M2 6 h14 v12 h-14 z', 'M2 10 h14',   // back table
+            'M5 4 h14 v12',                          // middle table
+            'M8 2 h14 v12'                           // front table
+        );
+        return svg;
+    }
+
+    /// Distributed - fanout
+    if (e === 'Distributed')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M2 4 h6 v5 h-6 z',       // source box
+            'M16 1 h6 v5 h-6 z',      // target top
+            'M16 9.5 h6 v5 h-6 z',    // target middle
+            'M16 18 h6 v5 h-6 z',     // target bottom
+            'M8 6.5 L16 3.5',         // arrow top
+            'M8 6.5 L16 12',          // arrow middle
+            'M8 6.5 L16 20.5'         // arrow bottom
+        );
+        return svg;
+    }
+
+    /// Proxy - arrow between two boxes
+    if (e === 'Proxy')
+    {
+        const svg = makeSVG('0 0 24 24',
+            'M1 7 h6 v10 h-6 z',    // left box
+            'M17 7 h6 v10 h-6 z',   // right box
+            'M7 12 h10',            // arrow line
+            'M14 9 l3 3 l-3 3'     // arrowhead
+        );
+        return svg;
+    }
+
+    /// Default MergeTree family - table
+    const svg = makeSVG('0 0 24 24',
+        'M3 4 h18 v16 h-18 z',  // border
+        'M3 9 h18',             // header line
+        'M3 14 h18',            // middle line
+        'M10 9 v11'             // column divider
+    );
+    return svg;
+}
+
 let load_tables_request_num = 0;
 async function loadTables(server_address, user, password, database, container) {
     ++load_tables_request_num;
@@ -2124,7 +2250,7 @@ async function loadTables(server_address, user, password, database, container) {
         let table = document.createElement('div');
         table.className = 'table';
         let table_link = document.createElement('button');
-        table_link.append(elem.table);
+        table_link.append(getTableIcon(elem.engine), elem.table);
 
         if (max_total_bytes && +elem.total_bytes) {
             const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
