@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/OriginComparisonUtils.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Common/Exception.h>
@@ -42,13 +43,6 @@ namespace
         while (path.starts_with("/"))
             path.erase(0, 1);
         return path;
-    }
-
-    bool isSameOrigin(const Poco::URI & lhs, const Poco::URI & rhs)
-    {
-        return lhs.getScheme() == rhs.getScheme()
-            && lhs.getHost() == rhs.getHost()
-            && lhs.getPort() == rhs.getPort();
     }
 
     const re2::RE2 & getURLRegex()
@@ -216,7 +210,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
         if (candidate_uri.getPath().empty())
             continue;
 
-        if (!isSameOrigin(candidate_uri, base_uri))
+        if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
             continue;
 
         auto candidate_str = candidate_uri.toString();
@@ -269,7 +263,7 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
             if (candidate_uri.getPath().empty())
                 continue;
 
-            if (!isSameOrigin(candidate_uri, base_uri))
+            if (!WebIndexPage::isSameOrigin(candidate_uri, base_uri))
                 continue;
 
             auto candidate_str = candidate_uri.toString();
