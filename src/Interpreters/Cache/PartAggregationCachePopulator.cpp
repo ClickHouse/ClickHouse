@@ -118,20 +118,27 @@ void populatePartAggregationCache(
                 if (block.rows() == 0)
                     continue;
 
-                aggregator.executeOnBlock(block, data_variants, key_columns, aggregate_columns, no_more_keys);
+                aggregator.executeOnBlock(
+                    block.getColumns(), 0, block.rows(),
+                    data_variants, key_columns, aggregate_columns, no_more_keys);
             }
 
-            auto blocks = aggregator.convertToBlocks(data_variants, /* final = */ false);
+            auto chunks = aggregator.convertToChunks(data_variants, /* final = */ false);
 
-            if (!blocks.empty())
+            if (!chunks.empty())
             {
-                Block result_block = blocks.front();
-                for (auto it = std::next(blocks.begin()); it != blocks.end(); ++it)
+                auto intermediate_header = Aggregator::Params::getHeader(
+                    aggregator_header, params.only_merge, params.keys, params.aggregates, /* final = */ false);
+
+                /// Merge all chunks into a single block for caching.
+                Block result_block = intermediate_header.cloneWithColumns(chunks.front().chunk.detachColumns());
+                for (auto it = std::next(chunks.begin()); it != chunks.end(); ++it)
                 {
+                    auto cols = it->chunk.detachColumns();
                     for (size_t i = 0; i < result_block.columns(); ++i)
                     {
                         auto mut_col = IColumn::mutate(std::move(result_block.getByPosition(i).column));
-                        mut_col->insertRangeFrom(*it->getByPosition(i).column, 0, it->rows());
+                        mut_col->insertRangeFrom(*cols[i], 0, cols[i]->size());
                         result_block.getByPosition(i).column = std::move(mut_col);
                     }
                 }
