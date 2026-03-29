@@ -13,7 +13,7 @@ CREATE TABLE test_qcc_cte (activity_year Int16) ENGINE = MergeTree ORDER BY acti
 -- Need enough rows to have multiple granules so the cache can incorrectly exclude some.
 INSERT INTO test_qcc_cte SELECT number % 10 + 2018 FROM numbers(100000);
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM DROP QUERY CONDITION CACHE;
 
 -- First query: addMonths('2022-12-01', 0) -> year = 2022, filter: year IN (2021, 2022)
 WITH block_0 AS (
