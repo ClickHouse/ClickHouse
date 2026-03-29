@@ -1735,10 +1735,10 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      std::unordered_map<uint32_t, SQLColumn> nested_cols;
                      SQLColumn ncol = std::move(t.staged_cols[ncname]);
                      SQLColumn & nested_col = t.cols.at(rg.pickRandomly(nested_ids));
-                     NestedType * ntp = dynamic_cast<NestedType *>(nested_col.tp);
+                     NestedType * ntp = dynamic_cast<NestedType *>(nested_col.tp.get());
 
                      chassert(ntp && ncol.tp);
-                     ntp->subtypes.emplace_back(NestedSubType(ncname, ncol.tp));
+                     ntp->subtypes.emplace_back(NestedSubType(ncname, std::move(ncol.tp)));
                      ncol.tp = nullptr;
                      nested_cols[nested_col.cname] = nested_col;
                      flatTableColumnPath(flat_nested, nested_cols, [](const SQLColumn &) { return true; });
@@ -3802,7 +3802,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
                         if (t.cols.contains(top_col))
                         {
-                            NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
+                            NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp.get());
 
                             if (ntp)
                             {
@@ -3835,7 +3835,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         NestedType * ntp;
 
                         chassert(path.sub_cols_size() == 1);
-                        if ((ntp = dynamic_cast<NestedType *>(col.tp)) && ntp->subtypes.size() > 1)
+                        if ((ntp = dynamic_cast<NestedType *>(col.tp.get())) && ntp->subtypes.size() > 1)
                         {
                             const uint32_t ncname = getIdentifierFromString(path.sub_cols(0).column());
 
@@ -3877,7 +3877,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                         NestedType * ntp;
 
                         chassert(path.sub_cols_size() == 1);
-                        if ((ntp = dynamic_cast<NestedType *>(col.tp)))
+                        if ((ntp = dynamic_cast<NestedType *>(col.tp.get())))
                         {
                             const uint32_t nocname = getIdentifierFromString(path.sub_cols(0).column());
 
@@ -3907,7 +3907,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
                         if (success && t.staged_cols.contains(cname) && t.cols.contains(top_col))
                         {
-                            NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp);
+                            NestedType * ntp = dynamic_cast<NestedType *>(t.cols.at(top_col).tp.get());
 
                             if (ntp)
                             {
@@ -3916,10 +3916,8 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                                     if (entry.cname == cname)
                                     {
                                         SQLColumn & ncol = t.staged_cols.at(cname);
-                                        delete entry.subtype;
                                         chassert(ncol.tp);
-                                        entry.subtype = ncol.tp;
-                                        ncol.tp = nullptr;
+                                        entry.subtype = std::move(ncol.tp);
                                         break;
                                     }
                                 }

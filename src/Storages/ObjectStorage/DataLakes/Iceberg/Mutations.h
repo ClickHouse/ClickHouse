@@ -31,9 +31,7 @@ void mutate(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     const std::optional<FormatSettings> & format_settings,
-    std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & blob_storage_type_name,
-    const String & blob_storage_namespace_name);
+    std::shared_ptr<DataLake::ICatalog> catalog);
 
 void alter(
     const AlterCommands & params,
@@ -51,8 +49,6 @@ ExpireSnapshotsResult expireSnapshots(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & blob_storage_type_name,
-    const String & blob_storage_namespace_name,
     const String & table_name);
 }
 

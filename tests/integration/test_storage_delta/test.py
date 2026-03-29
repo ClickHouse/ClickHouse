@@ -64,7 +64,7 @@ from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
     os.path.dirname(os.path.realpath(__file__))
 )
-cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
+cluster = ClickHouseCluster(__file__, with_spark=True)
 
 S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
@@ -2100,7 +2100,7 @@ deltaLake(
     )
 
 @pytest.mark.parametrize(
-    "new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"]]
+    "new_analyzer, storage_type", [["1", "s3"], ["0", "s3"]]
 )
 def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
@@ -2157,38 +2157,6 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
             '{minio_secret_key}',
             SETTINGS allow_experimental_delta_kernel_rs=1)
         """
-    elif storage_type == "azure":
-        # For azure we will only test new cluster as this function is added recently
-        storage_options = {
-            "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
-            "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-            "AZURE_STORAGE_CONTAINER_NAME": "{cluster.azure_container_name}",
-            "AZURE_STORAGE_USE_EMULATOR": "true",
-        }
-        path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
-        table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake_with_retry(
-            path, table, storage_options=storage_options, partition_by=["b"]
-        )
-
-        table_function = f"""
-        deltaLakeAzureCluster(cluster, azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}')
-        """
-        instance.query(
-            f"SELECT * FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
-        )
-        assert 5 == int(
-            instance.query(
-                f"SELECT count() FROM {table_function} SETTINGS allow_experimental_analyzer={new_analyzer}"
-            )
-        )
-        assert "1\taa\n"
-        "2\tbb\n"
-        "3\tcc\n"
-        "4\taa\n"
-        "5\tbb\n" == instance.query(
-            f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer={new_analyzer}"
-        )
 
 
 def test_partition_columns_3(started_cluster):

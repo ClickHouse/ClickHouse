@@ -146,8 +146,6 @@ protected:
 
                 auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
                 columns = metadata_snapshot->getColumns();
-                if (auto hints = storage->tryGetSerializationHints())
-                    serialization_hints = std::move(*hints);
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
@@ -164,6 +162,12 @@ protected:
                     cols_required_for_primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
+
+                if (columns_mask[21])
+                {
+                    if (auto hints = storage->tryGetSerializationHints())
+                        serialization_hints = std::move(*hints);
+                }
             }
 
             /// A shortcut: if we don't allow to list this table in SHOW TABLES, also exclude it from system.columns.
