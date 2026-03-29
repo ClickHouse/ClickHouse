@@ -26,6 +26,8 @@ void ExchangeConnections::addConnection(const String & query_id, const String & 
     {
         /// getConnection hasn't been called yet, create a new FutureConnection
         /// and keep it in the map until getConnection is called
+        LOG_WARNING(log, "addConnection: key ({}, {}) not found in map (source arrived before sink). Map has {} entries.",
+            query_id, exchange_stream_id, pending_connections.size());
         auto & element = pending_connections[connection_key];
         chassert(!element);
         element = std::make_shared<FutureConnection>();
