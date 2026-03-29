@@ -202,10 +202,12 @@ private:
         }
 
         Float64 num_bytes_with_decimals = base * static_cast<Float64>(iter->second);
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
-#pragma clang diagnostic pop
+        // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
+        // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
+        Float64 num_bytes_ceiled = std::ceil(num_bytes_with_decimals);
+        /// Check after ceil: values at or above 2^64 cannot be represented as UInt64.
+        constexpr Float64 max_representable = 18446744073709551616.0; /// 2^64
+        if (num_bytes_ceiled >= max_representable || num_bytes_ceiled < 0)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -214,9 +216,7 @@ private:
                 num_bytes_with_decimals
             );
         }
-        // As the input might be an arbitrary decimal number we might end up with a non-integer amount of bytes when parsing binary (eg MiB) units.
-        // This doesn't make sense so we round up to indicate the byte size that can fit the passed size.
-        return static_cast<UInt64>(std::ceil(num_bytes_with_decimals));
+        return static_cast<UInt64>(num_bytes_ceiled);
     }
 };
 
