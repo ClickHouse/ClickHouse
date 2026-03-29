@@ -163,7 +163,8 @@ void optimizeUsePartAggregationCache(
         query_hash = getSipHash128AsPair(extra_hash);
     }
 
-    String table_id = reading->getMergeTreeData().getStorageID().getFullTableName();
+    auto storage_id = reading->getMergeTreeData().getStorageID();
+    String table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
 
     bool enable_reads = settings[Setting::enable_reads_from_part_aggregation_cache];
 
