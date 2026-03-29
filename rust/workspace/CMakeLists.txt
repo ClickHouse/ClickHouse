@@ -44,11 +44,12 @@ if (ENABLE_PRQL)
         # Use ld.lld for partial linking — it's a cross-linker that handles all ELF architectures,
         # unlike the host ld which may not support the target architecture.
         find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
-        if (_LLD_FOR_STRIP)
+        find_program(_LLVM_OBJCOPY_FOR_STRIP NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy")
+        if (_LLD_FOR_STRIP AND _LLVM_OBJCOPY_FOR_STRIP)
             set(_prql_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_prql.a")
             add_custom_target(strip_prql_symbols
                 COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                    "${_prql_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
+                    "${_prql_lib}" "${CMAKE_AR}" "${_LLVM_OBJCOPY_FOR_STRIP}" "${_LLD_FOR_STRIP}"
                     prql_to_sql prql_free_pointer
                 DEPENDS cargo-build__ch_rust_prql
                 COMMENT "Stripping internal symbols from PRQL library"
@@ -67,11 +68,12 @@ if (ENABLE_POLYGLOT)
     if (NOT CMAKE_AR MATCHES "dummy_compiler_linker" AND NOT SANITIZE AND NOT OS_DARWIN
         AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le")
         find_program(_LLD_FOR_STRIP NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
-        if (_LLD_FOR_STRIP)
+        find_program(_LLVM_OBJCOPY_FOR_STRIP NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy")
+        if (_LLD_FOR_STRIP AND _LLVM_OBJCOPY_FOR_STRIP)
             set(_polyglot_lib "${CMAKE_CURRENT_BINARY_DIR}/lib_ch_rust_polyglot.a")
             add_custom_target(strip_polyglot_symbols
                 COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/strip_rust_symbols.sh"
-                    "${_polyglot_lib}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${_LLD_FOR_STRIP}"
+                    "${_polyglot_lib}" "${CMAKE_AR}" "${_LLVM_OBJCOPY_FOR_STRIP}" "${_LLD_FOR_STRIP}"
                     polyglot_transpile polyglot_free_pointer
                 DEPENDS cargo-build__ch_rust_polyglot
                 COMMENT "Stripping internal symbols from polyglot library"
