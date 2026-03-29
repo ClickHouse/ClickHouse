@@ -35,10 +35,24 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Name
         column_identifier = column.name;
 
     auto [it, inserted] = column_identifiers.emplace(column_identifier);
-    if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", column_identifier);
 
-    assert(inserted);
+    if (!inserted)
+    {
+        /// Column identifier may collide when the same column name is used by multiple table expressions
+        /// without aliases, for example in UNION children sharing a GlobalPlannerContext, or when
+        /// `additional_result_filter` creates a fake table expression with column names already registered.
+        /// Disambiguate by appending a numeric suffix.
+        size_t suffix = 1;
+        std::string disambiguated;
+        do
+        {
+            disambiguated = column_identifier + "_" + std::to_string(suffix);
+            ++suffix;
+        }
+        while (column_identifiers.contains(disambiguated));
+
+        std::tie(it, inserted) = column_identifiers.emplace(std::move(disambiguated));
+    }
 
     return *it;
 }
