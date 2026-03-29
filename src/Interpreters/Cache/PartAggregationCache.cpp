@@ -93,10 +93,10 @@ void PartAggregationCache::set(const Key & key, Block block)
     auto new_entry = std::make_shared<Entry>(Entry{.block = std::move(block)});
     size_t entry_bytes = new_entry->sizeInBytes();
 
+    std::lock_guard lock(mutex);
+
     if (entry_bytes > max_size_in_bytes)
         return;
-
-    std::lock_guard lock(mutex);
 
     auto existing_it = cache.find(key);
     if (existing_it != cache.end())
