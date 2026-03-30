@@ -63,11 +63,12 @@
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/makeSocketAddress.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTPHandlerFactory.h>
+#include <Server/socketBindListen.h>
+#include <Server/stopServers.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
 #include <Server/ServerType.h>
@@ -197,11 +198,10 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt32 listen_backlog;
-    extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
-    extern const ServerSettingsUInt64 asynchronous_heavy_metrics_update_period_s;
+    extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
 }
 
 namespace ErrorCodes
@@ -482,34 +482,7 @@ void LocalServer::tryInitPath()
 
 void LocalServer::stopServers(const ServerType & server_type)
 {
-    LoggerRawPtr log = &logger();
-
-    auto check_server = [&log](const char prefix[], auto & server)
-    {
-        if (!server.isStopping())
-            return false;
-        size_t current_connections = server.currentConnections();
-        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
-            server.getDescription(),
-            prefix,
-            !current_connections ? "finished" : "waiting",
-            current_connections);
-        return !current_connections;
-    };
-
-    std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
-
-    for (auto & server : servers)
-    {
-        if (!server.isStopping())
-        {
-            const std::string server_port_name = server.getPortName();
-            if (server_type.shouldStop(server_port_name))
-                server.stop();
-        }
-    }
-
-    std::erase_if(servers, std::bind_front(check_server, ""));
+    DB::stopServers(servers, server_type, &logger());
 }
 
 
@@ -590,18 +563,7 @@ void LocalServer::startServers(const ServerType & server_type)
         }
     };
 
-    auto socket_bind_listen = [&](Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port) -> Poco::Net::SocketAddress
-    {
-        auto address = makeSocketAddress(host, port, &logger());
-        socket.bind(address, /* reuseAddress= */ true, /* reusePort= */ server_settings[ServerSetting::listen_reuse_port]);
-        if (port == 0)
-        {
-            address = socket.address();
-            LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
-        }
-        socket.listen(/* backlog= */ server_settings[ServerSetting::listen_backlog]);
-        return address;
-    };
+    size_t servers_before = servers.size();
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -611,7 +573,7 @@ void LocalServer::startServers(const ServerType & server_type)
             create_server(listen_host, port_name, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
+                auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
                 socket.setReceiveTimeout(settings[Setting::receive_timeout]);
                 socket.setSendTimeout(settings[Setting::send_timeout]);
 
@@ -637,7 +599,7 @@ void LocalServer::startServers(const ServerType & server_type)
             create_server(listen_host, port_name, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
+                auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
                 socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
                 socket.setSendTimeout(settings[Setting::http_send_timeout]);
 
@@ -656,8 +618,10 @@ void LocalServer::startServers(const ServerType & server_type)
                         ProfileEvents::InterfaceHTTPSendBytes));
             });
         }
-
     }
+
+    if (servers.size() == servers_before)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "No listeners started — check listen_host and port configuration");
 }
 
 

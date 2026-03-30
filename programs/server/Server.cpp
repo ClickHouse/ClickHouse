@@ -59,6 +59,8 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Server/socketBindListen.h>
+#include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -562,18 +564,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    auto address = makeSocketAddress(host, port, &logger());
-    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ server_settings[ServerSetting::listen_reuse_port]);
-    /// If caller requests any available port from the OS, discover it after binding.
-    if (port == 0)
-    {
-        address = socket.address();
-        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
-    }
-
-    socket.listen(/* backlog = */ server_settings[ServerSetting::listen_backlog]);
-
-    return address;
+    return DB::socketBindListen(server_settings, socket, host, port, &logger());
 }
 
 Strings getListenHosts(const Poco::Util::AbstractConfiguration & config)
@@ -3733,36 +3724,7 @@ void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type) const
 {
-    LoggerRawPtr log = &logger();
-
-    /// Remove servers once all their connections are closed
-    auto check_server = [&log](const char prefix[], auto & server)
-    {
-        if (!server.isStopping())
-            return false;
-        size_t current_connections = server.currentConnections();
-        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
-            server.getDescription(),
-            prefix,
-            !current_connections ? "finished" : "waiting",
-            current_connections);
-        return !current_connections;
-    };
-
-    std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
-
-    for (auto & server : servers)
-    {
-        if (!server.isStopping())
-        {
-            const std::string server_port_name = server.getPortName();
-
-            if (server_type.shouldStop(server_port_name))
-                server.stop();
-        }
-    }
-
-    std::erase_if(servers, std::bind_front(check_server, ""));
+    DB::stopServers(servers, server_type, &logger());
 }
 
 void Server::updateServers(
