@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -67,14 +68,14 @@ void KinesisSink::consume(Chunk & chunk)
         Block current_block = block.cloneEmpty();
         current_block.setColumns(current_columns);
 
-        String data;
-        WriteBufferFromString buf(data);
+        String record_data;
+        WriteBufferFromString buf(record_data);
         auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, current_block, context);
         output_format->write(current_block);
         output_format->finalize();
         buf.finalize();
 
-        sendRecord(data, generatePartitionKey(data));
+        sendRecord(record_data, generatePartitionKey(record_data));
     }
 }
 
@@ -84,14 +85,14 @@ void KinesisSink::onFinish()
         LOG_DEBUG(log, "Finished sending {} rows to Kinesis stream {}", total_rows, stream_name);
 }
 
-void KinesisSink::sendRecord(const String & data, const String & partition_key)
+void KinesisSink::sendRecord(const String & record_data, const String & partition_key)
 {
     Aws::Kinesis::Model::PutRecordRequest request;
     request.SetStreamName(stream_name);
     request.SetPartitionKey(partition_key);
     request.SetData(Aws::Utils::ByteBuffer(
-        reinterpret_cast<const unsigned char *>(data.data()),
-        data.size()));
+        reinterpret_cast<const unsigned char *>(record_data.data()),
+        record_data.size()));
 
     auto outcome = client->PutRecord(request);
     if (!outcome.IsSuccess())
@@ -104,10 +105,10 @@ void KinesisSink::sendRecord(const String & data, const String & partition_key)
     }
 }
 
-String KinesisSink::generatePartitionKey(const String & data)
+String KinesisSink::generatePartitionKey(const String & record_data)
 {
     unsigned char digest[MD5_DIGEST_LENGTH];
-    MD5(reinterpret_cast<const unsigned char *>(data.data()), data.size(), digest);
+    MD5(reinterpret_cast<const unsigned char *>(record_data.data()), record_data.size(), digest);
 
     char hex[33];
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)

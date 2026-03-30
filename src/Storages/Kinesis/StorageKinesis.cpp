@@ -602,8 +602,8 @@ std::map<String, KinesisShardState> StorageKinesis::loadCheckpoints() const
 
         for (size_t r = 0; r < block.rows(); ++r)
         {
-            String shard_id = shard_col->getDataAt(r).toString();
-            String last_seq = seq_col->getDataAt(r).toString();
+            String shard_id{shard_col->getDataAt(r)};
+            String last_seq{seq_col->getDataAt(r)};
 
             KinesisShardState state;
             state.last_sequence = last_seq;

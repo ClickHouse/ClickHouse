@@ -31,10 +31,10 @@ KinesisConsumer::KinesisConsumer(
     size_t internal_queue_size_)
     : stream_name(stream_name_)
     , client(std::move(client_))
-    , shard_states(std::move(shard_states_))
     , max_records_per_request(max_records_per_request_)
     , starting_position_type(starting_position_type_)
     , at_timestamp(at_timestamp_)
+    , shard_states(std::move(shard_states_))
     , queue(internal_queue_size_)
     , log(getLogger("KinesisConsumer"))
 {
