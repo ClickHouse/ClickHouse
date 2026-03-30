@@ -691,10 +691,11 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self._iceberg_rest_catalog_port = None
+        self._iceberg_minio_port = None
         self.with_glue_catalog = False
-        self.glue_catalog_port = 3000
+        self._glue_catalog_port = None
         self.with_hms_catalog = False
-        self.hms_catalog_port = 9083
+        self._hms_catalog_port = None
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -756,6 +757,7 @@ class ClickHouseCluster:
         self.ldap_host = "openldap"
         self.ldap_container = None
         self.ldap_port = 1389
+        self._ldap_external_port = 0
         self.ldap_id = self.get_instance_docker_id(self.ldap_host)
 
         # available when with_rabbitmq == True
@@ -1012,11 +1014,39 @@ class ClickHouseCluster:
         return self._iceberg_rest_catalog_port
 
     @property
+    def iceberg_minio_port(self):
+        if self._iceberg_minio_port:
+            return self._iceberg_minio_port
+        self._iceberg_minio_port = self.port_pool.get_port()
+        return self._iceberg_minio_port
+
+    @property
+    def glue_catalog_port(self):
+        if self._glue_catalog_port:
+            return self._glue_catalog_port
+        self._glue_catalog_port = self.port_pool.get_port()
+        return self._glue_catalog_port
+
+    @property
+    def hms_catalog_port(self):
+        if self._hms_catalog_port:
+            return self._hms_catalog_port
+        self._hms_catalog_port = self.port_pool.get_port()
+        return self._hms_catalog_port
+
+    @property
     def redis_port(self):
         if self._redis_port:
             return self._redis_port
         self._redis_port = self.port_pool.get_port()
         return self._redis_port
+
+    @property
+    def ldap_external_port(self):
+        if self._ldap_external_port:
+            return self._ldap_external_port
+        self._ldap_external_port = self.port_pool.get_port()
+        return self._ldap_external_port
 
     @property
     def nats_port(self):
@@ -1166,7 +1196,7 @@ class ClickHouseCluster:
 
             result = run_and_check(["docker volume ls | wc -l"], shell=True)
             if int(result) > 1:
-                run_and_check(["docker", "volume", "prune", "-f"])
+                run_and_check(["docker", "volume", "prune", "-f", "--all"])
             logging.debug(f"Volumes pruned: {result}")
         except:
             pass
@@ -1714,6 +1744,7 @@ class ClickHouseCluster:
 
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_glue_catalog = True
+        env_variables["GLUE_CATALOG_PORT"] = str(self.glue_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1730,6 +1761,7 @@ class ClickHouseCluster:
 
     def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hms_catalog = True
+        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1754,8 +1786,8 @@ class ClickHouseCluster:
         file_name = "docker_compose_iceberg_rest_catalog.yml"
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
-        if file_name == "docker_compose_iceberg_rest_catalog.yml":
-            env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -1811,7 +1843,7 @@ class ClickHouseCluster:
 
     def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ldap = True
-        env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_port)
+        env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_external_port)
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ldap.yml")]
         )
@@ -5961,7 +5993,7 @@ class ClickHouseInstance:
 
         port_lines = []
         # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
-        
+
         if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
             base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
             m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)

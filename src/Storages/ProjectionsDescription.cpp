@@ -140,7 +140,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     Pipe read(
         const Names & column_names,
