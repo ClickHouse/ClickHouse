@@ -365,6 +365,9 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
         && properties.max_joined_block_rows > 0
         /// ignore join get, it has any join semantics
         && !properties.is_join_get
+        /// When need_filter is true, scattered_block->filter(matched_rows) changes the block size,
+        /// making offsets stale relative to the filtered block
+        && !properties.need_filter
         && !offsets.empty()
         /// check if using lazy_output with row_refs
         && lazy_output.output_by_row_list
