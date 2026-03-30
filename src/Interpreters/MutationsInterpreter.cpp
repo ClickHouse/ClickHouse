@@ -262,6 +262,10 @@ NameSet getRequiredSourceColumnsWithAnalyzer(
         context,
         /*execute_scalar_subqueries=*/true);
 
+    /// Remove unused input nodes so that getRequiredColumns only returns
+    /// columns that are actually referenced by the expression.
+    analysis_result.actions_dag.removeUnusedActions(/*allow_remove_inputs=*/true, /*allow_constant_folding=*/true);
+
     NameSet required_source_columns;
     for (const auto & required_column : analysis_result.actions_dag.getRequiredColumns())
         required_source_columns.insert(required_column.name);
