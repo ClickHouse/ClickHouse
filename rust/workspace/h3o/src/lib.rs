@@ -775,7 +775,8 @@ unsafe fn c_polygon_to_geo(poly: &GeoPolygon) -> geo::Polygon<f64> {
     let exterior = geoloop_to_linestring(&poly.geoloop);
     let mut holes = Vec::new();
     if !poly.holes.is_null() && poly.num_holes > 0 {
-        for i in 0..poly.num_holes as usize {
+        let num_holes = poly.num_holes as usize;
+        for i in 0..num_holes {
             let hole = &*poly.holes.add(i);
             holes.push(geoloop_to_linestring(hole));
         }
@@ -784,17 +785,19 @@ unsafe fn c_polygon_to_geo(poly: &GeoPolygon) -> geo::Polygon<f64> {
 }
 
 unsafe fn geoloop_to_linestring(loop_: &GeoLoop) -> geo::LineString<f64> {
-    let mut coords = Vec::with_capacity(loop_.num_verts as usize);
-    if !loop_.verts.is_null() {
-        for i in 0..loop_.num_verts as usize {
-            let v = &*loop_.verts.add(i);
-            // h3o::geom::Polygon::from_radians expects radians in geo coords.
-            // geo uses (x=lng, y=lat) convention.
-            coords.push(geo::Coord {
-                x: v.lng,
-                y: v.lat,
-            });
-        }
+    if loop_.verts.is_null() || loop_.num_verts <= 0 {
+        return geo::LineString::new(Vec::new());
+    }
+    let num_verts = loop_.num_verts as usize;
+    let mut coords = Vec::with_capacity(num_verts);
+    for i in 0..num_verts {
+        let v = &*loop_.verts.add(i);
+        // h3o::geom::Polygon::from_radians expects radians in geo coords.
+        // geo uses (x=lng, y=lat) convention.
+        coords.push(geo::Coord {
+            x: v.lng,
+            y: v.lat,
+        });
     }
     geo::LineString::new(coords)
 }
