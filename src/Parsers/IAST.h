@@ -164,6 +164,9 @@ public:
     /** Factory: deserialize an AST tree from a JSON string. */
     static ASTPtr createFromJSON(const String & json);
 
+    /** Factory: deserialize an AST tree from a JSON string with depth/element limits enforced during construction. */
+    static ASTPtr createFromJSON(const String & json, size_t max_depth, size_t max_elements);
+
     /** Factory: deserialize an AST node from a parsed JSON object. */
     static ASTPtr createFromJSON(const Poco::JSON::Object & json);
 

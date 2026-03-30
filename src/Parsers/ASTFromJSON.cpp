@@ -78,7 +78,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_DEEP_AST;
+    extern const int TOO_BIG_AST;
 }
+
+/// Thread-local limits for JSON AST deserialization depth and element count.
+/// These are set by the top-level createFromJSON overload with limits,
+/// and checked in the recursive createFromJSON(Object) overload.
+static thread_local size_t json_deser_max_depth = 0;
+static thread_local size_t json_deser_max_elements = 0;
+static thread_local size_t json_deser_current_depth = 0;
+static thread_local size_t json_deser_current_elements = 0;
 
 namespace
 {
@@ -228,6 +238,19 @@ ASTPtr IAST::createFromJSON(const String & json)
 
 ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
 {
+    /// Check depth limit during recursive construction.
+    if (json_deser_max_depth && json_deser_current_depth >= json_deser_max_depth)
+        throw Exception(ErrorCodes::TOO_DEEP_AST,
+            "JSON AST deserialization exceeded maximum depth limit ({})", json_deser_max_depth);
+
+    /// Check element count limit.
+    if (json_deser_max_elements && json_deser_current_elements >= json_deser_max_elements)
+        throw Exception(ErrorCodes::TOO_BIG_AST,
+            "JSON AST deserialization exceeded maximum element count limit ({})", json_deser_max_elements);
+
+    ++json_deser_current_depth;
+    ++json_deser_current_elements;
+
     if (!json.has("type"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "JSON object missing 'type' field for AST deserialization");
 
@@ -242,9 +265,38 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
     ASTPtr node = it->second();
 
     /// Populate from JSON via virtual dispatch.
+    /// readJSON may recursively call createFromJSON for child nodes.
     node->readJSON(json);
 
+    --json_deser_current_depth;
+
     return node;
+}
+
+
+ASTPtr IAST::createFromJSON(const String & json, size_t max_depth, size_t max_elements)
+{
+    /// Set thread-local limits for recursive deserialization.
+    json_deser_max_depth = max_depth;
+    json_deser_max_elements = max_elements;
+    json_deser_current_depth = 0;
+    json_deser_current_elements = 0;
+
+    try
+    {
+        auto result = createFromJSON(json);
+        /// Reset limits after successful deserialization.
+        json_deser_max_depth = 0;
+        json_deser_max_elements = 0;
+        return result;
+    }
+    catch (...)
+    {
+        /// Reset limits on failure too.
+        json_deser_max_depth = 0;
+        json_deser_max_elements = 0;
+        throw;
+    }
 }
 
 

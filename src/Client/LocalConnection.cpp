@@ -219,11 +219,9 @@ void LocalConnection::sendQuery(
                     "Support for clickhouse_json dialect is disabled "
                     "(turn on setting 'allow_experimental_json_ast_dialect')");
 
-            parsed_query = IAST::createFromJSON(String(begin, end));
-            if (settings[Setting::max_ast_depth])
-                parsed_query->checkDepth(settings[Setting::max_ast_depth]);
-            if (settings[Setting::max_ast_elements])
-                parsed_query->checkSize(settings[Setting::max_ast_elements]);
+            parsed_query = IAST::createFromJSON(String(begin, end),
+                settings[Setting::max_ast_depth],
+                settings[Setting::max_ast_elements]);
         }
         else
         {

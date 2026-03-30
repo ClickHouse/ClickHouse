@@ -419,11 +419,9 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
         try
         {
-            res = IAST::createFromJSON(String(pos, end));
-            if (settings[Setting::max_ast_depth])
-                res->checkDepth(settings[Setting::max_ast_depth]);
-            if (settings[Setting::max_ast_elements])
-                res->checkSize(settings[Setting::max_ast_elements]);
+            res = IAST::createFromJSON(String(pos, end),
+                settings[Setting::max_ast_depth],
+                settings[Setting::max_ast_elements]);
             pos = end;
         }
         catch (const Exception & e)
