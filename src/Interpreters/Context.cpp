@@ -3440,6 +3440,7 @@ void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_sett
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    cpu_thread_resource_names.reset(); // Must be reset together with classifier: it caches CPU resource names for the workload
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
@@ -3447,6 +3448,7 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    cpu_thread_resource_names.reset(); // Must be reset together with classifier: it caches CPU resource names for the workload
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 }
