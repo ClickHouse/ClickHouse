@@ -1,6 +1,7 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -55,6 +56,12 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
 /// See TTLDeleteFilterTransform::extractTimestamps for a batch-oriented approach.
 Int64 ITTLAlgorithm::getTimestampByIndex(const IColumn * column, size_t index) const
 {
+    /// Sparse columns must be unwrapped before type dispatch, since
+    /// typeid_cast does not see through the ColumnSparse wrapper.
+    /// Use getValueIndex (binary-search, O(log N)) to avoid O(N²) full conversion.
+    if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(column))
+        return getTimestampByIndex(&col_sparse->getValuesColumn(), col_sparse->getValueIndex(index));
+
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
         return date_lut.fromDayNum(DayNum(column_date->getData()[index]));
     if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
