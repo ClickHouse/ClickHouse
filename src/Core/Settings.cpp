@@ -5983,6 +5983,14 @@ Possible values:
 - Positive integer.
 )", 0) \
     \
+    DECLARE(UInt64, highlight_max_matches_per_row, 10000, R"(
+Sets the maximum number of highlight matches per row in the [highlight](/sql-reference/functions/string-search-functions#highlight) function. Use it to protect against excessive memory usage when highlighting highly repetitive patterns in large texts.
+
+Possible values:
+
+- Positive integer.
+)", 0) \
+    \
     DECLARE(UInt64, limit, 0, R"(
 Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](/sql-reference/statements/select/limit) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
 
