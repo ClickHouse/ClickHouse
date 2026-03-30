@@ -468,7 +468,7 @@ echo ""
 column -t -s $'\t' "$SUMMARY_FILE"
 
 # Report queries that had errors during execution.
-ERRORS="$(awk -F'\t' 'NR > 1 && $8 != "" { printf "  %-6s %s (%s #%s): %s\n", $1, $2, $3, $8 }' "$SUMMARY_FILE")"
+ERRORS="$(awk -F'\t' 'NR > 1 && $8 != "" { printf "  %-6s %s (run #%s): %s\n", $1, $2, $3, $8 }' "$SUMMARY_FILE")"
 if [[ -n "$ERRORS" ]]; then
     echo ""
     echo "=== Errors ==="
