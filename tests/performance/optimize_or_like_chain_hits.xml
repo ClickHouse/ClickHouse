@@ -5,16 +5,16 @@
 
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%'</query>
 
-    <!-- From this query, optimiz_or_like_chain should do well -->
+    <!-- From this query, optimize_or_like_chain should do well -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' OR URL LIKE 'http://3dnews%' OR URL LIKE 'http://news%' OR URL LIKE 'http://russia'</query>
 
     <!-- No match, quick exit -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'httx1%' OR URL LIKE 'httpx1%'</query>
 
-    <!-- mutliMatchAny is okay -->
+    <!-- multiMatchAny is okay -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%'</query>
 
-    <!-- mutliMatchAny is okay -->
+    <!-- multiMatchAny is okay -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' OR URL LIKE '%video%'</query>
 
     <!-- short string with multiMatchAny -->
