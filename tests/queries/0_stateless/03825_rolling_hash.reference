@@ -1,0 +1,13 @@
+--- contentDefinedChunks
+[]
+['ab']
+['abcdefghijklmnop']
+1
+--- contentDefinedChunkOffsets
+[]
+[0]
+1
+--- UTF8 variants
+['привет']
+[0]
+1
