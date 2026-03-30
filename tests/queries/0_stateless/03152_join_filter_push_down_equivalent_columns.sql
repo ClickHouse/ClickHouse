@@ -1,6 +1,9 @@
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = false;
 SET enable_join_runtime_filters = 0;
+SET query_plan_filter_push_down = 1;
+SET query_plan_merge_expressions = 1;
+SET query_plan_merge_filter_into_join_condition = 0;
 
 DROP TABLE IF EXISTS users;
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree order by (uid, name);

@@ -62,6 +62,7 @@ SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
+SET query_plan_merge_expressions = 1;
 
 
 -- This query join order depends on whether statts for product_id (NDV=10K) and region_id (NDV=5) are properly propagated from subquery

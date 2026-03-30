@@ -10,6 +10,7 @@ SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_merge_expressions = 1;
+SET query_plan_remove_unused_columns = 1;
 
 CREATE TABLE t(x Int, y Int) ORDER BY ()
 AS SELECT number as x, number % 2 as y FROM numbers(100);

@@ -3,6 +3,7 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
 SET optimize_use_projections = 1;
+SET query_plan_merge_expressions = 1;
 
 SELECT 'Simple:';
 
