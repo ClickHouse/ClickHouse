@@ -390,7 +390,7 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce();
+                    columns[i] = arg->reduce(dry_run);
             }
         }
         else
@@ -398,7 +398,7 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
             for (auto & col : columns)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce();
+                    col = arg->reduce(dry_run);
             }
         }
     }
