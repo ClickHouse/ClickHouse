@@ -948,19 +948,27 @@ tar -czf ./ci/tmp/logs.tar.gz \
                         report_name=f"parallel_{bugfix_bt}",
                     )
                     bt_test_results.extend(bt_result_parallel.results)
+                    _mark_infrastructure_errors(bt_result_parallel.results)
                     if bt_result_parallel.files:
                         failed_tests_files.extend(bt_result_parallel.files)
+                    if bt_result_parallel.is_error():
+                        has_error = True
+                        error_info.append(bt_result_parallel.info)
 
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
-                if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP:
+                if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
                     bt_result_sequential = run_pytest_and_collect_results(
                         command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
                     )
                     bt_test_results.extend(bt_result_sequential.results)
+                    _mark_infrastructure_errors(bt_result_sequential.results)
                     if bt_result_sequential.files:
                         failed_tests_files.extend(bt_result_sequential.files)
+                    if bt_result_sequential.is_error():
+                        has_error = True
+                        error_info.append(bt_result_sequential.info)
 
                 for r in bt_test_results:
                     r.set_label(bugfix_bt)

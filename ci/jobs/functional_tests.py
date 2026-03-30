@@ -338,7 +338,9 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run:
+    if is_coverage or info.is_local_run or is_bugfix_validation:
+        # For bugfix validation, fatal message checking is done per-build-type
+        # inside the bugfix validation loop below, so skip the outer stage.
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -645,10 +647,19 @@ def main():
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,
-        # workspace pollution, and to preserve logs for CHECK_ERRORS.
+        # workspace pollution, and to preserve logs for analysis.
+        # Fatal message checking (CHECK_ERRORS) is done per-build-type here
+        # rather than in the outer CHECK_ERRORS stage, so that crashes in any
+        # build type are detected even when logs are cleaned between builds.
         if is_bugfix_validation:
             for r in test_result.results:
                 r.set_label(BUGFIX_BUILD_TYPES[0])
+
+            # Check fatal messages for the first build type before cleaning logs
+            first_bt_fatals = CH.check_fatal_messages_in_logs()
+            for r in first_bt_fatals:
+                r.set_label(BUGFIX_BUILD_TYPES[0])
+            test_result.extend_sub_results(first_bt_fatals)
 
             if test_result.is_ok():
                 for bugfix_bt in BUGFIX_BUILD_TYPES[1:]:
@@ -673,6 +684,13 @@ def main():
                         rerun_count=1,
                     )
                     bt_result = ft_res_processor_bt.run()
+
+                    # Check fatal messages for this build type
+                    bt_fatals = CH.check_fatal_messages_in_logs()
+                    for r in bt_fatals:
+                        r.set_label(bugfix_bt)
+                    bt_result.extend_sub_results(bt_fatals)
+
                     for r in bt_result.results:
                         r.set_label(bugfix_bt)
                     test_result.results = bt_result.results
