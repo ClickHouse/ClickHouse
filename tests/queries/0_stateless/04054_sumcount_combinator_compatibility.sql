@@ -67,5 +67,18 @@ SELECT hex(sumCountMergeState(s)) FROM (SELECT sumCountState(number::Nullable(UI
 SELECT finalizeAggregation(CAST(unhex('01000000000000000001010000000000000001020000000000000001030000000000000001040000000000000001'), 'AggregateFunction(sumCountResample(0, 5, 1), Nullable(UInt8), UInt8)'));
 SELECT hex(sumCountResampleState(0, 5, 1)(x, y)) FROM (SELECT number::Nullable(UInt8) AS x, number::UInt8 AS y FROM numbers(5));
 
+-- sumCountOrDefault: deserialize old state and round-trip.
+SELECT finalizeAggregation(CAST(unhex('0A000000000000000501'), 'AggregateFunction(sumCountOrDefault, Nullable(UInt8))'));
+SELECT hex(sumCountOrDefaultState(x)) FROM (SELECT number::Nullable(UInt8) AS x FROM numbers(5));
+SELECT finalizeAggregation(CAST(unhex('00000000000000000000'), 'AggregateFunction(sumCountOrDefault, Nullable(UInt8))'));
+SELECT hex(sumCountOrDefaultState(x)) FROM (SELECT CAST(1, 'Nullable(UInt8)') AS x WHERE 0);
+
+-- sumCountOrDefault: LowCardinality(Nullable) same format.
+SELECT hex(sumCountOrDefaultState(x)) FROM (SELECT CAST(number, 'LowCardinality(Nullable(UInt8))') AS x FROM numbers(5));
+
+-- sumCountOrNull: round-trip (no backward compat concern — didn't exist pre-Nullable(Tuple)).
+SELECT finalizeAggregation(CAST(unhex('0A000000000000000501'), 'AggregateFunction(sumCountOrNull, Nullable(UInt8))'));
+SELECT hex(sumCountOrNullState(x)) FROM (SELECT number::Nullable(UInt8) AS x FROM numbers(5));
+
 SELECT sumCountOrNull(x) FROM (SELECT number::Nullable(UInt8) AS x FROM numbers(5) WHERE x > 0);
 SELECT sumCountOrDefault(x) FROM (SELECT number::Nullable(UInt8) AS x FROM numbers(5) WHERE x > 0);

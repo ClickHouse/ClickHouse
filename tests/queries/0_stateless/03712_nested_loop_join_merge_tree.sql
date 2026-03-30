@@ -1,4 +1,5 @@
--- Tags: no-tsan
+-- Tags: no-tsan, no-parallel-replicas
+-- no-parallel-replicas: JoinBuildTableRowCount is inflated with parallel replicas
 
 DROP TABLE IF EXISTS events;
 

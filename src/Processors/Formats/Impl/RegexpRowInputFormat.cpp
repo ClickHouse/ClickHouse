@@ -22,6 +22,9 @@ RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_setting
     if (regexp_str.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The regular expression is not set for the `Regexp` format. It requires setting the value of the `format_regexp` setting.");
 
+    if (!regexp.ok())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid regular expression '{}' for the `Regexp` format: {}", regexp_str, regexp.error());
+
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
     re2_arguments.resize(fields_count);

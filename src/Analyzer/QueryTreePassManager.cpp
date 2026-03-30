@@ -53,6 +53,7 @@
 #include <Analyzer/Passes/RewriteSumFunctionWithSumAndCountPass.h>
 #include <Analyzer/Passes/ShardNumColumnToFunctionPass.h>
 #include <Analyzer/Passes/SumIfToCountIfPass.h>
+#include <Analyzer/Passes/TruncateOrderByAfterGroupByKeysPass.h>
 #include <Analyzer/Passes/UniqInjectiveFunctionsEliminationPass.h>
 #include <Analyzer/Passes/UniqToCountPass.h>
 #include <Analyzer/Utils.h>
@@ -320,6 +321,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
+
+    manager.addPass(std::make_unique<TruncateOrderByAfterGroupByKeysPass>());
 
     manager.addPass(std::make_unique<FuseFunctionsPass>());
 

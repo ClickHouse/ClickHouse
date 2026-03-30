@@ -11,10 +11,10 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
-    ports:
-      - 8080:8080
-      - 10004:10000
-      - 10005:10001
+    expose:
+      - 8080
+      - 10000
+      - 10001
     stop_grace_period: 5s
     cpus: 3
   hive:

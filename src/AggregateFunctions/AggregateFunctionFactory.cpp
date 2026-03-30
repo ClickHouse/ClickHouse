@@ -251,11 +251,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
-        /// Aggregate function nothing does not support parameters
+        /// Aggregate function Nothing does not use parameters but preserves them for consistency.
         if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
             std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
             std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
-                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, Array());
+                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
 
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }

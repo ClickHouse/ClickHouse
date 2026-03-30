@@ -169,9 +169,6 @@
 
 
 /// A minimal file used when the server is run without installation
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to
-/// make a scratch build.
 constexpr unsigned char resource_embedded_xml[] =
 {
 #embed "embedded.xml"
