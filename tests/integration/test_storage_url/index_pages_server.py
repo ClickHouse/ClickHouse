@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 DATA_PARTS = {
     "/data/2025/part1.tsv": "1\n2\n",
     "/data/2025/part2.tsv": "4\n5\n",
+    "/data/invalid_href_fallback/part1.tsv": "1\n2\n",
+    "/data/invalid_href_fallback/part2.tsv": "4\n5\n",
     "/data/query/part3.tsv": "1\n",
     "/data/query/part4.tsv": "2\n",
     "/data/query/part5.tsv": "3\n",
@@ -209,8 +211,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             body = (
                 "<a href=\"#\">top</a>\n"
                 "<a href=\"javascript:void(0)\">noop</a>\n"
-                "http://resolver:8087/data/2025/part1.tsv\n"
-                "http://resolver:8087/data/2025/part2.tsv\n"
+                "http://resolver:8087/data/invalid_href_fallback/part1.tsv\n"
+                "http://resolver:8087/data/invalid_href_fallback/part2.tsv\n"
             )
             self._send_html(body)
             return
