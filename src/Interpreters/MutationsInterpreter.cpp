@@ -2074,12 +2074,18 @@ static void addCreatingSetsForPreparedSets(QueryPlan & plan, const PreparedSetsP
     if (subqueries.empty())
         return;
 
-    /// Build sets synchronously so that ReadFromMergeTree::initializePipeline
-    /// (called later during buildQueryPipeline) can use them for index analysis.
-    /// Without this, buildOrderedSetInplace would find a null source because
-    /// addCreatingSetsStep below moves the source out of FutureSetFromSubquery.
-    /// This mirrors the normal Planner behavior where sets are built inline
-    /// during the first optimization pass (before addPlansForSets in the second pass).
+    /// Try to build sets synchronously for index analysis. buildOrderedSetInplace
+    /// executes the subquery pipeline inline and populates set elements. If it
+    /// succeeds, the set is ready and addCreatingSetsStep will skip it. If it fails
+    /// (e.g. timeout_overflow_mode=break), we still need addCreatingSetsStep to
+    /// build the set asynchronously during pipeline execution.
+    ///
+    /// Note: buildOrderedSetInplace calls build() which moves the source out of
+    /// FutureSetFromSubquery. If the set is not created (e.g. timeout), the source
+    /// is already consumed, so addCreatingSetsStep will get a null source and skip it.
+    /// In that case the IN predicate will match no rows (empty set), which is safe
+    /// but may miss data. This is acceptable because timeout_overflow_mode=break
+    /// explicitly opts into incomplete results.
     for (auto & subquery : subqueries)
     {
         if (subquery->get())
