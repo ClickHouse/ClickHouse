@@ -68,7 +68,7 @@ SELECT 1.0/3 FORMAT JSONEachRow;
 -- Test CSV
 SELECT 1.0/3 FORMAT CSV;
 
--- Test out-of-range precision (> 100) raises a BAD_ARGUMENTS exception
+-- Test out-of-range precision (> 60) raises a BAD_ARGUMENTS exception
 SET output_format_float_precision = 101;
 SELECT 1.0/3; -- {clientError BAD_ARGUMENTS}
 
