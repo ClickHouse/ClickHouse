@@ -527,7 +527,7 @@ def main():
     # Compress profiles for upload
     if os.path.exists(PGO_PROFDATA_PATH):
         Shell.check(f"zstd -19 -f {PGO_PROFDATA_PATH} -o {temp_dir}/clickhouse-pgo.profdata.zst")
-    if os.path.exists(BOLT_FDATA_PATH) and os.path.getsize(BOLT_FDATA_PATH) > 0:
+    if os.path.exists(BOLT_FDATA_PATH):
         Shell.check(f"zstd -19 -f {BOLT_FDATA_PATH} -o {temp_dir}/clickhouse-bolt.fdata.zst")
 
     Result.create_from(results=results).complete_job()
