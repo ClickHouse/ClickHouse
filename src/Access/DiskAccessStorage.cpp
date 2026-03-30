@@ -503,19 +503,20 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
         try
         {
             writeAccessEntityToDisk(id, *new_entity);
+            scheduleWriteLists(new_entity->getType());
         }
         catch (...)
         {
-            /// If we fail to write the .sql file, roll back the memory insert
+            /// If we fail to write the .sql file or schedule list update, roll back the memory insert
             /// to prevent an inconsistency where the entity is in the list but has no file on disk.
             memory_storage.remove(id, /* throw_if_not_exists= */ false);
             /// Restore the old entity that was replaced (if any).
             if (old_entity && name_collision_id.has_value())
                 memory_storage.insert(*name_collision_id, old_entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
+            /// Clean up the .sql file if it was already written.
+            std::filesystem::remove(getEntityFilePath(directory_path, id));
             throw;
         }
-
-        scheduleWriteLists(new_entity->getType());
 
         /// Now that the new file is on disk, remove the old collision file (different UUID, same name).
         /// Tolerate missing files: the old file may have been already removed or never existed.
