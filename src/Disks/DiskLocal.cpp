@@ -577,7 +577,7 @@ DiskLocal::DiskLocal(
 {
     auto local_disk_check_period_ms = config.getUInt("local_disk_check_period_ms", 0);
     if (local_disk_check_period_ms > 0)
-        disk_checker.emplace(std::dynamic_pointer_cast<DiskLocal>(shared_from_this()), context, local_disk_check_period_ms);
+        disk_checker.emplace(this, context, local_disk_check_period_ms);
 }
 
 DiskLocal::DiskLocal(const String & name_, const String & path_)

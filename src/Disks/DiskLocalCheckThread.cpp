@@ -25,7 +25,7 @@ namespace DB
 
 static const auto DISK_CHECK_ERROR_SLEEP_MS = 1000;
 
-DiskLocalCheckThread::DiskLocalCheckThread(std::shared_ptr<DiskLocal> disk_, ContextPtr context_, UInt64 local_disk_check_period_ms)
+DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context_, UInt64 local_disk_check_period_ms)
     : WithContext(context_)
     , disk(std::move(disk_))
     , check_period_ms(local_disk_check_period_ms)

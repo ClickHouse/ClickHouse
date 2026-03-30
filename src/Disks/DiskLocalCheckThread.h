@@ -16,13 +16,13 @@ class DiskLocalCheckThread : WithContext
     void run();
 
 public:
-    DiskLocalCheckThread(std::shared_ptr<DiskLocal> disk_, ContextPtr context_, UInt64 local_disk_check_period_ms);
+    DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context_, UInt64 local_disk_check_period_ms);
 
     void startup();
     void shutdown();
 
 private:
-    const std::shared_ptr<DiskLocal> disk;
+    DiskLocal * disk;
     const size_t check_period_ms;
     const LoggerPtr log;
 
