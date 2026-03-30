@@ -2,6 +2,7 @@ Must not have no arguments.
 Test single tokenizer argument.
 -- tokenizer must be splitByNonAlpha, ngrams, sparseGrams, splitByString or array.
 -- tokenizer can be identifier or function.
+Test unicodeWord tokenizer.
 Test ngrams tokenizer.
 -- ngram size must be larger than 0.
 -- ngram size must be an unsigned int.

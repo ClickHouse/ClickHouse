@@ -19,7 +19,7 @@ static void collectNullable(SQLType * tp, const uint32_t flags, ColumnPathChain 
     {
         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
-        tp = lc->subtype;
+        tp = lc->subtype.get();
     }
     if ((flags & collect_generated) != 0 && tp
         && (tp->getTypeClass() == SQLTypeClass::NULLABLE || tp->getTypeClass() == SQLTypeClass::TUPLE))
@@ -48,7 +48,7 @@ void collectColumnPaths(
     {
         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
-        tp = lc->subtype;
+        tp = lc->subtype.get();
         is_lcard = true;
     }
     if (tp && tp->getTypeClass() == SQLTypeClass::NULLABLE)
@@ -56,7 +56,7 @@ void collectColumnPaths(
         /// JSON type can be inside nullable
         Nullable * nl = dynamic_cast<Nullable *>(tp);
 
-        tp = nl->subtype;
+        tp = nl->subtype.get();
     }
     if (tp && (flags & collect_generated) != 0 && (tp->getTypeClass() == SQLTypeClass::ARRAY || tp->getTypeClass() == SQLTypeClass::MAP))
     {
@@ -70,7 +70,7 @@ void collectColumnPaths(
             ArrayType * at2 = at;
             ArrayType * at3 = nullptr;
 
-            while (at && (at = dynamic_cast<ArrayType *>(at->subtype)))
+            while (at && (at = dynamic_cast<ArrayType *>(at->subtype.get())))
             {
                 next.path.emplace_back(ColumnPathChainEntry("size" + std::to_string(i), &(*size_tp)));
                 paths.push_back(next);
@@ -78,25 +78,25 @@ void collectColumnPaths(
                 i++;
             }
             /// Array null values
-            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype)))
+            while (at2 && (at3 = dynamic_cast<ArrayType *>(at2->subtype.get())))
             {
                 at2 = at3;
             }
             if (at2)
             {
-                collectNullable(at2->subtype, flags, next, paths);
+                collectNullable(at2->subtype.get(), flags, next, paths);
             }
         }
         else
         {
             MapType * mt = dynamic_cast<MapType *>(tp);
 
-            next.path.emplace_back(ColumnPathChainEntry("keys", mt->key));
+            next.path.emplace_back(ColumnPathChainEntry("keys", mt->key.get()));
             paths.push_back(next);
             next.path.pop_back();
-            next.path.emplace_back(ColumnPathChainEntry("values", mt->value));
+            next.path.emplace_back(ColumnPathChainEntry("values", mt->value.get()));
             paths.push_back(next);
-            collectNullable(mt->value, flags, next, paths);
+            collectNullable(mt->value.get(), flags, next, paths);
             next.path.pop_back();
         }
     }
@@ -109,7 +109,7 @@ void collectColumnPaths(
         {
             collectColumnPaths(
                 entry.cname.has_value() ? ("c" + std::to_string(entry.cname.value())) : std::to_string(i),
-                entry.subtype,
+                entry.subtype.get(),
                 flags,
                 next,
                 paths);
@@ -124,11 +124,11 @@ void collectColumnPaths(
         {
             const String nsub = "c" + std::to_string(entry.cname);
 
-            collectColumnPaths(nsub, entry.subtype, flags, next, paths);
+            collectColumnPaths(nsub, entry.subtype.get(), flags, next, paths);
             if ((flags & collect_generated) != 0)
             {
                 /// The size entry also exists for nested cols
-                next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype));
+                next.path.emplace_back(ColumnPathChainEntry(nsub, entry.subtype.get()));
                 next.path.emplace_back(ColumnPathChainEntry("size0", &(*size_tp)));
                 paths.push_back(next);
                 next.path.pop_back();
@@ -142,7 +142,7 @@ void collectColumnPaths(
 
         for (const auto & entry : jt->subcols)
         {
-            next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype));
+            next.path.emplace_back(ColumnPathChainEntry(entry.cname, entry.subtype.get()));
             paths.push_back(next);
             next.path.pop_back();
         }
@@ -150,7 +150,7 @@ void collectColumnPaths(
     else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::QBIT)
     {
         QBitType * qbit = dynamic_cast<QBitType *>(tp);
-        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype);
+        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype.get());
         static const std::unordered_map<uint32_t, DB::Strings> qentries
             = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
 
@@ -191,7 +191,7 @@ void StatementGenerator::flatTableColumnPath(
         {
             ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
-            collectColumnPaths("c" + std::to_string(key), val.tp, flags, cpc, res);
+            collectColumnPaths("c" + std::to_string(key), val.tp.get(), flags, cpc, res);
         }
     }
 }
@@ -1539,13 +1539,13 @@ void StatementGenerator::addTableColumnInternal(
     SQLColumn & col,
     ColumnDef * cd)
 {
-    SQLType * tp = nullptr;
+    std::unique_ptr<SQLType> tp;
 
     col.cname = cname;
     cd->mutable_col()->mutable_col()->set_column("c" + std::to_string(cname));
     if (special == ColumnSpecial::SIGN || special == ColumnSpecial::IS_DELETED)
     {
-        tp = new IntType(8, special == ColumnSpecial::IS_DELETED);
+        tp = std::make_unique<IntType>(8, special == ColumnSpecial::IS_DELETED);
         cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(
             special == ColumnSpecial::IS_DELETED ? Integers::UInt8 : Integers::Int8);
     }
@@ -1610,12 +1610,11 @@ void StatementGenerator::addTableColumnInternal(
     {
         tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
     }
-    delete col.tp;
-    col.tp = tp;
+    col.tp = std::move(tp);
     col.special = special;
     if (special != ColumnSpecial::TTL_COL && special != ColumnSpecial::ID_COL)
     {
-        if (!modify && special == ColumnSpecial::NONE && tp->isNullable() && rg.nextSmallNumber() < 3)
+        if (!modify && special == ColumnSpecial::NONE && col.tp->isNullable() && rg.nextSmallNumber() < 3)
         {
             cd->set_nullable(rg.nextBool());
             col.nullable = std::optional<bool>(cd->nullable());
@@ -1762,20 +1761,20 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 t.cols,
                 [&](const SQLColumn & c)
                 {
-                    SQLType * tp = c.tp;
+                    SQLType * tp = c.tp.get();
 
                     if (tp->getTypeClass() == SQLTypeClass::LOWCARDINALITY)
                     {
                         LowCardinality * lc = dynamic_cast<LowCardinality *>(tp);
 
-                        tp = lc->subtype;
+                        tp = lc->subtype.get();
                     }
                     if (tp->getTypeClass() == SQLTypeClass::NULLABLE)
                     {
                         /// JSON type can be inside nullable
                         Nullable * nl = dynamic_cast<Nullable *>(tp);
 
-                        tp = nl->subtype;
+                        tp = nl->subtype.get();
                     }
                     const SQLTypeClass tc = tp->getTypeClass();
 
@@ -2736,10 +2735,10 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         if (!has_hierarchical && rg.nextSmallNumber() < 8)
         {
             /// Hierarchical is only valid once, on an integer-type value column
-            const SQLType * eff_tp = next.cols[ncname].tp;
+            const SQLType * eff_tp = next.cols[ncname].tp.get();
 
             if (eff_tp && eff_tp->getTypeClass() == SQLTypeClass::NULLABLE)
-                eff_tp = static_cast<const Nullable *>(eff_tp)->subtype;
+                eff_tp = static_cast<const Nullable *>(eff_tp)->subtype.get();
             dc->set_hierarchical((eff_tp && eff_tp->getTypeClass() == SQLTypeClass::INT) || rg.nextSmallNumber() < 2);
             has_hierarchical |= dc->hierarchical();
         }
@@ -2965,6 +2964,77 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
         connections.createExternalDatabase(rg, next, deng);
     }
     this->staged_databases[dname] = std::make_shared<SQLDatabase>(std::move(next));
+}
+
+void StatementGenerator::generateNextCreatePolicy(RandomGenerator & rg, const bool row, CreatePolicy * crp)
+{
+    SQLPolicy next;
+    const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    const bool replace = !policies.empty() && rg.nextMediumNumber() < 16;
+
+    next.is_row = row;
+    /// ~50% of row policies are tagged for the oracle role so the row policy oracle has candidates to pick.
+    next.targets_oracle_role = fc.allow_query_oracles && rg.nextBool();
+    if (replace)
+    {
+        /// Let it mix row policies with masking policies
+        const SQLPolicy & existing = rg.pickValueRandomlyFromMap(this->policies);
+        next.policy_id = existing.policy_id;
+    }
+    else
+    {
+        next.policy_id = this->policy_counter++;
+    }
+    next.table_id = t.tname;
+
+    crp->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
+    if (!replace && rg.nextSmallNumber() < 3)
+    {
+        crp->set_if_not_exists(true);
+    }
+    next.setName(crp->mutable_policy());
+    t.setName(crp->mutable_target(), true);
+    if (row && !fc.clusters.empty() && rg.nextSmallNumber() < 4)
+    {
+        /// No cluster support for masking policies
+        next.cluster = rg.pickRandomly(fc.clusters);
+        setClusterClause(rg, next.cluster, crp->mutable_cluster());
+    }
+    if (row)
+    {
+        CreateRowPolicy * r = crp->mutable_row();
+
+        if (rg.nextSmallNumber() < 3)
+        {
+            r->set_is_restrictive(true);
+        }
+        r->set_for_select(rg.nextSmallNumber() < 3);
+    }
+    else
+    {
+        CreateMaskingPolicy * m = crp->mutable_masking();
+
+        /// UPDATE clause
+        generateUpdateSets(rg, t, m->mutable_first_update(), [&]() { return m->add_other_updates(); });
+        /// PRIORITY ~40% of the time
+        if (rg.nextSmallNumber() < 4)
+        {
+            m->set_priority(static_cast<int32_t>(rg.randomInt<uint32_t>(0, 100)));
+        }
+    }
+    /// USING filter: present ~70% of the time; absent means allow/deny all rows.
+    /// For oracle policies the filter is always present (oracle needs a predicate to test).
+    if (next.targets_oracle_role || rg.nextSmallNumber() < 8)
+    {
+        generateUptDelWhere(rg, t, crp->mutable_where_expr()->mutable_expr()->mutable_expr());
+        next.where_expr = crp->where_expr();
+    }
+    if (next.targets_oracle_role)
+    {
+        crp->mutable_role()->set_role(FuzzConfig::oracleRole);
+    }
+    this->staged_policies[next.policy_id] = next;
 }
 
 }
