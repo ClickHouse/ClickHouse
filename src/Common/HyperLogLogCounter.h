@@ -56,7 +56,7 @@ struct LogLUT
 private:
     static constexpr size_t M = 1 << ((static_cast<unsigned int>(K) <= 12) ? K : 12);
 
-    double log_table[M + 1]{};
+    double log_table[M + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
 };
 
 template <UInt8 K> struct MinCounterTypeHelper;

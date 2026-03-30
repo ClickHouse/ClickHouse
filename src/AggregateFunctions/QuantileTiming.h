@@ -247,7 +247,7 @@ namespace detail
 
     /** For a large number of values. The size is about 22 680 bytes.
       */
-    class QuantileTimingLarge /// NOLINT(cppcoreguidelines-pro-type-member-init) - zeroed by memset in the constructor
+    class QuantileTimingLarge /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset in the constructor
     {
     private:
         /// Total number of values.
