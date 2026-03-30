@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 4;
-SET cluster_for_parallel_replicas = 'test_cluster_two_shards';
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
 
 SELECT count() FROM url('http://localhost:8123/?query=SELECT+1', 'TSV', 'x UInt8');
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 4;
-SET cluster_for_parallel_replicas = 'test_cluster_two_shards';
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
 
 SELECT count() FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/04065.tsv', 'TSV', 'x UInt32, y String');
@@ -47,7 +47,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0;
 SET max_parallel_replicas = 4;
-SET cluster_for_parallel_replicas = 'test_cluster_two_shards';
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_for_cluster_engines = true;
 
 SELECT * FROM s3('http://localhost:11111/test/$CLICKHOUSE_DATABASE/04065.tsv', 'TSV', 'x UInt32, y String') ORDER BY x;
