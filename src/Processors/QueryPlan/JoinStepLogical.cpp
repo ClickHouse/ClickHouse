@@ -1259,6 +1259,14 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
     ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
 
+    /// When the USING column has different types on each side, the expression_actions DAG
+    /// may contain function nodes resolved with promoted (common) types. After extracting
+    /// per-side sub-DAGs, the INPUT nodes keep the promoted types, but the actual input
+    /// from the child step has the original (non-promoted) type. Re-resolve function types
+    /// to match the actual argument types and avoid type mismatches during header evaluation.
+    left_dag.resolveFunctionTypes();
+    right_dag.resolveFunctionTypes();
+
     if (logical_lookup && prepared_join_storage.storage_key_value)
     {
         right_dag.mergeInplace(
@@ -1433,6 +1441,12 @@ ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG:
 
     dag.mergeInplace(std::move(second_dag), node_map, true);
     remapNodes(keys, node_map);
+
+    /// After merging, function nodes may have stale result_type from the original DAG
+    /// (e.g., resolved with promoted types for USING column equality) while the actual
+    /// input types come from the stream header (original non-promoted types).
+    /// Re-resolve function types to match the actual argument types.
+    dag.resolveFunctionTypes();
 
     dag.getOutputs() = dag.getInputs();
     dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));

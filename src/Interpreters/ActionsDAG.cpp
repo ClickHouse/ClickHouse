@@ -813,6 +813,42 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 }
 
 
+void ActionsDAG::resolveFunctionTypes()
+{
+    for (auto & node : nodes)
+    {
+        if (node.type != ActionType::FUNCTION || !node.function_base)
+            continue;
+
+        const auto & original_arg_types = node.function_base->getArgumentTypes();
+        if (original_arg_types.size() != node.children.size())
+            continue;
+
+        bool types_changed = false;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (!original_arg_types[i]->equals(*node.children[i]->result_type))
+            {
+                types_changed = true;
+                break;
+            }
+        }
+
+        if (!types_changed)
+            continue;
+
+        /// Re-resolve the function with the actual argument types.
+        if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+        {
+            auto [arguments, all_const] = getFunctionArguments(node.children);
+            auto resolver = std::make_unique<FunctionToOverloadResolverAdaptor>(adaptor->getFunction());
+            node.function_base = resolver->build(arguments);
+            node.result_type = node.function_base->getResultType();
+            node.function = node.function_base->prepare(arguments);
+        }
+    }
+}
+
 void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 {
     const auto & filter_node = findInOutputs(filter_name);

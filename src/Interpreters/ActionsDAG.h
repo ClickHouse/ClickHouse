@@ -243,6 +243,11 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
+    /// Re-resolve function types when children's types may have changed after DAG extraction/merging.
+    /// For each FUNCTION node, checks if the argument types differ from what function_base expects.
+    /// If so, re-builds function_base and updates result_type to match the actual argument types.
+    void resolveFunctionTypes();
+
     /// Transform the current DAG in a way that leaf nodes get folded into their parents. It's done
     /// because each projection can provide some columns as inputs to substitute certain sub-DAGs
     /// (expressions). Consider the following example:
