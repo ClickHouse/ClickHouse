@@ -2117,7 +2117,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryStartedCallback on_query_started)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -2132,7 +2133,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
     QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, {}, result_details);
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, std::move(on_query_started), result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast

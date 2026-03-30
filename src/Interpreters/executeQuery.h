@@ -95,7 +95,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,   /// To which stage the query must be executed.
+    QueryStartedCallback on_query_started = {} /// If a non-empty callback is passed, it will be called after interpreter->execute() succeeds and all
+                                               /// pre-execution checks pass — right before logQueryStart. At this point ExceptionBeforeStart can no longer occur.
 );
 
 /// Executes BlockIO returned from executeQuery(...)

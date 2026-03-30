@@ -1,4 +1,5 @@
 #include <Client/LocalConnection.h>
+#include <future>
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
@@ -215,6 +216,12 @@ void LocalConnection::sendQuery(
     /// (and does not need client data), run query in a background thread and return query_id immediately.
     if (is_interactive)
     {
+        /// Set by the background thread once the query is registered in ProcessList and quotas are checked.
+        /// Kept outside the try/catch below so that query-start failures (quota, duplicate query_id,
+        /// permissions) propagate to the client rather than silently falling back to sync execution.
+        std::optional<std::future<void>> detach_started;
+        String detach_query_id;
+
         try
         {
             const auto & settings_ref = query_context->getSettingsRef();
@@ -234,7 +241,6 @@ void LocalConnection::sendQuery(
                 bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
                 if (!insert_needs_client_data)
                 {
-                    const String current_query_id = query_context->getClientInfo().current_query_id;
                     ContextMutablePtr async_context = Context::createCopy(query_context);
                     async_context->setProgressCallback(nullptr);
                     /// Ensure the background thread uses the same path and current database as this session.
@@ -248,14 +254,31 @@ void LocalConnection::sendQuery(
                     QueryProcessingStage::Enum stage_copy = state->stage;
                     detached_query_exception = std::make_shared<std::exception_ptr>();
 
-                    detached_query_thread = std::make_unique<std::thread>([async_context, query_copy, stage_copy, exc_ptr = detached_query_exception]()
+                    auto started_promise = std::make_shared<std::promise<void>>();
+                    auto started_future = started_promise->get_future();
+
+                    detached_query_thread = std::make_unique<std::thread>([async_context, query_copy, stage_copy, exc_ptr = detached_query_exception, started_promise]() mutable
                     {
                         setThreadName(ThreadName::QUERY_ASYNC_EXECUTOR);
                         ThreadStatus thread_status;
                         QueryScope async_query_scope = QueryScope::create(async_context);
+
+                        bool query_started = false;
+
+                        /// Called by executeQuery after ProcessList::insert and quota checks pass —
+                        /// the earliest point where ExceptionBeforeStart can no longer occur.
+                        auto on_started = [&]()
+                        {
+                            if (!query_started)
+                            {
+                                query_started = true;
+                                started_promise->set_value();
+                            }
+                        };
+
                         try
                         {
-                            BlockIO io = executeQuery(query_copy, async_context, QueryFlags{}, stage_copy).second;
+                            BlockIO io = executeQuery(query_copy, async_context, QueryFlags{}, stage_copy, std::move(on_started)).second;
                             /// Actually run the pipeline (executeQuery only builds it). Without this, no data is written.
                             if (io.pipeline.pushing())
                             {
@@ -278,27 +301,51 @@ void LocalConnection::sendQuery(
                         }
                         catch (...)
                         {
-                            *exc_ptr = std::current_exception();
-                            tryLogCurrentException("LocalConnection", "Detached local non-readonly query failed");
+                            if (!query_started)
+                            {
+                                /// Pre-start failure: propagate to the main thread via the promise.
+                                /// Do not store in exc_ptr — the exception already reaches the caller
+                                /// through detach_started->get(), so storing it again would cause a
+                                /// double-throw on the next sendQuery call.
+                                started_promise->set_exception(std::current_exception());
+                            }
+                            else
+                            {
+                                /// Post-start failure: query_id was already returned to the client.
+                                /// Store for later retrieval (rethrown at the next sendQuery).
+                                *exc_ptr = std::current_exception();
+                                tryLogCurrentException("LocalConnection", "Detached local non-readonly query failed after start");
+                            }
                         }
                     });
 
-                    auto col = ColumnString::create();
-                    col->insertData(current_query_id.data(), current_query_id.size());
-                    state->block = Block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
-                    next_packet_type = Protocol::Server::Data;
-                    state->is_finished = true;
-                    state->sent_totals = true;
-                    state->sent_extremes = true;
-                    state->sent_profile_info = true;
-                    state->sent_profile_events = true;
-                    return;
+                    detach_started = std::move(started_future);
+                    detach_query_id = query_context->getClientInfo().current_query_id;
                 }
             }
         }
         catch (...)
         {
             tryLogCurrentException("LocalConnection", "Cannot run local query in detach mode, falling back to sync");
+        }
+
+        if (detach_started.has_value())
+        {
+            /// Block until the background thread signals that the query has passed
+            /// ProcessList::insert and quota checks. Re-throw on failure so the
+            /// caller receives the exception (e.g. quota exceeded, duplicate query_id).
+            detach_started->get();
+
+            auto col = ColumnString::create();
+            col->insertData(detach_query_id.data(), detach_query_id.size());
+            state->block = Block({{std::move(col), std::make_shared<DataTypeString>(), "query_id"}});
+            next_packet_type = Protocol::Server::Data;
+            state->is_finished = true;
+            state->sent_totals = true;
+            state->sent_extremes = true;
+            state->sent_profile_info = true;
+            state->sent_profile_events = true;
+            return;
         }
     }
 
