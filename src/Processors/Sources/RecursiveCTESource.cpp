@@ -26,6 +26,7 @@
 
 #include <Core/Settings.h>
 
+#include <optional>
 #include <set>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
@@ -190,24 +191,31 @@ std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
     return result;
 }
 
-/// Read all values of a column from a StorageMemory-backed temporary table.
-std::vector<Field> readColumnValuesFromMemoryStorage(
+/// Maximum number of distinct values to collect for an IN filter.
+/// If the working table has more distinct join key values than this,
+/// we skip the optimization for that step to avoid generating an
+/// excessively large SQL expression that may exceed parser limits.
+static constexpr size_t MAX_IN_FILTER_CARDINALITY = 10000;
+
+/// Read deduplicated values of a column from a StorageMemory-backed temporary table.
+/// Returns nullopt if the number of distinct values exceeds MAX_IN_FILTER_CARDINALITY.
+std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     const StoragePtr & storage,
     const String & column_name,
     const ContextPtr & context)
 {
-    std::vector<Field> values;
-
     auto * memory_storage = typeid_cast<StorageMemory *>(storage.get());
     if (!memory_storage)
-        return values;
+        return std::vector<Field>{};
 
     auto metadata = memory_storage->getInMemoryMetadataPtr();
     auto snapshot = memory_storage->getStorageSnapshot(metadata, context);
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
 
     if (!snapshot_data.blocks)
-        return values;
+        return std::vector<Field>{};
+
+    std::set<Field> unique_values;
 
     for (const auto & block : *snapshot_data.blocks)
     {
@@ -219,11 +227,14 @@ std::vector<Field> readColumnValuesFromMemoryStorage(
         {
             Field value;
             column->get(i, value);
-            values.push_back(std::move(value));
+            unique_values.insert(std::move(value));
+
+            if (unique_values.size() > MAX_IN_FILTER_CARDINALITY)
+                return std::nullopt;
         }
     }
 
-    return values;
+    return std::vector<Field>(unique_values.begin(), unique_values.end());
 }
 
 /// Build a SQL filter expression like: `column_name` IN (val1, val2, ...)
@@ -267,10 +278,16 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     for (const auto & key_info : *cached_join_keys)
     {
         auto values = readColumnValuesFromMemoryStorage(working_table_storage, key_info.cte_column_name, context);
-        if (values.empty())
+
+        /// nullopt means cardinality exceeded the limit — skip the optimization entirely
+        /// for this step and fall back to unfiltered scans.
+        if (!values.has_value())
+            return original_additional_table_filters;
+
+        if (values->empty())
             continue;
 
-        String filter_expr = buildInFilterExpression(key_info.real_table_column_name, values);
+        String filter_expr = buildInFilterExpression(key_info.real_table_column_name, *values);
         if (!filter_expr.empty())
             table_filter_parts[key_info.real_table_storage_id.getFullNameNotQuoted()].push_back(std::move(filter_expr));
     }
