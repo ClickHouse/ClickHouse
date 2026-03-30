@@ -389,6 +389,7 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
+        std::lock_guard lock(token_mutex);
         if (!access_token.has_value() || update_token || access_token->isExpired())
         {
             access_token = retrieveGoogleCloudAccessToken();
