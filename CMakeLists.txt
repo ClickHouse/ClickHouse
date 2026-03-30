@@ -413,8 +413,8 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # Use -fvisibility=default (not hidden) to avoid -Wunique-object-duplication
         # errors on inline static members. CFI vtable visibility is already satisfied
         # by -fwhole-program-vtables and -Wl,--lto-whole-program-visibility above.
+        # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
         set (CFI_FLAGS "-fsanitize=cfi-vcall,cfi-derived-cast -fno-sanitize-recover=cfi -fvisibility=default")
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
         set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} ${CFI_FLAGS}")
     endif ()
