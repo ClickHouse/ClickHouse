@@ -31,6 +31,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled
@@ -157,7 +158,8 @@ public:
             QueryPlan & plan,
             const StorageMetadataPtr & snapshot_,
             const ContextPtr & context_,
-            const Settings & mutation_settings) const;
+            const Settings & mutation_settings,
+            bool use_new_analyzer_) const;
 
         explicit Source(StoragePtr storage_);
         Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
@@ -187,7 +189,7 @@ private:
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
-    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
+    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage, bool use_new_analyzer_);
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
@@ -224,7 +226,7 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr /*context_*/) {}
+        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -233,7 +235,12 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
-        /// A single step in the action pipeline for this stage.
+        /// Old analyzer path: ExpressionAnalyzer + ExpressionActionsChain.
+        std::unique_ptr<ExpressionAnalyzer> analyzer;
+        ExpressionActionsChain expressions_chain;
+        Names filter_column_names;
+
+        /// New analyzer path: ActionsDAG-based action steps.
         struct ActionStep
         {
             ActionsDAG dag;
@@ -246,10 +253,11 @@ private:
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         std::vector<ActionStep> action_steps;
 
-        /// Prepared sets for IN subqueries used in this stage.
+        /// Prepared sets for IN subqueries used in this stage (new analyzer path).
         PreparedSetsPtr prepared_sets;
 
-        /// Input columns needed by this stage (computed from first action step's DAG inputs).
+        /// Input columns needed by this stage (new analyzer: computed from action steps,
+        /// old analyzer: computed from expressions_chain).
         Names required_columns;
 
         bool affects_all_columns = false;
@@ -267,6 +275,7 @@ private:
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
     bool deleted_mask_updated = false;
+    bool use_new_analyzer = false; /// Whether to use the new analyzer path in prepareMutationStages.
 
     NameSet materialized_indices;
     NameSet materialized_projections;

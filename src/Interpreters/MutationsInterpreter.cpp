@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
@@ -69,6 +70,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_mutations;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
@@ -181,6 +183,7 @@ ColumnDependencies getAllColumnDependencies(
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
     ContextPtr context,
     std::function<void(const Progress & value)> check_operation_is_not_cancelled)
@@ -230,10 +233,26 @@ IsStorageTouched isStorageTouchedByMutations(
     if (all_commands_can_be_skipped)
         return no_rows;
 
-    /// Always use the new analyzer path to match the rest of the mutation pipeline.
-    auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
-    InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
-    BlockIO io = interpreter.execute();
+    std::optional<InterpreterSelectQuery> interpreter_select_query;
+    BlockIO io;
+
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
+        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
+        io = interpreter.execute();
+    }
+    else
+    {
+        ASTPtr select_query = prepareQueryAffectedAST(commands, storage_from_part, context);
+        /// Interpreter must be alive, when we use result of execute() method.
+        /// For some reason it may copy context and give it into ExpressionTransform
+        /// after that we will use context from destroyed stack frame in our stream.
+        interpreter_select_query.emplace(
+            select_query, context, storage_from_part, metadata_snapshot, SelectQueryOptions().ignoreLimits());
+
+        io = interpreter_select_query->execute();
+    }
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
@@ -459,13 +478,23 @@ MutationsInterpreter::MutationsInterpreter(
     , select_limits(SelectQueryOptions().analyze(!settings.can_execute).ignoreLimits())
     , logger(getLogger("MutationsInterpreter(" + source.getStorage()->getStorageID().getFullTableName() + ")"))
 {
-    auto mutable_context = Context::createCopy(context_);
-    /// Allow mutations to work when force_index_by_date or force_primary_key is on.
-    /// For regular mutations this is done in MutateTask::prepareMutationPartForExecution,
-    /// but lightweight updates (updateLightweightImpl) bypass MutateTask.
-    mutable_context->setSetting("force_primary_key", false);
-    mutable_context->setSetting("force_index_by_date", false);
-    context = std::move(mutable_context);
+    auto new_context = Context::createCopy(context_);
+    use_new_analyzer = new_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    if (use_new_analyzer)
+    {
+        /// When the new analyzer is enabled, disable force_index_by_date and force_primary_key
+        /// because the new analyzer path resolves columns differently and these checks
+        /// would interfere with mutation reads. For regular mutations this is done in
+        /// MutateTask::prepareMutationPartForExecution, but lightweight updates bypass MutateTask.
+        new_context->setSetting("force_primary_key", false);
+        new_context->setSetting("force_index_by_date", false);
+    }
+    else
+    {
+        new_context->setSetting("allow_experimental_analyzer", false);
+        LOG_TEST(logger, "Will use old analyzer to prepare mutation");
+    }
+    context = std::move(new_context);
 }
 
 static NameSet getKeyColumns(const MutationsInterpreter::Source & source, const StorageMetadataPtr & metadata_snapshot)
@@ -1503,439 +1532,413 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
         }
     }
 
-    /// Filter out ephemeral virtual columns from output_columns for each stage.
-    /// Ephemeral virtual columns (like _distance, _sample_factor) are computed
-    /// on-the-fly during reads and not stored in parts. Including them in output_columns
-    /// would cause the mutation pipeline to request them from the source reader, but some
-    /// can't be filled during mutation reads.
-    /// The old ExpressionActionsChain naturally excluded unreferenced columns from the
-    /// pipeline; with the new analyzer we need to exclude them explicitly.
-    /// However, columns that are in column_to_updated are explicitly requested (e.g. via
-    /// READ_COLUMN commands for lightweight updates that need _part, _part_offset, etc.)
-    /// and must be preserved even if they are ephemeral virtual columns.
-    /// When return_all_columns is true (e.g. for on-the-fly mutations in SELECT), ALL
-    /// columns including ephemeral virtuals must be preserved because the caller explicitly
-    /// needs them (e.g. _part_offset for applying patch parts).
-    if (auto real_storage = (!settings.return_all_columns ? source.getStorage() : nullptr))
+    if (use_new_analyzer)
     {
-        auto virtuals = real_storage->getVirtualsPtr();
-
-        /// Collect columns explicitly requested via column_to_updated across ALL stages.
-        /// These columns (e.g. _part, _part_offset from READ_COLUMN commands for lightweight
-        /// updates) must be preserved even if they are ephemeral virtual columns, because
-        /// output_columns propagates from earlier stages to later ones.
-        NameSet explicitly_requested;
-        for (const auto & stage : prepared_stages)
-            for (const auto & [name, _] : stage.column_to_updated)
-                explicitly_requested.insert(name);
-
-        for (auto & stage : prepared_stages)
+        /// Filter out ephemeral virtual columns from output_columns for each stage.
+        /// Ephemeral virtual columns (like _distance, _sample_factor) are computed
+        /// on-the-fly during reads and not stored in parts. Including them in output_columns
+        /// would cause the mutation pipeline to request them from the source reader, but some
+        /// can't be filled during mutation reads.
+        /// The old ExpressionActionsChain naturally excluded unreferenced columns from the
+        /// pipeline; with the new analyzer we need to exclude them explicitly.
+        /// However, columns that are in column_to_updated are explicitly requested (e.g. via
+        /// READ_COLUMN commands for lightweight updates that need _part, _part_offset, etc.)
+        /// and must be preserved even if they are ephemeral virtual columns.
+        /// When return_all_columns is true (e.g. for on-the-fly mutations in SELECT), ALL
+        /// columns including ephemeral virtuals must be preserved because the caller explicitly
+        /// needs them (e.g. _part_offset for applying patch parts).
+        if (auto real_storage = (!settings.return_all_columns ? source.getStorage() : nullptr))
         {
-            NameSet filtered;
-            for (const auto & name : stage.output_columns)
+            auto virtuals = real_storage->getVirtualsPtr();
+
+            /// Collect columns explicitly requested via column_to_updated across ALL stages.
+            NameSet explicitly_requested;
+            for (const auto & stage : prepared_stages)
+                for (const auto & [name, _] : stage.column_to_updated)
+                    explicitly_requested.insert(name);
+
+            for (auto & stage : prepared_stages)
             {
-                if (explicitly_requested.contains(name))
+                NameSet filtered;
+                for (const auto & name : stage.output_columns)
                 {
-                    filtered.insert(name);
-                    continue;
+                    if (explicitly_requested.contains(name))
+                    {
+                        filtered.insert(name);
+                        continue;
+                    }
+                    const auto * virt_desc = virtuals->tryGetDescription(name);
+                    if (!virt_desc || virt_desc->isPersistent())
+                        filtered.insert(name);
                 }
-                const auto * virt_desc = virtuals->tryGetDescription(name);
-                if (!virt_desc || virt_desc->isPersistent())
-                    filtered.insert(name);
-            }
-            stage.output_columns = std::move(filtered);
-        }
-    }
-
-    /// Now, calculate action steps for each stage.
-    /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
-    for (int64_t i = prepared_stages.size() - 1; i >= 0; --i)
-    {
-        auto & stage = prepared_stages[i];
-
-        /// Build AST expression list with all expressions needed in this stage.
-        ASTPtr all_asts = make_intrusive<ASTExpressionList>();
-
-        for (const auto & ast : stage.filters)
-            all_asts->children.push_back(ast);
-
-        for (const auto & kv : stage.column_to_updated)
-            all_asts->children.push_back(kv.second);
-
-        /// Add output columns (physical + persistent virtual) so they get INPUT nodes in
-        /// the DAG. Ephemeral virtuals were already filtered from output_columns above.
-        for (const auto & column : stage.output_columns)
-            all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
-
-        /// Build query tree from the combined AST and resolve it using the new analyzer.
-        /// This resolves all identifiers, functions, and types in one pass.
-        auto expression = buildQueryTree(all_asts, context);
-
-        ColumnsDescription fake_column_descriptions{};
-        for (const auto & column : all_columns)
-            fake_column_descriptions.add(
-                ColumnDescription(column.name, column.type),
-                /*after_column=*/"", /*first=*/false, /*add_subcolumns=*/true);
-
-        auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-
-        /// Copy virtual columns from the real storage so the analyzer can resolve
-        /// references to virtual columns like _part, _block_number, etc.
-        auto real_storage = source.getStorage();
-        if (real_storage)
-            dummy_storage->setVirtuals(*real_storage->getVirtualsPtr());
-
-        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, context);
-
-        /// When dry_run is true, we must not execute scalar subqueries to avoid deadlocks
-        /// (e.g. ALTER referencing the same table in a scalar subquery).
-        bool only_analyze = dry_run;
-        QueryAnalyzer analyzer(only_analyze);
-        analyzer.resolve(expression, fake_table_expression, context);
-        /// Assign unique aliases (__table1, __table2, etc.) to all table expressions in
-        /// the resolved tree. This is normally done by QueryAnalysisPass after resolve.
-        /// Without this, table expressions in GLOBAL IN subqueries have no aliases, so
-        /// GlobalPlannerContext::createColumnIdentifier generates non-unique identifiers
-        /// (just the column name), causing "Column identifier is already registered" errors.
-        createUniqueAliasesIfNecessary(expression, context);
-
-        /// Give the fake table expression a unique alias so that column identifiers
-        /// registered from it (e.g. "__mutation_source.key") don't collide with identifiers
-        /// from table expressions inside subqueries (e.g. EXISTS or IN subqueries that
-        /// reference tables with the same column names). Without this alias, identifiers
-        /// from the fake table are just the bare column name (e.g. "key"), which can
-        /// collide with identifiers from other tables that also lack aliases.
-        /// Note: createUniqueAliasesIfNecessary does NOT visit fake_table_expression because
-        /// it's the scope table, not part of the expression tree (ColumnNode stores its source
-        /// as a weak pointer, not a tree child).
-        fake_table_expression->setAlias("__mutation_source");
-
-        GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
-        auto mutable_context = Context::createCopy(context);
-        auto planner_context = std::make_shared<PlannerContext>(std::move(mutable_context), global_planner_context, SelectQueryOptions{});
-
-        /// Register only the columns from the fake table expression in the PlannerContext.
-        /// We do NOT call collectSourceColumns (which traverses the entire expression tree
-        /// including subqueries) because it registers columns from ALL table expressions in
-        /// the tree, and GlobalPlannerContext::createColumnIdentifier throws on duplicate
-        /// identifiers. Manually registering only the fake table's columns avoids this.
-        {
-            auto & table_expression_data = planner_context->getOrCreateTableExpressionData(fake_table_expression);
-            for (const auto & column : all_columns)
-            {
-                auto column_identifier = global_planner_context->createColumnIdentifier(column, fake_table_expression);
-                table_expression_data.addColumn(column, column_identifier);
+                stage.output_columns = std::move(filtered);
             }
         }
-        collectSets(expression, *planner_context);
 
-        /// Get the input columns from all_columns (physical + all virtual columns).
-        /// All virtual columns (including ephemeral ones like _part, _distance) are included
-        /// as inputs so that expressions like UPDATE s = _part can reference them.
-        ColumnsWithTypeAndName input_columns;
-        for (const auto & column : all_columns)
-            input_columns.emplace_back(column.type, column.name);
-
-        size_t num_filters = stage.filters.size();
-        size_t num_updates = stage.column_to_updated.size();
-
-        /// Build a single DAG from the full resolved expression tree.
-        /// This DAG contains all filter, update, and output column computations.
-        /// Outputs are ordered: [filter_0, ..., filter_N-1, update_0, ..., update_M-1, output_col_0, ...].
-        /// Note: We do NOT add aliases here. Aliases (renaming update expressions to target column names)
-        /// are added only in the update step's DAG, to avoid name collisions with input columns
-        /// that would cause expressions to be evaluated in the wrong step.
-        auto full_dag = buildActionsDAGFromExpressionNode(expression, input_columns, planner_context, {}, false).first;
-
-        /// Remember the original output names of update expressions (before aliasing).
-        Names update_expression_names;
-        for (size_t j = 0; j < num_updates; ++j)
-            update_expression_names.push_back(full_dag.getOutputs().at(num_filters + j)->result_name);
-
-        /// Add pass-through for output_columns that are inputs of the DAG but not
-        /// already in the outputs. This ensures physical + persistent virtual columns
-        /// survive through the filter/update steps. We don't add ALL inputs as pass-through
-        /// because that would include ephemeral virtual columns (like _distance) that
-        /// can't be read from parts during mutations.
+        /// Now, calculate action steps for each stage (new analyzer path).
+        /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
+        for (int64_t i = prepared_stages.size() - 1; i >= 0; --i)
         {
-            NameSet output_names;
-            for (const auto * output : full_dag.getOutputs())
-                output_names.insert(output->result_name);
-            for (const auto * input_node : full_dag.getInputs())
-                if (!output_names.contains(input_node->result_name) && stage.output_columns.contains(input_node->result_name))
-                    full_dag.getOutputs().push_back(input_node);
-        }
+            auto & stage = prepared_stages[i];
 
-        /// Now split the full DAG into separate steps for filters, updates, and projection.
-        /// Each step's DAG must contain only the computations needed for that step,
-        /// to prevent update expressions from being evaluated during filtering (which
-        /// would overwrite column values before the actual update step runs).
+            /// Build AST expression list with all expressions needed in this stage.
+            ASTPtr all_asts = make_intrusive<ASTExpressionList>();
 
-        /// Build the filter step (if there are filters).
-        if (num_filters > 0)
-        {
-            auto filter_dag = full_dag.clone();
+            for (const auto & ast : stage.filters)
+                all_asts->children.push_back(ast);
 
-            /// Combine multiple filter outputs into a single AND expression if needed.
-            String filter_column_name;
-            if (num_filters == 1)
-            {
-                filter_column_name = filter_dag.getOutputs().at(0)->result_name;
-            }
-            else
-            {
-                ActionsDAG::NodeRawConstPtrs filter_nodes;
-                for (size_t j = 0; j < num_filters; ++j)
-                    filter_nodes.push_back(filter_dag.getOutputs().at(j));
+            for (const auto & kv : stage.column_to_updated)
+                all_asts->children.push_back(kv.second);
 
-                auto and_function = FunctionFactory::instance().get("and", context);
-                const auto & and_node = filter_dag.addFunction(and_function, filter_nodes, {});
-                filter_dag.getOutputs().push_back(&and_node);
-                filter_column_name = and_node.result_name;
-            }
-
-            /// Trim the filter DAG to only compute the filter expression plus
-            /// pass-through of physical + persistent virtual columns. We use
-            /// output_columns (not all_columns) because ephemeral virtual columns
-            /// were filtered out and are not present in the DAG outputs.
-            /// Columns not matching any INPUT node in the trimmed DAG will pass
-            /// through the FilterStep automatically via updateHeader.
-            NameSet filter_required_outputs;
-            filter_required_outputs.insert(filter_column_name);
+            /// Add output columns (physical + persistent virtual) so they get INPUT nodes in
+            /// the DAG. Ephemeral virtuals were already filtered from output_columns above.
             for (const auto & column : stage.output_columns)
-                filter_required_outputs.insert(column);
-            filter_dag.removeUnusedActions(filter_required_outputs);
+                all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
 
-            stage.action_steps.push_back(Stage::ActionStep{.dag = std::move(filter_dag), .filter_column_name = std::move(filter_column_name)});
-        }
+            /// Build query tree from the combined AST and resolve it using the new analyzer.
+            auto expression = buildQueryTree(all_asts, context);
 
-        /// Build the update step (if there are column updates).
-        if (num_updates > 0)
-        {
-            auto update_dag = full_dag.clone();
+            ColumnsDescription fake_column_descriptions{};
+            for (const auto & column : all_columns)
+                fake_column_descriptions.add(
+                    ColumnDescription(column.name, column.type),
+                    /*after_column=*/"", /*first=*/false, /*add_subcolumns=*/true);
 
-            /// Add aliases to rename update expression results to target column names.
-            /// This is done only in the update step's DAG (not the full DAG) to avoid
-            /// creating name collisions with input columns in other steps.
+            auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+
+            /// Copy virtual columns from the real storage so the analyzer can resolve
+            /// references to virtual columns like _part, _block_number, etc.
+            auto real_storage = source.getStorage();
+            if (real_storage)
+                dummy_storage->setVirtuals(*real_storage->getVirtualsPtr());
+
+            QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, context);
+
+            /// When dry_run is true, we must not execute scalar subqueries to avoid deadlocks
+            /// (e.g. ALTER referencing the same table in a scalar subquery).
+            bool only_analyze = dry_run;
+            QueryAnalyzer query_analyzer(only_analyze);
+            query_analyzer.resolve(expression, fake_table_expression, context);
+            createUniqueAliasesIfNecessary(expression, context);
+
+            /// Give the fake table expression a unique alias so that column identifiers
+            /// don't collide with identifiers from table expressions inside subqueries.
+            fake_table_expression->setAlias("__mutation_source");
+
+            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+            auto mutable_context = Context::createCopy(context);
+            auto planner_context = std::make_shared<PlannerContext>(std::move(mutable_context), global_planner_context, SelectQueryOptions{});
+
+            /// Register only the columns from the fake table expression in the PlannerContext.
             {
-                size_t update_idx = 0;
+                auto & table_expression_data = planner_context->getOrCreateTableExpressionData(fake_table_expression);
+                for (const auto & column : all_columns)
+                {
+                    auto column_identifier = global_planner_context->createColumnIdentifier(column, fake_table_expression);
+                    table_expression_data.addColumn(column, column_identifier);
+                }
+            }
+            collectSets(expression, *planner_context);
+
+            ColumnsWithTypeAndName input_columns;
+            for (const auto & column : all_columns)
+                input_columns.emplace_back(column.type, column.name);
+
+            size_t num_filters = stage.filters.size();
+            size_t num_updates = stage.column_to_updated.size();
+
+            auto full_dag = buildActionsDAGFromExpressionNode(expression, input_columns, planner_context, {}, false).first;
+
+            /// Remember the original output names of update expressions (before aliasing).
+            Names update_expression_names;
+            for (size_t j = 0; j < num_updates; ++j)
+                update_expression_names.push_back(full_dag.getOutputs().at(num_filters + j)->result_name);
+
+            /// Add pass-through for output_columns that are inputs of the DAG but not
+            /// already in the outputs.
+            {
+                NameSet output_names;
+                for (const auto * output : full_dag.getOutputs())
+                    output_names.insert(output->result_name);
+                for (const auto * input_node : full_dag.getInputs())
+                    if (!output_names.contains(input_node->result_name) && stage.output_columns.contains(input_node->result_name))
+                        full_dag.getOutputs().push_back(input_node);
+            }
+
+            /// Build the filter step (if there are filters).
+            if (num_filters > 0)
+            {
+                auto filter_dag = full_dag.clone();
+
+                String filter_column_name;
+                if (num_filters == 1)
+                {
+                    filter_column_name = filter_dag.getOutputs().at(0)->result_name;
+                }
+                else
+                {
+                    ActionsDAG::NodeRawConstPtrs filter_nodes;
+                    for (size_t j = 0; j < num_filters; ++j)
+                        filter_nodes.push_back(filter_dag.getOutputs().at(j));
+
+                    auto and_function = FunctionFactory::instance().get("and", context);
+                    const auto & and_node = filter_dag.addFunction(and_function, filter_nodes, {});
+                    filter_dag.getOutputs().push_back(&and_node);
+                    filter_column_name = and_node.result_name;
+                }
+
+                NameSet filter_required_outputs;
+                filter_required_outputs.insert(filter_column_name);
+                for (const auto & column : stage.output_columns)
+                    filter_required_outputs.insert(column);
+                filter_dag.removeUnusedActions(filter_required_outputs);
+
+                stage.action_steps.push_back(Stage::ActionStep{.dag = std::move(filter_dag), .filter_column_name = std::move(filter_column_name)});
+            }
+
+            /// Build the update step (if there are column updates).
+            if (num_updates > 0)
+            {
+                auto update_dag = full_dag.clone();
+
+                {
+                    size_t update_idx = 0;
+                    for (const auto & kv : stage.column_to_updated)
+                    {
+                        const auto & output_node = update_dag.findInOutputs(update_expression_names[update_idx]);
+                        const auto & alias = update_dag.addAlias(output_node, kv.first);
+                        update_dag.addOrReplaceInOutputs(alias);
+                        ++update_idx;
+                    }
+                }
+
+                NameSet update_required_outputs;
+                for (const auto & kv : stage.column_to_updated)
+                    update_required_outputs.insert(kv.first);
+                for (const auto & column : stage.output_columns)
+                    update_required_outputs.insert(column);
+                update_dag.removeUnusedActions(update_required_outputs);
+
+                /// Materialize constant output columns to avoid AMBIGUOUS_COLUMN_NAME errors
+                /// when multiple mutations are batched with different constant values.
                 for (const auto & kv : stage.column_to_updated)
                 {
-                    const auto & output_node = update_dag.findInOutputs(update_expression_names[update_idx]);
-                    const auto & alias = update_dag.addAlias(output_node, kv.first);
-                    update_dag.addOrReplaceInOutputs(alias);
-                    ++update_idx;
+                    const auto & output_node = update_dag.findInOutputs(kv.first);
+                    if (output_node.column && isColumnConst(*output_node.column))
+                        update_dag.addOrReplaceInOutputs(update_dag.materializeNode(output_node));
+                }
+
+                stage.action_steps.push_back(Stage::ActionStep{.dag = std::move(update_dag), .filter_column_name = {}, .project_input = true});
+            }
+
+            /// Build the final projection step that keeps only output_columns.
+            {
+                NameSet final_output_names = stage.output_columns;
+
+                ColumnsWithTypeAndName projection_columns;
+                for (const auto * input_node : full_dag.getInputs())
+                    if (final_output_names.contains(input_node->result_name))
+                        projection_columns.emplace_back(input_node->result_type, input_node->result_name);
+
+                ActionsDAG projection_dag(projection_columns);
+                stage.action_steps.push_back(Stage::ActionStep{
+                    .dag = std::move(projection_dag),
+                    .filter_column_name = {},
+                    .project_input = !settings.return_all_columns});
+            }
+
+            /// Store prepared sets from the planner context.
+            stage.prepared_sets = PreparedSetsPtr(planner_context, &planner_context->getPreparedSets());
+
+            /// Build subquery plans for IN clauses.
+            /// Skip this when dry_run is true (validation mode).
+            if (!dry_run && stage.prepared_sets)
+            {
+                auto subqueries = stage.prepared_sets->getSubqueries();
+                auto subquery_options = SelectQueryOptions{}.subquery();
+                subquery_options.ignore_limits = false;
+                for (auto & subquery : subqueries)
+                {
+                    if (subquery->get())
+                        continue;
+
+                    auto query_tree = subquery->detachQueryTree();
+                    if (!query_tree)
+                        continue;
+
+                    createUniqueAliasesIfNecessary(query_tree, context);
+
+                    Planner subquery_planner(
+                        query_tree,
+                        subquery_options,
+                        std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                    subquery_planner.buildQueryPlanIfNeeded();
+
+                    auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+                    subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
                 }
             }
 
-            /// Trim the update DAG to only compute the update expressions plus
-            /// pass-through of physical + persistent virtual columns (same
-            /// reasoning as the filter step — use output_columns, not all_columns).
-            NameSet update_required_outputs;
-            for (const auto & kv : stage.column_to_updated)
-                update_required_outputs.insert(kv.first);
-            for (const auto & column : stage.output_columns)
-                update_required_outputs.insert(column);
-            update_dag.removeUnusedActions(update_required_outputs);
-
-            /// Materialize constant output columns in the update DAG. The new analyzer's
-            /// constant folding can produce ColumnConst outputs (e.g. UPDATE v = 3 WHERE 1).
-            /// When multiple mutations are batched, columns with the same name but different
-            /// constant values cause AMBIGUOUS_COLUMN_NAME errors during block structure checks.
-            /// Wrapping them with materialize() converts them to regular columns.
-            for (const auto & kv : stage.column_to_updated)
+            /// Compute required input columns for this stage.
             {
-                const auto & output_node = update_dag.findInOutputs(kv.first);
-                if (output_node.column && isColumnConst(*output_node.column))
-                    update_dag.addOrReplaceInOutputs(update_dag.materializeNode(output_node));
-            }
+                NameSet needed;
+                if (!stage.action_steps.empty())
+                {
+                    const auto & last_step = stage.action_steps.back();
+                    for (const auto & name : last_step.dag.getRequiredColumnsNames())
+                        needed.insert(name);
+                }
 
-            /// Use project_input=true so that only DAG outputs survive. This properly
-            /// replaces updated columns: when an update expression doesn't reference the
-            /// original column (e.g. UPDATE v = '100'), removeUnusedActions removes the
-            /// INPUT node for that column. With project_input=false, the original column
-            /// would pass through unconsumed alongside the ALIAS result, causing duplicates.
-            /// With project_input=true, appendInputsForUnusedColumns (called later in
-            /// addStreamsForLaterStages) adds INPUT nodes for all header columns, ensuring
-            /// they are consumed. Only DAG output columns survive, correctly replacing
-            /// updated columns.
-            /// This also prevents the updated column from appearing in required_columns
-            /// (computed from the DAG before appendInputsForUnusedColumns), so the reader
-            /// doesn't request it from the part. This is important when the column type
-            /// changed (e.g. MODIFY COLUMN after UPDATE): the reader would try to convert
-            /// the old type to the new type via performRequiredConversions, which can fail
-            /// for values that only the UPDATE expression would fix.
-            stage.action_steps.push_back(Stage::ActionStep{.dag = std::move(update_dag), .filter_column_name = {}, .project_input = true});
-        }
+                for (int64_t step_idx = static_cast<int64_t>(stage.action_steps.size()) - 2; step_idx >= 0; --step_idx)
+                {
+                    const auto & step = stage.action_steps[step_idx];
 
-        /// Build the final projection step that keeps only output_columns.
-        /// This step runs AFTER the update step, so updated columns already have their
-        /// new values in the input. We just need to select the right columns, not recompute.
-        /// The projection also removes filter columns and any other intermediate results.
-        ///
-        /// We only project output_columns (not column_to_updated keys) to match the old
-        /// ExpressionActionsChain behavior. The output_columns set already includes
-        /// column_to_updated keys (they are added in the output_columns computation loop
-        /// above), except when explicitly excluded (e.g. _row_exists when has_filters is
-        /// true and deleted_mask_updated is false — in that case, the ALTER DELETE physically
-        /// removes rows, making _row_exists redundant in the output part).
-        ///
-        /// We use full_dag.getInputs() (not input_columns) because the expression
-        /// resolution may have added extra INPUT nodes via addInputColumnIfNecessary
-        /// (e.g., for ephemeral virtual columns like _part referenced in expressions).
-        {
-            NameSet final_output_names = stage.output_columns;
+                    NameSet produced;
+                    NameSet step_inputs;
+                    for (const auto * input : step.dag.getInputs())
+                        step_inputs.insert(input->result_name);
+                    for (const auto & output_name : step.dag.getOutputs())
+                        if (!step_inputs.contains(output_name->result_name))
+                            produced.insert(output_name->result_name);
 
-            ColumnsWithTypeAndName projection_columns;
-            for (const auto * input_node : full_dag.getInputs())
-                if (final_output_names.contains(input_node->result_name))
-                    projection_columns.emplace_back(input_node->result_type, input_node->result_name);
+                    for (const auto & name : produced)
+                        needed.erase(name);
 
-            ActionsDAG projection_dag(projection_columns);
-            /// When return_all_columns is true (on-the-fly mutations in SELECT), do NOT
-            /// project away extra columns. The caller may need columns (e.g. _part_offset
-            /// for patch merging) that are not in the mutation's output_columns or even
-            /// in the DAG's inputs. With project_input=true, such columns would be dropped
-            /// from the block. The old analyzer's ExpressionActionsChain had pass-through
-            /// semantics for unmentioned columns; we replicate that by disabling projection.
-            stage.action_steps.push_back(Stage::ActionStep{
-                .dag = std::move(projection_dag),
-                .filter_column_name = {},
-                .project_input = !settings.return_all_columns});
-        }
+                    for (const auto & name : step.dag.getRequiredColumnsNames())
+                        needed.insert(name);
+                }
 
-        /// Store prepared sets from the planner context.
-        /// We use a shared_ptr with aliasing constructor to keep the PlannerContext alive
-        /// while sharing the PreparedSets reference.
-        stage.prepared_sets = PreparedSetsPtr(planner_context, &planner_context->getPreparedSets());
-
-        /// Build subquery plans for IN clauses so that addCreatingSetsStep can wire them
-        /// into the mutation pipeline. Without this, FutureSetFromSubquery objects created by
-        /// collectSets would have no source QueryPlan, and build() would return null.
-        ///
-        /// Skip this when dry_run is true (validation mode): subquery plans are only needed
-        /// for pipeline execution, and during dry_run the expression tree may contain
-        /// EXISTS-turned-IN subqueries (QueryAnalyzer transforms non-correlated EXISTS to IN
-        /// when only_analyze=true) whose nested table expressions can cause identifier
-        /// collisions in the Planner.
-        if (!dry_run && stage.prepared_sets)
-        {
-            auto subqueries = stage.prepared_sets->getSubqueries();
-            auto subquery_options = SelectQueryOptions{}.subquery();
-            subquery_options.ignore_limits = false;
-            for (auto & subquery : subqueries)
-            {
-                if (subquery->get())
-                    continue;
-
-                auto query_tree = subquery->detachQueryTree();
-                if (!query_tree)
-                    continue;
-
-                /// Ensure all table expressions inside the detached subquery tree have
-                /// unique aliases. This is needed because the subquery tree was part of
-                /// a larger expression tree where createUniqueAliasesIfNecessary was called,
-                /// but building a standalone plan requires consistent aliases within
-                /// the fresh GlobalPlannerContext.
-                createUniqueAliasesIfNecessary(query_tree, context);
-
-                Planner subquery_planner(
-                    query_tree,
-                    subquery_options,
-                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
-                subquery_planner.buildQueryPlanIfNeeded();
-
-                auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
-                subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
-            }
-        }
-
-        /// Compute required input columns for this stage by propagating requirements
-        /// backwards through the action steps. Start from the last step's requirements,
-        /// then for each preceding step: remove columns it produces (DAG outputs that
-        /// are not pass-through INPUTs) and add columns it needs from its predecessor.
-        /// This matches how ExpressionActionsChain::finalize computes source requirements:
-        /// columns produced by intermediate steps (e.g. UPDATE v='100' creates v) are NOT
-        /// requested from the source, preventing unnecessary reads that could trigger
-        /// performRequiredConversions failures when column types have changed.
-        {
-            NameSet needed;
-            /// Start with the last step's required columns.
-            if (!stage.action_steps.empty())
-            {
-                const auto & last_step = stage.action_steps.back();
-                for (const auto & name : last_step.dag.getRequiredColumnsNames())
-                    needed.insert(name);
-            }
-
-            /// Propagate backwards through remaining steps.
-            for (int64_t step_idx = static_cast<int64_t>(stage.action_steps.size()) - 2; step_idx >= 0; --step_idx)
-            {
-                const auto & step = stage.action_steps[step_idx];
-
-                /// Determine which columns this step produces (non-INPUT outputs).
-                NameSet produced;
-                NameSet step_inputs;
-                for (const auto * input : step.dag.getInputs())
-                    step_inputs.insert(input->result_name);
-                for (const auto & output_name : step.dag.getOutputs())
-                    if (!step_inputs.contains(output_name->result_name))
-                        produced.insert(output_name->result_name);
-
-                /// Remove produced columns from needed set (they don't need to come from source).
-                for (const auto & name : produced)
-                    needed.erase(name);
-
-                /// Add this step's own required inputs.
-                for (const auto & name : step.dag.getRequiredColumnsNames())
-                    needed.insert(name);
-            }
-
-            stage.required_columns = Names(needed.begin(), needed.end());
-
-            /// When return_all_columns is true (e.g. Iceberg mutations, on-the-fly
-            /// mutations in SELECT), the caller expects ALL columns including virtual
-            /// columns in the output. The backwards propagation through action steps
-            /// should include all output_columns, but the projection step with
-            /// project_input=false doesn't create DAG inputs for pass-through
-            /// columns. Ensure all output_columns are explicitly requested from
-            /// the source so the storage produces data for them.
-            if (settings.return_all_columns)
-            {
-                for (const auto & name : stage.output_columns)
-                    needed.insert(name);
                 stage.required_columns = Names(needed.begin(), needed.end());
+
+                if (settings.return_all_columns)
+                {
+                    for (const auto & name : stage.output_columns)
+                        needed.insert(name);
+                    stage.required_columns = Names(needed.begin(), needed.end());
+                }
+
+                if (stage.required_columns.empty() && !stage.output_columns.empty())
+                    stage.required_columns.push_back(*stage.output_columns.begin());
             }
 
-            /// When all columns are updated with constants and the WHERE clause doesn't
-            /// reference any table columns, required_columns can end up empty. But the
-            /// storage reader needs at least one column to know how many rows exist.
-            if (stage.required_columns.empty() && !stage.output_columns.empty())
-                stage.required_columns.push_back(*stage.output_columns.begin());
+            if (i)
+            {
+                for (const auto & name : stage.required_columns)
+                    prepared_stages[i - 1].output_columns.insert(name);
+            }
         }
-
-        if (i)
+    }
+    else
+    {
+        /// Old analyzer path: use TreeRewriter + ExpressionAnalyzer + ExpressionActionsChain.
+        /// Now, calculate `expressions_chain` for each stage except the first.
+        /// Do it backwards to propagate information about columns required as input for a stage to the previous stage.
+        for (int64_t i = prepared_stages.size() - 1; i >= 0; --i)
         {
+            auto & stage = prepared_stages[i];
+
+            ASTPtr all_asts = make_intrusive<ASTExpressionList>();
+
+            for (const auto & ast : stage.filters)
+                all_asts->children.push_back(ast);
+
+            for (const auto & kv : stage.column_to_updated)
+                all_asts->children.push_back(kv.second);
+
+            /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
+            for (const auto & column : stage.output_columns)
+                all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
+
+            /// Executing scalar subquery on that stage can lead to deadlock
+            /// e.g. ALTER referencing the same table in scalar subquery
+            bool execute_scalar_subqueries = !dry_run;
+            auto syntax_result = TreeRewriter(context).analyze(
+                all_asts, all_columns, source.getStorage(), storage_snapshot,
+                false, true, execute_scalar_subqueries);
+
+            stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
+
+            ExpressionActionsChain & actions_chain = stage.expressions_chain;
+
+            if (!stage.filters.empty())
+            {
+                auto ast = stage.filters.front();
+                if (stage.filters.size() > 1)
+                    ast = makeASTForLogicalAnd(std::move(stage.filters));
+
+                if (!actions_chain.steps.empty())
+                    actions_chain.addStep();
+
+                stage.analyzer->appendExpression(actions_chain, ast, dry_run);
+                stage.filter_column_names.push_back(ast->getColumnName());
+            }
+
+            if (!stage.column_to_updated.empty())
+            {
+                if (!actions_chain.steps.empty())
+                    actions_chain.addStep();
+
+                for (const auto & kv : stage.column_to_updated)
+                    stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
+
+                auto & actions = actions_chain.getLastStep().actions();
+
+                for (const auto & kv : stage.column_to_updated)
+                {
+                    auto column_name = kv.second->getColumnName();
+                    const auto & dag_node = actions->dag.findInOutputs(column_name);
+                    const auto & alias = actions->dag.addAlias(dag_node, kv.first);
+                    actions->dag.addOrReplaceInOutputs(alias);
+                }
+            }
+
+            /// Remove all intermediate columns.
+            actions_chain.addStep();
+            actions_chain.getLastStep().required_output.clear();
+            ActionsDAG::NodeRawConstPtrs new_index;
+            for (const auto & column : stage.output_columns)
+                actions_chain.getLastStep().addRequiredOutput(column);
+
+            actions_chain.finalize();
+
             /// Propagate information about columns needed as input.
-            for (const auto & name : stage.required_columns)
-                prepared_stages[i - 1].output_columns.insert(name);
+            if (i)
+            {
+                for (const auto & column : actions_chain.steps.front()->getRequiredColumns())
+                    prepared_stages[i - 1].output_columns.insert(column.name);
+            }
         }
     }
 }
 
-std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
+std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage, bool use_new_analyzer_)
 {
-    ActionsDAG::NodeRawConstPtrs filter_nodes;
-    for (const auto & action_step : stage.action_steps)
+    if (use_new_analyzer_)
     {
-        if (!action_step.filter_column_name.empty())
-            filter_nodes.push_back(&action_step.dag.findInOutputs(action_step.filter_column_name));
+        ActionsDAG::NodeRawConstPtrs filter_nodes;
+        for (const auto & action_step : stage.action_steps)
+        {
+            if (!action_step.filter_column_name.empty())
+                filter_nodes.push_back(&action_step.dag.findInOutputs(action_step.filter_column_name));
+        }
+
+        if (filter_nodes.empty())
+            return std::nullopt;
+
+        return ActionsDAG::buildFilterActionsDAG(filter_nodes);
     }
+    else
+    {
+        const auto & names = stage.filter_column_names;
+        if (names.empty())
+            return std::nullopt;
 
-    if (filter_nodes.empty())
-        return std::nullopt;
+        ActionsDAG::NodeRawConstPtrs nodes(names.size());
+        for (size_t i = 0; i < names.size(); ++i)
+            nodes[i] = &stage.expressions_chain.steps[i]->actions()->dag.findInOutputs(names[i]);
 
-    return ActionsDAG::buildFilterActionsDAG(filter_nodes);
+        return ActionsDAG::buildFilterActionsDAG(nodes);
+    }
 }
 
 void MutationsInterpreter::Source::read(
@@ -1943,9 +1946,14 @@ void MutationsInterpreter::Source::read(
     QueryPlan & plan,
     const StorageMetadataPtr & snapshot_,
     const ContextPtr & context_,
-    const Settings & mutation_settings) const
+    const Settings & mutation_settings,
+    bool use_new_analyzer_) const
 {
-    auto required_columns = first_stage.required_columns;
+    /// For the new analyzer path, required_columns is pre-computed in prepareMutationStages.
+    /// For the old analyzer path, compute it from the ExpressionActionsChain.
+    auto required_columns = !first_stage.required_columns.empty()
+        ? first_stage.required_columns
+        : first_stage.expressions_chain.steps.front()->getRequiredColumns().getNames();
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
 
     if (!mutation_settings.can_execute)
@@ -1976,7 +1984,7 @@ void MutationsInterpreter::Source::read(
             required_columns,
             nullptr,
             mutation_settings.apply_deleted_mask,
-            createFilterDAGForStage(first_stage),
+            createFilterDAGForStage(first_stage, use_new_analyzer_),
             false,
             false,
             context_,
@@ -2015,7 +2023,7 @@ void MutationsInterpreter::Source::read(
 
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
 
-            if (auto filter = createFilterDAGForStage(first_stage))
+            if (auto filter = createFilterDAGForStage(first_stage, use_new_analyzer_))
                 filter_actions_dag = std::make_shared<ActionsDAG>(std::move(*filter));
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create filter DAG for stage with non-empty filters");
@@ -2088,36 +2096,71 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
     // TODO(serxa): Enable concurrency control for mutation queries and mutations. This should be done after CPU scheduler introduction.
     plan.setConcurrencyControl(false);
 
-    source.read(first_stage, plan, metadata_snapshot, context, settings);
-    addCreatingSetsForPreparedSets(plan, first_stage.prepared_sets, context);
+    source.read(first_stage, plan, metadata_snapshot, context, settings, use_new_analyzer);
+    if (use_new_analyzer)
+        addCreatingSetsForPreparedSets(plan, first_stage.prepared_sets, context);
+    else
+        addDelayedCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
 {
     for (const Stage & stage : prepared_stages)
     {
-        /// Build sets before the action steps that use them.
-        addCreatingSetsForPreparedSets(plan, stage.prepared_sets, context);
-
-        for (const auto & action_step : stage.action_steps)
+        if (use_new_analyzer)
         {
-            if (action_step.dag.hasArrayJoin())
-                throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
+            /// New analyzer path: iterate through action_steps.
+            addCreatingSetsForPreparedSets(plan, stage.prepared_sets, context);
 
-            auto dag = action_step.dag.clone();
-            if (action_step.project_input)
-                dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
+            for (const auto & action_step : stage.action_steps)
+            {
+                if (action_step.dag.hasArrayJoin())
+                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
 
-            if (!action_step.filter_column_name.empty())
-            {
-                /// Execute DELETEs.
-                plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), action_step.filter_column_name, false));
+                auto dag = action_step.dag.clone();
+                if (action_step.project_input)
+                    dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
+
+                if (!action_step.filter_column_name.empty())
+                {
+                    /// Execute DELETEs.
+                    plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), action_step.filter_column_name, false));
+                }
+                else
+                {
+                    /// Execute UPDATE or final projection.
+                    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+                }
             }
-            else
+        }
+        else
+        {
+            /// Old analyzer path: iterate through expressions_chain steps.
+            for (size_t j = 0; j < stage.expressions_chain.steps.size(); ++j)
             {
-                /// Execute UPDATE or final projection.
-                plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+                const auto & step = stage.expressions_chain.steps[j];
+                if (step->actions()->dag.hasArrayJoin())
+                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "arrayJoin is not allowed in mutations");
+
+                if (j < stage.filter_column_names.size())
+                {
+                    auto dag = step->actions()->dag.clone();
+                    if (step->actions()->project_input)
+                        dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
+                    /// Execute DELETEs.
+                    plan.addStep(std::make_unique<FilterStep>(plan.getCurrentHeader(), std::move(dag), stage.filter_column_names[j], false));
+                }
+                else
+                {
+                    auto dag = step->actions()->dag.clone();
+                    if (step->actions()->project_input)
+                        dag.appendInputsForUnusedColumns(*plan.getCurrentHeader());
+                    /// Execute UPDATE or final projection.
+                    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+                }
             }
+
+            addDelayedCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
         }
     }
 
@@ -2206,11 +2249,17 @@ void MutationsInterpreter::validate()
         }
     }
 
-    // Make sure the mutation query is valid.
-    // Always use the new analyzer path to match prepareMutationStages which uses the
-    // new analyzer directly.
+    // Make sure the mutation query is valid
     if (context->getSettingsRef()[Setting::validate_mutation_query])
-        prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+    {
+        if (use_new_analyzer)
+            prepareQueryAffectedQueryTree(commands, source.getStorage(), context);
+        else
+        {
+            ASTPtr select_query = prepareQueryAffectedAST(commands, source.getStorage(), context);
+            InterpreterSelectQuery(select_query, context, source.getStorage(), metadata_snapshot);
+        }
+    }
 
     QueryPlan plan;
 
@@ -2257,9 +2306,22 @@ std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
     std::vector<MutationActions> result;
     for (const auto & stage : stages)
     {
-        for (const auto & action_step : stage.action_steps)
+        if (use_new_analyzer)
         {
-            result.push_back({action_step.dag.clone(), action_step.filter_column_name, action_step.project_input, stage.mutation_version});
+            for (const auto & action_step : stage.action_steps)
+                result.push_back({action_step.dag.clone(), action_step.filter_column_name, action_step.project_input, stage.mutation_version});
+        }
+        else
+        {
+            for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
+            {
+                const auto & step = stage.expressions_chain.steps[i];
+                bool project_input = step->actions()->project_input;
+                if (i < stage.filter_column_names.size())
+                    result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input, stage.mutation_version});
+                else
+                    result.push_back({step->actions()->dag.clone(), "", project_input, stage.mutation_version});
+            }
         }
     }
 
