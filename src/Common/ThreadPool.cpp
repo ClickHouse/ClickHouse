@@ -773,7 +773,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             }
 
             /// LIFO idle thread scheduling: push this thread onto the idle stack
-            /// and wait on the shared condition variable. The scheduler selects the
+            /// and wait on a per-thread condition variable. The scheduler selects the
             /// most recently idle thread first via idle_wakeup_flag, concentrating
             /// work on fewer OS threads. This improves CPU cache locality and reduces
             /// memory fragmentation from allocator per-thread caches (e.g. jemalloc tcache).
