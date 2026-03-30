@@ -69,6 +69,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
+#include <Server/waitServersToFinish.h>
 #include <Server/TCPHandlerFactory.h>
 #include <Server/TCPServer.h>
 #include <Server/ServerType.h>
@@ -641,6 +642,21 @@ void LocalServer::cleanup()
             for (auto & server : servers)
                 if (!server.isStopping())
                     server.stop();
+        }
+
+        /// Wait for active connections to drain (up to 5 seconds),
+        /// mirroring the shutdown sequence in Server.cpp.
+        {
+            constexpr size_t shutdown_wait_seconds = 5;
+            waitServersToFinish(servers, servers_lock, shutdown_wait_seconds);
+        }
+
+        /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
+        if (server_pool)
+            server_pool->joinAll();
+
+        {
+            std::lock_guard lock(servers_lock);
             servers.clear();
         }
 
