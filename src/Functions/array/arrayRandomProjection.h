@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/TargetSpecific.h>
+#include <Core/Types.h>
 
 #include <pcg_random.hpp>
 
@@ -30,7 +31,7 @@ T boxMullerNormal(pcg64 & rng)
     return std::sqrt(T(-2) * std::log(u1)) * std::cos(T(2) * std::numbers::pi_v<T> * u2);
 }
 
-/// In-place fast Walsh–Hadamard transform; `n` must be a power of two.
+/// In-place fast Walsh-Hadamard transform; `n` must be a power of two.
 template <typename T>
 void fwht(T * data, size_t n)
 {
@@ -249,7 +250,7 @@ void axpyDispatch(T * __restrict y, const T * __restrict x, T alpha, size_t n)
     axpyScalar<T>(y, x, alpha, n);
 }
 
-/// Column-major `n`×`n` Householder QR: upper triangle is `R`, subdiagonal holds normalized `v` (leading 1 implicit), `tau[k]` are scalars.
+/// Column-major `n x n` Householder QR: upper triangle is `R`, subdiagonal holds normalized `v` (leading 1 implicit), `tau[k]` are scalars.
 template <typename T>
 void householderQR(T * __restrict A, T * __restrict tau, size_t n)
 {
@@ -324,7 +325,7 @@ void extractQ(const T * __restrict A_qr, const T * __restrict tau, T * __restric
     }
 }
 
-/// `Y(N×D) = X(N×d) * P^T` with `P` row-major `D×d`, i.e. `Y[i,j] = dot(X_i, P_j)`.
+/// `Y(N x D) = X(N x d) * P^T` with `P` row-major `D x d`, i.e. `Y[i,j] = dot(X_i, P_j)`.
 template <typename T>
 void gemmBatchScalar(const T * __restrict X, const T * __restrict P, T * __restrict Y, size_t N, size_t d, size_t D)
 {
@@ -773,7 +774,7 @@ struct SparseProjectionState
     UInt64 seed = 0;
     T scale = 0;
 
-    /// Per input index `j`: pairs `(output row, ±1)` for Achlioptas nonzeros.
+    /// Per input index `j`: pairs `(output row, +/-1)` for Achlioptas nonzeros.
     std::vector<std::vector<std::pair<UInt32, int8_t>>> columns;
 
     void generate(size_t d, size_t D, UInt64 s)
@@ -862,7 +863,7 @@ struct HadamardProjectionState
     }
 };
 
-/// Achlioptas: scale input once per column, scatter `±val` to listed rows (no multiply in inner loop).
+/// Achlioptas: scale input once per column, scatter `+/-val` to listed rows (no multiply in inner loop).
 template <typename T>
 void applySparseProjection(const T * __restrict input, T * __restrict output, const SparseProjectionState<T> & state)
 {
@@ -877,26 +878,33 @@ void applySparseProjection(const T * __restrict input, T * __restrict output, co
 }
 
 /// SRHT: sign inputs, FWHT on padded power-of-two length, then subsample coefficients per block.
+/// `scratch` must have at least `state.padded_dim` elements; avoids per-call heap allocation.
 template <typename T>
-void applyHadamardProjection(const T * __restrict input, T * __restrict output, const HadamardProjectionState<T> & state)
+void applyHadamardProjection(const T * __restrict input, T * __restrict output, const HadamardProjectionState<T> & state, T * __restrict scratch)
 {
-    std::vector<T> buf(state.padded_dim);
-
     size_t out_offset = 0;
     for (const auto & block : state.blocks)
     {
         for (size_t i = 0; i < state.input_dim; ++i)
-            buf[i] = input[i] * block.signs[i];
+            scratch[i] = input[i] * block.signs[i];
         for (size_t i = state.input_dim; i < state.padded_dim; ++i)
-            buf[i] = T(0);
+            scratch[i] = T(0);
 
-        fwht(buf.data(), state.padded_dim);
+        fwht(scratch, state.padded_dim);
 
         for (size_t i = 0; i < block.indices.size(); ++i)
-            output[out_offset + i] = buf[block.indices[i]] * state.scale_factor;
+            output[out_offset + i] = scratch[block.indices[i]] * state.scale_factor;
 
         out_offset += block.indices.size();
     }
+}
+
+/// Convenience overload that allocates the scratch buffer internally.
+template <typename T>
+void applyHadamardProjection(const T * __restrict input, T * __restrict output, const HadamardProjectionState<T> & state)
+{
+    std::vector<T> scratch(state.padded_dim);
+    applyHadamardProjection(input, output, state, scratch.data());
 }
 
 } // namespace DB

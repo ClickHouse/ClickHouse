@@ -85,28 +85,32 @@ struct UsesDenseGEMM<HadamardMethodTag> : std::false_type
 };
 
 /// Per-row projection application for non-GEMM methods.
+/// `scratch` is a pre-allocated buffer (used by Hadamard, ignored by Sparse).
 template <typename T, typename MethodTag>
-void applyPerRow(const T * input, T * output, const typename ProjectionStateTypes<MethodTag>::template State<T> & state);
+void applyPerRow(
+    const T * input, T * output, const typename ProjectionStateTypes<MethodTag>::template State<T> & state, T * scratch);
 
 template <>
-void applyPerRow<Float32, SparseMethodTag>(const Float32 * input, Float32 * output, const SparseProjectionState<Float32> & state)
+void applyPerRow<Float32, SparseMethodTag>(const Float32 * input, Float32 * output, const SparseProjectionState<Float32> & state, Float32 *)
 {
     applySparseProjection<Float32>(input, output, state);
 }
 template <>
-void applyPerRow<Float64, SparseMethodTag>(const Float64 * input, Float64 * output, const SparseProjectionState<Float64> & state)
+void applyPerRow<Float64, SparseMethodTag>(const Float64 * input, Float64 * output, const SparseProjectionState<Float64> & state, Float64 *)
 {
     applySparseProjection<Float64>(input, output, state);
 }
 template <>
-void applyPerRow<Float32, HadamardMethodTag>(const Float32 * input, Float32 * output, const HadamardProjectionState<Float32> & state)
+void applyPerRow<Float32, HadamardMethodTag>(
+    const Float32 * input, Float32 * output, const HadamardProjectionState<Float32> & state, Float32 * scratch)
 {
-    applyHadamardProjection<Float32>(input, output, state);
+    applyHadamardProjection<Float32>(input, output, state, scratch);
 }
 template <>
-void applyPerRow<Float64, HadamardMethodTag>(const Float64 * input, Float64 * output, const HadamardProjectionState<Float64> & state)
+void applyPerRow<Float64, HadamardMethodTag>(
+    const Float64 * input, Float64 * output, const HadamardProjectionState<Float64> & state, Float64 * scratch)
 {
-    applyHadamardProjection<Float64>(input, output, state);
+    applyHadamardProjection<Float64>(input, output, state, scratch);
 }
 
 template <typename MethodTag>
@@ -263,6 +267,11 @@ private:
         else
         {
             /// Per-row methods (Sparse, Hadamard): validate and apply one row at a time.
+            /// Allocate scratch buffer once for Hadamard FWHT; Sparse ignores it.
+            std::vector<T> scratch;
+            if constexpr (std::is_same_v<MethodTag, HadamardMethodTag>)
+                scratch.resize(state.padded_dim);
+
             ColumnArray::Offset prev = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -276,7 +285,7 @@ private:
                         row_dim,
                         i);
 
-                applyPerRow<T, MethodTag>(data_in.data() + prev, out.data() + i * target_dim, state);
+                applyPerRow<T, MethodTag>(data_in.data() + prev, out.data() + i * target_dim, state, scratch.data());
                 prev = offsets[i];
             }
         }

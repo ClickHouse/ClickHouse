@@ -4,7 +4,7 @@
 
 using namespace DB;
 
-// Row-major GEMM: Y(N x D) = X(N x d) * P^T; P is D x d row-major.
+/// Row-major GEMM: Y(N x D) = X(N x d) * P^T; P is D x d row-major.
 template <typename T>
 void gemmSimple(const T * X, const T * P, T * Y, size_t N, size_t d, size_t D)
 {
@@ -124,7 +124,7 @@ TEST(ArrayRandomProjection, AchlioptasSparsity)
     EXPECT_NEAR(sparsity, 2.0 / 3.0, 0.02);
 }
 
-// Householder QR: Q^T Q ~ I.
+/// Householder QR: Q^T Q ~ I.
 TEST(ArrayRandomProjection, HouseholderQROrthogonalityFloat)
 {
     const size_t n = 8;
@@ -187,7 +187,7 @@ TEST(ArrayRandomProjection, HouseholderQROrthogonalityDouble)
     EXPECT_LT(max_error, 1e-10);
 }
 
-// Reconstruction: A ~ Q * R.
+/// Reconstruction: A ~ Q * R.
 TEST(ArrayRandomProjection, HouseholderQRFactorizationCorrectness)
 {
     const size_t n = 8;
@@ -224,7 +224,7 @@ TEST(ArrayRandomProjection, HouseholderQRFactorizationCorrectness)
     EXPECT_LT(max_error, 1e-4f);
 }
 
-// Leading D x d block P: P P^T ~ I.
+/// Leading D x d block P: P P^T ~ I.
 TEST(ArrayRandomProjection, OrthogonalProjectionProperty)
 {
     const size_t d = 16;
@@ -264,7 +264,7 @@ TEST(ArrayRandomProjection, OrthogonalProjectionProperty)
     EXPECT_LT(max_error, 1e-4f);
 }
 
-// OrthogonalProjectionState: P P^T ~ scale^2 * I (sqrt(n/D) scaling in state).
+/// OrthogonalProjectionState: P P^T ~ scale^2 * I (sqrt(n/D) scaling in state).
 TEST(ArrayRandomProjection, OrthogonalProjectionStatePipeline)
 {
     OrthogonalProjectionState<float> state;
@@ -290,7 +290,7 @@ TEST(ArrayRandomProjection, OrthogonalProjectionStatePipeline)
     EXPECT_LT(max_error, 0.1f);
 }
 
-// Gaussian random projection: average ||y|| / ||x|| ~ 1 (JL-style).
+/// Gaussian random projection: average ||y|| / ||x|| ~ 1 (JL-style).
 TEST(ArrayRandomProjection, NormalProjectionNormPreservation)
 {
     const size_t d = 64;
@@ -326,7 +326,7 @@ TEST(ArrayRandomProjection, NormalProjectionNormPreservation)
     EXPECT_NEAR(avg_ratio, 1.0, 0.15);
 }
 
-// GEMM: tiled scalar and SIMD dispatch match reference; odd d exercises tails.
+/// GEMM: tiled scalar and SIMD dispatch match reference; odd d exercises tails.
 TEST(ArrayRandomProjection, GEMMCorrectness)
 {
     const size_t n = 5;
@@ -363,7 +363,7 @@ TEST(ArrayRandomProjection, GEMMCorrectness)
         EXPECT_NEAR(y_dispatch[i], y_ref[i], 1e-4f) << "dispatch mismatch at index " << i;
 }
 
-// Large GEMM: SIMD main loop vs reference.
+/// Large GEMM: SIMD main loop vs reference.
 TEST(ArrayRandomProjection, GEMMCorrectnessLarge)
 {
     const size_t n = 10;
@@ -443,7 +443,7 @@ TEST(ArrayRandomProjection, HadamardProjectionDeterminism)
         EXPECT_FLOAT_EQ(out1[i], out2[i]);
 }
 
-// dotProduct: scalar vs dispatch for various sizes including SIMD boundaries.
+/// dotProduct: scalar vs dispatch for various sizes including SIMD boundaries.
 TEST(ArrayRandomProjection, DotProductScalarVsDispatch)
 {
     pcg64 rng(42);
@@ -476,7 +476,7 @@ TEST(ArrayRandomProjection, DotProductScalarVsDispatch)
     }
 }
 
-// axpy: scalar vs dispatch for various sizes.
+/// axpy: scalar vs dispatch for various sizes.
 TEST(ArrayRandomProjection, AxpyScalarVsDispatch)
 {
     pcg64 rng(42);
@@ -498,7 +498,7 @@ TEST(ArrayRandomProjection, AxpyScalarVsDispatch)
     }
 }
 
-// nextPowerOfTwo: edge cases.
+/// nextPowerOfTwo: edge cases.
 TEST(ArrayRandomProjection, NextPowerOfTwo)
 {
     EXPECT_EQ(nextPowerOfTwo(0), 1u);
@@ -515,12 +515,12 @@ TEST(ArrayRandomProjection, NextPowerOfTwo)
     EXPECT_EQ(nextPowerOfTwo(1025), 2048u);
 }
 
-// GEMM corner cases: N=1, d=1, D=1.
+/// GEMM corner cases: N=1, d=1, D=1.
 TEST(ArrayRandomProjection, GEMMCornerCases)
 {
     pcg64 rng(42);
 
-    // Single element: 1x1 * 1x1
+        /// Single element: 1x1 * 1x1
     {
         float x[] = {3.0f};
         float p[] = {2.0f};
@@ -532,7 +532,7 @@ TEST(ArrayRandomProjection, GEMMCornerCases)
         EXPECT_NEAR(y_got[0], 6.0f, 1e-6f);
     }
 
-    // Single row, multiple columns
+        /// Single row, multiple columns
     {
         const size_t d = 33;
         const size_t dd = 17;
@@ -552,7 +552,7 @@ TEST(ArrayRandomProjection, GEMMCornerCases)
             EXPECT_NEAR(y_got[i], y_ref[i], 1e-4f);
     }
 
-    // D=1: single output per row
+        /// D=1: single output per row
     {
         const size_t n = 10;
         const size_t d = 64;
@@ -573,7 +573,7 @@ TEST(ArrayRandomProjection, GEMMCornerCases)
     }
 }
 
-// GEMM Float64: dispatch vs reference.
+/// GEMM Float64: dispatch vs reference.
 TEST(ArrayRandomProjection, GEMMCorrectnessFloat64)
 {
     const size_t n = 5;
@@ -599,7 +599,7 @@ TEST(ArrayRandomProjection, GEMMCorrectnessFloat64)
         EXPECT_NEAR(y_got[i], y_ref[i], std::abs(y_ref[i]) * 1e-10 + 1e-12) << "i=" << i;
 }
 
-// Sparse projection: output is non-zero and has correct dimension.
+/// Sparse projection: output is non-zero and has correct dimension.
 TEST(ArrayRandomProjection, SparseProjectionCorrectness)
 {
     SparseProjectionState<float> state;
@@ -614,7 +614,7 @@ TEST(ArrayRandomProjection, SparseProjectionCorrectness)
         sum += std::abs(v);
     EXPECT_GT(sum, 0.0f);
 
-    // Zero input -> zero output
+    /// Zero input -> zero output
     std::vector<float> zero_input(64, 0.0f);
     std::vector<float> zero_output(16, 999.0f);
     applySparseProjection<float>(zero_input.data(), zero_output.data(), state);
@@ -623,7 +623,7 @@ TEST(ArrayRandomProjection, SparseProjectionCorrectness)
         EXPECT_FLOAT_EQ(zero_output[i], 0.0f);
 }
 
-// Hadamard projection: output is non-zero and has correct dimension.
+/// Hadamard projection: output is non-zero and has correct dimension.
 TEST(ArrayRandomProjection, HadamardProjectionCorrectness)
 {
     HadamardProjectionState<float> state;
@@ -640,7 +640,7 @@ TEST(ArrayRandomProjection, HadamardProjectionCorrectness)
         sum += std::abs(v);
     EXPECT_GT(sum, 0.0f);
 
-    // Non-power-of-2 input
+    /// Non-power-of-2 input
     HadamardProjectionState<float> state2;
     state2.generate(50, 10, 42);
     EXPECT_EQ(state2.padded_dim, 64u);
@@ -657,4 +657,26 @@ TEST(ArrayRandomProjection, HadamardProjectionCorrectness)
     for (auto v : output2)
         sum2 += std::abs(v);
     EXPECT_GT(sum2, 0.0f);
+}
+
+/// Test that the scratch-buffer overload of `applyHadamardProjection` gives identical results to the convenience overload.
+TEST(ArrayRandomProjection, HadamardProjectionScratchBuffer)
+{
+    HadamardProjectionState<float> state;
+    state.generate(64, 16, 42);
+
+    std::vector<float> input(64);
+    pcg64 rng(77);
+    for (auto & v : input)
+        v = boxMullerNormal<float>(rng);
+
+    std::vector<float> out_convenience(16);
+    applyHadamardProjection<float>(input.data(), out_convenience.data(), state);
+
+    std::vector<float> out_scratch(16);
+    std::vector<float> scratch(state.padded_dim);
+    applyHadamardProjection<float>(input.data(), out_scratch.data(), state, scratch.data());
+
+    for (size_t i = 0; i < 16; ++i)
+        EXPECT_FLOAT_EQ(out_scratch[i], out_convenience[i]);
 }
