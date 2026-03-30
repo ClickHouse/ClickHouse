@@ -706,6 +706,7 @@ bool StorageKafka::streamToViews()
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
     std::atomic_size_t rows = 0;
+    bool cancelled = false;
     {
         block_io.pipeline.complete(std::move(pipe));
 
@@ -721,7 +722,15 @@ bool StorageKafka::streamToViews()
         /// Without this, DROP TABLE can hang waiting for the pipeline to finish naturally,
         /// which may take a very long time if consumers are stuck in a rebalance after
         /// a heartbeat error.
-        executor.setCancelCallback([this]() { return shutdown_called.load(); }, 100);
+        executor.setCancelCallback([this, &cancelled]()
+        {
+            if (shutdown_called.load())
+            {
+                cancelled = true;
+                return true;
+            }
+            return false;
+        }, 100);
 
         executor.execute();
     }
@@ -731,11 +740,15 @@ bool StorageKafka::streamToViews()
     {
         some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
 
-        /// Don't commit offsets if the pipeline was cancelled due to shutdown.
+        /// Don't commit offsets if the pipeline was actually cancelled due to shutdown.
         /// The cancelled pipeline may not have fully written data to dependent views,
         /// so committing offsets would cause data loss. The consumer will be marked
         /// as dirty and offsets will remain uncommitted.
-        if (!shutdown_called)
+        /// Note: we check `cancelled` (whether the cancel callback fired) rather than
+        /// `shutdown_called`, because the pipeline may have completed naturally before
+        /// the cancel callback had a chance to fire. In that case the data was fully
+        /// written and offsets must be committed to avoid duplicates on restart.
+        if (!cancelled)
             source->commit();
     }
 
