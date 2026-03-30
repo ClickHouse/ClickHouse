@@ -19,6 +19,7 @@ create table t
 engine = MergeTree order by id
 settings
     map_serialization_version = 'basic',
+    map_serialization_version_for_zero_level_parts = 'basic',
     min_bytes_for_wide_part = 1,
     min_rows_for_wide_part = 1,
     serialization_info_version = 'with_types';
