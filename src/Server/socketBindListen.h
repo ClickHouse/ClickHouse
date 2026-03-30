@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class ServerSettings;
+struct ServerSettings;
 
 /// Bind a server socket to the given host:port and start listening.
 /// If port is 0, the OS will assign an available port and the actual address is returned.
