@@ -811,6 +811,10 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesRemoval)
     addNode(storage, "/hello1", "world");
     addNode(storage, "/hello2", "data");
 
+    /// Capture baseline size before inserting orphans (includes / + system nodes + hello1 + hello2)
+    const auto baseline_size = storage.container.size();
+    const auto baseline_root_children = storage.container.getValue("/").getChildren().size();
+
     /// Insert orphaned nodes directly (parent /missing does not exist)
     using Node = typename Storage::Node;
     {
@@ -824,7 +828,6 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesRemoval)
         storage.container.insertOrReplace("/missing/child/grandchild", orphan_grandchild);
     }
 
-    /// Serialize: container has / + 3 system nodes + /hello1 + /hello2 + /missing/child + /missing/child/grandchild = 8
     DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 0, nullptr, DB::SnapshotVersion::V7);
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 0);
@@ -837,15 +840,15 @@ TYPED_TEST(CoordinationTest, TestSnapshotOrphanedNodesRemoval)
     auto deser_result = manager.deserializeSnapshotFromBuffer(debuf);
     const auto & restored_storage = deser_result.storage;
 
-    /// Orphans should be removed: only / + 3 system nodes + /hello1 + /hello2 = 6
-    EXPECT_EQ(restored_storage->container.size(), 6);
+    /// Orphans should be removed, size should match baseline
+    EXPECT_EQ(restored_storage->container.size(), baseline_size);
     EXPECT_NE(restored_storage->container.find("/hello1"), restored_storage->container.end());
     EXPECT_NE(restored_storage->container.find("/hello2"), restored_storage->container.end());
     EXPECT_EQ(restored_storage->container.find("/missing/child"), restored_storage->container.end());
     EXPECT_EQ(restored_storage->container.find("/missing/child/grandchild"), restored_storage->container.end());
 
     /// Normal parent-child relationships should be intact
-    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), 3); /// hello1, hello2, keeper system node
+    EXPECT_EQ(restored_storage->container.getValue("/").getChildren().size(), baseline_root_children);
 }
 
 /// Test that deserialization throws when orphaned nodes are found but removal is disabled.
