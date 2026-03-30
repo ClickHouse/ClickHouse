@@ -196,7 +196,6 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
-    extern const SettingsBool allow_experimental_audit_log;
 }
 
 namespace ServerSetting
@@ -998,9 +997,6 @@ void logExceptionBeforeStart(
 
 void auditLog(const QueryLogElement & elem, ContextPtr context)
 {
-    if (!context->getSettingsRef()[Setting::allow_experimental_audit_log])
-        return;
-
     auto audit_log = getAuditLogger();
     if (!audit_log)
         return;

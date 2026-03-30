@@ -231,10 +231,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             ProfileEvents::AsyncLoggingAuditFileLogDroppedMessages);
 
         /// Enable audit logging
-        enableAuditLogging();
+        if (config.getBool("allow_experimental_audit_log", false))
+            enableAuditLogging();
     }
-    else
-        disableAuditLogging();
 
     if (config.getBool("logger.use_syslog", false))
     {

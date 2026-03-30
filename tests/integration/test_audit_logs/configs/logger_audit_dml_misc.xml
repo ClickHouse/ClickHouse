@@ -1,4 +1,5 @@
 <clickhouse>
+    <allow_experimental_audit_log>true</allow_experimental_audit_log>
     <logger>
         <level>warning</level>
         <auditlog>/var/log/clickhouse-server/clickhouse-server.audit.log</auditlog>

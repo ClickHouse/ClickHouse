@@ -9,13 +9,11 @@ cluster = ClickHouseCluster(__file__)
 node_ddl = cluster.add_instance(
     "node_audit_ddl",
     main_configs=["configs/logger_audit_ddl.xml"],
-    user_configs=["configs/users.d/users.xml"],
     stay_alive=True,
 )
 node_dml_misc = cluster.add_instance(
     "node_audit_dml_misc",
     main_configs=["configs/logger_audit_dml_misc.xml"],
-    user_configs=["configs/users.d/users.xml"],
     stay_alive=True,
 )
 

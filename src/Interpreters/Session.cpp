@@ -34,7 +34,6 @@ namespace Setting
 {
     extern const SettingsUInt64 max_sessions_for_user;
     extern const SettingsBool push_external_roles_in_interserver_queries;
-    extern const SettingsBool allow_experimental_audit_log;
 }
 
 namespace ErrorCodes
@@ -800,11 +799,6 @@ void Session::closeSession(const String & session_id)
 
 LoggerPtr Session::getAuditLoggerIfEnabled() const
 {
-    const auto & settings = session_context ? session_context->getSettingsRef() : global_context->getSettingsRef();
-
-    if (!settings[Setting::allow_experimental_audit_log])
-        return nullptr;
-
     if (!global_context->isEnabledAuditType(Context::AuditLogTypes::USER))
         return nullptr;
 

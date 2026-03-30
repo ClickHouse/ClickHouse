@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_audit_log>1</allow_experimental_audit_log>
-        </default>
-    </profiles>
-</clickhouse>
