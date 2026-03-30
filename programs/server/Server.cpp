@@ -3552,7 +3552,7 @@ void Server::createServers(
                             connection_filter));
 #else
                 UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled because ClickHouse has been built without libssh");
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled because ClickHouse has been built without libssh or is running on a non-Linux platform");
 #endif
                 });
         }

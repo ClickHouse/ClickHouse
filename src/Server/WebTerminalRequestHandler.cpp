@@ -488,9 +488,11 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     bool in_fragmented_message = false;
     static constexpr size_t MAX_MESSAGE_SIZE = 16 * 1024 * 1024;
 
-    /// Do not set a receive timeout on the socket. We use poll() to check for
-    /// readability before calling readWebSocketFrame. Setting a receive timeout
-    /// would risk partial frame reads on timeout, causing protocol desync.
+    /// Set a receive timeout to prevent a malicious client from stalling the
+    /// handler thread by trickling bytes after poll() indicates readability.
+    /// If a timeout fires mid-frame, the catch block below terminates the
+    /// connection (rather than continuing), so there is no protocol desync.
+    socket.setReceiveTimeout(Poco::Timespan(30, 0)); /// 30 seconds per socket read
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
@@ -667,9 +669,13 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 }
                 fragment_buffer.clear();
             }
-            catch (const Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
+            catch (const Poco::TimeoutException &)
             {
-                /// Timeout reading frame, continue polling
+                /// Timeout while reading a frame means the client is stalling.
+                /// We must close the connection because the frame parser may have
+                /// consumed a partial frame, making the stream unrecoverable.
+                LOG_DEBUG(log, "WebSocket frame read timed out, closing connection");
+                running = false;
             }
             catch (...)
             {
