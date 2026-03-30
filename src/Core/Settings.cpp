@@ -1666,6 +1666,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_part_pruning, true, R"(
+Use statistics to filter out parts during query execution.
+
+When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -4467,6 +4477,9 @@ Move arithmetic operations out of aggregation functions
 )", 0) \
     DECLARE(Bool, optimize_redundant_functions_in_order_by, true, R"(
 Remove functions from ORDER BY if its argument is also in ORDER BY
+)", 0) \
+    DECLARE(Bool, optimize_truncate_order_by_after_group_by_keys, true, R"(
+Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix.
 )", 0) \
     DECLARE(Bool, optimize_if_chain_to_multiif, false, R"(
 Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not beneficial for numeric types.

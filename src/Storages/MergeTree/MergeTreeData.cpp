@@ -9663,7 +9663,8 @@ void MergeTreeData::writePartLog(
     const DataPartsVector & source_parts,
     const MergeListEntry * merge_entry,
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-    const Strings & mutation_ids)
+    const Strings & mutation_ids,
+    const std::map<String, UInt64> & projections_duration_ms)
 try
 {
     auto table_id = getStorageID();
@@ -9738,6 +9739,8 @@ try
     }
 
     part_log_elem.mutation_ids = mutation_ids;
+
+    part_log_elem.projections_duration_ms = projections_duration_ms;
 
     part_log->add(std::move(part_log_elem));
 }
@@ -9905,7 +9908,7 @@ MovePartsOutcome MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & 
                 cloned_part.part,
                 {moving_part.part},
                 nullptr,
-                profile_events_scope.getSnapshot());
+                profile_events_scope.getSnapshot(), {}, {});
         };
 
         // Register in global moves list (StorageSystemMoves)
