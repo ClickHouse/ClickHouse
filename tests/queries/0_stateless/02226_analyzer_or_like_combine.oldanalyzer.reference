@@ -364,11 +364,11 @@ QUERY id: 0
 Hello World
 Hello World
 SELECT materialize(\'Hello World\') AS s
-WHERE match(s, \'(Hello)|(^World)\') OR false
+WHERE match(materialize(\'Hello World\') AS s, \'(Hello)|(^World)\') OR false
 SETTINGS optimize_or_like_chain = 1
 Hello World
 World Hello
 SELECT materialize(\'Hello World\') AS s
-WHERE match(s, \'((?i)hello)|((?i)world)\') OR false
+WHERE match(materialize(\'Hello World\') AS s, \'((?i)hello)|((?i)world)\') OR false
 SETTINGS optimize_or_like_chain = 1
 Hello World
