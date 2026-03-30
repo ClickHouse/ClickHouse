@@ -182,6 +182,15 @@ def test_url_wildcard_falls_back_to_plain_url_scan_when_href_links_are_invalid()
     assert result.strip() == "12"
 
 
+def test_url_wildcard_reads_files_when_head_is_not_supported():
+    result = node1.query(
+        with_url_wildcard_setting(
+            "SELECT sum(x) FROM url('http://resolver:8087/data/head_fallback/part*.tsv', 'TSV', 'x UInt64')"
+        )
+    )
+    assert result.strip() == "7"
+
+
 def test_url_wildcard_with_headers():
     result = node1.query(
         with_url_wildcard_setting("SELECT sum(x) FROM url("

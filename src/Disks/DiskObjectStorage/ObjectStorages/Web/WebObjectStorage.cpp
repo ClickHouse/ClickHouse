@@ -10,6 +10,7 @@
 #include <Poco/Timestamp.h>
 
 #include <deque>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -17,6 +18,25 @@ namespace DB
 
 namespace
 {
+    unsigned getEffectivePort(const Poco::URI & uri)
+    {
+        if (const auto port = uri.getPort())
+            return port;
+
+        const auto & scheme = uri.getScheme();
+        if (scheme == "http")
+            return 80;
+        if (scheme == "https")
+            return 443;
+
+        return 0;
+    }
+
+    String getOriginCacheKey(const Poco::URI & uri)
+    {
+        return fmt::format("{}://{}:{}", uri.getScheme(), uri.getHost(), getEffectivePort(uri));
+    }
+
     std::string stripLeadingSlashes(std::string path)
     {
         while (path.starts_with('/'))
@@ -177,21 +197,54 @@ ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, boo
 
 std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
+    const Poco::URI uri(buildURL(path), false);
     Poco::Net::HTTPBasicCredentials credentials{};
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(
         getContext()->getSettingsRef(),
         getContext()->getServerSettings());
 
-    auto response_buf = BuilderRWBufferFromHTTP(Poco::URI(buildURL(path), false))
-                            .withConnectionGroup(HTTPConnectionGroupType::DISK)
-                            .withMethod(Poco::Net::HTTPRequest::HTTP_HEAD)
-                            .withSettings(getContext()->getReadSettings())
-                            .withTimeouts(timeouts)
-                            .withHostFilter(&getContext()->getRemoteHostFilter())
-                            .withSkipNotFound(true)
-                            .withDelayInit(false)
-                            .withHeaders(headers)
-                            .create(credentials);
+    auto create_probe_buffer = [&](const String & method)
+    {
+        return BuilderRWBufferFromHTTP(uri)
+            .withConnectionGroup(HTTPConnectionGroupType::DISK)
+            .withMethod(method)
+            .withSettings(getContext()->getReadSettings())
+            .withTimeouts(timeouts)
+            .withHostFilter(&getContext()->getRemoteHostFilter())
+            .withSkipNotFound(true)
+            .withDelayInit(false)
+            .withHeaders(headers)
+            .create(credentials);
+    };
+
+    std::unique_ptr<ReadWriteBufferFromHTTP> response_buf;
+    const auto head_support = getHeadSupportForOrigin(uri);
+    if (head_support == HeadSupport::Unsupported)
+    {
+        response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
+    }
+    else
+    {
+        try
+        {
+            response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_HEAD);
+            setHeadSupportForOrigin(uri, HeadSupport::Supported);
+        }
+        catch (const HTTPException & e)
+        {
+            if (
+                e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED
+                || e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_IMPLEMENTED)
+            {
+                setHeadSupportForOrigin(uri, HeadSupport::Unsupported);
+                response_buf = create_probe_buffer(Poco::Net::HTTPRequest::HTTP_GET);
+            }
+            else
+            {
+                throw;
+            }
+        }
+    }
 
     if (response_buf->hasNotFoundURL())
         return std::nullopt;
@@ -208,6 +261,22 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::
         metadata.attributes.emplace(tuple[0].safeGet<String>(), tuple[1].safeGet<String>());
     }
     return metadata;
+}
+
+WebObjectStorage::HeadSupport WebObjectStorage::getHeadSupportForOrigin(const Poco::URI & uri) const
+{
+    const auto origin = getOriginCacheKey(uri);
+    std::lock_guard lock(head_support_mutex);
+    if (const auto it = head_support_by_origin.find(origin); it != head_support_by_origin.end())
+        return it->second;
+    return HeadSupport::Unknown;
+}
+
+void WebObjectStorage::setHeadSupportForOrigin(const Poco::URI & uri, HeadSupport support) const
+{
+    const auto origin = getOriginCacheKey(uri);
+    std::lock_guard lock(head_support_mutex);
+    head_support_by_origin[origin] = support;
 }
 
 std::string WebObjectStorage::buildURL(const std::string & path) const

@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 DATA_PARTS = {
     "/data/2025/part1.tsv": "1\n2\n",
     "/data/2025/part2.tsv": "4\n5\n",
+    "/data/head_fallback/part1.tsv": "3\n",
+    "/data/head_fallback/part2.tsv": "4\n",
     "/data/invalid_href_fallback/part1.tsv": "1\n2\n",
     "/data/invalid_href_fallback/part2.tsv": "4\n5\n",
     "/data/query/part3.tsv": "1\n",
@@ -82,6 +84,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("HEAD", path)
+        if path.startswith("/data/head_fallback/part"):
+            self.send_response(405)
+            self.end_headers()
+            return
         if path in DATA_PARTS:
             data = DATA_PARTS[path].encode("utf-8")
             self.send_response(200)
@@ -96,6 +102,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "/data/2025/",
             "/data/deep/",
             "/data/empty/",
+            "/data/head_fallback/",
             "/data/query/",
             "/data/invalid_href_fallback/",
             "/data/oversize/",
@@ -197,6 +204,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/data/empty/":
             self._send_html("")
+            return
+        if path == "/data/head_fallback/":
+            body = "<a href=\"part1.tsv\">part1.tsv</a>\n<a href=\"part2.tsv\">part2.tsv</a>\n"
+            self._send_html(body)
             return
 
         if path == "/data/query/":

@@ -5,6 +5,9 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/HTTPHeaderEntries.h>
 
+#include <mutex>
+#include <unordered_map>
+
 namespace Poco
 {
 class Logger;
@@ -85,10 +88,22 @@ protected:
     std::string buildURL(const std::string & path) const;
 
 private:
+    enum class HeadSupport
+    {
+        Unknown,
+        Supported,
+        Unsupported,
+    };
+
+    HeadSupport getHeadSupportForOrigin(const Poco::URI & uri) const;
+    void setHeadSupportForOrigin(const Poco::URI & uri, HeadSupport support) const;
+
     const String url;
     const String query_fragment;
     const HTTPHeaderEntries headers;
     const size_t max_directories_to_read;
+    mutable std::mutex head_support_mutex;
+    mutable std::unordered_map<String, HeadSupport> head_support_by_origin;
     LoggerPtr log;
 };
 

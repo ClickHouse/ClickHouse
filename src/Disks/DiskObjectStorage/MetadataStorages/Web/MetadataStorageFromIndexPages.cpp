@@ -31,6 +31,30 @@ namespace ServerSetting
 
 namespace
 {
+    bool shouldSkipHrefCandidate(const std::string & url_candidate)
+    {
+        if (url_candidate.empty() || url_candidate.starts_with('#'))
+            return true;
+
+        Poco::URI candidate_uri;
+        try
+        {
+            candidate_uri = Poco::URI(url_candidate, false);
+        }
+        catch (const Poco::Exception &)
+        {
+            return true;
+        }
+
+        if (!candidate_uri.isRelative())
+        {
+            const auto & scheme = candidate_uri.getScheme();
+            return scheme != "http" && scheme != "https";
+        }
+
+        return false;
+    }
+
     std::string ensureTrailingSlash(std::string path)
     {
         if (!path.empty() && !path.ends_with("/"))
@@ -189,6 +213,9 @@ std::vector<std::string> MetadataStorageFromIndexPages::extractURLs(
     while (re2::RE2::FindAndConsume(&href_input, href_regex, &href_match))
     {
         std::string url_candidate(href_match.data(), href_match.size());
+
+        if (shouldSkipHrefCandidate(url_candidate))
+            continue;
 
         Poco::URI candidate_uri;
         try
