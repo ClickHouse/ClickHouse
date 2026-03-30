@@ -16,6 +16,7 @@ SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = false;
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
+SET query_plan_merge_expressions = 1;
 SET join_use_nulls = 1;
 SET enable_join_runtime_filters = 0;
 

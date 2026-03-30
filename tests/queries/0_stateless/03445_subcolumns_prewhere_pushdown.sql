@@ -1,6 +1,7 @@
 -- Tags: no-parallel-replicas
 
 set enable_analyzer=1;
+set query_plan_merge_expressions = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_remove_unused_columns = 1;
 

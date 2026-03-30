@@ -11,6 +11,8 @@
 
 SET enable_analyzer = 1;
 SET vector_search_with_rescoring = 0;
+SET query_plan_merge_expressions = 1;
+SET use_skip_indexes_for_top_k = 1;
 
 SELECT 'Create tables with Array(Float32) and Array(BFloat16) column';
 

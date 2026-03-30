@@ -2,6 +2,8 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
 -- EXPLAIN output may differ
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS t_cast_bug;
 
 CREATE TABLE t_cast_bug (val UInt8) ENGINE = MergeTree ORDER BY val  SETTINGS add_minmax_index_for_numeric_columns=0;

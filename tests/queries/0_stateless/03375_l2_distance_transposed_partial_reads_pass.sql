@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 
 -- Check if [L2/cosine/...]DistanceTransposed(vec, reference_vec, N) partial reads are achieved with optimize_qbit_distance_function_reads
 

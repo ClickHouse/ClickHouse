@@ -15,6 +15,7 @@ SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statis
 
 SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;

@@ -4,6 +4,7 @@
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
+SET query_plan_merge_expressions = 1;
 
 -- Nullable column with minmax index: skip-index top-k should NOT activate,
 -- but dynamic filtering should still produce correct results.
