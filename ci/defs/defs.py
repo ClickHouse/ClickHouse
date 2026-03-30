@@ -301,8 +301,11 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
+    ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
+    ARM_MSAN = "arm_msan"
+    ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
@@ -383,8 +386,11 @@ class ArtifactNames:
     CH_AMD_MSAN = "CH_AMD_MSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
+    CH_ARM_DEBUG = "CH_ARM_DEBUG"
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
+    CH_ARM_MSAN = "CH_ARM_MSAN"
+    CH_ARM_UBSAN = "CH_ARM_UBSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
@@ -410,9 +416,13 @@ class ArtifactNames:
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
     DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAN = "DEB_AMD_MSAM"
+    DEB_AMD_MSAN = "DEB_AMD_MSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
+    DEB_ARM_DEBUG = "DEB_ARM_DEBUG"
     DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
+    DEB_ARM_TSAN = "DEB_ARM_TSAN"
+    DEB_ARM_MSAN = "DEB_ARM_MSAN"
+    DEB_ARM_UBSAN = "DEB_ARM_UBSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -466,8 +476,11 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_AMD_MSAN,
     ArtifactNames.CH_AMD_BINARY,
     ArtifactNames.CH_ARM_RELEASE,
+    ArtifactNames.CH_ARM_DEBUG,
     ArtifactNames.CH_ARM_ASAN_UBSAN,
     ArtifactNames.CH_ARM_TSAN,
+    ArtifactNames.CH_ARM_MSAN,
+    ArtifactNames.CH_ARM_UBSAN,
 ]
 
 
@@ -486,8 +499,11 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_MSAN,
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
+            ArtifactNames.CH_ARM_DEBUG,
             ArtifactNames.CH_ARM_ASAN_UBSAN,
             ArtifactNames.CH_ARM_TSAN,
+            ArtifactNames.CH_ARM_MSAN,
+            ArtifactNames.CH_ARM_UBSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -528,7 +544,11 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_ARM_RELEASE,
+            ArtifactNames.DEB_ARM_DEBUG,
             ArtifactNames.DEB_ARM_ASAN_UBSAN,
+            ArtifactNames.DEB_ARM_TSAN,
+            ArtifactNames.DEB_ARM_MSAN,
+            ArtifactNames.DEB_ARM_UBSAN,
         ]
     )
     clickhouse_rpms = Artifact.Config(

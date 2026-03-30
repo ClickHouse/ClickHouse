@@ -226,7 +226,6 @@ public:
         const ReadFromMergeTree::Indexes & indexes;
         const std::optional<TopKFilterInfo> & top_k_filter_info;
         const MergeTreeReaderSettings & reader_settings;
-        StorageID storage_id;
         LoggerPtr log;
         size_t num_streams;
         bool find_exact_ranges;
