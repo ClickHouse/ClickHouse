@@ -28,5 +28,19 @@ exec 4<>"$FIFO"
 
 timeout 30 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE" <&4 2>&1
 
+# Also test with async_insert enabled — the async insert path has its own
+# stdin check that must not hang on an empty pipe either.
+QUERIES_FILE_ASYNC="${CLICKHOUSE_TMP}/04064_queries_async_$$.sql"
+cat > "$QUERIES_FILE_ASYNC" <<EOF
+CREATE TABLE IF NOT EXISTS test_04064_async (x UInt32) ENGINE = MergeTree ORDER BY x;
+SET async_insert = 1;
+SET wait_for_async_insert = 1;
+INSERT INTO test_04064_async VALUES (10), (20), (30);
+SELECT sum(x) FROM test_04064_async;
+DROP TABLE test_04064_async;
+EOF
+
+timeout 30 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_ASYNC" <&4 2>&1
+
 exec 4>&-
-rm -f "$FIFO" "$QUERIES_FILE"
+rm -f "$FIFO" "$QUERIES_FILE" "$QUERIES_FILE_ASYNC"
