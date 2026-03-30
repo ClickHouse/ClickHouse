@@ -16,8 +16,10 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -1627,24 +1629,45 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
-                    auto execution_context = Context::createCopy(context);
-                    auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
-                    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
-                    for (const ColumnDescription & column : all_columns)
+                    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
                     {
-                        if (const auto & default_expression = column.default_desc.expression)
+                        auto execution_context = Context::createCopy(context);
+                        auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
+                        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+                        for (const ColumnDescription & column : all_columns)
                         {
-                            auto expression = buildQueryTree(default_expression->clone(), execution_context);
-                            QueryAnalyzer analyzer(true);
-                            analyzer.resolve(expression, fake_table_expression, execution_context);
-                            GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
-                            auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
-                            collectSourceColumns(expression, planner_context);
-                            if (const auto * table_expression = planner_context->getTableExpressionDataOrNull(fake_table_expression))
+                            if (const auto & default_expression = column.default_desc.expression)
                             {
-                                for (const auto & selected_column : table_expression->getSelectedColumnsNames())
+                                auto expression = buildQueryTree(default_expression->clone(), execution_context);
+                                QueryAnalyzer analyzer(true);
+                                analyzer.resolve(expression, fake_table_expression, execution_context);
+                                GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+                                auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+                                collectSourceColumns(expression, planner_context);
+                                if (const auto * table_expression = planner_context->getTableExpressionDataOrNull(fake_table_expression))
                                 {
-                                    auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, selected_column);
+                                    for (const auto & selected_column : table_expression->getSelectedColumnsNames())
+                                    {
+                                        auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, selected_column);
+                                        if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        for (const ColumnDescription & column : all_columns)
+                        {
+                            if (const auto & default_expression = column.default_desc.expression)
+                            {
+                                ASTPtr query = default_expression->clone();
+                                auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
+                                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+                                for (const auto & required_column : actions->getRequiredColumns())
+                                {
+                                    auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
                                     if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
                                         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                 }

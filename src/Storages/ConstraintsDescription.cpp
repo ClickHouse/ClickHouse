@@ -9,6 +9,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -24,7 +25,26 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// Recursively check whether an AST contains subqueries (SELECT inside expressions).
+/// Subqueries in CHECK constraints are not supported because the old ExpressionAnalyzer
+/// rejected them, and allowing them would be a backward-incompatible behavior change.
+bool hasSubqueries(const ASTPtr & ast)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>())
+        return true;
+    for (const auto & child : ast->children)
+        if (hasSubqueries(child))
+            return true;
+    return false;
+}
+
 }
 
 
@@ -144,6 +164,8 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
+            if (hasSubqueries(expr))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not allowed in CHECK constraints");
             res.push_back(analyzeExpressionToActions(expr, source_columns_, context, false, CompileExpressions::yes));
         }
     }
