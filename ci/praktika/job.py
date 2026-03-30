@@ -217,6 +217,11 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
+        def set_timeout(self, timeout):
+            res = copy.deepcopy(self)
+            res.timeout = timeout
+            return res
+
         @staticmethod
         def get_job(job_configs, job_name):
             for job in job_configs:

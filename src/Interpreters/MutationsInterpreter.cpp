@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool validate_mutation_query;
+    extern const SettingsBool allow_statistics;
 }
 
 namespace MergeTreeSetting
@@ -85,6 +86,7 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
+    extern const int INCORRECT_QUERY;
 }
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
@@ -976,6 +978,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
+            if (!context->getSettingsRef()[Setting::allow_statistics])
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
             if (command.statistics_columns.empty())
@@ -1021,6 +1026,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
+            if (!context->getSettingsRef()[Setting::allow_statistics])
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
             if (command.clear && command.statistics_columns.empty())
@@ -1044,6 +1052,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
+            if (!metadata_snapshot->hasAnyTTL())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
+
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
                 && metadata_snapshot->hasOnlyRowsTTL();
@@ -1818,12 +1829,21 @@ QueryPipelineBuilder MutationsInterpreter::execute()
 
     /// Sometimes we update just part of columns (for example UPDATE mutation)
     /// in this case we don't read sorting key, so just we don't check anything.
-    if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
+    ///
+    /// Only check sort order when mutating MergeTree parts. In MergeTree, mutations
+    /// process one part at a time and each part is physically sorted by the sorting key,
+    /// so the check is a valid invariant assertion. Other storages (e.g. Iceberg) may declare
+    /// a sorting key but process the entire table at once, reading multiple independently
+    /// sorted data files whose combined stream is not globally sorted.
+    if (source.getMergeTreeData())
     {
-        builder.addSimpleTransform([&](const SharedHeader & header)
+        if (auto sort_desc = getStorageSortDescriptionIfPossible(builder.getHeader()))
         {
-            return std::make_shared<CheckSortedTransform>(header, *sort_desc);
-        });
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<CheckSortedTransform>(header, *sort_desc);
+            });
+        }
     }
 
     if (!updated_header)

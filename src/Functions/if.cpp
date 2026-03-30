@@ -678,7 +678,14 @@ private:
         ColumnsWithTypeAndName temporary_columns(3);
         temporary_columns[0] = arguments[0];
 
-        size_t tuple_size = type1.getElements().size();
+        const size_t tuple_size = tuple_result.getElements().size();
+
+        if (type1.getElements().size() != tuple_size
+            || type2.getElements().size() != tuple_size
+            || col1_contents.size() != tuple_size
+            || col2_contents.size() != tuple_size)
+            return nullptr;
+
         if (tuple_size == 0)
             return ColumnTuple::create(input_rows_count);
 
