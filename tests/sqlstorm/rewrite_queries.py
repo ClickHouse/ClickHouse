@@ -482,14 +482,22 @@ def rewrite_any_comparison(sql):
         accumulated = ''.join(result)
         lhs_match = re.search(r'((?:\w+\.)*\w+)\s*$', accumulated)
         if lhs_match:
-            lhs = lhs_match.group(1)
-            # Remove the LHS from accumulated result
-            accumulated = accumulated[:lhs_match.start()]
-            if op == '=':
-                replacement = f"has({array_expr}, {lhs})"
+            # Verify the identifier is standalone: the character before it must not be
+            # an arithmetic/bitwise operator, which would mean it's part of a larger
+            # expression (e.g. "a + b = ANY(...)"). In that case, keep the original.
+            before_lhs = accumulated[:lhs_match.start()].rstrip()
+            if before_lhs and before_lhs[-1] in '+-*/%|&^~':
+                # Part of a compound expression, keep original to avoid changing semantics
+                result.append(sql[m.start():paren_end + 1])
             else:
-                replacement = f"NOT has({array_expr}, {lhs})"
-            result = [accumulated, replacement]
+                lhs = lhs_match.group(1)
+                # Remove the LHS from accumulated result
+                accumulated = accumulated[:lhs_match.start()]
+                if op == '=':
+                    replacement = f"has({array_expr}, {lhs})"
+                else:
+                    replacement = f"NOT has({array_expr}, {lhs})"
+                result = [accumulated, replacement]
         else:
             # Can't find LHS, keep original
             result.append(sql[m.start():paren_end + 1])
