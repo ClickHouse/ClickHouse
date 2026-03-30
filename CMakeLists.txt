@@ -392,6 +392,12 @@ if (ENABLE_CFI AND NOT ENABLE_THINLTO)
         "when ThinLTO is enabled. Current configuration has ENABLE_THINLTO=${ENABLE_THINLTO}.")
 endif ()
 
+if (ENABLE_CFI AND ENABLE_TESTS)
+    message (FATAL_ERROR "ENABLE_CFI is incompatible with ENABLE_TESTS. "
+        "ThinLTO (required by CFI) is disabled when building tests. "
+        "Build without tests (ENABLE_TESTS=0) to use CFI.")
+endif ()
+
 # We cannot afford to use LTO when compiling unit tests, and it's not enough
 # to only supply -fno-lto at the final linking stage. So we disable it
 # completely.
