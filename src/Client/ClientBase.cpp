@@ -3808,6 +3808,22 @@ bool ClientBase::processHelpCommand(const String & word_arg)
 }
 
 #if USE_CLIENT_AI
+void ClientBase::syncDefaultDatabase()
+{
+    try
+    {
+        const auto db = executeQueryForSingleString("SELECT currentDatabase()");
+        if (!db.empty())
+            default_database = db;
+        else
+            LOG_WARNING(getLogger("ClientBase"), "syncDefaultDatabase: server returned empty result for SELECT currentDatabase()");
+    }
+    catch (...)
+    {
+        LOG_WARNING(getLogger("ClientBase"), "syncDefaultDatabase: failed to query current database from server: {}", getCurrentExceptionMessage(false));
+    }
+}
+
 bool ClientBase::checkAIProviderAcknowledgment()
 {
     // If API key came from environment and user hasn't acknowledged yet, ask for confirmation

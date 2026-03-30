@@ -706,6 +706,8 @@ void Client::connect()
         boost::replace_all(prompt, "{" + key + "}", value);
 
     prompt = appendSmileyIfNeeded(prompt);
+
+    syncDefaultDatabase();
 }
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
