@@ -967,16 +967,31 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type.get()))
                 left_columns_count = left_tuple_type->getElements().size();
 
-            size_t right_columns_count = 0;
+            NamesAndTypes right_projection_columns;
             if (const auto * query_node = in_second_argument->as<QueryNode>())
-                right_columns_count = query_node->getProjectionColumns().size();
+                right_projection_columns = query_node->getProjectionColumns();
             else if (const auto * union_node = in_second_argument->as<UnionNode>())
-                right_columns_count = union_node->computeProjectionColumns().size();
+                right_projection_columns = union_node->computeProjectionColumns();
+
+            size_t right_columns_count = right_projection_columns.size();
 
             if (right_columns_count > 0 && left_columns_count != right_columns_count)
-                throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
-                    "Number of columns in section IN doesn't match. {} at left, {} at right.",
-                    left_columns_count, right_columns_count);
+            {
+                /// When the right side returns a single Tuple column, FunctionIn compares
+                /// the entire left-side value (even if it is a tuple) against that column
+                /// as a single value. So `(a, b) IN (SELECT tuple(a, b))` is valid.
+                bool right_is_single_tuple_column = false;
+                if (right_columns_count == 1)
+                {
+                    auto right_col_type = removeNullable(right_projection_columns.front().type);
+                    right_is_single_tuple_column = typeid_cast<const DataTypeTuple *>(right_col_type.get()) != nullptr;
+                }
+
+                if (!right_is_single_tuple_column)
+                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                        "Number of columns in section IN doesn't match. {} at left, {} at right.",
+                        left_columns_count, right_columns_count);
+            }
         }
     }
 
