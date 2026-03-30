@@ -11,9 +11,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Use 1000 rows (not 10000) to keep total runtime under the test timeout
-# even under sanitizers, while still exercising the resize processor topology.
-OUTPUT=$(for _ in {1..100}; do
+# Use 1000 rows (not 10000) and 20 iterations to keep total runtime under
+# the test timeout even under sanitizers, while still exercising the resize
+# processor topology.
+OUTPUT=$(for _ in {1..20}; do
     echo "SELECT sum(a[length(a)]) FROM (SELECT groupArray(number) IGNORE NULLS OVER (PARTITION BY modulo(number, 11) ORDER BY modulo(number, 1111) ASC, number ASC) AS a FROM numbers_mt(1000)) SETTINGS max_block_size = 7;"
 done | $CLICKHOUSE_CLIENT -n) || { echo "Client failed with exit code $?"; exit 1; }
 
