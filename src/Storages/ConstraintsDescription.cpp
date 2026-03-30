@@ -32,17 +32,14 @@ namespace ErrorCodes
 namespace
 {
 
-/// Recursively check whether an AST contains subqueries (SELECT inside expressions).
-/// Subqueries in CHECK constraints are not supported because the old ExpressionAnalyzer
-/// rejected them, and allowing them would be a backward-incompatible behavior change.
-bool hasSubqueries(const ASTPtr & ast)
+/// Check whether the top-level constraint expression is a bare subquery
+/// (e.g. `CHECK (SELECT 1)`).  Bare subqueries are rejected because they
+/// don't make sense as boolean constraint expressions.
+/// Subqueries inside function calls like `IN (SELECT ...)` are allowed —
+/// they are handled as "not-ready sets" built at insert time.
+bool isBareSubquery(const ASTPtr & ast)
 {
-    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>())
-        return true;
-    for (const auto & child : ast->children)
-        if (hasSubqueries(child))
-            return true;
-    return false;
+    return ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>();
 }
 
 }
@@ -164,7 +161,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
-            if (hasSubqueries(expr))
+            if (isBareSubquery(expr))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subqueries are not allowed in CHECK constraints");
             res.push_back(analyzeExpressionToActions(expr, source_columns_, context, false, CompileExpressions::yes));
         }
