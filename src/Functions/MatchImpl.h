@@ -82,7 +82,8 @@ struct MatchTraits
 enum class Syntax : uint8_t
 {
     Like,
-    Re2
+    Re2,
+    SimilarTo
 };
 
 enum class Case : uint8_t
@@ -112,6 +113,8 @@ struct MatchImpl
     using ResultType = UInt8;
 
     static constexpr bool is_like = (syntax_ == MatchTraits::Syntax::Like);
+    static constexpr bool is_similar_to = (syntax_ == MatchTraits::Syntax::SimilarTo);
+    static constexpr bool is_like_or_similar_to = is_like || is_similar_to;
     static constexpr bool case_insensitive = (case_ == MatchTraits::Case::Insensitive);
     static constexpr bool negate = (result_ == MatchTraits::Result::Negate);
 
@@ -138,18 +141,19 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - col [not] [i]like '%' / '%%'
+        /// - col [not] similar to '%' / '%%' / '.*'
         /// - match(col, '.*')
-        if ((is_like && (needle == "%" || needle == "%%"))
-            || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && (needle == "%" || needle == "%%"))
+            || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
         {
             for (auto & x : res)
                 x = !negate;
             return;
         }
 
-        /// Special case that the [I]LIKE expression reduces to finding a substring in a string
+        /// Special case that the [I]LIKE or SIMILAR TO expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -188,7 +192,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -303,7 +307,7 @@ struct MatchImpl
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - col [not] [i]like '%' / '%%'
         /// - match(col, '.*')
-        if ((is_like && (needle == "%" or needle == "%%")) || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && (needle == "%" or needle == "%%")) || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
         {
             for (auto & x : res)
                 x = !negate;
@@ -312,7 +316,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -356,7 +360,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial;
@@ -497,7 +501,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -510,7 +514,7 @@ struct MatchImpl
             }
             else
             {
-                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                regexp = cache.getOrSet<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle);
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
                 if (required_substr.empty())
@@ -606,7 +610,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -619,7 +623,7 @@ struct MatchImpl
             }
             else
             {
-                regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(needle);
+                regexp = cache.getOrSet<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle);
                 regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
                 if (required_substr.empty())

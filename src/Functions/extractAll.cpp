@@ -72,7 +72,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}. "
                 "Must be constant string.", arguments[1].column->getName(), getName());
 
-        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+        re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(col->getValue<String>()));
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);

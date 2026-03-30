@@ -1616,6 +1616,7 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+// TODO-guang: restrict SIMILAR TO as keyword
 const char * ParserAlias::restricted_keywords[] =
 {
     "ALL",

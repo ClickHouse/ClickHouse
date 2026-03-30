@@ -44,7 +44,7 @@ namespace Regexps
 
 using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
-template <bool like, bool no_capture, bool case_insensitive>
+template <bool like, bool similar_to, bool no_capture, bool case_insensitive>
 inline OptimizedRegularExpression createRegexp(const String & pattern)
 {
     int flags = OptimizedRegularExpression::RE_DOT_NL;
@@ -55,6 +55,8 @@ inline OptimizedRegularExpression createRegexp(const String & pattern)
 
     if constexpr (like)
         return {likePatternToRegexp(pattern), flags};
+    else if constexpr (similar_to)
+        return {similarToPatternToRegexp(pattern), flags};
     else
         return {pattern, flags};
 }
@@ -69,7 +71,7 @@ class LocalCacheTable
 public:
     using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
-    template <bool like, bool no_capture, bool case_insensitive>
+    template <bool like, bool similar_to, bool no_capture, bool case_insensitive>
     RegexpPtr getOrSet(const String & pattern)
     {
         Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
@@ -78,7 +80,7 @@ public:
         {
             /// insert new entry
             ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
-            bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+            bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, similar_to, no_capture, case_insensitive>(pattern))};
         }
         else
         {
@@ -86,7 +88,7 @@ public:
             {
                 /// replace existing entry
                 ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
-                bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+                bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, similar_to, no_capture, case_insensitive>(pattern))};
             }
             else
                 ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);

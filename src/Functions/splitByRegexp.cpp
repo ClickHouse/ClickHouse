@@ -63,7 +63,7 @@ public:
                             "Must be constant string.", arguments[0].column->getName(), name);
 
         if (!col->getValue<String>().empty())
-            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false>(col->getValue<String>()));
+            re = std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, false, false, false>(col->getValue<String>()));
 
         max_substrings_includes_remaining_string = max_substrings_includes_remaining_string_;
         max_splits = extractMaxSplits(arguments, 2);
@@ -192,7 +192,7 @@ private:
         String pattern = col->getValue<String>();
         if (pattern.size() == 1)
         {
-            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
+            OptimizedRegularExpression re = Regexps::createRegexp<false, false, false, false>(pattern);
 
             std::string required_substring;
             bool is_trivial;

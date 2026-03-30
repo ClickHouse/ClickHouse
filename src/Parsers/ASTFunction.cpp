@@ -425,6 +425,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && arguments->children.size() == 2)
         {
+            // TODO-guang: format SIMILAR TO
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
             {{
                 {"multiply",          " * "},
