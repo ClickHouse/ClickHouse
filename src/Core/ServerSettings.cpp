@@ -1958,11 +1958,20 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
 
-        /// Command-line options injected into config by argsToConfig
+        /// Command-line options injected into config by argsToConfig (with hyphens)
+        /// and their hyphen-less variants (argsToConfig stores raw CLI key names,
+        /// so --pidfile becomes "pidfile" in config).
         "config-file",
         "pid-file",
         "log-file",
         "errorlog-file",
+        "pidfile",
+        "configfile",
+        "logfile",
+        "errorlogfile",
+
+        /// Poco option bindings (e.g., pid-file binds to "pid")
+        "pid",
     };
 
     /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
