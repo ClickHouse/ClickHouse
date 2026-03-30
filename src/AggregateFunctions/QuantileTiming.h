@@ -247,19 +247,19 @@ namespace detail
 
     /** For a large number of values. The size is about 22 680 bytes.
       */
-    class QuantileTimingLarge
+    class QuantileTimingLarge /// NOLINT(cppcoreguidelines-pro-type-member-init) - zeroed by memset in the constructor
     {
     private:
         /// Total number of values.
-        UInt64 count; /// NOLINT(cppcoreguidelines-init-variables) - zeroed by memset in the constructor
+        UInt64 count;
         /// Use of UInt64 is very wasteful.
         /// But UInt32 is definitely not enough, and it's too hard to invent 6-byte values.
 
         /// Number of values for each value is smaller than `small_threshold`.
-        UInt64 count_small[SMALL_THRESHOLD]; /// NOLINT(cppcoreguidelines-init-variables) - zeroed by memset in the constructor
+        UInt64 count_small[SMALL_THRESHOLD];
 
         /// The number of values for each value from `small_threshold` to `big_threshold`, rounded to `big_precision`.
-        UInt64 count_big[BIG_SIZE]; /// NOLINT(cppcoreguidelines-init-variables) - zeroed by memset in the constructor
+        UInt64 count_big[BIG_SIZE];
 
         /// Get value of quantile by index in array `count_big`.
         static UInt16 indexInBigToValue(size_t i)

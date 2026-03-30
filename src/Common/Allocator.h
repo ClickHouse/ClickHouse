@@ -69,10 +69,10 @@ private:
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
 template <typename Base, size_t _initial_bytes, size_t Alignment>
-class AllocatorWithStackMemory : private Base
+class AllocatorWithStackMemory : private Base /// NOLINT(cppcoreguidelines-pro-type-member-init) - stack_memory is cleared in alloc() when needed
 {
 private:
-    alignas(Alignment) char stack_memory[_initial_bytes]; /// NOLINT(cppcoreguidelines-init-variables) - cleared in alloc() when needed
+    alignas(Alignment) char stack_memory[_initial_bytes];
 
 public:
     static constexpr size_t initial_bytes = _initial_bytes;
