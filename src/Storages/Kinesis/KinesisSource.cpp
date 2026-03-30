@@ -50,7 +50,10 @@ KinesisSource::~KinesisSource()
 Chunk KinesisSource::generate()
 {
     if (!consumer)
-        consumer = storage.popConsumer();
+    {
+        const auto timeout_ms = max_execution_time_ms > 0 ? max_execution_time_ms : 5000;
+        consumer = storage.popConsumer(std::chrono::milliseconds(timeout_ms));
+    }
 
     if (!consumer || is_finished)
         return {};

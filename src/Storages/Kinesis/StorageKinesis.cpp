@@ -7,6 +7,8 @@
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/StreamingHandleErrorMode.h>
@@ -548,6 +550,9 @@ void StorageKinesis::createCheckpointTableIfNeeded() const
 {
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    auto thread_group = ThreadGroup::createForQuery(query_context);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
 
     String create_query = R"(
         CREATE TABLE IF NOT EXISTS system.kinesis_checkpoints
@@ -561,7 +566,7 @@ void StorageKinesis::createCheckpointTableIfNeeded() const
         ORDER BY (stream_name, shard_id)
     )";
 
-    auto [ast, io] = DB::executeQuery(create_query, query_context, {}, QueryProcessingStage::Complete);
+    auto [ast, io] = DB::executeQuery(create_query, query_context, QueryFlags{.internal = true}, QueryProcessingStage::Complete);
     if (io.pipeline.initialized())
     {
         CompletedPipelineExecutor executor(io.pipeline);
@@ -575,13 +580,16 @@ std::map<String, KinesisShardState> StorageKinesis::loadCheckpoints() const
 
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    auto thread_group_load = ThreadGroup::createForQuery(query_context);
+    ThreadGroupSwitcher switcher_load(thread_group_load, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
 
     String select_query = fmt::format(
         "SELECT shard_id, last_sequence FROM system.kinesis_checkpoints "
         "FINAL WHERE stream_name = '{}'",
         stream_name);
 
-    auto [ast, io] = DB::executeQuery(select_query, query_context, {}, QueryProcessingStage::Complete);
+    auto [ast, io] = DB::executeQuery(select_query, query_context, QueryFlags{.internal = true}, QueryProcessingStage::Complete);
 
     std::map<String, KinesisShardState> result;
 
@@ -624,6 +632,9 @@ void StorageKinesis::saveCheckpoints(const std::map<String, KinesisShardState> &
 
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    auto thread_group_save = ThreadGroup::createForQuery(query_context);
+    ThreadGroupSwitcher switcher_save(thread_group_save, ThreadName::UNKNOWN, /*allow_existing_group=*/true);
 
     String insert_query = "INSERT INTO system.kinesis_checkpoints (stream_name, shard_id, last_sequence) VALUES ";
     bool first = true;
@@ -641,7 +652,7 @@ void StorageKinesis::saveCheckpoints(const std::map<String, KinesisShardState> &
     if (first)
         return;
 
-    auto [ast, io] = DB::executeQuery(insert_query, query_context, {}, QueryProcessingStage::Complete);
+    auto [ast, io] = DB::executeQuery(insert_query, query_context, QueryFlags{.internal = true}, QueryProcessingStage::Complete);
     if (io.pipeline.initialized())
     {
         CompletedPipelineExecutor executor(io.pipeline);
