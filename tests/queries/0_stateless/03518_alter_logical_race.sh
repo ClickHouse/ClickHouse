@@ -20,7 +20,7 @@ function thread_alter()
             ALTER TABLE alter_table MODIFY COLUMN $1 UInt64;
             ALTER TABLE alter_table DROP COLUMN $1;" 2>&1 | tr '\n' ' ')
 
-        if [[ ! "${ERROR}" =~ "You can retry this error" ]]
+        if [[ -n "${ERROR}" && ! "${ERROR}" =~ "You can retry this error" ]]
         then
             echo "${ERROR}"
         fi
