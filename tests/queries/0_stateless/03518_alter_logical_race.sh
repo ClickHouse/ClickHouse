@@ -22,7 +22,11 @@ function thread_alter()
             ALTER TABLE alter_table MODIFY COLUMN $1 UInt64;
             ALTER TABLE alter_table DROP COLUMN $1;" 2>&1 | tr '\n' ' ')
 
-        if [[ -n "${ERROR}" && ! "${ERROR}" =~ "You can retry this error" ]]
+        if [[ -n "${ERROR}" \
+            && ! "${ERROR}" =~ "You can retry this error" \
+            && ! "${ERROR}" =~ "DUPLICATE_COLUMN" \
+            && ! "${ERROR}" =~ "NOT_FOUND_COLUMN_IN_BLOCK" \
+            && ! "${ERROR}" =~ "UNKNOWN_IDENTIFIER" ]]
         then
             echo "${ERROR}"
         fi
