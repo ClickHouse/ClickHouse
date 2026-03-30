@@ -36,7 +36,6 @@ public:
         ClusterConfigurationPtr cluster_,
         MetadataStoragePtr metadata_storage_,
         ObjectStorageRouterPtr object_storages_,
-        DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         bool use_fake_transaction_ = true);
@@ -276,7 +275,6 @@ private:
     std::atomic_bool enable_distributed_cache;
 
     const bool use_fake_transaction;
-    std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };
 

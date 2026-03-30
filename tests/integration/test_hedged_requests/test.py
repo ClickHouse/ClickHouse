@@ -228,14 +228,12 @@ def test_stuck_replica(started_cluster):
 
         assert TSV(result) == TSV("node_2\t0")
 
-        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase much.
-        # Under heavy load (e.g., MSan builds), hedging may still attempt node_1 as a secondary
-        # hedge, recording an extra slowdown, but the key assertion is the result above.
+        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
         result = NODES["node"].query(
             "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
         )
 
-        assert int(result) <= 2
+        assert TSV(result) == TSV("1")
 
 
 def test_long_query(started_cluster):
@@ -288,13 +286,7 @@ def test_send_data(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    # Add a small delay to node_3 to ensure node_2 always wins the race
-    # when node_1 is slow in send_data. Without this, under heavy load (e.g., MSan builds),
-    # node_3 can occasionally respond before node_2.
-    update_configs(
-        node_1_sleep_in_send_data=sleep_time,
-        node_3_sleep_in_send_tables_status=1000,
-    )
+    update_configs(node_1_sleep_in_send_data=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 

@@ -3,8 +3,6 @@
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
@@ -319,6 +317,12 @@ bool DistributedAsyncInsertDirectoryQueue::hasPendingFiles() const
     return fs::exists(current_batch_file_path) || !current_file.empty() || !pending_files.empty();
 }
 
+void DistributedAsyncInsertDirectoryQueue::addFile(const std::string & file_path)
+{
+    if (!pending_files.push(fs::absolute(file_path).string()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path);
+}
+
 void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
 {
     /// NOTE: This method does not requires to hold status_mutex (because this
@@ -337,8 +341,8 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
             const auto & base_name = file_path.stem().string();
             if (!it->is_directory() && startsWith(fs::path(file_path).extension(), ".bin") && parse<UInt64>(base_name))
             {
-                if (!pending_files.push(fs::absolute(file_path).string()))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot schedule a file '{}'", file_path.string());
+                const std::string & file_path_str = file_path.string();
+                addFile(file_path_str);
                 bytes_count += fs::file_size(file_path);
             }
             else if (base_name != "tmp" && base_name != "broken")
@@ -513,11 +517,15 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
 bool DistributedAsyncInsertDirectoryQueue::addFileAndSchedule(const std::string & file_path, size_t file_size, size_t ms)
 {
-    if (!pending_files.push(fs::absolute(file_path).string()))
+    /// NOTE: It is better not to throw in this case, since the file is already
+    /// on disk (see DistributedSink), and it will be processed next time.
+    if (pending_files.isFinished())
     {
         LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file_path);
         return false;
     }
+
+    addFile(file_path);
 
     {
         std::lock_guard lock(status_mutex);
@@ -644,7 +652,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
             for (const auto & file : batch.files)
             {
                 if (!pending_files.pushFront(file))
-                    LOG_DEBUG(log, "File {} had not been scheduled, since the table had been detached", file);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot re-schedule a file '{}'", file);
             }
         }
         /// Rethrow exception

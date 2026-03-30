@@ -1,8 +1,6 @@
 import copy
 import dataclasses
 import json
-import os
-import time
 import urllib
 from typing import List, Optional
 
@@ -216,7 +214,7 @@ ORDER BY day DESC
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
-    def query(self, query: str, retries: int = 5, log_level="warning"):
+    def query(self, query: str, retries: int = 1, log_level="warning"):
         """
         Executes a SELECT query on CI DB with retry support.
 
@@ -238,7 +236,7 @@ ORDER BY day DESC
                     url=self.url,
                     params=params,
                     headers=self.auth,
-                    timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
 
                 if response.ok:
@@ -256,7 +254,6 @@ ORDER BY day DESC
                 print(f"ERROR: Exception during CI DB query attempt {attempt}: {ex}")
                 if attempt == retries:
                     raise ex
-                time.sleep(2**attempt)
 
     def insert_rows(self, jsons, retries=3):
         params = {
@@ -272,7 +269,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
-                    data="\n".join(jsons),
+                    data=",".join(jsons),
                     headers=self.auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )

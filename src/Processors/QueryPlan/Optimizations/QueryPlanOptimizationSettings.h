@@ -20,7 +20,7 @@ class QueryPlan;
 
 struct QueryPlanOptimizationSettings
 {
-    QueryPlanOptimizationSettings(
+    explicit QueryPlanOptimizationSettings(
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
@@ -85,7 +85,6 @@ struct QueryPlanOptimizationSettings
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
-    bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
@@ -164,9 +163,9 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    size_t max_parallel_replicas = 1;
+    bool parallel_replicas_enabled;
+    size_t max_parallel_replicas;
     size_t automatic_parallel_replicas_mode;
-    size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
 
     bool query_plan_optimize_primary_key = true;
