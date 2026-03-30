@@ -399,6 +399,10 @@ public:
     /// Union current nodes with second dag without any matching of inputs and outputs.
     void unite(ActionsDAG && second);
 
+    /// Re-resolve FUNCTION nodes whose children's types differ from the function's expected argument types.
+    /// This is needed after mergeInplace when input nodes get replaced by nodes with different types.
+    void resolveStaleFunctionTypes();
+
     struct SplitResult;
 
     /// Split ActionsDAG into two DAGs, where first part contains all nodes from split_nodes and their children.

@@ -102,6 +102,9 @@ public:
     {
         return function->getPreimage(type, point);
     }
+
+    FunctionOverloadResolverPtr getOverloadResolver() const override;
+
 private:
     std::shared_ptr<IFunction> function;
     DataTypes arguments;
@@ -164,5 +167,9 @@ private:
     std::shared_ptr<IFunction> function;
 };
 
+inline FunctionOverloadResolverPtr FunctionToFunctionBaseAdaptor::getOverloadResolver() const
+{
+    return std::make_shared<FunctionToOverloadResolverAdaptor>(function);
+}
 
 }

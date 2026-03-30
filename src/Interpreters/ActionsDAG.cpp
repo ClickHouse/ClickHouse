@@ -2043,6 +2043,41 @@ void ActionsDAG::mergeInplace(ActionsDAG && second, std::unordered_map<const Nod
     first.nodes.splice(first.nodes.end(), std::move(second.nodes));
 }
 
+void ActionsDAG::resolveStaleFunctionTypes()
+{
+    for (auto & node : nodes)
+    {
+        if (node.type != ActionType::FUNCTION || !node.function_base)
+            continue;
+
+        const auto & expected_types = node.function_base->getArgumentTypes();
+        if (expected_types.size() != node.children.size())
+            continue;
+
+        bool types_changed = false;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (!expected_types[i]->equals(*node.children[i]->result_type))
+            {
+                types_changed = true;
+                break;
+            }
+        }
+
+        if (!types_changed)
+            continue;
+
+        auto resolver = node.function_base->getOverloadResolver();
+        if (!resolver)
+            continue;
+
+        auto [arguments, all_const] = getFunctionArguments(node.children);
+        node.function_base = resolver->build(arguments);
+        node.result_type = node.function_base->getResultType();
+        node.function = node.function_base->prepare(arguments);
+    }
+}
+
 void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs)
 {
     std::unordered_map<std::string, const ActionsDAG::Node *> node_name_to_node;

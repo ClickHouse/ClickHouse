@@ -1434,6 +1434,10 @@ ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG:
     dag.mergeInplace(std::move(second_dag), node_map, true);
     remapNodes(keys, node_map);
 
+    /// After mergeInplace, function nodes from the cloned subDAG may reference inputs
+    /// with different types than the function was originally built for. Re-resolve them.
+    dag.resolveStaleFunctionTypes();
+
     dag.getOutputs() = dag.getInputs();
     dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
 

@@ -151,6 +151,9 @@ private:
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
 
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
+
 /** Function with known arguments and return type (when the specific overload was chosen).
   * It is also the point where all function-specific properties are known.
   */
@@ -332,6 +335,11 @@ public:
       * nullptr might be returned if the point (a single value) is invalid for this function.
       */
     virtual FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/) const;
+
+    /// Return an overload resolver that can rebuild this function for different argument types.
+    /// Used to re-resolve functions when argument types change after DAG transformations (e.g., mergeInplace).
+    /// Returns nullptr by default; overridden by FunctionToFunctionBaseAdaptor.
+    virtual FunctionOverloadResolverPtr getOverloadResolver() const { return nullptr; }
 };
 
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
@@ -470,8 +478,6 @@ private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
-
-using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 /// Old function interface. Check documentation in IFunction.h.
 /// If client do not need stateful properties it can implement this interface.
