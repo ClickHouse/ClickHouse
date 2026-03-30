@@ -1106,13 +1106,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
+            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
-            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
             {"vertical_merge_optimize_ttl_delete", false, true, "Allow vertical merge algorithm for merges that need to remove rows expired by TTL"},
             {"shared_merge_tree_replica_set_max_lifetime_seconds", 300, 300, "New setting"},
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
