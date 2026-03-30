@@ -261,7 +261,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
+            "Missing field '{}' or '{}' or '{}' in SerializationInfo of columns",
             KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
@@ -565,7 +565,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in serialization infos", KEY_NAME);
+                    "Missing field '{}' in serialization infos", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
             auto it = column_type_by_name.find(name);
@@ -612,7 +612,7 @@ SerializationInfoByName SerializationInfoByName::readJSONWithPhysicalNames(
         const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
 
         if (!elem_object->has(KEY_NAME))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in serialization infos", KEY_NAME);
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing field '{}' in serialization infos", KEY_NAME);
 
         auto stored_name = elem_object->getValue<String>(KEY_NAME);
         String logical_name;
