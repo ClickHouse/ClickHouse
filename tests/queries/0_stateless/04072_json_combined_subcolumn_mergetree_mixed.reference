@@ -1,0 +1,12 @@
+1	42	Int64
+2	0	Int64
+3	{"x":1,"y":2}	JSON(max_dynamic_paths=10)
+4	{"x":3}	JSON(max_dynamic_paths=10)
+5	\N	None
+6	\N	None
+1	42	{}	42
+2	0	{}	0
+3	{"x":1,"y":2}	{"x":1,"y":2}	\N
+4	{"x":3}	{"x":3}	\N
+5	\N	{}	\N
+6	\N	{}	\N
