@@ -10,27 +10,25 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.t_orders)
 -- 2. GROUP BY from other side (eager fires)
 Expression ((Project names + Projection))
-  MergingAggregated
-    JoinLogical (Local HashJoin EagerJoin:  swapped swapped)
-      GatherExchange
-        Aggregating
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (ParallelRead default.t_lineitem)
-      Expression (Change column names to column identifiers)
-        ReadFromMergeTree (default.t_orders)
--- 3. Multi-join chain reconstruction
-Expression ((Project names + Projection))
-  MergingAggregated
-    JoinLogical (Local HashJoin EagerJoin:  swapped swapped)
-      GatherExchange
-        Aggregating
-          Expression (Change column names to column identifiers)
-            ReadFromMergeTree (ParallelRead default.t_lineitem)
+  Aggregating
+    Expression (Before GROUP BY)
       JoinLogical (Local HashJoin )
         Expression (Change column names to column identifiers)
-          ReadFromMergeTree (default.t_orders)
+          ReadFromMergeTree (default.t_lineitem)
         Expression (Change column names to column identifiers)
-          ReadFromMergeTree (default.t_customer)
+          ReadFromMergeTree (default.t_orders)
+-- 3. Multi-join chain reconstruction
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      JoinLogical (Local HashJoin )
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_lineitem)
+        JoinLogical (Local HashJoin )
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_orders)
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (default.t_customer)
 -- 4. Non-candidate
 Expression ((Project names + Projection))
   Aggregating
