@@ -7,6 +7,7 @@
 #include <crc32c/crc32c.h>
 
 #include <IO/SnappyFramedReadBuffer.h>
+#include <IO/WithFileName.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -47,13 +48,19 @@ SnappyFramedReadBuffer::SnappyFramedReadBuffer(
 {
 }
 
-bool SnappyFramedReadBuffer::readExact(char * dst, size_t size)
+bool SnappyFramedReadBuffer::readExact(char * dst, size_t size, bool allow_partial_eof)
 {
     size_t bytes_read = 0;
     while (bytes_read < size)
     {
         if (in->eof())
-            return false;
+        {
+            if (bytes_read == 0 && allow_partial_eof)
+                return false;
+            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                "Truncated snappy stream: expected {} bytes but got {}{}",
+                size, bytes_read, getExceptionEntryWithFileName(*in));
+        }
         size_t available = in->buffer().end() - in->position();
         size_t to_copy = std::min(available, size - bytes_read);
         memcpy(dst + bytes_read, in->position(), to_copy);
@@ -70,10 +77,12 @@ bool SnappyFramedReadBuffer::readStreamIdentifier()
         return false;
 
     uint8_t header[sizeof(STREAM_IDENTIFIER)];
-    if (!readExact(reinterpret_cast<char *>(header), sizeof(header)))
-        throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Truncated snappy stream: incomplete stream identifier");
+    /// readExact with allow_partial_eof=false: any truncation throws.
+    readExact(reinterpret_cast<char *>(header), sizeof(header), /*allow_partial_eof=*/false);
     if (memcmp(header, STREAM_IDENTIFIER, sizeof(STREAM_IDENTIFIER)) != 0)
-        throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Invalid snappy framing format: bad stream identifier");
+        throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+            "Invalid snappy framing format: bad stream identifier{}",
+            getExceptionEntryWithFileName(*in));
     identifier_read = true;
     return true;
 }
@@ -89,8 +98,9 @@ bool SnappyFramedReadBuffer::nextImpl()
     while (true)
     {
         /// Read chunk header: 1 byte type + 3 bytes little-endian length.
+        /// Clean EOF at a chunk boundary is valid (end of stream).
         uint8_t chunk_header[4];
-        if (!readExact(reinterpret_cast<char *>(chunk_header), 4))
+        if (!readExact(reinterpret_cast<char *>(chunk_header), 4, /*allow_partial_eof=*/true))
             return false;
 
         uint8_t chunk_type = chunk_header[0];
@@ -102,23 +112,25 @@ bool SnappyFramedReadBuffer::nextImpl()
         {
             /// Stream identifier can appear again mid-stream; skip its payload.
             if (chunk_data_size != 6)
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Invalid snappy stream identifier chunk size");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Invalid snappy stream identifier chunk size{}",
+                    getExceptionEntryWithFileName(*in));
             uint8_t payload[6];
-            if (!readExact(reinterpret_cast<char *>(payload), 6))
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Truncated snappy stream identifier");
+            readExact(reinterpret_cast<char *>(payload), 6, /*allow_partial_eof=*/false);
             continue;
         }
 
         if (chunk_type == CHUNK_TYPE_COMPRESSED)
         {
             if (chunk_data_size < 4)
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Compressed snappy chunk too small");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Compressed snappy chunk too small{}",
+                    getExceptionEntryWithFileName(*in));
 
             /// Read checksum (4 bytes) + compressed payload.
             size_t payload_size = chunk_data_size - 4;
             String chunk_buf(chunk_data_size, '\0');
-            if (!readExact(chunk_buf.data(), chunk_data_size))
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Truncated snappy compressed chunk");
+            readExact(chunk_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
 
             uint32_t expected_crc = 0;
             memcpy(&expected_crc, chunk_buf.data(), 4);
@@ -127,22 +139,28 @@ bool SnappyFramedReadBuffer::nextImpl()
 
             size_t uncompressed_length = 0;
             if (!snappy::GetUncompressedLength(compressed, payload_size, &uncompressed_length))
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Cannot determine snappy uncompressed length");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Cannot determine snappy uncompressed length{}",
+                    getExceptionEntryWithFileName(*in));
 
             /// Snappy framing format limits uncompressed data per chunk to 65536 bytes.
             /// Reject larger values to prevent untrusted input from forcing huge allocations.
             if (uncompressed_length > MAX_UNCOMPRESSED_CHUNK_SIZE)
                 throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
-                    "Snappy chunk claims uncompressed length {} which exceeds the framing format limit of {}",
-                    uncompressed_length, MAX_UNCOMPRESSED_CHUNK_SIZE);
+                    "Snappy chunk claims uncompressed length {} which exceeds the framing format limit of {}{}",
+                    uncompressed_length, MAX_UNCOMPRESSED_CHUNK_SIZE, getExceptionEntryWithFileName(*in));
 
             decompress_buffer.resize(uncompressed_length);
             if (!snappy::RawUncompress(compressed, payload_size, decompress_buffer.data()))
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Snappy decompression failed");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Snappy decompression failed{}",
+                    getExceptionEntryWithFileName(*in));
 
             uint32_t actual_crc = maskedCrc32c(decompress_buffer.data(), uncompressed_length);
             if (actual_crc != expected_crc)
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Snappy CRC-32C checksum mismatch");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Snappy CRC-32C checksum mismatch{}",
+                    getExceptionEntryWithFileName(*in));
 
             working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + uncompressed_length);
             return true;
@@ -151,12 +169,20 @@ bool SnappyFramedReadBuffer::nextImpl()
         if (chunk_type == CHUNK_TYPE_UNCOMPRESSED)
         {
             if (chunk_data_size < 4)
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Uncompressed snappy chunk too small");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Uncompressed snappy chunk too small{}",
+                    getExceptionEntryWithFileName(*in));
 
             size_t payload_size = chunk_data_size - 4;
+
+            /// Enforce the same framing format limit for uncompressed chunks.
+            if (payload_size > MAX_UNCOMPRESSED_CHUNK_SIZE)
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Uncompressed snappy chunk payload size {} exceeds the framing format limit of {}{}",
+                    payload_size, MAX_UNCOMPRESSED_CHUNK_SIZE, getExceptionEntryWithFileName(*in));
+
             String chunk_buf(chunk_data_size, '\0');
-            if (!readExact(chunk_buf.data(), chunk_data_size))
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Truncated snappy uncompressed chunk");
+            readExact(chunk_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
 
             uint32_t expected_crc = 0;
             memcpy(&expected_crc, chunk_buf.data(), 4);
@@ -165,7 +191,9 @@ bool SnappyFramedReadBuffer::nextImpl()
 
             uint32_t actual_crc = maskedCrc32c(decompress_buffer.data(), payload_size);
             if (actual_crc != expected_crc)
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Snappy CRC-32C checksum mismatch");
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Snappy CRC-32C checksum mismatch{}",
+                    getExceptionEntryWithFileName(*in));
 
             working_buffer = Buffer(decompress_buffer.data(), decompress_buffer.data() + payload_size);
             return true;
@@ -175,14 +203,14 @@ bool SnappyFramedReadBuffer::nextImpl()
         {
             /// Skippable chunks (0x80–0xfe): skip the payload.
             String skip_buf(chunk_data_size, '\0');
-            if (!readExact(skip_buf.data(), chunk_data_size))
-                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Truncated snappy skippable chunk");
+            readExact(skip_buf.data(), chunk_data_size, /*allow_partial_eof=*/false);
             continue;
         }
 
         /// Unskippable reserved chunk types (0x02–0x7f) — must fail.
         throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
-            "Unknown unskippable snappy chunk type: 0x{:02x}", chunk_type);
+            "Unknown unskippable snappy chunk type: 0x{:02x}{}",
+            chunk_type, getExceptionEntryWithFileName(*in));
     }
 }
 

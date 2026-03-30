@@ -26,8 +26,9 @@ private:
     bool nextImpl() override;
 
     /// Read exactly `size` bytes from the underlying buffer into `dst`.
-    /// Returns false if EOF is reached before reading all bytes.
-    bool readExact(char * dst, size_t size);
+    /// If allow_partial_eof is true, returns false on clean EOF (0 bytes read at boundary).
+    /// Otherwise (or on partial read), throws an exception.
+    bool readExact(char * dst, size_t size, bool allow_partial_eof);
 
     /// Read and validate the stream identifier chunk.
     bool readStreamIdentifier();

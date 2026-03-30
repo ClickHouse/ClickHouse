@@ -17,9 +17,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
-#include <IO/SnappyWriteBuffer.h>
+#include <snappy.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
-#include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
@@ -313,9 +312,15 @@ public:
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(&getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
-        zero_copy_output_stream.finalize();
+        /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
+        /// used by SnappyWriteBuffer for HTTP Content-Encoding). Serialize, compress, and write directly.
+        String serialized;
+        read_response.SerializeToString(&serialized);
+        String compressed;
+        snappy::Compress(serialized.data(), serialized.size(), &compressed);
+        auto & out = getOutputStream(response);
+        out.write(compressed.data(), compressed.size());
+        out.finalize();
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote read protocol is disabled");
