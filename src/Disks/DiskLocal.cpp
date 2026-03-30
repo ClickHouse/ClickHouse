@@ -616,20 +616,25 @@ void DiskLocal::shutdown()
 
 void DiskLocal::checkAccessImpl(const String & path)
 {
-    broken = false;
-    readonly = false;
-
     if (!FS::canRead(disk_path))
     {
         broken = true;
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "There is no read access to disk {} ({}).", name, disk_path);
     }
+    else
+    {
+        broken = false;
+    }
 
     if (!FS::canWrite(disk_path))
     {
-        LOG_ERROR(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
+        LOG_INFO(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
         readonly = true;
         return;
+    }
+    else
+    {
+        readonly = false;
     }
 
     IDisk::checkAccessImpl(path);
