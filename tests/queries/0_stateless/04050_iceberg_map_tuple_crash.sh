@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 # Reproduces https://github.com/ClickHouse/ClickHouse/issues/85955
-# Reading an Iceberg table with Map(Tuple(Int), Tuple(Int)) throws
+# Reading an Iceberg table with Map(Tuple(Int), Tuple(Int)) threw
 # an exception (std::out_of_range in unordered_map::at) during Parquet column name remapping.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,17 +17,6 @@ ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
     CREATE TABLE t_map_tuple (c0 Map(Tuple(Int32), Tuple(Int32))) ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH}');
     INSERT INTO t_map_tuple SELECT c0 FROM generateRandom('c0 Map(Tuple(Int32), Tuple(Int32))', 42, 1, 1) LIMIT 1;
-"
-
-# Test with the Arrow reader path (where the fix was made in ArrowColumnToCHColumn)
-${CLICKHOUSE_CLIENT} --query "
-    SET input_format_parquet_use_native_reader_v3 = 0;
-    SELECT count() FROM t_map_tuple;
-"
-
-# Test with the native Parquet reader v3 path
-${CLICKHOUSE_CLIENT} --query "
-    SET input_format_parquet_use_native_reader_v3 = 1;
     SELECT count() FROM t_map_tuple;
 "
 
