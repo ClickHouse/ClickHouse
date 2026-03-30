@@ -312,6 +312,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// We do not want to take over cases covered by InOrder Aggregation as those are faster.
         && sort_description_for_merging.empty()
         && grouping_sets_params.empty()
+        /// TODO: Support this when we will have external aggregation
+        && !should_produce_results_in_order_of_bucket_number
         /// Sharding is useful for high cardinality keys. Skip 1-byte types
         /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality.
         && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isUInt8()
