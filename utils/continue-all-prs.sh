@@ -7,36 +7,40 @@ AUTHOR="$(gh api user --jq '.login')"
 SHARDS=1
 SHARD=0
 
+# Bright magenta for script messages, to distinguish from Claude output
+S=$'\033[1;35m'
+R=$'\033[0m'
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --shards) SHARDS="$2"; shift 2 ;;
         --shard)  SHARD="$2";  shift 2 ;;
-        *) echo "Unknown option: $1" >&2; exit 1 ;;
+        *) echo "${S}Unknown option: $1${R}" >&2; exit 1 ;;
     esac
 done
 
 if (( SHARD >= SHARDS )); then
-    echo "Error: --shard (${SHARD}) must be less than --shards (${SHARDS})" >&2
+    echo "${S}Error: --shard (${SHARD}) must be less than --shards (${SHARDS})${R}" >&2
     exit 1
 fi
 
-echo "Shard ${SHARD} of ${SHARDS}"
+echo "${S}Shard ${SHARD} of ${SHARDS}${R}"
 echo ""
 
 ROUND=0
 while true; do
     ROUND=$((ROUND + 1))
-    echo "##########################################"
-    echo "# Round ${ROUND}"
-    echo "##########################################"
+    echo "${S}##########################################${R}"
+    echo "${S}# Round ${ROUND}${R}"
+    echo "${S}##########################################${R}"
     echo ""
-    echo "Fetching open PRs by ${AUTHOR} in ${REPO}..."
+    echo "${S}Fetching open PRs by ${AUTHOR} in ${REPO}...${R}"
 
     PRS=$(gh api "repos/${REPO}/pulls?state=open&per_page=100" --paginate \
         --jq "[.[] | select(.user.login == \"${AUTHOR}\")] | sort_by(.updated_at) | .[] | \"\(.number)\t\(.title)\"")
 
     if [[ -z "$PRS" ]]; then
-        echo "No open PRs found. Sleeping 60s before retrying..."
+        echo "${S}No open PRs found. Sleeping 60s before retrying...${R}"
         sleep 60
         continue
     fi
@@ -53,22 +57,22 @@ while true; do
     done <<< "$PRS"
 
     if [[ -z "$SHARD_PRS" ]]; then
-        echo "No PRs matching shard ${SHARD}/${SHARDS}. Sleeping 60s before retrying..."
+        echo "${S}No PRs matching shard ${SHARD}/${SHARDS}. Sleeping 60s before retrying...${R}"
         sleep 60
         continue
     fi
 
     COUNT=$(echo "$SHARD_PRS" | wc -l)
-    echo "Found ${COUNT} open PR(s) for shard ${SHARD}/${SHARDS}:"
-    echo "$SHARD_PRS"
+    echo "${S}Found ${COUNT} open PR(s) for shard ${SHARD}/${SHARDS}:${R}"
+    echo "${S}${SHARD_PRS}${R}"
     echo ""
 
     I=0
     while IFS=$'\t' read -r NUMBER TITLE; do
         I=$((I + 1))
-        echo "=========================================="
-        echo "[${I}/${COUNT}] PR #${NUMBER}: ${TITLE}"
-        echo "=========================================="
+        echo "${S}==========================================${R}"
+        echo "${S}[${I}/${COUNT}] PR #${NUMBER}: ${TITLE}${R}"
+        echo "${S}==========================================${R}"
 
         timeout 3600 claude --dangerously-skip-permissions --print --verbose \
             --output-format stream-json \
@@ -85,13 +89,13 @@ while true; do
                         if .type == "tool_result" then "<<< \(.content | tostring | .[0:300])\n"
                         else empty end)
                 else empty end' \
-            || echo "WARNING: claude exited with code $? for PR #${NUMBER}, continuing..."
+            || echo "${S}WARNING: claude exited with code $? for PR #${NUMBER}, continuing...${R}"
 
         echo ""
-        echo "Done with PR #${NUMBER}"
+        echo "${S}Done with PR #${NUMBER}${R}"
         echo ""
     done <<< "$SHARD_PRS"
 
-    echo "Round ${ROUND} complete. Starting over..."
+    echo "${S}Round ${ROUND} complete. Starting over...${R}"
     echo ""
 done
