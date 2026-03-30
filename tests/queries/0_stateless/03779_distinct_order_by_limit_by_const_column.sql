@@ -1,19 +1,41 @@
--- Tags: no-parallel
 -- https://github.com/ClickHouse/ClickHouse/issues/92982
--- NOT_FOUND_COLUMN_IN_BLOCK exception for valid query with constant Columns and DISTINCT, ORDER BY, LIMIT BY
+-- NOT_FOUND_COLUMN_IN_BLOCK exception for valid queries with constant columns
+-- and DISTINCT, ORDER BY, LIMIT BY combinations.
+--
+-- Root cause: ActionsChainStep::finalizeInputAndOutputColumns kept COLUMN nodes
+-- (constants) in DAG outputs instead of INPUT nodes, causing removeUnusedActions
+-- to garbage-collect the INPUT and break column propagation across chain steps.
 
+-- Original reproducer
 SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
 SELECT DISTINCT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=0;
 
--- Test with different constant types
+-- Multiple constant types
 SELECT DISTINCT 1, '1', 2.5 ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
 
--- Test without DISTINCT
+-- Without DISTINCT
 SELECT 1, '1' ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
 
--- Test without ORDER BY
+-- Without ORDER BY
 SELECT DISTINCT 1, '1' LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
 
--- Test with more complex constants
+-- Mixed table column + constant
 SELECT DISTINCT number % 2, 'const' FROM numbers(5) ORDER BY 1 LIMIT 1 BY 2 SETTINGS enable_analyzer=1;
 
+-- Multiple constants in LIMIT BY
+SELECT DISTINCT 1, '1', 2 ORDER BY 1 LIMIT 1 BY '1', 2 SETTINGS enable_analyzer=1;
+
+-- Constant not in LIMIT BY must still survive through the pipeline
+SELECT number % 3 AS n, 'tag' AS t FROM numbers(9) ORDER BY n LIMIT 1 BY n SETTINGS enable_analyzer=1;
+
+-- LIMIT BY with GROUP BY and constant in SELECT
+SELECT number % 2 AS g, count() AS c, 'label' AS lbl FROM numbers(10) GROUP BY g ORDER BY g LIMIT 1 BY lbl SETTINGS enable_analyzer=1;
+
+-- LIMIT BY with WHERE and constant
+SELECT number AS n, 'filtered' AS f FROM numbers(10) WHERE number > 5 ORDER BY n LIMIT 1 BY f SETTINGS enable_analyzer=1;
+
+-- LIMIT 2 BY constant (all rows in one group)
+SELECT number AS n, 'grp' AS g FROM numbers(5) ORDER BY n LIMIT 2 BY g SETTINGS enable_analyzer=1;
+
+-- Constant-folded expression in LIMIT BY
+SELECT number AS n, 1 + 1 AS two FROM numbers(5) ORDER BY n LIMIT 1 BY two SETTINGS enable_analyzer=1;

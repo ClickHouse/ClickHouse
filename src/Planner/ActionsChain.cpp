@@ -49,8 +49,28 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         output_nodes_names.insert(node.result_name);
     }
 
+    /// When a DAG has both an INPUT and a COLUMN node with the same name
+    /// (created by duplicate_const_columns in the ActionsDAG constructor),
+    /// replace the COLUMN output with the INPUT so that removeUnusedActions
+    /// preserves the INPUT and the column requirement propagates upstream.
+    {
+        std::unordered_map<std::string_view, const ActionsDAG::Node *> input_nodes_by_name;
+        for (const auto * input_node : actions->dag.getInputs())
+            input_nodes_by_name.emplace(input_node->result_name, input_node);
+
+        for (auto & output_node : actions->dag.getOutputs())
+        {
+            if (output_node->type == ActionsDAG::ActionType::COLUMN
+                && child_required_output_columns_names.contains(output_node->result_name))
+            {
+                auto it = input_nodes_by_name.find(output_node->result_name);
+                if (it != input_nodes_by_name.end())
+                    output_node = it->second;
+            }
+        }
+    }
+
     actions->dag.removeUnusedActions();
-    /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
     actions->project_input = true;
     initialize();
 }
