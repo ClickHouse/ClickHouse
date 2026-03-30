@@ -1257,7 +1257,7 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         }
     }
 
-    return std::make_shared<ExpressionActions>(std::move(dag));
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 }
