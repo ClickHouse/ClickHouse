@@ -32,7 +32,7 @@ Per the SQL standard, rows containing `NULL` in any column are never considered 
 
 **Implementation details**
 
-Internally, `UNIQUE(subquery)` is rewritten to `SELECT __hasNoDuplicates(*) FROM (subquery)`. The `__hasNoDuplicates` aggregate function maintains a hash set and can terminate early — as soon as the first duplicate is found, it stops reading further data from the subquery.
+Internally, `UNIQUE(subquery)` is rewritten to `SELECT allUnique(*) FROM (subquery)`. The `allUnique` aggregate function maintains a hash set and can terminate early — as soon as the first duplicate is found, it stops reading further data from the subquery.
 
 Correlated subqueries are not currently supported with `UNIQUE`.
 
