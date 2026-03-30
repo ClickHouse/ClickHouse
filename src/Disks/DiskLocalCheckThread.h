@@ -17,6 +17,7 @@ class DiskLocalCheckThread : WithContext
 
 public:
     DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context_, UInt64 local_disk_check_period_ms);
+    ~DiskLocalCheckThread();
 
     void startup();
     void shutdown();

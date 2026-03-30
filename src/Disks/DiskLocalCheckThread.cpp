@@ -37,6 +37,11 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     task->deactivate();
 }
 
+DiskLocalCheckThread::~DiskLocalCheckThread()
+{
+    task->deactivate();
+}
+
 void DiskLocalCheckThread::startup()
 {
     task->activateAndSchedule();
