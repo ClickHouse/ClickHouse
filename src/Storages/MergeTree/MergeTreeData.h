@@ -328,8 +328,6 @@ public:
     DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
-    /// NOTE: `operation_with_data_parts_mutex` is also locked directly via `std::lock` in
-    /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat
@@ -536,7 +534,7 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsColumnsWithDynamicStructure() const override { return true; }
+    bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;

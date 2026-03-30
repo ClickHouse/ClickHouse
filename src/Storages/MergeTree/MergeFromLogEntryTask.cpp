@@ -18,8 +18,6 @@
 namespace ProfileEvents
 {
     extern const Event DataAfterMergeDiffersFromReplica;
-    extern const Event MergeCommitMilliseconds;
-    extern const Event MergeTotalMilliseconds;
     extern const Event ReplicatedPartMerges;
 }
 
@@ -404,8 +402,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /// and it's really needed.
     merge_task.reset();
 
-    Stopwatch commit_watch;
-
     try
     {
         storage.checkPartChecksumsAndCommit(*transaction_ptr, part);
@@ -416,9 +412,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
         {
             transaction_ptr->rollback();
 
-            UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
-            ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
-            ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
             ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
             Strings files_with_size;
@@ -469,10 +462,6 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
      * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
      */
-    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
-    ProfileEvents::increment(ProfileEvents::MergeCommitMilliseconds, commit_elapsed_ms);
-    ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, commit_elapsed_ms);
-
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 

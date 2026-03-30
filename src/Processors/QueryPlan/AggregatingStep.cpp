@@ -535,9 +535,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
 void AggregatingStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
-
-    params.explain(settings.out, prefix);
+    params.explain(settings.out, settings.offset);
+    String prefix(settings.offset, settings.indent_char);
     if (!sort_description_for_merging.empty())
     {
         settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';

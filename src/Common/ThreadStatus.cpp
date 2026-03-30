@@ -186,7 +186,7 @@ const String & ThreadStatus::getQueryId() const
     return query_id;
 }
 
-ContextPtr ThreadStatus::tryGetQueryContext() const
+ContextPtr ThreadStatus::getQueryContext() const
 {
     return query_context.lock();
 }

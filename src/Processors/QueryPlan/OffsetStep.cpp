@@ -41,8 +41,7 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
-    const auto & prefix = settings.detail_prefix;
-    settings.out << prefix << "Offset " << offset << '\n';
+    settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
 }
 
 void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const

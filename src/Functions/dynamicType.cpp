@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -41,11 +42,18 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"dynamic", isDynamic, nullptr, "Dynamic"}
-        };
+        if (arguments.empty() || arguments.size() > 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1",
+                getName(), arguments.empty());
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        if (!isDynamic(arguments[0].type.get()))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be Dynamic, got {} instead",
+                getName(), arguments[0].type->getName());
+
         return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     }
 
