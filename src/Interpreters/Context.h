@@ -882,7 +882,7 @@ public:
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
     /// Returns (master_thread_resource_name, worker_thread_resource_name).
-    /// Result is cached after the first call; subsequent calls are lock-free on the fast path.
+    /// Result is cached after the first call; subsequent calls avoid `WorkloadEntityStorageBase::mutex` and only take `Context::mutex`.
     std::pair<String, String> getCPUThreadResourceNames() const;
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
