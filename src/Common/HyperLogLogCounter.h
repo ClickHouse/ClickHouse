@@ -39,7 +39,7 @@ namespace details
 template <UInt8 K>
 struct LogLUT
 {
-    LogLUT()
+    LogLUT() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in the body
     {
         log_table[0] = 0.0;
         for (size_t i = 1; i <= M; ++i)

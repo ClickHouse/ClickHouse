@@ -281,7 +281,7 @@ private:
 public:
     using value_type = Value;
 
-    UniquesHashSet() :
+    UniquesHashSet() : // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
         m_size(0),
         skip_degree(0),
         has_zero(false)
@@ -292,7 +292,7 @@ public:
 #endif
     }
 
-    UniquesHashSet(const UniquesHashSet & rhs)
+    UniquesHashSet(const UniquesHashSet & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
         : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);

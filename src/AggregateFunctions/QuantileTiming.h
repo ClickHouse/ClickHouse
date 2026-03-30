@@ -309,7 +309,7 @@ namespace detail
         };
 
     public:
-        QuantileTimingLarge()
+        QuantileTimingLarge() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset
         {
             memset(this, 0, sizeof(*this));
         }
