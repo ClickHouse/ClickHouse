@@ -245,23 +245,36 @@ void PipelineExecutor::finalizeExecution()
     auto status = execution_status.load();
     bool is_cancelled = (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser);
 
+    /// First pass: check if all processors are finished (for "Pipeline stuck" detection).
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
     {
         if (node->status != ExecutingGraph::ExecStatus::Finished)
         {
-            /// Single thread, do not hold mutex
             all_processors_finished = false;
-
-            /// When not cancelled, we will throw below, so no need to continue.
             if (!is_cancelled)
                 break;
-
-            /// When cancelled, fall through to also collect remaining progress from
-            /// non-finished processors. This is safe because all execution threads
-            /// have stopped by this point, so no concurrent access to processor state.
         }
+    }
 
+    if (!is_cancelled && !all_processors_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+
+    /// Ensure all processors' onCancel() handlers have run before collecting progress.
+    /// For cancelled pipelines, graph->cancel() was already called in cancel().
+    /// For normal completion (e.g. LIMIT satisfied with parallel replicas), this is
+    /// needed because RemoteSource::onCancel() calls query_executor->finish() which
+    /// drains remaining packets (including Progress) from replica connections.
+    /// Without this, progress accumulated during the concurrent drain in onUpdatePorts()
+    /// may remain in ISource::read_progress and not be collected, causing rows_read=0
+    /// in JSON/XML statistics on the client side.
+    /// This is safe because all worker threads have been joined by this point.
+    if (!is_cancelled)
+        graph->cancel();
+
+    /// Second pass: collect remaining progress from all processors.
+    for (auto & node : graph->nodes)
+    {
         if (node->processor && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
@@ -284,9 +297,6 @@ void PipelineExecutor::finalizeExecution()
             }
         }
     }
-
-    if (!is_cancelled && !all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
 
     if (finalize_callback)
         finalize_callback();
