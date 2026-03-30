@@ -24,9 +24,7 @@ function thread_alter()
 
         if [[ -n "${ERROR}" \
             && ! "${ERROR}" =~ "You can retry this error" \
-            && ! "${ERROR}" =~ "DUPLICATE_COLUMN" \
-            && ! "${ERROR}" =~ "NOT_FOUND_COLUMN_IN_BLOCK" \
-            && ! "${ERROR}" =~ "UNKNOWN_IDENTIFIER" ]]
+            && ! "${ERROR}" =~ "DUPLICATE_COLUMN" ]]
         then
             echo "${ERROR}"
         fi
@@ -42,7 +40,7 @@ function thread_insert()
     done
 }
 
-TIMEOUT=30
+TIMEOUT=10
 
 thread_alter h &
 thread_insert &
