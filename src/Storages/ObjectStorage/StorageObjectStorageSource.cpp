@@ -659,6 +659,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
         }();
 
+        /// If the actual file format doesn't support PREWHERE, strip PREWHERE-related fields
+        /// from the filter info. This can happen with Iceberg tables that have files in
+        /// mixed formats (e.g. Parquet supports PREWHERE but ORC doesn't).
+        /// See https://github.com/ClickHouse/ClickHouse/issues/96829
+        const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
+        if (filter_info && (filter_info->prewhere_info || filter_info->row_level_filter))
+        {
+            if (!FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings))
+            {
+                filter_info = std::make_shared<FormatFilterInfo>(
+                    filter_info->filter_actions_dag,
+                    filter_info->context.lock(),
+                    filter_info->column_mapper,
+                    nullptr,  /* row_level_filter */
+                    nullptr   /* prewhere_info */
+                );
+            }
+        }
+
         chassert(object_info->getObjectMetadata().has_value());
 
         LOG_DEBUG(
