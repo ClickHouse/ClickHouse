@@ -29,11 +29,8 @@ StreamingExchangeSource::~StreamingExchangeSource()
 void StreamingExchangeSource::onStart()
 {
     connect();
-    LOG_TRACE(log, "TCP connected to {}:{} for exchange stream {}", host, port, stream_name);
     sendHello();
-    LOG_TRACE(log, "SourceHello sent for exchange stream {}", stream_name);
     receiveHello();
-    LOG_TRACE(log, "SinkHello received for exchange stream {} — handshake complete", stream_name);
 
     /// Set socket to non-blocking mode after handshake is finished.
     socket->setBlocking(false);

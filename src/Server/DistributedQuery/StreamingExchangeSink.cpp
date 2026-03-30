@@ -43,7 +43,7 @@ void StreamingExchangeSink::extractSocket()
     if (!future_connection->isReady())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is expected be ready at this point. Wrong sequence of prepare/schedule/work calls for exchange stream {}", stream_name);
 
-    LOG_TRACE(log, "Extracting socket from future connection for exchange stream {} — connection is now established", stream_name);
+    LOG_TRACE(log, "Extracting socket from future connection for exchange stream {}", stream_name);
     socket = std::make_unique<Poco::Net::StreamSocket>(future_connection->getSocket());
     future_connection.reset();
     chassert(socket);
@@ -134,10 +134,7 @@ ISink::Status StreamingExchangeSink::prepare()
 {
     /// If socket is not ready yet, wait for it
     if (!socket)
-    {
-        LOG_TRACE(log, "Sink {} waiting for connection (no socket yet)", stream_name);
         return Status::Async;
-    }
 
     if (has_input)
         return canAddChunk() ? Status::Ready : Status::Async;
@@ -233,13 +230,13 @@ std::pair<int, uint32_t> StreamingExchangeSink::scheduleForEvent()
 
     if (socket)
     {
-        LOG_TRACE(log, "Sink {} scheduling on socket fd {} (EPOLLOUT)", stream_name, socket->sockfd());
+        LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
         return {socket->sockfd(), EPOLL_EVENTS::EPOLLOUT | EPOLL_EVENTS::EPOLLERR};
     }
 
     int fd = future_connection->getEventFd();
 
-    LOG_TRACE(log, "Sink {} scheduling on eventfd {} waiting for connection", stream_name, fd);
+    LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);
     return {fd, EPOLL_EVENTS::EPOLLIN | EPOLL_EVENTS::EPOLLERR};
 }
 

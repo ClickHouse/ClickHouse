@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Chunk.h>
 #include <Common/CurrentThread.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -21,18 +20,19 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
     try
     {
         const bool query_finished = distributed_query_executor->execute();
-        LOG_TRACE(getLogger("ReadFromDistributedPlanSource"), "execute() returned {}", query_finished ? "finished" : "running");
-        if (!query_finished)
-            return Chunk(); /// Not finished yet — return empty chunk to be called again
-
-        distributed_query_executor->cleanup();
-        return {}; /// Finished — signal ISource to close the output
+        if (query_finished)
+        {
+            distributed_query_executor->cleanup();
+            return Chunk();
+        }
     }
     catch (...)
     {
         distributed_query_executor->cleanup();
         throw;
     }
+
+    return std::nullopt;
 }
 
 void ReadFromDistributedPlanSource::onCancel() noexcept

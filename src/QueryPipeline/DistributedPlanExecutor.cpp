@@ -816,35 +816,25 @@ protected:
 
                 auto & stage = all_stages.at(stage_name);
 
+                /// Is already finished?
+                if (stage->started_tasks == stage->finished_tasks)
+                    return true;
+
+                /// Create a future that will be signaled by the last finishing task of this stage
                 if (!stage_results.contains(stage_name))
-                {
-                    /// All tasks finished successfully before anyone started waiting
-                    if (stage->started_tasks == stage->finished_tasks && !stage->promise_set)
-                        return true;
                     stage_results[stage_name] = stage->promise.get_future();
-                }
 
                 finished = stage_results.at(stage_name);
-
-                /// Stage already resolved (success via set_value or failure via set_exception)
-                if (stage->promise_set)
-                {
-                    finished.get(); /// Rethrows if a task failed with an exception
-                    return true;
-                }
             }
 
             bool stage_finished = false;
             if (timeout_ms.has_value())
             {
                 stage_finished = (finished.wait_for(std::chrono::milliseconds(timeout_ms.value())) == std::future_status::ready);
-                if (stage_finished)
-                    finished.get(); /// Rethrows if a task failed with an exception
             }
             else
             {
                 finished.wait();
-                finished.get(); /// Rethrows if a task failed with an exception
                 stage_finished = true;
             }
             checkCancelled();
@@ -939,33 +929,10 @@ protected:
             stage->finished_tasks++;
 
             /// Is somebody already waiting for the result?
-            if (stage->finished_tasks == stage->started_tasks && stage_results.contains(stage_name) && !stage->promise_set)
-            {
-                stage->promise_set = true;
+            if (stage->finished_tasks == stage->started_tasks && stage_results.contains(stage_name))
                 stage->promise.set_value();
-            }
 
             stage_tasks[stage_name].erase(task_name); // TODO: really need to erase?
-        }
-
-        /// Called when a task fails. Propagates the exception to `waitForStage`.
-        void setTaskFailed(const String & stage_name, const String & task_name, std::exception_ptr exception)
-        {
-            LOG_ERROR(logger, "Task {} of stage {} failed", task_name, stage_name);
-            std::lock_guard g(lock);
-            auto & stage = all_stages[stage_name];
-            stage->finished_tasks++;
-
-            if (!stage->promise_set)
-            {
-                stage->promise_set = true;
-                /// Ensure the future exists so waitForStage can retrieve and rethrow the exception
-                if (!stage_results.contains(stage_name))
-                    stage_results[stage_name] = stage->promise.get_future().share();
-                stage->promise.set_exception(exception);
-            }
-
-            stage_tasks[stage_name].erase(task_name);
         }
 
         /// Picks the next task from the queue.
@@ -1015,7 +982,6 @@ protected:
                     catch (...)
                     {
                         tryLogCurrentException(__PRETTY_FUNCTION__);
-                        setTaskFailed(task->first, task->second, std::current_exception());
                     }
                     --in_flight_request_count;
                 });
@@ -1029,7 +995,6 @@ protected:
             Int64 started_tasks = 0;
             Int64 finished_tasks = 0;
             std::promise<void> promise;
-            bool promise_set = false; /// Guards against double-setting the promise (set_value / set_exception)
         };
 
         using StageInfoPtr = std::shared_ptr<StageInfo>;

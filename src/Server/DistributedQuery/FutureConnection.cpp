@@ -58,7 +58,7 @@ Poco::Net::Socket FutureConnection::getSocket()
 
 void FutureConnection::setSocket(Poco::Net::Socket socket)
 {
-    LOG_TRACE(log, "Setting socket for FutureConnection, eventfd: {}", event_fd);
+    LOG_TRACE(log, "Setting socket for FutureConnection");
 
     /// Set the promise value, promise can be set only once.
     promise.set_value(std::move(socket));

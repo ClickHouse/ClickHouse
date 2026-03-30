@@ -4,8 +4,7 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -58,8 +57,6 @@ void ExchangeServer::stop()
 
 void ExchangeServer::run()
 {
-    setThreadName(ThreadName::EXCHANGE_SERVER);
-
     while (!stopped)
     {
         Poco::Timespan timeout(250000);
@@ -93,9 +90,9 @@ void ExchangeServer::run()
 
 void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
 {
-    LOG_WARNING(log, "Connection from {}", socket.peerAddress().toString());
+    LOG_TRACE(log, "Connection from {}", socket.peerAddress().toString());
 
-    ReadBufferFromPocoSocket in(socket);
+    ReadBufferFromPocoSocketChunked in(socket);
 
     UInt64 packet_type = 0;
     readIntBinary(packet_type, in);
@@ -107,7 +104,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
     String stream_name;
     readStringBinary(stream_name, in);
 
-    LOG_WARNING(log, "Accepted connection for query id {} stream {}", query_id, stream_name);
+    LOG_TRACE(log, "Query id: {}, stream: {}", query_id, stream_name);
 
     /// Send Hello back to finish handshake
     WriteBufferFromPocoSocket out(socket);
@@ -115,9 +112,7 @@ void ExchangeServer::addConnection(Poco::Net::StreamSocket socket)
     out.next();
     out.cancel();
 
-    LOG_WARNING(log, "SinkHello sent, registering connection for query id {} stream {}", query_id, stream_name);
     connections->addConnection(query_id, stream_name, socket);
-    LOG_WARNING(log, "Connection registered for query id {} stream {}", query_id, stream_name);
 }
 
 }
