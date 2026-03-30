@@ -1795,7 +1795,11 @@ bool tryPrepareSetColumnsForIndex(
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
-        const auto & key_column_type = data_types[indexes_mapping_index];
+        /// Recursively strip LowCardinality from the key column type (including inside Tuples).
+        /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
+        /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
+        /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
+        auto key_column_type = recursiveRemoveLowCardinality(data_types[indexes_mapping_index]);
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];

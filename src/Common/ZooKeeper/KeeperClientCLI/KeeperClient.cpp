@@ -195,6 +195,7 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
         std::make_shared<MVCommand>(),
         std::make_shared<MVRCommand>(),
         std::make_shared<GetAclCommand>(),
+        std::make_shared<WaitWatchCommand>(),
     });
 }
 
