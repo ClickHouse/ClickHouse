@@ -22,13 +22,16 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%PrefetchingConcat%';
 
 -- Verify correctness: output must be sorted.
--- Check that no adjacent pair violates ordering using neighbor().
+-- Check that no adjacent pair violates ordering using lagInFrame() window function.
 SELECT 'correctness';
-SELECT count(), countIf(path < neighbor(path, -1)) as violations FROM (
-    SELECT path FROM t_prefetching_concat
-    WHERE path LIKE '%file.log'
-    ORDER BY path
-    SETTINGS max_threads = 4, optimize_read_in_order = 1
+SELECT count(), countIf(path < prev_path) AS violations FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY rowNumberInAllBlocks()) AS prev_path
+    FROM (
+        SELECT path FROM t_prefetching_concat
+        WHERE path LIKE '%file.log'
+        ORDER BY path
+        SETTINGS max_threads = 4, optimize_read_in_order = 1
+    )
 );
 
 -- PrefetchingConcat should NOT be used with LIMIT (read_limit != 0).
