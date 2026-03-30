@@ -15,7 +15,7 @@ namespace DB
 
 /** Leader election for non-replicated MergeTree tables on shared storage.
   *
-  * Uses conditional writes (If-Match / If-None-Match) on object storage (S3, Azure, GCS)
+  * Uses conditional writes (If-Match / If-None-Match) on object storage (S3, Azure)
   * to implement a lease-based leader election protocol without external coordination.
   *
   * Protocol:

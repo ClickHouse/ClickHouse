@@ -2154,7 +2154,7 @@ namespace ErrorCodes
     If set to true, the table is in read-only mode. Any attempts to insert data or modify the table will fail.
     )", 0) \
     DECLARE(Bool, leader_election, false, R"(
-    Enable leader election for non-replicated MergeTree tables on shared object storage (S3, Azure, GCS).
+    Enable leader election for non-replicated MergeTree tables on shared object storage (S3, Azure).
     When enabled, the table uses conditional writes on the object storage to elect a single leader among
     multiple server instances sharing the same data. Only the leader can perform writes, merges, and mutations.
     Follower instances act as read-only replicas. Requires the table to be stored on an object storage disk.
