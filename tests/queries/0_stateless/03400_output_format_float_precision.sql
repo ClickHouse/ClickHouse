@@ -73,7 +73,7 @@ SET output_format_float_precision = 101;
 SELECT 1.0/3; -- {clientError BAD_ARGUMENTS}
 
 -- Test non-finite values with non-zero precision (should not throw)
-SET output_format_float_precision = 3;
+SET output_format_float_precision = 5;
 SELECT toFloat64('inf');
 SELECT toFloat64('-inf');
 SELECT toFloat64('nan');
