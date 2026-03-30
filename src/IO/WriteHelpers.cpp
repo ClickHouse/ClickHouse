@@ -201,8 +201,9 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
 
     /// ToFixed returns false for values with magnitude >= 10^kMaxFixedDigitsBeforePoint.
     /// Fall back to the default shortest round-trip representation for such values.
+    static const double max_fixed_magnitude = std::pow(10.0, Converter::kMaxFixedDigitsBeforePoint);
     const double x_double = static_cast<double>(x);
-    if (std::abs(x_double) >= 1e60)
+    if (std::abs(x_double) >= max_fixed_magnitude)
     {
         writeFloatText(x, buf);
         return;
