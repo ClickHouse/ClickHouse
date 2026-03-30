@@ -132,6 +132,12 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
         UInt64 num_blocks;
         readVarUInt(num_blocks, *data_buffer);
 
+        UInt64 max_blocks = (segment_doc_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        if (num_blocks > max_blocks)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Posting list num_blocks {} exceeds maximum {} for segment with {} documents",
+                num_blocks, max_blocks, segment_doc_count);
+
         block_last_row_ids.resize(num_blocks);
         block_offsets.resize(num_blocks);
 
@@ -178,6 +184,12 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
             offset += 1 + packed_bytes;
 
             /// Decode block to determine its last_row_id.
+            size_t data_start = block_offsets[b] + 1;
+            if (data_start > payload_buffer.size() || packed_bytes > payload_buffer.size() - data_start)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Posting list block data out of bounds: offset {}, packed_bytes {}, buffer size {}",
+                    data_start, packed_bytes, payload_buffer.size());
+
             std::span<const std::byte> block_data(
                 reinterpret_cast<const std::byte *>(payload_buffer.data() + block_offsets[b] + 1),
                 packed_bytes);
@@ -291,7 +303,7 @@ void PostingListCursor::seek(uint32_t target)
 
     /// Binary search across segments.
     size_t start = has_prepared_first_segment ? current_segment_idx + 1 : 0;
-    auto it = std::lower_bound(
+    const auto * it = std::lower_bound(
         info.ranges.begin() + start, info.ranges.end(), static_cast<size_t>(target),
         [](const RowsRange & range, size_t t) { return range.end < t; });
 
@@ -310,7 +322,7 @@ bool PostingListCursor::seekImpl(uint32_t target)
     /// If current block contains the target, search within it.
     if (decoded_count > 0 && target <= decoded_values[decoded_count - 1])
     {
-        auto it = std::lower_bound(decoded_values + index, decoded_values + decoded_count, target);
+        auto * it = std::lower_bound(decoded_values + index, decoded_values + decoded_count, target);
         if (it != decoded_values + decoded_count)
         {
             index = static_cast<size_t>(it - decoded_values);
@@ -329,7 +341,7 @@ bool PostingListCursor::seekImpl(uint32_t target)
         decodeBlock(j);
 
     /// Binary search within the decoded packed block.
-    auto found_it = std::lower_bound(decoded_values, decoded_values + decoded_count, target);
+    auto * found_it = std::lower_bound(decoded_values, decoded_values + decoded_count, target);
     if (found_it != decoded_values + decoded_count)
     {
         index = static_cast<size_t>(found_it - decoded_values);
@@ -379,6 +391,15 @@ void PostingListCursor::next()
 /// PadOp::Or assigns 1, PadOp::And increments the counter.
 namespace
 {
+
+/// Clamp (row_offset + num_rows) to uint32_t max to avoid narrowing overflow.
+static inline uint32_t clampRowEnd(size_t row_offset, size_t num_rows)
+{
+    size_t sum = row_offset + num_rows;
+    return sum > std::numeric_limits<uint32_t>::max()
+        ? std::numeric_limits<uint32_t>::max()
+        : static_cast<uint32_t>(sum);
+}
 
 enum class PadOp { Or, And };
 
@@ -523,7 +544,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 
         /// Find range within decoded_values.
         auto * begin_it = std::lower_bound(decoded_values, decoded_values + decoded_count, static_cast<uint32_t>(row_offset));
-        auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, static_cast<uint32_t>(row_offset + num_rows));
+        auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, clampRowEnd(row_offset, num_rows));
         size_t begin_idx = static_cast<size_t>(begin_it - decoded_values);
         size_t end_idx = static_cast<size_t>(end_it - decoded_values);
         padColumn<PadOp::Or>(data, decoded_values, row_offset, begin_idx, end_idx);
@@ -611,7 +632,7 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             decodeBlock(b);
 
             auto * begin_it = std::lower_bound(decoded_values, decoded_values + decoded_count, static_cast<uint32_t>(row_offset));
-            auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, static_cast<uint32_t>(row_offset + num_rows));
+            auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, clampRowEnd(row_offset, num_rows));
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values);
             padColumn<PadOp::Or>(data, decoded_values, row_offset, begin_idx, end_idx);
@@ -648,7 +669,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
         }
 
         auto * begin_it = std::lower_bound(decoded_values, decoded_values + decoded_count, static_cast<uint32_t>(row_offset));
-        auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, static_cast<uint32_t>(row_offset + num_rows));
+        auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, clampRowEnd(row_offset, num_rows));
         size_t begin_idx = static_cast<size_t>(begin_it - decoded_values);
         size_t end_idx = static_cast<size_t>(end_it - decoded_values);
         padColumn<PadOp::And>(data, decoded_values, row_offset, begin_idx, end_idx);
@@ -738,7 +759,7 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
             decodeBlock(b);
 
             auto * begin_it = std::lower_bound(decoded_values, decoded_values + decoded_count, static_cast<uint32_t>(row_offset));
-            auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, static_cast<uint32_t>(row_offset + num_rows));
+            auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, clampRowEnd(row_offset, num_rows));
             size_t begin_idx = static_cast<size_t>(begin_it - decoded_values);
             size_t end_idx = static_cast<size_t>(end_it - decoded_values);
             padColumn<PadOp::And>(data, decoded_values, row_offset, begin_idx, end_idx);

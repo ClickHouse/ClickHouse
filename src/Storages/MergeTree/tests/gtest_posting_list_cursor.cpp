@@ -665,7 +665,7 @@ TEST(PostingListCursorTest, BruteForceIntersectionDense)
 
 TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
 {
-    std::mt19937 rng(42);
+    std::mt19937 rng(42); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> dist(0, 99);
 
     for (int trial = 0; trial < 10; ++trial)
@@ -870,7 +870,11 @@ TEST(PostingListCursorTest, IntersectFourExtremeSelectivity)
     // Cursors: every 2 / every 5 / every 10 / every 30
     // LCM(2, 5, 10, 30) = 30
     const uint32_t range = 120;
-    std::vector<uint32_t> docs_2, docs_5, docs_10, docs_30, expected;
+    std::vector<uint32_t> docs_2;
+    std::vector<uint32_t> docs_5;
+    std::vector<uint32_t> docs_10;
+    std::vector<uint32_t> docs_30;
+    std::vector<uint32_t> expected;
 
     for (uint32_t i = 0; i < range; i += 2)
         docs_2.push_back(i);
@@ -902,7 +906,9 @@ TEST(PostingListCursorTest, BruteForceHighDensity)
 {
     // Two 90%+ density cursors. With density_threshold = 0.5, should take brute-force path.
     const uint32_t range = 100;
-    std::vector<uint32_t> docs_a, docs_b, expected;
+    std::vector<uint32_t> docs_a;
+    std::vector<uint32_t> docs_b;
+    std::vector<uint32_t> expected;
 
     // Cursor A: every doc except multiples of 10 (90% density)
     for (uint32_t i = 0; i < range; ++i)
