@@ -190,7 +190,7 @@ def main():
             is_bugfix_validation = True
         elif "no-llvm-coverage" == to:
             is_llvm_coverage = False
-        elif "llvm_coverage" == to:
+        elif "arm_llvm_coverage" == to:
             is_llvm_coverage = True
         elif "coverage" in to:
             is_coverage = True
