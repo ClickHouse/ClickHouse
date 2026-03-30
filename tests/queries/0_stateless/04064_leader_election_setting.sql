@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage, no-azure-blob-storage
 -- Test that the leader_election settings are accepted and validated.
 
 -- Basic: setting can be specified

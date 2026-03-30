@@ -13,11 +13,13 @@ node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.d/storage_conf.xml"],
     with_minio=True,
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.d/storage_conf.xml"],
     with_minio=True,
+    stay_alive=True,
 )
 
 

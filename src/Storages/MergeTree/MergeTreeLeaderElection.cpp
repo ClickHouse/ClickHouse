@@ -192,6 +192,10 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
         auto write_settings = context->getWriteSettings();
         write_settings.object_storage_write_if_match = if_match;
         write_settings.object_storage_write_if_none_match = if_none_match;
+        /// Disable filesystem cache for lease writes — the lease file is tiny and
+        /// rewritten frequently. Writing through CachedOnDiskWriteBufferFromFile
+        /// causes "Having intersection with already existing cache" errors.
+        write_settings.enable_filesystem_cache_on_write_operations = false;
 
         auto buffer = object_storage->writeObject(
             StoredObject(lease_path),
