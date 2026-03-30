@@ -33,10 +33,10 @@ struct CostConfig
 {
     Float64 cpu_weight = 1.0;             /// Parallelizable CPU work (scans, expression eval). Reference = 1.0.
     Float64 memory_weight = 1.0;          /// Memory consumption (hash tables, buffers). ~0.1-1.0 depending on pressure.
-    Float64 network_weight = 1.0;         /// Per-byte network transfer. ~1.0 if bandwidth ≈ disk; higher for slow networks.
+    Float64 network_weight = 1.0;         /// Per-byte network transfer. ~1.0 if bandwidth ~ disk; higher for slow networks.
     Float64 io_weight = 1.0;              /// Per-byte I/O (S3/disk reads). ~1.0 for S3; lower for fast NVMe.
     Float64 sequential_weight = 1000.0;   /// Single-threaded phases (hash build, merge). ~threads_per_node for single-node
-                                          /// decisions; ~bytes_per_row × N / 2 for broadcast-vs-shuffle threshold.
+                                          /// decisions; ~bytes_per_row * N / 2 for broadcast-vs-shuffle threshold.
     Float64 exchange_fixed_overhead = 100.0; /// Fixed per-exchange latency (connection setup, metadata).
 
     String dump() const;
