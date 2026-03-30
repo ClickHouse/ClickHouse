@@ -148,18 +148,18 @@ public:
     /// Insert a column into the cache.
     void set(const Key & key, const MappedPtr & mapped)
     {
+        /// Hold interval_index_mutex across both operations so that clearAll()
+        /// cannot run between them and leave an orphaned Base entry.
         /// Insert into base cache first, then publish to interval_index.
         /// This order ensures there is no window where a key is visible in the index
         /// but not yet in the cache (which would cause getIntersecting to classify it
         /// as stale and erase it).
+        std::lock_guard lock(interval_index_mutex);
         Base::set(key, mapped);
 
-        {
-            std::lock_guard lock(interval_index_mutex);
-            PartIdentifier part_id{key.table_uuid, key.part_name};
-            auto & intervals = interval_index[part_id][key.column_name];
-            intervals[{key.row_begin, key.row_end}] = key;
-        }
+        PartIdentifier part_id{key.table_uuid, key.part_name};
+        auto & intervals = interval_index[part_id][key.column_name];
+        intervals[{key.row_begin, key.row_end}] = key;
     }
 
     /// Remove all cached entries for a specific data part.
@@ -168,10 +168,14 @@ public:
 
     /// Clear both the base cache and the interval index.
     /// Used by SYSTEM DROP COLUMNS CACHE.
+    /// Holds interval_index_mutex across both operations so that a concurrent
+    /// set() cannot insert into interval_index between the two clears.
+    /// This is deadlock-safe: set() releases the CacheBase internal lock
+    /// before acquiring interval_index_mutex, so there is no lock-order cycle.
     void clearAll()
     {
-        Base::clear();
         std::lock_guard lock(interval_index_mutex);
+        Base::clear();
         interval_index.clear();
     }
 
