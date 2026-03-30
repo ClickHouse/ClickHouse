@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_SETTING;
+extern const int UNKNOWN_SETTING;
 }
 
 #define KINESIS_RELATED_SETTINGS(DECLARE, ALIAS) \
@@ -39,14 +39,19 @@ namespace ErrorCodes
     DECLARE(Bool, kinesis_save_checkpoints, true, "Save sequence number checkpoints to survive restarts.", 0) \
     /* Error handling */ \
     DECLARE(UInt64, kinesis_skip_broken_messages, 0, "Skip at least this number of broken messages from Kinesis per block.", 0) \
-    DECLARE(StreamingHandleErrorMode, kinesis_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kinesis engine.", 0) \
+    DECLARE( \
+        StreamingHandleErrorMode, \
+        kinesis_handle_error_mode, \
+        StreamingHandleErrorMode::DEFAULT, \
+        "How to handle errors for Kinesis engine.", \
+        0) \
     /* Producer */ \
     DECLARE(UInt64, kinesis_max_rows_per_message, 1, "The maximum number of rows per PutRecord call for row-based formats.", 0) \
     /* SSL */ \
-    DECLARE(Bool, kinesis_verify_ssl, true, "Verify SSL certificate when connecting to Kinesis.", 0) \
+    DECLARE(Bool, kinesis_verify_ssl, true, "Verify SSL certificate when connecting to Kinesis.", 0)
 
 #define LIST_OF_KINESIS_SETTINGS(M, ALIAS) \
-    KINESIS_RELATED_SETTINGS(M, ALIAS)     \
+    KINESIS_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(KinesisSettingsTraits, LIST_OF_KINESIS_SETTINGS)
@@ -65,15 +70,18 @@ LIST_OF_KINESIS_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 
 #undef INITIALIZE_SETTING_EXTERN
 
-KinesisSettings::KinesisSettings() : impl(std::make_unique<KinesisSettingsImpl>())
+KinesisSettings::KinesisSettings()
+    : impl(std::make_unique<KinesisSettingsImpl>())
 {
 }
 
-KinesisSettings::KinesisSettings(const KinesisSettings & settings) : impl(std::make_unique<KinesisSettingsImpl>(*settings.impl))
+KinesisSettings::KinesisSettings(const KinesisSettings & settings)
+    : impl(std::make_unique<KinesisSettingsImpl>(*settings.impl))
 {
 }
 
-KinesisSettings::KinesisSettings(KinesisSettings && settings) noexcept : impl(std::make_unique<KinesisSettingsImpl>(std::move(*settings.impl)))
+KinesisSettings::KinesisSettings(KinesisSettings && settings) noexcept
+    : impl(std::make_unique<KinesisSettingsImpl>(std::move(*settings.impl)))
 {
 }
 
