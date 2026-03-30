@@ -179,9 +179,18 @@ public:
         interval_index.clear();
     }
 
-    /// Get all cache entries for introspection (system.columns_cache table).
-    /// Returns a vector of (key, entry) pairs for all cached columns.
-    std::vector<std::pair<Key, MappedPtr>> getAllEntries();
+    /// Metadata for a cache entry, used by system.columns_cache.
+    /// Does not hold a shared_ptr to column data, so it does not pin cached columns in memory.
+    struct EntryMetadata
+    {
+        Key key;
+        size_t rows;
+        size_t bytes;
+    };
+
+    /// Get metadata for all cache entries for introspection (system.columns_cache table).
+    /// Returns lightweight metadata without holding shared_ptrs to column data.
+    std::vector<EntryMetadata> getAllEntriesMetadata();
 
 private:
     /// Remove stale entries from interval_index.

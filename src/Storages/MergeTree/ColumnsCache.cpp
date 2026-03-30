@@ -143,10 +143,10 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     }
 }
 
-std::vector<std::pair<ColumnsCache::Key, ColumnsCache::MappedPtr>>
-ColumnsCache::getAllEntries()
+std::vector<ColumnsCache::EntryMetadata>
+ColumnsCache::getAllEntriesMetadata()
 {
-    std::vector<std::pair<Key, MappedPtr>> result;
+    std::vector<EntryMetadata> result;
 
     /// First collect all keys while holding the interval_index lock
     std::vector<Key> keys;
@@ -166,14 +166,16 @@ ColumnsCache::getAllEntries()
         }
     }
 
-    /// Then query cache entries without holding interval_index lock to avoid deadlock
+    /// Then query cache entries without holding interval_index lock to avoid deadlock.
+    /// We extract metadata (rows, bytes) immediately and release the shared_ptr,
+    /// so we don't pin all cached column data in memory during the query.
     std::vector<Key> stale_keys;
     for (const auto & key : keys)
     {
         /// Verify the entry still exists in cache (might have been evicted)
         auto entry = Base::get(key);
         if (entry)
-            result.emplace_back(key, entry);
+            result.push_back(EntryMetadata{key, entry->rows, entry->column->byteSize()});
         else
             stale_keys.push_back(key);
     }

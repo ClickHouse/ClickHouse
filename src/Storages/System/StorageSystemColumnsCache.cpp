@@ -80,12 +80,13 @@ protected:
         if (done)
             return {};
 
-        /// Fetch all entries on the first call and paginate through them.
+        /// Fetch all entry metadata on the first call and paginate through them.
+        /// Uses metadata-only API to avoid pinning all cached column data in memory.
         if (!entries_fetched)
         {
             auto columns_cache = getContext()->getColumnsCache();
             if (columns_cache)
-                all_entries = columns_cache->getAllEntries();
+                all_entries = columns_cache->getAllEntriesMetadata();
             entries_fetched = true;
         }
 
@@ -108,12 +109,12 @@ protected:
         size_t num_rows = 0;
         while (current_index < all_entries.size() && (!max_block_size || num_rows < max_block_size))
         {
-            const auto & [key, entry] = all_entries[current_index];
+            const auto & meta = all_entries[current_index];
 
             /// Look up database and table names from UUID
             String database_name;
             String table_name;
-            auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(key.table_uuid);
+            auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(meta.key.table_uuid);
             if (database && table)
             {
                 database_name = database->getDatabaseName();
@@ -122,13 +123,13 @@ protected:
 
             col_database->insert(database_name);
             col_table->insert(table_name);
-            col_table_uuid->insert(key.table_uuid);
-            col_part->insert(key.part_name);
-            col_column->insert(key.column_name);
-            col_row_begin->insert(key.row_begin);
-            col_row_end->insert(key.row_end);
-            col_rows->insert(entry->rows);
-            col_bytes->insert(entry->column->byteSize());
+            col_table_uuid->insert(meta.key.table_uuid);
+            col_part->insert(meta.key.part_name);
+            col_column->insert(meta.key.column_name);
+            col_row_begin->insert(meta.key.row_begin);
+            col_row_end->insert(meta.key.row_end);
+            col_rows->insert(meta.rows);
+            col_bytes->insert(meta.bytes);
 
             ++num_rows;
             ++current_index;
@@ -153,7 +154,7 @@ private:
     bool done = false;
     bool entries_fetched = false;
     size_t current_index = 0;
-    std::vector<std::pair<ColumnsCacheKey, std::shared_ptr<ColumnsCacheEntry>>> all_entries;
+    std::vector<ColumnsCache::EntryMetadata> all_entries;
 };
 
 }
