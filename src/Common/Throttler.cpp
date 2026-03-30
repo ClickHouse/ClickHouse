@@ -101,7 +101,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
     }
     else if (max_speed_value > 0)
     {
-        LOG_TRACE(log, "Not sleeping: throttler_name={}, amount={}, count={}, tokens={}, max_speed={}", throttler_name, amount, count_value, tokens_value, max_speed_value);
+        LOG_TEST(log, "Not sleeping: throttler_name={}, amount={}, count={}, tokens={}, max_speed={}", throttler_name, amount, count_value, tokens_value, max_speed_value);
     }
 
     bool parent_block = false;
