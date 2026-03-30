@@ -4,6 +4,7 @@
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
@@ -61,6 +62,17 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Common/makeSocketAddress.h>
+#include <Common/ProfileEvents.h>
+#include <Interpreters/ServerAsynchronousMetrics.h>
+#include <Server/HTTP/HTTPServer.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/TCPHandlerFactory.h>
+#include <Server/TCPServer.h>
+#include <Server/ServerType.h>
+#include <Poco/Net/HTTPServerParams.h>
+#include <Poco/ThreadPool.h>
 
 #include "config.h"
 
@@ -76,13 +88,25 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
 }
 
+namespace ProfileEvents
+{
+    extern const Event InterfaceNativeReceiveBytes;
+    extern const Event InterfaceNativeSendBytes;
+    extern const Event InterfaceHTTPReceiveBytes;
+    extern const Event InterfaceHTTPSendBytes;
+}
+
 namespace DB
 {
 
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool implicit_select;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
 }
 
@@ -172,6 +196,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsUInt32 listen_backlog;
+    extern const ServerSettingsBool listen_reuse_port;
+    extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsUInt64 max_keep_alive_requests;
+    extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
+    extern const ServerSettingsUInt64 asynchronous_heavy_metrics_update_period_s;
 }
 
 namespace ErrorCodes
@@ -180,6 +210,7 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NETWORK_ERROR;
 }
 
 void applySettingsOverridesForLocal(ContextMutablePtr context)
@@ -449,11 +480,207 @@ void LocalServer::tryInitPath()
 }
 
 
+void LocalServer::stopServers(const ServerType & server_type)
+{
+    LoggerRawPtr log = &logger();
+
+    auto check_server = [&log](const char prefix[], auto & server)
+    {
+        if (!server.isStopping())
+            return false;
+        size_t current_connections = server.currentConnections();
+        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
+            server.getDescription(),
+            prefix,
+            !current_connections ? "finished" : "waiting",
+            current_connections);
+        return !current_connections;
+    };
+
+    std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
+
+    for (auto & server : servers)
+    {
+        if (!server.isStopping())
+        {
+            const std::string server_port_name = server.getPortName();
+            if (server_type.shouldStop(server_port_name))
+                server.stop();
+        }
+    }
+
+    std::erase_if(servers, std::bind_front(check_server, ""));
+}
+
+
+void LocalServer::startServers(const ServerType & server_type)
+{
+    const auto & config = getClientConfiguration();
+    const Settings & settings = global_context->getSettingsRef();
+
+    auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+    if (listen_hosts.empty())
+    {
+        listen_hosts.emplace_back("::1");
+        listen_hosts.emplace_back("127.0.0.1");
+    }
+
+    bool listen_try = listen_hosts.size() > 1;
+
+    if (!server_pool)
+        server_pool = std::make_unique<Poco::ThreadPool>(3, 100);
+
+    if (!async_metrics)
+    {
+        auto metrics_func = [this]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> result;
+            std::lock_guard lock(servers_lock);
+            result.reserve(servers.size());
+            for (const auto & server : servers)
+                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
+            return result;
+        };
+        async_metrics = std::make_unique<ServerAsynchronousMetrics>(
+            global_context,
+            /* update_period_seconds= */ 60,
+            /* update_heavy_metrics_= */ false,
+            /* heavy_metrics_update_period_seconds= */ 120,
+            metrics_func,
+            /* update_jemalloc_epoch_= */ false,
+            /* update_rss_= */ false);
+    }
+
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings[Setting::http_receive_timeout]);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
+    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
+    http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+
+    auto create_server = [&](const std::string & listen_host, const char * port_name, auto && func)
+    {
+        if (config.getString(port_name, "").empty())
+            return;
+
+        /// If we already have an active server for this listen_host/port_name, don't create it again
+        for (const auto & server : servers)
+        {
+            if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
+                return;
+        }
+
+        auto port = config.getInt(port_name);
+        try
+        {
+            servers.push_back(func(static_cast<UInt16>(port)));
+            servers.back().start();
+            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
+            global_context->registerServerPort(port_name, static_cast<UInt16>(port));
+        }
+        catch (const Poco::Exception &)
+        {
+            if (listen_try)
+            {
+                LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}...", listen_host, port, getCurrentExceptionMessage(false));
+            }
+            else
+            {
+                throw Exception(ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, getCurrentExceptionMessage(false));
+            }
+        }
+    };
+
+    auto socket_bind_listen = [&](Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port) -> Poco::Net::SocketAddress
+    {
+        auto address = makeSocketAddress(host, port, &logger());
+        socket.bind(address, /* reuseAddress= */ true, /* reusePort= */ server_settings[ServerSetting::listen_reuse_port]);
+        if (port == 0)
+        {
+            address = socket.address();
+            LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
+        }
+        socket.listen(/* backlog= */ server_settings[ServerSetting::listen_backlog]);
+        return address;
+    };
+
+    for (const auto & listen_host : listen_hosts)
+    {
+        if (server_type.shouldStart(ServerType::Type::TCP))
+        {
+            const char * port_name = "tcp_port";
+            create_server(listen_host, port_name, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+
+                Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
+                params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "native protocol (tcp): " + address.toString(),
+                    std::make_unique<TCPServer>(
+                        new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
+                            ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                        *server_pool,
+                        socket,
+                        params));
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::HTTP))
+        {
+            const char * port_name = "http_port";
+            create_server(listen_host, port_name, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socket_bind_listen(socket, listen_host, port);
+                socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                socket.setSendTimeout(settings[Setting::http_send_timeout]);
+
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "http://" + address.toString(),
+                    std::make_unique<HTTPServer>(
+                        std::make_shared<HTTPContext>(global_context),
+                        createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
+                        *server_pool,
+                        socket,
+                        http_params,
+                        /* connection_filter= */ nullptr,
+                        ProfileEvents::InterfaceHTTPReceiveBytes,
+                        ProfileEvents::InterfaceHTTPSendBytes));
+            });
+        }
+
+    }
+}
+
+
 void LocalServer::cleanup()
 {
     try
     {
         connection.reset();
+
+        /// Stop protocol servers before shutting down context.
+        {
+            std::lock_guard lock(servers_lock);
+            for (auto & server : servers)
+                if (!server.isStopping())
+                    server.stop();
+            servers.clear();
+        }
+
+        if (async_metrics)
+        {
+            async_metrics->stop();
+            async_metrics.reset();
+        }
 
         /// Stop the memory worker before shutting down context, as it references the page cache.
         memory_worker.reset();
@@ -1187,6 +1414,25 @@ void LocalServer::processConfig()
     else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
         prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
     prompt = appendSmileyIfNeeded(prompt);
+
+    /// Set default ports if not specified, so SYSTEM START LISTEN works out of the box.
+    if (!getClientConfiguration().has("tcp_port"))
+        getClientConfiguration().setInt("tcp_port", DBMS_DEFAULT_PORT);
+    if (!getClientConfiguration().has("http_port"))
+        getClientConfiguration().setInt("http_port", 8123);
+
+    /// Register callbacks for SYSTEM START/STOP LISTEN queries.
+    global_context->setStartServersCallback([this](const ServerType & server_type)
+    {
+        std::lock_guard lock(servers_lock);
+        startServers(server_type);
+    });
+
+    global_context->setStopServersCallback([this](const ServerType & server_type)
+    {
+        std::lock_guard lock(servers_lock);
+        stopServers(server_type);
+    });
 }
 
 

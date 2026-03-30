@@ -6,21 +6,29 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Loggers/Loggers.h>
+#include <Server/IServer.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Common/MemoryWorker.h>
 #include <Common/StatusFile.h>
 
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 
+
+namespace Poco { class ThreadPool; }
 
 namespace DB
 {
 
+class AsynchronousMetrics;
+class ServerType;
+
 /// Lightweight Application for clickhouse-local
 /// No networking, no extra configs and working directories, no pid and status files, no dictionaries, no logging.
 /// Quiet mode by default
-class LocalServer : public ClientApplicationBase, public Loggers
+class LocalServer : public ClientApplicationBase, public Loggers, public IServer
 {
 public:
     LocalServer() = default;
@@ -29,6 +37,12 @@ public:
 
     int main(const std::vector<String> & /*args*/) override;
     bool supportsLocalMetaCommands() const override { return true; }
+
+    /// IServer interface
+    Poco::Util::LayeredConfiguration & config() const override { return ClientApplicationBase::config(); }
+    Poco::Logger & logger() const override { return ClientApplicationBase::logger(); }
+    ContextMutablePtr context() const override { return global_context; }
+    bool isCancelled() const override { return is_cancelled; }
 
 protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
@@ -68,6 +82,9 @@ private:
 
     void createClientContext();
 
+    void startServers(const ServerType & server_type);
+    void stopServers(const ServerType & server_type);
+
     ServerSettings server_settings;
 
     std::optional<StatusFile> status;
@@ -78,6 +95,12 @@ private:
     /// MemoryWorker periodically updates RSS and resizes the userspace page cache.
     /// Without it the page cache stays stuck at `page_cache_min_size`.
     std::optional<MemoryWorker> memory_worker;
+
+    std::atomic<bool> is_cancelled{false};
+    std::vector<ProtocolServerAdapter> servers;
+    std::mutex servers_lock;
+    std::unique_ptr<Poco::ThreadPool> server_pool;
+    std::unique_ptr<AsynchronousMetrics> async_metrics;
 };
 
 }
