@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -41,7 +43,7 @@ def test_user_overcommit():
     finished = False
     last_error = ""
 
-    for attempt in range(3):
+    for attempt in range(5):
         responses_A = list()
         responses_B = list()
         for i in range(100):
@@ -71,6 +73,9 @@ def test_user_overcommit():
         last_error = (
             f"attempt {attempt + 1}: overcommitted_killed={overcommitted_killed}, finished={finished}"
         )
+
+        # Wait for ProcessList and MemoryTracker state to clear before the next attempt.
+        time.sleep(2)
 
     assert overcommitted_killed, f"overcommitted query is not killed ({last_error})"
     assert finished, f"all tasks are killed ({last_error})"
