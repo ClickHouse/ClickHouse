@@ -457,8 +457,13 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         else if (query_node || union_node)
         {
             const auto & projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
-            NamesAndTypesList projection_columns_list(projection_columns.begin(), projection_columns.end());
-            additional_column_to_read = ExpressionActions::getSmallestColumn(projection_columns_list);
+            if (projection_columns.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected at least one projection column for query or union. Actual {}",
+                                table_expression->formatASTForErrorMessage());
+
+            /// pick the first projection column
+            /// ExpressionActions::getSmallestColumn is not used because it skips subcolumns (`tup.s` from Tuple)
+            additional_column_to_read = projection_columns.front();
         }
         else
         {
