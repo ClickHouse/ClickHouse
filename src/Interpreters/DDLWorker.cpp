@@ -560,10 +560,11 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
     ReadBufferFromString istr(query_to_execute);
     QueryScope query_scope;
+    ContextMutablePtr query_context;
 
     try
     {
-        auto query_context = task.makeQueryContext(context, zookeeper);
+        query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());
         if (query_context->getSettingsRef()[Setting::implicit_transaction])
@@ -612,12 +613,12 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
 
         /// TABLE_IS_READ_ONLY is retriable for ReplicatedMergeTree (temporary ZooKeeper disconnect),
         /// but not for plain MergeTree where it comes from the permanent `table_readonly` setting.
-        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY)
+        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY && query_context)
         {
             if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()))
             {
-                auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
-                if (auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                auto table_id = query_context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                if (auto storage = DatabaseCatalog::instance().tryGetTable(table_id, query_context);
                     storage && !storage->supportsReplication())
                     no_sense_to_retry = true;
             }
