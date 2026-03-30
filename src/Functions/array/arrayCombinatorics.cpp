@@ -560,4 +560,4 @@ REGISTER_FUNCTION(ArrayCombinatorics)
     factory.registerFunction<FunctionArrayCombinations>(combinations_documentation);
 }
 
-} // namespace DB
+}
