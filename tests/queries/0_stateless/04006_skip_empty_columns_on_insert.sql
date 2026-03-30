@@ -241,7 +241,7 @@ WHERE database = currentDatabase() AND table = 't_skip_empty_default_expr' AND a
 ORDER BY column;
 
 SELECT 'case7_data';
-SELECT key, a, b FROM t_skip_empty_default_expr ORDER BY key;
+SELECT key, a, b, c FROM t_skip_empty_default_expr ORDER BY key;
 
 DROP TABLE t_skip_empty_default_expr;
 
@@ -379,3 +379,149 @@ SELECT count(), sum(val) FROM t_skip_empty_sparse_dst;
 
 DROP TABLE t_skip_empty_sparse_src;
 DROP TABLE t_skip_empty_sparse_dst;
+
+-- ============================================================================
+-- CASE 11: Compact parts — all columns stored in a single file, but the
+-- optimization should still skip type-default columns in columns.txt.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_compact;
+
+CREATE TABLE t_skip_empty_compact
+(
+    key UInt64,
+    a UInt64,
+    b String,
+    c Float64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- a=100, b='' (default), c=0 (default) → b, c should be skipped
+INSERT INTO t_skip_empty_compact (key, a, b, c) VALUES (1, 100, '', 0);
+
+SELECT 'case11_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_compact' AND active
+ORDER BY column;
+
+SELECT 'case11_data';
+SELECT * FROM t_skip_empty_compact ORDER BY key;
+
+-- Merge compact parts
+INSERT INTO t_skip_empty_compact (key, a, b, c) VALUES (2, 0, 'hello', 3.14);
+
+OPTIMIZE TABLE t_skip_empty_compact FINAL;
+
+SELECT 'case11_post_merge';
+SELECT * FROM t_skip_empty_compact ORDER BY key;
+
+DROP TABLE t_skip_empty_compact;
+
+-- ============================================================================
+-- CASE 12: LowCardinality column — hasOnlyTypeDefaults uses the generic
+-- isDefaultAt loop, which works through the dictionary.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_lc;
+
+CREATE TABLE t_skip_empty_lc
+(
+    key UInt64,
+    lc1 LowCardinality(String),
+    lc2 LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+-- lc1='' (default), lc2='' (default) → both should be skipped
+INSERT INTO t_skip_empty_lc (key, lc1, lc2) VALUES (1, '', '');
+
+SELECT 'case12_columns_in_part';
+SELECT column FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_skip_empty_lc' AND active
+ORDER BY column;
+
+SELECT 'case12_data';
+SELECT * FROM t_skip_empty_lc ORDER BY key;
+
+-- Insert non-default, merge
+INSERT INTO t_skip_empty_lc (key, lc1, lc2) VALUES (2, 'hello', 'world');
+
+OPTIMIZE TABLE t_skip_empty_lc FINAL;
+
+SELECT 'case12_post_merge';
+SELECT * FROM t_skip_empty_lc ORDER BY key;
+
+DROP TABLE t_skip_empty_lc;
+
+-- ============================================================================
+-- CASE 13: Vertical merge — explicitly enable vertical merge algorithm and
+-- verify that merging parts with missing columns works correctly.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_vertical;
+
+CREATE TABLE t_skip_empty_vertical
+(
+    key UInt64,
+    a UInt64,
+    b UInt64,
+    c String
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0,
+         enable_vertical_merge_algorithm = 1,
+         vertical_merge_algorithm_min_rows_to_activate = 1,
+         vertical_merge_algorithm_min_columns_to_activate = 1;
+
+INSERT INTO t_skip_empty_vertical (key, a, b, c) VALUES (1, 100, 0, '');
+INSERT INTO t_skip_empty_vertical (key, a, b, c) VALUES (2, 0, 200, '');
+INSERT INTO t_skip_empty_vertical (key, a, b, c) VALUES (3, 0, 0, 'hello');
+
+OPTIMIZE TABLE t_skip_empty_vertical FINAL;
+
+SELECT 'case13_vertical_merge';
+SELECT * FROM t_skip_empty_vertical ORDER BY key;
+
+DROP TABLE t_skip_empty_vertical;
+
+-- ============================================================================
+-- CASE 14: Horizontal merge — explicitly disable vertical merge and verify.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_horizontal;
+
+CREATE TABLE t_skip_empty_horizontal
+(
+    key UInt64,
+    a UInt64,
+    b UInt64,
+    c String
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         enable_block_number_column = 0, enable_block_offset_column = 0,
+         enable_vertical_merge_algorithm = 0;
+
+INSERT INTO t_skip_empty_horizontal (key, a, b, c) VALUES (1, 100, 0, '');
+INSERT INTO t_skip_empty_horizontal (key, a, b, c) VALUES (2, 0, 200, '');
+INSERT INTO t_skip_empty_horizontal (key, a, b, c) VALUES (3, 0, 0, 'hello');
+
+OPTIMIZE TABLE t_skip_empty_horizontal FINAL;
+
+SELECT 'case14_horizontal_merge';
+SELECT * FROM t_skip_empty_horizontal ORDER BY key;
+
+DROP TABLE t_skip_empty_horizontal;

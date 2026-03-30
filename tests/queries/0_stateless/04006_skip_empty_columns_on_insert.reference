@@ -36,7 +36,7 @@ b
 c
 key
 case7_data
-1	5	0
+1	5	0	50
 case8_columns_in_part
 key
 case8_data
@@ -57,3 +57,26 @@ case10_columns_in_part
 key
 case10_data_sample
 1000	0
+case11_columns_in_part
+a
+key
+case11_data
+1	100		0
+case11_post_merge
+1	100		0
+2	0	hello	3.14
+case12_columns_in_part
+key
+case12_data
+1		
+case12_post_merge
+1		
+2	hello	world
+case13_vertical_merge
+1	100	0	
+2	0	200	
+3	0	0	hello
+case14_horizontal_merge
+1	100	0	
+2	0	200	
+3	0	0	hello
