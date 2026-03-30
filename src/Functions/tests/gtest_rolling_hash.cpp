@@ -159,3 +159,11 @@ TEST(RollingHashCDC, MaxChunkSizeFloor)
 {
     EXPECT_GE(RollingHashCDC::maxChunkSizeForCdc(2), 262144u);
 }
+
+TEST(RollingHashCDC, ForceCutUtf8WhenTentativeEqualsDataSize)
+{
+    const std::string input = "hello";
+    const UInt8 * data = reinterpret_cast<const UInt8 *>(input.data());
+    size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, 100);
+    EXPECT_EQ(cut, input.size());
+}

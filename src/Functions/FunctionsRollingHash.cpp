@@ -15,6 +15,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 namespace
 {
 constexpr UInt64 buzhashSplitmix64(UInt64 x)
@@ -44,8 +52,8 @@ namespace RollingHashCDC
 {
 namespace
 {
-static constexpr size_t MAX_CDC_CHUNK_SIZE = 256 * 1024 * 1024; /// 256 MiB safety cap
-static constexpr size_t DEFAULT_MIN_MAX_CHUNK = 262144; /// 256 KiB default max chunk floor
+constexpr size_t MAX_CDC_CHUNK_SIZE = 256 * 1024 * 1024; /// 256 MiB safety cap
+constexpr size_t DEFAULT_MIN_MAX_CHUNK = 262144; /// 256 KiB default max chunk floor
 }
 
 size_t maxChunkSizeForCdc(UInt64 reverse_probability)
@@ -71,6 +79,9 @@ size_t forceCutPositionUtf8(const UInt8 * data, size_t data_size, size_t chunk_s
     size_t tentative = std::min(chunk_start + max_chunk_size, data_size);
     if (tentative <= chunk_start)
         return tentative;
+    if (tentative == data_size)
+        return data_size;
+
     const UInt8 * p = data + tentative;
     UTF8::syncBackward(p, data + chunk_start);
     size_t cut_pos = static_cast<size_t>(p - data);
@@ -194,7 +205,7 @@ void validateContentDefinedCdcArguments(const ColumnsWithTypeAndName & arguments
     getReverseProbability(arguments, func_name);
 }
 
-} // namespace
+}
 
 DataTypePtr FunctionContentDefinedChunks::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
