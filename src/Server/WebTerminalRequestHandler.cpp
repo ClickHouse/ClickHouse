@@ -734,7 +734,7 @@ void WebTerminalRequestHandler::handleRequest(HTTPServerRequest & request, HTTPS
     if (!server.config().getBool("allow_experimental_webterminal", false))
     {
         response.setContentType("text/plain; charset=UTF-8");
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_FORBIDDEN);
         *response.send() << "Web terminal is disabled. See the `allow_experimental_webterminal` server configuration.\n";
         return;
     }
