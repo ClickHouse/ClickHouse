@@ -799,6 +799,9 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     std::sort(block_idxs.begin(), block_idxs.end());
     block_idxs.erase(std::unique(block_idxs.begin(), block_idxs.end()), block_idxs.end());
 
+    if (block_idxs.empty())
+        return;
+
     std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> subranges;
     subranges.reserve(block_idxs.size());
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
