@@ -1,0 +1,253 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionGeoUtils.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+
+#include <DataTypes/DataTypeFactory.h>
+
+#include <boost/geometry.hpp>
+
+#include <vector>
+
+
+namespace DB
+{
+
+struct Settings;
+
+namespace
+{
+
+constexpr size_t UNION_REDUCTION_THRESHOLD = 16;
+
+
+/// Pairwise reduction to keep intermediate complexity lower than a linear left-fold.
+void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks)
+{
+    while (chunks.size() > 1)
+    {
+        size_t n = chunks.size();
+        size_t out = 0;
+        for (size_t i = 0; i + 1 < n; i += 2)
+        {
+            CartesianMultiPolygon tmp;
+            boost::geometry::union_(chunks[i], chunks[i + 1], tmp);
+            chunks[out++] = std::move(tmp);
+        }
+        if (n % 2 == 1)
+            chunks[out++] = std::move(chunks[n - 1]);
+        chunks.resize(out);
+    }
+}
+
+
+struct GroupPolygonUnionData
+{
+    std::vector<CartesianMultiPolygon> chunks;
+
+    void add(CartesianMultiPolygon && mp)
+    {
+        if (mp.empty())
+            return;
+        chunks.push_back(std::move(mp));
+        maybeReduce();
+    }
+
+    void merge(const GroupPolygonUnionData & other)
+    {
+        chunks.insert(chunks.end(), other.chunks.begin(), other.chunks.end());
+        maybeReduce();
+    }
+
+    void maybeReduce()
+    {
+        if (chunks.size() > UNION_REDUCTION_THRESHOLD)
+            reduceChunksPairwiseUnion(chunks);
+    }
+
+    CartesianMultiPolygon getResult()
+    {
+        if (chunks.empty())
+            return {};
+        reduceChunksPairwiseUnion(chunks);
+        return chunks.empty() ? CartesianMultiPolygon{} : chunks[0];
+    }
+};
+
+
+class AggregateFunctionGroupPolygonUnion final
+    : public IAggregateFunctionDataHelper<GroupPolygonUnionData, AggregateFunctionGroupPolygonUnion>
+{
+private:
+    GeometryColumnType geo_type;
+    bool is_variant = false;
+    VariantTypeMap variant_type_map;
+
+public:
+    AggregateFunctionGroupPolygonUnion(
+        const DataTypePtr & argument_type, const Array & parameters_, GeometryColumnType geo_type_, bool is_variant_)
+        : IAggregateFunctionDataHelper<GroupPolygonUnionData, AggregateFunctionGroupPolygonUnion>(
+              {argument_type}, parameters_, DataTypeFactory::instance().get("MultiPolygon"))
+        , geo_type(geo_type_)
+        , is_variant(is_variant_)
+    {
+        if (is_variant)
+            variant_type_map = buildVariantTypeMap(argument_type);
+    }
+
+    String getName() const override { return "groupPolygonUnion"; }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        Field field;
+        columns[0]->get(row_num, field);
+
+        GeometryColumnType current_type = geo_type;
+        if (is_variant)
+        {
+            current_type = resolveGeometryVariantType(columns[0], row_num, variant_type_map);
+            current_type = normalizePolygonalVariantType(current_type);
+        }
+
+        if (current_type == GeometryColumnType::Null)
+            return;
+
+        auto mp = fieldToMultiPolygon(field, current_type, getName().c_str());
+        AggregateFunctionGroupPolygonUnion::data(place).add(std::move(mp));
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        AggregateFunctionGroupPolygonUnion::data(place).merge(AggregateFunctionGroupPolygonUnion::data(rhs));
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        writeBinaryLittleEndian(GEO_SERDE_VERSION, buf);
+
+        const auto & chunks = AggregateFunctionGroupPolygonUnion::data(place).chunks;
+        writeVarUInt(chunks.size(), buf);
+        for (const auto & chunk : chunks)
+            serializeGeoMultiPolygon(chunk, buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        UInt8 version;
+        readBinaryLittleEndian(version, buf);
+        if (version != GEO_SERDE_VERSION)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unsupported serialization version {} for aggregate function {} (expected {})",
+                static_cast<int>(version),
+                getName(),
+                static_cast<int>(GEO_SERDE_VERSION));
+
+        auto & chunks = AggregateFunctionGroupPolygonUnion::data(place).chunks;
+        UInt64 chunk_count;
+        readVarUInt(chunk_count, buf);
+        if (chunk_count > MAX_CHUNKS_PER_STATE)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Corrupted state of aggregate function {}: {} chunks (limit {})",
+                getName(),
+                chunk_count,
+                MAX_CHUNKS_PER_STATE);
+
+        chunks.resize(chunk_count);
+        for (UInt64 i = 0; i < chunk_count; ++i)
+            chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str());
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        auto result = AggregateFunctionGroupPolygonUnion::data(place).getResult();
+        insertMultiPolygonIntoColumn(result, to);
+    }
+};
+
+
+AggregateFunctionPtr createAggregateFunctionGroupPolygonUnion(
+    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    assertUnary(name, argument_types);
+    assertNoParameters(name, parameters);
+
+    const auto & arg_type = argument_types[0];
+
+    if (arg_type->getName() == "Geometry")
+        return std::make_shared<AggregateFunctionGroupPolygonUnion>(
+            arg_type, parameters, GeometryColumnType::Polygon /* unused for variant */, true);
+
+    auto geo_type = getGeometryColumnTypeFromDataType(arg_type);
+    if (!geo_type)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument of function {} must be a polygonal Geo type (Ring, Polygon, MultiPolygon), got {}",
+            name,
+            arg_type->getName());
+
+    switch (*geo_type)
+    {
+        case GeometryColumnType::Ring:
+        case GeometryColumnType::Polygon:
+        case GeometryColumnType::MultiPolygon:
+            break;
+        case GeometryColumnType::Point:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be Point", name);
+        case GeometryColumnType::Linestring:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be LineString", name);
+        case GeometryColumnType::MultiLinestring:
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be MultiLineString", name);
+        case GeometryColumnType::Null:
+            break;
+    }
+
+    return std::make_shared<AggregateFunctionGroupPolygonUnion>(arg_type, parameters, *geo_type, false);
+}
+
+}
+
+void registerAggregateFunctionGroupPolygonUnion(AggregateFunctionFactory & factory)
+{
+    FunctionDocumentation::Description description = R"(
+Computes the union of all polygonal geometries in the group.
+
+Accepts `Ring`, `Polygon`, and `MultiPolygon` arguments. Rejects `Point`, `LineString`, and `MultiLineString` with an exception.
+
+`Geometry` arguments are also supported if the active value is polygonal.
+
+Empty geometry inputs are treated as the neutral element for union and are silently skipped.
+
+The result is a `MultiPolygon` representing the geometric union of all input geometries. Returns an empty `MultiPolygon` for empty groups. Invalid polygonal input raises an exception.
+    )";
+    FunctionDocumentation::Syntax syntax = "groupPolygonUnion(polygon)";
+    FunctionDocumentation::Arguments arguments
+        = {{"polygon",
+            "A polygonal geometry value (`Ring`, `Polygon`, `MultiPolygon`) or a `Geometry` value containing one of these types.",
+            {"Ring", "Polygon", "MultiPolygon", "Geometry"}}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the union as a MultiPolygon.", {"MultiPolygon"}};
+    FunctionDocumentation::Examples examples
+        = {{"Union of two overlapping polygons",
+            R"(
+SELECT wkt(groupPolygonUnion(p)) FROM (
+    SELECT arrayJoin([
+        readWKTPolygon('POLYGON ((0 0, 0 2, 2 2, 2 0, 0 0))'),
+        readWKTPolygon('POLYGON ((1 1, 1 3, 3 3, 3 1, 1 1))')
+    ]) AS p
+)
+            )",
+            R"(
+MULTIPOLYGON(((1 2,1 3,3 3,3 1,2 1,2 0,0 0,0 2,1 2)))
+        )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = false};
+    factory.registerFunction("groupPolygonUnion", {createAggregateFunctionGroupPolygonUnion, documentation, properties});
+}
+
+}

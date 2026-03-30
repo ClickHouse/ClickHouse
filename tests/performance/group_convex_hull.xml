@@ -1,0 +1,29 @@
+<test>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_heavy</drop_query>
+
+    <create_query>CREATE TABLE bench_convex_hull_dense (pt Point, group_id UInt32) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE bench_convex_hull_heavy (pt Point) ENGINE = Memory</create_query>
+
+    <fill_query>
+        INSERT INTO bench_convex_hull_dense SELECT
+            (toFloat64((number * 1103515245 + 12345) % 100000) / 100,
+             toFloat64((number * 6364136223 + 1) % 100000) / 100),
+            number % 128
+        FROM numbers(2000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO bench_convex_hull_heavy SELECT
+            (sin(number) * 1000 + cos(number * 3) * 500,
+             cos(number * 7) * 1000 + sin(number * 11) * 500)
+        FROM numbers(100000)
+    </fill_query>
+
+    <query>SELECT groupConvexHull(pt) FROM bench_convex_hull_dense FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT group_id, groupConvexHull(pt) FROM bench_convex_hull_dense GROUP BY group_id FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupConvexHull(pt) FROM bench_convex_hull_heavy FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_convex_hull_heavy</drop_query>
+</test>

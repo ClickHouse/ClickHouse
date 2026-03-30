@@ -1,0 +1,7 @@
+convex_hull_bad_version
+union_oversized_chunks
+intersect_bad_mode
+union_oversized_polygons
+union_oversized_rings
+union_oversized_points
+convex_hull_oversized_points

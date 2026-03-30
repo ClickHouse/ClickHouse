@@ -1,0 +1,12 @@
+union_rejects_point
+intersect_rejects_point
+linestring_geometry_treated_as_ring
+4
+convex_hull_rejects_nan
+union_rejects_nan
+intersect_rejects_nan
+union_rejects_inf
+convex_hull_rejects_inf
+intersect_rejects_inf
+union_rejects_nan_geometry
+intersect_rejects_inf_geometry
