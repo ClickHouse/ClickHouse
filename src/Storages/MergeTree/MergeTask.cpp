@@ -146,6 +146,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace ErrorCodes
@@ -779,6 +780,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
+        (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
@@ -1182,10 +1184,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
+        Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
         Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
+        {
+            ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
             continue;
+        }
 
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
@@ -1203,6 +1209,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
             tmp_part->part->getDataPartStorage().commitTransaction();
             ctx->projection_parts[projection.name].emplace_back(std::move(tmp_part->part));
         }
+        ctx->projections_rebuild_elapsed_ns[projection.name] += projection_watch.elapsedNanoseconds();
     }
 }
 
@@ -1261,15 +1268,34 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 {
     /// In case if there are no projections we didn't construct a task
     if (!ctx->merge_projection_parts_task_ptr)
+    {
+        /// Transfer accumulated rebuild timings to global context
+        for (auto & [name, elapsed_ns] : ctx->projections_rebuild_elapsed_ns)
+            global_ctx->projections_merge_time[name] += elapsed_ns / 1000000;
+        ctx->projections_rebuild_elapsed_ns.clear();
         return false;
+    }
+
+    const auto & current_projection_name = ctx->projection_parts_iterator->first;
+    Stopwatch step_watch(CLOCK_MONOTONIC_COARSE);
 
     if (ctx->merge_projection_parts_task_ptr->executeStep())
+    {
+        ctx->projections_rebuild_elapsed_ns[current_projection_name] += step_watch.elapsedNanoseconds();
         return true;
+    }
 
+    ctx->projections_rebuild_elapsed_ns[current_projection_name] += step_watch.elapsedNanoseconds();
     ++ctx->projection_parts_iterator;
 
     if (ctx->projection_parts_iterator == std::make_move_iterator(ctx->projection_parts.end()))
+    {
+        /// Transfer accumulated rebuild timings to global context
+        for (auto & [name, elapsed_ns] : ctx->projections_rebuild_elapsed_ns)
+            global_ctx->projections_merge_time[name] += elapsed_ns / 1000000;
+        ctx->projections_rebuild_elapsed_ns.clear();
         return false;
+    }
 
     constructTaskForProjectionPartsMerge();
 
@@ -1827,9 +1853,18 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
     if (global_ctx->merged_part_offsets && !(*ctx->projections_iterator)->global_ctx->merged_part_offsets)
         global_ctx->merged_part_offsets->clear();
 
-    if ((*ctx->projections_iterator)->execute())
-        return true;
+    const auto & projection_name = (*ctx->projections_iterator)->global_ctx->future_part->name;
+    Stopwatch projection_watch(CLOCK_MONOTONIC_COARSE);
 
+    if ((*ctx->projections_iterator)->execute())
+    {
+        ctx->projections_merge_elapsed_ns[projection_name] += projection_watch.elapsedNanoseconds();
+        return true;
+    }
+
+    /// Projection finished — convert accumulated nanoseconds to milliseconds.
+    ctx->projections_merge_elapsed_ns[projection_name] += projection_watch.elapsedNanoseconds();
+    global_ctx->projections_merge_time[projection_name] += ctx->projections_merge_elapsed_ns[projection_name] / 1000000;
     ++ctx->projections_iterator;
     return true;
 }

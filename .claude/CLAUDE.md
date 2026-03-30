@@ -33,7 +33,7 @@ node .claude/tools/fetch_ci_report.js "<url>" --failed --download-logs
 #   --links                     Show artifact links (logs.tar.gz, etc.)
 #   --cidb                      Show CIDB links for failed tests
 #   --report <number>           For PR URLs: fetch only one specific report
-#   --download-logs             Download logs.tar.gz to /tmp/ci_logs.tar.gz
+#   --download-logs [path]      Download logs to path (default: /tmp/ci_logs.tar.{gz,zst})
 #   --credentials <user,password>  HTTP Basic Auth for private repositories
 ```
 

@@ -1587,9 +1587,21 @@ static BlockIO executeQueryImpl(
             if (quota)
             {
                 quota_checked = true;
-                quota->used(QuotaType::QUERY_INSERTS, 1);
-                quota->used(QuotaType::QUERIES, 1);
-                quota->checkExceeded(QuotaType::ERRORS);
+                if (quota->isKeyedByNormalizedQueryHash())
+                {
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                }
+                else
+                {
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
+                    quota->used(QuotaType::QUERIES, 1);
+                    quota->checkExceeded(QuotaType::ERRORS);
+                }
+
+                /// Track per-normalized-query-hash quota limits (works for all key types).
+                quota->usedPerNormalizedHash(normalized_query_hash);
             }
 
             /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
@@ -1744,16 +1756,29 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        if (quota->isKeyedByNormalizedQueryHash())
                         {
-                            quota->used(QuotaType::QUERY_SELECTS, 1);
+                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
+                            /// against per-hash intervals instead of shared session intervals.
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
                         }
-                        else if (out_ast->as<ASTInsertQuery>())
+                        else
                         {
-                            quota->used(QuotaType::QUERY_INSERTS, 1);
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->used(QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->used(QuotaType::QUERY_INSERTS, 1);
+                            quota->used(QuotaType::QUERIES, 1);
+                            quota->checkExceeded(QuotaType::ERRORS);
                         }
-                        quota->used(QuotaType::QUERIES, 1);
-                        quota->checkExceeded(QuotaType::ERRORS);
+
+                        /// Track per-normalized-query-hash quota limits (works for all key types).
+                        quota->usedPerNormalizedHash(normalized_query_hash);
                     }
                 }
 
