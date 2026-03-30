@@ -411,7 +411,7 @@ private:
         if (kafka_storage.shutdown_called)
             throw Exception(ErrorCodes::ABORTED, "Table is detached");
 
-        if (kafka_storage.mv_attached)
+        if (kafka_storage.active_mv_streamers.load() > 0)
             throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka2 with attached materialized views");
 
         ProfileEvents::increment(ProfileEvents::KafkaDirectReads);
@@ -1091,6 +1091,7 @@ void StorageKafka2::threadFunc(size_t idx)
     chassert(idx < tasks.size());
     auto task = tasks[idx];
     std::optional<StallKind> maybe_stall_reason;
+    bool incremented_mv_streamers = false;
     try
     {
         auto table_id = getStorageID();
@@ -1098,41 +1099,53 @@ void StorageKafka2::threadFunc(size_t idx)
         size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
         if (num_views)
         {
-            auto start_time = std::chrono::steady_clock::now();
-
-            mv_attached.store(true);
-
-            // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!task->stream_cancelled && num_created_consumers > 0)
+            /// If direct readers are active, skip this round and reschedule.
+            /// This prevents MV streaming from starting while direct SELECTs are in progress,
+            /// which would lead to concurrent consumer access.
+            if (active_direct_readers.load() > 0)
             {
-                maybe_stall_reason.reset();
-                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
-                {
-                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
-                    break;
-                }
+                LOG_DEBUG(log, "Direct readers are active, skipping MV streaming this round");
+                // Will reschedule below
+            }
+            else
+            {
+                auto start_time = std::chrono::steady_clock::now();
 
-                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+                active_mv_streamers.fetch_add(1);
+                incremented_mv_streamers = true;
 
-                // Exit the loop & reschedule if some stream stalled
-                if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                // Keep streaming as long as there are attached views and streaming is not cancelled
+                while (!task->stream_cancelled && num_created_consumers > 0)
                 {
-                    LOG_TRACE(
-                        log,
-                        "Stream stalled. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
-                    break;
-                }
+                    maybe_stall_reason.reset();
+                    if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                    {
+                        ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
+                        break;
+                    }
 
-                auto ts = std::chrono::steady_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
-                if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
-                {
-                    LOG_TRACE(
-                        log,
-                        "Thread work duration limit exceeded. Rescheduling in {} ms",
-                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
-                    break;
+                    LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+                    // Exit the loop & reschedule if some stream stalled
+                    if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Stream stalled. Rescheduling in {} ms",
+                            (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                        break;
+                    }
+
+                    auto ts = std::chrono::steady_clock::now();
+                    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
+                    if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
+                    {
+                        LOG_TRACE(
+                            log,
+                            "Thread work duration limit exceeded. Rescheduling in {} ms",
+                            (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
+                        break;
+                    }
                 }
             }
         }
@@ -1142,7 +1155,8 @@ void StorageKafka2::threadFunc(size_t idx)
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    mv_attached.store(false);
+    if (incremented_mv_streamers)
+        active_mv_streamers.fetch_sub(1);
 
     if (!task->stream_cancelled)
     {

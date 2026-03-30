@@ -28,18 +28,21 @@ Kafka2Source::Kafka2Source(
     , consumer_index(consumer_index_)
     , commit_in_suffix(commit_in_suffix_)
 {
+    storage.active_direct_readers.fetch_add(1);
 }
 
 Kafka2Source::~Kafka2Source()
 {
-    if (!consumer)
-        return;
+    if (consumer)
+    {
+        auto component_guard = Coordination::setCurrentComponent("Kafka2Source::~Kafka2Source");
 
-    auto component_guard = Coordination::setCurrentComponent("Kafka2Source::~Kafka2Source");
+        // If broken (not committed), the OffsetGuard destructor will rollback
+        offset_guard.reset();
+        storage.releaseConsumer(std::move(consumer));
+    }
 
-    // If broken (not committed), the OffsetGuard destructor will rollback
-    offset_guard.reset();
-    storage.releaseConsumer(std::move(consumer));
+    storage.active_direct_readers.fetch_sub(1);
 }
 
 Chunk Kafka2Source::generate()

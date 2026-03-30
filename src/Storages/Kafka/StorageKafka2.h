@@ -170,9 +170,14 @@ private:
     /// If named_collection is specified.
     String collection_name;
     std::atomic<bool> shutdown_called = false;
-    /// True when the background streaming thread is actively consuming for materialized views.
+    /// Number of background streaming threads currently consuming for materialized views.
     /// Prevents direct SELECTs from using consumers concurrently with MV streaming.
-    std::atomic<bool> mv_attached = false;
+    /// Uses a counter instead of a boolean because with thread_per_consumer=1,
+    /// multiple threads may stream simultaneously and each must be tracked independently.
+    std::atomic<size_t> active_mv_streamers{0};
+    /// Number of active direct SELECT readers. Prevents MV streaming from starting
+    /// while direct reads are in progress, avoiding concurrent consumer access.
+    std::atomic<size_t> active_direct_readers{0};
 
     // Handling replica activation.
     std::atomic<bool> is_active = false;
