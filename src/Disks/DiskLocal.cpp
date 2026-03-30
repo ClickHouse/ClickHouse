@@ -616,6 +616,9 @@ void DiskLocal::shutdown()
 
 void DiskLocal::checkAccessImpl(const String & path)
 {
+    broken = false;
+    readonly = false;
+
     if (!FS::canRead(disk_path))
     {
         broken = true;
