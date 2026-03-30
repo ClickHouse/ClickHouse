@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/Operators.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/split.hpp>
@@ -47,6 +49,8 @@ Float64 estimateRowWidthFromHeader(const Block & header)
         const auto & type = col.type;
         if (type->haveMaximumSizeOfValue())
             total += Float64(type->getMaximumSizeOfValueInMemory());
+        else if (const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+            total += Float64(agg_type->getFunction()->sizeOfData());
         else if (type->getTypeId() == TypeIndex::String)
             total += DEFAULT_STRING_SIZE;
         else
