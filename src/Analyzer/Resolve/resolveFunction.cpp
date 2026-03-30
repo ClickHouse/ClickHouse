@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/Context.h>
@@ -983,7 +984,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 bool right_is_single_tuple_column = false;
                 if (right_columns_count == 1)
                 {
-                    auto right_col_type = removeNullable(right_projection_columns.front().type);
+                    auto right_col_type = removeLowCardinalityAndNullable(right_projection_columns.front().type);
                     right_is_single_tuple_column = typeid_cast<const DataTypeTuple *>(right_col_type.get()) != nullptr;
                 }
 
