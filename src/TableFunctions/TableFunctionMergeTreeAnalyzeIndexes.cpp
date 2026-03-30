@@ -194,7 +194,11 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
         if (optimization == "vector_search_index_analysis")
         {
             auto cast_node = args[4]->children.at(0);
-            auto vector_search_args = cast_node->children.at(0)->as<ASTLiteral>()->value.safeGet<Array>();
+            const auto * literal = cast_node->children.at(0)->as<ASTLiteral>();
+            if (!literal)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "vector_search_index_analysis expects a literal tuple argument");
+            auto vector_search_args = literal->value.safeGet<Array>();
             if (vector_search_args.size() != 6)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "vector_search_index_analysis requires 6 arguments");
