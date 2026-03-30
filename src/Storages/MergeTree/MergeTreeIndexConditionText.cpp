@@ -7,6 +7,8 @@
 #include <Interpreters/misc.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -830,8 +832,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     Columns columns = prepared_set->getSetElements();
-    const auto & set_column = *columns[*set_key_position];
+    /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
 
+    if (*set_key_position >= columns.size())
+        return false;
+
+    const auto & set_column = *columns[*set_key_position];
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 
