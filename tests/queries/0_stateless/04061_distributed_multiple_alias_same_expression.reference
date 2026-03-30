@@ -1,0 +1,26 @@
+HELLO	hello
+HELLO	hello
+TEST	test
+TEST	test
+WORLD	world
+WORLD	world
+2	3
+2	3
+4	6
+4	6
+6	9
+6	9
+1	HELLO	hello
+1	HELLO	hello
+2	WORLD	world
+2	WORLD	world
+3	TEST	test
+3	TEST	test
+HELLO	hello
+HELLO	hello
+abc	3
+abc	3
+de	2
+de	2
+f	1
+f	1

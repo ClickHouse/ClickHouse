@@ -769,7 +769,7 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
                            || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
             return nullptr;
 
-        auto column_expression = column_node->getExpression();
+        auto column_expression = column_node->getExpression()->clone();
         column_expression->setAlias(column_node->getColumnName());
         return column_expression;
     }
