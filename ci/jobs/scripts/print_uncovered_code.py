@@ -146,7 +146,7 @@ if __name__ == "__main__":
     CONTEXT = 2  # lines before/after
     MAX_PRINT = 200  # max uncovered lines to print total
 
-    msg = f"PR changed-lines coverage: {pct:.2f}% ({covered}/{total}, {noise_skipped} noise lines excluded)"
+    msg = f"{pct:.2f}% ({covered}/{total})"
     print(msg)
 
     if uncovered:
@@ -205,4 +205,7 @@ if __name__ == "__main__":
         with_info_from_results=True,
     )
     r.set_comment(msg)
+    r.ext["changed_lines_total"] = total
+    r.ext["changed_lines_covered"] = covered
+    r.ext["changed_lines_cov"] = pct
     r.dump()
