@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 
 #include <IO/WriteBuffer.h>
@@ -50,9 +51,14 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     }
 
     /// When a DAG has both an INPUT and a COLUMN node with the same name
-    /// (created by duplicate_const_columns in the ActionsDAG constructor),
-    /// replace the COLUMN output with the INPUT so that removeUnusedActions
+    /// (created by `duplicate_const_columns` in the `ActionsDAG` constructor),
+    /// replace the COLUMN output with the INPUT so that `removeUnusedActions`
     /// preserves the INPUT and the column requirement propagates upstream.
+    /// We must only do this when the INPUT and COLUMN carry the same constant
+    /// value, which is the case for `duplicate_const_columns` pairs. When a
+    /// subquery redefines a column (e.g. `'redefined' AS my_field`), the
+    /// COLUMN holds the new value while the INPUT holds the old upstream
+    /// value, so replacing would lose the redefinition.
     {
         std::unordered_map<std::string_view, const ActionsDAG::Node *> input_nodes_by_name;
         for (const auto * input_node : actions->dag.getInputs())
@@ -65,7 +71,22 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
             {
                 auto it = input_nodes_by_name.find(output_node->result_name);
                 if (it != input_nodes_by_name.end())
-                    output_node = it->second;
+                {
+                    const auto * input_node = it->second;
+
+                    /// Only replace if both nodes carry the same constant value.
+                    /// This ensures we only affect `duplicate_const_columns` pairs
+                    /// and not column redefinitions where the value changed.
+                    bool same_const_value = input_node->column
+                        && output_node->column
+                        && isColumnConst(*input_node->column)
+                        && isColumnConst(*output_node->column)
+                        && assert_cast<const ColumnConst &>(*input_node->column).getField()
+                            == assert_cast<const ColumnConst &>(*output_node->column).getField();
+
+                    if (same_const_value)
+                        output_node = input_node;
+                }
             }
         }
     }
