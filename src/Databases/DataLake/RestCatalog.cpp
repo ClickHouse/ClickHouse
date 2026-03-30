@@ -229,6 +229,7 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
+        std::lock_guard lock(token_mutex);
         if (!access_token.has_value() || update_token)
         {
             access_token = retrieveAccessToken();

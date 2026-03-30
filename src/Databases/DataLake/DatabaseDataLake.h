@@ -9,6 +9,7 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <mutex>
 
 namespace DB
 {
@@ -79,6 +80,7 @@ private:
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
+    mutable std::mutex catalog_mutex;
     mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
     void validateSettings();

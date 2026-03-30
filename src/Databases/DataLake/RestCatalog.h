@@ -4,6 +4,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <mutex>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -121,6 +122,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
+    mutable std::mutex token_mutex;
     mutable std::optional<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
