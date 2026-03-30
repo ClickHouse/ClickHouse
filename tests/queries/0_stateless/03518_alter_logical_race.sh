@@ -7,6 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+trap '$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"' EXIT
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1"
 
@@ -52,5 +54,3 @@ thread_insert &
 
 
 wait
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE alter_table"
