@@ -13,7 +13,8 @@ CREATE TABLE tab1
     INDEX vindex v TYPE minmax
 )
 Engine=MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO tab1 SELECT number, number, number FROM numbers(10000);
 

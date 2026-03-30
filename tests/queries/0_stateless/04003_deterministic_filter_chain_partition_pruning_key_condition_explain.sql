@@ -6,7 +6,7 @@
 DROP TABLE IF EXISTS test_simple_key;
 CREATE TABLE test_simple_key (x Int32)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_simple_key SELECT number FROM numbers(15);
 
@@ -26,7 +26,7 @@ SELECT x FROM test_simple_key WHERE x + 2 != 9 ORDER BY x;
 DROP TABLE IF EXISTS test_composite_key;
 CREATE TABLE test_composite_key (x Int32)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY x * x
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_composite_key SELECT number FROM numbers(15);
 
@@ -45,7 +45,7 @@ SELECT x FROM test_composite_key WHERE x * x + 2 != 11 ORDER BY x;
 DROP TABLE IF EXISTS test_composite_key2;
 CREATE TABLE test_composite_key2 (x Int32)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(x >= 0, -x, x)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_composite_key2 SELECT -number FROM numbers(10);
 INSERT INTO test_composite_key2 SELECT number FROM numbers(10);
@@ -66,7 +66,7 @@ SELECT x FROM test_composite_key2 WHERE if(x >= 0, -x, x) + 2 != -1 ORDER BY x;
 DROP TABLE IF EXISTS test_det_function;
 CREATE TABLE test_det_function (x Int32)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_det_function SELECT number FROM numbers(15);
 
@@ -161,7 +161,7 @@ ORDER BY d;
 DROP TABLE IF EXISTS test_nondeterministic_function;
 CREATE TABLE test_nondeterministic_function (x Int32)
 ENGINE = MergeTree ORDER BY tuple() PARTITION BY x
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO test_nondeterministic_function SELECT number FROM numbers(15);
 

@@ -4,7 +4,7 @@ SET optimize_or_like_chain = 0;
 
 DROP TABLE IF EXISTS t_search_mode;
 
-CREATE TABLE t_search_mode (a UInt64, s String, index idx_s (s) type text(tokenizer = ngrams(2))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_search_mode (a UInt64, s String, index idx_s (s) type text(tokenizer = ngrams(2))) ENGINE = MergeTree ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_search_mode SELECT number, toString(number) FROM numbers(100000);
 
