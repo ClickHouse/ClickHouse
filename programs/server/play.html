@@ -1844,6 +1844,12 @@ class QueryResultElement extends HTMLElement
     {
         await this._loadUplot();
 
+        if (this._uplot)
+        {
+            this._uplot.destroy();
+            this._uplot = null;
+        }
+
         let chart = this._chart;
         chart.style.display = 'block';
 
