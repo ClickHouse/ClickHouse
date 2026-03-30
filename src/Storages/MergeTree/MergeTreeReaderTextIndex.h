@@ -100,6 +100,10 @@ private:
     /// Lazy mode state, computed once in `readGranule` and reused across `fillColumn` calls.
     bool use_lazy_mode = false;
     float lazy_density_threshold = 0.5f;
+
+    /// Cached lazy cursors keyed by token, reused across marks within the same part.
+    /// Row offsets increase monotonically, so cursor segment positions remain valid.
+    PostingListCursorMap lazy_cursor_cache;
 };
 
 }

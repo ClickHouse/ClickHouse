@@ -21,6 +21,9 @@ namespace ProfileEvents
     extern const Event TextIndexLazySegmentsSkippedDense;
     extern const Event TextIndexLazySegmentsSkippedCovered;
     extern const Event TextIndexLazyBlocksSkippedCovered;
+    extern const Event TextIndexLazyAndSegmentsSkippedZero;
+    extern const Event TextIndexLazyAndBlocksSkippedZero;
+    extern const Event TextIndexLazyAndSegmentsSkippedDense;
 }
 
 namespace DB
@@ -58,15 +61,10 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
                 "Embedded posting list cardinality ({}) exceeds BLOCK_SIZE ({})",
                 info.cardinality, BLOCK_SIZE);
 
-        /// Decode all embedded postings into decoded_values.
+        /// Decode all embedded postings directly into decoded_values.
         decoded_count = static_cast<size_t>(info.cardinality);
         if (decoded_count > 0)
-        {
-            std::vector<uint32_t> buf(info.cardinality);
-            info.embedded_postings->toUint32Array(buf.data());
-            for (size_t i = 0; i < decoded_count; ++i)
-                decoded_values[i] = buf[i];
-        }
+            info.embedded_postings->toUint32Array(decoded_values);
         is_valid = decoded_count > 0;
 
         if (!info.ranges.empty())
@@ -291,12 +289,14 @@ void PostingListCursor::seek(uint32_t target)
         }
     }
 
-    /// Search across segments.
-    for (size_t i = has_prepared_first_segment ? current_segment_idx + 1 : 0; i < total_segments; ++i)
-    {
-        if (target > static_cast<uint32_t>(info.ranges[i].end))
-            continue;
+    /// Binary search across segments.
+    size_t start = has_prepared_first_segment ? current_segment_idx + 1 : 0;
+    auto it = std::lower_bound(
+        info.ranges.begin() + start, info.ranges.end(), static_cast<size_t>(target),
+        [](const RowsRange & range, size_t t) { return range.end < t; });
 
+    for (size_t i = static_cast<size_t>(it - info.ranges.begin()); i < total_segments; ++i)
+    {
         prepareSegment(i);
         if (seekImpl(target))
             return;
@@ -441,6 +441,60 @@ bool hasNoZeros(const UInt8 * data, size_t count)
     return memchr(data, 0, count) == nullptr;
 }
 
+#if USE_MULTITARGET_CODE
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+/// Check whether a byte range contains only zero bytes (i.e., no position is set).
+/// Uses 256-bit (AVX2) loads with 4x loop unrolling for the hot path (128 bytes/iter).
+bool hasAllZeros(const UInt8 * data, size_t count)
+{
+    const __m256i * ptr = reinterpret_cast<const __m256i *>(data);
+
+    /// Process 128 bytes (4 x 32-byte vectors) per iteration.
+    size_t i = 0;
+    for (; i + 128 <= count; i += 128, ptr += 4)
+    {
+        __m256i v0 = _mm256_loadu_si256(ptr);
+        __m256i v1 = _mm256_loadu_si256(ptr + 1);
+        __m256i v2 = _mm256_loadu_si256(ptr + 2);
+        __m256i v3 = _mm256_loadu_si256(ptr + 3);
+
+        __m256i combined = _mm256_or_si256(_mm256_or_si256(v0, v1), _mm256_or_si256(v2, v3));
+        if (!_mm256_testz_si256(combined, combined))
+            return false;
+    }
+
+    /// Scalar tail.
+    const UInt8 * tail = data + i;
+    size_t remaining = count - i;
+    for (size_t j = 0; j < remaining; ++j)
+    {
+        if (tail[j] != 0)
+            return false;
+    }
+    return true;
+}
+) /// DECLARE_X86_64_V3_SPECIFIC_CODE
+#endif
+
+/// Runtime-dispatched `hasAllZeros`: returns true if all bytes in [data, data + count) are zero.
+bool hasAllZeros(const UInt8 * data, size_t count)
+{
+    if (count == 0)
+        return true;
+
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::hasAllZeros(data, count);
+#endif
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        if (data[i] != 0)
+            return false;
+    }
+    return true;
+}
+
 } // anonymous namespace
 
 void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_rows)
@@ -569,6 +623,30 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 {
     if (is_embedded)
     {
+        /// Dense shortcut: if every row in the range is in the posting list,
+        /// just increment the entire clipped region without binary search.
+        if (!info.ranges.empty())
+        {
+            size_t range_begin = info.ranges.front().begin;
+            size_t range_end = info.ranges.back().end;
+            size_t range_span = range_end - range_begin + 1;
+
+            if (info.cardinality == range_span)
+            {
+                size_t clip_begin = std::max(range_begin, row_offset);
+                size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
+                if (clip_begin < clip_end)
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense);
+                    UInt8 * out = data + (clip_begin - row_offset);
+                    size_t count = clip_end - clip_begin;
+                    for (size_t i = 0; i < count; ++i)
+                        ++out[i];
+                    return;
+                }
+            }
+        }
+
         auto * begin_it = std::lower_bound(decoded_values, decoded_values + decoded_count, static_cast<uint32_t>(row_offset));
         auto * end_it = std::lower_bound(begin_it, decoded_values + decoded_count, static_cast<uint32_t>(row_offset + num_rows));
         size_t begin_idx = static_cast<size_t>(begin_it - decoded_values);
@@ -587,9 +665,47 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
         if (row_offset + num_rows <= seg_begin)
             break;
 
+        /// Level 2a: segment-level "all-zeros" skip.
+        /// If the output region for this segment is already all-zeros, incrementing
+        /// will not help — the final pass requires count == n, so skip entirely.
+        {
+            size_t clip_begin = std::max(seg_begin, row_offset);
+            size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+            if (clip_begin < clip_end)
+            {
+                size_t clip_off = clip_begin - row_offset;
+                size_t clip_count = clip_end - clip_begin;
+                if (hasAllZeros(data + clip_off, clip_count))
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedZero);
+                    continue;
+                }
+            }
+        }
+
         /// Skip re-preparing the segment if it is already loaded.
         if (i != current_segment_idx || !has_prepared_first_segment)
             prepareSegment(i);
+
+        /// Level 1: dense segment shortcut.
+        /// If every row in the segment range has a posting, increment the entire clipped range.
+        {
+            size_t range_span = seg_end - seg_begin + 1;
+            if (segment_doc_count == range_span)
+            {
+                size_t clip_begin = std::max(seg_begin, row_offset);
+                size_t clip_end = std::min(seg_end + 1, row_offset + num_rows);
+                if (clip_begin < clip_end)
+                {
+                    ProfileEvents::increment(ProfileEvents::TextIndexLazyAndSegmentsSkippedDense);
+                    UInt8 * out = data + (clip_begin - row_offset);
+                    size_t count = clip_end - clip_begin;
+                    for (size_t j = 0; j < count; ++j)
+                        ++out[j];
+                    continue;
+                }
+            }
+        }
 
         for (size_t b = 0; b < block_count; ++b)
         {
@@ -602,6 +718,22 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
                 continue;
             if (block_first >= row_offset + num_rows)
                 break;
+
+            /// Level 2b: block-level "all-zeros" skip.
+            {
+                size_t blk_clip_begin = std::max(static_cast<size_t>(block_first), row_offset);
+                size_t blk_clip_end = std::min(static_cast<size_t>(block_last) + 1, row_offset + num_rows);
+                if (blk_clip_begin < blk_clip_end)
+                {
+                    size_t blk_off = blk_clip_begin - row_offset;
+                    size_t blk_cnt = blk_clip_end - blk_clip_begin;
+                    if (hasAllZeros(data + blk_off, blk_cnt))
+                    {
+                        ProfileEvents::increment(ProfileEvents::TextIndexLazyAndBlocksSkippedZero);
+                        continue;
+                    }
+                }
+            }
 
             decodeBlock(b);
 
@@ -862,6 +994,41 @@ void intersectLeapfrog(UInt8 * out, const std::vector<PostingListCursorPtr> & cu
 /// Brute-force intersection via bitmap counting.
 /// First cursor sets bits (linearOr), remaining cursors increment counters (linearAnd),
 /// then a final pass converts count == n into 1, everything else into 0.
+
+#if USE_MULTITARGET_CODE
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
+{
+    __m256i t = _mm256_set1_epi8(static_cast<char>(target));
+    __m256i one = _mm256_set1_epi8(1);
+    size_t i = 0;
+    for (; i + 32 <= num_rows; i += 32)
+    {
+        __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(out + i));
+        __m256i eq = _mm256_cmpeq_epi8(v, t);
+        __m256i result = _mm256_and_si256(eq, one);
+        _mm256_storeu_si256(reinterpret_cast<__m256i *>(out + i), result);
+    }
+    for (; i < num_rows; ++i)
+        out[i] = (out[i] == target);
+}
+) /// DECLARE_X86_64_V3_SPECIFIC_CODE
+#endif
+
+void finalizeCounters(UInt8 * out, size_t num_rows, UInt8 target)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        TargetSpecific::x86_64_v3::finalizeCounters(out, num_rows, target);
+        return;
+    }
+#endif
+
+    for (size_t i = 0; i < num_rows; ++i)
+        out[i] = (out[i] == target);
+}
+
 void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & cursors, size_t row_offset, size_t num_rows)
 {
     cursors[0]->linearOr(out, row_offset, num_rows);
@@ -873,8 +1040,7 @@ void intersectBruteForce(UInt8 * out, const std::vector<PostingListCursorPtr> & 
     if (n > 1)
     {
         UInt8 n8 = static_cast<UInt8>(n);
-        for (size_t i = 0; i < num_rows; ++i)
-            out[i] = (out[i] == n8);
+        finalizeCounters(out, num_rows, n8);
     }
 }
 

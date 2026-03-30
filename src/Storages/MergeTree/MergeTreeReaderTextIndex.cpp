@@ -155,6 +155,9 @@ void MergeTreeReaderTextIndex::readGranule()
     dictionary_stream->seekToStart();
     small_postings_stream->seekToStart();
 
+    /// Clear cursor cache — new granule means new TokenPostingsInfo references.
+    lazy_cursor_cache.clear();
+
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();
     streams[MergeTreeIndexSubstream::Type::TextIndexDictionary] = dictionary_stream.get();
@@ -636,10 +639,18 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
         const auto & remaining_tokens = granule_text.getRemainingTokens();
 
-        /// Build PostingListCursorMap for query tokens with V2 compressed postings.
+        /// Build PostingListCursorMap for query tokens, reusing cached cursors.
         PostingListCursorMap cursor_map;
         for (const auto & token : search_query->tokens)
         {
+            /// Check if we already have a cached cursor for this token.
+            auto cache_it = lazy_cursor_cache.find(token);
+            if (cache_it != lazy_cursor_cache.end())
+            {
+                cursor_map[token] = cache_it->second;
+                continue;
+            }
+
             auto info_it = remaining_tokens.find(token);
             if (info_it == remaining_tokens.end())
                 continue;
@@ -647,6 +658,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
             const auto & token_info = *info_it->second;
 
             /// Compressed postings use lazy cursor; embedded postings use stream-free cursor.
+            PostingListCursorPtr cursor;
             if (token_info.header & PostingsSerialization::Flags::IsCompressed)
             {
                 auto stream_it = large_postings_streams.find(token);
@@ -654,11 +666,17 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
                     ? stream_it->second.get()
                     : small_postings_stream.get();
 
-                cursor_map[token] = std::make_shared<PostingListCursor>(*postings_stream, token_info);
+                cursor = std::make_shared<PostingListCursor>(*postings_stream, token_info);
             }
             else if (token_info.embedded_postings)
             {
-                cursor_map[token] = std::make_shared<PostingListCursor>(token_info);
+                cursor = std::make_shared<PostingListCursor>(token_info);
+            }
+
+            if (cursor)
+            {
+                cursor_map[token] = cursor;
+                lazy_cursor_cache[token] = cursor;
             }
         }
 
