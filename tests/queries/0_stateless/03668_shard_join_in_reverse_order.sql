@@ -1,3 +1,6 @@
+-- Tags: no-random-settings
+-- The test depends on specific `query_plan_join_shard_by_pk_ranges` and
+-- `query_plan_read_in_order_through_join` settings; randomized overrides break the expected order.
 -- { echo ON }
 
 DROP TABLE IF EXISTS t0;
