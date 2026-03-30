@@ -10,7 +10,6 @@
 #include <Poco/Timestamp.h>
 
 #include <deque>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -268,7 +267,10 @@ WebObjectStorage::HeadSupport WebObjectStorage::getHeadSupportForOrigin(const Po
     const auto origin = getOriginCacheKey(uri);
     std::lock_guard lock(head_support_mutex);
     if (const auto it = head_support_by_origin.find(origin); it != head_support_by_origin.end())
-        return it->second;
+    {
+        head_support_lru.splice(head_support_lru.begin(), head_support_lru, it->second);
+        return it->second->second;
+    }
     return HeadSupport::Unknown;
 }
 
@@ -276,7 +278,23 @@ void WebObjectStorage::setHeadSupportForOrigin(const Poco::URI & uri, HeadSuppor
 {
     const auto origin = getOriginCacheKey(uri);
     std::lock_guard lock(head_support_mutex);
-    head_support_by_origin[origin] = support;
+
+    if (const auto it = head_support_by_origin.find(origin); it != head_support_by_origin.end())
+    {
+        it->second->second = support;
+        head_support_lru.splice(head_support_lru.begin(), head_support_lru, it->second);
+        return;
+    }
+
+    head_support_lru.emplace_front(origin, support);
+    head_support_by_origin.emplace(origin, head_support_lru.begin());
+
+    if (head_support_lru.size() > max_head_support_cache_size)
+    {
+        auto last = std::prev(head_support_lru.end());
+        head_support_by_origin.erase(last->first);
+        head_support_lru.pop_back();
+    }
 }
 
 std::string WebObjectStorage::buildURL(const std::string & path) const

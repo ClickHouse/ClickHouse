@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/HTTPHeaderEntries.h>
 
+#include <list>
 #include <mutex>
 #include <unordered_map>
 
@@ -98,12 +99,17 @@ private:
     HeadSupport getHeadSupportForOrigin(const Poco::URI & uri) const;
     void setHeadSupportForOrigin(const Poco::URI & uri, HeadSupport support) const;
 
+    static constexpr size_t max_head_support_cache_size = 65536;
+
     const String url;
     const String query_fragment;
     const HTTPHeaderEntries headers;
     const size_t max_directories_to_read;
     mutable std::mutex head_support_mutex;
-    mutable std::unordered_map<String, HeadSupport> head_support_by_origin;
+    using HeadSupportLRUList = std::list<std::pair<String, HeadSupport>>;
+    using HeadSupportLRUIndex = std::unordered_map<String, HeadSupportLRUList::iterator>;
+    mutable HeadSupportLRUList head_support_lru;
+    mutable HeadSupportLRUIndex head_support_by_origin;
     LoggerPtr log;
 };
 
