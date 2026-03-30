@@ -313,7 +313,19 @@ def main():
             if bolt_result.is_ok():
                 # Replace original binary with BOLT-optimized version
                 Shell.check(f"mv {clickhouse_bolted} {clickhouse_binary}")
-                print("BOLT optimization applied successfully")
+                # Rebuild the self-extracting bundle so uploaded artifacts contain the BOLT-optimized binary
+                results.append(
+                    Result.from_commands_run(
+                        name="Rebuild self-extracting bundle after BOLT",
+                        command=f"ninja clickhouse-self-extracting",
+                        workdir=build_dir_normalized,
+                    )
+                )
+                if results[-1].is_ok():
+                    print("BOLT optimization applied successfully, self-extracting bundle rebuilt")
+                else:
+                    print("WARNING: Failed to rebuild self-extracting bundle after BOLT")
+                    res = False
             else:
                 # BOLT is best-effort: if it fails, continue with the unoptimized binary
                 print("WARNING: BOLT optimization failed, continuing with unoptimized binary")
