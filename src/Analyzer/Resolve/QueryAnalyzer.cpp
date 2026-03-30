@@ -889,7 +889,7 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 
     if (!query_tree_node_typed.hasLimitByLimit())
     {
-        throw Exception(ErrorCodes::SYNTAX_ERROR,
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LIMIT BY ALL requires a limit expression. Use LIMIT n BY ALL");
     }
 
@@ -909,7 +909,7 @@ void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
 
     if (limit_by_nodes.empty())
     {
-        throw Exception(ErrorCodes::SYNTAX_ERROR,
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LIMIT BY ALL requires at least one non-aggregate expression in SELECT");
     }
 
