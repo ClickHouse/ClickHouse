@@ -84,7 +84,7 @@ echo "-- enabled, check that sorting properties are propagated from ReadFromMerg
 $CLICKHOUSE_CLIENT -q "$DISABLE_ANALYZER;$ENABLE_OPTIMIZATION;explain plan sorting=1 select distinct b, a from distinct_in_order_explain where a > 0" | eval $FIND_SORTING_PROPERTIES
 
 echo "-- check that reading in order optimization for ORDER BY and DISTINCT applied correctly in the same query"
-ENABLE_READ_IN_ORDER="set optimize_read_in_order=1"
+ENABLE_READ_IN_ORDER="set optimize_read_in_order=1;set query_plan_read_in_order=1"
 echo "-- disabled, check that sorting description for ReadFromMergeTree match ORDER BY columns"
 $CLICKHOUSE_CLIENT -q "$DISABLE_ANALYZER;$DISABLE_OPTIMIZATION;$ENABLE_READ_IN_ORDER;explain plan sorting=1 select distinct b, a from distinct_in_order_explain order by a" | eval $FIND_SORTING_PROPERTIES
 echo "-- enabled, check that ReadFromMergeTree sorting description is overwritten by DISTINCT optimization i.e. it contains columns from DISTINCT clause"

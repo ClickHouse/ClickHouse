@@ -10,7 +10,7 @@ opts=(
 
 function explain_sort_description()
 {
-    out=$($CLICKHOUSE_CLIENT "${opts[@]}" --optimize_read_in_order=1 -q "EXPLAIN PLAN actions = 1 $1")
+    out=$($CLICKHOUSE_CLIENT "${opts[@]}" --optimize_read_in_order=1 --query_plan_read_in_order=1 -q "EXPLAIN PLAN actions = 1 $1")
     echo "$out" | grep "Prefix sort description:"
     echo "$out" | grep "Result sort description:"
 }

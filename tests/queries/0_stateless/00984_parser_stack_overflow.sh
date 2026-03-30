@@ -15,5 +15,5 @@ perl -e 'print "SELECT " . ("([" x 5000)' | $CLICKHOUSE_CURL -sS "$CLICKHOUSE_UR
 perl -e 'print "SELECT 1" . ("+1" x 10000)' | $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" --data-binary @- | grep -cP 'exceeded|too large'
 
 # But this is Ok
-perl -e 'print "SELECT 1" . (",1" x 10000)' | $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" --data-binary @- | wc -c
+perl -e 'print "SELECT 1" . (",1" x 10000) . " FORMAT TabSeparated"' | $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" --data-binary @- | wc -c
 perl -e 'print "SELECT 1" . (" OR 1" x 10000)' | $CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" --data-binary @-

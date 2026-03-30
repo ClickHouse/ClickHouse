@@ -1,3 +1,4 @@
+SET query_plan_merge_expressions = 1;
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
 (

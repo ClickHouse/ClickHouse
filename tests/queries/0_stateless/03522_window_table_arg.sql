@@ -1,4 +1,5 @@
 SET enable_analyzer=1;
+SET query_plan_merge_expressions=1;
 
 SELECT * FROM view(
     SELECT row_number() OVER w

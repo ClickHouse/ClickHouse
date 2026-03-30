@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET use_skip_indexes_for_top_k = 1; -- vector similarity requires top-k index usage
 
 -- Test for issue #77978
 

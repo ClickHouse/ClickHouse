@@ -5,6 +5,7 @@ SET query_plan_join_swap_table = false;
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
 SET query_plan_split_filter = 1;
+SET query_plan_convert_outer_join_to_inner_join = 1;
 
 SELECT *
 FROM (SELECT number AS key, number AS value FROM numbers(100)) t1

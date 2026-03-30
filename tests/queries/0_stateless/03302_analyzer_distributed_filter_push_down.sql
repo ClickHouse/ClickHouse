@@ -13,6 +13,7 @@ set optimize_move_to_prewhere=1;
 set optimize_skip_unused_shards=0;
 set enable_parallel_blocks_marshalling = 1; -- EXPLAIN output includes BlocksMarshalling node when enabled
 set query_plan_remove_unused_columns=1;
+set query_plan_lift_up_union = 1;
 
 select '============ #66878';
 

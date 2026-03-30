@@ -1,3 +1,4 @@
+SET allow_reorder_prewhere_conditions = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;

@@ -15,9 +15,11 @@ INSERT INTO users2 SELECT number as uid, 'Alice2' as name, 30 as age FROM number
 EXPLAIN actions = 1
 SELECT count()
 FROM users1 u1
-WHERE EXISTS (SELECT * FROM users2 u2 WHERE u1.uid != u2.uid);
+WHERE EXISTS (SELECT * FROM users2 u2 WHERE u1.uid != u2.uid)
+SETTINGS query_plan_merge_expressions = 1, query_plan_convert_any_join_to_semi_or_anti_join = 1;
 
 EXPLAIN actions = 1
 SELECT count()
 FROM users1 u1
-WHERE NOT EXISTS (SELECT * FROM users2 u2 WHERE u1.uid != u2.uid);
+WHERE NOT EXISTS (SELECT * FROM users2 u2 WHERE u1.uid != u2.uid)
+SETTINGS query_plan_merge_expressions = 1, query_plan_convert_any_join_to_semi_or_anti_join = 1;

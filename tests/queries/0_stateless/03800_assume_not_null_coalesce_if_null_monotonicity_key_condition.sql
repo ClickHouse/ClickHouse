@@ -10,6 +10,7 @@ DROP VIEW IF EXISTS view_assume;
 DROP TABLE IF EXISTS test;
 
 SET session_timezone = 'UTC';
+SET query_plan_merge_expressions = 1;
 
 CREATE TABLE test
 (
