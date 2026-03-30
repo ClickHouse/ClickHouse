@@ -35,6 +35,24 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 | `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
 | `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
 
+:::tip
+When the `structure` argument is omitted, ClickHouse infers the schema from the format itself.
+Different formats produce different default column names and types.
+To see the schema for a specific format, use [`DESC`](/sql-reference/statements/describe-table) with the [`format`](/sql-reference/table-functions/format) table function.
+
+For example:
+
+```sql
+DESC format(LineAsString, 'Hello\nWorld')
+```
+
+```response
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ line │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+:::
+
 ## Returned value {#returned_value}
 
 A table for reading or writing data in a file.

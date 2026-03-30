@@ -1,4 +1,5 @@
 #include <Columns/ColumnDynamic.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationObject.h>
@@ -47,6 +48,33 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
         return new_state;
     }
 };
+
+
+UInt128 SerializationObjectDynamicPath::getHash(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
+{
+    SipHash hash;
+    hash.update("ObjectDynamicPath");
+    hash.update(nested_->getHash());
+    hash.update(path_.size());
+    hash.update(path_);
+    hash.update(path_subcolumn_.size());
+    hash.update(path_subcolumn_);
+    hash.update(dynamic_serialization_->getHash());
+    auto dynamic_type_name = dynamic_type_->getName();
+    hash.update(dynamic_type_name.size());
+    hash.update(dynamic_type_name);
+    auto subcolumn_type_name = subcolumn_type_->getName();
+    hash.update(subcolumn_type_name.size());
+    hash.update(subcolumn_type_name);
+    return hash.get128();
+}
+
+SerializationPtr SerializationObjectDynamicPath::create(const SerializationPtr & nested_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & subcolumn_type_)
+{
+    if (!nested_->supportsPooling() || !dynamic_serialization_->supportsPooling())
+        return std::shared_ptr<ISerialization>(new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_));
+    return ISerialization::pooled(getHash(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_), [&] { return new SerializationObjectDynamicPath(nested_, path_, path_subcolumn_, dynamic_type_, dynamic_serialization_, subcolumn_type_); });
+}
 
 void SerializationObjectDynamicPath::enumerateStreams(
     ISerialization::EnumerateStreamsSettings & settings,
@@ -121,7 +149,7 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     if (dynamic_path_state->read_from_shared_data)
     {
         settings.path.push_back(Substream::ObjectSharedData);
-        dynamic_path_state->shared_data_path_serialization = std::make_shared<SerializationObjectSharedDataPath>(
+        dynamic_path_state->shared_data_path_serialization = SerializationObjectSharedDataPath::create(
             nested_serialization,
             object_structure_state->shared_data_serialization_version,
             path,
@@ -179,6 +207,11 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     }
 
     settings.path.pop_back();
+}
+
+size_t SerializationObjectDynamicPath::allocatedBytes() const
+{
+    return sizeof(*this) + path.capacity() + path_subcolumn.capacity();
 }
 
 }

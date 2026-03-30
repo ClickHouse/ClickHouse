@@ -1473,6 +1473,43 @@ void Float16Converter::convertColumn(std::span<const char> data, size_t num_valu
     }
 }
 
+static inline UUID decodeParquetUUID(const char * data)
+{
+    UUID res;
+    std::memcpy(&res, data, 16);
+    auto * bytes = reinterpret_cast<uint8_t *>(&res);
+
+    // Parquet demands Big-Endian (network byte order) for UUIDs
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        std::reverse(bytes, bytes + 8);
+        std::reverse(bytes + 8, bytes + 16);
+    }
+    else
+    {
+        std::swap_ranges(bytes, bytes + 8, bytes + 8);
+    }
+
+    return res;
+}
+
+void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    auto & col_data = assert_cast<ColumnVector<UUID> &>(col).getData();
+    size_t old_size = col_data.size();
+    col_data.resize(old_size + num_values);
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        col_data[old_size + i] = decodeParquetUUID(data.data() + i * 16);
+    }
+}
+
+void UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    out = decodeParquetUUID(data.data());
+}
+
 void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
 {
     if (data.size() != input_size)

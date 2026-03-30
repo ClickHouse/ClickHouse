@@ -779,6 +779,11 @@ void QueryResultCache::clear(const std::optional<String> & tag)
     times_executed.clear();
 }
 
+size_t QueryResultCache::maxSizeInBytes() const
+{
+    return cache.maxSizeInBytes();
+}
+
 size_t QueryResultCache::sizeInBytes() const
 {
     return cache.sizeInBytes();

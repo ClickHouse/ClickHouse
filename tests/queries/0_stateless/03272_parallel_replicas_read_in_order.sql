@@ -3,6 +3,8 @@
 
 SET log_queries = 1;
 SET optimize_read_in_order=1;
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 DROP TABLE IF EXISTS read_in_order_with_parallel_replicas;
 CREATE TABLE read_in_order_with_parallel_replicas(id UInt64) ENGINE=MergeTree ORDER BY id SETTINGS index_granularity=1;
 

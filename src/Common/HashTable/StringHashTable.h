@@ -279,15 +279,21 @@ public:
     {
     }
 
+    StringHashTable(StringHashTable && rhs) noexcept
+        : m0(std::move(rhs.m0))
+        , m1(std::move(rhs.m1))
+        , m2(std::move(rhs.m2))
+        , m3(std::move(rhs.m3))
+        , ms(std::move(rhs.ms))
+    {
+    }
+
     /// Compute the sub-table-specific hash for a key.
     size_t hash(std::string_view x) const
     {
         return const_cast<Self &>(*this).dispatch(
             *this, x, [](const auto &, const auto &, size_t h) { return h; });
     }
-
-
-    StringHashTable(StringHashTable && rhs) noexcept { *this = std::move(rhs); }
 
     StringHashTable & operator=(StringHashTable && rhs) noexcept
     {
