@@ -1,4 +1,4 @@
--- Tags: distributed, no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- Tags: distributed, no-replicated-database, no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
 -- Sharded aggregation must not activate for distributed queries where the merge
