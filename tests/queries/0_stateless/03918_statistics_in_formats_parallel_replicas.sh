@@ -12,51 +12,59 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO ${TABLE_NAME} SELECT * FROM system.numbe
 
 SETTINGS="enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas', parallel_replicas_for_non_replicated_merge_tree=1"
 
-# The two-phase finalization mechanism in the pipeline executor guarantees that
-# statistics (rows_read, bytes_read) are written after all progress has been
-# collected, including progress from parallel replica connection draining.
-# No retries are needed.
+# Run each check multiple times to reliably detect the race condition on master
+# (where rows_read can be 0 due to the race between format finalization and progress
+# collection). With the fix, all iterations should pass deterministically.
+NUM_ITERATIONS=10
 
 function check_rows_read_client_json()
 {
     local fmt=$1
-    result=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT ${fmt} SETTINGS ${SETTINGS}" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
-    if [ -n "$result" ] && [ "$result" -gt 0 ]; then
-        echo "${fmt} OK"
-    else
-        echo "${fmt} FAIL: rows_read=${result}"
-    fi
+    for _ in $(seq 1 $NUM_ITERATIONS); do
+        result=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT ${fmt} SETTINGS ${SETTINGS}" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
+        if [ -z "$result" ] || [ "$result" -eq 0 ]; then
+            echo "${fmt} FAIL: rows_read=${result}"
+            return
+        fi
+    done
+    echo "${fmt} OK"
 }
 
 function check_rows_read_client_xml()
 {
-    result=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT XML SETTINGS ${SETTINGS}" | grep -o '<rows_read>[0-9]*</rows_read>' | grep -o '[0-9]*')
-    if [ -n "$result" ] && [ "$result" -gt 0 ]; then
-        echo "XML OK"
-    else
-        echo "XML FAIL: rows_read=${result}"
-    fi
+    for _ in $(seq 1 $NUM_ITERATIONS); do
+        result=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT XML SETTINGS ${SETTINGS}" | grep -o '<rows_read>[0-9]*</rows_read>' | grep -o '[0-9]*')
+        if [ -z "$result" ] || [ "$result" -eq 0 ]; then
+            echo "XML FAIL: rows_read=${result}"
+            return
+        fi
+    done
+    echo "XML OK"
 }
 
 function check_rows_read_http_json()
 {
     local fmt=$1
-    result=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT ${fmt} SETTINGS ${SETTINGS}" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
-    if [ -n "$result" ] && [ "$result" -gt 0 ]; then
-        echo "${fmt} HTTP OK"
-    else
-        echo "${fmt} HTTP FAIL: rows_read=${result}"
-    fi
+    for _ in $(seq 1 $NUM_ITERATIONS); do
+        result=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT ${fmt} SETTINGS ${SETTINGS}" | grep -o '"rows_read": [0-9]*' | grep -o '[0-9]*')
+        if [ -z "$result" ] || [ "$result" -eq 0 ]; then
+            echo "${fmt} HTTP FAIL: rows_read=${result}"
+            return
+        fi
+    done
+    echo "${fmt} HTTP OK"
 }
 
 function check_rows_read_http_xml()
 {
-    result=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT XML SETTINGS ${SETTINGS}" | grep -o '<rows_read>[0-9]*</rows_read>' | grep -o '[0-9]*')
-    if [ -n "$result" ] && [ "$result" -gt 0 ]; then
-        echo "XML HTTP OK"
-    else
-        echo "XML HTTP FAIL: rows_read=${result}"
-    fi
+    for _ in $(seq 1 $NUM_ITERATIONS); do
+        result=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT XML SETTINGS ${SETTINGS}" | grep -o '<rows_read>[0-9]*</rows_read>' | grep -o '[0-9]*')
+        if [ -z "$result" ] || [ "$result" -eq 0 ]; then
+            echo "XML HTTP FAIL: rows_read=${result}"
+            return
+        fi
+    done
+    echo "XML HTTP OK"
 }
 
 # Verify rows_read > 0 for each format via clickhouse-client
