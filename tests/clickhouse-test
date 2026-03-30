@@ -1880,6 +1880,7 @@ class TestCase:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
                     self.base_url_params + "&" + http_params
                 )
+            new_options += f" {self.cli_format_settings(self.effective_settings)}"
         elif detach_http_params:
             if len(self.base_url_params) == 0:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = detach_http_params
@@ -1887,8 +1888,6 @@ class TestCase:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
                     self.base_url_params + "&" + detach_http_params
                 )
-
-            new_options += f" {self.cli_format_settings(self.effective_settings)}"
 
         if self.effective_merge_tree_settings:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"

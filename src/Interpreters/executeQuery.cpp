@@ -11,6 +11,7 @@
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
+#include <Common/quoteString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -1108,10 +1109,19 @@ public:
             if (table.empty())
                 return;
 
-            if (database.empty())
-                tables.emplace_back(context->getCurrentDatabase(), table);
-            else
-                tables.emplace_back(database, table);
+            StorageID storage_id = database.empty()
+                ? StorageID("", table)
+                : StorageID(database, table);
+
+            auto resolved = context->tryResolveStorageID(storage_id);
+            if (!resolved)
+                return;
+
+            /// Skip temporary and external tables — detaching them makes no sense.
+            if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
+                return;
+
+            tables.emplace_back(std::move(resolved));
         }
     };
 
@@ -1199,15 +1209,17 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
         table.reset();
 
-        auto full_name = table_id.getFullTableName();
-        auto detach_query = fmt::format("DETACH TABLE {} SYNC", full_name);
-        auto attach_query = fmt::format("ATTACH TABLE {}", full_name);
+        auto quoted_name = backQuoteIfNeed(table_id.getDatabaseName()) + "." + backQuoteIfNeed(table_id.getTableName());
+        auto detach_query = fmt::format("DETACH TABLE {} SYNC", quoted_name);
+        auto attach_query = fmt::format("ATTACH TABLE {}", quoted_name);
 
+        bool detached = false;
         try
         {
             {
                 auto detach = executeQuery(detach_query, context, QueryFlags{.internal = true}).second;
                 executeTrivialBlockIO(detach, context);
+                detached = true;
             }
 
             {
@@ -1217,10 +1229,24 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         }
         catch (...)
         {
-            /// The DETACH/ATTACH may fail for various reasons
-            /// (e.g., a concurrent query interfered).
-            /// Since this is a testing-only feature, we just skip this table.
             tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::warning);
+
+            /// If DETACH succeeded but ATTACH failed, try to re-attach the table
+            /// to avoid leaving it in a detached state.
+            if (detached)
+            {
+                try
+                {
+                    auto attach = executeQuery(attach_query, context, QueryFlags{.internal = true}).second;
+                    executeTrivialBlockIO(attach, context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("reattachTablesUsedInQuery",
+                        fmt::format("Failed to re-attach table {} after failed DETACH/ATTACH cycle", quoted_name),
+                        LogsLevel::error);
+                }
+            }
         }
     }
 }
@@ -1584,10 +1610,12 @@ static BlockIO executeQueryImpl(
 
         bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
         bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
-        if (!internal && is_initial_query && !has_transaction)
+        if (!internal && is_initial_query && !has_transaction && out_ast)
         {
             bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
-            auto reattach_probability = settings[Setting::reattach_tables_before_query_execution_probability];
+            auto reattach_probability = std::clamp(
+                static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
+                0.0, 1.0);
 
             if (!need_reattach_tables && reattach_probability > 0.0)
             {

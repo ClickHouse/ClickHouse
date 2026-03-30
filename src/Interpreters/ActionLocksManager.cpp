@@ -75,7 +75,11 @@ bool ActionLocksManager::has(const StoragePtr & table, StorageActionBlockType ac
     if (it == storage_locks.end())
         return false;
 
-    return it->second.contains(action_type);
+    auto lock_it = it->second.find(action_type);
+    if (lock_it == it->second.end())
+        return false;
+
+    return !lock_it->second.expired();
 }
 
 bool ActionLocksManager::hasAny(const StorageID & table_id) const
@@ -88,7 +92,17 @@ bool ActionLocksManager::hasAny(const StorageID & table_id) const
 bool ActionLocksManager::hasAny(const StoragePtr & table) const
 {
     std::lock_guard lock(mutex);
-    return storage_locks.contains(table.get());
+
+    auto it = storage_locks.find(table.get());
+    if (it == storage_locks.end())
+        return false;
+
+    /// Check if there are any non-expired locks
+    for (const auto & [_, action_lock] : it->second)
+        if (!action_lock.expired())
+            return true;
+
+    return false;
 }
 
 void ActionLocksManager::cleanExpired()

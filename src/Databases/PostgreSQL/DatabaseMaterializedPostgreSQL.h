@@ -57,6 +57,8 @@ public:
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
 
+    bool supportsDetachingTables() const override { return false; }
+
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void dropTable(ContextPtr local_context, const String & name, bool sync) override;
