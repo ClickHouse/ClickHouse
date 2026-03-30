@@ -686,19 +686,12 @@ catch (...)
 
 void DiskLocal::checkAccessImpl(const String & path)
 {
-    try
+    if (!FS::canRead(disk_path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "There is no read access to disk {} ({}).", name, disk_path);
+
+    if (!FS::canWrite(disk_path))
     {
-        fs::create_directories(disk_path);
-        if (!FS::canWrite(disk_path))
-        {
-            LOG_ERROR(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
-            readonly = true;
-            return;
-        }
-    }
-    catch (...)
-    {
-        LOG_ERROR(logger, "Cannot create the root directory of disk {} ({}).", name, disk_path);
+        LOG_ERROR(logger, "Cannot write to the root directory of disk {} ({}).", name, disk_path);
         readonly = true;
         return;
     }
@@ -709,16 +702,6 @@ void DiskLocal::checkAccessImpl(const String & path)
 void DiskLocal::setup()
 {
     fs::create_directories(disk_path);
-    try
-    {
-        if (!FS::canRead(disk_path))
-            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "There is no read access to disk {} ({}).", name, disk_path);
-    }
-    catch (...)
-    {
-        LOG_ERROR(logger, "Cannot gain read access of the disk directory: {}", disk_path);
-        throw;
-    }
 
     /// If disk checker is disabled, just assume RW by default.
     if (!disk_checker)
