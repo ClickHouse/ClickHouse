@@ -195,7 +195,7 @@ std::vector<JoinKeyInfo> findJoinKeysWithCTETable(
 /// If the working table has more distinct join key values than this,
 /// we skip the optimization for that step to avoid generating an
 /// excessively large SQL expression that may exceed parser limits.
-static constexpr size_t MAX_IN_FILTER_CARDINALITY = 10000;
+constexpr size_t MAX_IN_FILTER_CARDINALITY = 10000;
 
 /// Read deduplicated values of a column from a StorageMemory-backed temporary table.
 /// Returns nullopt if the number of distinct values exceeds MAX_IN_FILTER_CARDINALITY.
@@ -292,16 +292,44 @@ Map buildAdditionalTableFiltersForRecursiveStep(
             table_filter_parts[key_info.real_table_storage_id.getFullNameNotQuoted()].push_back(std::move(filter_expr));
     }
 
-    /// Index user-specified filters by table name so we can combine them.
-    std::map<String, String> user_filter_by_table;
-    for (const auto & entry : original_additional_table_filters)
+    /// Build a set of StorageIDs for tables that have CTE-generated filters,
+    /// so we can match user filters by any key form (full name, short name, or alias).
+    std::map<String, StorageID> table_name_to_storage_id;
+    for (const auto & key_info : *cached_join_keys)
+        table_name_to_storage_id.emplace(
+            key_info.real_table_storage_id.getFullNameNotQuoted(),
+            key_info.real_table_storage_id);
+
+    /// Find user-specified filter for a given table, matching by full name or short name.
+    /// This mirrors the matching logic in PlannerJoinTree::buildAdditionalFiltersIfNeeded
+    /// so that we correctly merge (rather than shadow) user filters regardless of how
+    /// the user specified the table key.
+    auto find_user_filter = [&](const String & full_table_name) -> std::pair<size_t, String>
     {
-        const auto & tuple = entry.safeGet<Tuple>();
-        user_filter_by_table[tuple.at(0).safeGet<String>()] = tuple.at(1).safeGet<String>();
-    }
+        auto sid_it = table_name_to_storage_id.find(full_table_name);
+        if (sid_it == table_name_to_storage_id.end())
+            return {SIZE_MAX, {}};
+
+        const auto & storage_id = sid_it->second;
+        const auto & current_database = context->getCurrentDatabase();
+
+        for (size_t idx = 0; idx < original_additional_table_filters.size(); ++idx)
+        {
+            const auto & tuple = original_additional_table_filters[idx].safeGet<Tuple>();
+            const auto & user_key = tuple.at(0).safeGet<String>();
+
+            if (user_key == full_table_name
+                || (user_key == storage_id.getTableName() && current_database == storage_id.getDatabaseName()))
+            {
+                return {idx, tuple.at(1).safeGet<String>()};
+            }
+        }
+
+        return {SIZE_MAX, {}};
+    };
 
     Map filters_map;
-    std::set<String> processed_tables;
+    std::set<size_t> merged_user_filter_indices;
 
     for (auto & [table_name, parts] : table_filter_parts)
     {
@@ -314,11 +342,11 @@ Map buildAdditionalTableFiltersForRecursiveStep(
         }
 
         /// Combine with user-specified filter for the same table, if any.
-        auto it = user_filter_by_table.find(table_name);
-        if (it != user_filter_by_table.end())
+        auto [user_idx, user_filter] = find_user_filter(table_name);
+        if (user_idx != SIZE_MAX)
         {
-            combined_filter = "(" + combined_filter + ") AND (" + it->second + ")";
-            processed_tables.insert(table_name);
+            combined_filter = "(" + combined_filter + ") AND (" + user_filter + ")";
+            merged_user_filter_indices.insert(user_idx);
         }
 
         Tuple tuple;
@@ -328,11 +356,10 @@ Map buildAdditionalTableFiltersForRecursiveStep(
     }
 
     /// Preserve user-specified filters for tables not involved in the CTE join.
-    for (const auto & entry : original_additional_table_filters)
+    for (size_t i = 0; i < original_additional_table_filters.size(); ++i)
     {
-        const auto & tuple = entry.safeGet<Tuple>();
-        if (!processed_tables.contains(tuple.at(0).safeGet<String>()))
-            filters_map.push_back(entry);
+        if (!merged_user_filter_indices.contains(i))
+            filters_map.push_back(original_additional_table_filters[i]);
     }
 
     return filters_map;
