@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS testoffset;
 
 create table testoffset Engine=MergeTree partition by toStartOfMonth(day) order by day as select toDate('2022-01-01')+number as day from system.numbers limit 1000;
