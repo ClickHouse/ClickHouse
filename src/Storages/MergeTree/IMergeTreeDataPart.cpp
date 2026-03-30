@@ -1058,8 +1058,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         auto file_buf = reader.readFile(filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        result.emplace(column_desc->name, std::move(column_stat));
+        try
+        {
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
+                column_desc->name, filename, getCurrentExceptionMessage(false));
+        }
     }
 
     return result;
@@ -1081,8 +1089,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
         auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
         CompressedReadBuffer compressed_buf(*file_buf);
-        auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-        result.emplace(column_desc->name, std::move(column_stat));
+        try
+        {
+            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
+            result.emplace(column_desc->name, std::move(column_stat));
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Cannot load statistics for column {} from file {}, ignoring: {}",
+                column_desc->name, filename, getCurrentExceptionMessage(false));
+        }
     }
 
     return result;
