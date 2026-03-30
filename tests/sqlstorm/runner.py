@@ -279,7 +279,8 @@ def run_queries(query_dir, port, database, timeout, out_dir, schema=None, data_d
 
         # Check for ClickHouse-specific override
         ch_override = query_path + ".clickhouse"
-        if os.path.isfile(ch_override):
+        use_override = os.path.isfile(ch_override)
+        if use_override:
             query_path = ch_override
 
         with open(query_path, "r") as f:
@@ -288,8 +289,10 @@ def run_queries(query_dir, port, database, timeout, out_dir, schema=None, data_d
         if not query:
             continue
 
-        # Apply PostgreSQL -> ClickHouse dialect rewrites
-        query = rewrite_query(query)
+        # Apply PostgreSQL -> ClickHouse dialect rewrites only to non-override queries.
+        # Override files are already hand-authored for ClickHouse and should run verbatim.
+        if not use_override:
+            query = rewrite_query(query)
 
         ok, stdout, stderr, elapsed_ms = run_clickhouse_query(
             query, port=port, database=database, timeout=timeout
