@@ -76,7 +76,9 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory
 
             try
             {
-                return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
+                auto res = memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
+                current_thread->updateUntrackedMemoryLimit(memory_tracker->get());
+                return res;
             }
             catch (...)
             {
@@ -95,6 +97,13 @@ void CurrentMemoryTracker::check()
 {
     if (auto * memory_tracker = getMemoryTracker())
         std::ignore = memory_tracker->allocImpl(0, true);
+}
+
+Int64 CurrentMemoryTracker::get()
+{
+    if (auto * memory_tracker = getMemoryTracker())
+        return memory_tracker->get();
+    return 0;
 }
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
@@ -124,10 +133,12 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         current_thread->untracked_memory_blocker_level = blocker_level;
 
         current_thread->untracked_memory -= size;
-        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit)
+        /// Use `max_untracked_memory` (not `untracked_memory_limit`) to create hysteresis and avoid track/untrack cycles
+        if (current_thread->untracked_memory < -current_thread->max_untracked_memory)
         {
             Int64 untracked_memory = current_thread->untracked_memory;
             current_thread->untracked_memory = 0;
+            current_thread->updateUntrackedMemoryLimit(memory_tracker->get() + untracked_memory);
             return memory_tracker->free(-untracked_memory);
         }
 

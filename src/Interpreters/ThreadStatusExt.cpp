@@ -13,6 +13,7 @@
 #include <Parsers/queryNormalization.h>
 #include <Common/MemoryTracker.h>
 #include <Common/VariableContext.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -48,6 +49,7 @@ namespace Setting
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_query_threads;
     extern const SettingsUInt64 max_untracked_memory;
+    extern const SettingsUInt64 min_untracked_memory;
     extern const SettingsUInt64 memory_overcommit_ratio_denominator;
     extern const SettingsFloat memory_profiler_sample_probability;
     extern const SettingsUInt64 memory_profiler_sample_min_allocation_size;
@@ -387,9 +389,12 @@ void ThreadStatus::applyQuerySettings()
     query_id = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
 
-    untracked_memory_limit = settings[Setting::max_untracked_memory];
-    if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
-        untracked_memory_limit = settings[Setting::memory_profiler_step];
+    max_untracked_memory = settings[Setting::max_untracked_memory];
+    if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(max_untracked_memory))
+        max_untracked_memory = settings[Setting::memory_profiler_step];
+    min_untracked_memory = std::min<Int64>(settings[Setting::min_untracked_memory], max_untracked_memory);
+
+    updateUntrackedMemoryLimit(CurrentMemoryTracker::get());
 
     /// Populate the cache from authoritative query settings; on the initiator this runs before ProcessList::insert, on workers after (idempotent)
     /// (we cannot do this for all threads, even though it is no-op, since it is a data-race)

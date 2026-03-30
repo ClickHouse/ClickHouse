@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.5",
         {
             {"predicate_statistics_sample_rate", 0, 0, "New setting to collect predicate selectivity statistics into system.predicate_statistics_log"},
+            {"min_untracked_memory", 4 * 1024 * 1024, 4 * 1024, "More accurate memory tracking by making untracked memory limit proportional to thread memory usage."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {

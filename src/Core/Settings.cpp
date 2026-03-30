@@ -3552,6 +3552,9 @@ Read more about [memory overcommit](memory-overcommit.md).
     DECLARE(UInt64, max_untracked_memory, (4 * 1024 * 1024), R"(
 Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
 )", 0) \
+    DECLARE(UInt64, min_untracked_memory, (4 * 1024), R"(
+Lower bound for the dynamic untracked memory limit. The per-thread untracked memory limit is computed as `thread_memory_usage / 16` and clamped between `min_untracked_memory` and `max_untracked_memory`. This guarantees that total untracked memory does not exceed ~6.25% of the current memory footprint regardless of thread count. Set to the value of `max_untracked_memory` to disable the dynamic limit.
+)", 0) \
     DECLARE(UInt64, max_reverse_dictionary_lookup_cache_size_bytes, (100 * 1024 * 1024), R"(
 Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query. When the limit is reached, entries are evicted using LRU. Set to 0 to disable caching.
 )", 0) \

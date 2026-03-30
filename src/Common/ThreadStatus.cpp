@@ -254,6 +254,12 @@ bool ThreadStatus::isQueryCanceled() const
     return false;
 }
 
+void ThreadStatus::updateUntrackedMemoryLimit(Int64 current)
+{
+    constexpr Int64 untracked_memory_ratio_bits = 4; /// 1.0 / (1 << 4) = 1/16 = 6.25%
+    untracked_memory_limit = std::clamp<Int64>(current >> untracked_memory_ratio_bits, min_untracked_memory, max_untracked_memory);
+}
+
 size_t ThreadStatus::getNextPlanStepIndex() const
 {
     return local_data.plan_step_index->fetch_add(1);
