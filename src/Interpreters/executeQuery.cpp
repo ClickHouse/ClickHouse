@@ -2176,7 +2176,14 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 catch (const Exception & e)
                 {
                     if (e.code() == ErrorCodes::LOGICAL_ERROR)
-                        throw; /// Oracle mismatch — re-throw the exception to make it visible in CI
+                    {
+                        LOG_FATAL(logger,
+                            "AST Fuzzer oracle mismatch detected!\n"
+                            "Fuzzed query: {}\n"
+                            "{}",
+                            fuzzed_query, e.message());
+                        throw;
+                    }
                     LOG_TRACE(logger, "AST Fuzzer oracle check error (skipping): {}", e.message());
                 }
                 catch (...)
@@ -2187,6 +2194,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
             reset_transactions();
             base_ast = fuzzed_ast;
+        }
+        catch (const Exception & e)
+        {
+            reset_transactions();
+            if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                throw; /// Oracle mismatch — abort the fuzzer to make it visible in CI
+            LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzer->notifyQueryFailed(fuzzed_ast);
         }
         catch (...)
         {
