@@ -1390,6 +1390,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         {
             if (need_preliminary_merge
                 || output_each_partition_through_separate_port
+                || prefer_multiple_streams
                 || input_order_info->limit != 0
                 || input_order_info->direction != 1
                 || split_parts_and_ranges.size() <= 1)

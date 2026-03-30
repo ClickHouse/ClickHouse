@@ -332,6 +332,10 @@ public:
     bool requestOutputEachPartitionThroughSeparatePort();
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
+    /// Signal that downstream needs multiple output streams (e.g. aggregation-in-order).
+    /// When set, PrefetchingConcatProcessor will not be used to avoid collapsing parallel streams.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
@@ -415,6 +419,9 @@ private:
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
+
+    /// Set by aggregation-in-order optimizer to prevent PrefetchingConcat from collapsing streams.
+    bool prefer_multiple_streams = false;
 
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
