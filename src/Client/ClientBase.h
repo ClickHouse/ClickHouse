@@ -309,6 +309,11 @@ protected:
 
     String appendSmileyIfNeeded(const String & prompt);
 
+    /// Query the server for the current database and update default_database.
+    /// Called after the connection handshake so that the prompt reflects the
+    /// server-side default when no --database flag was passed.
+    void syncDefaultDatabase();
+
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
     /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
