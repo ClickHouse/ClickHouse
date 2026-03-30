@@ -296,7 +296,10 @@ class Runner:
         if job.enable_gh_auth:
             _GH_Auth(workflow=workflow)
 
+        print("INFO: disk status before running a job:")
+        Shell.run("df -h")
         if job.run_in_docker and not no_docker:
+            Shell.run("docker system df")
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
                 job.run_in_docker.split("+")[1:],
@@ -487,6 +490,9 @@ class Runner:
                         process.get_latest_log(max_lines=20)
                     ).set_info("---")
             result.dump()
+
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         # When running Docker containers as root (non-rootless mode), any files created
         # by the job will be owned by root. This causes issues when:

@@ -295,9 +295,7 @@ HAVING __table1.color_id IN (
     FROM dictionary(\'colors\') AS __table1
     WHERE __table1.name = \'red\'
 )
-ORDER BY
-    __table1.color_id ASC,
-    count() ASC
+ORDER BY __table1.color_id ASC
 HAVING
 1	1
 3	1
@@ -415,13 +413,11 @@ GROUP BY __table1.color_id IN (
         FROM dictionary(\'colors\') AS __table1
         WHERE __table1.name = \'red\'
     )
-ORDER BY
-    __table1.color_id IN (
+ORDER BY __table1.color_id IN (
         SELECT __table1.id AS id
         FROM dictionary(\'colors\') AS __table1
         WHERE __table1.name = \'red\'
-    ) ASC,
-    count() ASC
+    ) ASC
 GROUP BY
 0	3
 1	2

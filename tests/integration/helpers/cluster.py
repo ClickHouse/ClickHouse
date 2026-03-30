@@ -691,6 +691,7 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self._iceberg_rest_catalog_port = None
+        self._iceberg_minio_port = None
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
@@ -1013,6 +1014,13 @@ class ClickHouseCluster:
         return self._iceberg_rest_catalog_port
 
     @property
+    def iceberg_minio_port(self):
+        if self._iceberg_minio_port:
+            return self._iceberg_minio_port
+        self._iceberg_minio_port = self.port_pool.get_port()
+        return self._iceberg_minio_port
+
+    @property
     def glue_catalog_port(self):
         if self._glue_catalog_port:
             return self._glue_catalog_port
@@ -1188,7 +1196,7 @@ class ClickHouseCluster:
 
             result = run_and_check(["docker volume ls | wc -l"], shell=True)
             if int(result) > 1:
-                run_and_check(["docker", "volume", "prune", "-f"])
+                run_and_check(["docker", "volume", "prune", "-f", "--all"])
             logging.debug(f"Volumes pruned: {result}")
         except:
             pass
@@ -1779,6 +1787,7 @@ class ClickHouseCluster:
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
         env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -5984,7 +5993,7 @@ class ClickHouseInstance:
 
         port_lines = []
         # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
-        
+
         if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
             base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
             m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)
