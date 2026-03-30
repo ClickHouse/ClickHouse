@@ -489,7 +489,7 @@ namespace
     This setting can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
     :::
     )", 0) \
-    DECLARE(Bool, enable_query_admission_queue, true, R"(
+    DECLARE(Bool, enable_query_admission_queue, false, R"(
     Enable a FIFO admission queue for query concurrency control.
     When enabled, queries that exceed `max_concurrent_queries` wait in a strict FIFO queue
     with precise per-waiter wakeups, eliminating the thundering herd problem.

@@ -439,7 +439,7 @@ protected:
 
     /// When disabled, falls back to legacy `non_internal_processes` counting.
     /// Set once at server startup; not reloadable to avoid mode-transition races.
-    bool admission_queue_enabled = true;
+    bool admission_queue_enabled = false;
 
     /// Grant the front waiter (if any) or decrement `admission_running`.
     /// Caller must hold `mutex`.
