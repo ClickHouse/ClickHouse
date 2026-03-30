@@ -55,7 +55,7 @@ ${CLICKHOUSE_CLIENT} "${opts[@]}" --query="
 # Dynamic column with JSON comparison: NO_COMMON_TYPE because String and JSON have no common supertype.
 ${CLICKHOUSE_CLIENT} "${opts[@]}" --query="
     SELECT count() FROM file('04050_dynamic2_${CLICKHOUSE_DATABASE}.parquet', Parquet, 'c0 Dynamic') WHERE c0 = '{\"c1\":1}'::JSON
-" 2>&1 | grep -o 'NO_COMMON_TYPE'
+" 2>&1 | grep -o -m1 'NO_COMMON_TYPE'
 
 # Dynamic column with String comparison.
 ${CLICKHOUSE_CLIENT} "${opts[@]}" --query="
