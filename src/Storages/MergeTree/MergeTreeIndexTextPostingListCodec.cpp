@@ -110,7 +110,7 @@ void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & posti
     }
 }
 
-void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info, UInt64 version) const
+void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
 {
     info.offsets.reserve(segment_descriptors.size());
     info.ranges.reserve(segment_descriptors.size());
@@ -125,21 +125,18 @@ void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPosting
         header.write(out);
         out.write(compressed_data.data() + descriptor.compressed_data_offset, descriptor.compressed_data_size);
 
-        if (version >= 2)
-        {
-            /// V2 Index Section: append per-block metadata after segment payload.
-            /// This allows PostingListCursor to binary-search for blocks without
-            /// decoding the entire segment. The cursor reads header + payload + Index Section
-            /// sequentially, so no offset storage is needed in the dictionary.
-            const auto & block_metas = segment_block_metas[seg_idx].metas;
-            writeVarUInt(block_metas.size(), out);
+        /// Index Section: append per-block metadata after segment payload.
+        /// This allows PostingListCursor to binary-search for blocks without
+        /// decoding the entire segment. The cursor reads header + payload + Index Section
+        /// sequentially, so no offset storage is needed in the dictionary.
+        const auto & block_metas = segment_block_metas[seg_idx].metas;
+        writeVarUInt(block_metas.size(), out);
 
-            for (const auto & meta : block_metas)
-                writeVarUInt(meta.last_row_id, out);
+        for (const auto & meta : block_metas)
+            writeVarUInt(meta.last_row_id, out);
 
-            for (const auto & meta : block_metas)
-                writeVarUInt(meta.relative_offset, out);
-        }
+        for (const auto & meta : block_metas)
+            writeVarUInt(meta.relative_offset, out);
     }
 }
 
@@ -242,7 +239,7 @@ void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings)
 }
 
 void PostingListCodecBitpacking::encode(
-        const PostingList & postings, size_t max_rowids_in_segment, UInt64 version, TokenPostingsInfo & info, WriteBuffer & out) const
+        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     PostingListCodecBitpackingImpl impl(max_rowids_in_segment);
     std::vector<uint32_t> rowids;
@@ -262,7 +259,7 @@ void PostingListCodecBitpacking::encode(
         for (auto rowid: rowids_view)
             impl.insert(rowid);
     }
-    impl.encode(out, info, version);
+    impl.encode(out, info);
 }
 }
 
