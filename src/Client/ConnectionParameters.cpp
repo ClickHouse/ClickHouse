@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
+#include <Common/PortUtils.h>
 #include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>
@@ -196,13 +197,8 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
 
     if (config.has("port_offset"))
     {
-        Int64 offset = config.getInt64("port_offset");
-        Int64 effective_port = static_cast<Int64>(port) + offset;
-        if (effective_port < 1 || effective_port > 65535)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Port {} with offset {} results in invalid port {}: must be in range 1-65535",
-                port, offset, effective_port);
-        port = static_cast<UInt16>(effective_port);
+        Int32 offset = static_cast<Int32>(config.getInt64("port_offset"));
+        port = applyPortOffset(port, offset);
     }
 
     return port;

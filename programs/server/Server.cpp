@@ -48,6 +48,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/PortUtils.h>
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
@@ -637,28 +638,10 @@ void Server::createServer(
     auto port = config.getInt(port_name);
     UInt16 original_port = static_cast<UInt16>(port);
 
-    // Apply port offset only to server ports.
-    // We should apply it to all ports, including interserver and keeper,
-    // to allow running multiple instances on the same host without collisions.
-    bool should_apply_offset = true;
-    int applied_offset = 0;
-
-    if (should_apply_offset)
-    {
-        applied_offset = server_settings[ServerSetting::port_offset];
-        if (applied_offset != 0)
-        {
-            Int64 effective_port = static_cast<Int64>(port) + applied_offset;
-
-            // Validate port range (1-65535)
-            if (effective_port < 1 || effective_port > 65535)
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Port {} with offset {} results in invalid port {}: must be in range 1-65535",
-                    port, applied_offset, effective_port);
-
-            port = static_cast<int>(effective_port);
-        }
-    }
+    /// Apply port offset to all ports to allow running multiple instances on the same host
+    Int32 port_offset = server_settings[ServerSetting::port_offset];
+    if (port_offset != 0)
+        port = applyPortOffset(original_port, port_offset);
 
     try
     {
@@ -666,11 +649,11 @@ void Server::createServer(
         if (start_server)
         {
             servers.back().start();
-            if (applied_offset != 0)
-                LOG_INFO(&logger(), "Listening for {} (configured port {} + offset {} = {})",
-                    servers.back().getDescription(), original_port, applied_offset, port);
-            else
-                LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
+                if (port_offset != 0)
+                    LOG_INFO(&logger(), "Listening for {} (configured port {} + offset {} = {})",
+                        servers.back().getDescription(), original_port, port_offset, port);
+                else
+                    LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
         }
         global_context->registerServerPort(port_name, static_cast<UInt16>(port));
     }
@@ -1954,16 +1937,9 @@ try
             if (port > 0xFFFF)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
-            int applied_offset = server_settings[ServerSetting::port_offset];
-            if (applied_offset != 0)
-            {
-                Int64 effective_port = static_cast<Int64>(port) + applied_offset;
-                if (effective_port < 1 || effective_port > 65535)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                        "Port {} with offset {} results in invalid port {}: must be in range 1-65535",
-                        port, applied_offset, effective_port);
-                port = static_cast<UInt64>(effective_port);
-            }
+            Int32 port_offset = server_settings[ServerSetting::port_offset];
+            if (port_offset != 0)
+                port = applyPortOffset(static_cast<UInt16>(port), port_offset);
 
             global_context->setInterserverIOAddress(this_host, static_cast<UInt16>(port));
             global_context->setInterserverScheme(scheme);
