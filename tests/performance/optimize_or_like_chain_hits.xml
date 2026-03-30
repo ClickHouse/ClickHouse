@@ -1,7 +1,4 @@
 <test>
-  <settings>
-      <use_query_condition_cache>0</use_query_condition_cache>
-  </settings> 
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%'</query>
 
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%'</query>
