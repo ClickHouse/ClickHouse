@@ -88,15 +88,14 @@ namespace
 
         std::optional<StackTrace> stack_trace;
 
-#if defined(SANITIZER)
-        /// Under sanitizers, use abseil's frame-pointer-based unwinding (via the default
+#if defined(THREAD_SANITIZER)
+        /// Under TSan, use abseil's frame-pointer-based unwinding (via the default
         /// StackTrace constructor) instead of the ucontext_t constructor which uses libunwind.
-        /// Libunwind is not safe here because sanitizers modify %rbp during their own
-        /// frame-walking, and a profiling signal arriving mid-unwind would crash.
-        /// TSan defers SI_TIMER signals and delivers them at interceptor boundaries, so
-        /// abseil's walk from the current frame naturally includes the interrupted code.
-        /// We also skip sigsetjmp — TSan intercepts it, and siglongjmp across TSan's
-        /// signal delivery frames would corrupt its internal state.
+        /// TSan intercepts signal delivery via CallUserSignalHandler, and defers SI_TIMER
+        /// signals to interceptor boundaries. This makes libunwind unsafe (non-reentrant
+        /// with TSan's own unwinding) and sigsetjmp unusable (siglongjmp across TSan's
+        /// signal frames corrupts its state). Abseil's walk from the current frame works
+        /// because TSan's deferral places the interrupted code on the current stack.
         UNUSED(context);
         stack_trace.emplace();
 #else
