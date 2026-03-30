@@ -611,29 +611,35 @@ void TCPHandler::runImpl()
             /// before the detach decision so that inline settings can trigger the detach path.
             /// `settings_ref` is a reference to query_context's settings, so it reflects changes made here.
             /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
+            /// Guard: only pre-parse when the setting is already on (session/client-level) OR the query
+            /// text references it inline — avoids an unconditional extra parse on the hot path.
             {
                 const auto & pre_settings = query_state->query_context->getSettingsRef();
-                const size_t max_query_size_pre
-                    = pre_settings[Setting::max_query_size] ? pre_settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
-                ParserQuery parser_pre(
-                    query_state->query.data() + query_state->query.size(),
-                    pre_settings[Setting::allow_settings_after_format_in_insert],
-                    pre_settings[Setting::implicit_select]);
-                const char * query_pos_pre = query_state->query.data();
-                std::string parse_error_pre;
-                if (ASTPtr inline_ast = tryParseQuery(
-                        parser_pre,
-                        query_pos_pre,
+                if (pre_settings[Setting::allow_experimental_detach_non_readonly_queries]
+                    || query_state->query.find("allow_experimental_detach_non_readonly_queries") != std::string::npos)
+                {
+                    const size_t max_query_size_pre
+                        = pre_settings[Setting::max_query_size] ? pre_settings[Setting::max_query_size] : std::numeric_limits<size_t>::max();
+                    ParserQuery parser_pre(
                         query_state->query.data() + query_state->query.size(),
-                        parse_error_pre,
-                        /*hilite=*/false,
-                        /*description=*/"",
-                        /*allow_multi_statements=*/false,
-                        max_query_size_pre,
-                        pre_settings[Setting::max_parser_depth],
-                        pre_settings[Setting::max_parser_backtracks],
-                        /*skip_insignificant=*/true))
-                    InterpreterSetQuery::applySettingsFromQuery(inline_ast, query_state->query_context);
+                        pre_settings[Setting::allow_settings_after_format_in_insert],
+                        pre_settings[Setting::implicit_select]);
+                    const char * query_pos_pre = query_state->query.data();
+                    std::string parse_error_pre;
+                    if (ASTPtr inline_ast = tryParseQuery(
+                            parser_pre,
+                            query_pos_pre,
+                            query_state->query.data() + query_state->query.size(),
+                            parse_error_pre,
+                            /*hilite=*/false,
+                            /*description=*/"",
+                            /*allow_multi_statements=*/false,
+                            max_query_size_pre,
+                            pre_settings[Setting::max_parser_depth],
+                            pre_settings[Setting::max_parser_backtracks],
+                            /*skip_insignificant=*/true))
+                        InterpreterSetQuery::applySettingsFromQuery(inline_ast, query_state->query_context);
+                }
             }
 
             /// Detach path: for non-readonly queries when allow_experimental_detach_non_readonly_queries is on, run the query in a background thread and return query_id immediately.

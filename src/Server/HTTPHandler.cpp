@@ -550,7 +550,12 @@ void HTTPHandler::processQuery(
     /// before the detach decision so that inline settings can trigger the detach path.
     /// `settings` is a reference to context->getSettingsRef(), so it reflects any changes made here.
     /// `executeQueryImpl` will call `applySettingsFromQuery` again — that call is idempotent.
-    if (!query.empty())
+    /// Guard: only pre-parse when the setting is already on (session/URL-level) OR the query text
+    /// references it inline — avoids an unconditional extra parse on every request on the hot path.
+    if (!query.empty()
+        && (settings[Setting::allow_experimental_detach_non_readonly_queries]
+            || params.has("allow_experimental_detach_non_readonly_queries")
+            || query.find("allow_experimental_detach_non_readonly_queries") != std::string::npos))
     {
         ParserQuery parser_for_inline_settings(
             query.data() + query.size(),
