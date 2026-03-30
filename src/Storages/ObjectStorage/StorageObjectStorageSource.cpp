@@ -27,6 +27,7 @@
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -649,34 +650,44 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
             schema_changed = true;
         }
+        /// Save the row_level_filter if we need to strip it from format-level filter info
+        /// so we can apply it as a fallback FilterTransform later in the pipeline.
+        FilterDAGInfoPtr stripped_row_level_filter;
+
         auto filter_info = [&]()
         {
-            if (!schema_changed)
-                return format_filter_info;
-            auto mapper = configuration->getColumnMapperForObject(object_info);
-            if (!mapper)
-                return format_filter_info;
-            return std::make_shared<FormatFilterInfo>(format_filter_info->filter_actions_dag, format_filter_info->context.lock(), mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-        }();
-
-        /// If the actual file format doesn't support PREWHERE, strip PREWHERE-related fields
-        /// from the filter info. This can happen with Iceberg tables that have files in
-        /// mixed formats (e.g. Parquet supports PREWHERE but ORC doesn't).
-        /// See https://github.com/ClickHouse/ClickHouse/issues/96829
-        const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
-        if (filter_info && (filter_info->prewhere_info || filter_info->row_level_filter))
-        {
-            if (!FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings))
+            auto result = format_filter_info;
+            if (schema_changed)
             {
-                filter_info = std::make_shared<FormatFilterInfo>(
-                    filter_info->filter_actions_dag,
-                    filter_info->context.lock(),
-                    filter_info->column_mapper,
-                    nullptr,  /* row_level_filter */
-                    nullptr   /* prewhere_info */
-                );
+                if (auto mapper = configuration->getColumnMapperForObject(object_info))
+                    result = std::make_shared<FormatFilterInfo>(
+                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
             }
-        }
+
+            /// If the actual file format doesn't support PREWHERE, strip prewhere_info
+            /// and row_level_filter from format-level filter info. Both fields require
+            /// format-level PREWHERE support (FormatFactory::getInputImpl checks both).
+            /// This handles mixed-format Iceberg tables (e.g. Parquet + ORC files).
+            /// See https://github.com/ClickHouse/ClickHouse/issues/96829
+            if (result && (result->prewhere_info || result->row_level_filter))
+            {
+                const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
+                if (!FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings))
+                {
+                    stripped_row_level_filter = result->row_level_filter;
+                    result = std::make_shared<FormatFilterInfo>(
+                        result->filter_actions_dag,
+                        result->context.lock(),
+                        result->column_mapper,
+                        nullptr,  /// row_level_filter — applied as FilterTransform below
+                        nullptr   /// prewhere_info
+                    );
+                }
+            }
+
+            return result;
+        }();
 
         chassert(object_info->getObjectMetadata().has_value());
 
@@ -739,6 +750,22 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         builder.init(Pipe(input_format));
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+
+        /// Apply row-level security filter as a regular FilterTransform when the file
+        /// format doesn't support PREWHERE. The query planner puts row policies into
+        /// row_level_filter when storage->supportsPrewhere() (PlannerJoinTree.cpp:1012),
+        /// but individual files in mixed-format tables may not support it at format level.
+        if (stripped_row_level_filter)
+        {
+            auto row_level_actions = std::make_shared<ExpressionActions>(stripped_row_level_filter->actions.clone());
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header, row_level_actions,
+                    stripped_row_level_filter->column_name,
+                    stripped_row_level_filter->do_remove_column);
+            });
+        }
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows
