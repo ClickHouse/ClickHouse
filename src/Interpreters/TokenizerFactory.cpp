@@ -267,23 +267,8 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     auto unicode_word_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        const auto * tokenizer_name = UnicodeWordTokenizer::getExternalName();
-        assertParamsCount(args.size(), 1, tokenizer_name);
-
-        std::vector<String> stop_words;
-        if (args.empty())
-        {
-            /// Default stop words: common CJK punctuation marks
-            stop_words = {"，", "。", "！", "？", "；", "：", "、", "‘", "’", "“", "”"};
-        }
-        else
-        {
-            auto array = castAs<Array>(args[0], "stop_words");
-            for (const auto & value : array)
-                stop_words.emplace_back(castAs<String>(value, "stop_word"));
-        }
-
-        return std::make_unique<UnicodeWordTokenizer>(stop_words);
+        assertParamsCount(args.size(), 0, UnicodeWordTokenizer::getExternalName());
+        return std::make_unique<UnicodeWordTokenizer>();
     };
 
     factory.registerTokenizer(UnicodeWordTokenizer::getName(), ITokenizer::Type::UnicodeWord, unicode_word_creator);

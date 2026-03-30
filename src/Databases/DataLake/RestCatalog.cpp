@@ -971,7 +971,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces", base_url);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -999,7 +999,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 {
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
@@ -1036,7 +1036,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
+    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1121,10 +1121,18 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
     {
         case StorageType::S3:
         {
+            static constexpr auto gcs_token_str = "gcs.oauth2.token";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
+
+            if (object->has(gcs_token_str))
+            {
+                auto gcs_token = object->get(gcs_token_str).extract<String>();
+                LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
+                return {std::make_shared<GCSCredentials>(gcs_token), ""};
+            }
 
             std::string access_key_id;
             std::string secret_access_key;

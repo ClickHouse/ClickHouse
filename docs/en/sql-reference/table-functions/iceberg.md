@@ -15,7 +15,7 @@ Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.ap
 ## Syntax {#syntax}
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
 icebergS3(named_collection[, option=value [,..]])
 
 icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -32,6 +32,8 @@ icebergLocal(named_collection[, option=value [,..]])
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
+
+For `icebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ### Returned value {#returned-value}
 

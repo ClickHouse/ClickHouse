@@ -64,19 +64,19 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
 "
 
 echo "INSERT"
-$CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
+$CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 -q "
 INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 
 echo "READ"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
-SELECT '1', min(t) FROM times SETTINGS optimize_use_implicit_projections = 1;
+SELECT '1', min(t) FROM times SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 
 echo "INSERT and READ INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
 INSERT INTO times SELECT now() + INTERVAL 2 day SETTINGS optimize_on_insert = 0;
-SELECT '2', min(t) FROM times SETTINGS optimize_use_implicit_projections = 1;
+SELECT '2', min(t) FROM times SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 INSERT INTO times SELECT now() + INTERVAL 3 day SETTINGS optimize_on_insert = 0;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 

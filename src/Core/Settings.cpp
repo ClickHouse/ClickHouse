@@ -12,6 +12,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
@@ -259,6 +260,9 @@ Higher values will lead to higher memory usage.
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 
 Cloud default value: `50`.
+)", 0) \
+    DECLARE(Bool, finalize_projection_parts_synchronously, false, R"(
+When enabled, projection parts are finalized synchronously during INSERT, reducing peak memory usage at the cost of reduced S3 upload parallelism. By default, each projection's output stream is kept alive until the entire part (including all projections) is finalized, which allows overlapping S3 uploads but increases peak memory proportional to the number of projections. This setting only affects the INSERT path; merge and mutation already finalize projections synchronously.
 )", 0) \
     DECLARE(MaxThreads, max_final_threads, 0, R"(
 Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
@@ -1656,6 +1660,16 @@ Possible values:
 Enable using data skipping indexes for TopK filtering.
 
 When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_statistics_for_part_pruning, true, R"(
+Use statistics to filter out parts during query execution.
+
+When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
 
 Possible values:
 
@@ -4464,6 +4478,9 @@ Move arithmetic operations out of aggregation functions
     DECLARE(Bool, optimize_redundant_functions_in_order_by, true, R"(
 Remove functions from ORDER BY if its argument is also in ORDER BY
 )", 0) \
+    DECLARE(Bool, optimize_truncate_order_by_after_group_by_keys, true, R"(
+Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix.
+)", 0) \
     DECLARE(Bool, optimize_if_chain_to_multiif, false, R"(
 Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not beneficial for numeric types.
 )", 0) \
@@ -4848,6 +4865,9 @@ Allow to execute alters which affects not only tables metadata, but also data on
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
+    DECLARE(Bool, enable_materialized_cte, false, R"(
+Enable materialized common table expressions, it will be preferred over enable_global_with_statement
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
 
@@ -5957,6 +5977,14 @@ Replace distance functions on `QBit` data type with equivalent ones that only re
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.
+
+Possible values:
+
+- Positive integer.
+)", 0) \
+    \
+    DECLARE(UInt64, highlight_max_matches_per_row, 10000, R"(
+Sets the maximum number of highlight matches per row in the [highlight](/sql-reference/functions/string-search-functions#highlight) function. Use it to protect against excessive memory usage when highlighting highly repetitive patterns in large texts.
 
 Possible values:
 
@@ -7129,6 +7157,12 @@ Uses replicas from cluster_for_parallel_replicas.
 - [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
 - [distributed_index_analysis_min_indexes_bytes_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_bytes_to_activate)
 )", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_index_analysis_only_on_coordinator, false, R"(
+If enabled, distributed index analysis runs only on the coordinator.
+This prevents O(N^2) spawned queries when the predicate contains subqueries (e.g., `IN (SELECT ...)`),
+because each follower replica would otherwise independently trigger its own distributed index analysis,
+but makes distributed index analysis less efficient if large tables are used in the subqueries.
+)", 0) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0) \

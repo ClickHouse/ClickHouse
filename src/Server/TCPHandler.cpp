@@ -492,9 +492,11 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
+                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(),
+                    !in->isCanceled() && in->eof());
                 return;
             }
         }
@@ -1372,13 +1374,24 @@ void TCPHandler::processInsertQuery(QueryState & state)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
-                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", timeout_ms);
 
-                result.future.get();
+                auto progress_result = result.future.get();
+
+                /// Report the written rows/bytes as progress so that the client
+                /// and query_log reflect the actual insert stats.
+                if (auto process_list_elem = state.query_context->getProcessListElement())
+                {
+                    process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
+                    process_list_elem->updateProgressIn(Progress(ReadProgress(progress_result.rows, progress_result.bytes)));
+                }
             }
 
-            std::lock_guard lock(*callback_mutex);
-            sendInsertProfileEvents(state);
+            {
+                std::lock_guard lock(*callback_mutex);
+                sendProgress(state);
+                sendInsertProfileEvents(state);
+            }
             return;
         }
         if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
@@ -1400,6 +1413,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
+    sendProgress(state);
     sendInsertProfileEvents(state);
 }
 
@@ -1433,12 +1447,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+                bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
                     receivePacketsExpectCancel(state);
+                    stop_read_return_partial_result = state.stop_read_return_partial_result;
                 }
 
-                if (state.stop_read_return_partial_result)
+                if (stop_read_return_partial_result)
                 {
                     executor.cancelReading();
                 }
@@ -1590,7 +1606,7 @@ void TCPHandler::sendReadTaskRequest()
 void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_parallel_replicas_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1600,7 +1616,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out, client_parallel_replicas_protocol_version);
+    request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();

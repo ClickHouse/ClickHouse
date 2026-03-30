@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 set optimize_move_to_prewhere = 1;
+set query_plan_optimize_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;
 set enable_multiple_prewhere_read_steps = 1;
 set move_primary_key_columns_to_end_of_prewhere = 1;
