@@ -24,7 +24,7 @@ static int64_t port = 9000;
 
 using namespace std::chrono_literals;
 
-bool isMerge(int argc, const char * const * argv)
+static bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -37,11 +37,14 @@ bool isMerge(int argc, const char * const * argv)
     return false;
 }
 
-void on_exit()
+static void on_exit()
 {
     BaseDaemon::terminate();
     main_app.wait();
 }
+
+extern "C" int LLVMFuzzerInitialize(int * argc, char ***argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 extern "C"
 int LLVMFuzzerInitialize(int * argc, char ***argv)

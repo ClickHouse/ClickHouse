@@ -102,7 +102,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-__attribute__((constructor(202))) void init_ssl()
+static __attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -114,7 +114,7 @@ __attribute__((constructor(202))) void init_ssl()
 /// class C { C() { assert(inside_main); } };
 bool inside_main = false;
 
-int clickhouseMain(int argc_, char ** argv_)
+static int clickhouseMain(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
@@ -147,7 +147,7 @@ int clickhouseMain(int argc_, char ** argv_)
     return exit_code;
 }
 
-bool isMerge(int argc, const char * const * argv)
+static bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -175,6 +175,9 @@ String query;
 std::optional<std::thread> runner;
 String clickhouse{"clickhouse"};
 std::vector<char *> clickhouse_args{clickhouse.data()};
+
+extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 extern "C"
 int LLVMFuzzerInitialize(const int *argc, char ***argv)

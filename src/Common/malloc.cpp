@@ -204,6 +204,8 @@ void * pvalloc(size_t size)
 }
 #endif
 
+extern "C" void * reallocarray(void * ptr, size_t nmemb, size_t size);
+
 void * reallocarray(void * ptr, size_t nmemb, size_t size)
 {
     size_t real_size = 0;
