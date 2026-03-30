@@ -1,0 +1,34 @@
+<test>
+    <drop_query>DROP TABLE IF EXISTS bench_intersect_overlap</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_intersect_early_empty</drop_query>
+
+    <create_query>CREATE TABLE bench_intersect_overlap (poly Polygon) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE bench_intersect_early_empty (poly Polygon) ENGINE = Memory</create_query>
+
+    <fill_query>
+        INSERT INTO bench_intersect_overlap SELECT
+            [[(0., 0.), (toFloat64(100 - number * 0.01), 0.),
+              (toFloat64(100 - number * 0.01), toFloat64(100 - number * 0.01)),
+              (0., toFloat64(100 - number * 0.01)), (0., 0.)]]
+        FROM numbers(10000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO bench_intersect_early_empty SELECT
+            if(number = 0,
+                [[(0., 0.), (1., 0.), (1., 1.), (0., 1.), (0., 0.)]],
+                if(number = 1,
+                    [[(10., 10.), (11., 10.), (11., 11.), (10., 11.), (10., 10.)]],
+                    [[(toFloat64(number), 0.), (toFloat64(number + 2), 0.),
+                      (toFloat64(number + 2), 2.), (toFloat64(number), 2.), (toFloat64(number), 0.)]]
+                )
+            )
+        FROM numbers(10000)
+    </fill_query>
+
+    <query>SELECT groupPolygonIntersection(poly) FROM bench_intersect_overlap FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT groupPolygonIntersection(poly) FROM bench_intersect_early_empty FORMAT Null SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS bench_intersect_overlap</drop_query>
+    <drop_query>DROP TABLE IF EXISTS bench_intersect_early_empty</drop_query>
+</test>
