@@ -1396,25 +1396,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 || split_parts_and_ranges.size() <= 1)
                 return false;
 
-            const size_t num_pk_columns = storage_snapshot->metadata->getPrimaryKey().column_names.size();
-            if (num_pk_columns == 0)
-                return false;
-
-            /// Walk through every part entry across all streams in order.
-            /// At each transition to a different data_part, compare PK index values.
+            /// PrefetchingConcat is only safe when all streams reference the same
+            /// single data part. Ranges from a single part are non-overlapping and
+            /// pre-sorted, so concatenation preserves order.
             ///
-            /// The PK index only covers PRIMARY KEY columns, which may be a strict
-            /// prefix of ORDER BY (sorting key). If the read-in-order prefix extends
-            /// beyond PK (`used_prefix_of_sorting_key_size > num_pk_columns`), two
-            /// adjacent parts can be equal on PK but out of order on the remaining
-            /// sorting key columns — concatenation would produce misordered output.
-            /// So we must fall back to MergingSortedTransform when there are cross-part
-            /// transitions and the sorting key prefix is wider than the PK.
-            const size_t sorting_prefix = input_order_info->used_prefix_of_sorting_key_size;
-            const bool has_sorting_columns_beyond_pk = sorting_prefix > num_pk_columns;
-
-            const RangesInDataPart * prev_entry = nullptr;
-
+            /// For multiple parts, the PK index marks only store the first row of
+            /// each granule — not an upper bound for all rows in that granule.
+            /// Comparing mark keys across parts cannot prove that all rows of the
+            /// previous range precede all rows of the next range, so concatenation
+            /// could produce misordered output. Fall back to MergingSortedTransform.
+            const IMergeTreeDataPart * single_part = nullptr;
             for (const auto & stream : split_parts_and_ranges)
             {
                 for (const auto & entry : stream)
@@ -1422,41 +1413,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     if (entry.ranges.empty())
                         continue;
 
-                    if (prev_entry && prev_entry->data_part != entry.data_part)
-                    {
-                        /// Different parts — if sorting key extends beyond PK, we cannot
-                        /// verify the full ordering from the index alone.
-                        if (has_sorting_columns_beyond_pk)
-                            return false;
-
-                        /// Compare PK index values at the boundary.
-                        const auto & prev_index = prev_entry->data_part->getIndex();
-                        const auto & curr_index = entry.data_part->getIndex();
-
-                        if (prev_index->empty() || curr_index->empty())
-                            return false;
-
-                        size_t prev_mark = prev_entry->ranges.back().end;
-                        size_t curr_mark = entry.ranges.front().begin;
-
-                        /// Use the mark before end if past the index (final mark).
-                        if (prev_mark > 0 && prev_mark >= (*prev_index)[0]->size())
-                            --prev_mark;
-
-                        size_t cols_to_check = std::min({num_pk_columns, prev_index->size(), curr_index->size()});
-
-                        for (size_t col = 0; col < cols_to_check; ++col)
-                        {
-                            int cmp = (*prev_index)[col]->compareAt(prev_mark, curr_mark, *(*curr_index)[col], 1);
-                            if (cmp < 0)
-                                break; /// prev < curr — in order.
-                            if (cmp > 0)
-                                return false; /// prev > curr — wrong order, cannot concatenate.
-                            /// cmp == 0 — equal on this column, check next.
-                        }
-                    }
-
-                    prev_entry = &entry;
+                    if (!single_part)
+                        single_part = entry.data_part.get();
+                    else if (entry.data_part.get() != single_part)
+                        return false;
                 }
             }
 
