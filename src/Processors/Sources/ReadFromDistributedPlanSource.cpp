@@ -23,7 +23,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         if (query_finished)
         {
             distributed_query_executor->cleanup();
-            return Chunk();
+            return std::nullopt;
         }
     }
     catch (...)
@@ -32,7 +32,7 @@ std::optional<Chunk> ReadFromDistributedPlanSource::tryGenerate()
         throw;
     }
 
-    return std::nullopt;
+    return Chunk{};
 }
 
 void ReadFromDistributedPlanSource::onCancel() noexcept
