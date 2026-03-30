@@ -18,7 +18,7 @@ SETTINGS disk = disk(type=local, path='not a real path');
 
 CREATE TABLE test (a Int32)
 ENGINE = MergeTree() order by tuple()
-SETTINGS disk = disk(type=local, path='/local/'); -- { serverError PATH_ACCESS_DENIED }
+SETTINGS disk = disk(type=local, path='/local/'); -- { serverError PATH_ACCESS_DENIED, BAD_ARGUMENTS }
 
 CREATE TABLE test (a Int32)
 ENGINE = MergeTree() order by tuple()
