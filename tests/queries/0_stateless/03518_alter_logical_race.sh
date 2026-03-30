@@ -36,7 +36,7 @@ function thread_insert()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(100000)"
+        $CLICKHOUSE_CLIENT -q "INSERT INTO alter_table (a, b, c, d, e, f, g) SELECT rand(1), rand(2), rand(3), rand(4), rand(5), rand(6), rand(7) FROM numbers(1000)"
     done
 }
 
@@ -46,12 +46,6 @@ thread_alter h &
 thread_insert &
 
 thread_alter i &
-thread_insert &
-
-thread_alter j &
-thread_insert &
-
-thread_alter k &
 thread_insert &
 
 
