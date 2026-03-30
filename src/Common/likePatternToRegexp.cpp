@@ -108,8 +108,19 @@ String similarToPatternToRegexp(std::string_view pattern)
 
     while (pos < end)
     {
+        /// SIMILAR TO's metachacraters consist of LIKE's and a subset of re2's:
+        /// - LIKE's: %_         --> Convert to .* or . in re2
+        /// - re2's: |*+?[](){}  --> Keep in re2
+        /// - Exclude re2's: ^$. --> Quote in re2
         switch (*pos)
         {
+            /// Quote characters which have a special meaning in re2
+            case '^':
+            case '$':
+            case '.':
+                res += '\\';
+                res += *pos;
+                break;
             case '%':
                 if (pos + 1 != end)
                     res += ".*";
@@ -124,29 +135,15 @@ String similarToPatternToRegexp(std::string_view pattern)
                     throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern '{}'", pattern);
                 switch (pos[1])
                 {
-                    /// Interpret quoted re2 metacharacters as literals:
-                    case '^':
-                    case '$':
-                    case '.':
-                    case '[':
-                    case '|':
-                    case '(':
-                    case ')':
-                    case '?':
-                    case '*':
-                    case '+':
-                    case '{':
-                        res += pos[1];
-                        ++pos;
-                        break;
-                    /// Interpret quoted LIKE metacharacters %, _ and \ as literals:
+                    /// Unquote LIKE metacharacters %, _ and \ as literals for re2:
                     case '%':
                     case '_':
                         res += pos[1];
                         ++pos;
                         break;
+                    /// Quote blackslash
                     case '\\':
-                        res += "\\\\"; /// backslash has a special meaning in re2 --> quote it
+                        res += "\\\\";
                         ++pos;
                         break;
                     /// Unknown escape sequence treated literally: as backslash (which must be quoted in re2) + the following character

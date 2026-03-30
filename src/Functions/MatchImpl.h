@@ -74,6 +74,8 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
     return true;
 }
 
+// TODO: is SIMILAR TO equivalent to a substring search?
+
 }
 
 // For more readable instantiations of MatchImpl<>
