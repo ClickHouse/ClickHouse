@@ -46,11 +46,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
-            {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
-            {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
+            {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
+            {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
             {"allow_experimental_polyglot_dialect", false, false, "New setting to enable the polyglot SQL transpiler dialect."},
             {"polyglot_dialect", "", "", "New setting to specify the source SQL dialect for the polyglot transpiler."},
             {"output_format_trim_fixed_string", false, false, "New setting to trim trailing zero bytes from FixedString values in text output formats"},

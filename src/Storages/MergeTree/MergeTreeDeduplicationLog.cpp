@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -224,6 +225,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
+            LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping outdated deduplication log {}", itr->second.path);
             disk->removeFile(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)

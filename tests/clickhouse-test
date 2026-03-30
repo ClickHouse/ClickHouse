@@ -5122,7 +5122,7 @@ def parse_args():
         "--reattach-tables-probability",
         type=float,
         default=0.1,
-        help="The probability of reattaching tables before execution of query if it's enabled",
+        help="Probability of enabling table reattach before query execution when the setting is disabled",
     )
     parser.add_argument(
         "--llvm-coverage",

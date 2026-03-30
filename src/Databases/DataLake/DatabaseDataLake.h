@@ -28,6 +28,7 @@ public:
     UUID getUUID() const override { return db_uuid; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
+    bool supportsDetachingTables() const override { return false; }
     bool isDatalakeCatalog() const override { return true; }
 
     bool empty() const override;

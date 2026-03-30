@@ -85,6 +85,8 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+
+#include <unordered_set>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -1170,6 +1172,12 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 {
     CollectTablesInQueryVisitor::Data data(context);
     CollectTablesInQueryVisitor(data).visit(query);
+
+    /// Deduplicate: the same table can appear multiple times (e.g. self-joins).
+    {
+        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        std::erase_if(data.tables, [&](const StorageID & id) { return !seen.insert(id).second; });
+    }
 
     /// Keep old settings, because they may be changed
     /// during execution of ATTACH/DETACH queries.
