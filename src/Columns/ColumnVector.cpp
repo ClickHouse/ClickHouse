@@ -1296,6 +1296,16 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
+template <typename T>
+bool ColumnVector<T>::hasOnlyTypeDefaults() const
+{
+    /// For floating-point types, -0.0 has non-zero bit representation but
+    /// compares equal to 0.0 via isDefaultAt. memoryIsZero is therefore
+    /// conservative: it may return false when -0.0 is present, which is
+    /// safe (we simply won't skip the column).
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;

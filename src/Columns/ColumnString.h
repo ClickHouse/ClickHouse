@@ -5,7 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/ColumnsCommon.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/memcpySmall.h>
 #include <base/memcmpSmall.h>
@@ -129,13 +129,7 @@ public:
         return sizeAt(n) == 0;
     }
 
-    /// All strings are empty iff every offset is zero.
-    bool hasOnlyTypeDefaults() const override
-    {
-        if (offsets.empty())
-            return true;
-        return memoryIsZero(offsets.data(), 0, offsets.size() * sizeof(offsets[0]));
-    }
+    bool hasOnlyTypeDefaults() const override;
 
     void insert(const Field & x) override
     {

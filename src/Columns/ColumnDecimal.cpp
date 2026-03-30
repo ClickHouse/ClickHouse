@@ -620,6 +620,12 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
     data[dst_pos] = src_data[src_pos];
 }
 
+template <is_decimal T>
+bool ColumnDecimal<T>::hasOnlyTypeDefaults() const
+{
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
+}
+
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -66,15 +65,7 @@ public:
     Int64 getInt(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return isNullAt(n); }
 
-    /// All values are NULL (the type-default for Nullable) iff every byte
-    /// in the null-map is 1.
-    bool hasOnlyTypeDefaults() const override
-    {
-        const auto & data = getNullMapData();
-        if (data.empty())
-            return true;
-        return memoryIsByte(data.data(), 0, data.size(), 1);
-    }
+    bool hasOnlyTypeDefaults() const override;
     std::string_view getDataAt(size_t) const override;
     /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;

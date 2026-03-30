@@ -816,4 +816,11 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     return column_sizes;
 }
 
+bool ColumnString::hasOnlyTypeDefaults() const
+{
+    if (offsets.empty())
+        return true;
+    return memoryIsZero(offsets.data(), 0, offsets.size() * sizeof(offsets[0]));
+}
+
 }

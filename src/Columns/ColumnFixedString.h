@@ -5,7 +5,6 @@
 #include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnFixedSizeHelper.h>
@@ -98,10 +97,7 @@ public:
 
     bool isDefaultAt(size_t index) const override;
 
-    bool hasOnlyTypeDefaults() const override
-    {
-        return memoryIsZero(chars.data(), 0, chars.size());
-    }
+    bool hasOnlyTypeDefaults() const override;
 
     void insert(const Field & x) override;
 

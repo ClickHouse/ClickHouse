@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
 
@@ -1087,6 +1088,14 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     }
 
     return removeNullable(column);
+}
+
+bool ColumnNullable::hasOnlyTypeDefaults() const
+{
+    const auto & data = getNullMapData();
+    if (data.empty())
+        return true;
+    return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnFixedSizeHelper.h>
-#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/assert_cast.h>
@@ -318,14 +317,7 @@ public:
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
 
-    bool hasOnlyTypeDefaults() const override
-    {
-        /// For floating-point types, -0.0 has non-zero bit representation but
-        /// compares equal to 0.0 via isDefaultAt. memoryIsZero is therefore
-        /// conservative: it may return false when -0.0 is present, which is
-        /// safe (we simply won't skip the column).
-        return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
-    }
+    bool hasOnlyTypeDefaults() const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {
