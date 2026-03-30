@@ -3868,15 +3868,20 @@ void Context::setColumnsCache(const String & cache_policy, size_t max_size_in_by
     shared->columns_cache = std::make_shared<ColumnsCache>(cache_policy, CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, 0, size_ratio);
 }
 
-void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->columns_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("columns_cache_size", DEFAULT_COLUMNS_CACHE_MAX_SIZE);
-    shared->columns_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("columns_cache_size", DEFAULT_COLUMNS_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->columns_cache->setMaxSizeInBytes(size);
 }
 
 ColumnsCachePtr Context::getColumnsCache() const
@@ -3889,9 +3894,9 @@ void Context::clearColumnsCache() const
 {
     ColumnsCachePtr cache = getColumnsCache();
 
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    /// Clear both the base cache and interval index without holding context mutex
     if (cache)
-        cache->clear();
+        cache->clearAll();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,

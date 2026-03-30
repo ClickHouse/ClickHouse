@@ -13,10 +13,17 @@
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
+#include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/UUID.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
+
+namespace ProfileEvents
+{
+    extern const Event ColumnsCacheHits;
+    extern const Event ColumnsCacheMisses;
+}
 
 namespace DB
 {
@@ -302,6 +309,15 @@ size_t MergeTreeReaderWide::readRows(
                     }
                 }
             }
+        }
+
+        /// Count cache hits/misses at request level, not per-entry.
+        if (cache_enabled && settings.enable_columns_cache_reads)
+        {
+            if (serving_from_cache)
+                ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
+            else
+                ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
         }
 
         if (serving_from_cache)

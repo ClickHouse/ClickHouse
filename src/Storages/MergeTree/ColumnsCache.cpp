@@ -1,11 +1,5 @@
 #include <Storages/MergeTree/ColumnsCache.h>
 
-namespace ProfileEvents
-{
-    extern const Event ColumnsCacheHits;
-    extern const Event ColumnsCacheMisses;
-}
-
 namespace DB
 {
 
@@ -38,7 +32,7 @@ void ColumnsCache::removeStaleKeys(const std::vector<Key> & stale_keys)
             continue;
 
         auto & intervals = col_it->second;
-        auto it = intervals.find(key.row_begin);
+        auto it = intervals.find({key.row_begin, key.row_end});
         if (it != intervals.end() && it->second == key)
             intervals.erase(it);
 
@@ -79,12 +73,12 @@ ColumnsCache::getIntersecting(
 
         /// Collect all intervals that intersect with [row_begin, row_end).
         /// An interval [a, b) intersects if a < row_end AND b > row_begin.
-        /// Since the map is sorted by row_begin (a), we iterate from the start
-        /// and stop once a >= row_end (all subsequent entries also have a >= row_end).
-        for (const auto & [_, key] : intervals)
+        /// Since the map is sorted by (row_begin, row_end), we iterate from the start
+        /// and stop once row_begin >= row_end (all subsequent entries also start at or after row_end).
+        for (const auto & [range_key, key] : intervals)
         {
             /// Stop if we've gone past the query range
-            if (key.row_begin >= row_end)
+            if (range_key.first >= row_end)
                 break;
 
             /// Check if this interval actually intersects
@@ -95,22 +89,18 @@ ColumnsCache::getIntersecting(
         }
     }
 
-    /// Then query cache entries without holding interval_index lock to avoid deadlock
+    /// Then query cache entries without holding interval_index lock to avoid deadlock.
+    /// Hit/miss counting is left to the caller at request level to avoid inflating
+    /// counters with per-entry or stale-cleanup events.
     std::vector<Key> stale_keys;
     for (const auto & key : intersecting_keys)
     {
         /// Verify the entry still exists in cache (might have been evicted)
         auto entry = Base::get(key);
         if (entry)
-        {
             result.emplace_back(key, entry);
-            ProfileEvents::increment(ProfileEvents::ColumnsCacheHits);
-        }
         else
-        {
             stale_keys.push_back(key);
-            ProfileEvents::increment(ProfileEvents::ColumnsCacheMisses);
-        }
     }
 
     /// Clean up stale entries from interval_index (entries evicted by LRU/SLRU)

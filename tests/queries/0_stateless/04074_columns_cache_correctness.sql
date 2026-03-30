@@ -208,8 +208,8 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1000;
 INSERT INTO t_cache_prewhere SELECT
     number,
     number % 100,
-    repeat(toString(number), 100)
-FROM numbers(5000);
+    repeat(toString(number), 10)
+FROM numbers(3000);
 
 SYSTEM DROP COLUMNS CACHE;
 
@@ -398,7 +398,7 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 1000;
 INSERT INTO t_cache_compression SELECT
     number,
     toString(number),
-    repeat('data' || toString(number), 1000),
+    repeat('data' || toString(number), 100),
     number
 FROM numbers(2000);
 

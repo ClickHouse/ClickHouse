@@ -108,7 +108,7 @@ private:
         }
     };
 
-    using IntervalMap = std::map<size_t, ColumnsCacheKey>;
+    using IntervalMap = std::map<std::pair<size_t, size_t>, ColumnsCacheKey>;
     using ColumnIntervalsMap = std::unordered_map<String, IntervalMap>;
     using PartIndexMap = std::unordered_map<PartIdentifier, ColumnIntervalsMap, PartIdentifierHash>;
 
@@ -137,6 +137,7 @@ public:
 
     /// Find all cached entries that intersect with the given row range for a column.
     /// Returns a vector of (cache_key, cached_entry) pairs, sorted by row_begin.
+    /// Does NOT update hit/miss profile events; the caller should count at request level.
     std::vector<std::pair<Key, MappedPtr>> getIntersecting(
         const UUID & table_uuid,
         const String & part_name,
@@ -153,30 +154,26 @@ public:
         /// as stale and erase it).
         Base::set(key, mapped);
 
-        /// Check if there's an existing entry at the same row_begin with a different row_end.
-        /// If so, remove the old cache entry to avoid orphaned entries.
-        Key old_key{};
-        bool has_old_key = false;
         {
             std::lock_guard lock(interval_index_mutex);
             PartIdentifier part_id{key.table_uuid, key.part_name};
             auto & intervals = interval_index[part_id][key.column_name];
-            auto it = intervals.find(key.row_begin);
-            if (it != intervals.end() && !(it->second == key))
-            {
-                old_key = it->second;
-                has_old_key = true;
-            }
-            intervals[key.row_begin] = key;
+            intervals[{key.row_begin, key.row_end}] = key;
         }
-
-        if (has_old_key)
-            Base::remove(old_key);
     }
 
     /// Remove all cached entries for a specific data part.
     /// Should be called when a part is dropped, merged, or mutated.
     void removePart(const UUID & table_uuid, const String & part_name);
+
+    /// Clear both the base cache and the interval index.
+    /// Used by SYSTEM DROP COLUMNS CACHE.
+    void clearAll()
+    {
+        Base::clear();
+        std::lock_guard lock(interval_index_mutex);
+        interval_index.clear();
+    }
 
     /// Get all cache entries for introspection (system.columns_cache table).
     /// Returns a vector of (key, entry) pairs for all cached columns.

@@ -2466,7 +2466,7 @@ try
                     static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
-                global_context->updateColumnsCacheConfiguration(config());
+                global_context->updateColumnsCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);

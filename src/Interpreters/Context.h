@@ -1367,7 +1367,7 @@ public:
     void clearPrimaryIndexCache() const;
 
     void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
-    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     ColumnsCachePtr getColumnsCache() const;
     void clearColumnsCache() const;
 

@@ -17,16 +17,16 @@ namespace DB
  *
  * Usage example:
  * SELECT
- *     table_name,
- *     part_name,
- *     column_name,
+ *     table,
+ *     part,
+ *     column,
  *     row_begin,
  *     row_end,
  *     rows,
  *     bytes
  * FROM system.columns_cache
- * WHERE table_name = 'my_table'
- * ORDER BY part_name, column_name, row_begin
+ * WHERE table = 'my_table'
+ * ORDER BY part, column, row_begin
  */
 
 class StorageSystemColumnsCache final : public IStorage
