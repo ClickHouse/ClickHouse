@@ -483,8 +483,14 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
 
     /// Find name collision before modifying anything, so we can delete the old file after successful write.
     std::optional<UUID> name_collision_id;
+    AccessEntityPtr old_entity;
     if (replace_if_exists && write_on_disk)
+    {
         name_collision_id = memory_storage.find(new_entity->getType(), new_entity->getName());
+        /// Save the old entity so we can restore it if the disk write fails.
+        if (name_collision_id.has_value())
+            old_entity = memory_storage.read(*name_collision_id, /* throw_if_not_exists= */ false);
+    }
 
     /// Do insertion into memory.
     if (!memory_storage.insert(id, new_entity, replace_if_exists, throw_if_exists, conflicting_id))
@@ -494,7 +500,6 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     /// Delete old name-collision file only after the new file is successfully written.
     if (write_on_disk)
     {
-        scheduleWriteLists(new_entity->getType());
         try
         {
             writeAccessEntityToDisk(id, *new_entity);
@@ -504,12 +509,21 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
             /// If we fail to write the .sql file, roll back the memory insert
             /// to prevent an inconsistency where the entity is in the list but has no file on disk.
             memory_storage.remove(id, /* throw_if_not_exists= */ false);
+            /// Restore the old entity that was replaced (if any).
+            if (old_entity && name_collision_id.has_value())
+                memory_storage.insert(*name_collision_id, old_entity, /* replace_if_exists= */ true, /* throw_if_exists= */ false);
             throw;
         }
 
+        scheduleWriteLists(new_entity->getType());
+
         /// Now that the new file is on disk, remove the old collision file (different UUID, same name).
+        /// Tolerate missing files: the old file may have been already removed or never existed.
         if (name_collision_id.has_value() && *name_collision_id != id)
-            deleteAccessEntityOnDisk(*name_collision_id);
+        {
+            auto old_file_path = getEntityFilePath(directory_path, *name_collision_id);
+            std::filesystem::remove(old_file_path);
+        }
     }
 
     return true;
