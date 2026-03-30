@@ -1196,3 +1196,56 @@ TEST(AccessRights, MultipleAccessTypesPartialRevoke)
     ASSERT_FALSE(root.isGrantedWildcard(AccessType::SELECT, "readonl"));
     ASSERT_TRUE(root.isGrantedWildcard(AccessType::INSERT, "readonl"));
 }
+
+
+/// Verify that individual grants on parameterized GLOBAL types (TABLE_ENGINE)
+/// do not act as a wildcard — an ungranted parameter must return false.
+TEST(AccessRights, ParameterizedGrantsDoNotLeak)
+{
+    AccessRights rights;
+
+    /// Grant TABLE_ENGINE on a few specific engines, but NOT on "PostgreSQL".
+    rights.grant(AccessType::TABLE_ENGINE, "MergeTree");
+    rights.grant(AccessType::TABLE_ENGINE, "TinyLog");
+    rights.grant(AccessType::TABLE_ENGINE, "Log");
+    rights.grant(AccessType::TABLE_ENGINE, "Memory");
+    rights.grant(AccessType::TABLE_ENGINE, "ReplacingMergeTree");
+    rights.grant(AccessType::TABLE_ENGINE, "AggregatingMergeTree");
+
+    /// Granted engines must be granted.
+    ASSERT_TRUE(rights.isGranted(AccessType::TABLE_ENGINE, "MergeTree"));
+    ASSERT_TRUE(rights.isGranted(AccessType::TABLE_ENGINE, "TinyLog"));
+    ASSERT_TRUE(rights.isGranted(AccessType::TABLE_ENGINE, "Log"));
+
+    /// An engine that was never granted must NOT be granted.
+    /// This would fail if min_flags_with_children incorrectly short-circuits
+    /// the isGranted check for parameterized types.
+    ASSERT_FALSE(rights.isGranted(AccessType::TABLE_ENGINE, "PostgreSQL"));
+    ASSERT_FALSE(rights.isGranted(AccessType::TABLE_ENGINE, "URL"));
+    ASSERT_FALSE(rights.isGranted(AccessType::TABLE_ENGINE, "UnknownEngine"));
+
+    /// Wildcard TABLE_ENGINE (no parameter) should NOT be considered granted
+    /// when only individual engines were granted.
+    ASSERT_FALSE(rights.isGranted(AccessType::TABLE_ENGINE));
+
+    /// Now grant TABLE_ENGINE wildcard and verify everything passes.
+    rights.grant(AccessType::TABLE_ENGINE);
+    ASSERT_TRUE(rights.isGranted(AccessType::TABLE_ENGINE, "PostgreSQL"));
+    ASSERT_TRUE(rights.isGranted(AccessType::TABLE_ENGINE, "AnyEngine"));
+    ASSERT_TRUE(rights.isGranted(AccessType::TABLE_ENGINE));
+}
+
+
+/// Same test for NAMED_COLLECTION — another parameterized GLOBAL type.
+TEST(AccessRights, NamedCollectionParameterizedGrants)
+{
+    AccessRights rights;
+
+    rights.grant(AccessType::CREATE_NAMED_COLLECTION, "my_collection");
+    rights.grant(AccessType::CREATE_NAMED_COLLECTION, "other_collection");
+
+    ASSERT_TRUE(rights.isGranted(AccessType::CREATE_NAMED_COLLECTION, "my_collection"));
+    ASSERT_TRUE(rights.isGranted(AccessType::CREATE_NAMED_COLLECTION, "other_collection"));
+    ASSERT_FALSE(rights.isGranted(AccessType::CREATE_NAMED_COLLECTION, "secret_collection"));
+    ASSERT_FALSE(rights.isGranted(AccessType::CREATE_NAMED_COLLECTION));
+}
