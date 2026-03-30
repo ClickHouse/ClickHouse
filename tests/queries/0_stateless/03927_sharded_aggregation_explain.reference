@@ -12,7 +12,7 @@ Nullable key
 1
 Nullable key with diverse underlying NULL data
 1
-Setting is off: transform is be applied
+Setting is off: transform is not applied
 1
 UInt16 key (key16)
 1

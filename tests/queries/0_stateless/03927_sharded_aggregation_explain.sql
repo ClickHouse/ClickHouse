@@ -65,7 +65,7 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
-SELECT 'Setting is off: transform is be applied';
+SELECT 'Setting is off: transform is not applied';
 SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test GROUP BY a
     SETTINGS optimize_aggregation_by_sharding = 0
