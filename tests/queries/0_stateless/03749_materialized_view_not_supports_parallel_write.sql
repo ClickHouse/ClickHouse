@@ -1,6 +1,7 @@
 -- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas, no-flaky-check
 
 SET parallel_view_processing = 1, max_insert_threads = 2;
+SET query_plan_merge_expressions = 1;
 
 CREATE TABLE test_set (c0 Int) ENGINE = Set;
 CREATE TABLE test_table (c0 Int) ENGINE = MergeTree ORDER BY c0 PARTITION BY c0;

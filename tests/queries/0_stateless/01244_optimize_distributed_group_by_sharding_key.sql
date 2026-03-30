@@ -8,6 +8,7 @@ set optimize_distributed_group_by_sharding_key=1;
 set max_bytes_before_external_group_by = 0;
 set max_bytes_ratio_before_external_group_by = 0;
 set count_distinct_optimization = 0;
+set query_plan_push_down_limit = 1;
 
 drop table if exists dist_01247;
 drop table if exists data_01247;

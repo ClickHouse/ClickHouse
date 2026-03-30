@@ -1,4 +1,5 @@
 SET enable_analyzer=1;
+SET query_plan_merge_expressions=1;
 SET rewrite_in_to_join=1;
 SET allow_experimental_correlated_subqueries=1;
 SET correlated_subqueries_default_join_kind = 'left';

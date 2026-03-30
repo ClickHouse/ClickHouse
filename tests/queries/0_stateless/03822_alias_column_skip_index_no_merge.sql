@@ -58,7 +58,8 @@ SETTINGS query_plan_merge_expressions = 0;
 
 -- Test 4: Default settings still work (regression guard)
 SELECT 'default_settings';
-EXPLAIN indexes = 1 SELECT * FROM test_alias_skip_idx WHERE a > 100;
+EXPLAIN indexes = 1 SELECT * FROM test_alias_skip_idx WHERE a > 100
+SETTINGS query_plan_merge_expressions = 1;
 
 DROP TABLE test_alias_skip_idx;
 DROP TABLE test_nested_alias_idx;

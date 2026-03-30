@@ -3,6 +3,8 @@
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- add_minmax_index_for_numeric_columns=0: Different plan
 
+SET query_plan_merge_expressions = 1;
+
 -- { echo }
 
 DROP TABLE IF EXISTS tab;

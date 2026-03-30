@@ -1,4 +1,5 @@
 SET enable_analyzer=1;
+SET query_plan_merge_expressions=1;
 SET optimize_arithmetic_operations_in_aggregate_functions=1;
 
 EXPLAIN actions = 1, compact = 1

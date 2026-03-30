@@ -1,3 +1,6 @@
+SET query_plan_merge_expressions = 1;
+SET query_plan_filter_push_down = 1;
+
 -- {echoOn}
 
 SET use_query_condition_cache = 0;

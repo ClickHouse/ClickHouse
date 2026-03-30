@@ -286,4 +286,5 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     sed 's/^ *//g' | grep -o "^ *\(Expression (.*Before ORDER BY.*)\|Sorting\|FUNCTION \w\+\)"
 echo "> this query should be executed without throwing an exception"
 $CLICKHOUSE_CLIENT -q "
-    select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1"
+    select throwIf(number = 5) from (select * from numbers(10)) order by number limit 1
+    settings query_plan_execute_functions_after_sorting = 1"
