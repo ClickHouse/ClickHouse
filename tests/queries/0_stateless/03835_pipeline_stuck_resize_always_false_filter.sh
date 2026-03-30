@@ -11,12 +11,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-set -o errexit
-set -o pipefail
-
-for _ in {1..100}; do
+OUTPUT=$(for _ in {1..100}; do
     echo "SELECT count() FROM (SELECT number FROM numbers(100) GROUP BY number) WHERE 0 SETTINGS max_threads = 2;"
     echo "SELECT count() FROM (SELECT number FROM numbers(100) GROUP BY number) WHERE 0 SETTINGS max_threads = 3;"
     echo "SELECT count() FROM (SELECT number FROM numbers(100) GROUP BY number) WHERE 0 SETTINGS max_threads = 4;"
     echo "SELECT count() FROM (SELECT number FROM numbers(100) GROUP BY number) WHERE 0 SETTINGS max_threads = 5;"
-done | $CLICKHOUSE_CLIENT -n | grep -vcE '^0$' && echo 'Fail!' || echo 'OK'
+done | $CLICKHOUSE_CLIENT -n) || { echo "Client failed with exit code $?"; exit 1; }
+
+MISMATCHES=$(echo "$OUTPUT" | grep -vcE '^0$') || true
+
+if [ "$MISMATCHES" -ne 0 ]; then
+    echo "Fail: $MISMATCHES unexpected results"
+    exit 1
+fi
+
+echo "OK"
