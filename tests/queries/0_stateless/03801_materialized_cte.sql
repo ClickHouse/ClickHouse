@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN QUERY TREE node IDs are not stable with parallel replicas
+
 SET enable_analyzer = 1;
 SET query_plan_merge_expressions = 1;
 SET enable_materialized_cte = 1;
