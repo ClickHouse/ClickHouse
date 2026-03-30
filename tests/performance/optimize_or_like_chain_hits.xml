@@ -11,13 +11,13 @@
     <!-- No match, quick exit -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'httx1%' OR URL LIKE 'httpx1%'</query>
 
-    <!-- multiMatchAny is okay -->
+    <!-- multiSearchAny is okay -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%'</query>
 
-    <!-- multiMatchAny is okay -->
+    <!-- multiSearchAny is okay -->
     <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' OR URL LIKE '%video%'</query>
 
-    <!-- short string with multiMatchAny -->
+    <!-- short string with multiSearchAny -->
     <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE '%love%' OR SearchPhrase LIKE '%dead%'</query>
 
     <!-- short string with regex -->

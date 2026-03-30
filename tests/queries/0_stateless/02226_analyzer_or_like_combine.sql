@@ -33,7 +33,7 @@ SELECT materialize('Привет, World') AS s WHERE (s LIKE 'hell%') OR (s ILIK
 
 EXPLAIN SYNTAX SELECT test, materialize('Привет, World') AS s WHERE ((s LIKE 'hell%') AS test) OR (s ILIKE '%привет%') OR (s ILIKE 'world%') SETTINGS optimize_or_like_chain = 1;
 
--- Test match() function combined with LIKE (should use multiMatchAny)
+-- Test match() function combined with LIKE (should use match with combined regexp)
 EXPLAIN SYNTAX SELECT materialize('Hello World') AS s WHERE (s LIKE 'hello%') OR match(s, 'wor.*') SETTINGS optimize_or_like_chain = 1;
 EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s WHERE (s LIKE 'hello%') OR match(s, 'wor.*') SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
 
@@ -64,7 +64,7 @@ EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s WHERE (s 
 SELECT materialize('Hello World') AS s WHERE (s ILIKE '%hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 1;
 SELECT materialize('Hello World') AS s WHERE (s ILIKE '%hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 0;
 
--- Test mixed case sensitivity (should fall back to multiMatchAny)
+-- Test mixed case sensitivity (should fall back to match with combined regexp)
 EXPLAIN SYNTAX SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 1;
 EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1;
 
@@ -72,7 +72,7 @@ EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Hello World') AS s WHERE (s 
 SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 1;
 SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s ILIKE '%world%') SETTINGS optimize_or_like_chain = 0;
 
--- Test substring patterns with non-substring patterns (should use multiMatchAny)
+-- Test substring patterns with non-substring patterns (should use match with combined regexp)
 EXPLAIN SYNTAX SELECT materialize('Hello World') AS s WHERE (s LIKE '%Hello%') OR (s LIKE 'World%') SETTINGS optimize_or_like_chain = 1;
 
 -- Verify mixed pattern types still returns correct results
