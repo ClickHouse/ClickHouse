@@ -1,6 +1,5 @@
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -15,17 +14,24 @@
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Logger.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
 #include <cstddef>
 #include <memory>
 #include <ranges>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event DiskObjectStorageWaitBlobRemovalMicroseconds;
+}
 
 namespace DB
 {
@@ -44,13 +50,34 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) const
+{
+    try
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
+        for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
+            blob_killer->triggerAndWait();
+
+        if (watch.elapsed() > 100'000)
+            LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Waiting for blob removal took {} ms", watch.elapsed() / 1000);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("DiskObjectStorageTransaction"));
+    }
+}
+
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
-    ObjectStorageRouterPtr object_storages_)
+    ObjectStorageRouterPtr object_storages_,
+    BlobKillerThreadPtr blob_killer_,
+    bool wait_blob_removal_)
     : cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
+    , blob_killer(std::move(blob_killer_))
+    , wait_blob_removal(wait_blob_removal_)
     , metadata_transaction(metadata_storage->createTransaction())
 {
 }
@@ -62,7 +89,7 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
     ClusterConfigurationPtr destination_cluster_,
     MetadataStoragePtr destination_metadata_storage_,
     ObjectStorageRouterPtr destination_object_storages_)
-    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_)
+    : DiskObjectStorageTransaction(destination_cluster_, destination_metadata_storage_, destination_object_storages_, /*blob_killer=*/nullptr, /*wait_blob_removal=*/false)
     , source_cluster(std::move(source_cluster_))
     , source_metadata_storage(std::move(source_metadata_storage_))
     , source_object_storages(std::move(source_object_storages_))
@@ -509,6 +536,9 @@ void DiskObjectStorageTransaction::commit()
         throw;
     }
 
+    if (wait_blob_removal)
+        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs());
+
     operations_to_execute.clear();
     written_blobs.clear();
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
@@ -580,6 +610,9 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
         return outcome;
     }
 
+    if (wait_blob_removal)
+        waitBlobRemoval(metadata_transaction->getSubmittedForRemovalBlobs());
+
     operations_to_execute.clear();
     written_blobs.clear();
     LOG_TEST(getLogger("DiskObjectStorageTransaction"), "Transaction committed successfully");
@@ -589,14 +622,16 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
-    try
+    for (const auto & [location, blobs] : written_blobs)
     {
-        for (const auto & [location, blobs] : written_blobs)
+        try
+        {
             object_storages->takePointingTo(location)->removeObjectsIfExist(blobs);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), "An error occurred during transaction cleanup");
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), fmt::format("An error occurred during transaction cleanup from location '{}'", location));
+        }
     }
 
     operations_to_execute.clear();
