@@ -761,7 +761,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             if (requested_columns_copy.size() + constant_columns.size() != original_columns)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't remove constant columns for file {} correct, fallback to read. Founded constant columns: [{}]",
                     object_info->getPath(), constant_columns);
-            if (requested_columns_copy.empty())
+            if (requested_columns_copy.empty()
+                && (!format_filter_info || (!format_filter_info->row_level_filter && !format_filter_info->prewhere_info)))
                 need_only_count = true;
         }
     }
