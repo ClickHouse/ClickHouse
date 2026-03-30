@@ -577,9 +577,22 @@ struct ToStartOfInterval<IntervalKind::Kind::Microsecond>
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000000);
             if (t >= 0) [[likely]] /// When we divide the `t` value we should round the result
-                return (t + scale_diff / 2) / (microseconds * scale_diff) * microseconds;
+            {
+                Int64 t_rounded = 0;
+                if (common::addOverflow(t, scale_diff / 2, t_rounded))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                Int64 divisor = 0;
+                if (common::mulOverflow(microseconds, scale_diff, divisor))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return t_rounded / divisor * microseconds;
+            }
             else
-                return ((t + 1) / microseconds / scale_diff - 1) * microseconds;
+            {
+                Int64 result = 0;
+                if (common::mulOverflow((t + 1) / microseconds / scale_diff - 1, microseconds, result))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return result;
+            }
         }
         else
             if (t >= 0) [[likely]]
@@ -620,9 +633,22 @@ struct ToStartOfInterval<IntervalKind::Kind::Millisecond>
         {
             Int64 scale_diff = scale_multiplier / static_cast<Int64>(1000);
             if (t >= 0) [[likely]]  /// When we divide the `t` value we should round the result
-                return (t + scale_diff / 2) / (milliseconds * scale_diff) * milliseconds;
+            {
+                Int64 t_rounded = 0;
+                if (common::addOverflow(t, scale_diff / 2, t_rounded))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                Int64 divisor = 0;
+                if (common::mulOverflow(milliseconds, scale_diff, divisor))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return t_rounded / divisor * milliseconds;
+            }
             else
-                return ((t + 1) / milliseconds / scale_diff - 1) * milliseconds;
+            {
+                Int64 result = 0;
+                if (common::mulOverflow((t + 1) / milliseconds / scale_diff - 1, milliseconds, result))
+                    throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+                return result;
+            }
         }
         else
             if (t >= 0) [[likely]]
