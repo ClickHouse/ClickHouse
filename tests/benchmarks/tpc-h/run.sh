@@ -246,18 +246,21 @@ echo ""
 
 # ---------- helper: report query status after execution ----------
 # Prints elapsed time + row count, or error if the query failed.
-# Sets QUERY_ERROR to the error message (empty on success).
+# Sets QUERY_ERROR and SERVER_TIME (from the server's executeQuery log).
 report_query_status() {
     local log_file="$1"
     local result_file="$2"
     local elapsed="$3"
 
     QUERY_ERROR=""
+    SERVER_TIME=""
     local err_msg
     err_msg="$(grep -oP 'Code: \d+\. DB::Exception: \K[^(]+' "$log_file" 2>/dev/null | head -1 || true)"
     if [[ -z "$err_msg" ]]; then
         err_msg="$(grep -oP 'DB::Exception:.*?(?=\. \(|, Stack)' "$log_file" 2>/dev/null | head -1 || true)"
     fi
+
+    SERVER_TIME="$(grep -oP 'executeQuery: Read .* in \K[\d.]+(?= sec)' "$log_file" 2>/dev/null | tail -1 || true)"
 
     if [[ -n "$err_msg" ]]; then
         QUERY_ERROR="$err_msg"
@@ -265,7 +268,7 @@ report_query_status() {
     else
         local result_rows
         result_rows="$(wc -l < "$result_file")"
-        echo "${elapsed}s (${result_rows} rows)"
+        echo "${elapsed}s (${result_rows} rows, server ${SERVER_TIME:-?}s)"
     fi
 }
 
@@ -316,7 +319,7 @@ echo ""
 
 # ---------- summary CSV header ----------
 SUMMARY_FILE="${RUN_DIR}/summary.tsv"
-printf "query\trun_type\trun_num\telapsed_sec\tread_rows\tread_bytes\tresult_rows\terror\n" > "$SUMMARY_FILE"
+printf "query\trun_type\trun_num\telapsed_sec\tserver_sec\tread_rows\tread_bytes\tresult_rows\terror\n" > "$SUMMARY_FILE"
 
 # ---------- main loop ----------
 for QN in "${QUERY_NUMS[@]}"; do
@@ -403,12 +406,12 @@ for QN in "${QUERY_NUMS[@]}"; do
 
         report_query_status "$LOG_FILE" "$RESULT_FILE" "$ELAPSED_SEC"
 
-        printf "%s\tcold\t%d\t%s\t%s\t%s\t%s\t%s\n" \
-            "Q${QN_PAD}" "$r" "$ELAPSED_SEC" "$READ_ROWS" "$READ_BYTES" "$RESULT_ROWS" "$QUERY_ERROR" \
+        printf "%s\tcold\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+            "Q${QN_PAD}" "$r" "$ELAPSED_SEC" "$SERVER_TIME" "$READ_ROWS" "$READ_BYTES" "$RESULT_ROWS" "$QUERY_ERROR" \
             >> "$SUMMARY_FILE"
 
         cat > "$TIME_FILE" <<TIMEJSON
-{"query": "Q${QN_PAD}", "type": "cold", "run": ${r}, "elapsed_sec": ${ELAPSED_SEC}, "read_rows": "${READ_ROWS}", "result_rows": ${RESULT_ROWS}, "error": "${QUERY_ERROR}"}
+{"query": "Q${QN_PAD}", "type": "cold", "run": ${r}, "elapsed_sec": ${ELAPSED_SEC}, "server_sec": "${SERVER_TIME}", "read_rows": "${READ_ROWS}", "result_rows": ${RESULT_ROWS}, "error": "${QUERY_ERROR}"}
 TIMEJSON
     done
 
@@ -434,12 +437,12 @@ TIMEJSON
 
         report_query_status "$LOG_FILE" "$RESULT_FILE" "$ELAPSED_SEC"
 
-        printf "%s\thot\t%d\t%s\t%s\t%s\t%s\t%s\n" \
-            "Q${QN_PAD}" "$r" "$ELAPSED_SEC" "$READ_ROWS" "$READ_BYTES" "$RESULT_ROWS" "$QUERY_ERROR" \
+        printf "%s\thot\t%d\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+            "Q${QN_PAD}" "$r" "$ELAPSED_SEC" "$SERVER_TIME" "$READ_ROWS" "$READ_BYTES" "$RESULT_ROWS" "$QUERY_ERROR" \
             >> "$SUMMARY_FILE"
 
         cat > "$TIME_FILE" <<TIMEJSON
-{"query": "Q${QN_PAD}", "type": "hot", "run": ${r}, "elapsed_sec": ${ELAPSED_SEC}, "read_rows": "${READ_ROWS}", "result_rows": ${RESULT_ROWS}, "error": "${QUERY_ERROR}"}
+{"query": "Q${QN_PAD}", "type": "hot", "run": ${r}, "elapsed_sec": ${ELAPSED_SEC}, "server_sec": "${SERVER_TIME}", "read_rows": "${READ_ROWS}", "result_rows": ${RESULT_ROWS}, "error": "${QUERY_ERROR}"}
 TIMEJSON
     done
 done
@@ -468,7 +471,7 @@ echo ""
 column -t -s $'\t' "$SUMMARY_FILE"
 
 # Report queries that had errors during execution.
-ERRORS="$(awk -F'\t' 'NR > 1 && $8 != "" { printf "  %-6s %s (run #%s): %s\n", $1, $2, $3, $8 }' "$SUMMARY_FILE")"
+ERRORS="$(awk -F'\t' 'NR > 1 && $9 != "" { printf "  %-6s %s (run #%s): %s\n", $1, $2, $3, $9 }' "$SUMMARY_FILE")"
 if [[ -n "$ERRORS" ]]; then
     echo ""
     echo "=== Errors ==="
@@ -478,35 +481,41 @@ fi
 
 # Compute per-query best hot time.
 echo ""
-echo "=== Best hot times ==="
+echo "=== Best hot times (server-side) ==="
 echo ""
 awk -F'\t' '
 NR == 1 { next }
 $2 == "hot" {
     q = $1
-    t = $4 + 0
-    e = $8
+    wall = $4 + 0
+    srv = $5 + 0
+    e = $9
     if (e != "") {
         errors[q] = e
     } else {
-        if (!(q in best) || t < best[q]) best[q] = t
+        if (!(q in best_srv) || srv < best_srv[q]) {
+            best_srv[q] = srv
+            best_wall[q] = wall
+        }
     }
 }
 END {
     PROCINFO["sorted_in"] = "@ind_str_asc"
-    total = 0
+    total_srv = 0
+    total_wall = 0
     failed = 0
-    for (q in best) {
-        printf "  %-6s %8.3fs\n", q, best[q]
-        total += best[q]
+    for (q in best_srv) {
+        printf "  %-6s %8.3fs  (wall %7.3fs)\n", q, best_srv[q], best_wall[q]
+        total_srv += best_srv[q]
+        total_wall += best_wall[q]
     }
     for (q in errors) {
-        if (!(q in best)) {
+        if (!(q in best_srv)) {
             printf "  %-6s    ERROR: %s\n", q, errors[q]
             failed++
         }
     }
-    printf "  %-6s %8.3fs", "TOTAL", total
+    printf "  %-6s %8.3fs  (wall %7.3fs)", "TOTAL", total_srv, total_wall
     if (failed > 0) printf "  (%d failed)", failed
     printf "\n"
 }' "$SUMMARY_FILE"
