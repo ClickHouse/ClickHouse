@@ -9,12 +9,11 @@ doc_type: 'guide'
 
 # Kinesis table engine
 
-:::note
+## Note
 The Kinesis table engine is experimental. Enable it with:
 ```sql
 SET allow_experimental_kinesis_table = 1;
 ```
-:::
 
 This engine allows integrating ClickHouse with [Amazon Kinesis Data Streams](https://aws.amazon.com/kinesis/data-streams/).
 
