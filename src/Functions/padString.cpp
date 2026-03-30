@@ -61,10 +61,10 @@ namespace
             {
                 if (num_chars <= step)
                 {
-                    writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
+                    writeSlice(StringSource::Slice{pad_data.data(), numCharsToNumBytes(num_chars)}, res_sink);
                     break;
                 }
-                writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
+                writeSlice(StringSource::Slice{pad_data.data(), numCharsToNumBytes(step)}, res_sink);
                 num_chars -= step;
             }
         }
@@ -105,9 +105,21 @@ namespace
                         utf8_offsets.push_back(utf8_offsets[i] + base);
                 }
             }
+
+            /// Copy pad string data to PaddedPODArray which provides 15 bytes of read
+            /// padding beyond its size. This is required because writeSlice() uses
+            /// memcpySmallAllowReadWriteOverflow15 which reads in 16-byte SIMD chunks
+            /// and may read up to 15 bytes past the source data. std::string does not
+            /// provide this padding, causing heap-buffer-overflow under AddressSanitizer.
+            pad_data.insert(pad_string.begin(), pad_string.end());
         }
 
         String pad_string;
+
+        /// Padded copy of pad_string data for use in writeSlice().
+        /// PaddedPODArray provides 15 bytes of extra read padding beyond its size,
+        /// which memcpySmallAllowReadWriteOverflow15 (used by writeSlice) requires.
+        PaddedPODArray<UInt8> pad_data;
 
         /// Offsets of code points in `pad_string`:
         /// utf8_offsets[0] is the offset of the first code point in `pad_string`, it's always 0;
