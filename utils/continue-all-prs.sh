@@ -70,7 +70,7 @@ while true; do
         echo "[${I}/${COUNT}] PR #${NUMBER}: ${TITLE}"
         echo "=========================================="
 
-        claude --dangerously-skip-permissions --print --verbose \
+        timeout 3600 claude --dangerously-skip-permissions --print --verbose \
             --output-format stream-json \
             "/continue-pr https://github.com/${REPO}/pull/${NUMBER}" \
             < /dev/null 2>&1 \
@@ -84,7 +84,8 @@ while true; do
                     (.message.content[] |
                         if .type == "tool_result" then "<<< \(.content | tostring | .[0:300])\n"
                         else empty end)
-                else empty end'
+                else empty end' \
+            || echo "WARNING: claude exited with code $? for PR #${NUMBER}, continuing..."
 
         echo ""
         echo "Done with PR #${NUMBER}"
