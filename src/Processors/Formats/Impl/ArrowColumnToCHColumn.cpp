@@ -1396,7 +1396,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                             field_name = it->second;
                             size_t pos = field_name.rfind('.');
                             /// Get the ClickHouse field as the last element of the name.
-                            /// For example, if we converted parquet "a.b" to clickhouse "c.d", the resulting field name would be "d".
+                            /// For example, if we converted parquet "a.b" to ClickHouse "c.d", the resulting field name would be "d".
                             if (pos != std::string::npos)
                                 field_name = field_name.substr(pos + 1);
                         }
