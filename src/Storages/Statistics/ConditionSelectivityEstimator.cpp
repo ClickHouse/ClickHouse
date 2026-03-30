@@ -144,7 +144,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     final_element->finalize(column_estimators, metadata);
     RelationProfile result;
     Float64 final_rows = final_element->selectivity * static_cast<Float64>(total_rows);
-    final_rows = std::max<Float64>(final_rows, 0);
+    final_rows = std::clamp<Float64>(final_rows, 0, static_cast<Float64>(total_rows));
     result.rows = static_cast<UInt64>(final_rows);
     for (const auto & [column_name, estimator] : column_estimators)
     {
