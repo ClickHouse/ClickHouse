@@ -204,7 +204,7 @@ private:
         Float64 num_bytes_with_decimals = base * static_cast<Float64>(iter->second);
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-        if (num_bytes_with_decimals > std::numeric_limits<UInt64>::max())
+        if (num_bytes_with_decimals >= std::numeric_limits<UInt64>::max())
 #pragma clang diagnostic pop
         {
             throw Exception(
