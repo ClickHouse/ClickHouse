@@ -51,6 +51,22 @@ ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'two' = 2); -
 SHOW CREATE TABLE enum_relative;
 DROP TABLE enum_relative;
 
+SELECT '======= SHORTHAND AUTO ASSIGN ===============';
+CREATE OR REPLACE TABLE enum_shorthand (x Enum8('One' = 1, 'Two')) ENGINE = Memory;
+ALTER TABLE enum_shorthand MODIFY COLUMN x ADD ENUM VALUES('Three');
+SHOW CREATE TABLE enum_shorthand;
+DROP TABLE enum_shorthand;
+
+SELECT '======= ENUM8 SHORTHAND OVERFLOW ===============';
+CREATE OR REPLACE TABLE enum8_shorthand_overflow (x Enum8('a' = 127)) ENGINE = Memory;
+ALTER TABLE enum8_shorthand_overflow MODIFY COLUMN x ADD ENUM VALUES('b'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enum8_shorthand_overflow;
+
+SELECT '======= OUT OF RANGE VALUE ===============';
+CREATE OR REPLACE TABLE enum_out_of_range (x Enum8('a' = 1)) ENGINE = Memory;
+ALTER TABLE enum_out_of_range MODIFY COLUMN x ADD ENUM VALUES('too_big' = 128); -- { serverError ARGUMENT_OUT_OF_BOUND }
+DROP TABLE enum_out_of_range;
+
 CREATE OR REPLACE TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
