@@ -1243,7 +1243,7 @@ StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t i
     bool ready = cv.wait_until(
         lock.getUnderlyingLock(),
         deadline,
-        [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !consumers[idx]->isInUse() || shutdown_called; });
+        [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return shutdown_called || !consumers[idx]->isInUse(); });
 
     if (shutdown_called)
         throw Exception(ErrorCodes::ABORTED, "Table is detached");
