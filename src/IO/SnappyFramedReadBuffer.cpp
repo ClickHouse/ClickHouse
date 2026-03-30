@@ -29,6 +29,9 @@ constexpr uint8_t CHUNK_TYPE_COMPRESSED = 0x00;
 constexpr uint8_t CHUNK_TYPE_UNCOMPRESSED = 0x01;
 constexpr uint8_t CHUNK_TYPE_STREAM_IDENTIFIER = 0xff;
 
+/// Maximum uncompressed data per chunk in snappy framing format.
+constexpr size_t MAX_UNCOMPRESSED_CHUNK_SIZE = 65536;
+
 /// Compute masked CRC-32C as defined by snappy framing format.
 uint32_t maskedCrc32c(const char * data, size_t size)
 {
@@ -62,9 +65,13 @@ bool SnappyFramedReadBuffer::readExact(char * dst, size_t size)
 
 bool SnappyFramedReadBuffer::readStreamIdentifier()
 {
+    /// Check if the stream is truly empty (EOF before any bytes).
+    if (in->eof())
+        return false;
+
     uint8_t header[sizeof(STREAM_IDENTIFIER)];
     if (!readExact(reinterpret_cast<char *>(header), sizeof(header)))
-        return false;
+        throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Truncated snappy stream: incomplete stream identifier");
     if (memcmp(header, STREAM_IDENTIFIER, sizeof(STREAM_IDENTIFIER)) != 0)
         throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Invalid snappy framing format: bad stream identifier");
     identifier_read = true;
@@ -121,6 +128,13 @@ bool SnappyFramedReadBuffer::nextImpl()
             size_t uncompressed_length = 0;
             if (!snappy::GetUncompressedLength(compressed, payload_size, &uncompressed_length))
                 throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "Cannot determine snappy uncompressed length");
+
+            /// Snappy framing format limits uncompressed data per chunk to 65536 bytes.
+            /// Reject larger values to prevent untrusted input from forcing huge allocations.
+            if (uncompressed_length > MAX_UNCOMPRESSED_CHUNK_SIZE)
+                throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED,
+                    "Snappy chunk claims uncompressed length {} which exceeds the framing format limit of {}",
+                    uncompressed_length, MAX_UNCOMPRESSED_CHUNK_SIZE);
 
             decompress_buffer.resize(uncompressed_length);
             if (!snappy::RawUncompress(compressed, payload_size, decompress_buffer.data()))

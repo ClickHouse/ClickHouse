@@ -313,7 +313,7 @@ public:
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
+        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(&getOutputStream(response))};
         read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
         zero_copy_output_stream.finalize();
 
