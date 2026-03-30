@@ -3,6 +3,8 @@
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET query_plan_filter_push_down = 1;
+SET query_plan_merge_filter_into_join_condition = 1;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 

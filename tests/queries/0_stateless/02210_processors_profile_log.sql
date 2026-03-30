@@ -1,6 +1,6 @@
-EXPLAIN PIPELINE SELECT sleep(1);
+EXPLAIN PIPELINE SELECT sleep(1) SETTINGS query_plan_merge_expressions = 1;
 
-SELECT sleep(1) SETTINGS log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH';
+SELECT sleep(1) SETTINGS log_processors_profiles=true, log_queries=1, log_queries_min_type='QUERY_FINISH', query_plan_merge_expressions = 1;
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 WITH

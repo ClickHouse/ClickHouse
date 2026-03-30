@@ -5,6 +5,7 @@ SET query_plan_merge_filters = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET prefer_localhost_replica = 1; -- Make sure plan is reliable
 SET optimize_functions_to_subcolumns = 0;
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS t_02156_mt1;
 DROP TABLE IF EXISTS t_02156_mt2;

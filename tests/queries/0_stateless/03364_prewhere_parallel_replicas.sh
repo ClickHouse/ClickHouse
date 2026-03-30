@@ -16,6 +16,7 @@ opts=(
   --parallel_replicas_min_number_of_rows_per_replica=0
   --optimize_move_to_prewhere=1
   --query_plan_optimize_prewhere=1
+  --query_plan_merge_expressions=1
 )
 
 ${CLICKHOUSE_CLIENT} -nq "

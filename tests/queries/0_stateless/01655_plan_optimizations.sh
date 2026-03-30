@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT -q "select x + 1 from (select y + 2 as x from (select dummy +
      grep -o "Too many optimizations applied to query plan"
 
 echo "> sipHash should be calculated after filtration"
-$CLICKHOUSE_CLIENT -q "explain actions = 1 select sum(x), sum(y) from (select sipHash64(number) as x, bitAnd(number, 1024) as y from numbers_mt(1000000000) limit 1000000000) where y = 0 settings query_plan_execute_functions_after_sorting=1" | grep -o "FUNCTION sipHash64\|Filter column: equals"
+$CLICKHOUSE_CLIENT -q "explain actions = 1 select sum(x), sum(y) from (select sipHash64(number) as x, bitAnd(number, 1024) as y from numbers_mt(1000000000) limit 1000000000) where y = 0 settings query_plan_execute_functions_after_sorting=1, query_plan_split_filter=1" | grep -o "FUNCTION sipHash64\|Filter column: equals"
 echo "> sorting steps should know about limit"
 $CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10 settings query_plan_push_down_limit=1" | grep -o "Sorting\|Limit 10"
 

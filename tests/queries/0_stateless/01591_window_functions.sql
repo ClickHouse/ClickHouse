@@ -2,6 +2,7 @@
 
 SET enable_analyzer = 1;
 SET query_plan_merge_expressions = 1;
+SET query_plan_reuse_storage_ordering_for_window_functions = 1;
 
 -- Too slow
 SET max_bytes_before_external_sort = 0;

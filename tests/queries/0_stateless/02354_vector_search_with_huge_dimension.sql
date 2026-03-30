@@ -3,6 +3,7 @@
 -- Tests vector search over vectors with a huge dimension (32k)
 
 SET parallel_replicas_local_plan = 1;
+SET use_skip_indexes_on_data_read = 1;
 
 DROP TABLE IF EXISTS tab;
 

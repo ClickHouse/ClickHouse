@@ -2,6 +2,7 @@
 -- optimization if all underlying tables support it
 
 SET optimize_trivial_count_query = 1;
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS mt1;
 DROP TABLE IF EXISTS mt2;

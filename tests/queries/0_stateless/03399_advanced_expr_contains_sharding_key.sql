@@ -2,6 +2,7 @@ drop table if exists local_table;
 drop table if exists distributed_table;
 drop table if exists distributed_table2;
 
+SET query_plan_merge_expressions = 1;
 set optimize_skip_unused_shards = true;
 SET optimize_skip_unused_shards_rewrite_in = 1;
 SET optimize_distributed_group_by_sharding_key = 1;
