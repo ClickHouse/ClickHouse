@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
+#include <Storages/MergeTree/MergeTreeIndexSpatialBbox.h>
 
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
@@ -194,6 +195,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
+
+    registerCreator("spatial_bbox", spatialBboxIndexCreator);
+    registerValidator("spatial_bbox", spatialBboxIndexValidator);
 
     /// Index type 'hypothesis' is no longer supported.
     /// To allow loading tables with old indexes, register a dummy index which allows attach but

@@ -345,6 +345,9 @@ private:
 MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
 void minmaxIndexValidator(const IndexDescription & index, bool attach);
 
+MergeTreeIndexPtr spatialBboxIndexCreator(const IndexDescription & index);
+void spatialBboxIndexValidator(const IndexDescription & index, bool attach);
+
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
