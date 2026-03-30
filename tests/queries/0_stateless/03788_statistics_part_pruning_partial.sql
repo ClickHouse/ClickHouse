@@ -10,7 +10,7 @@ CREATE TABLE test_stats_pruning_partial (
 ) ENGINE = MergeTree()
 PARTITION BY toInt32(id / 100)
 ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = '';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
 
 SET use_statistics_for_part_pruning = 1;
 SET allow_experimental_statistics = 1;
