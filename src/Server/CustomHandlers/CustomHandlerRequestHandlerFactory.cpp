@@ -4,8 +4,6 @@
 #include <Server/HTTP/HTTPRequestHandlerFactory.h>
 #include <Server/HTTP/HTTPServerRequest.h>
 #include <Server/IServer.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <Common/re2.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -18,11 +16,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_sql_handlers;
-}
 
 namespace
 {
@@ -75,11 +68,11 @@ public:
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override
     {
-        /// Check if the experimental setting is enabled; if not, skip matching entirely.
-        auto context = server.context();
-        if (!context->getSettingsRef()[Setting::allow_experimental_sql_handlers])
-            return nullptr;
-
+        /// The experimental setting gates DDL (CREATE/ALTER/DROP HANDLER),
+        /// not runtime matching. Once handlers are created and persisted,
+        /// they serve requests regardless of the session-level setting.
+        /// This is consistent with other experimental features in ClickHouse:
+        /// e.g. experimental table engines remain queryable after disabling the setting.
         auto handlers = CustomHandlersFactory::instance().getSortedSnapshot();
 
         if (handlers.empty())
