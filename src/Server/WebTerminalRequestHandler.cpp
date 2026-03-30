@@ -52,7 +52,7 @@ bool isValidWebSocketKey(const String & key)
         String decoded = base64Decode(key);
         return decoded.size() == 16;
     }
-    catch (...)
+    catch (...) // Ok: malformed base64 means invalid key
     {
         return false;
     }
@@ -419,7 +419,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     catch (...)
     {
         LOG_DEBUG(log, "Auth frame read failed: {}", getCurrentExceptionMessage(false));
-        try { sendWebSocketClose(socket, 1002, "Auth timeout"); } catch (...) {}
+        try { sendWebSocketClose(socket, 1002, "Auth timeout"); } catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort close on already-failing connection
         return;
     }
     socket.setReceiveTimeout(Poco::Timespan(0)); /// Clear timeout for the main loop
