@@ -311,7 +311,8 @@ def main():
     if results[-1].is_ok():
         print("Download StackOverflow DBA dataset")
 
-        data_url = "http://db.in.tum.de/~schmidt/data/stackoverflow_dba.tar.gz"
+        data_url = "https://db.in.tum.de/~schmidt/data/stackoverflow_dba.tar.gz"
+        data_sha256 = "a80c23a6ddf7699641d89554114d0125ee47e83f5be80ad81ac5ea5c7682acf2"
         data_archive = os.path.join(data_dir, "stackoverflow_dba.tar.gz")
         extracted_dir = os.path.join(data_dir, "stackoverflow_dba")
 
@@ -323,6 +324,12 @@ def main():
                 f"wget -q -O {data_archive} {data_url}",
                 verbose=True,
             ):
+                return False
+            if not Shell.check(
+                f"echo '{data_sha256}  {data_archive}' | sha256sum -c",
+                verbose=True,
+            ):
+                print("Checksum verification failed!")
                 return False
             if not Shell.check(
                 f"tar -xzf {data_archive} -C {data_dir}",
