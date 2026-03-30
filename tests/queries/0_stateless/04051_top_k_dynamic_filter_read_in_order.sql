@@ -13,7 +13,7 @@ INSERT INTO t_topk_rio SELECT number, toString(number) FROM numbers(1000000);
 
 -- Correctness: results must match regardless of dynamic filtering.
 SELECT x FROM t_topk_rio ORDER BY x LIMIT 5
-SETTINGS optimize_read_in_order = 1, use_top_k_dynamic_filtering = 1;
+SETTINGS optimize_read_in_order = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
 
 -- The query plan should NOT contain __topKFilter when read-in-order is active
 -- on the sorting key prefix.
@@ -21,7 +21,7 @@ SELECT explain LIKE '%__topKFilter%' AS has_topk_filter
 FROM (
     EXPLAIN actions = 1
     SELECT x FROM t_topk_rio ORDER BY x LIMIT 5
-    SETTINGS optimize_read_in_order = 1, use_top_k_dynamic_filtering = 1
+    SETTINGS optimize_read_in_order = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
 WHERE has_topk_filter;
 
@@ -35,6 +35,7 @@ WHERE
     current_database = currentDatabase()
     AND query LIKE '%SELECT x FROM t_topk_rio ORDER BY x LIMIT 5%'
     AND query NOT LIKE '%system.query_log%'
+    AND query NOT LIKE '%EXPLAIN%'
     AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
@@ -45,7 +46,7 @@ SELECT count() > 0 AS has_topk_filter
 FROM (
     EXPLAIN actions = 1
     SELECT y FROM t_topk_rio ORDER BY y LIMIT 5
-    SETTINGS optimize_read_in_order = 1, use_top_k_dynamic_filtering = 1
+    SETTINGS optimize_read_in_order = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
 WHERE explain LIKE '%__topKFilter%';
 

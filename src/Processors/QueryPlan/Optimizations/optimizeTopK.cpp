@@ -129,8 +129,13 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         && skip_index_type_eligible
         && read_from_mergetree_step->isSkipIndexAvailableForTopK(sort_column_name);
 
+    /// Dynamic and Variant columns cannot be reliably filtered: their lessOrEquals
+    /// returns Nullable(UInt8) rather than UInt8, causing an "Unexpected return type"
+    /// logical error when the prewhere filter is executed. Skip the optimization for them.
     bool use_dynamic_filtering = settings.use_top_k_dynamic_filtering
-        && !read_from_mergetree_step->getPrewhereInfo();
+        && !read_from_mergetree_step->getPrewhereInfo()
+        && !isDynamic(sort_column.type)
+        && !isVariant(sort_column.type);
 
     /// When read-in-order optimization is enabled and the sort column is a prefix
     /// of the storage's sorting key, the engine will read data in sorted order.

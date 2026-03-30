@@ -1370,7 +1370,7 @@ CONV_FN(ExprAny, eany)
 {
     ExprToString(ret, eany.expr());
     BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
-    ret += eany.anyall() ? "ALL" : "ANY";
+    ret += eany.anyall() == AnyAllSome::AAS_ALL ? "ALL" : eany.anyall() == AnyAllSome::AAS_SOME ? "SOME" : "ANY";
     ret += "(";
     ExplainQueryToString(ret, eany.sel());
     ret += ")";
@@ -1737,10 +1737,21 @@ CONV_FN(WindowDef, wdef)
 
 CONV_FN(IntervalExpr, ie)
 {
-    ret += "INTERVAL (";
-    ExprToString(ret, ie.expr());
-    ret += ") ";
-    ret += IntervalExpr_Interval_Name(ie.interval());
+    if (ie.interval() <= IntervalExpr::YEAR)
+    {
+        ret += "INTERVAL (";
+        ExprToString(ret, ie.expr());
+        ret += ") ";
+        ret += IntervalExpr_Interval_Name(ie.interval());
+    }
+    else
+    {
+        ret += "EXTRACT(";
+        ret += IntervalExpr_Interval_Name(ie.interval());
+        ret += " FROM ";
+        ExprToString(ret, ie.expr());
+        ret += ")";
+    }
 }
 
 CONV_FN(ComplicatedExpr, expr)
@@ -2942,7 +2953,12 @@ CONV_FN(CTEquery, cteq)
         ret += "RECURSIVE ";
     }
     TableToString(ret, false, cteq.table());
-    ret += " AS (";
+    ret += " AS ";
+    if (cteq.is_materialized())
+    {
+        ret += "MATERIALIZED ";
+    }
+    ret += "(";
     SelectToString(ret, cteq.query());
     ret += ")";
 }

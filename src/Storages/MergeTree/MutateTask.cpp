@@ -86,6 +86,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace FailPoints
@@ -276,6 +277,12 @@ static void splitAndModifyMutationCommands(
                             for (const auto & column : projection.required_columns)
                             {
                                 if (projection.with_parent_part_offset && column == "_part_offset")
+                                    continue;
+
+                                if (projection.with_block_number && column == BlockNumberColumn::name)
+                                    continue;
+
+                                if (projection.with_block_offset && column == BlockOffsetColumn::name)
                                     continue;
 
                                 auto column_in_storage = Nested::tryGetColumnNameInStorage(column, storage_columns);
@@ -475,6 +482,11 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::RENAME_COLUMN)
                     part_columns.rename(command.column_name, command.rename_to);
 
+                /// CLEAR COLUMN must also go to the interpreter, because we might have projections/indexes/materialized
+                /// columns that depend on this column and should be rebuilt.
+                if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
+                    for_interpreter.push_back(command);
+
                 for_file_renames.push_back(command);
             }
         }
@@ -622,6 +634,7 @@ getColumnsForNewDataPart(
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
             serialization_infos.getSettings().nullable_serialization_version,
+            serialization_infos.getSettings().map_serialization_version,
             serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
         };
     }
@@ -635,6 +648,7 @@ getColumnsForNewDataPart(
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
     }
@@ -692,6 +706,16 @@ getColumnsForNewDataPart(
     {
         if (updated_header.has(it->name))
         {
+            /// Column may be present in updated_header (e.g. the interpreter provides
+            /// a default value for projection rebuild) yet still be removed from the
+            /// part by CLEAR COLUMN. In that case we must drop it from the column list
+            /// so that the part does not claim to contain data it no longer has.
+            if (removed_columns.contains(it->name))
+            {
+                it = storage_columns.erase(it);
+                continue;
+            }
+
             auto updated_type = updated_header.getByName(it->name).type;
             if (updated_type != it->type)
                 it->type = updated_type;
@@ -2250,11 +2274,27 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            /// Some columns may be present in the interpreter output only for
+            /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
+            /// value so that dependent projections are rebuilt correctly). Such columns
+            /// must NOT be written to the main part – only the projection needs them.
+            /// Filter the writer's column list to the columns that actually belong to
+            /// the new part.
+            NamesAndTypesList columns_for_writer;
+            {
+                NameSet new_part_columns_set;
+                for (const auto & col : ctx->new_data_part->getColumns())
+                    new_part_columns_set.insert(col.name);
+                for (const auto & col : ctx->updated_header.getNamesAndTypesList())
+                    if (new_part_columns_set.contains(col.name))
+                        columns_for_writer.push_back(col);
+            }
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->data->getSettings(),
                 ctx->metadata_snapshot,
-                ctx->updated_header.getNamesAndTypesList(),
+                columns_for_writer,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,

@@ -213,6 +213,7 @@ std::optional<String> optimizeUseAggregateProjections(
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
     bool is_parallel_replicas_initiator_with_projection_support,
     size_t max_step_description_length);
 
