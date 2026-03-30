@@ -360,8 +360,26 @@ set_source_files_properties(Server/WebTerminalRequestHandler.cpp PROPERTIES OBJE
 set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
 
-# Note: Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed,
-# but that submodule is not always checked out, so we cannot add OBJECT_DEPENDS for it.
+# Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
+# Add OBJECT_DEPENDS only if the submodule is checked out.
+set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
+set(_nlp_tonality "${CMAKE_SOURCE_DIR}/contrib/nlp-data/tonality_ru.zst")
+if (EXISTS "${_nlp_charset}" AND EXISTS "${_nlp_tonality}")
+    set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
+        "${_nlp_charset};${_nlp_tonality}")
+endif()
+
+set_source_files_properties(Storages/System/attachInformationSchemaTables.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schemata.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/tables.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/views.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/columns.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/key_column_usage.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_constraints.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
 
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
