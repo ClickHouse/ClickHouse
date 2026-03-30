@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
