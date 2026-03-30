@@ -25,25 +25,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_IDENTIFIER;
 }
 
-namespace
-{
-
-bool hasSubqueryInAST(const ASTPtr & ast)
-{
-    if (ast->as<ASTSubquery>())
-        return true;
-    for (const auto & child : ast->children)
-    {
-        if (hasSubqueryInAST(child))
-            return true;
-    }
-    return false;
-}
-
-}
 
 String ConstraintsDescription::toString() const
 {
@@ -161,13 +144,6 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
-
-            /// Subqueries in CHECK constraints are not supported — the old
-            /// ExpressionAnalyzer rejected them with UNKNOWN_IDENTIFIER.
-            /// Preserve this behavior to avoid a backward-incompatible change.
-            if (hasSubqueryInAST(expr))
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Subqueries are not supported in CHECK constraints");
-
             res.push_back(analyzeExpressionToActions(expr, source_columns_, context, false, CompileExpressions::yes));
         }
     }
