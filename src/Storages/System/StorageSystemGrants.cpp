@@ -39,15 +39,10 @@ ColumnsDescription StorageSystemGrants::getColumnsDescription()
             "1 — The row describes a partial revoke."
         },
         {"grant_option", std::make_shared<DataTypeUInt8>(), "Permission is granted WITH GRANT OPTION."},
-        {"grant_scope", std::make_shared<DataTypeEnum8>(
-            DataTypeEnum8::Values{
-                {"exact",            0},
-                {"database_prefix",  1},
-                {"table_prefix",     2},
-            }), "Scope type of the grant: "
-                "'exact' — exact database/table match, "
-                "'database_prefix' — database name is a wildcard prefix (e.g. db*.*), "
-                "'table_prefix' — table name is a wildcard prefix (e.g. foo.bar*)."
+        {"is_wildcard", std::make_shared<DataTypeUInt8>(),
+            "Logical value. It shows whether the grant is a wildcard prefix grant. Possible values: "
+            "0 — The row describes an exact grant, "
+            "1 — The row describes a wildcard prefix grant (e.g. db*.* or foo.bar*)."
         },
     };
 }
