@@ -36,5 +36,14 @@ SELECT UNIQUE(SELECT number, if(number = 2, NULL, number) FROM numbers(5));
 -- Nullable column with actual duplicates among non-NULL rows
 SELECT UNIQUE(SELECT if(number < 3, number % 2, NULL) FROM numbers(5));
 
+-- LowCardinality(Nullable(...)) columns: NULL rows still skipped, non-NULL duplicates detected
+DROP TABLE IF EXISTS t_lc_nullable;
+CREATE TABLE t_lc_nullable (x LowCardinality(Nullable(String))) ENGINE = Memory;
+INSERT INTO t_lc_nullable VALUES ('a'), (NULL), ('b'), (NULL);
+SELECT UNIQUE(SELECT x FROM t_lc_nullable);
+INSERT INTO t_lc_nullable VALUES ('a');
+SELECT UNIQUE(SELECT x FROM t_lc_nullable);
+DROP TABLE t_lc_nullable;
+
 -- Correlated subquery: not supported (fails during identifier resolution)
 SELECT UNIQUE(SELECT number FROM numbers(n)) FROM (SELECT 1 AS n); -- { serverError UNKNOWN_IDENTIFIER }
