@@ -537,9 +537,10 @@ Pipe ReadFromMergeTree::readFromPool(
     if (block_size.max_block_size_rows && !data.canUseAdaptiveGranularity())
     {
         size_t fixed_index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
-        pool_settings.min_marks_for_concurrent_read
-            = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
-            / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
+        if (fixed_index_granularity)
+            pool_settings.min_marks_for_concurrent_read
+                = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
+                / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
     }
 
     bool all_parts_are_remote = true;
