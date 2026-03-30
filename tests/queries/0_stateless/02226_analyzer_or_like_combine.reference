@@ -286,7 +286,7 @@ QUERY id: 0
           FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2
-                FUNCTION id: 10, function_name: multiSearchAnyCaseInsensitive, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 10, function_name: multiSearchAnyCaseInsensitiveUTF8, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 11, nodes: 2
                       FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String

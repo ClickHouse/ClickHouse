@@ -14,7 +14,7 @@ namespace DB
   *   x LIKE '%foo%' OR match(x, 'bar.*') --> match(x, '(foo)|(bar.*)')
   *
   * If all patterns are simple substring searches (%substring%) with the same
-  * case sensitivity, uses the faster multiSearchAny/multiSearchAnyCaseInsensitive.
+  * case sensitivity, uses the faster multiSearchAny/multiSearchAnyCaseInsensitiveUTF8.
   * Otherwise, uses match() with a combined regexp pattern using alternation.
   *
   * The result is wrapped with indexHint() to preserve index analysis:

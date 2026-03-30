@@ -265,7 +265,7 @@ public:
             if (info.canUseMultiSearchAny())
             {
                 /// Use multiSearchAny or multiSearchAnyCaseInsensitive for pure substring patterns
-                String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitive" : "multiSearchAny";
+                String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
                 match_function = std::make_shared<FunctionNode>(func_name);
                 match_function->getArguments().getNodes().push_back(key);
                 match_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(Field{info.getSubstrings()}));

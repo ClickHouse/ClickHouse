@@ -105,7 +105,7 @@ QUERY id: 0
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitive(s2, [\'привет\'])
+WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitiveUTF8(s2, [\'привет\'])
 SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
@@ -125,7 +125,7 @@ SETTINGS optimize_or_like_chain = 1, max_hyperscan_regexp_total_length = 10
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitive(s2, [\'привет\']) OR (s1 = \'Привет\')
+WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitiveUTF8(s2, [\'привет\']) OR (s1 = \'Привет\')
 SETTINGS optimize_or_like_chain = 1
 Привет, optimized World
 Привет, optimized World
@@ -254,7 +254,7 @@ QUERY id: 0
 Hello World
 Hello World
 SELECT materialize(\'Hello World\') AS s
-WHERE multiSearchAnyCaseInsensitive(s, [\'hello\', \'world\']) OR false
+WHERE multiSearchAnyCaseInsensitiveUTF8(s, [\'hello\', \'world\']) OR false
 SETTINGS optimize_or_like_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -274,7 +274,7 @@ QUERY id: 0
           FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2
-                FUNCTION id: 10, function_name: multiSearchAnyCaseInsensitive, function_type: ordinary, result_type: UInt8
+                FUNCTION id: 10, function_name: multiSearchAnyCaseInsensitiveUTF8, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
                     LIST id: 11, nodes: 2
                       FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String

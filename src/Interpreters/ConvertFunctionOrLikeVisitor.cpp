@@ -186,13 +186,13 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr & /*ast*/)
                 if (info.canUseMultiSearchAny())
                 {
                     /// Use multiSearchAny or multiSearchAnyCaseInsensitive for pure substring patterns
-                    String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitive" : "multiSearchAny";
-                    match_fn = makeASTFunction(func_name, identifier_ast, std::make_shared<ASTLiteral>(Field{info.getSubstrings()}));
+                    String func_name = info.needsCaseInsensitive() ? "multiSearchAnyCaseInsensitiveUTF8" : "multiSearchAny";
+                    match_fn = makeASTFunction(func_name, identifier_ast, make_intrusive<ASTLiteral>(Field{info.getSubstrings()}));
                 }
                 else
                 {
                     /// Use match() with combined regexp pattern using alternation
-                    match_fn = makeASTFunction("match", identifier_ast, std::make_shared<ASTLiteral>(Field{info.getCombinedRegexp()}));
+                    match_fn = makeASTFunction("match", identifier_ast, make_intrusive<ASTLiteral>(Field{info.getCombinedRegexp()}));
                 }
 
                 unique_elems[pos] = std::move(match_fn);
