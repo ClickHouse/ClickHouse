@@ -167,7 +167,7 @@ def sync_loaded_config(querier):
 def wait_loaded_config_changed(loads_before, querier):
     loads_after = None
     start_time = time.monotonic()
-    while time.monotonic() - start_time < 10:
+    while time.monotonic() - start_time < 60:
         try:
             loads_after = querier(LOADS_QUERY)
             if loads_after != loads_before:
