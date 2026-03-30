@@ -87,7 +87,8 @@ public:
                 continue;
             }
 
-            int max_faces = maxFaceCount(data[row]);
+            int max_faces = 0;
+            maxFaceCount(data[row], &max_faces);
 
             faces.resize(max_faces);
 

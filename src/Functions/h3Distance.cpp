@@ -104,7 +104,11 @@ public:
             Int64 res = -1;
 
             if (validator.validateCell(start) && validator.validateCell(end))
-                res = gridDistance(start, end);
+            {
+                int64_t distance = 0;
+                if (!gridDistance(start, end, &distance))
+                    res = distance;
+            }
 
             dst_data[row] = res;
         }

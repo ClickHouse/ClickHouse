@@ -87,7 +87,8 @@ public:
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
-            double res = getHexagonEdgeLengthAvgKm(resolution);
+            double res = 0;
+            getHexagonEdgeLengthAvgKm(resolution, &res);
             dst_data[row] = res;
         }
 
