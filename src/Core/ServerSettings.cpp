@@ -1972,6 +1972,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Poco option bindings (e.g., pid-file binds to "pid")
         "pid",
+
+        /// Poco internal layers (SystemConfiguration injects "system" into the layered config)
+        "system",
     };
 
     /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
