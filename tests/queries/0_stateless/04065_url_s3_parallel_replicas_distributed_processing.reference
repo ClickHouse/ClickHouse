@@ -1,3 +1,5 @@
+--- parallel replicas with url in subquery ---
+1
 --- url with parallel replicas ---
 1
 --- s3 with parallel replicas ---
