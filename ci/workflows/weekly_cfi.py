@@ -3,18 +3,17 @@ from praktika import Workflow
 from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames
 from ci.defs.job_configs import JobConfigs
 
-# Monthly Control-Flow Integrity (CFI) check.
+# Weekly Control-Flow Integrity (CFI) check.
 # Builds ClickHouse with Clang CFI (cfi-vcall, cfi-derived-cast) on top of a release
 # build (ThinLTO + -fwhole-program-vtables already enabled) and runs the full stateless
 # functional test suite. A CFI violation aborts the server with a diagnostic message,
 # which surfaces as a test failure here.
 #
-# This workflow is intentionally lightweight: one build + one test run, monthly cadence.
-# Only merge this workflow if CFI is confirmed to not produce false positives.
+# Runs every Monday at 03:00 UTC.
 
 workflow = Workflow.Config(
-    name="MonthlyCFI",
-    event=Workflow.Event.PULL_REQUEST,  # Temporary: revert to SCHEDULE before merge
+    name="WeeklyCFI",
+    event=Workflow.Event.SCHEDULE,
     base_branches=[BASE_BRANCH],
     jobs=[
         *JobConfigs.cfi_build_job,
@@ -31,6 +30,7 @@ workflow = Workflow.Config(
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
+    cron_schedules=["0 3 * * 1"],
 )
 
 WORKFLOWS = [
