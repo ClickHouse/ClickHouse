@@ -1727,6 +1727,10 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 Port for communicating with clients over the TCP protocol.
 
+:::tip
+You can use [`port_offset`](settings.md#port_offset) to shift all configured ports by a uniform offset without modifying individual port settings.
+:::
+
 **Example**
 
 ```xml
