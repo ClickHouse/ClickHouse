@@ -906,7 +906,7 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
             case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
-                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})",
                     current_msg_info->currentTopic(),
                     current_msg_info->currentPartition(),
                     current_msg_info->currentOffset());

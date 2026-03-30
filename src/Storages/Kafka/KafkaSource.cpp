@@ -157,7 +157,7 @@ Chunk KafkaSource::generateImpl()
             case StreamingHandleErrorMode::DEFAULT:
             {
                 e.addMessage(
-                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})",
                     consumer->currentTopic(),
                     consumer->currentPartition(),
                     consumer->currentOffset());
