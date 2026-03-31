@@ -255,7 +255,7 @@ Result:
 
 ## -Resample {#-resample}
 
-Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
+Let's you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 
 ```sql
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
@@ -323,7 +323,7 @@ FROM people
 
 ## -Sparkbar {#-sparkbar}
 
-Lets you divide data into buckets by the first argument (the x-axis key) and apply an aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
+Let's you divide data into buckets by the first argument (the x-axis key) and apply an aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
 
 ```sql
 <aggFunction>Sparkbar(width, min_x, max_x)(x, <aggFunction_params>)
@@ -342,7 +342,7 @@ Lets you divide data into buckets by the first argument (the x-axis key) and app
 
 **Returned value**
 
-- A `String` containing `width` Unicode block characters (`▁▂▃▄▅▆▇█`) representing the relative magnitude of each bucket. Empty buckets or zero-valued buckets are rendered as a space.
+- A `String` of up to `width` characters representing the relative magnitude of each bucket. Each character is one of the Unicode block characters `▁▂▃▄▅▆▇█`, or a space for empty/zero-valued buckets. If all buckets are empty or zero, an empty string is returned.
 
 **Example**
 
