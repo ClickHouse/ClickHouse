@@ -110,7 +110,7 @@ public:
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of the first argument for aggregate function with {} suffix. "
-            "The type must be a native integer, Date, Date32, DateTime, or DateTime64",
+            "The type must be a native integer, Date, Date32, DateTime, DateTime64, Enum, or Interval",
             arguments[0]->getName(), getName());
     }
 };
