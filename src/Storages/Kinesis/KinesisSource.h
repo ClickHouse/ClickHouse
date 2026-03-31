@@ -4,7 +4,7 @@
 
 #include <Common/Stopwatch.h>
 #include <Core/Block.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/ISource.h>
 #include <Storages/StorageSnapshot.h>
 

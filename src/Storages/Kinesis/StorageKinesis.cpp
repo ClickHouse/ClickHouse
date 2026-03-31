@@ -51,11 +51,13 @@ namespace ErrorCodes
     extern const int CANNOT_CONNECT_KINESIS;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsBool allow_experimental_kinesis_table;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsMilliseconds stream_flush_interval_ms;
 }
 
@@ -194,14 +196,14 @@ void StorageKinesis::startup()
         }
     }
 
-    auto shard_assignments = listAndDistributeShards(checkpoints);
-    const size_t num = shard_assignments.size();
-
-    for (size_t i = 0; i < num; ++i)
+    try
     {
-        auto consumer = createConsumer(std::move(shard_assignments[i]));
-        consumers_ref.push_back(consumer);
-        pushConsumer(consumer);
+        initializeConsumers(checkpoints);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log,
+            "Kinesis stream is not yet available at startup, consumers will be initialized later");
     }
 
     streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(
@@ -293,6 +295,18 @@ std::vector<std::map<String, KinesisShardState>> StorageKinesis::listAndDistribu
     }
 
     return assignments;
+}
+
+void StorageKinesis::initializeConsumers(const std::map<String, KinesisShardState> & checkpoints)
+{
+    auto shard_assignments = listAndDistributeShards(checkpoints);
+    const size_t num = shard_assignments.size();
+    for (size_t i = 0; i < num; ++i)
+    {
+        auto consumer = createConsumer(std::move(shard_assignments[i]));
+        consumers_ref.push_back(consumer);
+        pushConsumer(consumer);
+    }
 }
 
 KinesisConsumerPtr StorageKinesis::createConsumer(std::map<String, KinesisShardState> shard_states) const
@@ -418,6 +432,32 @@ bool StorageKinesis::tryStreamToViews()
         catch (...)
         {
             tryLogCurrentException(log, "Failed to recreate Kinesis client");
+            return false;
+        }
+    }
+
+    /// If startup could not list shards (stream did not exist yet), try again now.
+    if (consumers_ref.empty())
+    {
+        try
+        {
+            std::map<String, KinesisShardState> checkpoints;
+            if ((*kinesis_settings)[KinesisSetting::kinesis_save_checkpoints].value)
+            {
+                try
+                {
+                    checkpoints = loadCheckpoints();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to load Kinesis checkpoints during deferred initialization");
+                }
+            }
+            initializeConsumers(checkpoints);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Kinesis stream is still not available, will retry");
             return false;
         }
     }
@@ -666,6 +706,13 @@ void registerStorageKinesis(StorageFactory & factory)
         "Kinesis",
         [](const StorageFactory::Arguments & args)
         {
+            if (args.mode == LoadingStrictnessLevel::CREATE
+                && !args.getContext()->getSettingsRef()[Setting::allow_experimental_kinesis_table])
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Kinesis table engine is experimental. "
+                    "Enable it with the `allow_experimental_kinesis_table` setting.");
+
             auto kinesis_settings = std::make_unique<KinesisSettings>();
             if (args.storage_def->settings)
                 kinesis_settings->loadFromQuery(*args.storage_def);

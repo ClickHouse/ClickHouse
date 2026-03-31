@@ -39,12 +39,7 @@ extern const int UNKNOWN_SETTING;
     DECLARE(Bool, kinesis_save_checkpoints, true, "Save sequence number checkpoints to survive restarts.", 0) \
     /* Error handling */ \
     DECLARE(UInt64, kinesis_skip_broken_messages, 0, "Skip at least this number of broken messages from Kinesis per block.", 0) \
-    DECLARE( \
-        StreamingHandleErrorMode, \
-        kinesis_handle_error_mode, \
-        StreamingHandleErrorMode::DEFAULT, \
-        "How to handle errors for Kinesis engine.", \
-        0) \
+    DECLARE(StreamingHandleErrorMode, kinesis_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kinesis engine.", 0) \
     /* Producer */ \
     DECLARE(UInt64, kinesis_max_rows_per_message, 1, "The maximum number of rows per PutRecord call for row-based formats.", 0) \
     /* SSL */ \
@@ -112,7 +107,7 @@ SettingsChanges KinesisSettings::getFormatSettings() const
 
     for (const auto & change : impl->changes())
     {
-        /// Every setting starting with "kinesis_" is for kinesis enginee
+        /// Every setting starting with "kinesis_" is for kinesis engine
         if (!change.name.starts_with("kinesis_"))
             result.push_back(change);
     }

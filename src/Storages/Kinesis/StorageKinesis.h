@@ -92,6 +92,11 @@ private:
     std::vector<std::map<String, KinesisShardState>> listAndDistributeShards(
         const std::map<String, KinesisShardState> & checkpoints) const;
 
+    /// Create consumers from shard assignments. Safe to call from both startup() and
+    /// the background streaming task (for deferred initialization when the stream did
+    /// not exist at startup time).
+    void initializeConsumers(const std::map<String, KinesisShardState> & checkpoints);
+
     void createCheckpointTableIfNeeded() const;
     std::map<String, KinesisShardState> loadCheckpoints() const;
     void saveCheckpoints(const std::map<String, KinesisShardState> & states) const;
