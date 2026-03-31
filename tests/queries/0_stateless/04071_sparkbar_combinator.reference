@@ -1,0 +1,25 @@
+sumSparkbar with range:
+▁▂▃▃▄▅▅▆▇█
+countSparkbar with range:
+██████████
+avgSparkbar with range:
+ ▂▄▆█
+minSparkbar with range:
+█▇▆▅▅
+maxSparkbar with range:
+ ▂▄▆█
+sumSparkbar multiple rows per bucket:
+█████
+sumSparkbar with Date:
+▂▃▅▆█
+result type:
+String
+empty result set:
+
+all values out of range:
+
+with GROUP BY:
+0	 ▂▄▆█
+1	▁▃▄▆█
+uniqSparkbar with range:
+█████
