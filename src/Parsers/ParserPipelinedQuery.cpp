@@ -17,6 +17,18 @@ namespace DB
 
 namespace
 {
+
+enum SQLClauseOrder : int
+{
+    NONE = 0,
+    JOIN = 1,
+    WHERE = 2,
+    GROUP_BY = 3,
+    AGGREGATE = 4,
+    ORDER_BY = 5,
+    LIMIT_OFFSET = 6
+};
+
 ASTPtr wrapInSubquery(ASTPtr current_query, size_t seqno)
 {
     auto subquery = make_intrusive<ASTSubquery>();
@@ -109,18 +121,12 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     current_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select));
 
     size_t subquery_seqno = 0;
-    bool has_where = false;
-    bool has_aggregate = false;
-    bool has_order_by = false;
-    bool has_limit = false;
+    SQLClauseOrder highest_op = SQLClauseOrder::NONE;
 
     auto wrap_current_query = [&]()
     {
         current_query = wrapInSubquery(current_query, subquery_seqno++)->as<ASTSelectQuery>();
-        has_where = false;
-        has_aggregate = false;
-        has_order_by = false;
-        has_limit = false;
+        highest_op = SQLClauseOrder::NONE;
     };
 
     ParserPipeWhere pipe_where_parser;
@@ -134,60 +140,63 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     {
         if (s_where.ignore(pos, expected))
         {
-            if (has_limit || has_aggregate || has_order_by)
+            if (SQLClauseOrder::WHERE < highest_op)
                 wrap_current_query();
 
             if (!pipe_where_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
-            has_where = true;
+            highest_op = std::max(highest_op, SQLClauseOrder::WHERE);
         }
         else if (s_order_by.ignore(pos, expected))
         {
-            if (has_limit || has_order_by)
+            if (SQLClauseOrder::ORDER_BY < highest_op)
                 wrap_current_query();
 
             if (!pipe_order_by_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
-            has_order_by = true;
+            highest_op = std::max(highest_op, SQLClauseOrder::ORDER_BY);
         }
         else if (s_limit.ignore(pos, expected))
         {
-            if (has_limit)
+            if (SQLClauseOrder::LIMIT_OFFSET < highest_op)
                 wrap_current_query();
 
             if (!pipe_limit_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
-            has_limit = true;
+            highest_op = std::max(highest_op, SQLClauseOrder::LIMIT_OFFSET);
         }
         else if (s_offset.ignore(pos, expected))
         {
-            if (has_limit)
+            if (SQLClauseOrder::LIMIT_OFFSET < highest_op)
                 wrap_current_query();
 
             if (!pipe_offset_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
-            has_limit = true;
+            highest_op = std::max(highest_op, SQLClauseOrder::LIMIT_OFFSET);
         }
         else if (s_aggregate.ignore(pos, expected))
         {
-            wrap_current_query();
+            if (SQLClauseOrder::AGGREGATE < highest_op)
+                wrap_current_query();
 
             if (!pipe_aggregate_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
-            has_aggregate = true;
+            highest_op = std::max(highest_op, SQLClauseOrder::AGGREGATE);
         }
         else if (startsWithJoinClause(pos))
         {
-            if (has_where || has_aggregate || has_order_by || has_limit)
+            if (SQLClauseOrder::JOIN < highest_op)
                 wrap_current_query();
 
             if (!pipe_join_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
+
+            highest_op = std::max(highest_op, SQLClauseOrder::JOIN);
         }
         else
         {
