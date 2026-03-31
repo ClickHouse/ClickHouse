@@ -76,7 +76,8 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-            Float64 res = exactEdgeLengthRads(index);
+            double res = 0;
+            edgeLengthRads(index, &res);
             dst_data[row] = res;
         }
 

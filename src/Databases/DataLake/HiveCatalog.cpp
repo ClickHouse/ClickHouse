@@ -15,11 +15,18 @@
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
 extern const int DATALAKE_DATABASE_ERROR;
 extern const int NO_HIVEMETASTORE;
+extern const int FAULT_INJECTED;
+}
+
+namespace DB::FailPoints
+{
+extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -138,6 +145,11 @@ void HiveCatalog::executeWithRetry(Func && func) const
 
 bool HiveCatalog::empty() const
 {
+    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
+    {
+        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
+    });
+
     std::vector<std::string> result;
 
     executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(result); });

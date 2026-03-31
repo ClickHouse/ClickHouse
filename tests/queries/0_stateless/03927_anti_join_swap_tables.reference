@@ -1,6 +1,6 @@
-  Type: RIGHT
-  Strictness: ANTI
+Type: RIGHT
+Strictness: ANTI
 3
-  Type: LEFT
-  Strictness: ANTI
+Type: LEFT
+Strictness: ANTI
 3
