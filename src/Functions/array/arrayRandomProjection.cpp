@@ -22,6 +22,7 @@ extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 struct NormalMethodTag
@@ -241,7 +242,16 @@ private:
         const auto & state = base.template getState<T>();
         size_t target_dim = state.target_dim;
 
-        auto col_data_out = ColumnVector<T>::create(input_rows_count * target_dim);
+        size_t total_output_elements = input_rows_count * target_dim;
+        if (target_dim != 0 && total_output_elements / target_dim != input_rows_count)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Output size overflow in {}: {} rows x {} target_dim exceeds size_t",
+                MethodTag::name,
+                input_rows_count,
+                target_dim);
+
+        auto col_data_out = ColumnVector<T>::create(total_output_elements);
         auto & out = col_data_out->getData();
 
         if constexpr (UsesDenseGEMM<MethodTag>::value)

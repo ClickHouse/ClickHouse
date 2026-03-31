@@ -680,3 +680,124 @@ TEST(ArrayRandomProjection, HadamardProjectionScratchBuffer)
     for (size_t i = 0; i < 16; ++i)
         EXPECT_FLOAT_EQ(out_scratch[i], out_convenience[i]);
 }
+
+/// Normal upscaling: input_dim=8 -> target_dim=32.
+TEST(ArrayRandomProjection, NormalProjectionUpscaling)
+{
+    NormalProjectionState<float> state;
+    state.generate(8, 32, 42);
+
+    EXPECT_EQ(state.input_dim, 8u);
+    EXPECT_EQ(state.target_dim, 32u);
+    EXPECT_EQ(state.matrix.size(), 32u * 8u);
+
+    std::vector<float> input(8);
+    pcg64 rng(99);
+    for (auto & v : input)
+        v = boxMullerNormal<float>(rng);
+
+    std::vector<float> output(32);
+    applyDenseProjectionBatch<float>(input.data(), output.data(), 1, 8, 32, state.matrix.data());
+
+    float sum = 0;
+    for (auto v : output)
+        sum += std::abs(v);
+    EXPECT_GT(sum, 0.0f);
+}
+
+/// Orthogonal upscaling: input_dim=8 -> target_dim=32.
+TEST(ArrayRandomProjection, OrthogonalProjectionUpscaling)
+{
+    OrthogonalProjectionState<float> state;
+    state.generate(8, 32, 42);
+
+    EXPECT_EQ(state.input_dim, 8u);
+    EXPECT_EQ(state.target_dim, 32u);
+
+    std::vector<float> input(8);
+    pcg64 rng(99);
+    for (auto & v : input)
+        v = boxMullerNormal<float>(rng);
+
+    std::vector<float> output(32);
+    applyDenseProjectionBatch<float>(input.data(), output.data(), 1, 8, 32, state.matrix.data());
+
+    float sum = 0;
+    for (auto v : output)
+        sum += std::abs(v);
+    EXPECT_GT(sum, 0.0f);
+}
+
+/// Sparse upscaling: input_dim=8 -> target_dim=32.
+TEST(ArrayRandomProjection, SparseProjectionUpscaling)
+{
+    SparseProjectionState<float> state;
+    state.generate(8, 32, 42);
+
+    EXPECT_EQ(state.input_dim, 8u);
+    EXPECT_EQ(state.target_dim, 32u);
+
+    std::vector<float> input(8);
+    pcg64 rng(99);
+    for (auto & v : input)
+        v = boxMullerNormal<float>(rng);
+
+    std::vector<float> output(32);
+    applySparseProjection<float>(input.data(), output.data(), state);
+
+    float sum = 0;
+    for (auto v : output)
+        sum += std::abs(v);
+    EXPECT_GT(sum, 0.0f);
+}
+
+/// Hadamard upscaling: input_dim=8 -> target_dim=32, multiple SRHT blocks.
+TEST(ArrayRandomProjection, HadamardProjectionUpscaling)
+{
+    HadamardProjectionState<float> state;
+    state.generate(8, 32, 42);
+
+    EXPECT_EQ(state.input_dim, 8u);
+    EXPECT_EQ(state.target_dim, 32u);
+    EXPECT_EQ(state.padded_dim, 8u);
+    EXPECT_GT(state.blocks.size(), 1u);
+
+    std::vector<float> input(8);
+    pcg64 rng(99);
+    for (auto & v : input)
+        v = boxMullerNormal<float>(rng);
+
+    std::vector<float> output(32);
+    applyHadamardProjection<float>(input.data(), output.data(), state);
+
+    float sum = 0;
+    for (auto v : output)
+        sum += std::abs(v);
+    EXPECT_GT(sum, 0.0f);
+}
+
+/// GEMM upscaling: reference vs dispatch for target_dim > input_dim.
+TEST(ArrayRandomProjection, GEMMUpscaling)
+{
+    const size_t n = 5;
+    const size_t d = 8;
+    const size_t dd = 32;
+
+    pcg64 rng(42);
+
+    std::vector<float> x(n * d);
+    std::vector<float> p(dd * d);
+    for (auto & v : x)
+        v = boxMullerNormal<float>(rng);
+    for (auto & v : p)
+        v = boxMullerNormal<float>(rng);
+
+    std::vector<float> y_ref(n * dd);
+    gemmSimple<float>(x.data(), p.data(), y_ref.data(), n, d, dd);
+
+    std::vector<float> y_dispatch(n * dd);
+    applyDenseProjectionBatch<float>(x.data(), y_dispatch.data(), n, d, dd, p.data());
+
+    for (size_t i = 0; i < n * dd; ++i)
+        EXPECT_NEAR(y_dispatch[i], y_ref[i], 1e-4f) << "upscaling GEMM mismatch at index " << i;
+}
