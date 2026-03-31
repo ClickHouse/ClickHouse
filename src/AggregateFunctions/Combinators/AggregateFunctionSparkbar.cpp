@@ -82,13 +82,25 @@ public:
 
         WhichDataType which{arguments[0]};
 
-        if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
+        if (which.isNativeUInt() || which.isDate() || which.isDateTime())
         {
             const UInt64 begin_x = params[1].safeGet<UInt64>();
             const UInt64 end_x   = params[2].safeGet<UInt64>();
 
             return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
                 nested_function, width, begin_x, end_x, arguments, params);
+        }
+
+        if (which.isDateTime64())
+        {
+            /// DateTime64 literal parameters arrive as DecimalField<Decimal64> (tick count),
+            /// not UInt64. Use FieldVisitorConvertToNumber to extract the underlying integer.
+            const auto extract = [](const Field & f) -> UInt64
+            {
+                return static_cast<UInt64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), f));
+            };
+            return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
+                nested_function, width, extract(params[1]), extract(params[2]), arguments, params);
         }
 
         if (which.isDate32())

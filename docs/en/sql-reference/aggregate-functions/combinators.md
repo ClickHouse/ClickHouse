@@ -255,7 +255,7 @@ Result:
 
 ## -Resample {#-resample}
 
-Let's you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
+Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 
 ```sql
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
@@ -323,7 +323,7 @@ FROM people
 
 ## -Sparkbar {#-sparkbar}
 
-Let's you divide data into buckets by the first argument (the x-axis key) and apply an aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
+Lets you divide data into buckets by the first argument (the x-axis key) and apply an aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string. The nested aggregate function must return a numeric type (`Int*`, `UInt*`, `Float*`, or `Decimal`).
 
 ```sql
 <aggFunction>Sparkbar(width, min_x, max_x)(x, <aggFunction_params>)
