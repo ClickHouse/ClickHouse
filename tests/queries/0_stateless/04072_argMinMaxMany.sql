@@ -35,3 +35,12 @@ SELECT length(argMinMany(2)(arg, val)) FROM (SELECT * FROM VALUES('arg String, v
 -- Error: N must be positive
 SELECT argMaxMany(0)(number, number) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
 SELECT argMinMany(-1)(number, number) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
+
+-- Error: Dynamic and Variant types are rejected for the val argument
+SET allow_experimental_dynamic_type = 1;
+SELECT argMaxMany(2)(number, number::Dynamic) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number, number::Dynamic) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SET allow_experimental_variant_type = 1;
+SELECT argMaxMany(2)(number, number::Variant(UInt64)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number, number::Variant(UInt64)) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

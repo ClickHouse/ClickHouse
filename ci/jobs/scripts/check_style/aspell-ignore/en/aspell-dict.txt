@@ -1404,7 +1404,9 @@ areaSpherical
 argAndMax
 argAndMin
 argMax
+argMaxMany
 argMin
+argMinMany
 argmax
 argmin
 arrayAUC
