@@ -15,6 +15,12 @@ namespace DB
 
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
@@ -32,7 +38,7 @@ enum class IntersectMode : UInt8
 struct GroupPolygonIntersectData
 {
     IntersectMode mode = IntersectMode::Uninitialized;
-    std::vector<CartesianMultiPolygon> chunks;
+    std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     void add(CartesianMultiPolygon && mp)
     {
