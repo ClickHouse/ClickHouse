@@ -1,0 +1,21 @@
+1	t_04071
+2	t_04071
+3	t_04071
+number	UInt64						0
+_table	LowCardinality(String)			The name of table which the row comes from			1
+x	UInt32	0
+_part	LowCardinality(String)	1
+_part_index	UInt64	1
+_part_starting_offset	UInt64	1
+_part_uuid	UUID	1
+_partition_id	LowCardinality(String)	1
+_sample_factor	Float64	1
+_part_offset	UInt64	1
+_part_granule_offset	UInt64	1
+_part_data_version	UInt64	1
+_disk_name	LowCardinality(String)	1
+_distance	Float32	1
+_row_exists	UInt8	1
+_block_number	UInt64	1
+_block_offset	UInt64	1
+_table	LowCardinality(String)	1
