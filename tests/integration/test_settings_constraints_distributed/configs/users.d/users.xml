@@ -8,4 +8,10 @@
             <show_named_collections_secrets>1</show_named_collections_secrets>
         </default>
     </users>
+
+    <profiles>
+        <default>
+            <min_untracked_memory>4Mi</min_untracked_memory>
+        </default>
+    </profiles>
 </clickhouse>
