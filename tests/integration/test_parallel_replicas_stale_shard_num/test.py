@@ -3,17 +3,25 @@ Regression test for: LOGICAL_ERROR 'Shard number is greater than shard count'
 when cluster_for_parallel_replicas has fewer shards than the outer Distributed
 cluster.
 
-Trigger scenario (mixed analyzer config between initiator and remote):
+Root cause: the cluster override in ReadFromRemote::addPipe that aligns
+_shard_num with cluster_for_parallel_replicas only fires when
+canUseTaskBasedParallelReplicas()=true on the initiator. When the initiator
+has PR disabled (e.g. max_parallel_replicas=1) but a remote node has a
+constraint that silently clamps the setting to a higher value, the remote
+enables PR with a stale _shard_num that exceeds shard_count of
+cluster_for_parallel_replicas.
 
-  Initiator (n1) — old analyzer profile (allow_experimental_analyzer=0):
+Trigger scenario (max_parallel_replicas constraint mismatch):
+
+  Initiator (n1) — max_parallel_replicas=1 in query settings:
     canUseTaskBasedParallelReplicas() = false
     → cluster_for_parallel_replicas NOT overridden in ReadFromRemote::addPipe
     → _shard_num IS set unconditionally (shard 2 → _shard_num=2)
 
-  Remote shard 2 (n3) — allow_experimental_analyzer forced to 1 via constraint:
-    TCPHandler receives allow_experimental_analyzer=0 from n1 as a
-    non-initial (distributed sub-)query → silently clamped to 1.
-    canUseTaskBasedParallelReplicas() = true (new planner, PR enabled)
+  Remote shard 2 (n3) — max_parallel_replicas forced to ≥2 via constraint:
+    TCPHandler receives max_parallel_replicas=1 from n1 as a
+    non-initial (distributed sub-)query → silently clamped to 2.
+    canUseTaskBasedParallelReplicas() = true (PR enabled)
     → prepareClusterForParallelReplicas reads _shard_num=2, shard_count=1
     → OLD code: LOGICAL_ERROR (server exception)
     → NEW code: LOG_WARNING + use all replicas (this test verifies)
@@ -25,13 +33,12 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-# n1 — initiator, old analyzer.  canUseTaskBasedParallelReplicas()=false
-# because allow_experimental_analyzer=0 AND parallel_replicas_only_with_analyzer=1
-# (compiled default, so it is NOT sent to remotes).
+# n1 — initiator.  Sends max_parallel_replicas=1 in query settings so that
+# canUseTaskBasedParallelReplicas()=false on n1, preventing the cluster
+# override in ReadFromRemote::addPipe from firing.
 n1 = cluster.add_instance(
     "n1",
     main_configs=["configs/remote_servers.xml", "configs/enable_text_log.xml"],
-    use_old_analyzer=True,
 )
 
 # n2 — remote shard 1.  _shard_num=1 ≤ shard_count=1, so no stale-shard_num
@@ -39,17 +46,15 @@ n1 = cluster.add_instance(
 n2 = cluster.add_instance(
     "n2",
     main_configs=["configs/remote_servers.xml", "configs/enable_text_log.xml"],
-    use_old_analyzer=False,
 )
 
 # n3 — remote shard 2.  _shard_num=2 > shard_count=1 triggers the bug.
-# The <min>1</min> constraint on allow_experimental_analyzer forces the new
-# planner even when n1 sends allow_experimental_analyzer=0.
+# The <min>2</min> constraint on max_parallel_replicas forces PR enabled
+# even when n1 sends max_parallel_replicas=1.
 n3 = cluster.add_instance(
     "n3",
     main_configs=["configs/remote_servers.xml", "configs/enable_text_log.xml"],
-    user_configs=["configs/force_allow_experimental_analyzer.xml"],
-    use_old_analyzer=False,
+    user_configs=["configs/force_max_parallel_replicas.xml"],
 )
 
 
@@ -68,9 +73,10 @@ def test_stale_shard_num_single_shard_pr_cluster(start_cluster):
     cluster_for_parallel_replicas points to a 1-shard / 2-replica cluster
     (both n2 and n3).
 
-    The mismatch in analyzer settings means the cluster override in
-    ReadFromRemote::addPipe does not fire, so _shard_num=2 leaks into
-    prepareClusterForParallelReplicas on shard 2 (n3).
+    n1 sends max_parallel_replicas=1 (PR disabled on initiator), so the
+    cluster override in ReadFromRemote::addPipe does not fire and _shard_num=2
+    leaks into prepareClusterForParallelReplicas on n3.  n3's constraint clamps
+    max_parallel_replicas to 2, enabling PR on the remote side.
 
     Before the fix: LOGICAL_ERROR (server exception).
     After the fix: LOG_WARNING, query succeeds, correct result returned.
@@ -88,7 +94,11 @@ def test_stale_shard_num_single_shard_pr_cluster(start_cluster):
 
     pr_settings = {
         "enable_parallel_replicas": 2,
-        "max_parallel_replicas": 2,
+        # max_parallel_replicas=1 makes canUseTaskBasedParallelReplicas()=false
+        # on n1 (initiator), so cluster_for_parallel_replicas is not overridden
+        # and _shard_num retains the outer-cluster shard number.
+        # n3's <min>2</min> constraint silently clamps this to 2, enabling PR.
+        "max_parallel_replicas": 1,
         "parallel_replicas_for_non_replicated_merge_tree": 1,
         "cluster_for_parallel_replicas": "pr_1_shard_2_replicas",
         "serialize_query_plan": 0,
@@ -129,7 +139,8 @@ def test_stale_shard_num_multi_shard_pr_cluster(start_cluster):
     cluster_for_parallel_replicas points to a 2-shard cluster (n2, n3).
 
     n3 is shard 3 of the outer cluster, so it receives _shard_num=3.
-    On n3, canUseParallelReplicasOnInitiator reads _shard_num=3 and
+    n3's constraint clamps max_parallel_replicas to 2, enabling PR.
+    canUseParallelReplicasOnInitiator reads _shard_num=3 and
     shard_count=2 from pr_2_shards → shard_num > shard_count.
 
     Before the fix: LOGICAL_ERROR (causes server abort in debug-like builds).
@@ -148,7 +159,7 @@ def test_stale_shard_num_multi_shard_pr_cluster(start_cluster):
 
     pr_settings = {
         "enable_parallel_replicas": 2,
-        "max_parallel_replicas": 2,
+        "max_parallel_replicas": 1,
         "parallel_replicas_for_non_replicated_merge_tree": 1,
         "cluster_for_parallel_replicas": "pr_2_shards",
         "serialize_query_plan": 0,

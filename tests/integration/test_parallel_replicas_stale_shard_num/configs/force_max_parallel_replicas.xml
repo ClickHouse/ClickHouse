@@ -1,0 +1,19 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Force max_parallel_replicas >= 2 on this node so that
+                 canUseTaskBasedParallelReplicas() = true even when the
+                 initiator sends max_parallel_replicas=1 (which disables PR
+                 on the initiator side and prevents the cluster override in
+                 ReadFromRemote::addPipe from firing). The <min> constraint
+                 causes TCPHandler to silently clamp the incoming value for
+                 non-initial (distributed sub-)queries. -->
+            <max_parallel_replicas>2</max_parallel_replicas>
+            <constraints>
+                <max_parallel_replicas>
+                    <min>2</min>
+                </max_parallel_replicas>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
