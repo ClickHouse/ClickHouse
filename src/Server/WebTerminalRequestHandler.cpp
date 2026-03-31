@@ -525,6 +525,10 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             {
                 running = false;
             }
+            else if (errno != EINTR && errno != EAGAIN)
+            {
+                running = false;
+            }
         }
 
         /// Data from WebSocket -> send to PTY
