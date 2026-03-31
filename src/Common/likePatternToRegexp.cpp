@@ -121,6 +121,7 @@ String similarToPatternToRegexp(std::string_view pattern)
                 res += '\\';
                 res += *pos;
                 break;
+            /// Convert LIKE's metacharacters to re2's
             case '%':
                 if (pos + 1 != end)
                     res += ".*";

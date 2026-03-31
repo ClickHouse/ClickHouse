@@ -155,7 +155,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE or SIMILAR TO expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -318,7 +318,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -503,7 +503,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -612,7 +612,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like_or_similar_to && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
