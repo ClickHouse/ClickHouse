@@ -578,7 +578,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             os.environ[key] = value.strip()
 
     java_path = Shell.get_output(
-        "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
+        r"update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
     )
     repeat_option = ""
@@ -654,7 +654,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     changed_test_modules = []
-    if is_bugfix_validation or is_flaky_check or is_targeted_check:
+    if is_bugfix_validation or is_flaky_check:
         if info.is_local_run:
             assert (
                 args.test
@@ -704,28 +704,41 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     targeted_tests = []
     if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check ???"
-        targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-            clickhouse_path
-        )
-        # no subtask level for integration tests - cannot add this info to the report now
-        # results.append(results_with_info)
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
-            ).complete_job()
+        if info.is_local_run:
+            assert (
+                args.test
+            ), (
+                "Local run of targeted integration job requires --test "
+                "(CIDB-based test selection is unavailable). "
+                "Example: --test test_polymorphic_parts"
+            )
+            print(
+                "NOTE: local targeted run: using explicit --test selectors instead of CIDB",
+                flush=True,
+            )
+        else:
+            assert not args.test, "--test not supposed to be used for targeted check ???"
+            targeter = Targeting(info=info)
+            tests, results_with_info = targeter.get_all_relevant_tests_with_info(
+                clickhouse_path
+            )
+            # no subtask level for integration tests - cannot add this info to the report now
+            # results.append(results_with_info)
+            if not tests:
+                # early exit
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="No failed tests found from previous runs",
+                ).complete_job()
 
-        # Parse test names from the query result
-        for test_ in tests:
-            if test_.strip():
-                test_name = test_.strip()
-                targeted_tests.append(
-                    test_name.split("[")[0]
-                )  # remove parametrization - does not work with test repeat with --count
-        print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
+            # Parse test names from the query result
+            for test_ in tests:
+                if test_.strip():
+                    test_name = test_.strip()
+                    targeted_tests.append(
+                        test_name.split("[")[0]
+                    )  # remove parametrization - does not work with test repeat with --count
+            print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
         _start_docker_in_docker()
