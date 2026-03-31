@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeSet.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 #include <Functions/IFunction.h>
 
@@ -164,6 +165,13 @@ void FunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << '\n' << std::string(indent + 2, ' ') << "WINDOW\n";
         getWindowNode()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (!settings_changes.empty())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
+        for (const auto & change : settings_changes)
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
+    }
 }
 
 bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
@@ -171,7 +179,7 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
     const auto & rhs_typed = assert_cast<const FunctionNode &>(rhs);
     if (function_name != rhs_typed.function_name || isAggregateFunction() != rhs_typed.isAggregateFunction()
         || isOrdinaryFunction() != rhs_typed.isOrdinaryFunction() || isWindowFunction() != rhs_typed.isWindowFunction()
-        || nulls_action != rhs_typed.nulls_action)
+        || nulls_action != rhs_typed.nulls_action || settings_changes != rhs_typed.settings_changes)
         return false;
 
     /// is_operator is ignored here because it affects only AST formatting
@@ -206,6 +214,17 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
+    hash_state.update(settings_changes.size());
+    for (const auto & change : settings_changes)
+    {
+        hash_state.update(change.name.size());
+        hash_state.update(change.name);
+
+        const auto & value_dump = change.value.dump();
+        hash_state.update(value_dump.size());
+        hash_state.update(value_dump);
+    }
+
     /// is_operator is ignored here because it affects only AST formatting
 
     if (!compare_options.compare_types)
@@ -230,6 +249,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
     result_function->is_operator = is_operator;
+    result_function->settings_changes = settings_changes;
 
     return result_function;
 }
@@ -290,6 +310,14 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
             function_ast->window_name = identifier_node->getIdentifier().getFullName();
         else
             function_ast->window_definition = window_node->toAST(new_options);
+    }
+
+    if (!settings_changes.empty())
+    {
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->changes = settings_changes;
+        settings_ast->is_standalone = false;
+        function_ast->arguments->children.push_back(settings_ast);
     }
 
     return function_ast;

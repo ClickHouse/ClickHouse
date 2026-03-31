@@ -762,7 +762,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                 {
                     const auto & function_arguments_list = function->arguments->as<ASTExpressionList>()->children;
                     for (const auto & argument : function_arguments_list)
-                        function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                    {
+                        if (const auto * ast_set = argument->as<ASTSetQuery>())
+                            function_node->setSettingsChanges(ast_set->changes);
+                        else
+                            function_node->getArguments().getNodes().push_back(buildExpression(argument, context));
+                    }
                 }
 
                 if (function->isWindowFunction())

@@ -76,6 +76,39 @@
         </shard>
     </cluster_with_dots>
 
+    <cluster_with_username_and_password>
+        <shard>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+                <user>foo</user>
+                <password>bar</password>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+                <user>foo</user>
+                <password>bar</password>
+            </replica>
+        </shard>
+    </cluster_with_username_and_password>
+
+    <cluster_with_secret>
+        <secret>baz</secret>
+        <shard>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+                <user>foo</user>
+            </replica>
+            <replica>
+                <host>s0_1_0</host>
+                <port>9000</port>
+                <user>foo</user>
+            </replica>
+        </shard>
+    </cluster_with_secret>
+
     <cluster_all>
         <shard>
             <replica>

@@ -42,11 +42,10 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 object_storage_max_nodes;
     extern const SettingsBool object_storage_remote_initiator;
+    extern const SettingsString object_storage_remote_initiator_cluster;
 }
 
 namespace ErrorCodes
@@ -161,8 +160,6 @@ void IStorageCluster::read(
 
     const auto & settings = context->getSettingsRef();
 
-    auto cluster = getClusterImpl(context, cluster_name_from_settings, isObjectStorage() ? settings[Setting::object_storage_max_nodes] : 0);
-
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
@@ -181,9 +178,21 @@ void IStorageCluster::read(
 
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
+    /// In case the current node is not supposed to initiate the clustered query
+    /// Sends this query to a remote initiator using the `remote` table function
     if (settings[Setting::object_storage_remote_initiator])
     {
-        auto storage_and_context = convertToRemote(cluster, context, cluster_name_from_settings, query_to_send);
+        /// Re-writes queries in the form of:
+        /// Input: SELECT * FROM iceberg(...) SETTINGS object_storage_cluster='swarm', object_storage_remote_initiator=1
+        /// Output: SELECT * FROM remote('remote_host', icebergCluster('swarm', ...)
+        /// Where `remote_host` is a random host from the cluster which will execute the query
+        /// This means the initiator node belongs to the same cluster that will execute the query
+        /// In case remote_initiator_cluster_name is set, the initiator might be set to a different cluster
+        auto remote_initiator_cluster_name = settings[Setting::object_storage_remote_initiator_cluster].value;
+        if (remote_initiator_cluster_name.empty())
+            remote_initiator_cluster_name = cluster_name_from_settings;
+        auto remote_initiator_cluster = getClusterImpl(context, remote_initiator_cluster_name);
+        auto storage_and_context = convertToRemote(remote_initiator_cluster, context, remote_initiator_cluster_name, query_to_send);
         auto src_distributed = std::dynamic_pointer_cast<StorageDistributed>(storage_and_context.storage);
         auto modified_query_info = query_info;
         modified_query_info.cluster = src_distributed->getCluster();
@@ -191,6 +200,8 @@ void IStorageCluster::read(
         storage_and_context.storage->read(query_plan, column_names, new_storage_snapshot, modified_query_info, storage_and_context.context, processed_stage, max_block_size, num_streams);
         return;
     }
+
+    auto cluster = getClusterImpl(context, cluster_name_from_settings, isObjectStorage() ? settings[Setting::object_storage_max_nodes] : 0);
 
     RestoreQualifiedNamesVisitor::Data data;
     data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
@@ -225,6 +236,10 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     const std::string & cluster_name_from_settings,
     ASTPtr query_to_send)
 {
+    /// TODO: Allow to use secret for remote queries
+    if (!cluster->getSecret().empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't convert query to remote when cluster uses secret");
+
     auto host_addresses = cluster->getShardsAddresses();
     if (host_addresses.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty cluster {}", cluster_name_from_settings);
@@ -246,6 +261,7 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     /// Clean object_storage_remote_initiator setting to avoid infinite remote call
     auto new_context = Context::createCopy(context);
     new_context->setSetting("object_storage_remote_initiator", false);
+    new_context->setSetting("object_storage_remote_initiator_cluster", String(""));
 
     auto * select_query = query_to_send->as<ASTSelectQuery>();
     if (!select_query)
@@ -265,7 +281,20 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     if (!table_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find table expression");
 
-    auto remote_query = makeASTFunction(remote_function_name, make_intrusive<ASTLiteral>(host_name), table_expression->table_function);
+    boost::intrusive_ptr<ASTFunction> remote_query;
+
+    if (shard_addresses[0].user_specified)
+    { // with user/password for clsuter access remote query is executed from this user, add it in query parameters
+        remote_query = makeASTFunction(remote_function_name,
+            make_intrusive<ASTLiteral>(host_name),
+            table_expression->table_function,
+            make_intrusive<ASTLiteral>(shard_addresses[0].user),
+            make_intrusive<ASTLiteral>(shard_addresses[0].password));
+    }
+    else
+    { // without specified user/password remote query is executed from default user
+        remote_query = makeASTFunction(remote_function_name, make_intrusive<ASTLiteral>(host_name), table_expression->table_function);
+    }
 
     table_expression->table_function = remote_query;
 

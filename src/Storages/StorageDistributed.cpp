@@ -884,6 +884,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
         auto table_function_node = std::make_shared<TableFunctionNode>(remote_table_function_node.getFunctionName());
         table_function_node->getArgumentsNode() = remote_table_function_node.getArgumentsNode();
+        table_function_node->setSettingsChanges(remote_table_function_node.getSettingsChanges());
 
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);

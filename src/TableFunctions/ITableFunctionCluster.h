@@ -75,9 +75,11 @@ protected:
 
         /// Cluster name is always the first
         cluster_name = checkAndGetLiteralArgument<String>(args[0], "cluster_name");
-
-        if (!context->tryGetCluster(cluster_name))
-            throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
+        /// Remove check cluster existing here
+        /// In query like
+        /// remote('remote_host', xxxCluster('remote_cluster', ...))
+        /// 'remote_cluster' can be defined only on 'remote_host'
+        /// If cluster not exists, query falls later
 
         /// Just cut the first arg (cluster_name) and try to parse other table function arguments as is
         args.erase(args.begin());
