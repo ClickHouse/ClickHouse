@@ -779,8 +779,8 @@ def test_used_storages_in_query_log(started_cluster):
         f" WHERE query_id = '{query_id_cluster}' AND type = 'QueryFinish'"
     ).strip()
     assert (
-        "'IcebergS3Cluster'" in result_cluster
-    ), f"Cluster: expected IcebergS3Cluster in used_storages, got {result_cluster}"
+        "'IcebergS3'" in result_cluster
+    ), f"Cluster: expected IcebergS3 in used_storages, got {result_cluster}"
 
 
 def test_not_specified_catalog_type(started_cluster):

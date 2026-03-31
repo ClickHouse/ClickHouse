@@ -680,7 +680,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /* is_table_function */true);
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
-            context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName() + "Cluster");
+            context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
 
         storage_cluster->startup();
         return storage_cluster;
