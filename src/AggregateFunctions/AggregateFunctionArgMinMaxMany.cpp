@@ -243,14 +243,24 @@ AggregateFunctionPtr createAggregateFunctionArgMinMaxMany(
             name);
 
     const auto & param = parameters[0];
-    if (param.getType() != Field::Types::Int64 && param.getType() != Field::Types::UInt64)
+    auto param_type = param.getType();
+    if (param_type != Field::Types::Int64 && param_type != Field::Types::UInt64)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be a positive integer", name);
 
-    Int64 raw_max_elems = param.safeGet<Int64>();
-    if (raw_max_elems <= 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be a positive integer", name);
-
-    UInt64 max_elems = static_cast<UInt64>(raw_max_elems);
+    UInt64 max_elems;
+    if (param_type == Field::Types::UInt64)
+    {
+        max_elems = param.safeGet<UInt64>();
+        if (max_elems == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be a positive integer", name);
+    }
+    else
+    {
+        Int64 v = param.safeGet<Int64>();
+        if (v <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be a positive integer", name);
+        max_elems = static_cast<UInt64>(v);
+    }
     if (max_elems > aggregate_function_arg_min_max_many_max_element_size)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

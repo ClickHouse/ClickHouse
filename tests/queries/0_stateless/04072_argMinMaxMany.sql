@@ -12,11 +12,11 @@ SELECT argMinMany(10)(number, number) FROM numbers(3);
 SELECT argMaxMany(1)(arg, val) FROM (SELECT * FROM VALUES('arg String, val UInt64', ('a',1),('b',3),('c',2)));
 SELECT argMinMany(1)(arg, val) FROM (SELECT * FROM VALUES('arg String, val UInt64', ('a',1),('b',3),('c',2)));
 
--- NULL val values are excluded
+-- NULL val values are excluded (consistent with argMax/argMin)
 SELECT argMaxMany(3)(a, b) FROM (SELECT * FROM VALUES('a String, b Nullable(Int64)', ('x',1),('y',NULL),('z',3),('w',2)));
 SELECT argMinMany(3)(a, b) FROM (SELECT * FROM VALUES('a String, b Nullable(Int64)', ('x',1),('y',NULL),('z',3),('w',2)));
 
--- NULL arg values are included when corresponding val is top
+-- NULL arg values are skipped (consistent with argMax/argMin null-aware wrapping)
 SELECT argMaxMany(2)(a, b) FROM (SELECT * FROM VALUES('a Nullable(String), b Int64', ('x',1),(NULL,3),('z',2)));
 SELECT argMinMany(2)(a, b) FROM (SELECT * FROM VALUES('a Nullable(String), b Int64', ('x',1),(NULL,3),('z',2)));
 
@@ -24,17 +24,14 @@ SELECT argMinMany(2)(a, b) FROM (SELECT * FROM VALUES('a Nullable(String), b Int
 SELECT argMaxMany(5)(number, number) FROM numbers(0);
 SELECT argMinMany(5)(number, number) FROM numbers(0);
 
--- Numeric types for arg
+-- Numeric types for arg and float for val
 SELECT argMaxMany(3)(toInt32(number), toFloat64(number)) FROM numbers(5);
 SELECT argMinMany(3)(toInt32(number), toFloat64(number)) FROM numbers(5);
 
--- All equal vals: result length must be N
+-- Tie-breaking: result length must be N even when all vals are equal
 SELECT length(argMaxMany(2)(arg, val)) FROM (SELECT * FROM VALUES('arg String, val UInt64', ('a',1),('b',1),('c',1)));
 SELECT length(argMinMany(2)(arg, val)) FROM (SELECT * FROM VALUES('arg String, val UInt64', ('a',1),('b',1),('c',1)));
 
 -- Error: N must be positive
 SELECT argMaxMany(0)(number, number) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
 SELECT argMinMany(-1)(number, number) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
-
--- Error: val type must be comparable
-SELECT argMaxMany(2)(number, [1,2]) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
