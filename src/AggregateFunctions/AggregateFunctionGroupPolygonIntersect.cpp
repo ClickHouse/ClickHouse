@@ -240,8 +240,12 @@ public:
                     MAX_CHUNKS_PER_STATE);
 
             data.chunks.resize(chunk_count);
+            size_t total_points = 0;
             for (UInt64 i = 0; i < chunk_count; ++i)
-                data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str());
+            {
+                data.chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), total_points);
+                validateDeserializedMultiPolygon(data.chunks[i], getName().c_str());
+            }
         }
     }
 

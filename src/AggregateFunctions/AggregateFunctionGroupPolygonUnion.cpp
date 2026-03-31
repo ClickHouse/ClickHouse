@@ -163,8 +163,12 @@ public:
                 MAX_CHUNKS_PER_STATE);
 
         chunks.resize(chunk_count);
+        size_t total_points = 0;
         for (UInt64 i = 0; i < chunk_count; ++i)
-            chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str());
+        {
+            chunks[i] = deserializeGeoMultiPolygon(buf, getName().c_str(), total_points);
+            validateDeserializedMultiPolygon(chunks[i], getName().c_str());
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
