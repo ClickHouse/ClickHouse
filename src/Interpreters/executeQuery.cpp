@@ -2293,6 +2293,12 @@ std::pair<ASTPtr, BlockIO> executeQuery(
                     {
                         executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
                     }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                            throw; /// Oracle mismatch — propagate to abort the server
+                        tryLogCurrentException("ASTFuzzer");
+                    }
                     catch (...)
                     {
                         tryLogCurrentException("ASTFuzzer");
@@ -2590,6 +2596,12 @@ void executeQuery(
                 try
                 {
                     executeASTFuzzerQueries(ast, context, ast_fuzzer_runs_value, any_query);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                        throw; /// Oracle mismatch — propagate to abort the server
+                    tryLogCurrentException("ASTFuzzer");
                 }
                 catch (...)
                 {

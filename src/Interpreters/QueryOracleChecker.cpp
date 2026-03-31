@@ -65,8 +65,13 @@ const std::unordered_set<String> non_deterministic_functions = {
     "first_value", "last_value",
     "topK", "topKWeighted",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
+    /// Approximate quantile/median functions: State/Merge gives different results
+    /// than direct computation due to approximate merging algorithms.
+    "median", "quantile", "quantiles",
     "quantileTDigest", "quantileTDigestWeighted",
     "quantileGK", "quantileBFloat16", "quantileDD",
+    "quantileTiming", "quantileTimingWeighted",
+    "quantileDeterministic",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
 };
@@ -261,6 +266,11 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
     /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
     oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
+    /// Remove result size limits that the fuzzer context may inherit — oracle
+    /// sub-queries (especially TLP's UNION ALL) legitimately produce more rows.
+    oracle_context->setSetting("max_result_rows", Field(UInt64(0)));
+    oracle_context->setSetting("max_result_bytes", Field(UInt64(0)));
+    oracle_context->setSetting("result_overflow_mode", String("break"));
     oracle_context->setCurrentQueryId("");
     return oracle_context;
 }
@@ -884,6 +894,12 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     if (!hasAggregates(select))
         return false;
 
+    /// Skip queries with HAVING — the TLP transformation cannot push HAVING into
+    /// the partitioned inner queries because HAVING filters on aggregate results,
+    /// which are only correct after merging all partitions.
+    if (select.having())
+        return false;
+
     if (hasNonDeterministicFunctions(select.clone()))
         return false;
 
@@ -892,6 +908,24 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     GetAggregatesVisitor(agg_data).visit(select.select());
     if (agg_data.aggregates.empty())
         return false;
+
+    /// Verify every SELECT-list expression is either an aggregate or a GROUP BY column.
+    /// Non-aggregate, non-GROUP-BY items (bare constants, arithmetic expressions)
+    /// cannot be faithfully preserved through the State/Merge transformation.
+    std::unordered_set<IAST::Hash> agg_hashes;
+    for (const auto & agg : agg_data.aggregates)
+        agg_hashes.insert(agg->getTreeHash());
+
+    std::unordered_set<IAST::Hash> group_hashes;
+    if (select.groupBy())
+        for (const auto & g : select.groupBy()->children)
+            group_hashes.insert(g->getTreeHash());
+
+    for (const auto & expr : select.select()->children)
+    {
+        if (!agg_hashes.contains(expr->getTreeHash()) && !group_hashes.contains(expr->getTreeHash()))
+            return false;
+    }
 
     ASTPtr predicate = select.where()->clone();
 
@@ -910,48 +944,66 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     auto inner_ast = select.clone();
     auto & inner_select = inner_ast->as<ASTSelectQuery &>();
     stripOrderAndLimit(inner_select);
+    inner_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
 
-    /// Build new SELECT list: [group_by_cols...,] aggState(args) AS _s_0, aggState(args) AS _s_1, ...
-    auto new_inner_select_list = make_intrusive<ASTExpressionList>();
-
-    /// Include GROUP BY columns in the inner SELECT (needed for outer GROUP BY).
     bool has_group_by = inner_select.groupBy() != nullptr;
-    if (has_group_by)
-    {
-        for (const auto & group_expr : inner_select.groupBy()->children)
-            new_inner_select_list->children.push_back(group_expr->clone());
-    }
 
-    /// Transform aggregates: agg(args) -> aggState(args) AS _s_N
-    /// Also build the outer SELECT list: aggMerge(_s_N)
-    auto outer_select_list = make_intrusive<ASTExpressionList>();
-    if (has_group_by)
-    {
-        for (const auto & group_expr : inner_select.groupBy()->children)
-            outer_select_list->children.push_back(group_expr->clone());
-    }
-
+    /// First pass: assign aliases to each aggregate function.
+    /// Build a map from aggregate AST pointer to (state_alias, merge_func).
+    std::unordered_map<const IAST *, String> agg_to_alias;
     size_t state_idx = 0;
     for (const auto & aggregate_ast : agg_data.aggregates)
     {
         const auto * agg_func = aggregate_ast->as<ASTFunction>();
         if (!agg_func)
             return false;
+        agg_to_alias[agg_func] = fmt::format("_s_{}", state_idx);
+        ++state_idx;
+    }
 
-        String alias = fmt::format("_s_{}", state_idx);
+    /// Build inner SELECT list: GROUP BY columns first (needed for outer GROUP BY),
+    /// then aggState(args) AS _s_N for each aggregate.
+    auto new_inner_select_list = make_intrusive<ASTExpressionList>();
+    if (has_group_by)
+    {
+        for (const auto & group_expr : inner_select.groupBy()->children)
+            new_inner_select_list->children.push_back(group_expr->clone());
+    }
+    for (const auto & aggregate_ast : agg_data.aggregates)
+    {
+        const auto * agg_func = aggregate_ast->as<ASTFunction>();
+        String alias = agg_to_alias[agg_func];
 
-        /// Inner: aggState(args) AS _s_N
         auto state_func_ast = agg_func->clone();
         auto & state_func = state_func_ast->as<ASTFunction &>();
         state_func.name = agg_func->name + "State";
         state_func.setAlias(alias);
         new_inner_select_list->children.push_back(std::move(state_func_ast));
+    }
 
-        /// Outer: aggMerge(_s_N)
-        auto merge_func = makeASTFunction(agg_func->name + "Merge", make_intrusive<ASTIdentifier>(alias));
-        outer_select_list->children.push_back(std::move(merge_func));
-
-        ++state_idx;
+    /// Build the outer SELECT list preserving original column order.
+    /// Walk the original SELECT list: for each expression, check if it's an
+    /// aggregate (replace with aggMerge) or a non-aggregate (pass through).
+    auto outer_select_list = make_intrusive<ASTExpressionList>();
+    for (const auto & select_expr : select.select()->children)
+    {
+        /// Check if this expression is one of the collected aggregates.
+        bool is_aggregate = false;
+        for (const auto & aggregate_ast : agg_data.aggregates)
+        {
+            if (select_expr.get() == aggregate_ast.get()
+                || select_expr->getTreeHash() == aggregate_ast->getTreeHash())
+            {
+                const auto * agg_func = aggregate_ast->as<ASTFunction>();
+                String alias = agg_to_alias[agg_func];
+                auto merge_func = makeASTFunction(agg_func->name + "Merge", make_intrusive<ASTIdentifier>(alias));
+                outer_select_list->children.push_back(std::move(merge_func));
+                is_aggregate = true;
+                break;
+            }
+        }
+        if (!is_aggregate)
+            outer_select_list->children.push_back(select_expr->clone());
     }
 
     inner_select.setExpression(ASTSelectQuery::Expression::SELECT, std::move(new_inner_select_list));
@@ -1011,16 +1063,12 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     LOG_TRACE(logger, "TLP Aggregate oracle: reference query: {}", ref_sql);
     LOG_TRACE(logger, "TLP Aggregate oracle: metamorphic query: {}", metamorphic_sql);
 
-    /// Compare row counts only (not full content) because aggregate values may differ
-    /// in low-order bits due to floating-point accumulation order differences between
-    /// direct computation and the State/Merge path.
-    String ref_count_sql = fmt::format("SELECT count() FROM ({})", ref_sql);
-    String meta_count_sql = fmt::format("SELECT count() FROM ({})", metamorphic_sql);
+    /// Compare full sorted row content. The State/Merge path should produce
+    /// identical results for deterministic aggregates (which we already filter for).
+    auto ref_rows = executeAndCollectSortedRows(ref_sql, context);
+    auto meta_rows = executeAndCollectSortedRows(metamorphic_sql, context);
 
-    Field ref_count = executeScalar(ref_count_sql, context);
-    Field meta_count = executeScalar(meta_count_sql, context);
-
-    if (ref_count != meta_count)
+    if (ref_rows != meta_rows)
     {
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
@@ -1028,11 +1076,11 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
             "TLP Aggregate oracle mismatch!\n"
             "Reference query ({} rows): {}\n"
             "Metamorphic query ({} rows): {}",
-            ref_count, ref_sql,
-            meta_count, metamorphic_sql);
+            ref_rows.size(), ref_sql,
+            meta_rows.size(), metamorphic_sql);
     }
 
-    LOG_TRACE(logger, "TLP Aggregate oracle passed ({} rows, {} aggregates)", ref_count, state_idx);
+    LOG_TRACE(logger, "TLP Aggregate oracle passed ({} rows, {} aggregates)", ref_rows.size(), state_idx);
     return true;
 }
 
