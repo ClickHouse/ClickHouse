@@ -52,7 +52,7 @@ MergeTreeTableJoinEntity::MergeTreeTableJoinEntity(Names primary_key_, Block dat
     for (const auto & column : data_block_.getColumns())
         columns_with_default.push_back(column->cloneResized(rows_count + 1));
 
-    data_block_with_default = data_block_.cloneWithColumns(std::move(columns_with_default));
+    data_block_with_default = data_block_.cloneWithColumns(columns_with_default);
 
     for (size_t position = 0; position < sample_block.columns(); ++position)
         column_positions.emplace(sample_block.getByPosition(position).name, position);
@@ -127,7 +127,7 @@ Chunk MergeTreeTableJoinEntity::getByKeysImpl(
             keys.size());
 
     auto result_block = getSampleBlock(required_columns);
-    if (keys.empty() || keys[0].column->size() == 0)
+    if (keys.empty() || keys[0].column->empty())
         return Chunk(result_block.cloneEmptyColumns(), 0);
 
     ColumnRawPtrs key_columns;

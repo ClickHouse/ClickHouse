@@ -391,7 +391,6 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
-    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace MergeTreeSetting
@@ -491,7 +490,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int DUPLICATE_DATA_PART;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
