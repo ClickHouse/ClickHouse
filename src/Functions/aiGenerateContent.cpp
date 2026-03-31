@@ -23,8 +23,9 @@ class FunctionAiGenerateContent final : public FunctionBaseAI
 public:
     static constexpr auto name = "aiGenerateContent";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerateContent>(context); }
     explicit FunctionAiGenerateContent(ContextPtr context) : FunctionBaseAI(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionAiGenerateContent>(context); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -49,11 +50,11 @@ protected:
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t idx = getFirstDataArgIndex(arguments);
+        size_t prompt_idx = getFirstDataArgIndex(arguments);
 
-        if (arguments.size() > idx + 1 && isString(arguments[idx + 1].type))
+        if (arguments.size() > prompt_idx + 1 && isString(arguments[prompt_idx + 1].type))
         {
-            String system_prompt(arguments[idx + 1].column->getDataAt(0));
+            String system_prompt(arguments[prompt_idx + 1].column->getDataAt(0));
             if (!system_prompt.empty())
                 return system_prompt;
         }
@@ -62,8 +63,8 @@ protected:
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        size_t idx = getFirstDataArgIndex(arguments);
-        return String(arguments[idx].column->getDataAt(row));
+        size_t prompt_idx = getFirstDataArgIndex(arguments);
+        return String(arguments[prompt_idx].column->getDataAt(row));
     }
 };
 
