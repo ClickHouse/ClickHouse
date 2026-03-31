@@ -15,6 +15,12 @@ namespace DB
 
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
@@ -22,7 +28,7 @@ constexpr size_t UNION_REDUCTION_THRESHOLD = 16;
 
 
 /// Pairwise reduction to keep intermediate complexity lower than a linear left-fold.
-void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks)
+void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     while (chunks.size() > 1)
     {
@@ -43,7 +49,7 @@ void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks)
 
 struct GroupPolygonUnionData
 {
-    std::vector<CartesianMultiPolygon> chunks;
+    std::vector<CartesianMultiPolygon> chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     void add(CartesianMultiPolygon && mp)
     {

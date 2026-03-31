@@ -39,7 +39,7 @@ static constexpr size_t MAX_POINTS_IN_CONVEX_HULL_STATE = 100'000'000;
 
 
 /// Maps global variant discriminator index -> GeometryColumnType.
-using VariantTypeMap = std::vector<GeometryColumnType>;
+using VariantTypeMap = std::vector<GeometryColumnType>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 inline VariantTypeMap buildVariantTypeMap(const DataTypePtr & argument_type)
 {
