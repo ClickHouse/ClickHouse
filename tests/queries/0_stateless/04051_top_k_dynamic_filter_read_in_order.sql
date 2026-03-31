@@ -3,6 +3,8 @@
 -- Otherwise the prewhere filter rejects all rows past the threshold in sorted
 -- order, preventing early LIMIT cancellation and causing a full table scan.
 
+SET query_plan_read_in_order = 1;
+
 DROP TABLE IF EXISTS t_topk_rio;
 
 CREATE TABLE t_topk_rio (x UInt64, y String)

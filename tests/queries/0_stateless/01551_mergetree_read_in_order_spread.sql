@@ -1,5 +1,7 @@
 -- Tags: no-object-storage, no-random-merge-tree-settings
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS data_01551;
 
 CREATE TABLE data_01551

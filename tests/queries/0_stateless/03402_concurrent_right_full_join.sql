@@ -3,6 +3,7 @@ SET enable_analyzer = 1;
 SET join_algorithm = 'parallel_hash';
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
+SET query_plan_merge_expressions = 1;
 
 -- 1) Small dataset: RIGHT OUTER ALL
 DROP TABLE IF EXISTS t_l_small;
