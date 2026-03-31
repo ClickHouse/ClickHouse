@@ -22,6 +22,7 @@ SET query_plan_convert_outer_join_to_inner_join = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET query_plan_filter_push_down = 1;
+SET query_plan_merge_filter_into_join_condition = 0;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 

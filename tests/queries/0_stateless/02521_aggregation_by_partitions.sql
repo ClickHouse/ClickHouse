@@ -7,6 +7,9 @@ set allow_aggregate_partitions_independently = 1;
 set force_aggregate_partitions_independently = 1;
 set optimize_use_projections = 0;
 set optimize_trivial_insert_select = 1;
+set query_plan_merge_expressions = 1;
+set optimize_aggregation_in_order = 0;
+set enable_memory_bound_merging_of_aggregation_results = 0;
 
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;

@@ -15,6 +15,7 @@ AS SELECT * FROM numbers(10);
 
 SET optimize_move_to_prewhere=1;
 SET query_plan_optimize_prewhere = 1;
+SET query_plan_merge_expressions = 1;
 
 -- Queries with 'IN'
 SELECT * FROM (EXPLAIN actions=1 SELECT * FROM t_02809 WHERE a IN (SELECT * FROM system.one)) WHERE explain LIKE '%Prewhere filter';

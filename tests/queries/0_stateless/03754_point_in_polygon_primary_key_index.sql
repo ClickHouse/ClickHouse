@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS points;
 CREATE TABLE points(`x` Float64, `y` Float64) ENGINE = MergeTree ORDER BY (x, y) SETTINGS index_granularity = 1000;   
 

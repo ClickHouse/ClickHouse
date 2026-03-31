@@ -1,4 +1,5 @@
 SET session_timezone = 'Etc/UTC';
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS tt;
 CREATE TABLE tt

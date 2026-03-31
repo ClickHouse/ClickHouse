@@ -1,4 +1,5 @@
 SET send_logs_level = 'error';
+SET query_plan_push_down_limit = 1;
 CREATE TABLE data_02052_1_wide0__fuzz_48
 (
     `key` Nullable(Int64),

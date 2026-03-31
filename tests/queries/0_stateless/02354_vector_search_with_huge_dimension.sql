@@ -4,6 +4,7 @@
 
 SET parallel_replicas_local_plan = 1;
 SET use_skip_indexes_on_data_read = 1;
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS tab;
 
