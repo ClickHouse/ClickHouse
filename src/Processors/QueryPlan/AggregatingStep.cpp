@@ -520,7 +520,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             if (use_gradual_resize)
                 pipeline.resizeGradual(pipeline.getNumStreams(),
                     settings.min_rows_per_stream_for_gradual_resize,
-                    settings.min_bytes_per_stream_for_gradual_resize);
+                    settings.min_bytes_per_stream_for_gradual_resize,
+                    settings.min_outstreams_per_resize_after_split);
             else
                 pipeline.resize(pipeline.getNumStreams(), true, settings.min_outstreams_per_resize_after_split);
         }

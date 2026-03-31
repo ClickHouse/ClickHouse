@@ -787,11 +787,11 @@ void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_res
     addTransform(std::move(resize));
 }
 
-void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t min_bytes_per_output)
+void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t min_bytes_per_output, UInt64 min_outstreams_per_resize_after_split)
 {
     if (min_rows_per_output == 0 && min_bytes_per_output == 0)
     {
-        resize(num_streams, true);
+        resize(num_streams, true, min_outstreams_per_resize_after_split);
         return;
     }
 

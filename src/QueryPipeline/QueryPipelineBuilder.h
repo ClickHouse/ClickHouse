@@ -102,7 +102,7 @@ public:
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
 
     /// Like resize, but uses GradualResizeProcessor that starts with 1 active output and activates more as data grows.
-    void resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t min_bytes_per_output);
+    void resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t min_bytes_per_output, UInt64 min_outstreams_per_resize_after_split = 0);
 
     /// Concat some ports to have no more then size outputs.
     /// This method is needed for Merge table engine in case of reading from many tables.
