@@ -185,15 +185,12 @@ public:
         if (key < begin_x || key > end_x)
             return;
 
-        /// Compute the integer deltas first to avoid Float64 catastrophic cancellation
-        /// for large keys (e.g. Int64/DateTime64 values near ±1e18).
-        /// Unsigned subtraction is safe here because the bounds check above guarantees
-        /// key >= begin_x and end_x > begin_x, so both deltas are non-negative.
-        using UnsignedKey = std::make_unsigned_t<Key>;
-        const auto int_range  = static_cast<UnsignedKey>(end_x)  - static_cast<UnsignedKey>(begin_x);
-        const auto int_offset = static_cast<UnsignedKey>(key)    - static_cast<UnsignedKey>(begin_x);
-        const Float64 range  = static_cast<Float64>(int_range);
-        const Float64 offset = static_cast<Float64>(int_offset);
+        /// Compute deltas in UInt64 before converting to Float64 to avoid catastrophic
+        /// cancellation when keys are large (e.g. Int64/DateTime64 near ±1e18).
+        /// The bounds check above guarantees key >= begin_x and end_x > begin_x,
+        /// so both unsigned deltas are mathematically non-negative.
+        const Float64 range  = static_cast<Float64>(static_cast<UInt64>(end_x) - static_cast<UInt64>(begin_x));
+        const Float64 offset = static_cast<Float64>(static_cast<UInt64>(key)   - static_cast<UInt64>(begin_x));
         const size_t pos = static_cast<size_t>(
             std::min<Float64>(offset / range * static_cast<Float64>(width), static_cast<Float64>(width - 1)));
 
