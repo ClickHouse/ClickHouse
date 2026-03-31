@@ -145,22 +145,13 @@ public:
         if (data.is_heap)
         {
             Field new_val = (*columns[1])[row_num];
-            if constexpr (isMin)
-            {
-                if (new_val >= data.entries[0].val)
-                    return;
-                std::pop_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
-                data.entries.back() = Entry{(*columns[0])[row_num], std::move(new_val)};
-                std::push_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
-            }
-            else
-            {
-                if (new_val <= data.entries[0].val)
-                    return;
-                std::pop_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
-                data.entries.back() = Entry{(*columns[0])[row_num], std::move(new_val)};
-                std::push_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
-            }
+            using Cmp = std::conditional_t<isMin, MaxHeapComparator, MinHeapComparator>;
+            Cmp cmp;
+            if (!cmp(Entry{Field{}, new_val}, data.entries[0]))
+                return;
+            std::pop_heap(data.entries.begin(), data.entries.end(), cmp);
+            data.entries.back() = Entry{(*columns[0])[row_num], std::move(new_val)};
+            std::push_heap(data.entries.begin(), data.entries.end(), cmp);
             return;
         }
 
