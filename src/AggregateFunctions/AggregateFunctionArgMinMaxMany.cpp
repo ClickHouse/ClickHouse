@@ -139,8 +139,33 @@ public:
         if (columns[1]->isNullAt(row_num))
             return;
 
-        Entry new_entry{(*columns[0])[row_num], (*columns[1])[row_num]};
-        addEntry(place, std::move(new_entry));
+        auto & data = this->data(place);
+
+        /// When the heap is full, check val first to avoid materializing arg on the hot rejection path.
+        if (data.is_heap)
+        {
+            Field new_val = (*columns[1])[row_num];
+            if constexpr (isMin)
+            {
+                if (new_val >= data.entries[0].val)
+                    return;
+                std::pop_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
+                data.entries.back() = Entry{(*columns[0])[row_num], std::move(new_val)};
+                std::push_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
+            }
+            else
+            {
+                if (new_val <= data.entries[0].val)
+                    return;
+                std::pop_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
+                data.entries.back() = Entry{(*columns[0])[row_num], std::move(new_val)};
+                std::push_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
+            }
+            return;
+        }
+
+        /// Fill-up phase: heap not yet built, materialize both fields.
+        addEntry(place, Entry{(*columns[0])[row_num], (*columns[1])[row_num]});
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -296,7 +321,7 @@ Null `val` values are ignored.
     };
     FunctionDocumentation::Arguments arguments_argMaxMany = {
         {"arg", "Argument values to collect.", {"Any"}},
-        {"val", "Values used to determine the top N rows.", {"Comparable type"}}
+        {"val", "Values used to determine the top N rows.", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMaxMany = {
         "Array of `arg` values corresponding to the N largest `val` values, in descending order of `val`.",
