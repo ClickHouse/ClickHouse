@@ -321,6 +321,59 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
+## -Sparkbar {#-sparkbar}
+
+Lets you divide data into buckets by the first argument (the x-axis key) and apply any aggregate function independently to values in each bucket. The per-bucket results are rendered as a Unicode sparkbar string.
+
+```sql
+<aggFunction>Sparkbar(width, min_x, max_x)(x, <aggFunction_params>)
+```
+
+**Parameters**
+
+- `width` — Number of buckets. Must be in the range `[2, 1024]`.
+- `min_x` — Start of the x-axis range (inclusive).
+- `max_x` — End of the x-axis range (inclusive). Must be strictly greater than `min_x`.
+
+**Arguments**
+
+- `x` — The x-axis column used to determine the bucket for each row. Supported types: `UInt8`–`UInt64`, `Int8`–`Int64`, `Date`, `Date32`, `DateTime`, `DateTime64`.
+- `aggFunction_params` — Arguments forwarded to the nested aggregate function (all arguments except `x`).
+
+**Returned value**
+
+- A `String` containing `width` Unicode block characters (`▁▂▃▄▅▆▇█`) representing the relative magnitude of each bucket. Empty buckets or zero-valued buckets are rendered as a space.
+
+**Example**
+
+```sql
+SELECT sumSparkbar(5, toDate('2023-01-01'), toDate('2023-01-05'))(toDate('2023-01-01') + number, toFloat64(number + 1))
+FROM numbers(5)
+```
+
+```text
+┌─sumSparkbar(5, '2023-01-01', '2023-01-05')(plus(toDate('2023-01-01'), number), plus(toFloat64(number), 1))─┐
+│ ▁▂▅▇█                                                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT
+    countSparkbar(12, toDate('2023-01-01'), toDate('2023-12-31'))(EventDate) AS events_by_month
+FROM hits
+```
+
+```sql
+-- Compare unique visitors per month for a set of URLs
+SELECT
+    URL,
+    uniqSparkbar(12, toDate('2023-01-01'), toDate('2023-12-31'))(EventDate, UserID) AS unique_visitors
+FROM hits
+GROUP BY URL
+ORDER BY uniq(UserID) DESC
+LIMIT 10
+```
+
 ## -ArgMin {#-argmin}
 
 The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
