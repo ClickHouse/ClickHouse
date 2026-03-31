@@ -176,14 +176,13 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
             size,
             MAX_POINTS_PER_RING);
 
-    total_points += size;
-    if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+    if (size > MAX_POINTS_IN_POLYGONAL_STATE - total_points)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Corrupted state of aggregate function {}: total points {} exceed polygonal state budget {}",
+            "Corrupted state of aggregate function {}: total points exceed polygonal state budget {}",
             function_name,
-            total_points,
             MAX_POINTS_IN_POLYGONAL_STATE);
+    total_points += size;
 
     CartesianRing ring;
     ring.resize(size);
