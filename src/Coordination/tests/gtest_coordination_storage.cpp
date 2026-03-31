@@ -1855,4 +1855,112 @@ TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
     }
 }
 
+
+TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+
+    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid);
+    auto responses = storage.processRequest(create_request, session_id, zxid);
+    ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+    ASSERT_TRUE(storage.ttl_paths.contains("/ttl_node"));
+    {
+        auto node_it = storage.container.find("/ttl_node");
+        ASSERT_NE(node_it, storage.container.end());
+        ASSERT_TRUE(node_it->value.destroy_time.has_value());
+        EXPECT_EQ(*node_it->value.destroy_time, ttl_ms);
+    }
+
+    EXPECT_TRUE(storage.collectExpiredTTLPaths(/*now_ms=*/0).empty());
+
+    auto expired = storage.collectExpiredTTLPaths(/*now_ms=*/ttl_ms + 1);
+    ASSERT_EQ(expired.size(), 1u);
+    EXPECT_EQ(expired[0], "/ttl_node");
+
+    auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+    remove_request->path = "/ttl_node";
+    remove_request->version = -1;
+    remove_request->try_remove = true;
+    storage.preprocessRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, /*time=*/0, ++zxid);
+    auto remove_responses = storage.processRequest(remove_request, keeper_internal_ttl_garbage_collector_session_id, zxid);
+    ASSERT_EQ(remove_responses[0].response->error, Error::ZOK);
+
+    EXPECT_FALSE(storage.ttl_paths.contains("/ttl_node"));
+    EXPECT_EQ(storage.container.find("/ttl_node"), storage.container.end());
+    EXPECT_TRUE(storage.collectExpiredTTLPaths(ttl_ms + 1).empty());
+}
+
+TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+    const int64_t session_id = 1;
+    const int64_t ttl_ms = 5000;
+    const int64_t create_time = 0;
+    const int64_t set_time = 100;
+
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/ttl_node";
+    create_request->include_ttl = true;
+    create_request->ttl = ttl_ms;
+    storage.preprocessRequest(create_request, session_id, create_time, ++zxid);
+    storage.processRequest(create_request, session_id, zxid);
+
+    const int64_t original_destroy_time = create_time + ttl_ms;
+    const int64_t expected_new_destroy_time = set_time + ttl_ms;
+    {
+        auto node_it = storage.container.find("/ttl_node");
+        ASSERT_NE(node_it, storage.container.end());
+        ASSERT_TRUE(node_it->value.destroy_time.has_value());
+        EXPECT_EQ(*node_it->value.destroy_time, original_destroy_time);
+    }
+
+    auto set_request = std::make_shared<ZooKeeperSetRequest>();
+    set_request->path = "/ttl_node";
+    set_request->data = "new_data";
+    storage.preprocessRequest(set_request, session_id, set_time, ++zxid);
+
+    {
+        auto uncommitted = storage.uncommitted_state.getNode("/ttl_node");
+        ASSERT_NE(uncommitted, nullptr);
+        ASSERT_TRUE(uncommitted->destroy_time.has_value());
+        EXPECT_EQ(*uncommitted->destroy_time, expected_new_destroy_time);
+    }
+
+    auto set_responses = storage.processRequest(set_request, session_id, zxid);
+    ASSERT_EQ(set_responses[0].response->error, Error::ZOK);
+
+    {
+        auto node_it = storage.container.find("/ttl_node");
+        ASSERT_NE(node_it, storage.container.end());
+        ASSERT_TRUE(node_it->value.destroy_time.has_value());
+        EXPECT_EQ(*node_it->value.destroy_time, expected_new_destroy_time);
+    }
+}
+
+
+
 #endif

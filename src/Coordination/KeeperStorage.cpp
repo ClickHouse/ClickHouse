@@ -864,6 +864,8 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 node->invalidateDigestCache();
                 node->stats = operation.new_stats;
                 node->num_children = operation.new_num_children;
+                if (operation.new_destroy_time.has_value())
+                    node->destroy_time = operation.new_destroy_time;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {

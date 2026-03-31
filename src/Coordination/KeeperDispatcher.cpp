@@ -244,6 +244,7 @@ void KeeperDispatcher::requestThread()
                 if (req.request->getOpNum() != Coordination::OpNum::Close
                     && req.request->getOpNum() != Coordination::OpNum::SessionID)
                 {
+                    /// Internal sessions (negative IDs, e.g. TTL garbage collector) are always live.
                     if (req.session_id < 0)
                         return false;
 
