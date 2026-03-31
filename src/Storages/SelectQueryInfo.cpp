@@ -54,7 +54,7 @@ PrewhereInfo PrewhereInfo::clone() const
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     prewhere_actions.serialize(ctx.out, ctx.registry);
-    writeVarUInt(prewhere_column_position, ctx.out);
+    writeStringBinary(prewhere_actions.getOutputs()[prewhere_column_position]->result_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
 }
 
@@ -63,7 +63,9 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     PrewhereInfo prewhere_info;
 
     prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
-    readVarUInt(prewhere_info.prewhere_column_position, ctx.in);
+    String prewhere_column_name;
+    readStringBinary(prewhere_column_name, ctx.in);
+    prewhere_info.prewhere_column_position = prewhere_info.prewhere_actions.findPositionInOutputs(prewhere_column_name);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
     prewhere_info.need_filter = true;
 
