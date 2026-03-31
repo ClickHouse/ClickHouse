@@ -40,8 +40,6 @@
             </constraints>
 
             <!-- Allow all experimental features by default -->
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-
             <allow_create_index_without_type>1</allow_create_index_without_type>
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
