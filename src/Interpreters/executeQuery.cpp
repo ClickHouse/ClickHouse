@@ -2144,6 +2144,9 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->setSetting("max_result_bytes", Field(UInt64(10 * 1024 * 1024)));  /// 10 MiB
 
             fuzz_context->setCurrentQueryId("");
+            if (current_thread)
+                current_thread->setQueryId(fuzz_context->getCurrentQueryId());
+
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
 
