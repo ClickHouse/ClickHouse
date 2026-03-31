@@ -93,6 +93,24 @@ public:
     virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
 
+    /// Whether this tokenizer supports phrase queries (positional matching).
+    /// Only word-level tokenizers produce meaningful token positions for phrase search.
+    /// Ngram, SparseGrams, and Array tokenizers do not support phrase queries. [D-04]
+    virtual bool supportsPhraseQuery() const
+    {
+        switch (type)
+        {
+            case Type::SplitByNonAlpha:
+            case Type::UnicodeWord:
+            case Type::SplitByString:
+                return true;
+            case Type::Ngrams:
+            case Type::SparseGrams:
+            case Type::Array:
+                return false;
+        }
+    }
+
 private:
     Type type;
 };

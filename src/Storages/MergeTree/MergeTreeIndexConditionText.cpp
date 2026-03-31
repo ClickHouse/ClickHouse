@@ -136,6 +136,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_AND:
         case RPNElement::FUNCTION_EQUALS:
         case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+        case RPNElement::FUNCTION_HAS_PHRASE:
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
         case RPNElement::ALWAYS_FALSE:
@@ -155,6 +156,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
     return function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
+        || function_name == "hasPhrase"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -181,6 +183,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "hasAllTokens")
     {
         return TextIndexDirectReadMode::Exact;
+    }
+
+    if (function_name == "hasPhrase")
+    {
+        /// hasPhrase needs row-level post-filtering to verify token adjacency,
+        /// so it cannot use Exact mode (which skips the row-level filter).
+        return getHintOrNoneMode();
     }
 
     if (function_name == "equals"
@@ -258,8 +267,17 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_HAS_PHRASE,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_MATCH});
+}
+
+bool MergeTreeIndexConditionText::hasPhraseQuery() const
+{
+    return std::any_of(rpn.begin(), rpn.end(), [](const RPNElement & element)
+    {
+        return element.function == RPNElement::FUNCTION_HAS_PHRASE;
+    });
 }
 
 bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
@@ -289,6 +307,13 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_HAS_PHRASE)
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasPhraseQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS)
@@ -593,6 +618,21 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens));
         }
 
+        return true;
+    }
+    if (function_name == "hasPhrase")
+    {
+        if (!value_data_type.isString())
+            return false;
+
+        /// For hasPhrase, we need to preserve token order for phrase semantics.
+        /// Store original ordered tokens separately; the sorted tokens in TextSearchQuery
+        /// are used for index lookups, while ordered_tokens are used for positional verification.
+        auto search_tokens = stringToTokens(value_field);
+        auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens);
+        query->ordered_tokens = std::move(search_tokens);
+        out.function = RPNElement::FUNCTION_HAS_PHRASE;
+        out.text_search_queries.emplace_back(std::move(query));
         return true;
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")

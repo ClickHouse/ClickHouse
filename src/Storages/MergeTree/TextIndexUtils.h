@@ -99,8 +99,13 @@ private:
     void readDictionaryBlock(size_t source_num);
     /// Reads the next posting lists for the next token in the given source index.
     std::vector<PostingListPtr> readPostingLists(size_t source_num);
+    /// Reads position data for the current token from the given source.
+    /// Returns empty data if .pos stream is not available. [D-08, D-09]
+    TokenPositionsData readPositions(size_t source_num);
     /// Adjusts row numbers in the postings list according to merged part offsets.
     PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
+    /// Adjusts row IDs in position data according to merged part offsets. [D-09]
+    TokenPositionsData adjustPositionRowIDs(size_t source_num, TokenPositionsData positions);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -129,6 +134,8 @@ private:
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
+    /// Position data accumulated for the current dictionary block (parallel to output_infos).
+    std::vector<TokenPositionsData> output_block_positions;
     /// Postings accumulated for the current token.
     PostingList output_postings;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
@@ -136,6 +143,11 @@ private:
     MutableColumnPtr sparse_index_offsets;
 
     PostingsSerialization postings_serialization;
+
+    /// Whether input segments have .pos streams available.
+    bool has_position_streams = false;
+    /// Accumulated position data for the current token across all source segments.
+    TokenPositionsData output_positions;
 
     bool is_initialized = false;
 };

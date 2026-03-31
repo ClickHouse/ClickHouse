@@ -238,10 +238,26 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     auto substreams = index_ptr->getSubstreams();
 
+    /// Try to open .pos input streams if available. [D-08, D-09]
+    /// Position data is only carried during merge if ALL source segments have .pos streams.
+    has_position_streams = true;
+
     for (size_t i = 0; i < segments.size(); ++i)
     {
         for (const auto & substream : substreams)
         {
+            /// For .pos streams, check existence first - old parts may not have them.
+            if (substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions)
+            {
+                auto pos_stream_name = segments[i].index_file_name + substream.suffix;
+                auto actual_name = IMergeTreeDataPart::getStreamNameOrHash(pos_stream_name, substream.extension, *segments[i].part_storage);
+                if (!actual_name)
+                {
+                    has_position_streams = false;
+                    continue;
+                }
+            }
+
             auto stream = makeTextIndexInputStream(
                 segments[i].part_storage,
                 segments[i].index_file_name + substream.suffix,
@@ -326,6 +342,32 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
 
+TokenPositionsData MergeTextIndexesTask::readPositions(size_t source_num)
+{
+    if (!has_position_streams)
+        return {};
+
+    auto it = input_streams[source_num].find(MergeTreeIndexSubstream::Type::TextIndexPositions);
+    if (it == input_streams[source_num].end())
+        return {};
+
+    auto * data_buffer = it->second->getDataBuffer();
+    return TextIndexSerialization::deserializePositions(*data_buffer);
+}
+
+TokenPositionsData MergeTextIndexesTask::adjustPositionRowIDs(size_t source_num, TokenPositionsData positions)
+{
+    if (!merged_part_offsets || positions.row_positions.empty())
+        return positions;
+
+    size_t part_index = segments[source_num].part_index;
+
+    for (auto & [row_id, pos_list] : positions.row_positions)
+        row_id = static_cast<UInt32>((*merged_part_offsets)[part_index, row_id]);
+
+    return positions;
+}
+
 void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
@@ -336,6 +378,11 @@ void MergeTextIndexesTask::flushPostingList()
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
     output_infos.push_back(token_info);
+    /// Sort accumulated position rows by row_id for deterministic output. [D-09]
+    std::sort(output_positions.row_positions.begin(), output_positions.row_positions.end(),
+        [](const auto & a, const auto & b) { return a.first < b.first; });
+    output_block_positions.push_back(std::move(output_positions));
+    output_positions = {};
     output_postings.clear();
 }
 
@@ -377,9 +424,16 @@ void MergeTextIndexesTask::flushDictionaryBlock()
         }
     }
 
+    /// Write position data for this dictionary block to the .pos stream. [D-03, D-09]
+    auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+    auto & pos_ostr = positions_stream->plain_hashing;
+    for (size_t i = 0; i < num_tokens; ++i)
+        TextIndexSerialization::serializePositions(output_block_positions[i], pos_ostr);
+
     output_tokens = ColumnString::create();
     output_postings.clear();
     output_infos.clear();
+    output_block_positions.clear();
 }
 
 bool MergeTextIndexesTask::isNewToken(const SortCursor & cursor) const
@@ -423,6 +477,7 @@ bool MergeTextIndexesTask::executeStep()
                 flushDictionaryBlock();
 
             output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
+            output_positions = {};
         }
 
         auto read_postings = readPostingLists(current->order);
@@ -432,6 +487,12 @@ bool MergeTextIndexesTask::executeStep()
             posting = adjustPartOffsets(current->order, posting);
             output_postings |= *posting;
         }
+
+        /// Read and accumulate position data for the current token. [D-09]
+        auto positions = readPositions(current->order);
+        positions = adjustPositionRowIDs(current->order, std::move(positions));
+        for (auto & row_pos : positions.row_positions)
+            output_positions.row_positions.push_back(std::move(row_pos));
 
         if (!current->isLast())
         {

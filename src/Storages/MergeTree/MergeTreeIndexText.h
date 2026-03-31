@@ -201,6 +201,64 @@ struct TokenPostingsInfo
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
 using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
+/// Map from row ID to sorted token positions (0-based token sequence numbers) within that row.
+using RowPositionsMap = absl::flat_hash_map<UInt32, std::vector<UInt32>>;
+
+/// Builder for token position data during index writing.
+/// Accumulates per-token, per-row position lists that correspond 1:1 with posting list entries.
+/// Uses token sequence numbers (0-based) rather than byte offsets. [D-02, D-03]
+struct TokenPositionsBuilder
+{
+    /// Add a token position: the token at `token_view` appeared at position `position` in row `row_id`.
+    void add(std::string_view token_view, UInt32 row_id, UInt32 position)
+    {
+        data[token_view][row_id].push_back(position);
+    }
+
+    /// Get sorted positions for a given token across all rows.
+    /// Returns a vector of (row_id, sorted positions) pairs, sorted by row_id.
+    std::vector<std::pair<UInt32, std::vector<UInt32>>> getSortedPositions(std::string_view token_view) const
+    {
+        auto it = data.find(token_view);
+        if (it == data.end())
+            return {};
+
+        std::vector<std::pair<UInt32, std::vector<UInt32>>> result;
+        result.reserve(it->second.size());
+        for (const auto & [row_id, positions] : it->second)
+        {
+            auto sorted_positions = positions;
+            std::sort(sorted_positions.begin(), sorted_positions.end());
+            result.emplace_back(row_id, std::move(sorted_positions));
+        }
+        std::sort(result.begin(), result.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
+        return result;
+    }
+
+    void clear() { data.clear(); }
+    bool empty() const { return data.empty(); }
+
+private:
+    /// token -> (row_id -> positions)
+    absl::flat_hash_map<std::string_view, RowPositionsMap> data;
+};
+
+/// A single row's position data: row ID and its sorted token positions.
+using RowPositions = std::pair<UInt32, std::vector<UInt32>>;
+
+/// Read-path data structure holding deserialized token position information.
+/// Corresponds 1:1 with posting list data for a given token. [D-03]
+struct TokenPositionsData
+{
+    /// Check if position data is available (non-empty).
+    bool hasPositions() const { return !row_positions.empty(); }
+
+    /// Get the position entries (row_id, positions) for this token.
+    const std::vector<RowPositions> & getPositions() const { return row_positions; }
+
+    std::vector<RowPositions> row_positions;
+};
+
 struct DictionaryBlockBase
 {
     ColumnPtr tokens;
@@ -257,6 +315,23 @@ struct TextIndexSerialization
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
     static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr);
 
+    /// Serializes token position data for a dictionary block of tokens. [D-07, D-15]
+    /// Positions are written in the same token order as the posting lists (sorted alphabetically).
+    /// Format per token per row: [count (VarUInt)] [first_pos (VarUInt)] [delta_1 (VarUInt)] ...
+    static void serializePositions(
+        const SortedTokensAndPostings & tokens_and_postings,
+        const TokenPositionsBuilder & positions_builder,
+        WriteBuffer & ostr,
+        size_t block_begin,
+        size_t block_end);
+
+    /// Serializes position data for a single token. Used by the merge path. [D-07, D-09]
+    static void serializePositions(const TokenPositionsData & positions, WriteBuffer & ostr);
+
+    /// Deserializes position data for a single token from the .pos stream. [D-07]
+    /// Symmetric to serializePositions: reads [num_rows] then per-row [row_id] [count] [first_pos] [deltas...].
+    static TokenPositionsData deserializePositions(ReadBuffer & istr);
+
     static DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr);
     /// If postings_serialization is null, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
@@ -301,11 +376,17 @@ public:
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
+    bool hasPhraseQueryTokens(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
+
+    /// Returns true if position data was loaded from the .pos stream. [D-08]
+    bool hasPositionData() const { return !token_positions.empty(); }
+    /// Position data deserialized from the .pos stream, keyed by token string. [D-03]
+    const absl::flat_hash_map<String, TokenPositionsData> & getTokenPositions() const { return token_positions; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -317,7 +398,8 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// If positions_stream is non-null, also reads position data from the .pos stream. [D-08]
+    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state, MergeTreeIndexReaderStream * positions_stream = nullptr);
     /// Fills tokens and their infos from the cache.
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
@@ -338,6 +420,9 @@ private:
     String index_id_for_caches;
     /// Serialization for the posting lists.
     PostingsSerialization postings_serialization;
+    /// Deserialized token position data from the .pos stream. [D-03, D-08]
+    /// Empty when the .pos stream is not present (old parts).
+    absl::flat_hash_map<String, TokenPositionsData> token_positions;
 };
 
 /// Text index granule created on writing of the index.
@@ -351,7 +436,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
-        std::unique_ptr<Arena> && arena_);
+        std::unique_ptr<Arena> && arena_,
+        TokenPositionsBuilder && positions_builder_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -371,6 +457,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     TokenToPostingsBuilderMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    /// Token position data for phrase query support. [D-03]
+    TokenPositionsBuilder positions_builder;
     LoggerPtr logger;
 };
 
@@ -406,6 +494,8 @@ struct MergeTreeIndexTextGranuleBuilder
     std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
+    /// Token position builder for phrase query support. [D-02, D-03, D-04]
+    TokenPositionsBuilder positions_builder;
 };
 
 class MergeTreeIndexTextPreprocessor;

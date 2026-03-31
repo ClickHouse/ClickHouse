@@ -1,0 +1,74 @@
+-- Section 1: Pure function correctness
+1
+1
+1
+1
+1
+0
+0
+0
+0
+1
+1
+1
+1
+-- Section 1b: Edge cases
+0
+1
+1
+1
+1
+1
+1
+0
+1
+-- Section 1c: Explicit tokenizer
+1
+1
+-- Section 2: Text index integration
+-- Basic phrase query
+1	the quick brown fox
+-- 3-token phrase
+1	the quick brown fox
+-- Phrase: quick fox
+3	quick fox is not brown fox
+-- Phrase: brown quick
+4	brown quick reverse order
+-- Single token
+5	segmentation fault core dumped
+6	no fault here at all
+-- Empty phrase
+8
+-- Phrase not present
+-- Repeated tokens: to be
+7	to be or not to be
+-- Section 3: EXPLAIN indexes verification
+-- Skip index name in EXPLAIN
+1
+-- Non-matching phrase skips parts
+Parts: 0/1
+-- Section 4: Index vs no-index consistency
+-- Consistency: quick brown
+1
+1
+-- Consistency: segmentation fault
+5
+5
+-- Consistency: to be
+7
+7
+-- Consistency: not present
+-- Consistency: empty phrase
+8
+8
+-- Section 5: Ngram tokenizer rejection
+-- Section 6: Merge correctness
+-- Before merge
+1
+5
+-- After merge
+1
+5
+-- Section 7: Multiple tokenizers
+-- splitByString tokenizer: quick brown
+1

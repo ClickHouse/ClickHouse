@@ -338,6 +338,10 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (!index_stream || !dictionary_stream || !postings_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
+    /// The .pos stream is optional — old parts may not have it. [D-08]
+    auto positions_it = streams.find(MergeTreeIndexSubstream::Type::TextIndexPositions);
+    auto * positions_stream = (positions_it != streams.end()) ? positions_it->second : nullptr;
+
     if (index_id_for_caches.empty())
     {
         const auto & part_storage = state.part.getDataPartStorage();
@@ -346,16 +350,50 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     is_empty = false;
     remaining_tokens.clear();
+    token_positions.clear();
 
-    analyzeDictionary(*index_stream, *dictionary_stream, state);
+    analyzeDictionary(*index_stream, *dictionary_stream, state, positions_stream);
     readPostingsForRareTokens(*postings_stream, state);
+}
+
+/// Skip one token's position data in the .pos stream without storing it.
+/// Reads [num_rows] then per-row [row_id] [count] [count positions], discarding all values.
+static void skipOneTokenPositions(ReadBuffer & istr)
+{
+    UInt64 num_rows;
+    readVarUInt(num_rows, istr);
+
+    for (UInt64 r = 0; r < num_rows; ++r)
+    {
+        UInt64 row_id;
+        readVarUInt(row_id, istr);
+        UNUSED(row_id);
+
+        UInt64 count;
+        readVarUInt(count, istr);
+
+        for (UInt64 j = 0; j < count; ++j)
+        {
+            UInt64 val;
+            readVarUInt(val, istr);
+        }
+    }
 }
 
 void MergeTreeIndexGranuleText::analyzeDictionary(
     MergeTreeIndexReaderStream & header_stream,
     MergeTreeIndexReaderStream & dictionary_stream,
-    MergeTreeIndexDeserializationState & state)
+    MergeTreeIndexDeserializationState & state,
+    MergeTreeIndexReaderStream * positions_stream)
 {
+    /// Determine whether we need to read position data for phrase queries.
+    const auto & condition_text_ref = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const bool need_positions = positions_stream != nullptr && condition_text_ref.hasPhraseQuery();
+
+    ReadBuffer * pos_buffer = nullptr;
+    if (need_positions)
+        pos_buffer = positions_stream->getDataBuffer();
+
     auto tokens_to_read = fillTokensFromCache(state);
     if (tokens_to_read.empty())
         return;
@@ -385,6 +423,9 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
         blocks_to_read.back().second.emplace_back(token);
     }
+
+    /// Track how many tokens' position data we've consumed from the .pos stream.
+    size_t pos_tokens_consumed = 0;
 
     for (const auto & [block_idx, needed_tokens] : blocks_to_read)
     {
@@ -427,7 +468,18 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
         }
 
         if (matched_indices.empty())
+        {
+            /// Skip position data for all tokens in this block if we need positions.
+            if (pos_buffer)
+            {
+                size_t tokens_before_block = block_idx * params.dictionary_block_size;
+                size_t tokens_to_skip = tokens_before_block - pos_tokens_consumed + num_tokens;
+                for (size_t s = 0; s < tokens_to_skip && !pos_buffer->eof(); ++s)
+                    skipOneTokenPositions(*pos_buffer);
+                pos_tokens_consumed = tokens_before_block + num_tokens;
+            }
             continue;
+        }
 
         /// Deserialize only the token infos for matched tokens.
         auto infos = TextIndexSerialization::deserializeTokenInfos(
@@ -435,6 +487,35 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
             num_tokens,
             matched_indices,
             postings_serialization);
+
+        /// Read position data from the .pos stream, synchronized with dictionary blocks.
+        if (pos_buffer)
+        {
+            /// Skip position data for all blocks/tokens between the last consumed position and this block.
+            size_t tokens_before_block = block_idx * params.dictionary_block_size;
+            size_t tokens_to_skip = tokens_before_block - pos_tokens_consumed;
+            for (size_t s = 0; s < tokens_to_skip && !pos_buffer->eof(); ++s)
+                skipOneTokenPositions(*pos_buffer);
+
+            /// Read position data for all tokens in this block.
+            /// Matched tokens get stored in token_positions; others are skipped.
+            size_t match_ptr = 0;
+            for (size_t i = 0; i < num_tokens && !pos_buffer->eof(); ++i)
+            {
+                if (match_ptr < matched_indices.size() && i == matched_indices[match_ptr])
+                {
+                    String token_name(block_tokens.getDataAt(i));
+                    token_positions[token_name] = TextIndexSerialization::deserializePositions(*pos_buffer);
+                    ++match_ptr;
+                }
+                else
+                {
+                    skipOneTokenPositions(*pos_buffer);
+                }
+            }
+
+            pos_tokens_consumed = tokens_before_block + num_tokens;
+        }
 
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
@@ -538,9 +619,18 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
+    size_t positions_size = 0;
+    for (const auto & [token, pos_data] : token_positions)
+    {
+        positions_size += token.capacity();
+        for (const auto & [row_id, positions] : pos_data.row_positions)
+            positions_size += sizeof(row_id) + positions.capacity() * sizeof(UInt32);
+    }
+
     return sizeof(*this)
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
-        + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
+        + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin())
+        + positions_size;
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
@@ -634,6 +724,98 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     return true;
 }
 
+bool MergeTreeIndexGranuleText::hasPhraseQueryTokens(const TextSearchQuery & query) const
+{
+    /// Empty phrase always matches [D-13].
+    if (query.tokens.empty())
+        return true;
+
+    /// First, check that all tokens exist in the granule (same as hasAllQueryTokens).
+    if (!hasAllQueryTokens(query))
+        return false;
+
+    /// If no position data is available (old parts without .pos file), degrade
+    /// to hasAllQueryTokens result (conservative, may have false positives) [D-08].
+    if (!hasPositionData())
+        return true;
+
+    /// Perform positional verification using the two-pointer algorithm [D-12].
+    /// For each row that contains all tokens, verify that ordered_tokens[i+1]
+    /// appears at position == ordered_tokens[i].position + 1.
+    const auto & ordered = query.ordered_tokens;
+    if (ordered.empty())
+        return true;
+
+    /// Collect position data for each ordered token.
+    std::vector<const TokenPositionsData *> token_pos_data;
+    token_pos_data.reserve(ordered.size());
+    for (const auto & token : ordered)
+    {
+        auto it = token_positions.find(token);
+        if (it == token_positions.end() || !it->second.hasPositions())
+            return true; /// No position data for this token — conservatively return true.
+        token_pos_data.push_back(&it->second);
+    }
+
+    /// For single-token phrases, all tokens exist so any row with the token matches.
+    if (ordered.size() == 1)
+        return true;
+
+    /// Collect the set of row IDs that appear in ALL ordered tokens' position data.
+    /// Build a map from row_id to an index into each token's row_positions vector.
+    /// We iterate over the first token's rows and check if all other tokens have the same row.
+    const auto & first_token_positions = token_pos_data[0]->getPositions();
+
+    for (const auto & [row_id, positions_in_row] : first_token_positions)
+    {
+        /// For this row_id, gather position lists from each ordered token.
+        std::vector<const std::vector<UInt32> *> row_position_lists;
+        row_position_lists.reserve(ordered.size());
+        row_position_lists.push_back(&positions_in_row);
+
+        bool all_tokens_in_row = true;
+        for (size_t t = 1; t < ordered.size(); ++t)
+        {
+            const auto & tp = token_pos_data[t]->getPositions();
+            /// Binary search for this row_id in the sorted row_positions.
+            auto it = std::lower_bound(tp.begin(), tp.end(), row_id,
+                [](const RowPositions & rp, UInt32 rid) { return rp.first < rid; });
+
+            if (it == tp.end() || it->first != row_id)
+            {
+                all_tokens_in_row = false;
+                break;
+            }
+            row_position_lists.push_back(&it->second);
+        }
+
+        if (!all_tokens_in_row)
+            continue;
+
+        /// Two-pointer algorithm: for each position of the first token,
+        /// check if token[1] has position+1, token[2] has position+2, etc.
+        for (UInt32 start_pos : *row_position_lists[0])
+        {
+            bool phrase_match = true;
+            for (size_t t = 1; t < ordered.size(); ++t)
+            {
+                UInt32 expected_pos = start_pos + static_cast<UInt32>(t);
+                const auto & pos_list = *row_position_lists[t];
+                /// Binary search for expected_pos in the sorted position list.
+                if (!std::binary_search(pos_list.begin(), pos_list.end(), expected_pos))
+                {
+                    phrase_match = false;
+                    break;
+                }
+            }
+            if (phrase_match)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 PostingListPtr MergeTreeIndexGranuleText::getPostingsForRareToken(std::string_view token) const
 {
     auto it = rare_tokens_postings.find(token);
@@ -646,13 +828,15 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     SortedTokensAndPostings && tokens_and_postings_,
     TokenToPostingsBuilderMap && tokens_map_,
     std::list<PostingList> && posting_lists_,
-    std::unique_ptr<Arena> && arena_)
+    std::unique_ptr<Arena> && arena_,
+    TokenPositionsBuilder && positions_builder_)
     : params(std::move(params_))
     , posting_list_codec(posting_list_codec_)
     , tokens_and_postings(std::move(tokens_and_postings_))
     , tokens_map(std::move(tokens_map_))
     , posting_lists(std::move(posting_lists_))
     , arena(std::move(arena_))
+    , positions_builder(std::move(positions_builder_))
     , logger(getLogger("TextIndexGranuleWriter"))
 {
 }
@@ -907,6 +1091,107 @@ void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & 
     serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
 }
 
+void TextIndexSerialization::serializePositions(
+    const SortedTokensAndPostings & tokens_and_postings,
+    const TokenPositionsBuilder & positions_builder,
+    WriteBuffer & ostr,
+    size_t block_begin,
+    size_t block_end)
+{
+    /// Serialize position data for each token in the dictionary block,
+    /// in the same sorted order as posting lists. [D-03, D-07, D-15]
+    for (size_t i = block_begin; i < block_end; ++i)
+    {
+        const auto & token_view = tokens_and_postings[i].first;
+        auto sorted_positions = positions_builder.getSortedPositions(token_view);
+
+        /// Write row count for this token.
+        writeVarUInt(sorted_positions.size(), ostr);
+
+        for (const auto & [row_id, positions] : sorted_positions)
+        {
+            /// Write row ID.
+            writeVarUInt(row_id, ostr);
+
+            /// Write position count for this row.
+            writeVarUInt(positions.size(), ostr);
+
+            if (positions.empty())
+                continue;
+
+            /// Write first position as-is, then deltas. [D-07]
+            writeVarUInt(positions[0], ostr);
+            for (size_t j = 1; j < positions.size(); ++j)
+            {
+                chassert(positions[j] >= positions[j - 1]);
+                writeVarUInt(positions[j] - positions[j - 1], ostr);
+            }
+        }
+    }
+}
+
+void TextIndexSerialization::serializePositions(const TokenPositionsData & positions, WriteBuffer & ostr)
+{
+    /// Serialize position data for a single token (used in merge path). [D-07, D-09]
+    /// Format: [num_rows (VarUInt)] then per-row: [row_id (VarUInt)] [count (VarUInt)] [first_pos (VarUInt)] [deltas...]
+    writeVarUInt(positions.row_positions.size(), ostr);
+
+    for (const auto & [row_id, pos_list] : positions.row_positions)
+    {
+        writeVarUInt(row_id, ostr);
+        writeVarUInt(pos_list.size(), ostr);
+
+        if (pos_list.empty())
+            continue;
+
+        writeVarUInt(pos_list[0], ostr);
+        for (size_t j = 1; j < pos_list.size(); ++j)
+        {
+            chassert(pos_list[j] >= pos_list[j - 1]);
+            writeVarUInt(pos_list[j] - pos_list[j - 1], ostr);
+        }
+    }
+}
+
+TokenPositionsData TextIndexSerialization::deserializePositions(ReadBuffer & istr)
+{
+    /// Deserialize position data for a single token. [D-07]
+    /// Symmetric to serializePositions.
+    TokenPositionsData result;
+
+    UInt64 num_rows;
+    readVarUInt(num_rows, istr);
+    result.row_positions.reserve(num_rows);
+
+    for (UInt64 r = 0; r < num_rows; ++r)
+    {
+        UInt64 row_id;
+        readVarUInt(row_id, istr);
+
+        UInt64 count;
+        readVarUInt(count, istr);
+
+        std::vector<UInt32> positions(count);
+        if (count > 0)
+        {
+            UInt64 first_pos;
+            readVarUInt(first_pos, istr);
+            positions[0] = static_cast<UInt32>(first_pos);
+
+            for (UInt64 j = 1; j < count; ++j)
+            {
+                UInt64 delta;
+                readVarUInt(delta, istr);
+                positions[j] = positions[j - 1] + static_cast<UInt32>(delta);
+            }
+        }
+
+        result.row_positions.emplace_back(static_cast<UInt32>(row_id), std::move(positions));
+    }
+
+    return result;
+}
+
 DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
@@ -1136,7 +1421,7 @@ DictionarySparseIndex serializeTokensAndPostings(
 
 void MergeTreeIndexGranuleTextWritable::serializeBinary(WriteBuffer &) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 4 streams: index, dictionary, postings, positions");
 }
 
 void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
@@ -1144,18 +1429,72 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     auto * index_stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
     auto * dictionary_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDictionary);
     auto * postings_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+    auto * positions_stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
 
-    if (!index_stream || !dictionary_stream || !postings_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 3 streams: index, dictionary, postings. One of the streams is missing");
+    if (!index_stream || !dictionary_stream || !postings_stream || !positions_stream)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be serialized with 4 streams: index, dictionary, postings, positions. One of the streams is missing");
 
     PostingsSerialization postings_serialization(posting_list_codec);
-    auto sparse_index_block = serializeTokensAndPostings(
-        tokens_and_postings,
-        *dictionary_stream,
-        *postings_stream,
-        params,
-        postings_serialization);
 
+    /// Serialize tokens, postings, and positions aligned by dictionary block. [D-15]
+    size_t num_tokens = tokens_and_postings.size();
+    size_t num_blocks = (num_tokens + params.dictionary_block_size - 1) / params.dictionary_block_size;
+
+    auto sparse_index_tokens = ColumnString::create();
+    auto & sparse_index_str = assert_cast<ColumnString &>(*sparse_index_tokens);
+    sparse_index_str.reserve(num_blocks);
+
+    auto sparse_index_offsets = ColumnUInt64::create();
+    auto & sparse_index_offsets_data = sparse_index_offsets->getData();
+    sparse_index_offsets_data.reserve(num_blocks);
+
+    auto tokens_format = params.dictionary_block_frontcoding_compression
+        ? TextIndexSerialization::TokensFormat::FrontCodedStrings
+        : TextIndexSerialization::TokensFormat::RawStrings;
+
+    for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
+    {
+        size_t block_begin = block_idx * params.dictionary_block_size;
+        size_t block_end = std::min(block_begin + params.dictionary_block_size, num_tokens);
+
+        /// Start a new compressed block because the dictionary blocks
+        /// are usually read with random reads and it is more efficient
+        /// to decompress only the needed data.
+        dictionary_stream->compressed_hashing.next();
+        auto dictionary_mark = dictionary_stream->getCurrentMark();
+        chassert(dictionary_mark.offset_in_decompressed_block == 0);
+
+        const auto & first_token = tokens_and_postings[block_begin].first;
+        sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
+        sparse_index_str.insertData(first_token.data(), first_token.size());
+
+        serializeTokensImpl(
+            [&](size_t i) { return tokens_and_postings[i].first; },
+            dictionary_stream->compressed_hashing,
+            tokens_format,
+            block_begin,
+            block_end);
+
+        for (size_t i = block_begin; i < block_end; ++i)
+        {
+            auto & postings = *tokens_and_postings[i].second;
+            auto token_info = TextIndexSerialization::serializePostings(postings, *postings_stream, params, postings_serialization);
+            TextIndexSerialization::serializeTokenInfo(dictionary_stream->compressed_hashing, token_info);
+
+            if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+                postings_serialization.serialize(postings, token_info, params.posting_list_block_size, dictionary_stream->compressed_hashing);
+        }
+
+        /// Serialize position data aligned with this dictionary block. [D-03, D-15]
+        TextIndexSerialization::serializePositions(
+            tokens_and_postings,
+            positions_builder,
+            positions_stream->plain_hashing,
+            block_begin,
+            block_end);
+    }
+
+    auto sparse_index_block = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
     TextIndexSerialization::serializeSparseIndex(sparse_index_block, index_stream->compressed_hashing);
 }
 
@@ -1228,6 +1567,9 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 {
+    const bool capture_positions = tokenizer->supportsPhraseQuery();
+    UInt32 token_position = 0;
+
     forEachToken(
         *tokenizer,
         document.data(),
@@ -1242,6 +1584,16 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
             auto & posting_list_builder = it->getMapped();
             posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
+
+            /// Capture token position for phrase query support. [D-02, D-04]
+            /// Copy token to arena for stable string_view lifetime in positions_builder.
+            if (capture_positions)
+            {
+                const char * persisted = arena->insert(token_start, token_length);
+                positions_builder.add(std::string_view(persisted, token_length), static_cast<UInt32>(current_row), token_position);
+            }
+
+            ++token_position;
             ++num_processed_tokens;
             return false;
         });
@@ -1271,7 +1623,8 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
         std::move(sorted_values),
         std::move(tokens_map),
         std::move(posting_lists),
-        std::move(arena));
+        std::move(arena),
+        std::move(positions_builder));
 }
 
 void MergeTreeIndexTextGranuleBuilder::reset()
@@ -1281,6 +1634,7 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     num_processed_tokens = 0;
     tokens_map = {};
     posting_lists.clear();
+    positions_builder.clear();
     arena = std::make_unique<Arena>();
 }
 
@@ -1388,14 +1742,26 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     {
         {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
         {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
-        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"}
     };
 }
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
     if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
-        return {1, getSubstreams()};
+    {
+        /// Check if the positions substream exists. Old parts may not have it. [D-08]
+        if (indexFileExistsInChecksums(checksums, path_prefix + ".pos", ".idx"))
+            return {1, getSubstreams()};
+
+        /// Fallback to 3-stream format (without positions) for backward compatibility.
+        return {1, {
+            {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+            {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+            {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
+        }};
+    }
 
     return {0, {}};
 }

@@ -42,7 +42,11 @@ struct TextSearchQuery
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
+    /// Sorted unique tokens for index lookups and hashing.
     std::vector<String> tokens;
+    /// Original ordered tokens for phrase queries (preserves duplicates and order).
+    /// Empty for non-phrase queries.
+    std::vector<String> ordered_tokens;
 
     SipHash getHash() const;
 };
@@ -83,6 +87,9 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
+    /// Whether any RPN element uses FUNCTION_HAS_PHRASE.
+    bool hasPhraseQuery() const;
+
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
@@ -102,6 +109,7 @@ private:
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_HAS_PHRASE,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
