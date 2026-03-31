@@ -33,14 +33,14 @@ namespace
     class PaddingChars
     {
     public:
-        explicit PaddingChars(const String & pad_string_) : pad_string(pad_string_) { init(); }
+        explicit PaddingChars(const String & pad_string) { init(pad_string); }
 
         ALWAYS_INLINE size_t numCharsInPadString() const
         {
             if constexpr (is_utf8)
                 return utf8_offsets.size() - 1;
             else
-                return pad_string.length();
+                return pad_data.size();
         }
 
         ALWAYS_INLINE size_t numCharsToNumBytes(size_t count) const
@@ -70,32 +70,37 @@ namespace
         }
 
     private:
-        void init()
+        void init(const String & pad_string)
         {
             if (pad_string.empty())
-                pad_string = " ";
+                pad_data.push_back(' ');
+            else
+                pad_data.insert(pad_string.begin(), pad_string.end());
 
             if constexpr (is_utf8)
             {
                 size_t offset = 0;
-                utf8_offsets.reserve(pad_string.length() + 1);
+                utf8_offsets.reserve(pad_data.size() + 1);
                 while (true)
                 {
                     utf8_offsets.push_back(offset);
-                    if (offset == pad_string.length())
+                    if (offset == pad_data.size())
                         break;
-                    offset += UTF8::seqLength(pad_string[offset]);
-                    offset = std::min(offset, pad_string.length());
+                    offset += UTF8::seqLength(pad_data[offset]);
+                    offset = std::min(offset, pad_data.size());
                 }
             }
 
             /// Not necessary, but good for performance.
-            /// We repeat `pad_string` multiple times until it's length becomes 16 or more.
+            /// We repeat the pad data multiple times until its length becomes 16 or more.
             /// It speeds up the function appendTo() because it allows to copy padding characters by portions of at least
             /// 16 bytes instead of single bytes.
             while (numCharsInPadString() < 16)
             {
-                pad_string += pad_string;
+                size_t current_size = pad_data.size();
+                pad_data.resize(current_size * 2);
+                memcpy(pad_data.data() + current_size, pad_data.data(), current_size);
+
                 if constexpr (is_utf8)
                 {
                     size_t old_size = utf8_offsets.size();
@@ -105,26 +110,17 @@ namespace
                         utf8_offsets.push_back(utf8_offsets[i] + base);
                 }
             }
-
-            /// Copy pad string data to PaddedPODArray which provides 15 bytes of read
-            /// padding beyond its size. This is required because writeSlice() uses
-            /// memcpySmallAllowReadWriteOverflow15 which reads in 16-byte SIMD chunks
-            /// and may read up to 15 bytes past the source data. std::string does not
-            /// provide this padding, causing heap-buffer-overflow under AddressSanitizer.
-            pad_data.insert(pad_string.begin(), pad_string.end());
         }
 
-        String pad_string;
-
-        /// Padded copy of pad_string data for use in writeSlice().
-        /// PaddedPODArray provides 15 bytes of extra read padding beyond its size,
-        /// which memcpySmallAllowReadWriteOverflow15 (used by writeSlice) requires.
+        /// Stores padding characters with 15 bytes of extra read padding beyond its size.
+        /// PaddedPODArray provides this padding, which memcpySmallAllowReadWriteOverflow15
+        /// (used by writeSlice in appendTo) requires to avoid heap-buffer-overflow.
         PaddedPODArray<UInt8> pad_data;
 
-        /// Offsets of code points in `pad_string`:
-        /// utf8_offsets[0] is the offset of the first code point in `pad_string`, it's always 0;
-        /// utf8_offsets[1] is the offset of the second code point in `pad_string`;
-        /// utf8_offsets[2] is the offset of the third code point in `pad_string`;
+        /// Offsets of code points in `pad_data`:
+        /// utf8_offsets[0] is the offset of the first code point in `pad_data`, it's always 0;
+        /// utf8_offsets[1] is the offset of the second code point in `pad_data`;
+        /// utf8_offsets[2] is the offset of the third code point in `pad_data`;
         /// ...
         std::vector<size_t> utf8_offsets;
     };

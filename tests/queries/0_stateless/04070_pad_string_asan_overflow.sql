@@ -1,9 +1,4 @@
 -- Regression test for heap-buffer-overflow in leftPad/rightPad.
--- writeSlice() uses memcpySmallAllowReadWriteOverflow15 which reads in 16-byte
--- SIMD chunks and may overread up to 15 bytes past the source buffer. The pad
--- string data must be stored in a PaddedPODArray to provide this read padding.
--- Without the fix, AddressSanitizer detects a heap-buffer-overflow here.
-
 -- Pad strings of various lengths exercise different SIMD chunk counts:
 -- 'abcdefghijklmnopq' (17 chars, no doubling, worst case: 15 byte overread)
 -- 'abcdefghi' (9 chars, doubled to 18, 14 byte overread)
