@@ -381,11 +381,18 @@ void InstrumentationManager::parseInstrumentationMap()
 
     functions_container.reserve(function_addresses.size());
     const SymbolIndex & symbol_index = SymbolIndex::instance();
+
+    /// XRAY addresses from `loadInstrumentationMap` are file-relative (read from the
+    /// on-disk ELF), but `findSymbol` expects runtime virtual addresses. Add the main
+    /// binary's load base to convert.
+    const auto * this_object = symbol_index.thisObject();
+    uintptr_t base_address = this_object ? uintptr_t(this_object->address_begin) : 0;
+
     size_t errors = 0;
 
     for (const auto & [func_id, addr] : function_addresses)
     {
-        const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(addr));
+        const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(addr + base_address));
         if (symbol)
         {
             const auto symbol_demangled = demangle(symbol->name);

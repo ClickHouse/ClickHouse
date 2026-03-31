@@ -24,7 +24,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ErrnoException.h>
 
-#include <Common/SymbolIndex.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -412,9 +411,6 @@ public:
 protected:
     Chunk generate() override
     {
-#ifdef OS_LINUX
-        const SymbolIndex & symbol_index = SymbolIndex::instance();
-#endif
         MutableColumns res_columns = header->cloneEmptyColumns();
 
         ColumnPtr thread_ids;
@@ -543,19 +539,7 @@ protected:
                         Array arr;
                         arr.reserve(stack_trace_size - stack_trace_offset);
                         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-                        {
-                            const void * virtual_addr = frame_pointers[i];
-#ifdef OS_LINUX
-                            const auto * object = symbol_index.findObject(virtual_addr);
-                            uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-                            uintptr_t physical_addr = uintptr_t(virtual_addr) - virtual_offset;
-#else
-                            /// On macOS, SymbolIndex uses absolute virtual addresses for symbols,
-                            /// so we store virtual addresses directly in the trace column.
-                            uintptr_t physical_addr = uintptr_t(virtual_addr);
-#endif
-                            arr.emplace_back(physical_addr);
-                        }
+                            arr.emplace_back(uintptr_t(frame_pointers[i]));
 
                         res_columns[res_index++]->insert(thread_name);
                         res_columns[res_index++]->insert(tid);

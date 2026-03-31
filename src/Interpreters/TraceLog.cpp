@@ -164,10 +164,13 @@ namespace
                 if (!std::filesystem::exists(object->name))
                     return {};
 
+                /// DWARF uses file-relative addresses, so convert from virtual address.
+                uintptr_t physical_addr = addr - uintptr_t(object->address_begin);
+
                 Dwarf::LocationInfo location;
                 std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
                 std::string_view result;
-                if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
+                if (dwarf_it->second.findAddress(physical_addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
                     return result;

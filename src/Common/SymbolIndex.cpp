@@ -237,9 +237,9 @@ void collectSymbolsFromProgramHeaders(
 
                     SymbolIndex::Symbol symbol;
                     symbol.offset_begin = reinterpret_cast<const void *>(
-                        elf_sym[sym_index].value);
+                        info->addr + elf_sym[sym_index].value);
                     symbol.offset_end = reinterpret_cast<const void *>(
-                        elf_sym[sym_index].value + elf_sym[sym_index].size);
+                        info->addr + elf_sym[sym_index].value + elf_sym[sym_index].size);
                     symbol.name = sym_name;
 
                     /// We are not interested in empty symbols.
@@ -282,6 +282,7 @@ void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
+    uintptr_t base_address,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
     /// Iterate symbol table.
@@ -305,9 +306,9 @@ void collectSymbolsFromELFSymbolTable(
 
         SymbolIndex::Symbol symbol;
         symbol.offset_begin = reinterpret_cast<const void *>(
-            symbol_table_entry->value);
+            base_address + symbol_table_entry->value);
         symbol.offset_end = reinterpret_cast<const void *>(
-            symbol_table_entry->value + symbol_table_entry->size);
+            base_address + symbol_table_entry->value + symbol_table_entry->size);
         symbol.name = symbol_name;
 
         if (symbol_table_entry->size)
@@ -320,6 +321,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     SectionHeaderType section_header_type,
     const char * string_table_name,
+    uintptr_t base_address,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
     std::optional<Elf::Section> symbol_table;
@@ -338,7 +340,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, base_address, symbols);
     return true;
 }
 
@@ -460,11 +462,11 @@ void collectSymbolsFromELF(
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", info->addr, symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", info->addr, symbols);
 #endif
 }
 
@@ -722,33 +724,8 @@ void SymbolIndex::load()
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 {
-    /// On ELF: Symbols are stored as file offsets (relative to object base).
-    /// Callers may pass either absolute runtime addresses OR file offsets.
-    /// - Coverage passes absolute addresses
-    /// - system.stack_trace (after PR #82809) already stores file offsets
-    ///
-    /// Strategy: Try to find containing object. If found, input is absolute address → convert.
-    /// If not found, assume input is already a file offset → use directly.
-    ///
-    /// On macOS: Symbols are stored as absolute virtual addresses to avoid
-    /// overlap between different objects. No conversion is needed.
-
-    const void * offset = address;
-
-#if defined(__ELF__)
-    const Object * object = findObject(address);
-
-    if (object)
-    {
-        /// Input is an absolute address, convert to file offset
-        offset = reinterpret_cast<const void *>(
-            reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
-    }
-    /// else: input is likely already a file offset, use it directly
-#endif
-    /// On macOS, symbols use absolute virtual addresses, so search directly.
-
-    return find(offset, data.symbols);
+    /// Symbols are stored as absolute virtual addresses on both ELF and macOS.
+    return find(address, data.symbols);
 }
 
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const

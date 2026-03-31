@@ -102,7 +102,8 @@ protected:
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
-            uintptr_t dwarf_addr = addr;
+            /// DWARF uses file-relative addresses, so convert from virtual address.
+            uintptr_t dwarf_addr = addr - uintptr_t(object->address_begin);
 #endif
 
             Dwarf::LocationInfo location;
