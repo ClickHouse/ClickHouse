@@ -23,10 +23,19 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    /// Checks if the types of the specified arguments are valid for the function.
-    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    struct ImplInfo
     {
-        size_t expected_number_of_arguments = 1;
+        std::string_view ch_function_name;
+        bool drop_metric_name = true;
+        int8_t scalar_arg_index = -1;
+        int8_t range_vector_arg_index = 0;
+    };
+
+    /// Checks if the types of the specified arguments are valid for the function.
+    void checkArgumentTypes(std::string_view function_name, const std::vector<SQLQueryPiece> & arguments,
+                            const ConverterContext & context, const ImplInfo & impl_info)
+    {
+        size_t expected_number_of_arguments = (impl_info.scalar_arg_index >= 0) ? 2 : 1;
 
         if (arguments.size() != expected_number_of_arguments)
         {
@@ -36,21 +45,27 @@ namespace
                                 arguments.size());
         }
 
-        const auto & argument = arguments[0];
-        if (argument.type != ResultType::RANGE_VECTOR)
+        const auto & range_arg = arguments[impl_info.range_vector_arg_index];
+        if (range_arg.type != ResultType::RANGE_VECTOR)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                             "Function {} expects an argument of type {}, but expression {} has type {}",
                             function_name, ResultType::RANGE_VECTOR,
-                            getPromQLText(argument, context), argument.type);
+                            getPromQLText(range_arg, context), range_arg.type);
+        }
+
+        if (impl_info.scalar_arg_index >= 0)
+        {
+            const auto & scalar_arg = arguments[impl_info.scalar_arg_index];
+            if (scalar_arg.type != ResultType::SCALAR)
+            {
+                throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                                "Function {} expects a scalar argument at position {}, but expression {} has type {}",
+                                function_name, impl_info.scalar_arg_index,
+                                getPromQLText(scalar_arg, context), scalar_arg.type);
+            }
         }
     }
-
-    struct ImplInfo
-    {
-        std::string_view ch_function_name;
-        bool drop_metric_name = true;
-    };
 
     /// Returns information about how the specified prometheus function is implemented.
     /// Returns nullptr if not found.
@@ -87,26 +102,129 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
-            /// TODO:
-            /// resets
-            /// predict_linear
-            /// deriv
-            /// avg_over_time
-            /// min_over_time
-            /// max_over_time
-            /// sum_over_time
-            /// count_over_time
-            /// quantile_over_time
-            /// stddev_over_time"
-            /// stdvar_over_time
-            /// present_over_time
-            /// absent_over_time
-            /// mad_over_time
-            /// ts_of_min_over_time
-            /// ts_of_max_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
+            {"resets",
+             {
+                 "timeSeriesResetsToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"changes",
+             {
+                 "timeSeriesChangesToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"deriv",
+             {
+                 "timeSeriesDerivToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"predict_linear",
+             {
+                 "timeSeriesPredictLinearToGrid",
+                 /* drop_metric_name = */ true,
+                 /* scalar_arg_index = */ 1,
+                 /* range_vector_arg_index = */ 0,
+             }},
+
+            {"avg_over_time",
+             {
+                 "timeSeriesAvgOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"max_over_time",
+             {
+                 "timeSeriesMaxOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"sum_over_time",
+             {
+                 "timeSeriesSumOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"count_over_time",
+             {
+                 "timeSeriesCountOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"present_over_time",
+             {
+                 "timeSeriesPresentOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"first_over_time",
+             {
+                 "timeSeriesFirstOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_min_over_time",
+             {
+                 "timeSeriesTsOfMinOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_max_over_time",
+             {
+                 "timeSeriesTsOfMaxOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTsOfLastOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTsOfFirstOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"quantile_over_time",
+             {
+                 "timeSeriesQuantileOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+                 /* scalar_arg_index = */ 0,
+                 /* range_vector_arg_index = */ 1,
+             }},
+
+            {"absent_over_time",
+             {
+                 "timeSeriesAbsentOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
+
+            {"mad_over_time",
+             {
+                 "timeSeriesMadOverTimeToGrid",
+                 /* drop_metric_name = */ false,
+             }},
         };
 
         auto it = impl_map.find(function_name);
@@ -140,7 +258,7 @@ SQLQueryPiece applyFunctionOverRange(
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
 
-    checkArgumentTypes(function_name, arguments, context);
+    checkArgumentTypes(function_name, arguments, context, *impl_info);
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
@@ -151,7 +269,17 @@ SQLQueryPiece applyFunctionOverRange(
     auto step = node_range.step;
     auto window = node_range.window;
 
-    auto argument = std::move(arguments[0]);
+    ASTPtr extra_param_ast;
+    if (impl_info->scalar_arg_index >= 0)
+    {
+        const auto & scalar_arg = arguments[impl_info->scalar_arg_index];
+        if (scalar_arg.store_method != StoreMethod::CONST_SCALAR)
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Function {} requires a constant scalar argument", function_name);
+        extra_param_ast = timeSeriesScalarToAST(scalar_arg.scalar_value, context.scalar_data_type);
+    }
+
+    auto argument = std::move(arguments[impl_info->range_vector_arg_index]);
 
     SQLQueryPiece res = argument;
     res.node = node;
@@ -266,12 +394,17 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(addParametersToAggregateFunction(
+    auto agg_func = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
         timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
         timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
         timeSeriesDurationToAST(step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type)));
+        timeSeriesDurationToAST(window, context.timestamp_data_type));
+
+    if (extra_param_ast)
+        agg_func = addParametersToAggregateFunction(std::move(agg_func), std::move(extra_param_ast));
+
+    builder.select_list.push_back(std::move(agg_func));
 
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
