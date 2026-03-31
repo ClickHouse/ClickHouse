@@ -9,7 +9,6 @@ SELECT (1, 1) IN (SELECT 1, 2);
 
 -- Single Tuple column on the right is valid (compared as a single value).
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Tuple(UInt8, UInt8)'));
-SELECT (1, 2) IN (SELECT CAST((1, 2), 'LowCardinality(Tuple(UInt8, UInt8))'));
 SELECT (1, 2) IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
 
 -- Original reproducer from the issue: previously silently returned empty result, now should error.

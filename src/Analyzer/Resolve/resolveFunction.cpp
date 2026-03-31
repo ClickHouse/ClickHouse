@@ -964,7 +964,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (in_second_argument_type == QueryTreeNodeType::QUERY || in_second_argument_type == QueryTreeNodeType::UNION)
         {
             size_t left_columns_count = 1;
-            auto left_type = removeNullable(in_first_argument->getResultType());
+            auto left_type = removeLowCardinalityAndNullable(in_first_argument->getResultType());
             if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_type.get()))
                 left_columns_count = left_tuple_type->getElements().size();
 
