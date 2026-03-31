@@ -71,5 +71,53 @@ def test_backward_compatability(start_cluster):
             == "49999500000\n"
         )
 
+    # WithOrder (ORDER BY + read_in_order optimization)
+    for node in nodes:
+        assert (
+            node.query(
+                """
+                select a
+                from t
+                order by a
+                limit 10
+                """,
+                settings={
+                    "cluster_for_parallel_replicas": "parallel_replicas",
+                    "max_parallel_replicas": 3,
+                    "allow_experimental_parallel_reading_from_replicas": 1,
+                    "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "merge_tree_min_rows_for_concurrent_read": 0,
+                    "merge_tree_min_bytes_for_concurrent_read": 0,
+                    "merge_tree_min_read_task_size": 1,
+                    "optimize_read_in_order": 1,
+                },
+            )
+            == "0\n" * 10
+        )
+
+    # ReverseOrder (ORDER BY DESC + read_in_order optimization)
+    for node in nodes:
+        assert (
+            node.query(
+                """
+                select a
+                from t
+                order by a desc
+                limit 10
+                """,
+                settings={
+                    "cluster_for_parallel_replicas": "parallel_replicas",
+                    "max_parallel_replicas": 3,
+                    "allow_experimental_parallel_reading_from_replicas": 1,
+                    "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "merge_tree_min_rows_for_concurrent_read": 0,
+                    "merge_tree_min_bytes_for_concurrent_read": 0,
+                    "merge_tree_min_read_task_size": 1,
+                    "optimize_read_in_order": 1,
+                },
+            )
+            == "99999\n" * 10
+        )
+
     for node in nodes:
         node.query("drop table t sync")
