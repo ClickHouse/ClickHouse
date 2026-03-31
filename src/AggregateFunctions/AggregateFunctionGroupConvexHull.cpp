@@ -15,6 +15,13 @@ namespace DB
 
 struct Settings;
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
@@ -22,9 +29,9 @@ constexpr size_t CONVEX_HULL_COMPRESSION_THRESHOLD = 10000;
 
 struct GroupConvexHullData
 {
-    std::vector<CartesianPoint> points;
+    std::vector<CartesianPoint> points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    void addMany(const std::vector<CartesianPoint> & new_points)
+    void addMany(const std::vector<CartesianPoint> & new_points) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         points.insert(points.end(), new_points.begin(), new_points.end());
         maybeCompress();
@@ -73,7 +80,10 @@ struct GroupConvexHullData
 };
 
 
-void extractPointsFromField(const Field & field, GeometryColumnType geo_type, std::vector<CartesianPoint> & out)
+void extractPointsFromField(
+    const Field & field,
+    GeometryColumnType geo_type,
+    std::vector<CartesianPoint> & out) // STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
     auto validate = [](const CartesianPoint & p)
     {
@@ -181,7 +191,7 @@ public:
         if (current_type == GeometryColumnType::Null)
             return;
 
-        std::vector<CartesianPoint> new_points;
+        std::vector<CartesianPoint> new_points; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         extractPointsFromField(field, current_type, new_points);
         AggregateFunctionGroupConvexHull::data(place).addMany(new_points);
     }
