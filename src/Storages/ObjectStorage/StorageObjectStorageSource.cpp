@@ -654,39 +654,46 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// so we can apply it as a fallback FilterTransform later in the pipeline.
         FilterDAGInfoPtr stripped_row_level_filter;
 
-        auto filter_info = [&]()
+        auto filter_info = [&]() -> FormatFilterInfoPtr
         {
-            auto result = format_filter_info;
+            if (!format_filter_info)
+                return nullptr;
+
+            /// Check if the actual file format supports PREWHERE. For mixed-format data lake
+            /// tables (e.g. Iceberg with Parquet + ORC files), table-level PREWHERE support
+            /// may not match the individual file's format capabilities.
+            /// See https://github.com/ClickHouse/ClickHouse/issues/96829
+            const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
+            const bool format_supports_prewhere =
+                FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
+
+            /// Save row_level_filter for fallback FilterTransform when format doesn't support PREWHERE.
+            if (!format_supports_prewhere && format_filter_info->row_level_filter)
+                stripped_row_level_filter = format_filter_info->row_level_filter;
+
             if (schema_changed)
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
-                    result = std::make_shared<FormatFilterInfo>(
-                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                        mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-            }
-
-            /// If the actual file format doesn't support PREWHERE, strip prewhere_info
-            /// and row_level_filter from format-level filter info. Both fields require
-            /// format-level PREWHERE support (FormatFactory::getInputImpl checks both).
-            /// This handles mixed-format Iceberg tables (e.g. Parquet + ORC files).
-            /// See https://github.com/ClickHouse/ClickHouse/issues/96829
-            if (result && (result->prewhere_info || result->row_level_filter))
-            {
-                const auto actual_format = object_info->getFileFormat().value_or(configuration->format);
-                if (!FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings))
                 {
-                    stripped_row_level_filter = result->row_level_filter;
-                    result = std::make_shared<FormatFilterInfo>(
-                        result->filter_actions_dag,
-                        result->context.lock(),
-                        result->column_mapper,
-                        nullptr,  /// row_level_filter — applied as FilterTransform below
-                        nullptr   /// prewhere_info
-                    );
+                    if (format_supports_prewhere)
+                        return std::make_shared<FormatFilterInfo>(
+                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                            mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
+                    else
+                        return std::make_shared<FormatFilterInfo>(
+                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                            mapper, nullptr, nullptr);
                 }
             }
 
-            return result;
+            if (!format_supports_prewhere)
+                return std::make_shared<FormatFilterInfo>(
+                    format_filter_info->filter_actions_dag,
+                    format_filter_info->context.lock(),
+                    format_filter_info->column_mapper,
+                    nullptr, nullptr);
+
+            return format_filter_info;
         }();
 
         chassert(object_info->getObjectMetadata().has_value());
