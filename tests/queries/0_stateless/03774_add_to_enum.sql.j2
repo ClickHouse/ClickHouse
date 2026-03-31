@@ -67,9 +67,20 @@ CREATE OR REPLACE TABLE enum_out_of_range (x Enum8('a' = 1)) ENGINE = Memory;
 ALTER TABLE enum_out_of_range MODIFY COLUMN x ADD ENUM VALUES('too_big' = 128); -- { serverError ARGUMENT_OUT_OF_BOUND }
 DROP TABLE enum_out_of_range;
 
+SELECT '======= ALTER AST VALIDATION ===============';
+CREATE OR REPLACE TABLE enum_alter_validation (x Enum8('a' = 1)) ENGINE = Memory;
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES(tuple('b', 2)); -- { serverError UNEXPECTED_AST_STRUCTURE }
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES(bad_identifier); -- { serverError UNEXPECTED_AST_STRUCTURE }
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES(); -- { serverError EMPTY_DATA_PASSED }
+ALTER TABLE enum_alter_validation MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 'sto'); -- { serverError UNEXPECTED_AST_STRUCTURE }
+DROP TABLE enum_alter_validation;
+
 CREATE OR REPLACE TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100), ADD COLUMN z ADD ENUM VALUES ('Five'); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors MODIFY COLUMN x RESET SETTING min_compress_block_size ADD ENUM VALUES('Hundred' = 100); -- { clientError SYNTAX_ERROR }
 ALTER TABLE syntaxerrors MODIFY COLUMN x Nullable(Enum ('c')) ADD ENUM VALUES('Hundred' = 100); -- { clientError SYNTAX_ERROR }
+SELECT '======= ADD ENUM VALUES SYNTAX ERRORS ===============';
+ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES(, 'Hundred' = 100); -- { clientError SYNTAX_ERROR }
+ALTER TABLE syntaxerrors MODIFY COLUMN x ADD ENUM VALUES('Hundred' = 100,); -- { clientError SYNTAX_ERROR }

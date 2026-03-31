@@ -71,3 +71,5 @@ CREATE TABLE default.enum_relative\n(\n    `x` Enum8(\'Two\' = 2, \'three\' = 3,
 CREATE TABLE default.enum_shorthand\n(\n    `x` Enum8(\'One\' = 1, \'Two\' = 2, \'Three\' = 3)\n)\nENGINE = Memory
 ======= ENUM8 SHORTHAND OVERFLOW ===============
 ======= OUT OF RANGE VALUE ===============
+======= ALTER AST VALIDATION ===============
+======= ADD ENUM VALUES SYNTAX ERRORS ===============
