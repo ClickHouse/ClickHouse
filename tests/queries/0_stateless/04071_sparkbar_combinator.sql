@@ -60,6 +60,12 @@ SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('20
     toDateTime64('2024-01-01 00:00:00', 3) + INTERVAL (number) DAY
 ) FROM numbers(5);
 
+-- DateTime64 cross-epoch range (begin_x < 0, end_x > 0): negative ticks must stay signed
+SELECT 'countSparkbar with DateTime64 cross-epoch:';
+SELECT countSparkbar(5, toDateTime64('1969-12-31 23:59:58', 3), toDateTime64('1970-01-01 00:00:02', 3))(
+    toDateTime64('1969-12-31 23:59:58', 3) + INTERVAL (number * 1000) MILLISECOND
+) FROM numbers(5);
+
 -- Error: wrong number of parameters
 SELECT countSparkbar(5, 0, 9, 1)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT countSparkbar(5, 0)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

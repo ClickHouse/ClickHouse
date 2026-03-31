@@ -93,12 +93,13 @@ public:
 
         if (which.isDateTime64())
         {
-            /// DateTime64 parameters are DecimalField<Decimal64>; extract .value directly to preserve raw ticks.
-            const auto extract = [](const Field & f) -> UInt64
+            /// DateTime64 parameters are DecimalField<DateTime64>; extract raw ticks as Int64
+            /// to correctly handle pre-epoch timestamps (negative tick counts).
+            const auto extract = [](const Field & f) -> Int64
             {
-                return static_cast<UInt64>(static_cast<Int64>(f.safeGet<DecimalField<DateTime64>>().getValue()));
+                return static_cast<Int64>(f.safeGet<DecimalField<DateTime64>>().getValue());
             };
-            return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
+            return std::make_shared<AggregateFunctionSparkbar<Int64>>(
                 nested_function, width, extract(params[1]), extract(params[2]), arguments, params);
         }
 

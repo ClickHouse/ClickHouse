@@ -27,3 +27,5 @@ countSparkbar with DateTime64 scale=0:
 █████
 countSparkbar with DateTime64 scale=3:
 █████
+countSparkbar with DateTime64 cross-epoch:
+█████
