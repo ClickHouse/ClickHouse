@@ -1228,7 +1228,7 @@ void KeeperStateMachine<Storage>::recalculateStorageStats()
 template<typename Storage>
 void KeeperStateMachine<Storage>::optimizeStorage()
 {
-    LockGuardWithStats<false> lock(storage_mutex);
+    KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
     LOG_INFO(log, "Optimizing storage");
     storage->optimize();
 }
