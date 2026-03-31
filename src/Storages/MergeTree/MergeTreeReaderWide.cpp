@@ -187,8 +187,12 @@ size_t MergeTreeReaderWide::readRows(
         /// - columns_cache is available
         /// - table has a valid UUID (Atomic/Replicated databases only)
         /// - this is not a continuing read (continue_reading == false)
+        /// Projection parts share the projection name (e.g. "ailog_rule_count") as their part name,
+        /// which is not unique across parent parts. This would cause cache key collisions,
+        /// so we disable caching for projection parts.
         const bool cache_possible = columns_cache
-            && data_part_info_for_read->getTableUUID() != UUIDHelpers::Nil;
+            && data_part_info_for_read->getTableUUID() != UUIDHelpers::Nil
+            && !data_part_info_for_read->isProjectionPart();
         const bool cache_enabled = cache_possible && !continue_reading;
 
         /// New task starting - reset deferred cache write state from previous task.
@@ -402,9 +406,18 @@ size_t MergeTreeReaderWide::readRows(
                 if (!append)
                     res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
 
-                /// Extract the needed subset from the cached block
+                /// Extract the needed subset from the cached block.
+                /// The cached column may have a different concrete type (e.g., ColumnSparse)
+                /// than what the current serialization settings produce (e.g., plain column),
+                /// because the cache entry was written by a query with different settings.
+                /// Convert to the expected column type to avoid type mismatches in downstream
+                /// operations like insertRangeFrom.
                 const auto & cached_col = cached_columns[pos].second;
                 auto cut_column = cached_col->cut(offset_in_cache, rows_to_serve);
+
+                /// Ensure the cut column is converted to a full (non-sparse, non-const) column.
+                cut_column = cut_column->convertToFullColumnIfConst();
+                cut_column = cut_column->convertToFullColumnIfSparse();
 
                 if (!append)
                 {
