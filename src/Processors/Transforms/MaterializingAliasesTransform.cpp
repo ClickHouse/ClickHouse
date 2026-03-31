@@ -1,5 +1,6 @@
 #include <Processors/Transforms/MaterializingAliasesTransform.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Core/BlockMissingValues.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Columns/IColumn.h>
 #include <Storages/ColumnsDescription.h>
