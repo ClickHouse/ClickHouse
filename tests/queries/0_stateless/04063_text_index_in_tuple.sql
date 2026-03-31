@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS tab_in_preprocess;
 
+SET enable_full_text_index = 1;
+
 CREATE TABLE tab_in_preprocess
 (
     `id` UInt64,
