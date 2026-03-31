@@ -333,12 +333,32 @@ pub extern "C" fn isValidCell(h: H3Index) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn getResolution(h: H3Index) -> i32 {
-    try_cell(h).map_or(0, |c| u8::from(c.resolution()) as i32)
+    // Try as cell first (most common case).
+    if let Some(c) = try_cell(h) {
+        return u8::from(c.resolution()) as i32;
+    }
+    // For other valid H3 index types (edges, etc.), extract resolution
+    // directly from bits 52-55, which is the same for all index modes.
+    let mode = (h >> 59) & 0xF;
+    if (1..=4).contains(&mode) {
+        return ((h >> 52) & 0xF) as i32;
+    }
+    0
 }
 
 #[no_mangle]
 pub extern "C" fn getBaseCellNumber(h: H3Index) -> i32 {
-    try_cell(h).map_or(0, |c| u8::from(c.base_cell()) as i32)
+    // Try as cell first (most common case).
+    if let Some(c) = try_cell(h) {
+        return u8::from(c.base_cell()) as i32;
+    }
+    // For other valid H3 index types (edges, etc.), extract base cell
+    // directly from bits 45-51 (7 bits).
+    let mode = (h >> 59) & 0xF;
+    if (1..=4).contains(&mode) {
+        return ((h >> 45) & 0x7F) as i32;
+    }
+    0
 }
 
 #[no_mangle]
@@ -1084,6 +1104,17 @@ mod tests {
         let mut orig: H3Index = 0;
         assert_eq!(unsafe { getDirectedEdgeOrigin(edge_valid, &mut orig) }, E_SUCCESS);
         assert_eq!(orig, 599686042433355775);
+    }
+
+    #[test]
+    fn test_resolution_and_base_cell_for_edges() {
+        // getResolution and getBaseCellNumber must work for edge indexes too,
+        // not just cell indexes.
+        let edge = 0x115283473FFFFFFF_u64;
+        // Resolution 5 is encoded in bits 52-55.
+        assert_eq!(getResolution(edge), 5);
+        // Base cell should be non-zero for this edge.
+        assert_ne!(getBaseCellNumber(edge), 0);
     }
 
     #[test]
