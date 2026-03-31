@@ -183,6 +183,13 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
         Float64 y;
         readBinaryLittleEndian(x, buf);
         readBinaryLittleEndian(y, buf);
+        if (!std::isfinite(x) || !std::isfinite(y))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Corrupted state of aggregate function {}: non-finite coordinate ({}, {})",
+                function_name,
+                x,
+                y);
         ring[i] = CartesianPoint(x, y);
     }
     return ring;

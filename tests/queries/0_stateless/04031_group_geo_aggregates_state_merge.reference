@@ -1,0 +1,12 @@
+convex_hull_state_merge
+POLYGON((0 0,0 10,10 10,10 0,0 0))
+convex_hull_merge_area
+1
+polygon_union_state_merge
+7
+polygon_intersect_state_merge
+1
+intersect_merge_disjoint
+MULTIPOLYGON()
+multi_state_merge
+3
