@@ -342,6 +342,7 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int UNKNOWN_POLICY;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -691,6 +692,24 @@ MergeTreeData::MergeTreeData(
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
+
+        try
+        {
+            // Call getStoragePolicy() to trigger the actual policy lookup
+            // If the policy does not exist, StoragePolicySelector::get() will throw an UNKNOWN_POLICY exception
+            getStoragePolicy();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_POLICY || e.code() == ErrorCodes::UNKNOWN_DISK)
+                throw Exception(
+                    e.code(),
+                    "Cannot create table: {}. "
+                    "Check your storage configuration or use: "
+                    "SELECT policy_name FROM system.storage_policies",
+                    e.message());
+            throw;
+        }
     }
 
     if (!date_column_name.empty())
