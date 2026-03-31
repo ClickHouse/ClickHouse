@@ -198,16 +198,40 @@ struct CosineDistance
     }
 };
 
+/// Pre-convert input data to ResultType before passing to the SIMD kernel.
+/// This lets the kernel template use only <Kernel, ResultType> instead of
+/// <Kernel, ResultType, LeftType, RightType>, reducing MULTITARGET instantiations
+/// from 6 kernels * 2 result types * 11 left * 11 right * 3 arch = 4356
+/// to just 6 * 2 * 3 = 36. Without this, the .o file exceeds the 50 MB CI limit.
+/// When InputType already matches ResultType, no copy is made.
+template <typename ResultType, typename InputType>
+std::pair<const ResultType *, PaddedPODArray<ResultType>>
+castData(const PaddedPODArray<InputType> & data)
+{
+    if constexpr (std::is_same_v<ResultType, InputType>)
+        return {data.data(), {}};
+    else
+    {
+        PaddedPODArray<ResultType> converted(data.size());
+        for (size_t i = 0; i < data.size(); ++i)
+            converted[i] = static_cast<ResultType>(data[i]);
+        return {converted.data(), std::move(converted)};
+    }
+}
+
 /// Multi-target hot loop for non-const x non-const path.
 /// The MULTITARGET macro generates _x86_64_v4, _x86_64_v3, and default versions
 /// so the compiler can auto-vectorize with the best available ISA.
+///
+/// Templated only on <Kernel, ResultType> to avoid combinatorial explosion of
+/// LeftType x RightType x arch instantiations. Callers pre-convert data to ResultType.
 MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
-    template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+    template <typename Kernel, typename ResultType>
     void NO_INLINE
 ), executeDistanceImpl, MULTITARGET_FUNCTION_BODY((
-    const LeftType * __restrict data_x,
-    const RightType * __restrict data_y,
+    const ResultType * __restrict data_x,
+    const ResultType * __restrict data_y,
     const ColumnArray::Offset * __restrict offsets,
     ResultType * __restrict result,
     size_t row_count,
@@ -231,8 +255,8 @@ MULTITARGET_FUNCTION_HEADER(
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
                     partial[s],
-                    static_cast<ResultType>(data_x[prev + i + s]),
-                    static_cast<ResultType>(data_y[prev + i + s]),
+                    data_x[prev + i + s],
+                    data_y[prev + i + s],
                     params);
 
         typename Kernel::template State<ResultType> state;
@@ -244,8 +268,8 @@ MULTITARGET_FUNCTION_HEADER(
         for (; i < count; ++i)
             Kernel::template accumulate<ResultType>(
                 state,
-                static_cast<ResultType>(data_x[prev + i]),
-                static_cast<ResultType>(data_y[prev + i]),
+                data_x[prev + i],
+                data_y[prev + i],
                 params);
 
         result[row] = Kernel::finalize(state, params);
@@ -253,10 +277,10 @@ MULTITARGET_FUNCTION_HEADER(
     }
 }))
 
-template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+template <typename Kernel, typename ResultType>
 void executeDistance(
-    const LeftType * __restrict data_x,
-    const RightType * __restrict data_y,
+    const ResultType * __restrict data_x,
+    const ResultType * __restrict data_y,
     const ColumnArray::Offset * __restrict offsets,
     ResultType * __restrict result,
     size_t row_count,
@@ -264,11 +288,11 @@ void executeDistance(
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
-        return executeDistanceImpl_x86_64_v4<Kernel, ResultType, LeftType, RightType>(data_x, data_y, offsets, result, row_count, params);
+        return executeDistanceImpl_x86_64_v4<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
     if (isArchSupported(TargetArch::x86_64_v3))
-        return executeDistanceImpl_x86_64_v3<Kernel, ResultType, LeftType, RightType>(data_x, data_y, offsets, result, row_count, params);
+        return executeDistanceImpl_x86_64_v3<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
 #endif
-    executeDistanceImpl<Kernel, ResultType, LeftType, RightType>(data_x, data_y, offsets, result, row_count, params);
+    executeDistanceImpl<Kernel, ResultType>(data_x, data_y, offsets, result, row_count, params);
 }
 
 
@@ -276,12 +300,12 @@ void executeDistance(
 /// data_x is the constant array (repeated for every row), data_y varies per row.
 MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
-    template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+    template <typename Kernel, typename ResultType>
     void NO_INLINE
 ), executeDistanceConstImpl, MULTITARGET_FUNCTION_BODY((
-    const LeftType * __restrict data_x,
+    const ResultType * __restrict data_x,
     size_t array_size,
-    const RightType * __restrict data_y,
+    const ResultType * __restrict data_y,
     const ColumnArray::Offset * __restrict offsets,
     ResultType * __restrict result,
     size_t row_count,
@@ -305,8 +329,8 @@ MULTITARGET_FUNCTION_HEADER(
             for (size_t s = 0; s < unroll_count; ++s)
                 Kernel::template accumulate<ResultType>(
                     partial[s],
-                    static_cast<ResultType>(data_x[i + s]),
-                    static_cast<ResultType>(data_y[prev + i + s]),
+                    data_x[i + s],
+                    data_y[prev + i + s],
                     params);
 
         typename Kernel::template State<ResultType> state;
@@ -317,8 +341,8 @@ MULTITARGET_FUNCTION_HEADER(
         for (; i < array_size; ++i)
             Kernel::template accumulate<ResultType>(
                 state,
-                static_cast<ResultType>(data_x[i]),
-                static_cast<ResultType>(data_y[prev + i]),
+                data_x[i],
+                data_y[prev + i],
                 params);
 
         result[row] = Kernel::finalize(state, params);
@@ -326,11 +350,11 @@ MULTITARGET_FUNCTION_HEADER(
     }
 }))
 
-template <typename Kernel, typename ResultType, typename LeftType, typename RightType>
+template <typename Kernel, typename ResultType>
 void executeDistanceConst(
-    const LeftType * __restrict data_x,
+    const ResultType * __restrict data_x,
     size_t array_size,
-    const RightType * __restrict data_y,
+    const ResultType * __restrict data_y,
     const ColumnArray::Offset * __restrict offsets,
     ResultType * __restrict result,
     size_t row_count,
@@ -338,11 +362,11 @@ void executeDistanceConst(
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
-        return executeDistanceConstImpl_x86_64_v4<Kernel, ResultType, LeftType, RightType>(data_x, array_size, data_y, offsets, result, row_count, params);
+        return executeDistanceConstImpl_x86_64_v4<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
     if (isArchSupported(TargetArch::x86_64_v3))
-        return executeDistanceConstImpl_x86_64_v3<Kernel, ResultType, LeftType, RightType>(data_x, array_size, data_y, offsets, result, row_count, params);
+        return executeDistanceConstImpl_x86_64_v3<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
 #endif
-    executeDistanceConstImpl<Kernel, ResultType, LeftType, RightType>(data_x, array_size, data_y, offsets, result, row_count, params);
+    executeDistanceConstImpl<Kernel, ResultType>(data_x, array_size, data_y, offsets, result, row_count, params);
 }
 
 
@@ -507,8 +531,11 @@ private:
         auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        executeDistance<Kernel, ResultType, LeftType, RightType>(
-            data_x.data(), data_y.data(), offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
+        const auto [ptr_x, buf_x] = castData<ResultType>(data_x);
+        const auto [ptr_y, buf_y] = castData<ResultType>(data_y);
+
+        executeDistance<Kernel, ResultType>(
+            ptr_x, ptr_y, offsets_x.data(), result_data.data(), input_rows_count, kernel_params);
 
         return col_res;
     }
@@ -542,8 +569,11 @@ private:
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
 
-        executeDistanceConst<Kernel, ResultType, LeftType, RightType>(
-            data_x.data(), offsets_x[0], data_y.data(), offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
+        const auto [ptr_x, buf_x] = castData<ResultType>(data_x);
+        const auto [ptr_y, buf_y] = castData<ResultType>(data_y);
+
+        executeDistanceConst<Kernel, ResultType>(
+            ptr_x, offsets_x[0], ptr_y, offsets_y.data(), result_data.data(), input_rows_count, kernel_params);
 
         return result;
     }
