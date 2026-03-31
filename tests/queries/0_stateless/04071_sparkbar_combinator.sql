@@ -48,10 +48,16 @@ ORDER BY grp;
 SELECT 'uniqSparkbar with range:';
 SELECT uniqSparkbar(5, 0, 4)(number, number % 3) FROM numbers(15);
 
--- DateTime64 x-axis (parameters arrive as Decimal64 fields)
-SELECT 'countSparkbar with DateTime64:';
+-- DateTime64 x-axis (scale=0): parameters arrive as raw tick counts
+SELECT 'countSparkbar with DateTime64 scale=0:';
 SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 0), toDateTime64('2024-01-05 00:00:00', 0))(
     toDateTime64('2024-01-01 00:00:00', 0) + INTERVAL (number) DAY
+) FROM numbers(5);
+
+-- DateTime64 x-axis (scale=3): ticks are milliseconds; begin_x/end_x must not be divided by scale
+SELECT 'countSparkbar with DateTime64 scale=3:';
+SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-05 00:00:00', 3))(
+    toDateTime64('2024-01-01 00:00:00', 3) + INTERVAL (number) DAY
 ) FROM numbers(5);
 
 -- Error: wrong number of parameters
