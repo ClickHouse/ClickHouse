@@ -148,7 +148,7 @@ MULTITARGET_FUNCTION_HEADER(
 {
     /// Multiple independent accumulators to break the data dependency chain and let
     /// the CPU execute SIMD additions in parallel across registers.
-    /// The count matches the number of available SSE registers times the lane count
+    /// The count matches the number of available SIMD registers times the lane count
     /// per register — same convention as AggregateFunctionSum::addManyImpl.
     constexpr size_t unroll_count = 128 / sizeof(ResultType);
 
