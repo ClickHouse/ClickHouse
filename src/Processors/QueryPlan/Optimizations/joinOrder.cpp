@@ -134,6 +134,7 @@ private:
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     size_t getColumnStats(BitSet rels, const String & column_name);
+    std::optional<UInt64> getEstimatedRows(const BitSet & rels);
 
     /// Peridically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
@@ -172,7 +173,7 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
             auto col_it = it->second->column_stats.find(column_name);
             if (col_it != it->second->column_stats.end())
                 return col_it->second.num_distinct_values;
-            return it->second->estimated_rows.value_or(0);
+            return 0;
         }
         return 0;
     }
@@ -181,7 +182,17 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     const auto & col_stats = relation_stat.column_stats;
     if (auto it = col_stats.find(column_name); it != col_stats.end())
         return it->second.num_distinct_values;
-    return relation_stat.estimated_rows.value_or(0);
+    return 0;
+}
+
+std::optional<UInt64> JoinOrderOptimizer::getEstimatedRows(const BitSet & rels)
+{
+    auto rel_id = rels.getSingleBit();
+    if (rel_id.has_value())
+        return query_graph.relation_stats.at(rel_id.value()).estimated_rows;
+    if (auto it = dp_table.find(rels); it != dp_table.end())
+        return it->second->estimated_rows;
+    return {};
 }
 
 double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
@@ -200,7 +211,23 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     UInt64 rhs_ndv = getColumnStats(rhs.getSourceRelations(), rhs.getColumnName());
     UInt64 max_ndv = std::max(lhs_ndv, rhs_ndv);
     if (max_ndv > 0)
+    {
         selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+    }
+    else
+    {
+        /// Both NDVs unknown — use containment assumption: 1 / min(left_rows, right_rows).
+        /// This preserves the larger side's cardinality, which is the standard heuristic
+        /// for equi-joins without column statistics (e.g. star-schema fact-dimension joins).
+        auto lhs_rows = getEstimatedRows(lhs.getSourceRelations());
+        auto rhs_rows = getEstimatedRows(rhs.getSourceRelations());
+        if (lhs_rows && rhs_rows)
+        {
+            UInt64 min_rows = std::min(*lhs_rows, *rhs_rows);
+            if (min_rows > 0)
+                selectivity = std::min(selectivity, 1.0 / static_cast<double>(min_rows));
+        }
+    }
     return selectivity;
 }
 
