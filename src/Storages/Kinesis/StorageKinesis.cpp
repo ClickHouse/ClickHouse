@@ -707,7 +707,7 @@ void registerStorageKinesis(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             if (args.mode == LoadingStrictnessLevel::CREATE
-                && !args.getContext()->getSettingsRef()[Setting::allow_experimental_kinesis_table])
+                && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kinesis_table])
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Kinesis table engine is experimental. "

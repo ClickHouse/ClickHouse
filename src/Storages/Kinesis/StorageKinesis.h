@@ -6,19 +6,19 @@
 #include <mutex>
 #include <vector>
 
-#include <Poco/Semaphore.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/IStorage.h>
+#include <Poco/Semaphore.h>
 
 #include "config.h"
 
 #if USE_AWS_KINESIS
 
-#include <aws/kinesis/KinesisClient.h>
-#include <Storages/Kinesis/KinesisConsumer.h>
-#include <Storages/Kinesis/KinesisSettings.h>
+#    include <Storages/Kinesis/KinesisConsumer.h>
+#    include <Storages/Kinesis/KinesisSettings.h>
+#    include <aws/kinesis/KinesisClient.h>
 
 namespace DB
 {
@@ -40,7 +40,7 @@ public:
     bool isMessageQueue() const override { return true; }
     bool noPushingToViewsOnInserts() const override { return true; }
     bool prefersLargeBlocks() const override { return false; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumns() const { return true; }
     bool supportsSubcolumns() const override { return true; }
 
     void startup() override;
@@ -56,11 +56,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(
-        const ASTPtr & query,
-        const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
-        bool async_insert) override;
+    SinkToStoragePtr
+    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
     const KinesisSettings & getSettings() const { return *kinesis_settings; }
 
@@ -89,8 +86,7 @@ private:
     std::shared_ptr<Aws::Kinesis::KinesisClient> createClient() const;
     KinesisConsumerPtr createConsumer(std::map<String, KinesisShardState> shard_states) const;
 
-    std::vector<std::map<String, KinesisShardState>> listAndDistributeShards(
-        const std::map<String, KinesisShardState> & checkpoints) const;
+    std::vector<std::map<String, KinesisShardState>> listAndDistributeShards(const std::map<String, KinesisShardState> & checkpoints) const;
 
     /// Create consumers from shard assignments. Safe to call from both startup() and
     /// the background streaming task (for deferred initialization when the stream did
