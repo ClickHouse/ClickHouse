@@ -8,6 +8,7 @@
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/arithmeticOverflow.h>
@@ -236,14 +237,7 @@ public:
 
             Field field;
             result_col->get(i, field);
-            try
-            {
-                values[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
-            }
-            catch (...)
-            {
-                values[i] = std::nan("");
-            }
+            values[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
         }
 
         render(assert_cast<ColumnString &>(to), values);

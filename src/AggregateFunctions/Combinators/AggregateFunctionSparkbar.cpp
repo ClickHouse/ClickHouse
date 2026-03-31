@@ -66,6 +66,18 @@ public:
 
         const size_t width = params[0].safeGet<UInt64>();
 
+        /// Validate that the nested function returns a numeric type that can be
+        /// converted to Float64 for sparkbar rendering. Non-numeric return types
+        /// (e.g. String, Array) cannot be visualised and must be rejected early.
+        {
+            WhichDataType result_which{nested_function->getResultType()};
+            if (!result_which.isNumber())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Aggregate function with {} suffix requires a nested function that returns "
+                    "a numeric type, but '{}' returns {}",
+                    getName(), nested_function->getName(), nested_function->getResultType()->getName());
+        }
+
         WhichDataType which{arguments[0]};
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime() || which.isDateTime64())
