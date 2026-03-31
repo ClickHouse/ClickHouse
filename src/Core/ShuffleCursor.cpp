@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ShuffleCursor.h>
 

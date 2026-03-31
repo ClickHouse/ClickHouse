@@ -27,6 +27,13 @@ namespace CurrentMetrics
     extern const Metric TemporaryFilesForSort;
 }
 
+namespace ProfileEvents
+{
+    extern const Event ExternalSortCompressedBytes;
+    extern const Event ExternalSortUncompressedBytes;
+    extern const Event ExternalSortWritePart;
+}
+
 namespace DB
 {
 namespace Setting
@@ -80,7 +87,7 @@ size_t getMaxBytesInQueryBeforeExternalShuffle(double max_bytes_ratio_before_ext
     auto available_system_memory = getMostStrictAvailableSystemMemory();
     if (available_system_memory.has_value())
     {
-        size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
+        size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
 
         LOG_TRACE(getLogger("ShufflingStep"), "Adjusting memory limit before external sort with");
         //  {} (ratio: {}, available system memory: {})",
@@ -245,7 +252,11 @@ void ShufflingStep::mergeShuffling(
 
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
     if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
-        tmp_data_on_disk = data->childScope(CurrentMetrics::TemporaryFilesForSort);
+        tmp_data_on_disk = data->childScope({
+        .current_metric = CurrentMetrics::TemporaryFilesForSort,
+        .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
+        .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
+        .num_files = ProfileEvents::ExternalSortWritePart});
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external shuffling is not provided");

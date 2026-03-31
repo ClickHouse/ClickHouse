@@ -18,7 +18,7 @@ MergingShuffledAlgorithm::MergingShuffledAlgorithm(
     bool use_average_block_sizes,
     bool apply_virtual_row_conversions_)
     : header(std::move(header_))
-    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_)
+    , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, std::nullopt)
     , limit(limit_)
     , out_row_sources_buf(out_row_sources_buf_)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)

@@ -2,6 +2,7 @@
 
 #include <Processors/Transforms/ShufflingTransform.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/logger_useful.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 

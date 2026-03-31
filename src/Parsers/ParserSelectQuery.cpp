@@ -404,7 +404,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_shuffle.ignore(pos, expected))
     {
         select_query->has_shuffle = true;
-        shuffle_expression = std::make_shared<ASTShuffle>();
+        shuffle_expression = make_intrusive<ASTShuffle>();
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.

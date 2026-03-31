@@ -15,7 +15,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTShuffle>(*this);
+        auto clone = make_intrusive<ASTShuffle>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -34,7 +34,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTStorageShuffle>(*this);
+        auto clone = make_intrusive<ASTStorageShuffle>(*this);
         clone->cloneChildren();
         return clone;
     }
