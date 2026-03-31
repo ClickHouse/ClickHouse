@@ -146,6 +146,10 @@ MULTITARGET_FUNCTION_HEADER(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
+    /// Multiple independent accumulators to break the data dependency chain and let
+    /// the CPU execute SIMD additions in parallel across registers.
+    /// The count matches the number of available SSE registers times the lane count
+    /// per register — same convention as AggregateFunctionSum::addManyImpl.
     constexpr size_t unroll_count = 128 / sizeof(ResultType);
 
     ColumnArray::Offset prev = 0;
@@ -164,8 +168,13 @@ MULTITARGET_FUNCTION_HEADER(
                     partial[s], static_cast<ResultType>(data[prev + i + s]), params);
 
         ResultType state = 0;
-        for (size_t s = 0; s < unroll_count; ++s)
-            state = Kernel::template combine<ResultType>(state, partial[s], params);
+        /// Skip the combine loop for short arrays where no unrolled block was processed,
+        /// avoiding redundant reduction over zero-initialized accumulators.
+        if (unrolled_end > 0)
+        {
+            for (size_t s = 0; s < unroll_count; ++s)
+                state = Kernel::template combine<ResultType>(state, partial[s], params);
+        }
 
         for (; i < count; ++i)
             state = Kernel::template accumulate<ResultType>(
