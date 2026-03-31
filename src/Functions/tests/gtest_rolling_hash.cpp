@@ -2,6 +2,7 @@
 
 #include <Functions/FunctionsRollingHash.h>
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -158,6 +159,13 @@ TEST(RollingHashCDC, Utf8ChunksStartOnCodePointBoundaries)
 TEST(RollingHashCDC, MaxChunkSizeFloor)
 {
     EXPECT_GE(RollingHashCDC::maxChunkSizeForCdc(2), 262144u);
+}
+
+TEST(RollingHashCDC, MaxChunkSizeSaturatesBeforeMultiplyOverflow)
+{
+    constexpr size_t max_cap = 256 * 1024 * 1024;
+    EXPECT_EQ(RollingHashCDC::maxChunkSizeForCdc(std::numeric_limits<UInt64>::max()), max_cap);
+    EXPECT_EQ(RollingHashCDC::maxChunkSizeForCdc(max_cap / 64 + 1), max_cap);
 }
 
 TEST(RollingHashCDC, ForceCutUtf8WhenTentativeEqualsDataSize)

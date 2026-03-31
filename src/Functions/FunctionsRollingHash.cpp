@@ -58,7 +58,12 @@ constexpr size_t DEFAULT_MIN_MAX_CHUNK = 262144; /// 256 KiB default max chunk f
 
 size_t maxChunkSizeForCdc(UInt64 reverse_probability)
 {
-    const uint64_t scaled = std::min<uint64_t>(reverse_probability * 64, static_cast<uint64_t>(MAX_CDC_CHUNK_SIZE));
+    const uint64_t max_rp_before_mul = static_cast<uint64_t>(MAX_CDC_CHUNK_SIZE) / 64;
+    uint64_t scaled;
+    if (reverse_probability > max_rp_before_mul)
+        scaled = static_cast<uint64_t>(MAX_CDC_CHUNK_SIZE);
+    else
+        scaled = reverse_probability * 64;
     return static_cast<size_t>(std::max<uint64_t>(DEFAULT_MIN_MAX_CHUNK, scaled));
 }
 
