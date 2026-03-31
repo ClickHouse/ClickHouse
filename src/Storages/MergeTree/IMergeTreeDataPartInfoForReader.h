@@ -15,8 +15,8 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 }
 
-class PhysicalNameMapping;
-using PhysicalNameMappingPtr = std::shared_ptr<const PhysicalNameMapping>;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 
 class IDataPartStorage;
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
@@ -114,7 +114,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
     }
 
-    virtual PhysicalNameMappingPtr getPhysicalNameMapping() const { return nullptr; }
+    virtual ColumnIdMappingPtr getColumnIdMapping() const { return nullptr; }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

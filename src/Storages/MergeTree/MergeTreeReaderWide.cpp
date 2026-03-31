@@ -184,7 +184,7 @@ size_t MergeTreeReaderWide::readRows(
             if (isColumnDroppedByPendingMutation(pos))
                 continue;
             const auto & col = columns_to_read[pos];
-            if (col.physical_name.empty())
+            if (col.column_id.empty())
                 continue;
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
                 col, offsets_path, ".bin",
@@ -231,11 +231,11 @@ size_t MergeTreeReaderWide::readRows(
                     cache,
                     deserialize_states_cache);
 
-                /// Flattened Nested subcolumns with physical names (e.g. "n.x", "n.y")
+                /// Flattened Nested subcolumns with column IDs (e.g. "n.x", "n.y")
                 /// use separate SubstreamsCaches but share a single on-disk offset stream.
-                /// Without physical names they would be subcolumns of a common parent "n"
+                /// Without column IDs they would be subcolumns of a common parent "n"
                 /// and share `caches["n"]`, so the first sibling's offsets are reused via
-                /// cache hit. With physical names the caches diverge, forcing the second
+                /// cache hit. With column IDs the caches diverge, forcing the second
                 /// sibling to re-read the stream whose position was already advanced by the
                 /// first sibling (and possibly not re-seekable due to prefetching on S3).
                 /// Pre-populate upcoming siblings' caches with the offsets we just read.
@@ -397,13 +397,13 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     if (!stream_name)
     {
         /// After DROP + re-ADD of the same column, the current mapping assigns a new
-        /// physical name (e.g. b→2) but parts loaded before the ALTER still carry the
-        /// column under the old physical name (b→1). The reader resolves to the
-        /// current mapping's physical name, so streams for the new name will not
+        /// column ID (e.g. b→2) but parts loaded before the ALTER still carry the
+        /// column under the old column ID (b→1). The reader resolves to the
+        /// current mapping's column ID, so streams for the new name will not
         /// be found in the old part. Detect this mismatch and return nullptr so the
         /// reader uses default values instead of throwing.
-        if (!name_and_type.physical_name.empty()
-            && name_and_type.getPhysicalNameInStorage() != name_and_type.getNameInStorage())
+        if (!name_and_type.column_id.empty()
+            && name_and_type.getColumnIdInStorage() != name_and_type.getNameInStorage())
         {
             auto col_pos = data_part_info_for_read->getColumnPosition(name_and_type.getNameInStorage());
             if (!col_pos)
@@ -411,7 +411,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
 
             auto it = data_part_info_for_read->getColumns().begin();
             std::advance(it, *col_pos);
-            if (!it->physical_name.empty() && it->physical_name != name_and_type.physical_name)
+            if (!it->column_id.empty() && it->column_id != name_and_type.column_id)
                 return nullptr;
         }
 
@@ -448,7 +448,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     else if (seek_to_mark)
         stream.seekToMark(from_mark);
     else if (read_without_marks
-        && !name_and_type.physical_name.empty()
+        && !name_and_type.column_id.empty()
         && !substream_path.empty()
         && substream_path.back().type == ISerialization::Substream::ArraySizes
         && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())

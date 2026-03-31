@@ -95,9 +95,9 @@ public:
 
     size_t getRowCount() const override { return data_part->rows_count; }
 
-    PhysicalNameMappingPtr getPhysicalNameMapping() const override
+    ColumnIdMappingPtr getColumnIdMapping() const override
     {
-        return data_part->storage.getActivePhysicalNameMapping();
+        return data_part->storage.getActiveColumnIdMapping();
     }
 
 private:

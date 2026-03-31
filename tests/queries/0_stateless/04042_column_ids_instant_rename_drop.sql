@@ -1,5 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
-SET allow_experimental_physical_column_names = 1;
+SET allow_experimental_column_ids = 1;
 
 SELECT 'Test 1: instant RENAME -- no mutation produced';
 
@@ -14,15 +14,15 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 INSERT INTO t_instant_rename VALUES (1, 'one');
 INSERT INTO t_instant_rename VALUES (2, 'two');
 
 ALTER TABLE t_instant_rename RENAME COLUMN b TO d;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_rename' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_rename' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_instant_rename' AND NOT is_done;
 SELECT a, d FROM t_instant_rename ORDER BY a;
@@ -38,7 +38,7 @@ SELECT a, e FROM t_instant_rename ORDER BY a;
 -- Merge after rename
 OPTIMIZE TABLE t_instant_rename FINAL;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_rename' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_rename' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT a, e FROM t_instant_rename ORDER BY a;
 
@@ -58,14 +58,14 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 INSERT INTO t_instant_drop VALUES (1, 'one', 10);
 ALTER TABLE t_instant_drop DROP COLUMN c;
 
 -- Part still lists dropped column (metadata-only drop, files remain)
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_drop' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_drop' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_instant_drop' AND NOT is_done;
 SELECT * FROM t_instant_drop ORDER BY a;
@@ -74,7 +74,7 @@ SELECT * FROM t_instant_drop ORDER BY a;
 INSERT INTO t_instant_drop VALUES (2, 'two');
 OPTIMIZE TABLE t_instant_drop FINAL;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_drop' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_instant_drop' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT * FROM t_instant_drop ORDER BY a;
 
@@ -93,15 +93,15 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 INSERT INTO t_drop_readd VALUES (1, 'old_value');
 ALTER TABLE t_drop_readd DROP COLUMN b;
 ALTER TABLE t_drop_readd ADD COLUMN b String DEFAULT 'new_default';
 INSERT INTO t_drop_readd VALUES (2, 'new_value');
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_drop_readd' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_drop_readd' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT a, b FROM t_drop_readd ORDER BY a;
 
@@ -124,8 +124,8 @@ SETTINGS
 INSERT INTO t_lazy_activate VALUES (1, 'one');
 
 ALTER TABLE t_lazy_activate MODIFY SETTING
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 -- Activation happens on first compatible ALTER
 ALTER TABLE t_lazy_activate ADD COLUMN c UInt64 DEFAULT 0;
@@ -134,7 +134,7 @@ INSERT INTO t_lazy_activate (a, b, c) VALUES (2, 'two', 22);
 -- Now RENAME should be instant (no mutation)
 ALTER TABLE t_lazy_activate RENAME COLUMN b TO d;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lazy_activate' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lazy_activate' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_lazy_activate' AND NOT is_done;
 SELECT a, d, c FROM t_lazy_activate ORDER BY a;
@@ -154,13 +154,13 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 INSERT INTO t_modify_still_mutates VALUES (1, 10);
 ALTER TABLE t_modify_still_mutates MODIFY COLUMN b UInt64;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_modify_still_mutates' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_modify_still_mutates' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT b, toTypeName(b) FROM t_modify_still_mutates;
 

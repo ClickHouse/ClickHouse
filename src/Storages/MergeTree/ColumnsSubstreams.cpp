@@ -71,24 +71,24 @@ size_t ColumnsSubstreams::getSubstreamPosition(
 {
     ISerialization::StreamFileNameSettings stream_file_name_settings(*storage_settings);
 
-    /// New parts with physical names store substreams under physical names.
-    if (!name_and_type.physical_name.empty())
+    /// New parts with column IDs store substreams under column IDs.
+    if (!name_and_type.column_id.empty())
     {
-        auto substream = ISerialization::getFileNameForStreamPhysical(name_and_type, substream_path, stream_file_name_settings);
+        auto substream = ISerialization::getFileNameForStreamByColumnId(name_and_type, substream_path, stream_file_name_settings);
         if (auto position = tryGetSubstreamPosition(column_position, substream))
             return *position;
     }
 
-    /// Old parts (or parts written before physical names) use logical names.
+    /// Old parts (or parts written before column IDs) use logical names.
     auto substream = ISerialization::getFileNameForStream(name_and_type, substream_path, stream_file_name_settings);
     if (auto position = tryGetSubstreamPosition(column_position, substream))
         return *position;
 
     if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
     {
-        if (!name_and_type.physical_name.empty())
+        if (!name_and_type.column_id.empty())
         {
-            substream = ISerialization::getFileNameForStreamPhysical(name_and_type, substream_path, stream_file_name_settings);
+            substream = ISerialization::getFileNameForStreamByColumnId(name_and_type, substream_path, stream_file_name_settings);
             if (auto position = tryGetSubstreamPosition(column_position, substream))
                 return *position;
         }

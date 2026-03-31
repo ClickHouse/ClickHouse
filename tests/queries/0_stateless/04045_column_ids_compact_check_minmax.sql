@@ -1,7 +1,7 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
-SET allow_experimental_physical_column_names = 1;
+SET allow_experimental_column_ids = 1;
 
-SELECT 'Test 1: compact parts with physical names after RENAME';
+SELECT 'Test 1: compact parts with column IDs after RENAME';
 
 DROP TABLE IF EXISTS t_phys_compact;
 
@@ -15,15 +15,15 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 INSERT INTO t_phys_compact VALUES (1, 'one', 10);
 INSERT INTO t_phys_compact VALUES (2, 'two', 20);
 
 ALTER TABLE t_phys_compact RENAME COLUMN b TO d;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_compact' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_compact' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT a, d, c FROM t_phys_compact ORDER BY a;
 
@@ -32,7 +32,7 @@ SELECT a, d, c FROM t_phys_compact ORDER BY a;
 
 OPTIMIZE TABLE t_phys_compact FINAL;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_compact' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_compact' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT a, d, c FROM t_phys_compact ORDER BY a;
 
@@ -57,15 +57,15 @@ PARTITION BY dt
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
 INSERT INTO t_phys_minmax VALUES (1, 'one', '2024-01-01');
 INSERT INTO t_phys_minmax VALUES (2, 'two', '2024-01-02');
 
 ALTER TABLE t_phys_minmax RENAME COLUMN b TO d;
 
-SELECT DISTINCT column, physical_name FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_minmax' AND active AND NOT startsWith(column, '_') ORDER BY column, physical_name;
+SELECT DISTINCT column, column_id FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_phys_minmax' AND active AND NOT startsWith(column, '_') ORDER BY column, column_id;
 
 SELECT a, d, dt FROM t_phys_minmax ORDER BY a;
 

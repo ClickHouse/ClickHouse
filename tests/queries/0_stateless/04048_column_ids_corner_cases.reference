@@ -51,7 +51,7 @@ a	a
 a	a
 b	b
 d	b
-Test 8: complex types with physical names
+Test 8: complex types with column IDs
 1	{'k1':10,'k2':20}	(100,'hello')	extra
 2	{'k3':30}	(200,'world')	extra
 1	{'k1':10,'k2':20}	(100,'hello')	extra

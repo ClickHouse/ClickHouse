@@ -1,5 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
-SET allow_experimental_physical_column_names = 1;
+SET allow_experimental_column_ids = 1;
 
 SELECT 'Test 1: merge with ADD COLUMN';
 
@@ -14,7 +14,7 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_column_ids';
 
 INSERT INTO t_physical_merge VALUES (1, 'one');
 INSERT INTO t_physical_merge VALUES (2, 'two');
@@ -31,7 +31,7 @@ SELECT count()
 FROM system.parts
 WHERE database = currentDatabase() AND table = 't_physical_merge' AND active;
 
-SELECT column, physical_name
+SELECT column, column_id
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_physical_merge' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
@@ -51,7 +51,7 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 1000000000,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_column_ids';
 
 INSERT INTO t_physical_compact VALUES (1, 'one');
 
@@ -64,7 +64,7 @@ INSERT INTO t_physical_compact (a, b, c) VALUES (3, 'three', 33);
 OPTIMIZE TABLE t_physical_compact FINAL;
 SELECT * FROM t_physical_compact ORDER BY a;
 
-SELECT column, physical_name
+SELECT column, column_id
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_physical_compact' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
@@ -84,13 +84,13 @@ ENGINE = MergeTree
 ORDER BY a
 SETTINGS
     min_bytes_for_wide_part = 0,
-    serialization_info_version = 'with_physical_names';
+    serialization_info_version = 'with_column_ids';
 
 ALTER TABLE t_physical_mutation ADD COLUMN c UInt32 DEFAULT 0;
 INSERT INTO t_physical_mutation (a, b, c) VALUES (1, 'one', 10);
 INSERT INTO t_physical_mutation (a, b, c) VALUES (2, 'two', 20);
 
-SELECT column, physical_name
+SELECT column, column_id
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_physical_mutation' AND active AND NOT startsWith(column, '_')
 ORDER BY column;
@@ -101,7 +101,7 @@ SELECT c, toTypeName(c) FROM t_physical_mutation ORDER BY a;
 OPTIMIZE TABLE t_physical_mutation FINAL;
 SELECT c, toTypeName(c) FROM t_physical_mutation ORDER BY a;
 
-SELECT column, physical_name
+SELECT column, column_id
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_physical_mutation' AND active AND NOT startsWith(column, '_')
 ORDER BY column;

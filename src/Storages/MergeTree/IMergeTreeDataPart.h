@@ -43,8 +43,8 @@ class Block;
 struct ColumnSize;
 class DeserializationPrefixesCache;
 class MergeTreeData;
-class PhysicalNameMapping;
-using PhysicalNameMappingPtr = std::shared_ptr<const PhysicalNameMapping>;
+class ColumnIdMapping;
+using ColumnIdMappingPtr = std::shared_ptr<const ColumnIdMapping>;
 struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -376,7 +376,7 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, PhysicalNameMappingPtr physical_name_mapping = nullptr) const;
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, ColumnIdMappingPtr column_id_mapping = nullptr) const;
         [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const Names & column_names);
@@ -778,13 +778,13 @@ private:
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
-    /// When a physical name mapping is active, the on-disk column list
+    /// When a column ID mapping is active, the on-disk column list
     /// (columns.txt) uses physical storage names that differ from the logical
     /// names in the current table schema. This method translates each entry
-    /// back to its logical name and attaches the physical name as metadata.
+    /// back to its logical name and attaches the column ID as metadata.
     NamesAndTypesList remapColumnsWithPhysicalNames(
         const NamesAndTypesList & loaded_columns,
-        const PhysicalNameMapping & mapping) const;
+        const ColumnIdMapping & mapping) const;
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();

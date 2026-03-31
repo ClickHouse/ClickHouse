@@ -6989,9 +6989,9 @@ Defines a bytes limit for a single inserted data file in delta lake.
     DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_physical_column_names, false, R"(
-Enables the use of persistent physical column names for MergeTree-family tables.
-When enabled, allows setting `serialization_info_version = 'with_physical_names'`
+    DECLARE(Bool, allow_experimental_column_ids, false, R"(
+Enables the use of persistent column IDs for MergeTree-family tables.
+When enabled, allows setting `serialization_info_version = 'with_column_ids'`
 which decouples on-disk file names from logical column names, making `RENAME COLUMN`
 and `DROP COLUMN` metadata-only operations.
 )", EXPERIMENTAL) \

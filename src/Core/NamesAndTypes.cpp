@@ -41,12 +41,12 @@ String NameAndTypePair::getNameInStorage() const
     return name.substr(0, *subcolumn_delimiter_position);
 }
 
-String NameAndTypePair::getPhysicalNameInStorage() const
+String NameAndTypePair::getColumnIdInStorage() const
 {
-    if (physical_name.empty())
+    if (column_id.empty())
         return getNameInStorage();
 
-    return physical_name;
+    return column_id;
 }
 
 bool NameAndTypePair::operator<(const NameAndTypePair & rhs) const
@@ -73,7 +73,7 @@ String NameAndTypePair::dump() const
     out << "name: " << name << "\n"
         << "type: " << type->getName() << "\n"
         << "name in storage: " << getNameInStorage() << "\n"
-        << "physical name in storage: " << getPhysicalNameInStorage() << "\n"
+        << "column ID in storage: " << getColumnIdInStorage() << "\n"
         << "type in storage: " << getTypeInStorage()->getName();
 
     return out.str();

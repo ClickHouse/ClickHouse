@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/PhysicalNameMapping.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -176,10 +176,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    auto pn_mapping = data_part->storage.getActivePhysicalNameMapping();
-    bool physical_names_active = pn_mapping != nullptr;
+    auto pn_mapping = data_part->storage.getActiveColumnIdMapping();
+    bool column_ids_active = pn_mapping != nullptr;
 
-    if (!physical_names_active)
+    if (!column_ids_active)
     {
         if (columns_txt != columns_list)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Columns doesn't match in part {}. Expected: {}. Found: {}",
@@ -187,22 +187,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else
     {
-        /// With physical names, old parts have pre-rename column names in
+        /// With column IDs, old parts have pre-rename column names in
         /// `columns.txt`, so exact equality is impossible. Perform a weaker
         /// check: for every column found in both the expected list and the
-        /// part (matched by physical name), verify the types agree.
+        /// part (matched by column ID), verify the types agree.
         std::unordered_map<String, DataTypePtr> expected_types;
         for (const auto & col : columns_list)
         {
-            auto phys = pn_mapping->getPhysicalNameOrDefault(col.name);
+            auto phys = pn_mapping->getColumnIdOrDefault(col.name);
             expected_types[phys] = col.type;
         }
         for (const auto & col : columns_txt)
         {
             String phys;
             if (pn_mapping->hasLogicalName(col.name))
-                phys = pn_mapping->getPhysicalName(col.name);
-            else if (pn_mapping->hasPhysicalName(col.name))
+                phys = pn_mapping->getColumnId(col.name);
+            else if (pn_mapping->hasColumnId(col.name))
                 phys = col.name;
             else
                 continue;
@@ -210,7 +210,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             auto it = expected_types.find(phys);
             if (it != expected_types.end() && !col.type->equals(*it->second))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Column type mismatch in part {} for physical name '{}': "
+                    "Column type mismatch in part {} for column ID '{}': "
                     "expected {}, found {}",
                     data_part_storage.getFullPath(), phys,
                     it->second->getName(), col.type->getName());
@@ -242,8 +242,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            if (physical_names_active)
-                serialization_infos = SerializationInfoByName::readJSONWithPhysicalNames(columns_list, *pn_mapping, *serialization_file);
+            if (column_ids_active)
+                serialization_infos = SerializationInfoByName::readJSONWithColumnIds(columns_list, *pn_mapping, *serialization_file);
             else
                 serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }

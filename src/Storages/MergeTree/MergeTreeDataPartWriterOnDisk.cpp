@@ -517,7 +517,7 @@ void MergeTreeDataPartWriterOnDisk::initColumnsSubstreamsIfNeeded()
         columns_substreams.addColumn(name_and_type.name);
         serialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStreamPhysical(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStreamByColumnId(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
             return &buf;
         };
         serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath &){ return MarkInCompressedFile(); };

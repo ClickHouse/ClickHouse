@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-            {"allow_experimental_physical_column_names", false, false, "New setting to gate persistent physical column names for MergeTree"},
+            {"allow_experimental_column_ids", false, false, "New setting to gate persistent column IDs for MergeTree"},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
@@ -1107,8 +1107,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.4",
         {
-            {"serialization_info_version", "with_types", "with_types", "Add `with_physical_names` option for persistent physical column names"},
-            {"activate_physical_names_for_existing_tables", false, false, "New setting"},
+            {"serialization_info_version", "with_types", "with_types", "Add `with_column_ids` option for persistent column IDs"},
+            {"activate_column_ids_for_existing_tables", false, false, "New setting"},
 
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},

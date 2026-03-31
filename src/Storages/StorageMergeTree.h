@@ -191,35 +191,35 @@ private:
     /// equals zero creates object with deduplication window equals zero.
     void loadDeduplicationLog();
 
-    /// Encapsulates the result of preparing physical name mapping changes for
-    /// an ALTER: the updated mapping, whether physical names are active (for
+    /// Encapsulates the result of preparing column ID mapping changes for
+    /// an ALTER: the updated mapping, whether column IDs are active (for
     /// deciding mutation strategy), and old logical names from two-phase
     /// renames that must be finalized after metadata commit.
-    struct PhysicalNameAlterPlan
+    struct ColumnIdAlterPlan
     {
-        std::optional<PhysicalNameMapping> new_mapping;
+        std::optional<ColumnIdMapping> new_mapping;
         std::vector<String> rename_old_names;
         /// Columns whose mapping entries should be removed post-commit
         /// (two-phase drop for crash safety).
         std::vector<String> drop_names;
         /// DROP + re-ADD same column: forces a mutation for crash safety
-        /// because we cannot atomically swap the physical name.
+        /// because we cannot atomically swap the column ID.
         std::set<String> force_mutation_columns;
-        bool physical_names_active = false;
+        bool column_ids_active = false;
     };
 
-    /// Compute how the physical name mapping should change for the given ALTER.
+    /// Compute how the column ID mapping should change for the given ALTER.
     /// Handles first-time activation, two-phase renames, column adds/drops, and
     /// the flattened Nested guard.
-    PhysicalNameAlterPlan preparePhysicalNameMappingForAlter(
+    ColumnIdAlterPlan prepareColumnIdMappingForAlter(
         const AlterCommands & commands,
         const StorageInMemoryMetadata & old_metadata,
         const StorageInMemoryMetadata & new_metadata) const;
 
     /// Finalize two-phase renames and deferred drops after metadata commit:
     /// remove old logical names from the mapping and persist.
-    void finalizePhysicalNameRenames(const std::vector<String> & old_names);
-    void finalizePhysicalNameDrops(const std::vector<String> & drop_names);
+    void finalizeColumnIdRenames(const std::vector<String> & old_names);
+    void finalizeColumnIdDrops(const std::vector<String> & drop_names);
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).

@@ -28,7 +28,7 @@
 #include <Storages/MergeTree/ZeroCopyLock.h>
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/PhysicalNameMapping.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
@@ -216,7 +216,7 @@ public:
     using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
-    constexpr static auto PHYSICAL_NAMES_FILE_NAME = "physical_names.json";
+    constexpr static auto COLUMN_IDS_FILE_NAME = "column_ids.json";
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
@@ -636,42 +636,42 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
-    bool hasPhysicalNameMapping() const
+    bool hasColumnIdMapping() const
     {
-        return getActivePhysicalNameMapping() != nullptr;
+        return getActiveColumnIdMapping() != nullptr;
     }
 
-    /// Returns the physical name mapping only if it is active (i.e. physical
+    /// Returns the column ID mapping only if it is active (i.e. physical
     /// names have been activated for this table). Returns nullptr otherwise.
-    PhysicalNameMappingPtr getActivePhysicalNameMapping() const
+    ColumnIdMappingPtr getActiveColumnIdMapping() const
     {
-        auto mapping = physical_name_mapping.get();
+        auto mapping = column_id_mapping.get();
         if (mapping && mapping->isActive())
             return mapping;
         return nullptr;
     }
 
-    /// Returns the raw physical name mapping pointer regardless of activation
+    /// Returns the raw column ID mapping pointer regardless of activation
     /// state. Needed during ALTER when transitioning from inactive to active.
-    PhysicalNameMappingPtr getPhysicalNameMapping() const
+    ColumnIdMappingPtr getColumnIdMapping() const
     {
-        return physical_name_mapping.get();
+        return column_id_mapping.get();
     }
 
-    void setPhysicalNameMapping(PhysicalNameMapping mapping_)
+    void setColumnIdMapping(ColumnIdMapping mapping_)
     {
-        physical_name_mapping.set(std::make_unique<const PhysicalNameMapping>(std::move(mapping_)));
+        column_id_mapping.set(std::make_unique<const ColumnIdMapping>(std::move(mapping_)));
     }
 
-    void loadPhysicalNameMappingFromDisk();
-    void writePhysicalNameMappingToDisk() const;
-    void writePhysicalNameMappingToDisk(const PhysicalNameMapping & mapping) const;
+    void loadColumnIdMappingFromDisk();
+    void writeColumnIdMappingToDisk() const;
+    void writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const;
 
     /// Remove mapping entries whose logical name no longer exists in table
     /// metadata. Called after loading the mapping from disk to handle stale
     /// entries left by: (a) a crash between mapping persist and metadata commit,
     /// (b) completed DROPs, (c) incomplete two-phase renames.
-    void reconcilePhysicalNameMappingWithMetadata();
+    void reconcileColumnIdMappingWithMetadata();
 
     /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
     /// This method allows read-only replicas of tables on a shared storage.
@@ -1561,7 +1561,7 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    MultiVersion<PhysicalNameMapping> physical_name_mapping;
+    MultiVersion<ColumnIdMapping> column_id_mapping;
 
     /// A cache for metadata snapshots for patch parts.
     /// The key is a partition id of patch part.

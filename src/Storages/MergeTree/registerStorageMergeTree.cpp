@@ -49,12 +49,13 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsBool allow_experimental_physical_column_names;
+    extern const SettingsBool allow_experimental_column_ids;
 }
 
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_floating_point_partition_key;
+    extern const MergeTreeSettingsBool activate_column_ids_for_existing_tables;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
@@ -899,6 +900,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
+        if ((*storage_settings)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+            || (*storage_settings)[MergeTreeSetting::activate_column_ids_for_existing_tables])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs are currently supported only for non-replicated `MergeTree` tables");
+        }
+
         bool need_check_table_structure = true;
         if (auto txn = args.getLocalContext()->getZooKeeperMetadataTransaction())
             need_check_table_structure = txn->isInitialQuery();
@@ -934,16 +943,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         std::move(storage_settings));
 
     if (args.mode == LoadingStrictnessLevel::CREATE
-        && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES)
+        && (*storage->getSettings())[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS)
     {
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_physical_column_names])
+        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_column_ids])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Physical column names require setting `allow_experimental_physical_column_names = 1`");
+                "Column IDs require setting `allow_experimental_column_ids = 1`");
 
-        auto physical_name_mapping = PhysicalNameMapping::createForNewTable(metadata.getColumns().getAllPhysical());
-        storage->setPhysicalNameMapping(std::move(physical_name_mapping));
-        storage->writePhysicalNameMappingToDisk();
+        auto column_id_mapping = ColumnIdMapping::createForNewTable(metadata.getColumns().getAllPhysical());
+        storage->setColumnIdMapping(std::move(column_id_mapping));
+        storage->writeColumnIdMappingToDisk();
     }
 
     return storage;

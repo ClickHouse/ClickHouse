@@ -46,7 +46,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/PhysicalNameMapping.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -566,8 +566,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-    if (auto pn_mapping = global_ctx->data->getActivePhysicalNameMapping())
-        populatePhysicalNames(global_ctx->storage_columns, *pn_mapping);
+    if (auto pn_mapping = global_ctx->data->getActiveColumnIdMapping())
+        populateColumnIds(global_ctx->storage_columns, *pn_mapping);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
 
     ctx->need_remove_expired_values = false;
@@ -614,15 +614,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
         /// Collect all column names that actually exist in the source parts.
-        /// With physical names, a column may appear under old logical names (before rename)
-        /// or under its physical name, so we add both to recognize the column as present.
+        /// With column IDs, a column may appear under old logical names (before rename)
+        /// or under its column ID, so we add both to recognize the column as present.
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
             {
                 columns_present_in_parts.emplace(col.name);
-                if (!col.physical_name.empty())
-                    columns_present_in_parts.emplace(col.getPhysicalNameInStorage());
+                if (!col.column_id.empty())
+                    columns_present_in_parts.emplace(col.getColumnIdInStorage());
             }
         }
 
@@ -632,8 +632,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         for (const auto & storage_column : global_ctx->storage_columns)
         {
             bool present = columns_present_in_parts.contains(storage_column.name);
-            if (!present && !storage_column.physical_name.empty())
-                present = columns_present_in_parts.contains(storage_column.getPhysicalNameInStorage());
+            if (!present && !storage_column.column_id.empty())
+                present = columns_present_in_parts.contains(storage_column.getColumnIdInStorage());
 
             if (!present && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);

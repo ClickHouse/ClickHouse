@@ -30,7 +30,7 @@ public:
         const DataTypePtr & type_in_storage_, const DataTypePtr & subcolumn_type_);
 
     String getNameInStorage() const;
-    String getPhysicalNameInStorage() const;
+    String getColumnIdInStorage() const;
     String getSubcolumnName() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
@@ -44,23 +44,23 @@ public:
     /// Can be used to convert "t.a.b.c" from meaning "column `t` in storage, subcolumn `a.b.c` inside it"
     /// to meaning "column `t.a.b` in storage, subcolumn `c` inside it".
     void setDelimiterAndTypeInStorage(const String & name_in_storage_, DataTypePtr type_in_storage_);
-    void setPhysicalName(const String & physical_name_) { physical_name = physical_name_; }
+    void setColumnId(const String & column_id_) { column_id = column_id_; }
 
     String name;
     DataTypePtr type;
 
     /// The name used for on-disk storage files (.bin, .mrk, etc.).
     ///
-    /// When a table has a PhysicalNameMapping (serialization_info_version =
-    /// 'with_physical_names'), each column is assigned a stable, counter-allocated
-    /// physical name (e.g. "0", "1", "2") that never changes across renames or
+    /// When a table has a ColumnIdMapping (serialization_info_version =
+    /// 'with_column_ids'), each column is assigned a stable, counter-allocated
+    /// column ID (e.g. "0", "1", "2") that never changes across renames or
     /// drops. This decouples the file names on disk from the logical column names
     /// visible to users, enabling metadata-only RENAME and DROP without rewriting
     /// data files.
     ///
     /// When empty (the default), the logical `name` is used as the file name --
-    /// this is the traditional behavior for tables without physical name mapping.
-    String physical_name;
+    /// this is the traditional behavior for tables without column ID mapping.
+    String column_id;
 
 private:
     DataTypePtr type_in_storage;

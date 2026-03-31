@@ -1,4 +1,4 @@
-Test 1: compact parts with physical names after RENAME
+Test 1: compact parts with column IDs after RENAME
 a	a
 b	b
 c	c

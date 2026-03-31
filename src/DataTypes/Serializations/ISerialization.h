@@ -647,9 +647,9 @@ public:
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings);
-    static String getFileNameForStreamPhysical(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
-    static String getFileNameForStreamPhysical(
-        const String & physical_name_in_storage,
+    static String getFileNameForStreamByColumnId(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
+    static String getFileNameForStreamByColumnId(
+        const String & column_id_in_storage,
         const String & logical_name_in_storage,
         const SubstreamPath & path,
         const StreamFileNameSettings & settings);

@@ -6,7 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
-#include <Storages/MergeTree/PhysicalNameMapping.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -422,11 +422,11 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     writeJSONImpl(*this, out, [](const String & name) { return name; });
 }
 
-void SerializationInfoByName::writeJSONWithPhysicalNames(WriteBuffer & out, const PhysicalNameMapping & physical_name_mapping) const
+void SerializationInfoByName::writeJSONWithColumnIds(WriteBuffer & out, const ColumnIdMapping & column_id_mapping) const
 {
     writeJSONImpl(*this, out, [&](const String & name)
     {
-        return physical_name_mapping.getPhysicalNameOrDefault(name);
+        return column_id_mapping.getColumnIdOrDefault(name);
     });
 }
 
@@ -590,9 +590,9 @@ SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesLis
     return readJSONFromString(columns, json_str);
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONWithPhysicalNames(
+SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(
     const NamesAndTypesList & columns,
-    const PhysicalNameMapping & physical_name_mapping,
+    const ColumnIdMapping & column_id_mapping,
     ReadBuffer & in)
 {
     String json_str;
@@ -617,9 +617,9 @@ SerializationInfoByName SerializationInfoByName::readJSONWithPhysicalNames(
         auto stored_name = elem_object->getValue<String>(KEY_NAME);
         String logical_name;
 
-        if (physical_name_mapping.hasPhysicalName(stored_name))
-            logical_name = physical_name_mapping.getLogicalName(stored_name);
-        else if (physical_name_mapping.getPhysicalNameOrDefault(stored_name) == stored_name && column_type_by_name.contains(stored_name))
+        if (column_id_mapping.hasColumnId(stored_name))
+            logical_name = column_id_mapping.getLogicalName(stored_name);
+        else if (column_id_mapping.getColumnIdOrDefault(stored_name) == stored_name && column_type_by_name.contains(stored_name))
             logical_name = stored_name;
         else
             continue;

@@ -320,7 +320,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings, new_part->storage.getActivePhysicalNameMapping());
+                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums, storage_settings, new_part->storage.getActiveColumnIdMapping());
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
@@ -358,8 +358,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            if (auto pn_mapping = new_part->storage.getActivePhysicalNameMapping())
-                serialization_infos.writeJSONWithPhysicalNames(buffer, *pn_mapping);
+            if (auto pn_mapping = new_part->storage.getActiveColumnIdMapping())
+                serialization_infos.writeJSONWithColumnIds(buffer, *pn_mapping);
             else
                 serialization_infos.writeJSON(buffer);
         });

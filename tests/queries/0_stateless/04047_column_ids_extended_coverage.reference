@@ -1,4 +1,4 @@
-Test 1: serialization.json is keyed by physical name
+Test 1: serialization.json is keyed by column ID
 c	1
 Test 2: columns.txt uses logical names
 b
@@ -29,7 +29,7 @@ c	c
 d	b
 1	30
 2	70
-Test 9: system.parts_columns exposes physical_name
+Test 9: system.parts_columns exposes column_id
 a	a
 b	b
 c	1
@@ -49,7 +49,7 @@ d	b
 1	hello world
 2	foo bar
 3	baz qux
-Test 12: system.projection_parts_columns exposes physical_name
+Test 12: system.projection_parts_columns exposes column_id
 a	a
 sum(c)	sum(c)
 Test 13: CHECK TABLE after rename with SerializationInfo

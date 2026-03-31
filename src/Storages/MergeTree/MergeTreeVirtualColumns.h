@@ -36,7 +36,7 @@ struct PartDataVersionColumn
 
 /// Whether a column is a persistent virtual column that is physically stored
 /// inside data parts (as opposed to computed on the fly).  These columns are
-/// NOT managed by the physical name mapping and should be passed through
+/// NOT managed by the column ID mapping and should be passed through
 /// unchanged during column remapping.
 /// Keep in sync when adding new persistent virtual columns.
 inline bool isPersistentVirtualColumn(const String & column_name)

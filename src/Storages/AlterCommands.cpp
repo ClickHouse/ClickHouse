@@ -60,7 +60,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
-    extern const SettingsBool allow_experimental_physical_column_names;
+    extern const SettingsBool allow_experimental_column_ids;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
@@ -1127,7 +1127,7 @@ bool AlterCommand::isSettingsAlter() const
     return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
-bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context, bool physical_names_active) const
+bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata, const ContextPtr & context, bool column_ids_active) const
 {
     if (ignore)
         return false;
@@ -1136,10 +1136,10 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
-    if (physical_names_active && type == RENAME_COLUMN)
+    if (column_ids_active && type == RENAME_COLUMN)
         return false;
 
-    if (physical_names_active && type == DROP_COLUMN && !clear && !partition)
+    if (column_ids_active && type == DROP_COLUMN && !clear && !partition)
         return false;
 
     if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
@@ -1214,9 +1214,9 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool physical_names_active) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool column_ids_active) const
 {
-    if (!isRequireMutationStage(metadata, context, physical_names_active))
+    if (!isRequireMutationStage(metadata, context, column_ids_active))
         return {};
 
     MutationCommand result;
@@ -1771,7 +1771,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (from_nested && to_nested)
             {
                 if (from_nested_table_name != to_nested_table_name
-                    && !context->getSettingsRef()[Setting::allow_experimental_physical_column_names])
+                    && !context->getSettingsRef()[Setting::allow_experimental_column_ids])
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
             }
@@ -1874,12 +1874,12 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool physical_names_active) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool column_ids_active) const
 {
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, physical_names_active); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, column_ids_active); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
         }

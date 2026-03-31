@@ -216,7 +216,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsBool activate_physical_names_for_existing_tables;
+    extern const MergeTreeSettingsBool activate_column_ids_for_existing_tables;
     extern const MergeTreeSettingsBool allow_experimental_reverse_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
@@ -501,35 +501,35 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     }
 }
 
-void MergeTreeData::loadPhysicalNameMappingFromDisk()
+void MergeTreeData::loadColumnIdMappingFromDisk()
 {
-    const auto physical_names_path = fs::path(relative_data_path) / PHYSICAL_NAMES_FILE_NAME;
+    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
 
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
             continue;
 
-        if (auto buf = disk->readFileIfExists(physical_names_path, getReadSettings()))
+        if (auto buf = disk->readFileIfExists(column_ids_path, getReadSettings()))
         {
-            setPhysicalNameMapping(PhysicalNameMapping::deserialize(*buf));
+            setColumnIdMapping(ColumnIdMapping::deserialize(*buf));
             assertEOF(*buf);
             return;
         }
     }
 }
 
-void MergeTreeData::writePhysicalNameMappingToDisk() const
+void MergeTreeData::writeColumnIdMappingToDisk() const
 {
-    auto mapping = getPhysicalNameMapping();
+    auto mapping = getColumnIdMapping();
     if (!mapping)
         return;
-    writePhysicalNameMappingToDisk(*mapping);
+    writeColumnIdMappingToDisk(*mapping);
 }
 
-void MergeTreeData::writePhysicalNameMappingToDisk(const PhysicalNameMapping & mapping) const
+void MergeTreeData::writeColumnIdMappingToDisk(const ColumnIdMapping & mapping) const
 {
-    const auto physical_names_path = fs::path(relative_data_path) / PHYSICAL_NAMES_FILE_NAME;
+    const auto column_ids_path = fs::path(relative_data_path) / COLUMN_IDS_FILE_NAME;
 
     for (const auto & disk : getStoragePolicy()->getDisks())
     {
@@ -538,7 +538,7 @@ void MergeTreeData::writePhysicalNameMappingToDisk(const PhysicalNameMapping & m
 
         if (!disk->isReadOnly() && !disk->isWriteOnce())
         {
-            auto buf = disk->writeFile(physical_names_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
+            auto buf = disk->writeFile(column_ids_path, 4096, WriteMode::Rewrite, getContext()->getWriteSettings());
             mapping.serialize(*buf);
             buf->finalize();
             if (getContext()->getSettingsRef()[Setting::fsync_metadata])
@@ -547,18 +547,18 @@ void MergeTreeData::writePhysicalNameMappingToDisk(const PhysicalNameMapping & m
         }
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", PHYSICAL_NAMES_FILE_NAME, getStorageID().getNameForLogs());
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write `{}` for table {}", COLUMN_IDS_FILE_NAME, getStorageID().getNameForLogs());
 }
 
-void MergeTreeData::reconcilePhysicalNameMappingWithMetadata()
+void MergeTreeData::reconcileColumnIdMappingWithMetadata()
 {
-    if (!hasPhysicalNameMapping())
+    if (!hasColumnIdMapping())
         return;
 
-    auto mapping = getPhysicalNameMapping();
+    auto mapping = getColumnIdMapping();
     auto metadata_columns = getInMemoryMetadataPtr()->getColumns().getAllPhysical();
 
-    PhysicalNameMapping reconciled = *mapping;
+    ColumnIdMapping reconciled = *mapping;
     bool changed = false;
     for (const auto & col_name : mapping->logicalNames())
     {
@@ -571,8 +571,8 @@ void MergeTreeData::reconcilePhysicalNameMappingWithMetadata()
 
     if (changed)
     {
-        setPhysicalNameMapping(std::move(reconciled));
-        writePhysicalNameMappingToDisk();
+        setColumnIdMapping(std::move(reconciled));
+        writeColumnIdMappingToDisk();
     }
 }
 
@@ -4326,7 +4326,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     {
         /// Evaluate activation against the post-MODIFY-SETTING state so that a
         /// single ALTER mixing `MODIFY SETTING ... , RENAME COLUMN ...` activates
-        /// physical names and correctly takes the metadata-only path.
+        /// column IDs and correctly takes the metadata-only path.
         StorageInMemoryMetadata check_metadata = new_metadata;
         commands.apply(check_metadata, local_context);
 
@@ -4335,17 +4335,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             effective_settings.applyChanges(check_metadata.settings_changes->as<const ASTSetQuery &>().changes);
 
         bool settings_enable_pn =
-            effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_PHYSICAL_NAMES
-            && effective_settings[MergeTreeSetting::activate_physical_names_for_existing_tables];
+            effective_settings[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+            && effective_settings[MergeTreeSetting::activate_column_ids_for_existing_tables];
         bool has_compat_alter = std::any_of(commands.begin(), commands.end(), [](const auto & c)
         {
             return c.type == AlterCommand::RENAME_COLUMN || c.type == AlterCommand::DROP_COLUMN || c.type == AlterCommand::ADD_COLUMN;
         });
-        bool pn_active = hasPhysicalNameMapping() || (settings_enable_pn && has_compat_alter);
+        bool pn_active = hasColumnIdMapping() || (settings_enable_pn && has_compat_alter);
 
         auto mutation_commands = commands.getMutationCommands(
             new_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
-            /*with_alters=*/false, /*physical_names_active=*/pn_active);
+            /*with_alters=*/false, /*column_ids_active=*/pn_active);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5000,6 +5000,16 @@ void MergeTreeData::changeSettings(
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes);
+
+        if (supportsReplication()
+            && ((*copy)[MergeTreeSetting::serialization_info_version] == MergeTreeSerializationInfoVersion::WITH_COLUMN_IDS
+                || (*copy)[MergeTreeSetting::activate_column_ids_for_existing_tables]))
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Column IDs are currently supported only for non-replicated `MergeTree` tables");
+        }
+
         const auto & ac = getContext()->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
@@ -9086,8 +9096,8 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
     auto columns_list = Nested::collect(columns.getAllPhysical());
 
-    if (auto mapping = getActivePhysicalNameMapping())
-        populatePhysicalNames(columns_list, *mapping);
+    if (auto mapping = getActiveColumnIdMapping())
+        populateColumnIds(columns_list, *mapping);
 
     SerializationInfo::Settings serialization_settings
     {
@@ -9106,7 +9116,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
         auto callback = [&](const auto & substream_path)
         {
-            auto full_stream_name = ISerialization::getFileNameForStreamPhysical(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+            auto full_stream_name = ISerialization::getFileNameForStreamByColumnId(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
             column_streams.emplace(stream_name, full_stream_name);
         };
@@ -9190,19 +9200,19 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
 
-    auto my_pn = getActivePhysicalNameMapping();
-    auto src_pn = src_data->getActivePhysicalNameMapping();
+    auto my_pn = getActiveColumnIdMapping();
+    auto src_pn = src_data->getActiveColumnIdMapping();
     bool my_has_pn = (my_pn != nullptr);
     bool src_has_pn = (src_pn != nullptr);
     if (my_has_pn != src_has_pn)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Tables have incompatible physical name mapping state: "
-            "one table has physical names active while the other does not");
+            "Tables have incompatible column ID mapping state: "
+            "one table has column IDs active while the other does not");
     if (my_has_pn && src_has_pn
-        && my_pn->getLogicalToPhysical() != src_pn->getLogicalToPhysical())
+        && my_pn->getLogicalToId() != src_pn->getLogicalToId())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Tables have different physical name mappings; "
-            "partition operations require identical logical-to-physical column mappings");
+            "Tables have different column ID mappings; "
+            "partition operations require identical logical-to-ID column mappings");
 
     return *src_data;
 }

@@ -407,12 +407,12 @@ String ISerialization::getFileNameForStream(const NameAndTypePair & column, cons
     return getFileNameForStream(column.getNameInStorage(), path, settings);
 }
 
-String ISerialization::getFileNameForStreamPhysical(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
+String ISerialization::getFileNameForStreamByColumnId(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
 {
-    if (column.physical_name.empty())
+    if (column.column_id.empty())
         return getFileNameForStream(column, path, settings);
 
-    return getFileNameForStreamPhysical(column.getPhysicalNameInStorage(), column.getNameInStorage(), path, settings);
+    return getFileNameForStreamByColumnId(column.getColumnIdInStorage(), column.getNameInStorage(), path, settings);
 }
 
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
@@ -447,8 +447,8 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }
 
-String ISerialization::getFileNameForStreamPhysical(
-    const String & physical_name_in_storage,
+String ISerialization::getFileNameForStreamByColumnId(
+    const String & column_id_in_storage,
     const String & logical_name_in_storage,
     const SubstreamPath & path,
     const StreamFileNameSettings & settings)
@@ -463,10 +463,10 @@ String ISerialization::getFileNameForStreamPhysical(
         /// renames.  For identity-mapped columns (physical = "n.x") this
         /// gives "n"; for compound-allocated columns (physical = "5.x")
         /// this gives "5".  Fall back to the logical name for columns
-        /// whose physical name has no dot (plain counter like "5").
-        auto nested_from_physical = Nested::extractTableName(physical_name_in_storage);
+        /// whose column ID has no dot (plain counter like "5").
+        auto nested_from_physical = Nested::extractTableName(column_id_in_storage);
         auto nested_from_logical = Nested::extractTableName(logical_name_in_storage);
-        bool physical_is_nested = (physical_name_in_storage != nested_from_physical);
+        bool physical_is_nested = (column_id_in_storage != nested_from_physical);
         bool logical_is_nested = (logical_name_in_storage != nested_from_logical);
 
         if (physical_is_nested)
@@ -474,10 +474,10 @@ String ISerialization::getFileNameForStreamPhysical(
         else if (logical_is_nested)
             stream_name = escapeForFileName(nested_from_logical);
         else
-            stream_name = escapeForFileName(physical_name_in_storage);
+            stream_name = escapeForFileName(column_id_in_storage);
     }
     else
-        stream_name = escapeForFileName(physical_name_in_storage);
+        stream_name = escapeForFileName(column_id_in_storage);
 
     return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
 }

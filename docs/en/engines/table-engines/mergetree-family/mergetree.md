@@ -1353,26 +1353,26 @@ ALTER TABLE tab MODIFY COLUMN document MODIFY SETTING min_compress_block_size = 
 ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
 ```
 
-## Physical column names {#physical-column-names}
+## Column IDs {#physical-column-names}
 
 By default, MergeTree stores each column's data in files named after the column itself (e.g. `name.bin`, `name.mrk2`).
 This means that schema changes such as `RENAME COLUMN` or `DROP COLUMN` require rewriting every data part on disk through a mutation, which can be expensive for large tables.
 
-When the `serialization_info_version` setting is set to `with_physical_names`, each column is assigned a stable, counter-allocated physical name (e.g. `1`, `2`, `3`) that is used for on-disk file names.
-A persistent mapping from logical column names to physical names is stored in a `physical_names.json` file alongside the table metadata.
+When the `serialization_info_version` setting is set to `with_column_ids`, each column is assigned a stable, counter-allocated column ID (e.g. `1`, `2`, `3`) that is used for on-disk file names.
+A persistent mapping from logical column names to column IDs is stored in a `column_ids.json` file alongside the table metadata.
 This decouples file names from logical column names and enables metadata-only `RENAME COLUMN` and `DROP COLUMN` operations.
 
 :::note
-Physical column names are an experimental feature. Enable it with `allow_experimental_physical_column_names = 1`.
+Column IDs are an experimental feature. Enable it with `allow_experimental_column_ids = 1`.
 Currently only non-replicated `MergeTree` tables are supported. `ReplicatedMergeTree` support is planned for a future release.
 :::
 
-### Enabling physical names {#enabling-physical-names}
+### Enabling column IDs {#enabling-physical-names}
 
 First, enable the experimental setting at session level:
 
 ```sql
-SET allow_experimental_physical_column_names = 1;
+SET allow_experimental_column_ids = 1;
 ```
 
 For new tables, set the `serialization_info_version` table setting:
@@ -1386,28 +1386,28 @@ CREATE TABLE example
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS serialization_info_version = 'with_physical_names';
+SETTINGS serialization_info_version = 'with_column_ids';
 ```
 
-For existing tables, also enable `activate_physical_names_for_existing_tables`.
-Physical names are activated on the first compatible `ALTER` (`ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`):
+For existing tables, also enable `activate_column_ids_for_existing_tables`.
+Column IDs are activated on the first compatible `ALTER` (`ADD COLUMN`, `DROP COLUMN`, or `RENAME COLUMN`):
 
 ```sql
 ALTER TABLE example MODIFY SETTING
-    serialization_info_version = 'with_physical_names',
-    activate_physical_names_for_existing_tables = 1;
+    serialization_info_version = 'with_column_ids',
+    activate_column_ids_for_existing_tables = 1;
 
--- This ALTER activates physical names and is already metadata-only:
+-- This ALTER activates column IDs and is already metadata-only:
 ALTER TABLE example RENAME COLUMN name TO title;
 ```
 
 ### Behavior changes {#physical-names-behavior-changes}
 
-Once physical names are active:
+Once column IDs are active:
 
 - **`RENAME COLUMN`** is instant and metadata-only.
   No mutation is created, and no data files are rewritten.
-  The mapping is updated to point the new logical name to the same physical name.
+  The mapping is updated to point the new logical name to the same column ID.
 
 - **`DROP COLUMN`** is instant and metadata-only.
   No mutation is created.
@@ -1416,15 +1416,15 @@ Once physical names are active:
 
 - **`MODIFY COLUMN`** (type change) still creates a mutation as before, since the data must be rewritten.
 
-- **`ADD COLUMN`** allocates a new counter-based physical name for the column.
-  For flattened `Nested` columns (when `flatten_nested = 1`, the default), sibling subcolumns receive compound physical names that share a common prefix (e.g. `3.x`, `3.y`) to preserve the shared array offset stream.
+- **`ADD COLUMN`** allocates a new counter-based column ID for the column.
+  For flattened `Nested` columns (when `flatten_nested = 1`, the default), sibling subcolumns receive compound column IDs that share a common prefix (e.g. `3.x`, `3.y`) to preserve the shared array offset stream.
 
-### Checking physical names {#checking-physical-names}
+### Checking column IDs {#checking-physical-names}
 
-The `physical_name` column in [`system.parts_columns`](/operations/system-tables/parts_columns) shows the physical name for each column in each part:
+The `column_id` column in [`system.parts_columns`](/operations/system-tables/parts_columns) shows the column ID for each column in each part:
 
 ```sql
-SELECT column, physical_name
+SELECT column, column_id
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 'example' AND active
 ORDER BY column;
@@ -1433,11 +1433,11 @@ ORDER BY column;
 :::note
 After a metadata-only `RENAME COLUMN`, old parts still show the pre-rename column name in the `column` field of `system.parts_columns`.
 New parts (from subsequent inserts or merges) show the new name.
-The `physical_name` field is a stable identifier that does not change across renames.
+The `column_id` field is a stable identifier that does not change across renames.
 :::
 
 ### Limitations {#physical-names-limitations}
 
-- **`ReplicatedMergeTree`** is not yet supported. Only non-replicated `MergeTree` tables can use physical column names.
+- **`ReplicatedMergeTree`** is not yet supported. Only non-replicated `MergeTree` tables can use column IDs.
 
-- **Single-child flattened `Nested` cross-parent rename**: when a flattened `Nested` column is added via `ALTER TABLE ADD COLUMN` as the only child of its parent (e.g. `ADD COLUMN n.x Array(UInt64)` with no sibling `n.y`), it receives a plain-counter physical name (e.g. `5`) rather than a compound one (e.g. `5.x`). Renaming such a column to a different `Nested` parent (e.g. `n.x` → `m.x`) is rejected because the shared array offset stream name is derived from the logical parent, and changing it would break reads of existing parts. Multi-child flattened `Nested` columns with compound physical names can be renamed across parents without restriction.
+- **Single-child flattened `Nested` cross-parent rename**: when a flattened `Nested` column is added via `ALTER TABLE ADD COLUMN` as the only child of its parent (e.g. `ADD COLUMN n.x Array(UInt64)` with no sibling `n.y`), it receives a plain-counter column ID (e.g. `5`) rather than a compound one (e.g. `5.x`). Renaming such a column to a different `Nested` parent (e.g. `n.x` → `m.x`) is rejected because the shared array offset stream name is derived from the logical parent, and changing it would break reads of existing parts. Multi-child flattened `Nested` columns with compound column IDs can be renamed across parents without restriction.
