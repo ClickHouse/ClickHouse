@@ -2,7 +2,6 @@
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -185,10 +184,10 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     if (configuration.is_local)
     {
-        context_copy->setCurrentQueryId({});
-
         if (!CurrentThread::getGroup())
-            io.query_scope = QueryScope::create(context_copy);
+            io.query_scope = CurrentThread::QueryScope::create(context_copy);
+
+        context_copy->setCurrentQueryId({});
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
@@ -214,9 +213,9 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     if (configuration.is_local)
     {
-        QueryScope query_scope;
+        CurrentThread::QueryScope query_scope;
         if (!CurrentThread::getGroup())
-            query_scope = QueryScope::create(context_copy);
+            query_scope = CurrentThread::QueryScope::create(context_copy);
 
         BlockIO io = executeQuery(request, context_copy, QueryFlags{ .internal = true }).second;
         std::string result;

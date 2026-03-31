@@ -5,7 +5,6 @@
 #include <base/sort.h>
 
 #include <Common/iota.h>
-#include <Columns/ColumnSparse.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -271,7 +270,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
     for (size_t i = 0; i < attributes_columns.size(); ++i)
     {
         const auto & block_column = block.safeGetByPosition(i + skip_key_column_offset);
-        auto column = removeSpecialRepresentations(block_column.column->convertToFullColumnIfConst());
+        const auto & column = block_column.column;
 
         attributes_columns[i]->assumeMutable()->insertRangeFrom(*column, 0, column->size());
     }

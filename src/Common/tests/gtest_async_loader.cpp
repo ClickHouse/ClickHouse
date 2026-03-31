@@ -694,7 +694,7 @@ TEST(AsyncLoader, WaitersLimit)
             t.loader.wait(job);
             success.fetch_add(1);
         }
-        catch(...) // Ok: test counts success/failure outcomes
+        catch(...)
         {
             failure.fetch_add(1);
         }

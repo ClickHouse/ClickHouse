@@ -110,10 +110,7 @@ struct ZkNodeCache
           */
         if (!exists)
         {
-            /// For intermediate nodes that are created as parents (not explicitly changed by the user),
-            /// use ignore_if_exists to handle concurrent creation by other sessions.
-            bool ignore_if_exists = !changed;
-            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent, ignore_if_exists);
+            auto request = zkutil::makeCreateRequest(path, value, zkutil::CreateMode::Persistent);
             requests.push_back(request);
         }
         else if (changed)
