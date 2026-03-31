@@ -1,4 +1,5 @@
 set enable_parallel_replicas = 0;
+set query_plan_merge_expressions = 1;
 
 drop table if exists test;
 CREATE table test

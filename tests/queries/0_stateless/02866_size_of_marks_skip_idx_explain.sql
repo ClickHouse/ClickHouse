@@ -5,6 +5,7 @@ SET convert_query_to_cnf = 0;
 SET optimize_read_in_order = 1;
 
 SET enable_analyzer = 1; -- slightly different operator names than w/o
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS test_skip_idx;
 

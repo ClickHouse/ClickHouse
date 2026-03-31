@@ -1,4 +1,5 @@
 SET enable_analyzer=0;
+SET query_plan_merge_expressions=1;
 
 EXPLAIN SELECT * FROM numbers(100) ORDER BY number LIMIT 10 OFFSET 90;
 

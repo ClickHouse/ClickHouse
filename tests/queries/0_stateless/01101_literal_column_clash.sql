@@ -17,6 +17,7 @@ select null, isConstant(null), * from (select 2 x, null) a right join (select 3 
 
 -- other cases with joins and constants
 
+SET query_plan_lift_up_array_join = 0;
 select cast(1, 'UInt8') from (select arrayJoin([1, 2]) as a) t1 left join (select 1 as b) t2 on b = ignore('UInt8') SETTINGS enable_analyzer = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 select cast(1, 'UInt8') from (select arrayJoin([1, 2]) as a) t1 left join (select 1 as b) t2 on b = ignore('UInt8') SETTINGS enable_analyzer = 1;
 

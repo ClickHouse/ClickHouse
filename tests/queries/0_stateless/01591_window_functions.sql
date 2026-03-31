@@ -314,6 +314,7 @@ order by number
 
 -- The EXPLAIN for the above query would be difficult to understand, so check some
 -- simple cases instead.
+SET query_plan_execute_functions_after_sorting = 1;
 explain select
     count(*) over (partition by p),
     count(*) over (),

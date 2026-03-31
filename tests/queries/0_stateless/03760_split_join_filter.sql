@@ -16,6 +16,8 @@ SET enable_join_runtime_filters=0;
 SET query_plan_join_swap_table = 0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET query_plan_merge_expressions = 1;
+SET query_plan_merge_filter_into_join_condition = 0;
 
 SELECT explain FROM (
         EXPLAIN actions = 1
