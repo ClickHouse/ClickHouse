@@ -1,0 +1,24 @@
+A1: eq bare string	2
+A2: gte bare string	2
+A2: gte bare string	3
+A3: lt bare string	1
+A4: eq toDateTime	2
+A5: gte toDateTime	2
+A5: gte toDateTime	3
+B1: between	2
+B2: between wide	1
+B2: between wide	2
+C1: in single	2
+C2: in multi	1
+C2: in multi	3
+D1: dt64 eq	2
+D2: dt64 gte	2
+D2: dt64 gte	3
+D3: dt64 between	2
+D4: dt64 in	1
+D4: dt64 in	3
+E1: roundtrip	2000-01-01 10:00:00
+E2: roundtrip dt64	2000-01-01 10:00:00.123
+F1: explicit tz epoch	946720800
+F2: explicit where	1
+G1: prune result	1

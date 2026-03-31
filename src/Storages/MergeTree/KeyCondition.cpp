@@ -2485,8 +2485,13 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                         const bool has_string_argument = !func_arg_types.empty() && isStringOrFixedString(func_arg_types[0]);
                         const bool has_session_timezone = !context->getSettingsRef()[Setting::session_timezone].value.empty();
 
-                        // Skipping analysis in case when is requires parsing datetime from string
-                        // with `session_timezone` specified
+                        /// Skipping analysis when it requires parsing datetime from string
+                        /// with `session_timezone` specified — the monotonic-chain analysis
+                        /// cannot safely account for session-dependent timezone resolution.
+                        /// NOTE: PR #100647 made `doGetSerialization` respect `session_timezone`,
+                        /// so `convertFieldToType` now uses the correct timezone. This bail-out
+                        /// could potentially be removed once the `toDateTime(string_column)` key
+                        /// expression case is thoroughly tested with `session_timezone`
                         if (has_string_argument && has_session_timezone)
                             return false;
 
