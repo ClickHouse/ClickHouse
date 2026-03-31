@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
     extern const SettingsBool query_plan_merge_filters;
+    extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsBool query_plan_optimize_prewhere;
     extern const SettingsBool query_plan_push_down_limit;
@@ -83,6 +84,8 @@ namespace Setting
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const SettingsUInt64 max_bytes_for_lazy_final;
+    extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
@@ -182,6 +185,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
+
+    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
+    max_rows_for_lazy_final = from[Setting::max_rows_for_lazy_final];
+    max_bytes_for_lazy_final = from[Setting::max_bytes_for_lazy_final];
 
     max_limit_for_vector_search_queries = from[Setting::max_limit_for_vector_search_queries].value;
     vector_search_with_rescoring = from[Setting::vector_search_with_rescoring];

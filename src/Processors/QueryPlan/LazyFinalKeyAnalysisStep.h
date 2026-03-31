@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
-#include <Processors/IProcessor.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 namespace DB
@@ -12,26 +11,26 @@ namespace DB
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class LazyFinalKeyAnalysisTransform : public IProcessor
+class LazyFinalKeyAnalysisStep : public ITransformingStep
 {
 public:
-    LazyFinalKeyAnalysisTransform(
+    LazyFinalKeyAnalysisStep(
+        SharedHeader input_header_,
         FutureSetPtr future_set_,
         ContextPtr query_context_,
         StorageMetadataPtr metadata_snapshot_,
         RangesInDataParts ranges_);
 
-    String getName() const override { return "LazyFinalKeyAnalysisTransform"; }
-    Status prepare() override;
-    void work() override;
+    String getName() const override { return "LazyFinalKeyAnalysis"; }
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
 private:
-    FutureSetPtr future_set;
-    RangesInDataParts ranges;
-    StorageMetadataPtr metadata_snapshot;
-    ContextPtr query_context;
+    void updateOutputHeader() override {}
 
-    bool is_done = false;
+    FutureSetPtr future_set;
+    ContextPtr query_context;
+    StorageMetadataPtr metadata_snapshot;
+    RangesInDataParts ranges;
 };
 
 }

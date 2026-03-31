@@ -585,6 +585,9 @@ void optimizeTreeSecondPass(
         if (optimization_settings.query_plan_optimize_primary_key)
             optimizePrimaryKeyConditionAndLimit(stack);
 
+        if (optimization_settings.optimize_lazy_final)
+            optimizeLazyFinal(stack, query_plan, nodes, optimization_settings);
+
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.

@@ -58,6 +58,9 @@ public:
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
 
+    /// Whether the set building was stopped early because of size limits with OverflowMode::BREAK.
+    bool isTruncated() const { return is_truncated.load(); }
+
     void checkIsCreated() const;
 
     void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
@@ -130,6 +133,9 @@ private:
 
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
+
+    /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
+    std::atomic<bool> is_truncated = false;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(

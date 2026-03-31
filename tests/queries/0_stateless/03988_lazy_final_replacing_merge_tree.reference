@@ -1,0 +1,15 @@
+-- Without optimization: filter on status
+-- Without optimization: filter on timestamp range
+-- Without optimization: combined filter
+-- With optimization: filter on status
+-- With optimization: filter on timestamp range
+-- With optimization: combined filter
+-- Plan with optimization
+-- Plan without optimization
+-- With optimization, small row limit (fallback)
+-- With optimization, small byte limit (fallback)
+-- Without optimization: prewhere
+-- With optimization: prewhere
+-- Without optimization: row policy
+-- With optimization: row policy
+-- Plan without filter (optimization should not apply)

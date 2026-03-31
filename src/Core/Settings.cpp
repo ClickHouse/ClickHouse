@@ -5853,6 +5853,15 @@ Use query plan for lazy materialization optimization.
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
+Optimize reading with FINAL from ReplacingMergeTree by building a set of sorting keys and using it for index analysis.
+)", 0) \
+    DECLARE(UInt64, max_rows_for_lazy_final, 10000000, R"(
+Maximum number of rows in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
+)", 0) \
+    DECLARE(UInt64, max_bytes_for_lazy_final, 256000000, R"(
+Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
+)", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \

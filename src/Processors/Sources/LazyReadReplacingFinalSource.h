@@ -28,8 +28,10 @@ public:
     String getName() const override { return "LazyReadReplacingFinalSource"; }
     Status prepare() override;
     void work() override;
+    Processors expandPipeline() override;
 
 private:
+    OutputPort * pipeline_output = nullptr;
     const StorageMetadataPtr metadata_snapshot;
     const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     const StorageSnapshotPtr storage_snapshot;
