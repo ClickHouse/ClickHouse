@@ -314,7 +314,6 @@ order by number
 
 -- The EXPLAIN for the above query would be difficult to understand, so check some
 -- simple cases instead.
-SET query_plan_execute_functions_after_sorting = 1;
 explain select
     count(*) over (partition by p),
     count(*) over (),
@@ -322,6 +321,7 @@ explain select
 from
     (select number, intDiv(number, 3) p, mod(number, 5) o
         from numbers(16)) t
+SETTINGS query_plan_execute_functions_after_sorting = 1
 ;
 
 explain select
@@ -330,6 +330,7 @@ explain select
 from
     (select number, intDiv(number, 3) p, mod(number, 5) o
         from numbers(16)) t
+SETTINGS query_plan_execute_functions_after_sorting = 1
 ;
 
 -- A test case for the sort comparator found by fuzzer.

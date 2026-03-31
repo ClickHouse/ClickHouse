@@ -1,4 +1,5 @@
 SET optimize_read_in_order = 1, optimize_sorting_by_input_stream_properties = 1;
+SET query_plan_merge_expressions = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET enable_vertical_final = 0;
 SET optimize_on_insert = 1;

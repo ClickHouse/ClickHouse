@@ -5,6 +5,7 @@ SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET query_plan_merge_expressions = 1;
 SET query_plan_remove_unused_columns = 1;
+SET query_plan_split_filter = 1;
 
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;

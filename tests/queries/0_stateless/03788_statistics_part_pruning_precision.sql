@@ -1,6 +1,8 @@
 -- This test validates that Field-based MinMax statistics can precisely prune parts
 -- for large integers (beyond 2^53), high-precision Decimals, and Float64 values.
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS test_stats_exceeds;
 
 CREATE TABLE test_stats_exceeds (
