@@ -959,15 +959,25 @@ bool StorageFileLog::updateFileInfos()
 
                         file_infos.file_names.push_back(file_name);
 
+                        /// If the file already existed with a different inode (deleted and recreated),
+                        /// clean up the old inode's meta entry and on-disk meta file to prevent
+                        /// two meta_by_inode entries mapping to the same filename.
+                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                        {
+                            if (it->second.inode != inode)
+                            {
+                                file_infos.meta_by_inode.erase(it->second.inode);
+                                disk->removeFileIfExists(getFullMetaPath(file_name));
+                            }
+                            it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
+                        }
+                        else
+                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
+
                         if (auto it = file_infos.meta_by_inode.find(inode); it != file_infos.meta_by_inode.end())
                             it->second = FileMeta{.file_name = file_name};
                         else
                             file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
-
-                        if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
-                            it->second = FileContext{.status = FileStatus::OPEN, .inode = inode};
-                        else
-                            file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
                     }
                     break;
                 }
@@ -1003,8 +1013,17 @@ bool StorageFileLog::updateFileInfos()
                         file_infos.file_names.push_back(file_name);
                         auto inode = getInode(file_path);
 
+                        /// If the file name was previously tracked with a different inode,
+                        /// clean up the stale meta entry.
                         if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
+                        {
+                            if (it->second.inode != inode)
+                            {
+                                file_infos.meta_by_inode.erase(it->second.inode);
+                                disk->removeFileIfExists(getFullMetaPath(file_name));
+                            }
                             it->second = FileContext{.inode = inode};
+                        }
                         else
                             file_infos.context_by_name.emplace(file_name, FileContext{.inode = inode});
 
@@ -1042,8 +1061,7 @@ bool StorageFileLog::updateFileInfos()
                     meta != file_infos.meta_by_inode.end() && meta->second.file_name == file_name)
                     file_infos.meta_by_inode.erase(meta);
 
-                if (std::filesystem::exists(getFullMetaPath(file_name)))
-                    (void)std::filesystem::remove(getFullMetaPath(file_name));
+                disk->removeFileIfExists(getFullMetaPath(file_name));
                 file_infos.context_by_name.erase(it);
             }
             else
