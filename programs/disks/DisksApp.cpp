@@ -138,7 +138,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
         {
             command = getCommandByName(arguments[0]);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             return {arguments.back()};
         }
@@ -156,7 +156,7 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     {
         command = getCommandByName(arguments[0]);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return {last_token};
     }
@@ -245,7 +245,7 @@ bool DisksApp::processQueryText(const String & text)
         {
             error_string = err.what();
         }
-        catch (...)
+        catch (...) // Ok: report unknown exception
         {
             error_string = "Unknown exception";
         }
@@ -273,7 +273,6 @@ void DisksApp::runInteractiveReplxx()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = {},
-        .on_complete_modify_callback = ReplxxLineReader::OnCompleteModifyCallback(),
     };
     ReplxxLineReader lr(std::move(reader_options));
     lr.enableBracketedPaste();

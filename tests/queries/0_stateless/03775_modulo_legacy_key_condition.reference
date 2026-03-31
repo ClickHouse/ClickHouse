@@ -26,7 +26,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_modulo_legacy_partition_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 16/16
             Granules: 20/20
@@ -55,7 +55,7 @@ Expression ((Project names + Projection))
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_modulo_legacy_partition_key)
         Indexes:
-          MinMax
+          Partition Min-Max
             Condition: true
             Parts: 16/16
             Granules: 20/20
