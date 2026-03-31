@@ -458,6 +458,8 @@ void alter(
             metadata_json_generator.generateAddColumnMetadata(params[0].column_name, params[0].data_type);
             break;
         case AlterCommand::Type::DROP_COLUMN:
+            if (params[0].clear)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Clear column is not supported for iceberg. Please use UPDATE instead");
             metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
             break;
         case AlterCommand::Type::MODIFY_COLUMN:
