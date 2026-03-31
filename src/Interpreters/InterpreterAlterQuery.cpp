@@ -5,6 +5,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
@@ -26,15 +27,18 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
 #include <Storages/StorageKeeperMap.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/IStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -45,6 +49,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool alter_distributed_propagate_to_remote;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
@@ -67,6 +72,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -93,6 +99,163 @@ template <class CommandsType>
 bool hasCommands(const CommandSegments & segments)
 {
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
+}
+
+AccessRightsElements getRequiredAccessForAlterCommands(
+    const ASTAlterQuery & alter,
+    const String & database,
+    const String & table)
+{
+    AccessRightsElements required_access;
+
+    for (const auto & child : alter.command_list->children)
+        required_access.append_range(InterpreterAlterQuery::getRequiredAccessForCommand(child->as<ASTAlterCommand &>(), database, table));
+
+    return required_access;
+}
+
+bool shouldPropagateAlterToRemote(const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::alter_distributed_propagate_to_remote];
+}
+
+void validatePropagateAlterToRemote(
+    const ASTAlterQuery & alter,
+    const StorageDistributed & distributed,
+    const CommandSegments & segments,
+    bool replicated_database)
+{
+    if (replicated_database)
+    {
+        if (!alter.cluster.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `alter_distributed_propagate_to_remote` cannot be used together with `ON CLUSTER` for replicated databases");
+    }
+    else if (alter.cluster.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `alter_distributed_propagate_to_remote` requires `ON CLUSTER`");
+    }
+
+    if (distributed.getRemoteTableFunctionPtr())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting `alter_distributed_propagate_to_remote` is not supported for `Distributed` tables over table functions");
+
+    if (distributed.getExplicitClusterName().empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting `alter_distributed_propagate_to_remote` requires a named cluster in the `Distributed` table definition");
+
+    if (segments.size() != 1 || !std::holds_alternative<AlterCommands>(segments.front()))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Setting `alter_distributed_propagate_to_remote` supports only metadata `ALTER` commands");
+
+    const auto & alter_commands = std::get<AlterCommands>(segments.front());
+    if (alter_commands.empty())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Empty `ALTER` query");
+
+    for (const auto & command : alter_commands)
+    {
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting `alter_distributed_propagate_to_remote` currently supports only `ADD COLUMN` and `COMMENT COLUMN`");
+    }
+}
+
+void waitForDistributedDDL(BlockIO & io)
+{
+    if (!io.pipeline.initialized())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `alter_distributed_propagate_to_remote` requires `distributed_ddl_task_timeout` to be greater than zero");
+
+    PullingPipelineExecutor executor(io.pipeline);
+    Block block;
+    while (executor.pull(block))
+    {
+    }
+}
+
+void removeSettingFromQuery(ASTAlterQuery & alter, std::string_view setting_name)
+{
+    if (!alter.settings_ast)
+        return;
+
+    auto * set_query = alter.settings_ast->as<ASTSetQuery>();
+    if (!set_query)
+        return;
+
+    auto & changes = set_query->changes;
+    std::erase_if(changes, [&](const SettingChange & change) { return change.name == setting_name; });
+
+    if (!changes.empty())
+        return;
+
+    auto it = std::find(alter.children.begin(), alter.children.end(), alter.settings_ast);
+    if (it != alter.children.end())
+        alter.children.erase(it);
+    alter.settings_ast.reset();
+}
+
+ASTPtr buildUnderlyingTablesAlterQuery(const ASTAlterQuery & alter, const StorageDistributed & distributed)
+{
+    auto rewritten_query = alter.clone();
+    auto & rewritten_alter = rewritten_query->as<ASTAlterQuery &>();
+
+    rewritten_alter.cluster = distributed.getExplicitClusterName();
+    removeSettingFromQuery(rewritten_alter, "alter_distributed_propagate_to_remote");
+
+    if (distributed.getRemoteDatabaseName().empty())
+        rewritten_alter.database = nullptr;
+    else
+        rewritten_alter.setDatabase(distributed.getRemoteDatabaseName());
+
+    rewritten_alter.setTable(distributed.getRemoteTableName());
+
+    return rewritten_query;
+}
+
+ASTPtr buildDistributedTablesAlterQuery(const ASTAlterQuery & alter)
+{
+    auto rewritten_query = alter.clone();
+    auto & rewritten_alter = rewritten_query->as<ASTAlterQuery &>();
+    removeSettingFromQuery(rewritten_alter, "alter_distributed_propagate_to_remote");
+    return rewritten_query;
+}
+
+BlockIO executePropagatingAlterOnDistributedTable(
+    const ASTAlterQuery & alter,
+    const StoragePtr & table,
+    const CommandSegments & segments,
+    const DatabasePtr & database,
+    const StorageID & table_id,
+    const ContextMutablePtr & context,
+    const AccessRightsElements & required_access)
+{
+    auto * distributed = dynamic_cast<StorageDistributed *>(table.get());
+    if (!distributed)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `alter_distributed_propagate_to_remote` can be used only with `Distributed` tables");
+
+    auto distributed_query = buildDistributedTablesAlterQuery(alter);
+    bool replicated_database = database->shouldReplicateQuery(context, distributed_query);
+    validatePropagateAlterToRemote(alter, *distributed, segments, replicated_database);
+
+    auto ddl_context = Context::createCopy(context);
+    ddl_context->resetSettingsToDefaultValue({"alter_distributed_propagate_to_remote"});
+
+    DDLQueryOnClusterParams remote_params;
+    remote_params.cluster = distributed->getCluster();
+    remote_params.access_to_check = getRequiredAccessForAlterCommands(alter, distributed->getRemoteDatabaseName(), distributed->getRemoteTableName());
+    auto remote_io = executeDDLQueryOnCluster(buildUnderlyingTablesAlterQuery(alter, *distributed), ddl_context, remote_params);
+    waitForDistributedDDL(remote_io);
+
+    if (replicated_database)
+    {
+        auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
+        guard->releaseTableLock();
+        return database->tryEnqueueReplicatedDDL(distributed_query, ddl_context, {}, std::move(guard));
+    }
+
+    DDLQueryOnClusterParams distributed_params;
+    distributed_params.access_to_check = required_access;
+    auto distributed_io = executeDDLQueryOnCluster(distributed_query, ddl_context, distributed_params);
+    waitForDistributedDDL(distributed_io);
+    return distributed_io;
 }
 
 CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
@@ -376,7 +539,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
-    if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    const bool propagate_alter_to_remote = shouldPropagateAlterToRemote(getContext());
+
+    if (!propagate_alter_to_remote && !alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (table && table->as<StorageKeeperMap>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mutations with ON CLUSTER are not allowed for KeeperMap tables");
@@ -392,7 +557,8 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(alter.getDatabase()));
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    if (database->shouldReplicateQuery(getContext(), query_ptr))
+
+    if (!propagate_alter_to_remote && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
@@ -423,8 +589,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-
     if (modify_query)
     {
         // Expand CTE before filling default database
@@ -440,6 +604,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateSegmentsCombination(segments);
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);
+
+    if (propagate_alter_to_remote)
+        return executePropagatingAlterOnDistributedTable(alter, table, segments, database, table_id, getContext(), getRequiredAccess());
+
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
 
     if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
         return std::move(lightweight_result.value());

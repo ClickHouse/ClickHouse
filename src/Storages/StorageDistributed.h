@@ -131,6 +131,8 @@ public:
     /// Used by InterpreterInsertQuery
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
+    const ASTPtr & getRemoteTableFunctionPtr() const { return remote_table_function_ptr; }
+    const String & getExplicitClusterName() const { return cluster_name; }
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery

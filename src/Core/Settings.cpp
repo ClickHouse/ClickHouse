@@ -2402,6 +2402,11 @@ Possible values:
 - 0 — Async mode.
 - Negative integer — infinite timeout.
 )", 0) \
+    DECLARE(Bool, alter_distributed_propagate_to_remote, false, R"(
+For `ALTER TABLE` on a `Distributed` table, propagates supported metadata changes to the underlying remote table first, then updates the `Distributed` table metadata locally.
+
+Currently supported only for `ADD COLUMN`.
+)", 0) \
     DECLARE(Milliseconds, stream_flush_interval_ms, 7500, R"(
 Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#max_insert_block_size) rows.
 
