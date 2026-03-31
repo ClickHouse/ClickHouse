@@ -72,6 +72,11 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileGK", "quantileBFloat16", "quantileDD",
     "quantileTiming", "quantileTimingWeighted",
     "quantileDeterministic",
+    /// Floating-point aggregates whose State/Merge path can differ from direct
+    /// computation due to accumulation order (not numerically stable across partitions).
+    "stddevPop", "stddevSamp", "varPop", "varSamp",
+    "covarPop", "covarSamp", "corr",
+    "avg", "avgWeighted",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
 };
@@ -908,6 +913,25 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
     GetAggregatesVisitor(agg_data).visit(select.select());
     if (agg_data.aggregates.empty())
         return false;
+
+    /// Skip aggregates that already have combinators (e.g. sumIf, countIf,
+    /// avgArray, etc.) — appending State to these produces double-combinator
+    /// names that may not resolve correctly.
+    for (const auto & aggregate_ast : agg_data.aggregates)
+    {
+        const auto * agg_func = aggregate_ast->as<ASTFunction>();
+        if (!agg_func)
+            return false;
+        const auto & name = agg_func->name;
+        /// Check for common combinator suffixes.
+        if (name.ends_with("If") || name.ends_with("Array") || name.ends_with("Map")
+            || name.ends_with("State") || name.ends_with("Merge")
+            || name.ends_with("ForEach") || name.ends_with("Distinct")
+            || name.ends_with("OrDefault") || name.ends_with("OrNull")
+            || name.ends_with("Resample") || name.ends_with("ArgMin")
+            || name.ends_with("ArgMax"))
+            return false;
+    }
 
     /// Verify every SELECT-list expression is either an aggregate or a GROUP BY column.
     /// Non-aggregate, non-GROUP-BY items (bare constants, arithmetic expressions)
