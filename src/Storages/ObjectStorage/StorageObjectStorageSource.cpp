@@ -739,6 +739,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (!column.second.second.type->isNullable())
                     continue;
 
+                /// Skip columns produced by prewhere or row-level filter expressions —
+                /// they are computed at read time, not stored in the file.
+                if (format_filter_info
+                    && ((format_filter_info->prewhere_info && column_name == format_filter_info->prewhere_info->prewhere_column_name)
+                        || (format_filter_info->row_level_filter && column_name == format_filter_info->row_level_filter->column_name)))
+                    continue;
+
                 /// Column is nullable and absent in file
                 constant_columns_with_values[column.second.first] =
                     ConstColumnWithValue{
