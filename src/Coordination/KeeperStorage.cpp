@@ -3983,9 +3983,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
     KeeperResponsesForSessions results;
 
-    /// ZooKeeper update sessions expirity for each request, not only for heartbeats
-    if (auto timeout_it = session_and_timeout.find(session_id); timeout_it != session_and_timeout.end())
-        session_expiry_queue.addNewSessionOrUpdate(session_id, timeout_it->second);
+    /// ZooKeeper update sessions expiry for each request, not only for heartbeats.
+    if (session_id >= 0)
+        session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
