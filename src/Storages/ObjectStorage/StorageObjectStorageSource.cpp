@@ -31,6 +31,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -650,9 +651,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             initial_header = sample_header;
             schema_changed = true;
         }
-        /// Save the row_level_filter if we need to strip it from format-level filter info
-        /// so we can apply it as a fallback FilterTransform later in the pipeline.
+        /// Save stripped filters if we need to apply them as fallback FilterTransforms
+        /// later in the pipeline when the file format doesn't support PREWHERE.
         FilterDAGInfoPtr stripped_row_level_filter;
+        PrewhereInfoPtr stripped_prewhere_info;
 
         auto filter_info = [&]() -> FormatFilterInfoPtr
         {
@@ -667,9 +669,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             const bool format_supports_prewhere =
                 FormatFactory::instance().checkIfFormatSupportsPrewhere(actual_format, context_, format_settings);
 
-            /// Save row_level_filter for fallback FilterTransform when format doesn't support PREWHERE.
-            if (!format_supports_prewhere && format_filter_info->row_level_filter)
-                stripped_row_level_filter = format_filter_info->row_level_filter;
+            /// Save filters for fallback FilterTransform when format doesn't support PREWHERE.
+            if (!format_supports_prewhere)
+            {
+                if (format_filter_info->row_level_filter)
+                    stripped_row_level_filter = format_filter_info->row_level_filter;
+                if (format_filter_info->prewhere_info)
+                    stripped_prewhere_info = format_filter_info->prewhere_info;
+            }
 
             if (schema_changed)
             {
@@ -757,6 +764,23 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         builder.init(Pipe(input_format));
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+
+        /// Apply PREWHERE filter as a regular FilterTransform when the file format
+        /// doesn't support PREWHERE. For mixed-format data lake tables (e.g. Iceberg
+        /// with Parquet + ORC files), table-level PREWHERE support may not match the
+        /// individual file's format. We strip prewhere_info from FormatFilterInfo above
+        /// and apply it here as a post-read filter instead.
+        if (stripped_prewhere_info)
+        {
+            auto prewhere_actions = std::make_shared<ExpressionActions>(stripped_prewhere_info->prewhere_actions.clone());
+            builder.addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<FilterTransform>(
+                    header, prewhere_actions,
+                    stripped_prewhere_info->prewhere_column_name,
+                    stripped_prewhere_info->remove_prewhere_column);
+            });
+        }
 
         /// Apply row-level security filter as a regular FilterTransform when the file
         /// format doesn't support PREWHERE. The query planner puts row policies into

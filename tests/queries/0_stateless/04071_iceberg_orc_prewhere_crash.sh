@@ -30,11 +30,13 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 
 # Read with Parquet config (enables PREWHERE) — this used to crash on ORC files.
+# Use explicit PREWHERE (not WHERE + optimizer) because the query plan optimizer
+# cannot push PREWHERE for ObjectStorage tables (getColumnSizes() returns empty).
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM icebergLocal('${ICEBERG_PATH}', 'Parquet', 'c0 Int64, c1 String')
-    WHERE c0 > 50
-    SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1
+    PREWHERE c0 > 50
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Also test pure ORC read through Parquet config
@@ -52,8 +54,8 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
     FROM icebergLocal('${ICEBERG_PATH_ORC}', 'Parquet', 'c0 Int64, c1 String')
-    WHERE c0 > 50
-    SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1
+    PREWHERE c0 > 50
+    SETTINGS input_format_parquet_use_native_reader_v3 = 1
 "
 
 # Cleanup
