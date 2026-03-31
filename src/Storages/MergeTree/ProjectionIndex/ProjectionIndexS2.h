@@ -2,6 +2,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
+#include <Common/logger_useful.h>
 
 #include <optional>
 
@@ -27,11 +28,12 @@ class ASTProjectionDeclaration;
 ///
 ///   2. tryRewriteFilterForQuery() — At query time, rewrites spatial predicates like
 ///        ST_Intersects(column, const_polygon)  or  ST_DWithin(column, const_geom, dist)
-///      into
-///        s2CellsIntersect(cell_id, ancestor_cell)
-///      where ancestor_cell is the smallest S2 cell that contains the entire query
-///      geometry's covering. This rewritten predicate can be evaluated against the
-///      projection's primary key (cell_id) for mark-level pruning.
+///      into:
+///        __s2CoveringIntersects(cell_id, [c1, c2, ..., cN])
+///      The full multi-cell covering is passed as an Array(UInt64) constant.
+///      `KeyCondition` recognizes this function and uses `coveringIntersectsRange`
+///      to binary-search the sorted `S2CellUnion`, giving much tighter pruning than
+///      a single ancestor cell (which could over-cover for spread-out coverings).
 ///
 ///   3. The generic projection index framework in projectionsCommon.cpp then uses
 ///      the rewritten filter + _parent_part_offset to identify which rows in the
@@ -56,7 +58,7 @@ public:
     static ProjectionIndexPtr create(const ASTProjectionDeclaration & proj);
 
     explicit ProjectionIndexS2(Params params_)
-        : params(std::move(params_))
+        : params(std::move(params_)), log(getLogger("ProjectionIndexS2"))
     {
     }
 
@@ -65,8 +67,8 @@ public:
     const Params & getParams() const { return params; }
 
     /// Attempt to rewrite a query filter for use with this projection's primary key.
-    /// Scans the filter DAG for polygonsIntersectSpherical(source_column, const_geom)
-    /// and rewrites it to s2CellsIntersect(cell_id, ancestor_cell).
+    /// Scans the filter DAG for spatial predicates on the source column and rewrites
+    /// them to `__s2CoveringIntersects(cell_id, covering_array)`.
     /// Returns std::nullopt if no rewrite is possible.
     std::optional<ActionsDAG> tryRewriteFilterForQuery(const ActionsDAG::Node * filter_node, ContextPtr context) const;
 
@@ -90,6 +92,7 @@ public:
 
 private:
     Params params;
+    LoggerPtr log;
 };
 
 }

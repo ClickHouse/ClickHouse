@@ -687,6 +687,10 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement &, const Field &) { return false; }
         },
         {
+            "__s2CoveringIntersects",
+            [] (RPNElement &, const Field &) { return false; }
+        },
+        {
             "s2RectContains",
             [] (RPNElement &, const Field &) { return false; }
         },
@@ -3412,11 +3416,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             }
 
 #if USE_S2_GEOMETRY
-            /// s2CellsIntersect is a 2-arg function and must be handled before the
-            /// generic func(key, const) path below, which would succeed (since one
-            /// arg is a key column and the other is a constant) but would only call
-            /// the atom_map callback without computing the S2 covering.
-            if (enable_s2_index_pruning && func_name == "s2CellsIntersect")
+            /// s2CellsIntersect and __s2CoveringIntersects are 2-arg functions and
+            /// must be handled before the generic func(key, const) path below, which
+            /// would succeed (since one arg is a key column and the other is a constant)
+            /// but would only call the atom_map callback without computing the S2 covering.
+            /// __s2CoveringIntersects takes Array(UInt64) as arg1, which the generic path
+            /// cannot handle.
+            if (enable_s2_index_pruning
+                && (func_name == "s2CellsIntersect" || func_name == "__s2CoveringIntersects"))
                 return tryAnalyzeS2Covering(func, key_columns, s2_max_covering_cells, out);
 #endif
 

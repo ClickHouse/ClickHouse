@@ -158,6 +158,39 @@ bool tryAnalyzeS2Covering(
         return make_result(key_arg_idx, S2CellUnion({const_cell}));
     }
 
+    // ------------------------------------------------------------------
+    // __s2CoveringIntersects(cell_id, Array(UInt64))
+    //
+    // Internal function emitted by ProjectionIndexS2 that passes the full
+    // multi-cell covering instead of collapsing it to a single ancestor.
+    // The Array(UInt64) constant is converted to an S2CellUnion for use
+    // by coveringIntersectsRange, which binary-searches the sorted covering.
+    // ------------------------------------------------------------------
+    if (func_name == "__s2CoveringIntersects")
+    {
+        /// arg0 = key column (UInt64), arg1 = constant Array(UInt64)
+        Field arr_val;
+        DataTypePtr arr_type;
+        if (!func.getArgumentAt(1).tryGetConstant(arr_val, arr_type))
+            return false;
+
+        const auto & arr = arr_val.safeGet<Array>();
+        std::vector<S2CellId> cells;
+        cells.reserve(arr.size());
+        for (const auto & elem : arr)
+        {
+            S2CellId cell(elem.safeGet<UInt64>());
+            if (!cell.is_valid())
+                return false;
+            cells.push_back(cell);
+        }
+        if (cells.empty())
+            return false;
+
+        /// S2CellUnion constructor auto-normalizes (sorts + deduplicates).
+        return make_result(0, S2CellUnion(std::move(cells)));
+    }
+
     return false;
 }
 

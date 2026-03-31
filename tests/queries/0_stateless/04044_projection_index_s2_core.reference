@@ -12,12 +12,12 @@ Expression ((Project names + Projection))
     Projections:
       Name: s2_proj
         Description: Projection has been analyzed and will be applied during reading
-        Condition: s2CellsIntersect
+        Condition: __s2CoveringIntersects
         Search Algorithm: generic exclusion search
         Parts: 2
-        Marks: 24
-        Ranges: 2
-        Rows: 24
+        Marks: 16
+        Ranges: 5
+        Rows: 16
         Filtered Parts: 3
 1
 Expression ((Project names + Projection))
@@ -32,12 +32,12 @@ Expression ((Project names + Projection))
     Projections:
       Name: s2_proj
         Description: Projection has been analyzed and will be applied during reading
-        Condition: s2CellsIntersect
+        Condition: __s2CoveringIntersects
         Search Algorithm: generic exclusion search
         Parts: 2
-        Marks: 24
-        Ranges: 2
-        Rows: 24
+        Marks: 16
+        Ranges: 5
+        Rows: 16
         Filtered Parts: 3
 1
 Expression ((Project names + Projection))
@@ -52,7 +52,7 @@ Expression ((Project names + Projection))
     Projections:
       Name: s2_proj
         Description: Projection has been analyzed and will be applied during reading
-        Condition: s2CellsIntersect
+        Condition: __s2CoveringIntersects
         Search Algorithm: generic exclusion search
         Parts: 1
         Marks: 2

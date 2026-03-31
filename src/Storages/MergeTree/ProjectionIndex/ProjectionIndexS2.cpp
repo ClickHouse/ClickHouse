@@ -10,6 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -39,9 +40,10 @@
 #include <s2/s2cell_id.h>
 #include <s2/s2cell_union.h>
 #include <s2/s2earth.h>
+#include <s2/s2error.h>
 #include <s2/s2latlng.h>
 #include <s2/s2latlng_rect.h>
-#include <s2/s2metrics.h>
+#include <s2/s2polyline.h>
 #include <s2/s2region_coverer.h>
 #endif
 
@@ -572,11 +574,14 @@ std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cac
 #if USE_S2_GEOMETRY
 
 /// ── S2 covering computation ──────────────────────────────────────────────────
-/// Build an S2 cell covering for a geometry. Instead of using S2Polygon (which
-/// has linker issues with S2ValidationQueryBase), we compute an S2LatLngRect
-/// bounding box from all polygon vertices and then cover that rectangle.
-/// This is a conservative approximation (may include more area than the actual
-/// polygon), but it is correct: no false negatives, only potential false positives.
+/// Build an S2 cell covering for a geometry. For linestrings, we convert to
+/// native S2Polyline for tight coverings. For polygons, rings, and multi-polygons,
+/// we compute an S2LatLngRect bounding box from all vertices and cover that
+/// rectangle. The bounding box is a conservative approximation (no false
+/// negatives, only potential false positives). We cannot use S2Polygon due to
+/// linker issues with S2ValidationQueryBase in ClickHouse's S2 library build,
+/// and S2Loop has subtle winding-order semantics that can cause coverings to
+/// represent the complement of the intended region.
 
 struct S2CoveringBuildOptions
 {
@@ -663,11 +668,75 @@ bool addPolygonToRect(const SphericalPolygon & polygon, S2LatLngRect & rect, boo
     return true;
 }
 
-/// Build an S2CellUnion covering for a geometry.
-/// - For Point: returns a single S2 cell at max_level containing the point.
-/// - For LineString/MultiLineString/Polygon/MultiPolygon: computes an S2LatLngRect
-///   bounding box from all vertices and covers that rectangle with S2RegionCoverer.
-std::optional<S2CellUnion> buildS2CoveringForGeometry(
+/// ── Native S2 type conversion helpers ─────────────────────────────────────────
+/// Convert boost::geometry linestring types to native S2Polyline for tight S2
+/// coverings. Used by `buildS2Covering` for LineString/MultiLineString.
+
+/// Convert a boost (lon, lat) point in degrees to an S2Point on the unit sphere.
+std::optional<S2Point> boostPointToS2Point(const SphericalPoint & point)
+{
+    const double lon = boost::geometry::get<0>(point);
+    const double lat = boost::geometry::get<1>(point);
+
+    if (!std::isfinite(lon) || !std::isfinite(lat))
+        return std::nullopt;
+
+    S2LatLng lat_lng = S2LatLng::FromDegrees(lat, lon);
+    if (!lat_lng.is_valid())
+        return std::nullopt;
+
+    return lat_lng.ToPoint();
+}
+
+/// Convert a boost linestring to a vector of S2Points (no closing vertex removal).
+std::optional<std::vector<S2Point>> convertBoostLineStringToS2Points(const SphericalLineString & linestring)
+{
+    if (linestring.empty())
+        return std::nullopt;
+
+    std::vector<S2Point> points;
+    points.reserve(linestring.size());
+    for (const auto & vertex : linestring)
+    {
+        auto s2point = boostPointToS2Point(vertex);
+        if (!s2point)
+            return std::nullopt;
+        points.push_back(*s2point);
+    }
+
+    return points;
+}
+
+/// Try to convert a boost linestring to an S2Polyline. Returns nullptr on failure.
+std::unique_ptr<S2Polyline> tryConvertLineStringToS2Polyline(const SphericalLineString & linestring)
+{
+    auto points_opt = convertBoostLineStringToS2Points(linestring);
+    if (!points_opt || points_opt->size() < 2)
+        return nullptr;
+
+    auto polyline = std::make_unique<S2Polyline>();
+    polyline->set_s2debug_override(S2Debug::DISABLE);
+    polyline->Init(*points_opt);
+
+    S2Error error;
+    if (polyline->FindValidationError(&error))
+        return nullptr;
+
+    return polyline;
+}
+
+/// Build an S2CellUnion covering for a decoded geometry.
+///
+/// Strategy per geometry kind:
+///   Point           → single S2CellId at max_level (no coverer needed)
+///   LineString      → native S2Polyline covering (tight); bounding-box fallback
+///   MultiLineString → native S2Polyline per segment, union; bounding-box fallback
+///   Ring/Polygon/MultiPolygon → S2LatLngRect bounding-box covering
+///
+/// LineStrings prefer native S2Polyline because S2RegionCoverer can produce
+/// a tight covering along the line. Polygons use bounding-box because S2Polygon
+/// cannot be linked (missing symbols) and S2Loop has winding-order ambiguity.
+std::optional<S2CellUnion> buildS2Covering(
     const DecodedGeometry & geometry,
     const S2CoveringBuildOptions & options)
 {
@@ -697,7 +766,69 @@ std::optional<S2CellUnion> buildS2CoveringForGeometry(
         return result;
     }
 
-    /// All other types: compute bounding-box covering from vertices.
+    /// LineString: try native S2Polyline for a tight covering; fall through
+    /// to bounding-box if conversion fails.
+    if (geometry.kind == DecodedGeometry::Kind::LineString)
+    {
+        auto polyline = tryConvertLineStringToS2Polyline(std::get<SphericalLineString>(geometry.value));
+        if (polyline)
+        {
+            S2RegionCoverer::Options coverer_options;
+            coverer_options.set_max_cells(static_cast<int>(options.max_cells));
+            coverer_options.set_min_level(static_cast<int>(options.min_level));
+            coverer_options.set_max_level(static_cast<int>(options.max_level));
+            S2RegionCoverer coverer(coverer_options);
+
+            S2CellUnion result = coverer.GetCovering(*polyline);
+            if (options.normalize_covering)
+                result.Normalize();
+            if (!result.empty())
+                return result;
+        }
+        /// Fall through to bounding-box path below.
+    }
+
+    /// MultiLineString: try native S2Polyline per segment, union results;
+    /// fall through to bounding-box if any segment conversion fails.
+    if (geometry.kind == DecodedGeometry::Kind::MultiLineString)
+    {
+        const auto & multi = std::get<SphericalMultiLineString>(geometry.value);
+        bool all_converted = true;
+        S2CellUnion native_result;
+
+        S2RegionCoverer::Options coverer_options;
+        coverer_options.set_max_cells(static_cast<int>(options.max_cells));
+        coverer_options.set_min_level(static_cast<int>(options.min_level));
+        coverer_options.set_max_level(static_cast<int>(options.max_level));
+        S2RegionCoverer coverer(coverer_options);
+
+        for (const auto & linestring : multi)
+        {
+            auto polyline = tryConvertLineStringToS2Polyline(linestring);
+            if (!polyline)
+            {
+                all_converted = false;
+                break;
+            }
+            S2CellUnion sub = coverer.GetCovering(*polyline);
+            if (native_result.empty())
+                native_result = std::move(sub);
+            else
+                native_result = native_result.Union(sub);
+        }
+
+        if (all_converted)
+        {
+            if (options.normalize_covering)
+                native_result.Normalize();
+            if (!native_result.empty())
+                return native_result;
+        }
+        /// Fall through to bounding-box path below.
+    }
+
+    /// Bounding-box path for Ring, Polygon, MultiPolygon, and as fallback
+    /// for LineString/MultiLineString when native conversion fails.
     S2LatLngRect rect;
     bool initialized = false;
 
@@ -936,81 +1067,6 @@ std::optional<DecodedGeometry> decodeGeometryFromField(const Field & field, cons
     return std::nullopt;
 }
 
-/// ── Single ancestor cell strategy ────────────────────────────────────────────
-/// Given a covering (set of S2 cells), find the smallest single S2 cell that
-/// contains ALL cells in the covering. This "ancestor cell" is used as the
-/// constant argument in the rewritten s2CellsIntersect(cell_id, ancestor) predicate.
-/// The ancestor is found by walking up from the first cell's level toward level 0
-/// and checking containment. This simplifies the rewrite to a single-cell comparison.
-std::optional<UInt64> buildSingleAncestorCellId(const S2CellUnion & covering)
-{
-    if (covering.empty())
-        return std::nullopt;
-
-    const S2CellId first = *covering.begin();
-    for (int level = first.level(); level >= 0; --level)
-    {
-        S2CellId candidate = first.parent(level);
-        bool contains_all = true;
-        for (const auto & cell : covering)
-        {
-            if (!candidate.contains(cell))
-            {
-                contains_all = false;
-                break;
-            }
-        }
-
-        if (contains_all)
-            return candidate.id();
-    }
-
-    return std::nullopt;
-}
-
-/// Expand an ancestor cell to account for a distance buffer (in meters).
-/// The idea: find the S2 level whose cells are large enough to cover the
-/// buffer distance, then walk the ancestor cell up to that level.
-/// This ensures that any geometry within `distance_meters` of the query
-/// geometry will intersect with the expanded ancestor cell.
-///
-/// SAFETY MARGIN: We go TWO levels coarser than the minimum required, because:
-/// 1. The query geometry may sit near the edge of its containing cell.
-/// 2. Points within distance_meters could fall in a neighboring cell at the
-///    ancestor level, causing false negatives if we only go one level coarser.
-/// Going two levels coarser ensures the ancestor cell's diagonal is at least
-/// 4x the required distance, providing ample safety margin.
-std::optional<UInt64> expandAncestorByDistance(UInt64 ancestor_id, double distance_meters)
-{
-    if (distance_meters <= 0)
-        return ancestor_id;
-
-    double distance_radians = S2Earth::MetersToRadians(distance_meters);
-
-    /// Find the level where the maximum cell diagonal >= distance_radians.
-    /// kMaxDiag.GetLevelForMaxValue returns the minimum level such that
-    /// all cells at that level have diagonal <= value. We want the level
-    /// where diagonal >= distance, so we go coarser.
-    ///
-    /// We go TWO levels coarser (not one) to ensure safety when the query
-    /// geometry is near a cell boundary. Each level up roughly doubles the
-    /// cell size, so two levels up gives 4x margin.
-    int buffer_level = S2::kMaxDiag.GetLevelForMaxValue(distance_radians);
-    buffer_level = std::max(0, buffer_level - 2);
-
-    S2CellId cell(ancestor_id);
-    if (!cell.is_valid())
-        return std::nullopt;
-
-    /// Walk up to ensure the cell covers the buffer distance.
-    /// The ancestor cell's level should be at most buffer_level.
-    int target_level = std::min(cell.level(), buffer_level);
-    if (target_level < 0)
-        target_level = 0;
-
-    return cell.parent(target_level).id();
-}
-
 #endif
 
 }
@@ -1126,13 +1182,15 @@ void ProjectionIndexS2::fillProjectionDescription(
 ///   1. Two-argument form: f(source_column, const_polygon) where f is one of
 ///      polygonsIntersectSpherical, polygonsWithinSpherical, ST_Intersects, etc.
 ///   2. Box form: ST_IntersectsBox(source_column, xmin, ymin, xmax, ymax)
+///   3. Distance form: ST_DWithin(source_column, const_geom, distance_meters)
 ///
-/// If found, builds an S2 covering for the constant geometry (or box), compresses
-/// it into a single ancestor cell, and produces a rewritten ActionsDAG:
-///   s2CellsIntersect(cell_id, <ancestor_cell_id>)
+/// If found, builds a multi-cell S2 covering for the constant geometry (or box)
+/// and produces a rewritten ActionsDAG:
+///   __s2CoveringIntersects(cell_id, [c1, c2, ..., cN])
 ///
-/// This rewritten DAG is then used by the generic projection index framework
-/// (in projectionsCommon.cpp) to prune marks via the projection's primary key.
+/// The full covering is passed as an Array(UInt64) constant, preserving tight
+/// spatial resolution. KeyCondition recognizes `__s2CoveringIntersects` and
+/// uses `coveringIntersectsRange` to binary-search the sorted S2CellUnion.
 std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const ActionsDAG::Node * filter_node, ContextPtr context) const
 {
 #if !USE_S2_GEOMETRY
@@ -1140,7 +1198,7 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
     (void)context;
     return std::nullopt;
 #else
-    LOG_DEBUG(getLogger("ProjectionIndexS2"), "Rewrite begin");
+    LOG_DEBUG(log, "Rewrite begin");
 
     if (!filter_node)
         return std::nullopt;
@@ -1206,8 +1264,8 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         }
         /// Path 3: ST_DWithin(source_column, const_geometry, distance_meters)
         ///          or ST_DWithin(const_geometry, source_column, distance_meters)
-        /// Build an S2 covering for const_geometry, then expand the ancestor cell
-        /// to cover the distance buffer.
+        /// Build an S2 covering for const_geometry, then expand it by the distance
+        /// buffer using S2CellUnion::Expand.
         else if (func_name == "ST_DWithin" && fn->children.size() == 3)
         {
             const ActionsDAG::Node * geometry_const = nullptr;
@@ -1238,43 +1296,60 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         if (!geometry)
             continue;
 
-        /// Build S2 covering and rewrite to s2CellsIntersect(cell_id, ancestor).
+        /// Build S2 covering for the query geometry. The full multi-cell covering
+        /// is passed to `__s2CoveringIntersects` so that `coveringIntersectsRange`
+        /// can binary-search the sorted covering — preserving the tight spatial
+        /// resolution instead of diluting it to a single ancestor cell.
+        ///
+        /// IMPORTANT: We do NOT use the projection's min_level/max_level here.
+        /// Those params constrain how data cells are stored in the projection,
+        /// but the query covering must cover the region at ALL levels. Using
+        /// unconstrained levels lets S2RegionCoverer choose optimal cell sizes
+        /// that correctly cover the region without gaps in Hilbert space.
         S2CoveringBuildOptions covering_options;
         covering_options.max_cells = params.max_cells;
-        covering_options.min_level = params.min_level;
-        covering_options.max_level = params.max_level;
+        covering_options.min_level = 0;
+        covering_options.max_level = 30;
+        covering_options.normalize_covering = true;
 
-        auto covering = buildS2CoveringForGeometry(*geometry, covering_options);
-        if (!covering)
+        auto covering = buildS2Covering(*geometry, covering_options);
+        if (!covering || covering->empty())
             continue;
 
-        auto ancestor = buildSingleAncestorCellId(*covering);
-        if (!ancestor)
-            continue;
-
-        /// For ST_DWithin, expand the ancestor cell to cover the distance buffer.
+        /// For ST_DWithin, expand the covering by the distance buffer.
+        /// S2CellUnion::Expand adds neighboring cells at each level to cover
+        /// the specified radius around every cell in the covering.
         if (distance_buffer_meters > 0)
         {
-            ancestor = expandAncestorByDistance(*ancestor, distance_buffer_meters);
-            if (!ancestor)
-                continue;
+            S1Angle radius = S1Angle::Radians(
+                distance_buffer_meters / S2Earth::RadiusMeters());
+            covering->Expand(radius, /*max_level_diff=*/4);
         }
+
+        LOG_DEBUG(log, "Query covering cells: {}", covering->size());
+
+        /// Build Array(UInt64) constant with all covering cell IDs.
+        Array cell_ids;
+        cell_ids.reserve(covering->size());
+        for (const auto & cell : *covering)
+            cell_ids.push_back(cell.id());
 
         ActionsDAG rewritten;
         auto uint64_type = std::make_shared<DataTypeUInt64>();
         const auto * cell_id_input = &rewritten.addInput("cell_id", uint64_type);
 
-        ColumnWithTypeAndName ancestor_col;
-        ancestor_col.name = std::to_string(*ancestor);
-        ancestor_col.type = uint64_type;
-        ancestor_col.column = uint64_type->createColumnConst(1, *ancestor);
-        const auto * ancestor_node = &rewritten.addColumn(std::move(ancestor_col));
+        auto arr_type = std::make_shared<DataTypeArray>(uint64_type);
+        ColumnWithTypeAndName arr_col;
+        arr_col.name = "s2_covering";
+        arr_col.type = arr_type;
+        arr_col.column = arr_type->createColumnConst(1, cell_ids);
+        const auto * arr_node = &rewritten.addColumn(std::move(arr_col));
 
-        auto s2_intersect = FunctionFactory::instance().get("s2CellsIntersect", context);
-        const auto * predicate = &rewritten.addFunction(s2_intersect, {cell_id_input, ancestor_node}, {});
+        auto s2_covering_fn = FunctionFactory::instance().get("__s2CoveringIntersects", context);
+        const auto * predicate = &rewritten.addFunction(s2_covering_fn, {cell_id_input, arr_node}, {});
         rewritten.getOutputs() = {predicate};
 
-        LOG_DEBUG(getLogger("ProjectionIndexS2"), "Rewrite success");
+        LOG_DEBUG(log, "Rewrite success");
         return rewritten;
     }
 
@@ -1349,7 +1424,7 @@ Block ProjectionIndexS2::calculate(
             continue;
         }
 
-        auto covering = buildS2CoveringForGeometry(*geometry, covering_options);
+        auto covering = buildS2Covering(*geometry, covering_options);
         if (!covering)
         {
             if (params.strict_decode)
