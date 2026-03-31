@@ -947,11 +947,12 @@ bool StorageFileLog::updateFileInfos()
         String file_path = getFullDataPath(file_name);
         for (const auto & event_info : event_infos.file_events)
         {
+            LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
+
             switch (event_info.type)
             {
                 case DirectoryWatcherBase::DW_ITEM_ADDED:
                 {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
                     /// Check if it is a regular file, and new file may be renamed or removed
                     if (std::filesystem::is_regular_file(file_path))
                     {
@@ -984,7 +985,6 @@ bool StorageFileLog::updateFileInfos()
 
                 case DirectoryWatcherBase::DW_ITEM_MODIFIED:
                 {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
                     /// When new file added and appended, it has two event: DW_ITEM_ADDED
                     /// and DW_ITEM_MODIFIED, since the order of these two events in the
                     /// sequence is uncentain, so we may can not find it in file_infos, just
@@ -995,17 +995,16 @@ bool StorageFileLog::updateFileInfos()
                 }
 
                 case DirectoryWatcherBase::DW_ITEM_REMOVED:
+                /// The file **left** the directory
                 case DirectoryWatcherBase::DW_ITEM_MOVED_FROM:
                 {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
                     if (auto it = file_infos.context_by_name.find(file_name); it != file_infos.context_by_name.end())
                         it->second.status = FileStatus::REMOVED;
                     break;
                 }
+                /// The file **arrived** in this directory
                 case DirectoryWatcherBase::DW_ITEM_MOVED_TO:
                 {
-                    LOG_TRACE(log, "New event {} watched, file_name: {}", event_info.callback, file_name);
-
                     /// Similar to DW_ITEM_ADDED, but if it removed from an old file
                     /// should obtain old meta file and rename meta file
                     if (std::filesystem::is_regular_file(file_path))
@@ -1039,6 +1038,7 @@ bool StorageFileLog::updateFileInfos()
                         else
                             file_infos.meta_by_inode.emplace(inode, FileMeta{.file_name = file_name});
                     }
+                    break;
                 }
             }
         }
