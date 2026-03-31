@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/memcpySmall.h>
 #include <base/memcmpSmall.h>
