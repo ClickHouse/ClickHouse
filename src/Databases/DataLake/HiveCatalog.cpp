@@ -7,26 +7,26 @@
 #include <optional>
 
 #include <Common/Exception.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
 #include <Core/Names.h>
-#include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Credentials.h>
 #include <IO/S3Settings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Databases/DataLake/Common.h>
 #include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
-extern const int DATALAKE_DATABASE_ERROR;
-extern const int NO_HIVEMETASTORE;
-extern const int FAULT_INJECTED;
+    extern const int DATALAKE_DATABASE_ERROR;
+    extern const int FAULT_INJECTED;
+    extern const int NO_HIVEMETASTORE;
 }
 
 namespace DB::FailPoints
 {
-extern const char check_database_datalake_negative[];
+    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
