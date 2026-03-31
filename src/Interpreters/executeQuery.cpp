@@ -1016,6 +1016,7 @@ void auditLog(const QueryLogElement & elem, ContextPtr context)
             break;
         case IAST::QueryKind::Create:
         case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
         case IAST::QueryKind::Rename:
         case IAST::QueryKind::Alter:
             audit_type = Context::AuditLogTypes::DDL;
