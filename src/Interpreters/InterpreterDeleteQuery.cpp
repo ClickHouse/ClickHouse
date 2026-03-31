@@ -32,7 +32,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsLightweightDeleteMode lightweight_delete_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsBool validate_mutation_query;
 }
 
 namespace MergeTreeSetting
@@ -102,11 +101,8 @@ BlockIO InterpreterDeleteQuery::execute()
         mutation_commands.emplace_back(mut_command);
 
         table->checkMutationIsPossible(mutation_commands, getContext()->getSettingsRef());
-        if (getContext()->getSettingsRef()[Setting::validate_mutation_query])
-        {
-            MutationsInterpreter::Settings mutation_settings(false);
-            MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
-        }
+        MutationsInterpreter::Settings mutation_settings(false);
+        MutationsInterpreter(table, metadata_snapshot, mutation_commands, getContext(), mutation_settings).validate();
         table->mutate(mutation_commands, getContext());
         return {};
     }
