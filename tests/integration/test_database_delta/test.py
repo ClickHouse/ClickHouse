@@ -549,7 +549,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert schema_name in get_schemas()
 
 
-def test_used_table_functions_in_query_log(started_cluster):
+def test_used_storages_in_query_log(started_cluster):
     node1 = started_cluster.instances["node1"]
     db_name = f"db_query_log_{uuid.uuid4()}".replace("-", "_")
 
@@ -572,10 +572,10 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
     node1.query("SYSTEM FLUSH LOGS")
 
     result = node1.query(
-        f"SELECT used_table_functions FROM system.query_log"
+        f"SELECT used_storages FROM system.query_log"
         f" WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
     ).strip()
-    assert "DeltaLake" in result, f"Expected DeltaLake in used_table_functions, got {result}"
+    assert "DeltaLake" in result, f"Expected DeltaLake in used_storages, got {result}"
 
 
 def test_snapshot_version(started_cluster):

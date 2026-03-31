@@ -727,7 +727,7 @@ def test_cluster_select(started_cluster):
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
     
-def test_used_table_functions_in_query_log(started_cluster):
+def test_used_storages_in_query_log(started_cluster):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
 
@@ -767,20 +767,20 @@ def test_used_table_functions_in_query_log(started_cluster):
     node1.query("SYSTEM FLUSH LOGS")
 
     result_non_cluster = node1.query(
-        f"SELECT used_table_functions FROM system.query_log"
+        f"SELECT used_storages FROM system.query_log"
         f" WHERE query_id = '{query_id_non_cluster}' AND type = 'QueryFinish'"
     ).strip()
     assert (
         "'IcebergS3'" in result_non_cluster
-    ), f"Non-cluster: expected IcebergS3 in used_table_functions, got {result_non_cluster}"
+    ), f"Non-cluster: expected IcebergS3 in used_storages, got {result_non_cluster}"
 
     result_cluster = node1.query(
-        f"SELECT used_table_functions FROM system.query_log"
+        f"SELECT used_storages FROM system.query_log"
         f" WHERE query_id = '{query_id_cluster}' AND type = 'QueryFinish'"
     ).strip()
     assert (
         "'IcebergS3Cluster'" in result_cluster
-    ), f"Cluster: expected IcebergS3Cluster in used_table_functions, got {result_cluster}"
+    ), f"Cluster: expected IcebergS3Cluster in used_storages, got {result_cluster}"
 
 
 def test_not_specified_catalog_type(started_cluster):

@@ -491,15 +491,7 @@ bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ 
 
 StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
 {
-    auto storage = tryGetTableImpl(name, context_, false, false);
-    if (storage && context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
-    {
-        auto engine_name = storage->getName();
-        if (dynamic_cast<StorageObjectStorageCluster *>(storage.get()))
-            engine_name += "Cluster";
-        context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::TableFunction, engine_name);
-    }
-    return storage;
+    return tryGetTableImpl(name, context_, false, false);
 }
 
 StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
@@ -687,6 +679,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /// because this table is actually stateless like a table function.
             /* is_table_function */true);
 
+        if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
+            context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName() + "Cluster");
+
         storage_cluster->startup();
         return storage_cluster;
     }
@@ -695,7 +690,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         context_->getClientInfo().collaborate_with_initiator &&
         can_use_parallel_replicas;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto result_storage = std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
         context_copy,
@@ -715,6 +710,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /// because this table is actually stateless like a table function.
         /* is_table_function */true,
         /* lazy_init */true);
+
+    if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
+        context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
+
+    return result_storage;
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
