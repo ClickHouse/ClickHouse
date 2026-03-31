@@ -4157,7 +4157,6 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 
 ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
-    std::cerr << "RFMT::removeUnusedColumns called, output_header=" << (output_header ? output_header->dumpStructure() : "null") << "\n";
     if (output_header == nullptr)
         return {};
 
