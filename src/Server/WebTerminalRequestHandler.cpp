@@ -11,6 +11,9 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Formats/FormatSettings.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/SHA1Engine.h>
 
@@ -232,6 +235,7 @@ WebSocketFrame readWebSocketFrame(Poco::Net::StreamSocket & socket)
 }
 
 /// Extract a JSON string value for a given key from a simple flat JSON object.
+/// Uses ReadHelpers for correct JSON string unescaping.
 /// Returns empty string if not found.
 String extractJSONStringValue(const String & json, const char * key)
 {
@@ -247,29 +251,18 @@ String extractJSONStringValue(const String & json, const char * key)
         ++pos;
     if (pos >= json.size() || json[pos] != '"')
         return {};
-    ++pos;
+
+    /// Use ReadHelpers to properly parse the JSON string value
+    ReadBufferFromString buf(std::string_view(json).substr(pos));
     String result;
-    while (pos < json.size() && json[pos] != '"')
+    FormatSettings::JSON json_settings;
+    try
     {
-        if (json[pos] == '\\' && pos + 1 < json.size())
-        {
-            ++pos;
-            switch (json[pos])
-            {
-                case '"': result += '"'; break;
-                case '\\': result += '\\'; break;
-                case '/': result += '/'; break;
-                case 'n': result += '\n'; break;
-                case 't': result += '\t'; break;
-                case 'r': result += '\r'; break;
-                default: result += json[pos]; break;
-            }
-        }
-        else
-        {
-            result += json[pos];
-        }
-        ++pos;
+        readJSONString(result, buf, json_settings);
+    }
+    catch (...)
+    {
+        return {};
     }
     return result;
 }
