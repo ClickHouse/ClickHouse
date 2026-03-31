@@ -23,3 +23,5 @@ with GROUP BY:
 1	▁▃▄▆█
 uniqSparkbar with range:
 █████
+countSparkbar with DateTime64:
+█████

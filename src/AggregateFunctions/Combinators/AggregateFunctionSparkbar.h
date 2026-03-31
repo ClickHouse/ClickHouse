@@ -176,11 +176,11 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        Key key;
-        if constexpr (static_cast<Key>(-1) < 0)
-            key = static_cast<Key>(columns[0]->getInt(row_num));
-        else
-            key = static_cast<Key>(columns[0]->getUInt(row_num));
+        /// Always read via getInt: ColumnDecimal (DateTime64) implements getInt but not getUInt.
+        /// For unsigned Key types the static_cast is safe because valid x-axis values fit in
+        /// the chosen unsigned type (UInt64 for Date/DateTime/DateTime64/UInt*, Int32/Int64 for
+        /// the signed branches).
+        const Key key = static_cast<Key>(columns[0]->getInt(row_num));
 
         if (key < begin_x || key > end_x)
             return;
