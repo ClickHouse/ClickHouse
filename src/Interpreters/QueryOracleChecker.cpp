@@ -933,23 +933,14 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
             return false;
     }
 
-    /// Verify every SELECT-list expression is either an aggregate or a GROUP BY column.
-    /// Non-aggregate, non-GROUP-BY items (bare constants, arithmetic expressions)
-    /// cannot be faithfully preserved through the State/Merge transformation.
-    std::unordered_set<IAST::Hash> agg_hashes;
-    for (const auto & agg : agg_data.aggregates)
-        agg_hashes.insert(agg->getTreeHash());
-
-    std::unordered_set<IAST::Hash> group_hashes;
+    /// Verify the SELECT list only contains aggregates and GROUP BY columns.
+    /// If there are extra expressions (bare constants, arithmetic), the State/Merge
+    /// transformation won't preserve them and column counts will differ.
+    size_t expected_exprs = agg_data.aggregates.size();
     if (select.groupBy())
-        for (const auto & g : select.groupBy()->children)
-            group_hashes.insert(g->getTreeHash());
-
-    for (const auto & expr : select.select()->children)
-    {
-        if (!agg_hashes.contains(expr->getTreeHash()) && !group_hashes.contains(expr->getTreeHash()))
-            return false;
-    }
+        expected_exprs += select.groupBy()->children.size();
+    if (select.select()->children.size() != expected_exprs)
+        return false;
 
     ASTPtr predicate = select.where()->clone();
 
@@ -1016,7 +1007,7 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         for (const auto & aggregate_ast : agg_data.aggregates)
         {
             if (select_expr.get() == aggregate_ast.get()
-                || select_expr->getTreeHash() == aggregate_ast->getTreeHash())
+                || select_expr->getTreeHash(/*ignore_aliases=*/true) == aggregate_ast->getTreeHash(/*ignore_aliases=*/true))
             {
                 const auto * agg_func = aggregate_ast->as<ASTFunction>();
                 String alias = agg_to_alias[agg_func];
