@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
-            {"min_rows_per_stream_for_gradual_resize", 0, 1000, "Enable gradual resize processor to limit effective parallelism for GROUP BY, reducing merge overhead for small result sets"},
+            {"min_rows_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by row count for GROUP BY"},
             {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting to control gradual resize processor activation by byte count"},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
