@@ -3231,6 +3231,42 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 {
     auto & result = getAnalysisResult();
 
+    /// When trivial_limit is set, we normally reduce block_size and num_streams
+    /// to avoid reading more data than needed. However, if any part has
+    /// lightweight deletes, the actual number of live rows is less than the
+    /// total row count, so we cannot safely reduce — we may need to scan
+    /// many more rows to find enough live ones.
+    if (query_info.trivial_limit > 0)
+    {
+        bool has_parts_with_lwd = false;
+        for (const auto & part_with_ranges : result.parts_with_ranges)
+        {
+            if (part_with_ranges.data_part->hasLightweightDelete())
+            {
+                has_parts_with_lwd = true;
+                break;
+            }
+        }
+
+        if (has_parts_with_lwd)
+        {
+            /// Disable trivial_limit optimizations when LWD parts are present,
+            /// because we cannot predict how many rows need to be scanned
+            /// to produce the requested number of live rows.
+            query_info.trivial_limit = 0;
+        }
+        else
+        {
+            /// No LWD parts: safe to apply trivial limit optimizations.
+            /// Reduce block_size and num_streams as the Planner previously did.
+            if (query_info.trivial_limit < block_size.max_block_size_rows)
+            {
+                block_size.max_block_size_rows = std::max<UInt64>(1, query_info.trivial_limit);
+                requested_num_streams = 1;
+            }
+        }
+    }
+
     if (enable_remove_parts_from_snapshot_optimization)
     {
         /// Do not keep data parts in snapshot.

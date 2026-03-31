@@ -841,19 +841,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
               * but LIMIT is specified, and limit + offset < max_block_size,
-              * then as the block size we will use limit + offset (not to read more from the table than requested),
-              * and also set the number of threads to 1.
+              * then set trivial_limit so that the storage can optimize reading.
+              * The actual block_size and num_streams reduction is done in ReadFromMergeTree::initializePipeline,
+              * where we can also check for lightweight deletes.
               */
             max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
             {
-                if (max_block_size_limited < max_block_size)
-                {
-                    max_block_size = std::max<UInt64>(1, max_block_size_limited);
-                    max_streams = 1;
-                    max_threads_execute_query = 1;
-                }
-
                 if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
                 {
                     if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
