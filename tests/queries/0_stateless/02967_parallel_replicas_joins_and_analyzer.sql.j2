@@ -23,6 +23,7 @@ SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET enable_join_runtime_filters = 1; -- Changes the plan (BuildRuntimeFilter node)
 SET query_plan_merge_expressions = 1;
 SET query_plan_remove_redundant_sorting = 1;
+SET use_statistics = 0; -- auto_statistics_types changes the plan
 
 {% for use_global_in in [0, 1] -%}
 
