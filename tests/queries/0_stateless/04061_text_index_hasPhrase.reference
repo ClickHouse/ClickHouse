@@ -22,9 +22,6 @@
 1
 0
 1
--- Section 1c: Explicit tokenizer
-1
-1
 -- Section 2: Text index integration
 -- Basic phrase query
 1	the quick brown fox
@@ -61,14 +58,10 @@ Parts: 0/1
 -- Consistency: empty phrase
 8
 8
--- Section 5: Ngram tokenizer rejection
--- Section 6: Merge correctness
+-- Section 5: Merge correctness
 -- Before merge
 1
 5
 -- After merge
 1
 5
--- Section 7: Multiple tokenizers
--- splitByString tokenizer: quick brown
-1

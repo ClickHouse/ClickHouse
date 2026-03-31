@@ -56,11 +56,6 @@ SELECT hasPhrase(
 SELECT hasPhrase('The Quick Brown Fox', 'the quick');
 SELECT hasPhrase('The Quick Brown Fox', 'The Quick');
 
-SELECT '-- Section 1c: Explicit tokenizer';
-
-SELECT hasPhrase('hello world test', 'hello world', 'splitByNonAlpha');
-SELECT hasPhrase('hello world test', 'world test', 'splitByNonAlpha');
-
 -- ============================================================
 -- Section 2: Text index integration (with text index)
 -- ============================================================
@@ -194,19 +189,10 @@ DROP TABLE IF EXISTS test_phrase_idx;
 DROP TABLE IF EXISTS test_phrase_noidx;
 
 -- ============================================================
--- Section 5: Ngram tokenizer rejection (FC-5)
+-- Section 5: OPTIMIZE TABLE merge correctness (FC-3)
 -- ============================================================
 
-SELECT '-- Section 5: Ngram tokenizer rejection';
-
--- hasPhrase should reject ngram tokenizer with an exception
-SELECT hasPhrase('hello world', 'hello world', 'ngram(3)'); -- { serverError BAD_ARGUMENTS }
-
--- ============================================================
--- Section 6: OPTIMIZE TABLE merge correctness (FC-3)
--- ============================================================
-
-SELECT '-- Section 6: Merge correctness';
+SELECT '-- Section 5: Merge correctness';
 
 DROP TABLE IF EXISTS test_phrase_merge;
 
@@ -238,32 +224,3 @@ SELECT id FROM test_phrase_merge WHERE hasPhrase(content, 'quick brown') ORDER B
 SELECT id FROM test_phrase_merge WHERE hasPhrase(content, 'to be') ORDER BY id;
 
 DROP TABLE IF EXISTS test_phrase_merge;
-
--- ============================================================
--- Section 7: Multiple tokenizers (FC-4)
--- ============================================================
-
-SELECT '-- Section 7: Multiple tokenizers';
-
--- Test with splitByString tokenizer
-DROP TABLE IF EXISTS test_phrase_split;
-
-CREATE TABLE test_phrase_split
-(
-    id UInt64,
-    content String,
-    INDEX idx content TYPE text(tokenizer = 'splitByString') GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
-
-INSERT INTO test_phrase_split VALUES
-    (1, 'the quick brown fox'),
-    (2, 'quick fox is not brown'),
-    (3, 'brown quick reverse');
-
-SELECT '-- splitByString tokenizer: quick brown';
-SELECT id FROM test_phrase_split WHERE hasPhrase(content, 'quick brown') ORDER BY id;
-
-DROP TABLE IF EXISTS test_phrase_split;

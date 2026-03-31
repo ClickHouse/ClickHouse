@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
-#include <Interpreters/TokenizerFactory.h>
 
 namespace DB
 {
@@ -15,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 namespace
@@ -84,8 +82,9 @@ bool hasPhraseInString(std::string_view haystack, const std::vector<String> & ph
 
 } /// anonymous namespace
 
-/// hasPhrase(haystack, phrase [, tokenizer]) -> UInt8
+/// hasPhrase(haystack, phrase) -> UInt8
 /// Returns 1 if the phrase (all tokens in order, adjacent) is found in the haystack.
+/// Always uses splitByNonAlpha tokenizer, consistent with hasToken.
 class FunctionHasPhrase : public IFunction
 {
 public:
@@ -93,30 +92,20 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasPhrase>(); }
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 2 || arguments.size() > 3)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} requires 2 or 3 arguments, got {}", getName(), arguments.size());
-
         FunctionArgumentDescriptors mandatory_args
         {
             {"haystack", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
             {"phrase", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
         };
 
-        FunctionArgumentDescriptors optional_args
-        {
-            {"tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String"}
-        };
-
-        validateFunctionArguments(name, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(name, arguments, mandatory_args);
 
         DataTypePtr return_type = std::make_shared<DataTypeNumber<UInt8>>();
         if (arguments[0].type->isNullable())
@@ -129,26 +118,14 @@ public:
         if (input_rows_count == 0)
             return ColumnVector<UInt8>::create();
 
-        /// Resolve tokenizer.
-        const auto tokenizer_name = arguments.size() < 3 || !arguments[2].column
-            ? SplitByNonAlphaTokenizer::getExternalName()
-            : arguments[2].column->getDataAt(0);
-
-        auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-
-        /// Check tokenizer supports phrase queries. [D-04]
-        if (!tokenizer->supportsPhraseQuery())
-            throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
-                "Function {} does not support tokenizer '{}' because it produces overlapping tokens. "
-                "Use a word-level tokenizer (splitByNonAlpha, unicodeWord, or splitByString).",
-                getName(), String(tokenizer_name));
+        SplitByNonAlphaTokenizer tokenizer;
 
         /// Extract phrase tokens.
         auto phrase_column = arguments[1].column;
         String phrase_str = (*phrase_column)[0].safeGet<String>();
-        auto phrase_tokens = tokenizePhrase(phrase_str, *tokenizer);
+        auto phrase_tokens = tokenizePhrase(phrase_str, tokenizer);
 
-        /// Empty phrase matches everything. [D-13]
+        /// Empty phrase matches everything.
         if (phrase_tokens.empty())
         {
             auto col_result = ColumnVector<UInt8>::create();
@@ -169,7 +146,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             std::string_view input = col_string->getDataAt(i);
-            result_data[i] = hasPhraseInString(input, phrase_tokens, *tokenizer) ? 1 : 0;
+            result_data[i] = hasPhraseInString(input, phrase_tokens, tokenizer) ? 1 : 0;
         }
 
         return col_result;
@@ -189,12 +166,10 @@ Column `haystack` should have a [text index](../../engines/table-engines/mergetr
 for optimal performance. If no text index is defined, the function performs a brute-force scan.
 :::
     )";
-    FunctionDocumentation::Syntax syntax = "hasPhrase(haystack, phrase [, tokenizer])";
+    FunctionDocumentation::Syntax syntax = "hasPhrase(haystack, phrase)";
     FunctionDocumentation::Arguments doc_arguments = {
         {"haystack", "String to be searched.", {"String"}},
-        {"phrase", "Phrase to search for. Will be tokenized.", {"const String"}},
-        {"tokenizer", "Tokenizer to use. Optional, defaults to splitByNonAlpha. "
-                      "Only word-level tokenizers are supported (splitByNonAlpha, unicodeWord, splitByString).", {"const String"}},
+        {"phrase", "Phrase to search for. Will be tokenized using splitByNonAlpha.", {"const String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the phrase is found, 0 otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
