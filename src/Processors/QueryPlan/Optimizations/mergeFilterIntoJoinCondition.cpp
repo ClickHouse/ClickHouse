@@ -97,23 +97,19 @@ ExpressionSide getExpressionSide(
     auto inputs = getExpressionInputs(expr);
 
     bool has_left = false;
-    for (const auto * input : inputs)
-    {
-        if (left_allowed_inputs.contains(input))
-        {
-            has_left = true;
-            break;
-        }
-    }
-
     bool has_right = false;
     for (const auto * input : inputs)
     {
-        if (right_allowed_inputs.contains(input))
-        {
+        bool in_left = left_allowed_inputs.contains(input);
+        bool in_right = right_allowed_inputs.contains(input);
+        if (in_left)
+            has_left = true;
+        if (in_right)
             has_right = true;
-            break;
-        }
+        if (!in_left && !in_right)
+            /// Input not from either side (e.g. a column whose type was changed by USING coercion).
+            /// The expression cannot be safely pushed to either side.
+            return ExpressionSide::UNKNOWN;
     }
 
     if (has_left && !has_right)
