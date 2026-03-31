@@ -80,7 +80,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     for (size_t i = 0; i < descriptions.size(); ++i)
         descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
     extension.sendInitialRequest(
-        mode, std::move(descriptions), /*mark_segment_size=*/0, /*min_marks_per_request=*/min_marks_per_task * request.size());
+        mode, std::move(descriptions), /*mark_segment_size=*/0, /*min_marks_per_request=*/min_marks_per_task * per_part_infos.size());
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }

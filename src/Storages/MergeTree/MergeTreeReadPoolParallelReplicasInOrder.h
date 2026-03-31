@@ -39,6 +39,8 @@ private:
 
     size_t min_marks_per_task{0};
     bool no_more_tasks{false};
+    /// Part names without ranges, kept for backward compatibility with old initiators
+    /// that still expect description in in-order read requests.
     RangesInDataPartsDescription request;
     RangesInDataPartsDescription buffered_tasks;
 

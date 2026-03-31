@@ -41,10 +41,19 @@ struct PartBlockRange
 
 /// ParallelReadRequest is used by remote replicas during parallel read
 /// to signal an initiator that they need more marks to read.
+///
+/// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS, in-order requests
+/// no longer carry part descriptions — the coordinator already knows the part set
+/// from the initial announcement. For older protocol versions, the description field
+/// is still serialized for backward compatibility.
 struct ParallelReadRequest
 {
-    /// No default constructor, you must initialize all fields at once.
+    ParallelReadRequest(CoordinationMode mode_, size_t replica_num_, size_t min_marks_per_request_)
+        : mode(mode_), replica_num(replica_num_), min_marks_per_request(min_marks_per_request_)
+    {}
 
+    /// Backward-compatible constructor: carries part descriptions (used by old protocol
+    /// for in-order mode, currently unused for Default mode).
     ParallelReadRequest(
         CoordinationMode mode_, size_t replica_num_, size_t min_marks_per_request_, RangesInDataPartsDescription description_)
         : mode(mode_)
@@ -61,8 +70,8 @@ struct ParallelReadRequest
     /// compatibility with older initiators that still read it from each request.
     size_t min_marks_per_request;
 
-    /// Extension for Ordered (InOrder or ReverseOrder) mode
-    /// Contains only data part names without mark ranges.
+    /// Part descriptions for backward compatibility with old in-order protocol.
+    /// Empty for Default mode and for new in-order protocol.
     RangesInDataPartsDescription description;
 
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;

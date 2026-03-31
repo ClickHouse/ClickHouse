@@ -1038,6 +1038,18 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
     LOG_TRACE(log, "Got read request: {}", request.describe());
 
+    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS, in-order requests
+    /// no longer carry part descriptions — build the part list from the coordinator's state.
+    if (request.description.empty())
+    {
+        for (const auto & part : all_parts_to_read)
+        {
+            if (part.replicas.contains(request.replica_num))
+                request.description.push_back(
+                    {.info = part.description.info, .ranges = {}, .projection_name = part.description.projection_name});
+        }
+    }
+
     ParallelReadResponse response;
     response.description = request.description;
     size_t overall_number_of_marks = 0;

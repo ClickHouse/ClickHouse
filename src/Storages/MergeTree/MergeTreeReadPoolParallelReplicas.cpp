@@ -186,9 +186,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         {
             response = extension.sendReadRequest(
                 coordination_mode,
-                min_marks_per_request,
-                /// For Default coordination mode we don't need to pass part names.
-                RangesInDataPartsDescription{});
+                min_marks_per_request // Send for compatibility with old initiators
+            );
         }
         catch (...)
         {
