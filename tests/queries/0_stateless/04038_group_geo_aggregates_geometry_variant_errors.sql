@@ -20,6 +20,32 @@ SELECT round(polygonAreaCartesian(groupPolygonUnion(g)), 2) FROM (
     SELECT readWKT('LINESTRING (0 0, 2 0, 2 2, 0 2, 0 0)') AS g
 );
 
+-- 4. MultiLineString Geometry values are structurally identical to Polygon,
+--    so the Variant column conflates them. Polygon functions accept
+--    the data (treated as Polygon).
+SELECT 'multilinestring_geometry_treated_as_polygon';
+SELECT round(polygonAreaCartesian(groupPolygonUnion(g)), 2) FROM (
+    SELECT readWKT('MULTILINESTRING ((0 0, 2 0, 2 2, 0 2, 0 0))') AS g
+);
+
+-- 4b. LineString Geometry treated as Ring for groupPolygonIntersection
+SELECT 'linestring_geometry_intersect';
+SELECT round(polygonAreaCartesian(groupPolygonIntersection(g)), 2) FROM (
+    SELECT arrayJoin([
+        readWKT('LINESTRING (0 0, 4 0, 4 4, 0 4, 0 0)'),
+        readWKT('LINESTRING (1 1, 3 1, 3 3, 1 3, 1 1)')
+    ]) AS g
+);
+
+-- 4c. MultiLineString Geometry treated as Polygon for groupPolygonIntersection
+SELECT 'multilinestring_geometry_intersect';
+SELECT round(polygonAreaCartesian(groupPolygonIntersection(g)), 2) FROM (
+    SELECT arrayJoin([
+        readWKT('MULTILINESTRING ((0 0, 4 0, 4 4, 0 4, 0 0))'),
+        readWKT('MULTILINESTRING ((1 1, 3 1, 3 3, 1 3, 1 1))')
+    ]) AS g
+);
+
 -- 5. groupConvexHull rejects NaN coordinates
 SELECT 'convex_hull_rejects_nan';
 SELECT groupConvexHull(pt) FROM (
