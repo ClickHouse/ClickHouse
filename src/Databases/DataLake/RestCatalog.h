@@ -42,6 +42,7 @@ public:
         const std::string & auth_header_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     ~RestCatalog() override = default;
@@ -91,6 +92,7 @@ protected:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
@@ -124,6 +126,26 @@ protected:
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
     mutable std::optional<AccessToken> access_token;
+
+public:
+    class AllowedNamespaces
+    {
+    public:
+        AllowedNamespaces() {}
+        explicit AllowedNamespaces(const std::string & namespaces_);
+
+        /// Check if nested namespaces (nested=true) or tables (nested=false) are allowed in namespace
+        bool isNamespaceAllowed(const std::string & namespace_, bool nested) const;
+
+    private:
+        /// List of allowed nested namespaces
+        std::unordered_map<std::string, AllowedNamespaces> nested_namespaces;
+        /// Tables from current level are allowed
+        bool allow_tables = false;
+    };
+
+protected:
+    AllowedNamespaces allowed_namespaces;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -184,6 +206,7 @@ public:
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
@@ -211,6 +234,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
+        const std::string & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
