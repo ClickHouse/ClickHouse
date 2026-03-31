@@ -75,6 +75,8 @@ namespace ErrorCodes
     DECLARE(Float, hash_map_min_load_factor, 0, "Minimal load factor for in-memory storage hash map", 0) \
     DECLARE(UInt64, min_node_count_for_auto_optimize, 0, "Minimal node count for automatic storage optimization", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
@@ -193,8 +195,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     /// coordination_settings
 
-    writeText("max_requests_batch_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_batch_size]);
     writeText("min_session_timeout_ms=", buf);
     write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::min_session_timeout_ms]));
     writeText("session_timeout_ms=", buf);
@@ -222,8 +222,12 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings[CoordinationSetting::auto_forwarding]);
     writeText("shutdown_timeout=", buf);
     write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::shutdown_timeout]));
+    writeText("session_shutdown_timeout=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::session_shutdown_timeout]));
     writeText("startup_timeout=", buf);
     write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::startup_timeout]));
+    writeText("sleep_before_leader_change_ms=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::sleep_before_leader_change_ms]));
 
     writeText("raft_logs_level=", buf);
     writeText(coordination_settings[CoordinationSetting::raft_logs_level].toString(), buf);
@@ -244,6 +248,10 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings[CoordinationSetting::max_requests_batch_bytes_size]);
     writeText("max_request_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_request_size]);
+    writeText("max_requests_append_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_requests_append_size]);
+    writeText("max_requests_append_bytes_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_requests_append_bytes_size]);
     writeText("max_flush_batch_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_flush_batch_size]);
     writeText("max_request_queue_size=", buf);
@@ -262,16 +270,34 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("configuration_change_tries_count=", buf);
     write_int(coordination_settings[CoordinationSetting::configuration_change_tries_count]);
 
+    writeText("max_log_file_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_log_file_size]);
+    writeText("log_file_overallocate_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::log_file_overallocate_size]);
+    writeText("min_request_size_for_cache=", buf);
+    write_int(coordination_settings[CoordinationSetting::min_request_size_for_cache]);
+
     writeText("raft_limits_reconnect_limit=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit]));
+    write_int(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit]);
+    writeText("raft_limits_response_limit=", buf);
+    write_int(coordination_settings[CoordinationSetting::raft_limits_response_limit]);
 
     writeText("async_replication=", buf);
     write_bool(coordination_settings[CoordinationSetting::async_replication]);
 
+    writeText("experimental_use_rocksdb=", buf);
+    write_bool(coordination_settings[CoordinationSetting::experimental_use_rocksdb]);
+    writeText("rocksdb_load_batch_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::rocksdb_load_batch_size]);
+
     writeText("latest_logs_cache_size_threshold=", buf);
     write_int(coordination_settings[CoordinationSetting::latest_logs_cache_size_threshold]);
+    writeText("latest_logs_cache_entry_count_threshold=", buf);
+    write_int(coordination_settings[CoordinationSetting::latest_logs_cache_entry_count_threshold]);
     writeText("commit_logs_cache_size_threshold=", buf);
     write_int(coordination_settings[CoordinationSetting::commit_logs_cache_size_threshold]);
+    writeText("commit_logs_cache_entry_count_threshold=", buf);
+    write_int(coordination_settings[CoordinationSetting::commit_logs_cache_entry_count_threshold]);
 
     writeText("disk_move_retries_wait_ms=", buf);
     write_int(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
@@ -289,6 +315,11 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings[CoordinationSetting::use_xid_64]);
     writeText("check_node_acl_on_remove=", buf);
     write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
+
+    writeText("write_snapshot_version=", buf);
+    write_int(coordination_settings[CoordinationSetting::write_snapshot_version]);
+    writeText("nuraft_test_mode=", buf);
+    write_bool(coordination_settings[CoordinationSetting::nuraft_test_mode]);
 }
 
 KeeperConfigurationAndSettingsPtr

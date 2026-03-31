@@ -1,7 +1,3 @@
-#include <memory>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Planner/Planner.h>
 
 #include <Core/Names.h>
@@ -15,9 +11,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -44,6 +40,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
 
@@ -53,6 +50,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -71,6 +69,7 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -212,7 +211,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const QueryTreeNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
 {
     bool collect_filters = false;
     const auto & settings = query_context->getSettingsRef();
@@ -235,6 +234,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             break;
         }
         if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
+        {
+            collect_filters = true;
+            break;
+        }
+        if (typeid_cast<const StorageView *>(storage.get()))
         {
             collect_filters = true;
             break;
@@ -277,8 +281,39 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     auto & result_query_plan = planner.getQueryPlan();
 
+    /// This part is needed to support "skip unused shards" for the View over Distributed.
+    /// When reading through a View, the outer WHERE clause is not visible to the inner query.
+    /// Inject it as a FilterStep on top of the dummy plan so that predicate-push-down works.
+    if (post_filter)
+    {
+        const auto & header = *result_query_plan.getCurrentHeader();
+        bool all_inputs_present = true;
+        for (const auto & input : post_filter->getInputs())
+        {
+            if (!header.has(input->result_name))
+            {
+                all_inputs_present = false;
+                break;
+            }
+        }
+
+        if (all_inputs_present)
+        {
+            auto filter_dag = post_filter->clone();
+            // filter_dag.appendInputsForUnusedColumns(header);
+            String filter_column_name = filter_dag.getOutputs().at(0)->result_name;
+            auto filter_step = std::make_unique<FilterStep>(
+                result_query_plan.getCurrentHeader(),
+                std::move(filter_dag),
+                filter_column_name,
+                true /* remove_filter_column */);
+            result_query_plan.addStep(std::move(filter_step));
+        }
+    }
+
     QueryPlanOptimizationSettings optimization_settings(query_context);
     optimization_settings.build_sets = false; // no need to build sets to collect filters
+    optimization_settings.materialize_ctes = false; // no need to materialize CTEs to collect filters
     result_query_plan.optimize(optimization_settings);
 
     FiltersForTableExpressionMap res;
@@ -306,7 +341,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     return res;
 }
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options, const ActionsDAG * post_filter)
 {
     if (select_query_options.only_analyze)
         return {};
@@ -324,7 +359,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto table_expressions_nodes
         = extractTableExpressions(query_tree_node, false /* add_array_join */, true /* recursive */);
 
-    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context);
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
 }
 
 /// Extend lifetime of query context, storages, and table locks
@@ -1248,6 +1283,10 @@ void addWindowSteps(QueryPlan & query_plan,
         {
             SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
+            /// Window functions require fully sorted input. Applying sort_overflow_mode = 'break'
+            /// would produce incomplete data and cause the pipeline to get stuck.
+            sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window_description.full_sort_description,
@@ -1465,6 +1504,19 @@ void addBuildSubqueriesForSetsStepIfNeeded(
     {
         auto query_tree = subquery->detachQueryTree();
         auto subquery_options = select_query_options.subquery();
+        /// Sets may use Materialized CTEs, so we need to materialize them in order to correctly build set from subquery.
+        /// Normally CTEs are materialized before building sets and running the main query, but in case when
+        /// set is built for primary key analysis, CTEs are not materialized yet.
+        ///
+        /// To build the set correctly, we need to add a DelayedMaterializingCTEsStep for CTEs in the set subquery plan.
+        /// This is done by forceMaterializeCTE() method, which would lead collectMaterializedCTEs() to return non-empty result.
+        ///
+        /// As a result:
+        /// 1. If set is built during primary key analysis FutureSetFromSubquery::buildSetInplace(), we will build plans for used CTEs materialization.
+        ///    Later, when the main query plan is optimized, DelayedMaterializingCTEsStep for these CTEs will not add materialization plans again.
+        /// 2. If set is built during main query execution, we will build plans for used CTEs materialization to be run before the set is built
+        ///    and before the main query is executed.
+        subquery_options.forceMaterializeCTE();
         /// I don't know if this is a good decision,
         /// but for now it is done in the same way as in old analyzer.
         /// This would not ignore limits for subqueries (affects mutations only).
@@ -1473,7 +1525,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         Planner subquery_planner(
             query_tree,
             subquery_options,
-            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+            std::make_shared<GlobalPlannerContext>(nullptr, nullptr, collectFiltersForAnalysis(query_tree, subquery_options, nullptr)));
         subquery_planner.buildQueryPlanIfNeeded();
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
@@ -1499,6 +1551,102 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             prepared_sets_cache);
         step->setStepDescription("DelayedCreatingSetsStep");
         query_plan.addStep(std::move(step));
+    }
+}
+
+void addBuildSubqueriesForMaterializedCTEsIfNeeded(
+    QueryPlan & query_plan,
+    const SelectQueryOptions & select_query_options,
+    const OrderedMaterializedCTEs & materialized_ctes
+)
+{
+    if (materialized_ctes.empty())
+        return;
+
+    // The main idea of the algorithm is to unite plans for Materialized CTEs of the same level
+    // with the main query plan by MaterializingCTEsStep.
+    //
+    // This allows to ensure following properties:
+    // 1) All CTEs are executed before the main query.
+    // 2) If CTE A depends on CTE B, then A will be executed after B, because A will be on the next level after B.
+    // 3) CTEs on the same level are independent.
+    // 3) CTEs of the same level will be executed in the same MaterializingCTEsStep, so they will be executed in parallel.
+    // 4) Materialized CTEs are executed only once.
+    //
+    // Example of query plan structure for query with 2 levels of CTEs:
+    //
+    //                                  ┌───────────────────────┐
+    //                                  │                       │
+    //                             ┌────│ MaterializingCTEsStep │────────────────────────────┐
+    //                             │    │                       │         │                  │
+    //                             │    └───────────────────────┘         │                  │
+    //                             │                                      │                  │
+    //                             │                                      │                  │
+    //                 ┌───────────▼───────────┐                 ┌────────▼───────┐ ┌────────▼───────┐
+    //                 │                       │                 │                │ │                │
+    //        ┌────────│ MaterializingCTEsStep │─────────┐       │ CTE (level: 0) │ │ CTE (level: 0) │
+    //        │        │                       │         │       │                │ │                │
+    //        │        └───────────────────────┘         │       └────────────────┘ └────────────────┘
+    //        │                                          │
+    //        │                                          │
+    // ┌──────▼─────┐                           ┌────────▼───────┐
+    // │            │                           │                │
+    // │ Query Plan │                           │ CTE (level: 1) │
+    // │            │                           │                │
+    // └────────────┘                           └────────────────┘
+    //
+    // The CTEs are added as DelayedMaterializingCTEsStep nodes — one per level — so that
+    // resolveMaterializingCTEs can skip already-materialized CTEs. This is important when
+    // buildOrderedSetInplace runs a subquery plan that contains CTEs: by the time the main
+    // plan's resolveMaterializingCTEs fires, is_planned is already true for those CTEs
+    // so they won't be materialized a second time.
+    //
+    // The level structure is preserved: for each level we push one DelayedMaterializingCTEsStep
+    // on top of the current plan, wrapping it the same way the old eager approach did with
+    // MaterializingCTEsStep. resolveMaterializingCTEs processes nodes post-order, so the inner
+    // (lower-level) step is resolved before the outer one, guaranteeing that a CTE at level N
+    // is always materialized before the CTE at level N-1 that depends on it.
+    for (const auto & cte_level : materialized_ctes)
+    {
+        std::vector<MaterializedCTEPtr> ctes;
+        ctes.reserve(cte_level.size());
+
+        for (const auto & cte_node : cte_level)
+        {
+            auto * cte_table_node = cte_node->as<TableNode>();
+            auto materialized_cte = cte_table_node->getMaterializedCTE();
+            if (!materialized_cte->hasPlanOrBuilt())
+            {
+                auto cte_subquery = cte_table_node->getMaterializedCTESubquery();
+                if (!cte_subquery)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "CTE '{}' does not have query tree, but was not planned yet",
+                        materialized_cte->cte_name);
+
+                auto cte_options = select_query_options.subquery();
+                Planner cte_planner(
+                    cte_subquery,
+                    cte_options,
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                cte_planner.buildQueryPlanIfNeeded();
+
+                auto cte_plan = std::move(cte_planner).extractQueryPlan();
+
+                auto step = std::make_unique<MaterializingCTEStep>(
+                    cte_plan.getCurrentHeader(),
+                    materialized_cte);
+                step->setStepDescription("Materializing CTE: " + materialized_cte->cte_name, 100);
+                cte_plan.addStep(std::move(step));
+                materialized_cte->plan = std::make_unique<QueryPlan>(std::move(cte_plan));
+            }
+
+            ctes.push_back(materialized_cte);
+        }
+
+        auto delayed_step = std::make_unique<DelayedMaterializingCTEsStep>(
+            query_plan.getCurrentHeader(),
+            std::move(ctes));
+        query_plan.addStep(std::move(delayed_step));
     }
 }
 
@@ -1583,14 +1731,15 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_)
+    SelectQueryOptions & select_query_options_,
+    const ActionsDAG * post_filter_)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
         std::make_shared<GlobalPlannerContext>(
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
-            collectFiltersForAnalysis(query_tree, select_query_options))))
+            collectFiltersForAnalysis(query_tree, select_query_options, post_filter_))))
 {
 }
 
@@ -1723,6 +1872,21 @@ void Planner::buildPlanForUnionNode()
             false /*pre distinct*/);
         query_plan.addStep(std::move(distinct_step));
     }
+
+    /// Each child of the UNION/INTERSECT/EXCEPT may independently add a DelayedMaterializingCTEsStep
+    /// for the same CTE. During optimization only one child wins the atomic is_materialization_planned
+    /// flag, leaving the other children without CTE materialization. Because IntersectOrExceptStep
+    /// runs all children concurrently, the losing child may read from the CTE StorageMemory before the
+    /// winning child has finished materializing it.
+    ///
+    /// Fix: add a DelayedMaterializingCTEsStep at the UNION level so that resolveMaterializingCTEs
+    /// (which walks pre-order) claims the CTE here first, ensuring materialization completes before
+    /// any child starts reading.
+    if (!select_query_options.only_analyze)
+    {
+        auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
+        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
+    }
 }
 
 void Planner::buildPlanForQueryNode()
@@ -1772,6 +1936,7 @@ void Planner::buildPlanForQueryNode()
     }
 
     collectSets(query_tree, *planner_context);
+    auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
 
     const auto & settings = query_context->getSettingsRef();
     if (query_context->canUseTaskBasedParallelReplicas())
@@ -2219,7 +2384,10 @@ void Planner::buildPlanForQueryNode()
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
     if (!select_query_options.only_analyze)
+    {
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
+        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
+    }
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();
 }

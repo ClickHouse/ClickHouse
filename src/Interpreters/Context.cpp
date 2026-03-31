@@ -41,6 +41,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
 #include <Storages/MarkCache.h>
+#include <Common/JemallocCacheArena.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MovesList.h>
 #include <Storages/MergeTree/ReplicatedFetchList.h>
@@ -49,7 +50,8 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadataFactory.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
@@ -221,6 +223,8 @@ namespace CurrentMetrics
     extern const Metric BackgroundFetchesPoolSize;
     extern const Metric BackgroundCommonPoolTask;
     extern const Metric BackgroundCommonPoolSize;
+    extern const Metric IcebergSchedulePoolTask;
+    extern const Metric IcebergSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
     extern const Metric MarksLoaderThreadsScheduled;
@@ -266,6 +270,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsFloat ast_fuzzer_runs;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -351,6 +357,7 @@ namespace ServerSetting
     extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
     extern const ServerSettingsString background_merges_mutations_scheduling_policy;
     extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
+    extern const ServerSettingsUInt64 iceberg_background_schedule_pool_size;
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
@@ -387,6 +394,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
     extern const ServerSettingsBool allow_experimental_webassembly_udf;
+    extern const ServerSettingsString webassembly_udf_engine;
 }
 
 namespace ErrorCodes
@@ -517,6 +525,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
@@ -541,7 +550,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
-    mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index dictionary blocks.
+    mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
@@ -550,6 +559,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+#endif
+#if USE_PARQUET
+    mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
@@ -571,6 +583,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable BackgroundSchedulePoolPtr distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     OnceFlag message_broker_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    OnceFlag iceberg_schedule_pool_initialized;
+    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that runs background metadata refresh for all active Iceberg tables
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -871,7 +885,16 @@ struct ContextSharedPart : boost::noncopyable
         /// This must be done first because otherwise the reloading may pass a changed config
         /// to some destroyed parts of ContextSharedPart.
 
+        /// We need to make sure no dictionary queries are concurrent with the further shutdown logic
+        /// because it sets various fields to null and those fields are unconditionally dereferenced by queries.
+        /// So we need to:
+        /// (1) Disable future dictionary queries.
+        /// (2) Make sure all the currently running dictionary queries are killed.
+        /// (3) Join the dictionary queries' threads.
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
+        process_list.killAllQueries();
+        SHUTDOWN(log, "dictionaries loader threads", external_dictionaries_loader, joinLoadingThreads());
+
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
 
@@ -887,7 +910,7 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "backups worker", backups_worker, shutdown());
 
         LOG_TRACE(log, "Shutting down object storage queue streaming");
-        ObjectStorageQueueFactory::instance().shutdown();
+        StreamingStorageRegistry::instance().shutdown();
 
         /// Stop all MergeTree background executors before shutting down databases.
         /// This ensures no background tasks (merges, mutations, moves, part cleanup)
@@ -927,6 +950,7 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_schedule_pool;
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
+        BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1005,6 +1029,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
+            delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
 
             delete_access_control = std::move(access_control);
 
@@ -1020,6 +1045,14 @@ struct ContextSharedPart : boost::noncopyable
         }
         if (delete_zookeeper)
             delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::lock_guard lock(auxiliary_zookeepers_mutex);
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -1053,6 +1086,7 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_schedule_pool));
         join_background_pool(std::move(delete_distributed_schedule_pool));
         join_background_pool(std::move(delete_message_broker_schedule_pool));
+        join_background_pool(std::move(delete_iceberg_schedule_pool));
 
         delete_access_control.reset();
 
@@ -1106,31 +1140,31 @@ struct ContextSharedPart : boost::noncopyable
     void configureServerWideThrottling()
     {
         if (auto bandwidth = server_settings[ServerSetting::max_replicated_fetches_network_bandwidth_for_server])
-            replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
+            replicated_fetches_throttler = std::make_shared<Throttler>("replicated_fetches_server", bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_replicated_sends_network_bandwidth_for_server])
-            replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
+            replicated_sends_throttler = std::make_shared<Throttler>("replicated_sends_server", bandwidth);
 
         if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
-            remote_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            remote_read_throttler = std::make_shared<Throttler>("remote_read_server", bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
-            remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            remote_write_throttler = std::make_shared<Throttler>("remote_write_server", bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            local_read_throttler = std::make_shared<Throttler>("local_read_server", bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
-            local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+            local_write_throttler = std::make_shared<Throttler>("local_write_server", bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
-            backups_server_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
+            backups_server_throttler = std::make_shared<Throttler>("backups_server", bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
-            mutations_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
+            mutations_throttler = std::make_shared<Throttler>("mutations_server", bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
-            merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
+            merges_throttler = std::make_shared<Throttler>("merges_server", bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
     }
 };
 
@@ -1382,7 +1416,7 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter, std::optional<Exception> * exception) const
+DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const
 {
     auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
     std::lock_guard lock(shard.mutex);
@@ -1390,12 +1424,13 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        if (exception && !storage.second)
-            exception->emplace(Exception(
-                ErrorCodes::UNKNOWN_TABLE,
-                "Table {} does not exist anymore - maybe it was dropped",
-                id.getNameForLogs()));
-        return storage;
+        if (storage.second)
+            return storage;
+
+        /// The table was cached but no longer exists by its UUID
+        /// (e.g. refreshable materialized view's inner table was dropped and recreated).
+        /// Remove the stale entry and fall through to a fresh lookup by name.
+        shard.set.erase(it);
     }
 
     auto storage = storage_getter();
@@ -1491,6 +1526,11 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
                 "The number of active parts ({}) exceeds the warning limit of {}.",
                 active_parts, shared->max_part_num_to_warn.load());
     }
+    if ((*settings)[Setting::ast_fuzzer_runs] > 0)
+        common_warnings[Context::WarningType::AST_FUZZER_IS_ENABLED] = PreformattedMessage::create(
+            "The server-side AST fuzzer is enabled (`ast_fuzzer_runs` = {}). This is intended for testing only and is not suitable for production.",
+            (*settings)[Setting::ast_fuzzer_runs].value);
+
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
 
@@ -2211,6 +2251,18 @@ void Context::setMergeWorkload(const String & value)
 {
     std::lock_guard lock(shared->mutex);
     shared->merge_workload = value;
+}
+
+String Context::getLicenseFile() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->license_file;
+}
+
+void Context::setLicenseFile(const String & value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->license_file = value;
 }
 
 String Context::getMutationWorkload() const
@@ -3643,9 +3695,7 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
-    const auto & config = shared->getConfigRefWithLock(lock);
-    auto engine_name = config.getString("webassembly_udf_engine", "wasmtime");
-
+    String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
     auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
@@ -3716,14 +3766,17 @@ void Context::cancelAllBackupsAndRestores() const
         shared->backups_worker->cancelAll();
 }
 
-BackupsInMemoryHolder & Context::getBackupsInMemory()
+std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 {
+    std::lock_guard lock(mutex);
+    if (!backups_in_memory)
+        backups_in_memory = std::make_shared<BackupsInMemoryHolder>();
     return backups_in_memory;
 }
 
-const BackupsInMemoryHolder & Context::getBackupsInMemory() const
+std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
-    return backups_in_memory;
+    return const_cast<Context *>(this)->getBackupsInMemory();
 }
 
 
@@ -3777,15 +3830,20 @@ void Context::setUncompressedCache(const String & cache_policy, size_t max_size_
     shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::UncompressedCacheBytes, CurrentMetrics::UncompressedCacheCells, max_size_in_bytes, size_ratio);
 }
 
-void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    shared->uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->uncompressed_cache->setMaxSizeInBytes(size);
 }
 
 UncompressedCachePtr Context::getUncompressedCache() const
@@ -3801,6 +3859,8 @@ void Context::clearUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setPageCache(std::chrono::milliseconds history_window,
@@ -3832,6 +3892,8 @@ void Context::clearPageCache() const
     }
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3844,15 +3906,20 @@ void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in
     shared->mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, max_cache_size_in_bytes, size_ratio);
 }
 
-void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    shared->mark_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->mark_cache->setMaxSizeInBytes(size);
 }
 
 MarkCachePtr Context::getMarkCache() const
@@ -3868,6 +3935,8 @@ void Context::clearMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 ThreadPool & Context::getLoadMarksThreadpool() const
@@ -3909,15 +3978,20 @@ void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache
     shared->primary_index_cache = std::make_shared<PrimaryIndexCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
 }
 
-void Context::updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->primary_index_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("primary_index_cache_size", DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE);
-    shared->primary_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("primary_index_cache_size", DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->primary_index_cache->setMaxSizeInBytes(size);
 }
 
 PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
@@ -3984,15 +4058,20 @@ void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_
     shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::IndexUncompressedCacheBytes, CurrentMetrics::IndexUncompressedCacheCells, max_size_in_bytes, size_ratio);
 }
 
-void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->index_uncompressed_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    shared->index_uncompressed_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->index_uncompressed_cache->setMaxSizeInBytes(size);
 }
 
 UncompressedCachePtr Context::getIndexUncompressedCache() const
@@ -4008,6 +4087,8 @@ void Context::clearIndexUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -4020,15 +4101,20 @@ void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_si
     shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::IndexMarkCacheBytes, CurrentMetrics::IndexMarkCacheFiles, max_cache_size_in_bytes, size_ratio);
 }
 
-void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->index_mark_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    shared->index_mark_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->index_mark_cache->setMaxSizeInBytes(size);
 }
 
 MarkCachePtr Context::getIndexMarkCache() const
@@ -4044,6 +4130,8 @@ void Context::clearIndexMarkCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
 }
 
 void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -4056,16 +4144,21 @@ void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t 
     shared->vector_similarity_index_cache = std::make_shared<VectorSimilarityIndexCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->vector_similarity_index_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("vector_similarity_index_cache_size", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE);
+    size_t size = config.getUInt64("vector_similarity_index_cache_size", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE);
     size_t max_entries = config.getUInt64("vector_similarity_index_cache_max_entries", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES);
-    shared->vector_similarity_index_cache->setMaxSizeInBytes(max_size_in_bytes);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->vector_similarity_index_cache->setMaxSizeInBytes(size);
     shared->vector_similarity_index_cache->setMaxCount(max_entries);
 }
 
@@ -4083,41 +4176,47 @@ void Context::clearVectorSimilarityIndexCache() const
         shared->vector_similarity_index_cache->clear();
 }
 
-void Context::setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache has been already created.");
+    if (shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache has been already created.");
 
-    shared->text_index_dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+    shared->text_index_tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (!shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("text_index_dictionary_block_cache_size", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("text_index_dictionary_block_cache_max_entries", DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES);
-    shared->text_index_dictionary_block_cache->setMaxSizeInBytes(max_size_in_bytes);
-    shared->text_index_dictionary_block_cache->setMaxCount(max_entries);
+    size_t size = config.getUInt64("text_index_tokens_cache_size", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_tokens_cache_max_entries", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered text index tokens cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->text_index_tokens_cache->setMaxSizeInBytes(size);
+    shared->text_index_tokens_cache->setMaxCount(max_entries);
 }
 
-std::shared_ptr<TextIndexDictionaryBlockCache> Context::getTextIndexDictionaryBlockCache() const
+std::shared_ptr<TextIndexTokensCache> Context::getTextIndexTokensCache() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->text_index_dictionary_block_cache;
+    return shared->text_index_tokens_cache;
 }
 
-void Context::clearTextIndexDictionaryBlockCache() const
+void Context::clearTextIndexTokensCache() const
 {
-    std::lock_guard lock(shared->mutex);
+    auto cache = getTextIndexTokensCache();
 
-    if (shared->text_index_dictionary_block_cache)
-        shared->text_index_dictionary_block_cache->clear();
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
@@ -4130,16 +4229,21 @@ void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_si
     shared->text_index_header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->text_index_header_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("text_index_header_cache_size", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE);
+    size_t size = config.getUInt64("text_index_header_cache_size", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE);
     size_t max_entries = config.getUInt64("text_index_header_cache_max_entries", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES);
-    shared->text_index_header_cache->setMaxSizeInBytes(max_size_in_bytes);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->text_index_header_cache->setMaxSizeInBytes(size);
     shared->text_index_header_cache->setMaxCount(max_entries);
 }
 
@@ -4168,16 +4272,21 @@ void Context::setTextIndexPostingsCache(const String & cache_policy, size_t max_
     shared->text_index_postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->text_index_postings_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index posting list cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("text_index_postings_cache_size", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE);
+    size_t size = config.getUInt64("text_index_postings_cache_size", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE);
     size_t max_entries = config.getUInt64("text_index_postings_cache_max_entries", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES);
-    shared->text_index_postings_cache->setMaxSizeInBytes(max_size_in_bytes);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->text_index_postings_cache->setMaxSizeInBytes(size);
     shared->text_index_postings_cache->setMaxCount(max_entries);
 }
 
@@ -4206,15 +4315,20 @@ void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
     shared->mmap_cache = std::make_shared<MMappedFileCache>(max_cache_size_in_num_entries);
 }
 
-void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
-    shared->mmap_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->mmap_cache->setMaxSizeInBytes(size);
 }
 
 MMappedFileCachePtr Context::getMMappedFileCache() const
@@ -4243,16 +4357,21 @@ void Context::setIcebergMetadataFilesCache(const String & cache_policy, size_t m
     shared->iceberg_metadata_files_cache = std::make_shared<IcebergMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
 }
 
-void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->iceberg_metadata_files_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE);
+    size_t size = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE);
     size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES);
-    shared->iceberg_metadata_files_cache->setMaxSizeInBytes(max_size_in_bytes);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->iceberg_metadata_files_cache->setMaxSizeInBytes(size);
     shared->iceberg_metadata_files_cache->setMaxCount(max_entries);
 }
 
@@ -4265,6 +4384,54 @@ std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache
 void Context::clearIcebergMetadataFilesCache() const
 {
     auto cache = getIcebergMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+#endif
+
+#if USE_PARQUET
+void Context::setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->parquet_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache has been already created.");
+
+    shared->parquet_metadata_cache = std::make_shared<ParquetMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->parquet_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
+
+    size_t size = config.getUInt64("parquet_metadata_cache_size", DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("parquet_metadata_cache_max_entries", DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->parquet_metadata_cache->setMaxSizeInBytes(size);
+    shared->parquet_metadata_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->parquet_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
+    return shared->parquet_metadata_cache;
+}
+
+void Context::clearParquetMetadataCache() const
+{
+    auto cache = getParquetMetadataCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -4288,15 +4455,20 @@ QueryConditionCachePtr Context::getQueryConditionCache() const
     return shared->query_condition_cache;
 }
 
-void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->query_condition_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
-    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
+    size_t size = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered query condition cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->query_condition_cache->setMaxSizeInBytes(size);
 }
 
 void Context::clearQueryConditionCache() const
@@ -4318,18 +4490,23 @@ void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, 
     shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
 }
 
-void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
 {
     std::lock_guard lock(shared->mutex);
 
     if (!shared->query_result_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache was not created yet.");
 
-    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
+    size_t size = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
     size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
     size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
     size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    shared->query_result_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->query_result_cache->updateConfiguration(size, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
 }
 
 QueryResultCachePtr Context::getQueryResultCache() const
@@ -4375,9 +4552,17 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
     shared->vector_similarity_index_cache->clear();
 
-    if (!shared->text_index_dictionary_block_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index dictionary block cache was not created yet.");
-    shared->text_index_dictionary_block_cache->clear();
+    if (!shared->text_index_tokens_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
+    shared->text_index_tokens_cache->clear();
+
+    if (!shared->text_index_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
+    shared->text_index_header_cache->clear();
+
+    if (!shared->text_index_postings_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index postings cache was not created yet.");
+    shared->text_index_postings_cache->clear();
 
     if (!shared->mmap_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
@@ -4531,6 +4716,20 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
     return *shared->message_broker_schedule_pool;
 }
 
+BackgroundSchedulePool & Context::getIcebergSchedulePool() const
+{
+    callOnce(shared->iceberg_schedule_pool_initialized, [&] {
+        shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
+            shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
+            /*max_parallel_tasks_per_type*/ 0,
+            CurrentMetrics::IcebergSchedulePoolTask,
+            CurrentMetrics::IcebergSchedulePoolSize,
+            DB::ThreadName::ICEBERG_SCHEDULE_POOL);
+    });
+
+    return *shared->iceberg_schedule_pool;
+}
+
 void Context::configureServerWideThrottling()
 {
     if (shared->application_type == ApplicationType::LOCAL || shared->application_type == ApplicationType::SERVER || shared->application_type == ApplicationType::DISKS)
@@ -4561,7 +4760,7 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
+            remote_read_query_throttler = std::make_shared<Throttler>("remote_read_query", bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
         throttler = remote_read_query_throttler;
     }
     return throttler;
@@ -4579,7 +4778,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
+            remote_write_query_throttler = std::make_shared<Throttler>("remote_write_query", bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
         throttler = remote_write_query_throttler;
     }
     return throttler;
@@ -4597,7 +4796,7 @@ ThrottlerPtr Context::getLocalReadThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            local_read_query_throttler = std::make_shared<Throttler>("local_read_query", bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -4615,7 +4814,7 @@ ThrottlerPtr Context::getLocalWriteThrottler() const
     {
         std::lock_guard lock(mutex);
         if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
+            local_write_query_throttler = std::make_shared<Throttler>("local_write_query", bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
         throttler = local_write_query_throttler;
     }
     return throttler;
@@ -4628,7 +4827,7 @@ ThrottlerPtr Context::getBackupsThrottler() const
     {
         std::lock_guard lock(mutex);
          if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
+            backups_query_throttler = std::make_shared<Throttler>("backups_query", bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
         throttler = backups_query_throttler;
     }
     return throttler;
@@ -4660,7 +4859,7 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->remote_read_throttler)
-            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
+            shared->remote_read_throttler = std::make_shared<Throttler>("remote_read_server", read_bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
     }
 
     if (shared->remote_read_throttler)
@@ -4670,7 +4869,7 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->remote_write_throttler)
-            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
+            shared->remote_write_throttler = std::make_shared<Throttler>("remote_write_server", write_bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
     }
 
     if (shared->remote_write_throttler)
@@ -4683,7 +4882,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+            shared->local_read_throttler = std::make_shared<Throttler>("local_read_server", read_bandwidth);
     }
 
     if (shared->local_read_throttler)
@@ -4693,7 +4892,7 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_write_throttler)
-            shared->local_write_throttler = std::make_shared<Throttler>(write_bandwidth);
+            shared->local_write_throttler = std::make_shared<Throttler>("local_write_server", write_bandwidth);
     }
 
     if (shared->local_write_throttler)
@@ -4903,7 +5102,7 @@ bool Context::tryCheckClientConnectionToMyKeeperCluster() const
         /// Our server doesn't depend on our Keeper cluster
         return true;
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return false;
     }
@@ -4971,7 +5170,7 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
+        bool is_standalone_app = config.getBool("keeper_server.standalone_keeper", getApplicationType() == ApplicationType::KEEPER);
         if (start_async)
         {
             assert(!is_standalone_app);
@@ -5011,6 +5210,14 @@ void Context::setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) 
     std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
 }
 #endif
+
+void Context::signalKeeperDispatcherShutdown() const
+{
+#if USE_NURAFT
+    if (auto dispatcher = tryGetKeeperDispatcher())
+        dispatcher->signalShutdown();
+#endif
+}
 
 void Context::shutdownKeeperDispatcher() const
 {
@@ -6646,6 +6853,12 @@ void Context::resetInputCallbacks()
         input_blocks_reader = {};
 }
 
+void Context::clearTableFunctionResults()
+{
+    std::lock_guard lock(table_function_results_mutex);
+    table_function_results.clear();
+}
+
 
 void Context::setClientInfo(const ClientInfo & client_info_)
 {
@@ -7385,7 +7598,8 @@ bool Context::canUseTaskBasedParallelReplicas() const
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && settings_ref[Setting::max_parallel_replicas] > 1;
+        && settings_ref[Setting::max_parallel_replicas] > 1
+        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

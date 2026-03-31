@@ -1,0 +1,242 @@
+1
+2
+QUERY id: 0
+  PROJECTION COLUMNS
+    n.a Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 5
+            CONSTANT id: 6, constant_value: \'a\', constant_value_type: String
+  JOIN TREE
+    ARRAY_JOIN id: 5, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 7, alias: __table2, table_name: default.t_nested
+      JOIN EXPRESSIONS
+        LIST id: 8, nodes: 1
+          COLUMN id: 9, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 5
+            EXPRESSION
+              FUNCTION id: 10, function_name: nested, function_type: ordinary, result_type: Array(Tuple(a Int64))
+                ARGUMENTS
+                  LIST id: 11, nodes: 2
+                    CONSTANT id: 12, constant_value: Array_[\'a\'], constant_value_type: Array(String)
+                    COLUMN id: 13, column_name: n.a, result_type: Array(Int64), source_id: 7
+  ORDER BY
+    LIST id: 14, nodes: 1
+      SORT id: 15, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION n.a
+          FUNCTION id: 16, function_name: tupleElement, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 17, nodes: 2
+                COLUMN id: 18, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 5
+                CONSTANT id: 19, constant_value: \'a\', constant_value_type: String
+Expression (Project names)
+Header: n.a Int64
+  Sorting (Sorting for ORDER BY)
+  Header: tupleElement(__array_join_exp_1, \'a\'_String) Int64
+    Expression ((Before ORDER BY + Projection))
+    Header: tupleElement(__array_join_exp_1, \'a\'_String) Int64
+      ArrayJoin (ARRAY JOIN)
+      Header: __array_join_exp_1 Tuple(a Int64)
+        Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+        Header: __array_join_exp_1 Array(Tuple(a Int64))
+          ReadFromMergeTree (default.t_nested)
+          Header: n.a Array(Int64)
+1	3
+2	4
+QUERY id: 0
+  PROJECTION COLUMNS
+    n.a Int64
+    n.b Int64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64), source_id: 5
+            CONSTANT id: 6, constant_value: \'a\', constant_value_type: String
+      FUNCTION id: 7, function_name: tupleElement, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 8, nodes: 2
+            COLUMN id: 9, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64), source_id: 5
+            CONSTANT id: 10, constant_value: \'b\', constant_value_type: String
+  JOIN TREE
+    ARRAY_JOIN id: 5, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 11, alias: __table2, table_name: default.t_nested
+      JOIN EXPRESSIONS
+        LIST id: 12, nodes: 1
+          COLUMN id: 13, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64), source_id: 5
+            EXPRESSION
+              FUNCTION id: 14, function_name: nested, function_type: ordinary, result_type: Array(Tuple(a Int64, b Int64))
+                ARGUMENTS
+                  LIST id: 15, nodes: 3
+                    CONSTANT id: 16, constant_value: Array_[\'a\', \'b\'], constant_value_type: Array(String)
+                    COLUMN id: 17, column_name: n.a, result_type: Array(Int64), source_id: 11
+                    COLUMN id: 18, column_name: n.b, result_type: Array(Int64), source_id: 11
+  ORDER BY
+    LIST id: 19, nodes: 1
+      SORT id: 20, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION n.a
+          FUNCTION id: 21, function_name: tupleElement, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 22, nodes: 2
+                COLUMN id: 23, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64), source_id: 5
+                CONSTANT id: 24, constant_value: \'a\', constant_value_type: String
+Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
+Header: n.a Int64
+        n.b Int64
+  Sorting (Sorting for ORDER BY)
+  Header: __array_join_exp_1 Tuple(a Int64, b Int64)
+          tupleElement(__array_join_exp_1, \'a\'_String) Int64
+    Expression ((Before ORDER BY + Projection))
+    Header: __array_join_exp_1 Tuple(a Int64, b Int64)
+            tupleElement(__array_join_exp_1, \'a\'_String) Int64
+      ArrayJoin (ARRAY JOIN)
+      Header: __array_join_exp_1 Tuple(a Int64, b Int64)
+        Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+        Header: __array_join_exp_1 Array(Tuple(a Int64, b Int64))
+          ReadFromMergeTree (default.t_nested)
+          Header: n.a Array(Int64)
+                  n.b Array(Int64)
+(1,3,5)
+(2,4,6)
+QUERY id: 0
+  PROJECTION COLUMNS
+    n Tuple(a Int64, b Int64, c Int64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64, c Int64), source_id: 3
+  JOIN TREE
+    ARRAY_JOIN id: 3, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 4, alias: __table2, table_name: default.t_nested
+      JOIN EXPRESSIONS
+        LIST id: 5, nodes: 1
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64, c Int64), source_id: 3
+            EXPRESSION
+              FUNCTION id: 7, function_name: nested, function_type: ordinary, result_type: Array(Tuple(a Int64, b Int64, c Int64))
+                ARGUMENTS
+                  LIST id: 8, nodes: 4
+                    CONSTANT id: 9, constant_value: Array_[\'a\', \'b\', \'c\'], constant_value_type: Array(String)
+                    COLUMN id: 10, column_name: n.a, result_type: Array(Int64), source_id: 4
+                    COLUMN id: 11, column_name: n.b, result_type: Array(Int64), source_id: 4
+                    COLUMN id: 12, column_name: n.c, result_type: Array(Int64), source_id: 4
+  ORDER BY
+    LIST id: 13, nodes: 1
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION n.a
+          FUNCTION id: 15, function_name: tupleElement, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 16, nodes: 2
+                COLUMN id: 17, column_name: __array_join_exp_1, result_type: Tuple(a Int64, b Int64, c Int64), source_id: 3
+                CONSTANT id: 18, constant_value: \'a\', constant_value_type: String
+Expression (Project names)
+Header: n Tuple(a Int64, b Int64, c Int64)
+  Sorting (Sorting for ORDER BY)
+  Header: tupleElement(__array_join_exp_1, \'a\'_String) Int64
+          __array_join_exp_1 Tuple(a Int64, b Int64, c Int64)
+    Expression ((Before ORDER BY + Projection))
+    Header: tupleElement(__array_join_exp_1, \'a\'_String) Int64
+            __array_join_exp_1 Tuple(a Int64, b Int64, c Int64)
+      ArrayJoin (ARRAY JOIN)
+      Header: __array_join_exp_1 Tuple(a Int64, b Int64, c Int64)
+        Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+        Header: __array_join_exp_1 Array(Tuple(a Int64, b Int64, c Int64))
+          ReadFromMergeTree (default.t_nested)
+          Header: n.a Array(Int64)
+                  n.b Array(Int64)
+                  n.c Array(Int64)
+1
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    1 UInt8
+  PROJECTION
+    LIST id: 1, nodes: 1
+      CONSTANT id: 2, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    ARRAY_JOIN id: 3, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 4, alias: __table2, table_name: default.t_nested
+      JOIN EXPRESSIONS
+        LIST id: 5, nodes: 1
+          COLUMN id: 6, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 3
+            EXPRESSION
+              FUNCTION id: 7, function_name: nested, function_type: ordinary, result_type: Array(Tuple(a Int64))
+                ARGUMENTS
+                  LIST id: 8, nodes: 2
+                    CONSTANT id: 9, constant_value: Array_[\'a\'], constant_value_type: Array(String)
+                    COLUMN id: 10, column_name: n.a, result_type: Array(Int64), source_id: 4
+  WHERE
+    FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 12, nodes: 2
+          FUNCTION id: 13, function_name: tupleElement, function_type: ordinary, result_type: Int64
+            ARGUMENTS
+              LIST id: 14, nodes: 2
+                COLUMN id: 15, column_name: __array_join_exp_1, result_type: Tuple(a Int64), source_id: 3
+                CONSTANT id: 16, constant_value: \'a\', constant_value_type: String
+          CONSTANT id: 17, constant_value: UInt64_0, constant_value_type: UInt8
+Expression ((Project names + Projection))
+Header: 1 UInt8
+  Filter (WHERE)
+  Header: 
+    ArrayJoin (ARRAY JOIN)
+    Header: __array_join_exp_1 Tuple(a Int64)
+      Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+      Header: __array_join_exp_1 Array(Tuple(a Int64))
+        ReadFromMergeTree (default.t_nested)
+        Header: n.a Array(Int64)
+1
+2
+Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
+Header: tupleElement(n, 1) Int64
+  Sorting (Sorting for ORDER BY)
+  Header: __array_join_exp_1 Tuple(a Int64)
+          tupleElement(__array_join_exp_1, \'a\'_String) Int64
+    Expression ((Before ORDER BY + Projection))
+    Header: __array_join_exp_1 Tuple(a Int64)
+            tupleElement(__array_join_exp_1, \'a\'_String) Int64
+      ArrayJoin (ARRAY JOIN)
+      Header: __array_join_exp_1 Tuple(a Int64)
+        Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+        Header: __array_join_exp_1 Array(Tuple(a Int64))
+          ReadFromMergeTree (default.t_nested)
+          Header: n.a Array(Int64)
+3
+4
+QUERY id: 0
+  PROJECTION COLUMNS
+    b Int64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+  JOIN TREE
+    ARRAY_JOIN id: 3, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 4, alias: __table2, table_name: default.t_two_arrays
+      JOIN EXPRESSIONS
+        LIST id: 5, nodes: 1
+          COLUMN id: 6, alias: __array_join_exp_2, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+            EXPRESSION
+              COLUMN id: 7, column_name: b, result_type: Array(Int64), source_id: 4
+  ORDER BY
+    LIST id: 8, nodes: 1
+      SORT id: 9, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION b
+          COLUMN id: 10, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
+Expression (Project names)
+Header: b Int64
+  Sorting (Sorting for ORDER BY)
+  Header: __array_join_exp_2 Int64
+    Expression ((Before ORDER BY + Projection))
+    Header: __array_join_exp_2 Int64
+      ArrayJoin (ARRAY JOIN)
+      Header: __array_join_exp_2 Int64
+        Expression ((DROP unused columns before ARRAY JOIN + (ARRAY JOIN actions + Change column names to column identifiers)))
+        Header: __array_join_exp_2 Array(Int64)
+          ReadFromMergeTree (default.t_two_arrays)
+          Header: b Array(Int64)

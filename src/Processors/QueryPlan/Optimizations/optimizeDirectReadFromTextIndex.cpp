@@ -1,3 +1,4 @@
+#include <ranges>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -12,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,7 +35,7 @@ struct TextIndexReadInfo
 {
     const MergeTreeIndexWithCondition * index;
     bool is_materialized;
-    bool is_fully_materialied;
+    bool is_fully_materialized;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -171,7 +173,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         {
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialied = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size()
         };
     }
 }
@@ -596,6 +598,11 @@ private:
         /// It can happen when the original function returns Nullable or LowCardinality type and replacement doesn't.
         if (!function_node.result_type->equals(*replacement.node->result_type))
             replacement.node = &actions_dag.addCast(*replacement.node, function_node.result_type, "", context);
+
+        /// Preserve the original column name so that downstream steps (e.g. ExpressionStep for SELECT)
+        /// that reference the predicate by its original name can still find it in the block.
+        if (replacement.node->result_name != function_node.result_name)
+            replacement.node = &actions_dag.addAlias(*replacement.node, function_node.result_name);
     }
 };
 
@@ -623,7 +630,7 @@ static const ActionsDAG::Node * processAndOptimizeTextIndexDAG(
     /// Log partially materialized text indexes
     for (const auto & [index_name, info] : text_index_read_infos)
     {
-        if (!info.is_fully_materialied)
+        if (!info.is_fully_materialized)
             LOG_DEBUG(logger, "Text index '{}' is not fully materialized. In some parts, direct read from text index cannot be used.", index_name);
     }
 
@@ -683,21 +690,53 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (stack.size() < 2)
         return;
 
-    QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
-    auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
+    /// Walk up the stack for a FilterStep, collecting any ExpressionSteps along the way.
+    /// When query_plan_merge_expressions = 0, one or more ExpressionSteps may sit between ReadFromMergeTree and FilterStep.
+    QueryPlan::Node * filter_node = nullptr;
+    FilterStep * filter_step = nullptr;
+    std::vector<ExpressionStep *> expression_steps; /// bottom-up order (index 0 = closest to ReadFromMergeTree)
+
+    for (const auto & f : stack | std::views::reverse | std::views::drop(1))
+    {
+        if (auto * fs = typeid_cast<FilterStep *>(f.node->step.get()))
+        {
+            filter_node = f.node;
+            filter_step = fs;
+            break;
+        }
+        if (auto * es = typeid_cast<ExpressionStep *>(f.node->step.get()))
+            expression_steps.push_back(es);
+        else
+            break;
+    }
 
     if (!filter_step)
         return;
 
-    ActionsDAG & filter_dag = filter_step->getExpression();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized);
+    /// Compose the DAG by prepending any ExpressionSteps (bottom-up) into a clone of FilterStep's DAG.
+    ///
+    /// With query_plan_merge_expressions = 0 the new query analyzer inserts ExpressionSteps that rename "msg" to "__table1.msg", so FilterStep's DAG
+    /// has bare INPUT("__table1.msg") nodes that aren't found in the text index header.
+    ///
+    /// After composing, those inputs become ALIAS("__table1.msg") → INPUT("msg"), and getColumnName() follows the alias back to the
+    /// physical name. With query_plan_merge_expressions = 1 the loop is a no-op since expression_steps is empty.
+    const String & filter_column_name = filter_step->getFilterColumnName();
+
+    /// expression_steps is bottom-up (index 0 = closest to ReadFromMergeTree, back() = closest to FilterStep),
+    /// so iterate in reverse to build merge(bottom, merge(..., merge(top, filter_dag)...)).
+    ActionsDAG composed = filter_step->getExpression().clone();
+    for (auto * step : expression_steps | std::views::reverse)
+        composed = ActionsDAG::merge(step->getExpression().clone(), std::move(composed));
+
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, composed, text_index_read_infos, filter_column_name, direct_read_from_text_index && !optimized);
 
     if (!result_filter_node)
         return;
 
     bool removes_filter_column = filter_step->removesFilterColumn();
     auto new_filter_column_name = result_filter_node->result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), std::move(composed), new_filter_column_name, removes_filter_column);
+    filter_node->children = {frame.node};
 }
 
 }

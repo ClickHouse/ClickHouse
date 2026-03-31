@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Common/IThrottler.h>
+#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
-
 #include <mutex>
 #include <base/sleep.h>
 #include <base/types.h>
@@ -20,33 +20,33 @@ class Throttler : public IThrottler
 public:
     static const size_t default_burst_seconds = 1;
 
-    Throttler(size_t max_speed_, size_t max_burst_, const ThrottlerPtr & parent_ = nullptr,
+    Throttler(const char * throttler_name_, size_t max_speed_, size_t max_burst_, const ThrottlerPtr & parent_ = nullptr,
             ProfileEvents::Event event_amount_ = ProfileEvents::end(),
             ProfileEvents::Event event_sleep_us_ = ProfileEvents::end())
-        : max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(static_cast<double>(max_burst)), parent(parent_)
+        : throttler_name(throttler_name_), max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(static_cast<double>(max_burst)), parent(parent_)
         , event_amount(event_amount_), event_sleep_us(event_sleep_us_)
     {}
 
-    Throttler(size_t max_speed_, size_t max_burst_,
+    Throttler(const char * throttler_name_, size_t max_speed_, size_t max_burst_,
             ProfileEvents::Event event_amount_ = ProfileEvents::end(),
             ProfileEvents::Event event_sleep_us_ = ProfileEvents::end())
-        : max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(static_cast<double>(max_burst))
+        : throttler_name(throttler_name_), max_speed(max_speed_), max_burst(max_burst_), limit_exceeded_exception_message(""), tokens(static_cast<double>(max_burst))
         , event_amount(event_amount_), event_sleep_us(event_sleep_us_)
     {}
 
-    explicit Throttler(size_t max_speed_, const ThrottlerPtr & parent_ = nullptr,
+    explicit Throttler(const char * throttler_name_, size_t max_speed_, const ThrottlerPtr & parent_ = nullptr,
         ProfileEvents::Event event_amount_ = ProfileEvents::end(),
         ProfileEvents::Event event_sleep_us_ = ProfileEvents::end());
 
-    Throttler(size_t max_speed_,
+    Throttler(const char * throttler_name_, size_t max_speed_,
         ProfileEvents::Event event_amount_,
         ProfileEvents::Event event_sleep_us_);
 
-    Throttler(size_t max_speed_, size_t max_burst_, size_t limit_, const char * limit_exceeded_exception_message_,
+    Throttler(const char * throttler_name_, size_t max_speed_, size_t max_burst_, size_t limit_, const char * limit_exceeded_exception_message_,
               const ThrottlerPtr & parent_ = nullptr)
-        : max_speed(max_speed_), max_burst(max_burst_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), tokens(static_cast<double>(max_burst)), parent(parent_) {}
+        : throttler_name(throttler_name_), max_speed(max_speed_), max_burst(max_burst_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), tokens(static_cast<double>(max_burst)), parent(parent_) {}
 
-    Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
+    Throttler(const char * throttler_name_, size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
               const ThrottlerPtr & parent_ = nullptr);
 
     /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
@@ -74,6 +74,10 @@ public:
 private:
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);
+
+    /// Human-readable name for logging (e.g. "backups_query", "remote_read_server")
+    const char * throttler_name;
+    LoggerPtr log = getLogger("Throttler");
 
     size_t count{0};
     size_t max_speed TSA_GUARDED_BY(mutex){0}; /// in tokens per second.

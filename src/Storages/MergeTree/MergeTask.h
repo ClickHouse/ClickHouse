@@ -170,6 +170,11 @@ public:
         return res;
     }
 
+    std::map<String, UInt64> grabProjectionsMergeTime()
+    {
+        return std::move(global_ctx->projections_merge_time);
+    }
+
     bool execute();
 
     void cancel() noexcept;
@@ -222,6 +227,7 @@ private:
         Names deduplicate_by_columns{};
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
+        bool vertical_ttl_delete{false};
         CompressionCodecPtr compression_codec{nullptr};
 
         NamesAndTypesList gathering_columns{};
@@ -247,6 +253,10 @@ private:
         std::vector<ProjectionDescriptionRawPtr> projections_to_merge{};
         std::map<String, MergeTreeData::DataPartsVector> projections_to_merge_parts{};
 
+        /// Whether any projection to rebuild needs _block_number / _block_offset in the horizontal phase.
+        bool need_block_number_in_merge{false};
+        bool need_block_offset_in_merge{false};
+
         std::unique_ptr<MergeStageProgress> horizontal_stage_progress{nullptr};
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
@@ -260,6 +270,8 @@ private:
         std::shared_ptr<std::atomic<size_t>> input_rows_filtered{std::make_shared<std::atomic<size_t>>(0)};
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};
+
+        std::map<String, UInt64> projections_merge_time;
 
         std::promise<MergeTreeData::MutableDataPartPtr> promise{};
 
@@ -302,6 +314,7 @@ private:
         std::move_iterator<ProjectionNameToItsBlocks::iterator> projection_parts_iterator;
         std::vector<Squashing> projection_squashes;
         size_t projection_block_num = 0;
+        std::map<String, UInt64> projections_rebuild_elapsed_ns;
         ExecutableTaskPtr merge_projection_parts_task_ptr;
         BuildStatisticsTransformMap build_statistics_transforms;
 
@@ -513,6 +526,11 @@ private:
 
         LoggerPtr log{getLogger("MergeTask::MergeProjectionsStage")};
         UInt64 elapsed_execute_ns{0};
+
+        /// Accumulate per-projection merge time in nanoseconds to avoid truncation
+        /// when individual execute() steps take less than 1ms.
+        /// Converted to milliseconds only when a projection finishes.
+        std::map<String, UInt64> projections_merge_elapsed_ns;
     };
 
     using MergeProjectionsRuntimeContextPtr = std::shared_ptr<MergeProjectionsRuntimeContext>;
@@ -569,8 +587,11 @@ private:
     static bool enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx);
     static bool enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx);
     static void addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
+    static void addMergingColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type);
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
+    static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);
     static void mergeBuiltStatistics(BuildStatisticsTransformMap && build_statistics_transforms, const GlobalRuntimeContextPtr & global_ctx);

@@ -21,9 +21,9 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           nullptr,
           main_reader_->all_mark_ranges,
           main_reader_->settings)
-    , main_reader(main_reader_)
     , index_read_result(std::move(index_read_result_))
     , lazy_materializing_rows(lazy_materializing_rows_)
+    , main_reader(main_reader_)
 {
     chassert(lazy_materializing_rows || index_read_result);
     chassert(lazy_materializing_rows || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);

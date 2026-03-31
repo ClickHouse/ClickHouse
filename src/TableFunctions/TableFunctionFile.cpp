@@ -3,7 +3,6 @@
 #include <TableFunctions/TableFunctionFile.h>
 
 #include <TableFunctions/registerTableFunctions.h>
-#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -132,7 +131,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>();
+    factory.registerFunction<TableFunctionFile>({});
 }
 
 }
