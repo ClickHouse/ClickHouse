@@ -1,5 +1,4 @@
 -- Tags: no-fasttest, no-replicated-database
-SET max_execution_time = 30;
 
 DROP TABLE IF EXISTS ilike_trunc_FOO;
 DROP TABLE IF EXISTS ilike_trunc_foo;
