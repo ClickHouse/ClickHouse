@@ -195,16 +195,26 @@ Extract parts from a given date. For example, you can retrieve a month from a gi
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
-- `DAY` — The day of the month. Possible values: 1–31.
-- `MONTH` — The number of a month. Possible values: 1–12.
-- `YEAR` — The year.
 - `SECOND` — The second. Possible values: 0–59.
 - `MINUTE` — The minute. Possible values: 0–59.
 - `HOUR` — The hour. Possible values: 0–23.
+- `DAY` — The day of the month. Possible values: 1–31.
+- `WEEK` — The ISO 8601 week number. Possible values: 1–53.
+- `MONTH` — The number of a month. Possible values: 1–12.
+- `QUARTER` — The quarter. Possible values: 1–4.
+- `YEAR` — The year.
+- `EPOCH` — The Unix timestamp (seconds since 1970-01-01 00:00:00 UTC). Note: for `DateTime64`, the subsecond part is truncated.
+- `DOW` — The day of the week (PostgreSQL-compatible). 0 = Sunday, 6 = Saturday.
+- `DOY` — The day of the year. Possible values: 1–366.
+- `ISODOW` — The ISO day of the week. 1 = Monday, 7 = Sunday.
+- `ISOYEAR` — The ISO 8601 week-numbering year.
+- `CENTURY` — The century. For example, the year 2024 is in the 21st century.
+- `DECADE` — The decade (year divided by 10). For example, the year 2024 has decade 202.
+- `MILLENNIUM` — The millennium. For example, the year 2024 is in the 3rd millennium.
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or the time to process. Either [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md) type is supported.
+The `date` parameter specifies the date or the time to process. The [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), and [DateTime64](../../sql-reference/data-types/datetime64.md) types are supported.
 
 Examples:
 
@@ -212,6 +222,9 @@ Examples:
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
 SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
+SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
+SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
 ```
 
 In the following example we create a table and insert into it a value with the `DateTime` type.
@@ -222,8 +235,8 @@ CREATE TABLE test.Orders
     OrderId UInt64,
     OrderName String,
     OrderDate DateTime
-)
-ENGINE = Log;
+) ENGINE = MergeTree
+ORDER BY ();
 ```
 
 ```sql

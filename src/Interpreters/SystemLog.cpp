@@ -59,6 +59,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -428,6 +429,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -470,6 +473,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -513,9 +518,36 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
+    /// Flush crash_log first since it's the most important log during a crash.
+    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
+    /// time budget from the signal handler's 303-second timeout, potentially
+    /// preventing crash_log from being flushed if stack symbolization was slow.
+    /// Use try/catch so that a timeout in one log does not prevent flushing others.
+    if (crash_log)
+    {
+        try
+        {
+            crash_log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     auto logs = getAllLogs();
     for (auto & log : logs)
-        log->handleCrash();
+    {
+        try
+        {
+            if (log != crash_log.get())
+                log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 template <typename LogElement>
@@ -528,8 +560,9 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>())
 {
+    create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
@@ -589,6 +622,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
     size_t flush_size = to_flush.size();
+    bool is_manual_flush = flush_policy->isManualFlush(to_flush_end);
 
     try
     {
@@ -654,11 +688,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
+
+        flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
     }
     catch (...)
     {
+        if (is_manual_flush)
+            flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
@@ -784,6 +822,7 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
     {
         /// We always want to deliver the data to the original table regardless of the MVs
         mutable_context->setSetting("materialized_views_ignore_errors", true);
+        flush_policy->addInsertSettings(mutable_context);
     }
     else if (query_kind == IAST::QueryKind::Rename)
     {
@@ -804,7 +843,10 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    ordinary_columns.setAliases(alias_columns);
+    /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
+    /// `true` for `SharedSystemLogFlushPolicy` and `false` for `DefaultSystemLogFlushPolicy`.
+    if (!flush_policy->shouldSkipAliasColumns())
+        ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
 

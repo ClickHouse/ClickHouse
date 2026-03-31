@@ -17,9 +17,9 @@ Provides a table-like interface to [Delta Lake](https://github.com/delta-io/delt
 `deltaLake` is an alias of `deltaLakeS3` which is supported for compatibility.
 
 ```sql
-deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
-deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 
@@ -30,6 +30,8 @@ deltaLakeLocal(path, [,format])
 
 The arguments for this table function are the same as for the `s3`, `azureBlobStorage`, `HDFS` and `file` table functions respectively.
 The `format` argument stands for the format of data files in the Delta lake table.
+
+An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ## Returned value {#returned_value}
 

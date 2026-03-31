@@ -31,14 +31,29 @@ const auto highRange = [](RandomGenerator & rg, FuzzConfig &)
     return std::to_string(val == UINT32_C(0) ? UINT32_C(0) : (UINT32_C(1) << (val - UINT32_C(1))));
 };
 
+/// Like highRange but never produces 0 — for NonZeroUInt64 settings
+const auto highRangeNonZero = [](RandomGenerator & rg, FuzzConfig &)
+{
+    const auto val = rg.randomInt<uint32_t>(1, 25);
+    return std::to_string(UINT32_C(1) << (val - UINT32_C(1)));
+};
+
 const auto columnsRange
     = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10))); };
 
 const auto rowsRange
     = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(8192))); };
 
+/// Like rowsRange but never produces 0 — for NonZeroUInt64 settings
+const auto rowsRangeNonZero
+    = [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, UINT32_C(8192))); };
+
 const auto bytesRange = [](RandomGenerator & rg, FuzzConfig &)
 { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
+
+/// Like bytesRange but never produces 0 — for NonZeroUInt64 settings
+const auto bytesRangeNonZero = [](RandomGenerator & rg, FuzzConfig &)
+{ return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024))); };
 
 const auto threadSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
@@ -86,6 +101,8 @@ extern std::vector<SystemTable> systemTables;
 extern std::unordered_map<DictionaryLayouts, std::unordered_map<String, CHSetting>> allDictionaryLayoutSettings;
 
 String generateNextCodecString(RandomGenerator & rg);
+String getNextIcebergTimestamp(RandomGenerator & rg, FuzzConfig & fc);
+String getNextIcebergExpireTimestamp(RandomGenerator & rg, FuzzConfig & fc);
 void loadFuzzerServerSettings(const FuzzConfig & fc);
 void loadFuzzerTableSettings(const FuzzConfig & fc);
 void loadSystemTables(FuzzConfig & fc);
