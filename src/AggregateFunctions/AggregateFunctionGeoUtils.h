@@ -36,6 +36,7 @@ static constexpr size_t MAX_RINGS_PER_POLYGON = 10'000;
 static constexpr size_t MAX_POLYGONS_PER_MULTIPOLYGON = 10'000;
 static constexpr size_t MAX_CHUNKS_PER_STATE = 10'000;
 static constexpr size_t MAX_POINTS_IN_CONVEX_HULL_STATE = 100'000'000;
+static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
 
 
 /// Maps global variant discriminator index -> GeometryColumnType.
@@ -163,7 +164,7 @@ inline void serializeGeoMultiPolygon(const CartesianMultiPolygon & mp, WriteBuff
 }
 
 
-inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_name)
+inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_name, size_t & total_points)
 {
     UInt64 size;
     readVarUInt(size, buf);
@@ -174,6 +175,15 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
             function_name,
             size,
             MAX_POINTS_PER_RING);
+
+    total_points += size;
+    if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted state of aggregate function {}: total points {} exceed polygonal state budget {}",
+            function_name,
+            total_points,
+            MAX_POINTS_IN_POLYGONAL_STATE);
 
     CartesianRing ring;
     ring.resize(size);
@@ -195,10 +205,10 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
     return ring;
 }
 
-inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * function_name)
+inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * function_name, size_t & total_points)
 {
     CartesianPolygon poly;
-    poly.outer() = deserializeGeoRing(buf, function_name);
+    poly.outer() = deserializeGeoRing(buf, function_name, total_points);
 
     UInt64 inner_count;
     readVarUInt(inner_count, buf);
@@ -212,11 +222,11 @@ inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * fun
 
     poly.inners().resize(inner_count);
     for (UInt64 i = 0; i < inner_count; ++i)
-        poly.inners()[i] = deserializeGeoRing(buf, function_name);
+        poly.inners()[i] = deserializeGeoRing(buf, function_name, total_points);
     return poly;
 }
 
-inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const char * function_name)
+inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const char * function_name, size_t & total_points)
 {
     UInt64 poly_count;
     readVarUInt(poly_count, buf);
@@ -231,8 +241,27 @@ inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const 
     CartesianMultiPolygon mp;
     mp.resize(poly_count);
     for (UInt64 i = 0; i < poly_count; ++i)
-        mp[i] = deserializeGeoPolygon(buf, function_name);
+        mp[i] = deserializeGeoPolygon(buf, function_name, total_points);
     return mp;
+}
+
+
+/// Re-establish the same polygon validity invariant enforced by the add path
+/// (boost::geometry::correct + is_valid). Malformed serialized states that
+/// passed finite-coordinate checks but carry self-intersecting or otherwise
+/// invalid topology are rejected here.
+inline void validateDeserializedMultiPolygon(CartesianMultiPolygon & mp, const char * function_name)
+{
+    for (auto & poly : mp)
+        boost::geometry::correct(poly);
+
+    String reason;
+    if (!boost::geometry::is_valid(mp, reason))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted state of aggregate function {}: deserialized geometry is invalid: {}",
+            function_name,
+            reason);
 }
 
 
