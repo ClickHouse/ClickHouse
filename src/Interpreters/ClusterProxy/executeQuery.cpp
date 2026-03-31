@@ -564,27 +564,16 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
         {
             if (shard_count > 1)
             {
-                /// `_shard_num` is stale (from an outer distributed cluster) and `cluster_for_parallel_replicas`
-                /// has multiple shards — cannot determine which shard to scope to.
-                /// Defensive guard: unreachable given the current call chain, but kept to prevent
-                /// silent mis-behavior if the call chain ever changes.
-                /// - SELECT path: `canUseParallelReplicasOnInitiator` (PlannerJoinTree) throws first.
-                /// - INSERT SELECT path: `isSuitableForInsertSelectWithParallelReplicas` runs the full
-                ///   query planner internally, which calls `canUseParallelReplicasOnInitiator` and throws
-                ///   before `executeInsertSelectWithParallelReplicas` is reached.
-                /// Without this guard the code would fall through to the LOG_WARNING path below and
-                /// silently use a multi-shard cluster as if it were single-shard, producing wrong results.
+                /// Stale `_shard_num` cannot be mapped to a shard of a multi-shard
+                /// `cluster_for_parallel_replicas`; keep the existing `UNEXPECTED_CLUSTER` semantics.
                 throw DB::Exception(
                     ErrorCodes::UNEXPECTED_CLUSTER,
                     "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
             }
 
-            /// `_shard_num` came from an outer distributed query over a different outer distributed cluster
-            /// (not from `cluster_for_parallel_replicas`). This happens when canUseTaskBasedParallelReplicas()
-            /// was false on the initiator, so cluster_for_parallel_replicas was not overridden to match the
-            /// outer cluster. Use all replicas of this single-shard cluster. shard_num is intentionally kept
-            /// non-zero to preserve the "distributed scope" signal (disables local plan and projection
-            /// optimizations).
+            /// `_shard_num` came from an outer `Distributed` query over a different cluster.
+            /// For a single-shard PR cluster, use all replicas but keep `shard_num` non-zero
+            /// to preserve the distributed-scope signal for downstream logic.
             LOG_WARNING(
                 logger,
                 "Shard number ({}) from query scalar `_shard_num` is greater than shard count ({}) "
