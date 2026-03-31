@@ -700,9 +700,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
     if (node.column && isColumnConst(*node.column))
     {
-        Field literal;
-        node.column->get(0, literal);
-        return !atomic && literal.safeGet<bool>();
+        return !atomic && node.column->getBool(0);
     }
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
