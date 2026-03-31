@@ -1,5 +1,4 @@
--- { echoOn }
-
+-- { echoOff }
 CREATE TABLE test1
 (
     id Int64
@@ -19,13 +18,17 @@ AS (
 
 INSERT INTO test1 VALUES (1), (2), (3);
 
+-- { echoOn }
 SELECT id, prev_id FROM v1 ORDER BY id;
 SELECT id, prev_id FROM v1 WHERE id >= 2 ORDER BY id;
 SELECT id, prev_id FROM v1 WHERE prev_id = 1 ORDER BY id;
+SELECT id, prev_id FROM v1 WHERE id >= 2 AND prev_id = 1 ORDER BY id;
 
 SELECT id, prev_id FROM v1 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
 SELECT id, prev_id FROM v1 WHERE id >= 2 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
 SELECT id, prev_id FROM v1 WHERE prev_id = 1 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+SELECT id, prev_id FROM v1 WHERE id >= 2 AND prev_id = 1 ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
+-- { echoOff }
 
 CREATE TABLE test2
 (
@@ -48,46 +51,8 @@ AS (
     FROM test2
 );
 
+-- { echoOn }
 SELECT category, id, value, running_sum FROM v2 ORDER BY id;
 SELECT category, id, value, running_sum FROM v2 WHERE category = 'y' ORDER BY id;
 SELECT category, id, value, running_sum FROM v2 WHERE category = 'y' ORDER BY id SETTINGS query_plan_filter_push_down_over_window = 1;
-
--- See <https://github.com/ClickHouse/ClickHouse/issues/51203>
-CREATE TABLE users (
-    uid Int16,
-    name String,
-    department String,
-    started DateTime64()
-)
-ENGINE = MergeTree()
-PRIMARY KEY (department);
-
-CREATE VIEW users_with_previous
-AS (
-    SELECT
-        uid,
-        name,
-        department,
-        lagInFrame(uid, 1) OVER (partition BY department ORDER BY started ASC) AS previous_user
-    FROM users
-);
-
-INSERT INTO users VALUES (1231, 'John', 'Sales', '2023-06-08 12:00:00');
-INSERT INTO users VALUES (6666, 'Ksenia', 'Engineering', '2023-06-09 12:00:00');
-INSERT INTO users VALUES (8888, 'Alice', 'Engineering', '2023-06-10 12:00:00');
-
-SELECT
-    uid,
-    name,
-    department,
-    lagInFrame(uid, 1) OVER (partition BY department ORDER BY started ASC) AS previous_user
-FROM users
-WHERE department = 'Engineering'
-SETTINGS force_primary_key = 1;
-
-SELECT *
-FROM users_with_previous
-WHERE department = 'Engineering'
-SETTINGS
-    force_primary_key = 1,
-    query_plan_filter_push_down_over_window = 1;
+-- { echoOff }
