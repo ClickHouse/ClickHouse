@@ -124,6 +124,13 @@ public:
                 "Illegal type {} of second argument of aggregate function {} because the values of that data type are not comparable",
                 data_type_val->getName(),
                 getName());
+
+        if (isDynamic(data_type_val) || isVariant(data_type_val))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different data types. Consider using typed subcolumns or cast column to a specific data type",
+                data_type_val->getName(),
+                getName());
     }
 
     String getName() const override
