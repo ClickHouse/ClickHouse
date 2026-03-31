@@ -74,3 +74,28 @@ SELECT groupConvexHullMerge(state) FROM (
         '00'
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
 ); -- { serverError INCORRECT_DATA }
+
+-- 8. groupPolygonUnion: reject NaN coordinate in deserialized state
+SELECT 'union_nan_coordinate';
+SELECT groupPolygonUnionMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '01',                  -- version
+        '01',                  -- 1 chunk
+        '01',                  -- 1 polygon
+        '01',                  -- 1-point outer ring
+        '000000000000F87F',    -- x = NaN (little-endian IEEE 754)
+        '0000000000000000',    -- y = 0.0
+        '00'                   -- 0 inner rings
+    )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
+); -- { serverError INCORRECT_DATA }
+
+-- 9. groupConvexHull: reject +Inf coordinate in deserialized state
+SELECT 'convex_hull_inf_coordinate';
+SELECT groupConvexHullMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '01',                  -- version
+        '01',                  -- 1 point
+        '000000000000F07F',    -- x = +Inf (little-endian IEEE 754)
+        '0000000000000000'     -- y = 0.0
+    )) AS AggregateFunction(groupConvexHull, Point)) AS state
+); -- { serverError INCORRECT_DATA }

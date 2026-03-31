@@ -5,3 +5,5 @@ union_oversized_polygons
 union_oversized_rings
 union_oversized_points
 convex_hull_oversized_points
+union_nan_coordinate
+convex_hull_inf_coordinate

@@ -41,13 +41,10 @@ struct GroupConvexHullData
         if (points.size() <= 1)
             return;
 
-        CartesianMultiPolygon input_mp;
-        CartesianPolygon dummy;
-        dummy.outer().assign(points.begin(), points.end());
-        input_mp.push_back(std::move(dummy));
+        boost::geometry::model::multi_point<CartesianPoint> mp(points.begin(), points.end());
 
         CartesianPolygon hull;
-        boost::geometry::convex_hull(input_mp, hull);
+        boost::geometry::convex_hull(mp, hull);
 
         points.clear();
         points.assign(hull.outer().begin(), hull.outer().end());
@@ -64,11 +61,10 @@ struct GroupConvexHullData
         if (points.empty())
             return {};
 
-        CartesianPolygon dummy;
-        dummy.outer().assign(points.begin(), points.end());
+        boost::geometry::model::multi_point<CartesianPoint> mp(points.begin(), points.end());
 
         CartesianPolygon hull;
-        boost::geometry::convex_hull(dummy, hull);
+        boost::geometry::convex_hull(mp, hull);
 
         CartesianRing result;
         result.assign(hull.outer().begin(), hull.outer().end());
@@ -238,6 +234,13 @@ public:
             Float64 y;
             readBinaryLittleEndian(x, buf);
             readBinaryLittleEndian(y, buf);
+            if (!std::isfinite(x) || !std::isfinite(y))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Corrupted state of aggregate function {}: non-finite coordinate ({}, {})",
+                    getName(),
+                    x,
+                    y);
             points[i] = CartesianPoint(x, y);
         }
     }
