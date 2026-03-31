@@ -64,7 +64,6 @@ namespace Setting
     extern const SettingsBool jemalloc_enable_profiler;
     extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
     extern const SettingsInt32 os_threads_nice_value_query;
-    extern const SettingsInt32 os_threads_nice_value_materialized_view;
 }
 
 namespace ServerSetting
@@ -94,7 +93,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
+// c-tor for method createForScope
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent_)
     : master_thread_id(CurrentThread::get().thread_id)
     , parent(parent_)
@@ -265,6 +264,13 @@ ThreadGroupPtr ThreadGroup::createForScope()
         res_group->memory_tracker.setParent(&background_memory_tracker);
     }
     res_group->memory_tracker.setDescription("ThreadGroupScope");
+    return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForMaterializedView()
+{
+    auto res_group = createForScope();
+    res_group->memory_tracker.setDescription("MaterializedView");
     return res_group;
 }
 

@@ -1092,7 +1092,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         if (auto thread_group = CurrentThread::getGroup())
             thread_groups[root_view] = thread_group;
         else
-            thread_groups[root_view] = ThreadGroup::createForScope();
+            thread_groups[root_view] = ThreadGroup::createForMaterializedView();
         views_error_registry->init(root_view);
         dependent_views[root_view] = {};
     };
@@ -1118,7 +1118,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         inner_tables[current] = materialized_view->getTargetTableId();
         source_tables[current] = parent;
-        thread_groups[current] = ThreadGroup::createForScope();
+        thread_groups[current] = ThreadGroup::createForMaterializedView();
         view_types[current] = QueryViewsLogElement::ViewType::MATERIALIZED;
         views_error_registry->init(current);
 
@@ -1147,7 +1147,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
         inner_tables[current] = current;
         select_queries[current] = window_view->getMergeableQuery();
         input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForScope();
+        thread_groups[current] = ThreadGroup::createForMaterializedView();
         view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
         views_error_registry->init(current);
 

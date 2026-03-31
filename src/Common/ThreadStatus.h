@@ -123,6 +123,9 @@ public:
     /// That method either creates a new thread group linked to current thread group which has to exist
     static ThreadGroupPtr createForScope();
 
+    /// Creates a new thread group for materialized view execution
+    static ThreadGroupPtr createForMaterializedView();
+
     /// That method creates a new thread group linked to flush_query_thread_group which has to exist, and is used for flushing async insert query
     /// Current threads are not linked to the flush_query_thread_group, that is why createForBackgroundOps is not used here
     static ThreadGroupPtr createForFlushAsyncInsertQuery(ContextPtr query_context, ThreadGroupPtr flush_query_thread_group);
