@@ -30,7 +30,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     min_bytes_per_stream_for_gradual_resize = from->getSettingsRef()[Setting::min_bytes_per_stream_for_gradual_resize];
 
     /// Setting query_plan_merge_filters is enabled by default.
-    /// But it can brake short-circuit without splitting filter step into smaller steps.
+    /// But it can break short-circuit without splitting filter step into smaller steps.
     /// So, enable and disable this optimizations together.
     enable_multiple_filters_transforms_for_and_chain = settings[Setting::query_plan_merge_filters];
 
