@@ -374,7 +374,7 @@ Null `val` values are ignored.
     };
     FunctionDocumentation::Arguments arguments_argMinMany = {
         {"arg", "Argument values to collect.", {"Any"}},
-        {"val", "Values used to determine the bottom N rows.", {"Comparable type"}}
+        {"val", "Values used to determine the bottom N rows.", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMinMany = {
         "Array of `arg` values corresponding to the N smallest `val` values, in ascending order of `val`.",
