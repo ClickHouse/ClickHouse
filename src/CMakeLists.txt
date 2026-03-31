@@ -336,6 +336,44 @@ endif()
 
 add_object_library(clickhouse_server Server)
 add_object_library(clickhouse_server_http Server/HTTP)
+
+# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
+set_source_files_properties(Server/WebUIRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/play.html;\
+${CMAKE_SOURCE_DIR}/programs/server/dashboard.html;\
+${CMAKE_SOURCE_DIR}/programs/server/js/uplot.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/lz-string.js;\
+${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
+${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
+${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html")
+
+set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/server/index.html")
+
+set_source_files_properties(Server/KeeperDashboardRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_SOURCE_DIR}/programs/keeper/dashboard.html")
+
+# Common/FrequencyHolder.cpp embeds files from contrib/nlp-data/ via #embed.
+# Add OBJECT_DEPENDS only if the submodule is checked out.
+set(_nlp_charset "${CMAKE_SOURCE_DIR}/contrib/nlp-data/charset.zst")
+set(_nlp_tonality "${CMAKE_SOURCE_DIR}/contrib/nlp-data/tonality_ru.zst")
+if (EXISTS "${_nlp_charset}" AND EXISTS "${_nlp_tonality}")
+    set_source_files_properties(Common/FrequencyHolder.cpp PROPERTIES OBJECT_DEPENDS
+        "${_nlp_charset};${_nlp_tonality}")
+endif()
+
+set_source_files_properties(Storages/System/attachInformationSchemaTables.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schemata.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/tables.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/views.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/columns.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/key_column_usage.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_constraints.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
+
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
 endif()
