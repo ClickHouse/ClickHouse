@@ -1,5 +1,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionSparkbar.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -68,8 +69,10 @@ public:
         /// Validate that the nested function returns a numeric type that can be
         /// converted to Float64 for sparkbar rendering. Non-numeric return types
         /// (e.g. String, Array) cannot be visualised and must be rejected early.
+        /// Nullable(<numeric>) is accepted: the Nullable wrapper is stripped before
+        /// the numeric check, so compositions like avgOrNullSparkbar work correctly.
         {
-            WhichDataType result_which{nested_function->getResultType()};
+            WhichDataType result_which{removeNullable(nested_function->getResultType())};
             if (!result_which.isNumber())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Aggregate function with {} suffix requires a nested function that returns "
