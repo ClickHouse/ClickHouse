@@ -354,18 +354,11 @@ void ExportPartitionTaskScheduler::handlePartExportFailure(
     size_t max_retries
 )
 {
-    LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} export failed, will now increment counters", part_name);
+    LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} export failed", part_name);
 
     if (!exception)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ExportPartition scheduler task: No exception provided for error handling. Sounds like a bug");
-    }
-
-    /// Early exit if the query was cancelled - no need to increment error counts
-    if (exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
-    {
-        LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} export was cancelled, skipping error handling", part_name);
-        return;
     }
 
     Coordination::Stat locked_by_stat;
@@ -382,6 +375,40 @@ void ExportPartitionTaskScheduler::handlePartExportFailure(
     if (locked_by != storage.replica_name)
     {
         LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} is locked by another replica, will not increment error counts", part_name);
+        return;
+    }
+
+    /// Early exit if the query was cancelled - no need to increment error counts
+    if (exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
+    {
+        /// Releasing the lock is important because a query can be cancelled due to SYSTEM STOP MOVES. If this is the case,
+        /// other replicas should still be able to export this individual part. That's why there is a retry loop here.
+        /// It is very unlikely this will be a problem in practice. The lock is ephemeral, which means it is automatically released
+        /// if ClickHouse loses connection to ZooKeeper
+        std::size_t retry_count = 0;
+        static constexpr std::size_t max_lock_release_retries = 3;
+        while (retry_count < max_lock_release_retries)
+        {
+            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
+            ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRemove);
+
+            const auto removal_code = zk->tryRemove(export_path / "locks" / part_name, locked_by_stat.version);
+
+            if (Coordination::Error::ZOK == removal_code)
+            {
+                break;
+            }
+
+            if (Coordination::Error::ZBADVERSION == removal_code)
+            {
+                LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} lock version mismatch, will not increment error counts", part_name);
+                break;
+            }
+
+            retry_count++;
+        }
+
+        LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} export was cancelled, skipping error handling", part_name);
         return;
     }
 

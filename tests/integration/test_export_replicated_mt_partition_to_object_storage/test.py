@@ -1377,3 +1377,152 @@ def test_sharded_export_partition_default_pattern(cluster):
 
     # only one file with 3 rows should be present
     assert int(total_count) == 3, f"Expected 3 rows, got {total_count}"
+
+
+def test_export_partition_scheduler_skipped_when_moves_stopped(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"sched_skip_mt_{uid}"
+    s3_table = f"sched_skip_s3_{uid}"
+
+    create_tables_and_insert_data(node, mt_table, s3_table, "replica1")
+
+    node.query(f"SYSTEM STOP MOVES {mt_table}")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
+    )
+
+    wait_for_export_to_start(node, mt_table, s3_table, "2020")
+
+    # Wait for several scheduler cycles (each fires every 5 s).
+    # If the guard is missing the scheduler would run and data would land in S3.
+    time.sleep(10)
+
+    status = node.query(
+        f"SELECT status FROM system.replicated_partition_exports"
+        f" WHERE source_table = '{mt_table}' AND destination_table = '{s3_table}'"
+        f" AND partition_id = '2020'"
+    ).strip()
+
+    assert status == "PENDING", (
+        f"Expected PENDING while moves are stopped, got '{status}'"
+    )
+
+    row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
+    assert row_count == 0, (
+        f"Expected 0 rows in S3 while scheduler is skipped, got {row_count}"
+    )
+
+    node.query(f"SYSTEM START MOVES {mt_table}")
+
+    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED", timeout=60)
+
+    row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
+    assert row_count == 3, f"Expected 3 rows in S3 after export completed, got {row_count}"
+
+
+def test_export_partition_resumes_after_stop_moves(cluster):
+    node = cluster.instances["replica1"]
+
+    uid = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"stop_moves_before_mt_{uid}"
+    s3_table = f"stop_moves_before_s3_{uid}"
+
+    create_tables_and_insert_data(node, mt_table, s3_table, "replica1")
+
+    node.query(f"SYSTEM STOP MOVES {mt_table}")
+
+    node.query(
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
+        f" SETTINGS export_merge_tree_partition_max_retries = 50"
+    )
+
+    wait_for_export_to_start(node, mt_table, s3_table, "2020")
+
+    # Give the scheduler enough time to attempt (and cancel) the part task at
+    # least once, exercising the lock-release code path.
+    time.sleep(5)
+
+    status = node.query(
+        f"SELECT status FROM system.replicated_partition_exports"
+        f" WHERE source_table = '{mt_table}' AND destination_table = '{s3_table}'"
+        f" AND partition_id = '2020'"
+    ).strip()
+    assert status == "PENDING", f"Expected PENDING while moves are stopped, got '{status}'"
+
+    row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
+    assert row_count == 0, f"Expected 0 rows in S3 while moves are stopped, got {row_count}"
+
+    node.query(f"SYSTEM START MOVES {mt_table}")
+
+    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED", timeout=60)
+
+    row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
+    assert row_count == 3, f"Expected 3 rows in S3 after export completed, got {row_count}"
+
+
+def test_export_partition_resumes_after_stop_moves_during_export(cluster):
+    skip_if_remote_database_disk_enabled(cluster)
+
+    node = cluster.instances["replica1"]
+
+    uid = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"stop_moves_during_mt_{uid}"
+    s3_table = f"stop_moves_during_s3_{uid}"
+
+    create_tables_and_insert_data(node, mt_table, s3_table, "replica1")
+
+    minio_ip = cluster.minio_ip
+    minio_port = cluster.minio_port
+
+    with PartitionManager() as pm:
+        pm.add_rule({
+            "instance": node,
+            "destination": node.ip_address,
+            "protocol": "tcp",
+            "source_port": minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        })
+        pm.add_rule({
+            "instance": node,
+            "destination": minio_ip,
+            "protocol": "tcp",
+            "destination_port": minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        })
+
+        node.query(
+            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
+            f" SETTINGS export_merge_tree_partition_max_retries = 50"
+        )
+
+        wait_for_export_to_start(node, mt_table, s3_table, "2020")
+
+        # Let the tasks start executing and failing against the blocked S3.
+        time.sleep(2)
+
+        node.query(f"SYSTEM STOP MOVES {mt_table}")
+
+        # Give the cancel callback time to fire and the lock-release path to run.
+        time.sleep(3)
+
+        status = node.query(
+            f"SELECT status FROM system.replicated_partition_exports"
+            f" WHERE source_table = '{mt_table}' AND destination_table = '{s3_table}'"
+            f" AND partition_id = '2020'"
+        ).strip()
+
+        assert status == "PENDING", (
+            f"Expected PENDING while moves are stopped and S3 is blocked, got '{status}'"
+        )
+
+        node.query(f"SYSTEM START MOVES {mt_table}")
+
+    # MinIO is now unblocked; the next scheduler cycle should succeed.
+    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED", timeout=60)
+
+    row_count = int(node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020").strip())
+    assert row_count == 3, f"Expected 3 rows in S3 after export completed, got {row_count}"
+
