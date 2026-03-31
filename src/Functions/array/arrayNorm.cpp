@@ -8,10 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#if USE_MULTITARGET_CODE
-#include <immintrin.h>
-#endif
-
 namespace DB
 {
 namespace ErrorCodes
@@ -45,49 +41,6 @@ struct L1Norm
     {
         return result;
     }
-
-#if USE_MULTITARGET_CODE
-    template <typename ResultType>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
-        const ResultType * data,
-        size_t i_max,
-        size_t & i,
-        ResultType & state)
-    {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
-        __m512 sums;
-        if constexpr (is_float32)
-            sums = _mm512_setzero_ps();
-        else
-            sums = _mm512_setzero_pd();
-
-        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
-
-        if constexpr (is_float32)
-        {
-            const __m512 sign_mask = _mm512_set1_ps(-0.0f);
-            for (; i + n < i_max; i += n)
-            {
-                __m512 x = _mm512_loadu_ps(data + i);
-                __m512 abs_x = _mm512_andnot_ps(sign_mask, x);
-                sums = _mm512_add_ps(sums, abs_x);
-            }
-            state += _mm512_reduce_add_ps(sums);
-        }
-        else
-        {
-            const __m512d sign_mask = _mm512_set1_pd(-0.0);
-            for (; i + n < i_max; i += n)
-            {
-                __m512d x = _mm512_loadu_pd(data + i);
-                __m512d abs_x = _mm512_andnot_pd(sign_mask, x);
-                sums = _mm512_add_pd(abs_x, sums);
-            }
-            state += _mm512_reduce_add_pd(sums);
-        }
-    }
-#endif
 };
 
 struct L2Norm
@@ -113,45 +66,6 @@ struct L2Norm
     {
         return sqrt(result);
     }
-
-#if USE_MULTITARGET_CODE
-    template <typename ResultType>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
-        const ResultType * data,
-        size_t i_max,
-        size_t & i,
-        ResultType & state)
-    {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
-        __m512 sums;
-        if constexpr (is_float32)
-            sums = _mm512_setzero_ps();
-        else
-            sums = _mm512_setzero_pd();
-
-        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
-
-        for (; i + n < i_max; i += n)
-        {
-            if constexpr (is_float32)
-            {
-                __m512 x = _mm512_loadu_ps(data + i);
-                sums = _mm512_fmadd_ps(x, x, sums);
-            }
-            else
-            {
-                __m512d x = _mm512_loadu_pd(data + i);
-                sums = _mm512_fmadd_pd(x, x, sums);
-            }
-        }
-
-        if constexpr (is_float32)
-            state += _mm512_reduce_add_ps(sums);
-        else
-            state += _mm512_reduce_add_pd(sums);
-    }
-#endif
 };
 
 struct L2SquaredNorm : L2Norm
@@ -218,46 +132,66 @@ struct LinfNorm
     {
         return result;
     }
-
-#if USE_MULTITARGET_CODE
-    template <typename ResultType>
-    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
-        const ResultType * data,
-        size_t i_max,
-        size_t & i,
-        ResultType & state)
-    {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
-        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
-
-        if constexpr (is_float32)
-        {
-            const __m512 sign_mask = _mm512_set1_ps(-0.0f);
-            __m512 maxes = _mm512_setzero_ps();
-            for (; i + n < i_max; i += n)
-            {
-                __m512 x = _mm512_loadu_ps(data + i);
-                __m512 abs_x = _mm512_andnot_ps(sign_mask, x);
-                maxes = _mm512_max_ps(maxes, abs_x);
-            }
-            state = fmax(state, _mm512_reduce_max_ps(maxes));
-        }
-        else
-        {
-            const __m512d sign_mask = _mm512_set1_pd(-0.0);
-            __m512d maxes = _mm512_setzero_pd();
-            for (; i + n < i_max; i += n)
-            {
-                __m512d x = _mm512_loadu_pd(data + i);
-                __m512d abs_x = _mm512_andnot_pd(sign_mask, x);
-                maxes = _mm512_max_pd(maxes, abs_x);
-            }
-            state = fmax(state, _mm512_reduce_max_pd(maxes));
-        }
-    }
-#endif
 };
+
+
+MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_HEADER(
+    template <typename Kernel, typename ResultType, typename ArgumentType>
+    void NO_INLINE
+), executeNormImpl, MULTITARGET_FUNCTION_BODY((
+    const ArgumentType * __restrict data,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+    constexpr size_t unroll_count = 128 / sizeof(ResultType);
+
+    ColumnArray::Offset prev = 0;
+    for (size_t row = 0; row < row_count; ++row)
+    {
+        const auto off = offsets[row];
+        const size_t count = off - prev;
+
+        ResultType partial[unroll_count] = {};
+        size_t i = 0;
+        const size_t unrolled_end = count / unroll_count * unroll_count;
+
+        for (; i < unrolled_end; i += unroll_count)
+            for (size_t s = 0; s < unroll_count; ++s)
+                partial[s] = Kernel::template accumulate<ResultType>(
+                    partial[s], static_cast<ResultType>(data[prev + i + s]), params);
+
+        ResultType state = 0;
+        for (size_t s = 0; s < unroll_count; ++s)
+            state = Kernel::template combine<ResultType>(state, partial[s], params);
+
+        for (; i < count; ++i)
+            state = Kernel::template accumulate<ResultType>(
+                state, static_cast<ResultType>(data[prev + i]), params);
+
+        result[row] = Kernel::finalize(state, params);
+        prev = off;
+    }
+}))
+
+template <typename Kernel, typename ResultType, typename ArgumentType>
+void executeNorm(
+    const ArgumentType * __restrict data,
+    const ColumnArray::Offset * __restrict offsets,
+    ResultType * __restrict result,
+    size_t row_count,
+    const typename Kernel::ConstParams & params)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        return executeNormImpl_x86_64_v4<Kernel, ResultType, ArgumentType>(data, offsets, result, row_count, params);
+    if (isArchSupported(TargetArch::x86_64_v3))
+        return executeNormImpl_x86_64_v3<Kernel, ResultType, ArgumentType>(data, offsets, result, row_count, params);
+#endif
+    executeNormImpl<Kernel, ResultType, ArgumentType>(data, offsets, result, row_count, params);
+}
 
 
 template <class Kernel>
@@ -370,53 +304,9 @@ private:
 
         const typename Kernel::ConstParams kernel_params = initConstParams(arguments);
 
-        ColumnArray::Offset prev = 0;
-        size_t row = 0;
-        for (auto off : offsets)
-        {
-            ResultType state = 0;
-            size_t i = 0;
-            const size_t count = off - prev;
+        executeNorm<Kernel, ResultType, ArgumentType>(
+            data.data(), offsets.data(), result_data.data(), input_rows_count, kernel_params);
 
-            bool processed_with_simd = false;
-#if USE_MULTITARGET_CODE
-            if constexpr (!std::is_same_v<Kernel, LpNorm>)
-            {
-                if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<ArgumentType, Float32>)
-                           || (std::is_same_v<ResultType, Float64> && std::is_same_v<ArgumentType, Float64>))
-                {
-                    if (isArchSupported(TargetArch::x86_64_v4))
-                    {
-                        Kernel::template accumulateCombine<ResultType>(data.data() + prev, count, i, state);
-                        processed_with_simd = true;
-                    }
-                }
-            }
-#endif
-            if (!processed_with_simd)
-            {
-                /// Process chunks in vectorized manner
-                static constexpr size_t VEC_SIZE = 4;
-                ResultType results[VEC_SIZE] = {0};
-                for (; i + VEC_SIZE < count; i += VEC_SIZE)
-                {
-                    for (size_t s = 0; s < VEC_SIZE; ++s)
-                        results[s] = Kernel::template accumulate<ResultType>(results[s], static_cast<ResultType>(data[prev + i + s]), kernel_params);
-                }
-
-                for (const auto & other_state : results)
-                    state = Kernel::template combine<ResultType>(state, other_state, kernel_params);
-            }
-
-            /// Process the tail
-            for (; i < count; ++i)
-            {
-                state = Kernel::template accumulate<ResultType>(state, static_cast<ResultType>(data[prev + i]), kernel_params);
-            }
-            result_data[row] = Kernel::finalize(state, kernel_params);
-            prev = off;
-            row++;
-        }
         return result_col;
     }
 
