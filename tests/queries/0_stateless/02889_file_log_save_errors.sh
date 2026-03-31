@@ -31,8 +31,18 @@ function count()
 	echo $COUNT
 }
 
-while true; do
-	[[ $(count) == 20 ]] && break
+# Wait for all 20 error records with a bounded timeout.
+# Under TSAN/MSAN the FileLog background thread can be significantly delayed.
+TIMEOUT=120
+START=$EPOCHSECONDS
+while [[ $(count) != 20 ]]; do
+	if ((EPOCHSECONDS - START > TIMEOUT)); then
+		echo "Timeout (${TIMEOUT}s) waiting for 20 error records in log_errors. Got $(count)."
+		${CLICKHOUSE_CLIENT} --query "drop table file_log;"
+		${CLICKHOUSE_CLIENT} --query "drop table log_errors;"
+		rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
+		exit 1
+	fi
 	sleep 1
 done
 
