@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -139,7 +140,7 @@ public:
 #endif
 
 private:
-    MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V3(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res) /// NOLINT
     {
         size_t size = null_map.size();
@@ -150,15 +151,9 @@ private:
     static void NO_INLINE vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorImplAVX2(null_map, res);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorImplSSE42(null_map, res);
+            vectorImpl_x86_64_v3(null_map, res);
             return;
         }
 #endif

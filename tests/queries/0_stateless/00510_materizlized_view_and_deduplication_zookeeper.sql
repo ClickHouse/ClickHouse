@@ -20,6 +20,8 @@ CREATE MATERIALIZED VIEW without_deduplication_mv UUID '00000510-1000-4000-8000-
     ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/{database}/test_00510/without_deduplication_mv', 'r1') ORDER BY dummy
     AS SELECT 0 AS dummy, countState(x) AS cnt FROM without_deduplication;
 
+SET deduplicate_blocks_in_dependent_materialized_views = 0;
+
 INSERT INTO with_deduplication VALUES (42);
 INSERT INTO with_deduplication VALUES (42);
 INSERT INTO with_deduplication VALUES (43);
@@ -31,7 +33,7 @@ INSERT INTO without_deduplication VALUES (43);
 SELECT count() FROM with_deduplication;
 SELECT count() FROM without_deduplication;
 
--- Implicit insert isn't deduplicated, because deduplicate_blocks_in_dependent_materialized_views = 0 by default
+-- Implicit insert isn't deduplicated, because deduplicate_blocks_in_dependent_materialized_views = 0
 SELECT '';
 SELECT countMerge(cnt) FROM with_deduplication_mv;
 SELECT countMerge(cnt) FROM without_deduplication_mv;

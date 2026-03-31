@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
-#include <fcntl.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <AggregateFunctions/SingleValueData.h>
@@ -20,7 +19,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -28,8 +26,6 @@
 #include <Parsers/parseQuery.h>
 #include <base/defines.h>
 #include <base/types.h>
-#include <Poco/Exception.h>
-#include <Poco/Logger.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -223,7 +219,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-            ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
+            ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }
@@ -261,7 +257,15 @@ AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
             UInt64 new_block_size_bytes = param.safeGet<UInt64>();
             if (new_block_size_bytes == 0)
-                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater then 0");
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater than 0");
+
+            /// Limit to 256 MiB to prevent absurd memory allocations from fuzzed queries
+            static constexpr UInt64 max_block_size_bytes = 256 * 1024 * 1024;
+            if (new_block_size_bytes > max_block_size_bytes)
+                throw Exception(
+                    ErrorCodes::BAD_QUERY_PARAMETER,
+                    "block_size_bytes ({}) is too large, maximum is {}",
+                    new_block_size_bytes, max_block_size_bytes);
 
             block_size_bytes = new_block_size_bytes;
         }
@@ -293,7 +297,7 @@ See [Column Compression Codecs](/sql-reference/statements/create/table#column_co
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -347,6 +351,6 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     factory.registerFunction(
         "estimateCompressionRatio",
-        {createAggregateFunctionEstimateCompressionRatio, {.is_order_dependent = true, .is_window_function = true}, documentation});
+        {createAggregateFunctionEstimateCompressionRatio, documentation, {.is_order_dependent = true, .is_window_function = true}});
 }
 }

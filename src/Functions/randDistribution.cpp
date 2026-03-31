@@ -195,7 +195,7 @@ struct PoissonDistribution
 
     static void generate(UInt64 n, ColumnUInt64::Container & container)
     {
-        auto distribution = std::poisson_distribution<UInt64>(n);
+        auto distribution = std::poisson_distribution<UInt64>(static_cast<double>(n));
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
     }

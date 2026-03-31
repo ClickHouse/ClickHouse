@@ -19,6 +19,7 @@ def started_cluster():
         cluster.start()
         # Validate on startup we increase the log level.
         assert instance.contains_in_log("Starting root logger in level trace")
+        assert instance.contains_in_log("Starting console logger in level trace")
         yield cluster
     finally:
         cluster.shutdown()
@@ -34,5 +35,6 @@ def test_server_no_logging(started_cluster):
     instance.stop_clickhouse()
 
     assert instance.contains_in_log("Set root logger in level trace before shutdown")
+    assert instance.contains_in_log("Set console logger in level trace before shutdown")
 
     instance.start_clickhouse()

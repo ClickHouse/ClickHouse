@@ -228,27 +228,27 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
         if (auto * col_ast = ast->as<ASTColumnDeclaration>())
         {
-            if (col_ast->default_expression)
+            if (auto col_default_expression = col_ast->getDefaultExpression())
             {
-                default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
-                default_desc.expression = std::move(col_ast->default_expression);
+                default_desc.kind = toColumnDefaultKind(col_ast->default_specifier);
+                default_desc.expression = std::move(col_default_expression);
                 default_desc.ephemeral_default = col_ast->ephemeral_default;
             }
 
-            if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
+            if (auto col_comment = col_ast->getComment())
+                comment = col_comment->as<ASTLiteral &>().value.safeGet<String>();
 
-            if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+            if (auto col_codec = col_ast->getCodec())
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_codec, type, false, true);
 
-            if (col_ast->ttl)
-                ttl = col_ast->ttl;
+            if (auto col_ttl = col_ast->getTTL())
+                ttl = col_ttl;
 
-            if (col_ast->settings)
-                settings = col_ast->settings->as<ASTSetQuery &>().changes;
+            if (auto col_settings = col_ast->getSettings())
+                settings = col_settings->as<ASTSetQuery &>().changes;
 
-            if (col_ast->statistics_desc)
-                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_ast->statistics_desc, name, type);
+            if (auto col_statistics_desc = col_ast->getStatisticsDesc())
+                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_statistics_desc, name, type);
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
@@ -355,7 +355,9 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
         insert_it = range.second;
     }
 
-    if (add_subcolumns)
+    /// Aliases don't have real subcolumns, they should be extracted
+    /// using getSubcolumn after expression evaluation.
+    if (add_subcolumns && column.default_desc.kind != ColumnDefaultKind::Alias)
         addSubcolumns(column.name, column.type);
     columns.get<0>().insert(insert_it, std::move(column));
 }
@@ -549,6 +551,12 @@ void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) co
     NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
+        /// Skip subcolumns of EPHEMERAL columns: they have no physical data
+        /// and no expression to compute them during SELECT.
+        auto it = columns.get<1>().find(col.name);
+        if (it != columns.get<1>().end() && it->default_desc.kind == ColumnDefaultKind::Ephemeral)
+            continue;
+
         auto range = subcolumns.get<1>().equal_range(col.name);
         if (range.first != range.second)
             subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
@@ -629,13 +637,31 @@ bool ColumnsDescription::hasNested(const String & column_name) const
     return range.first != range.second && range.first->name.length() > column_name.length();
 }
 
-bool ColumnsDescription::hasSubcolumn(const String & column_name) const
+static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
 {
-    if (subcolumns.get<0>().count(column_name))
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+            return GetColumnsOptions::Ordinary;
+        case ColumnDefaultKind::Materialized:
+            return GetColumnsOptions::Materialized;
+        case ColumnDefaultKind::Alias:
+            return GetColumnsOptions::Aliases;
+        case ColumnDefaultKind::Ephemeral:
+            return GetColumnsOptions::Ephemeral;
+    }
+
+    return GetColumnsOptions::None;
+}
+
+bool ColumnsDescription::hasSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
+{
+    auto jt = subcolumns.get<0>().find(column_name);
+    if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & kind))
         return true;
 
     /// Check for dynamic subcolumns
-    if (tryGetDynamicSubcolumn(column_name))
+    if (tryGetDynamicSubcolumn(column_name, kind))
         return true;
 
     return false;
@@ -654,23 +680,6 @@ const ColumnDescription * ColumnsDescription::tryGet(const String & column_name)
 {
     auto it = columns.get<1>().find(column_name);
     return it == columns.get<1>().end() ? nullptr : &(*it);
-}
-
-static GetColumnsOptions::Kind defaultKindToGetKind(ColumnDefaultKind kind)
-{
-    switch (kind)
-    {
-        case ColumnDefaultKind::Default:
-            return GetColumnsOptions::Ordinary;
-        case ColumnDefaultKind::Materialized:
-            return GetColumnsOptions::Materialized;
-        case ColumnDefaultKind::Alias:
-            return GetColumnsOptions::Aliases;
-        case ColumnDefaultKind::Ephemeral:
-            return GetColumnsOptions::Ephemeral;
-    }
-
-    return GetColumnsOptions::None;
 }
 
 NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & options, const Names & names) const
@@ -709,12 +718,15 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
+        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
             return *jt;
 
-        /// Check for dynamic subcolumns.
-        if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-            return dynamic_subcolumn;
+        if (options.with_dynamic_subcolumns)
+        {
+            /// Check for dynamic subcolumns.
+            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name, options))
+                return dynamic_subcolumn;
+        }
     }
 
     return {};
@@ -744,7 +756,7 @@ std::optional<const ColumnDescription> ColumnsDescription::tryGetColumnDescripti
     if (options.with_subcolumns)
     {
         auto jt = subcolumns.get<0>().find(column_name);
-        if (jt != subcolumns.get<0>().end())
+        if (jt != subcolumns.get<0>().end() && (defaultKindToGetKind(columns.get<1>().find(jt->getNameInStorage())->default_desc.kind) & options.kind))
             return ColumnDescription{jt->name, jt->type};
     }
 
@@ -803,7 +815,7 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
+    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(kind, column_name))
         return true;
 
     return false;
@@ -963,12 +975,12 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     return names;
 }
 
-std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name) const
+std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const
 {
     for (auto [ordinary_column_name, dynamic_subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
     {
         auto it = columns.get<1>().find(String(ordinary_column_name));
-        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && (defaultKindToGetKind(it->default_desc.kind) & options.kind))
         {
             if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
                 return NameAndTypePair(String(ordinary_column_name), String(dynamic_subcolumn_name), it->type, dynamic_subcolumn_type);
@@ -981,28 +993,29 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const 
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
 {
-    if (!col_decl.default_expression)
+    auto col_default_expression = col_decl.getDefaultExpression();
+    if (!col_default_expression)
         return;
 
     /** For columns with explicitly-specified type create two expressions:
     * 1. default_expression aliased as column name with _tmp suffix
     * 2. conversion of expression (1) to explicitly-specified type alias as column name
     */
-    if (col_decl.type)
+    if (col_decl.getType())
     {
         const auto & final_column_name = col_decl.name;
         const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
-        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), tmp_column_name));
     }
     else
     {
         info.has_columns_with_default_without_type = true;
-        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+        info.expr_list->children.emplace_back(setAlias(col_default_expression->clone(), col_decl.name));
     }
 }
 

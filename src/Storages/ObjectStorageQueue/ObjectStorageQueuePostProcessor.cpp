@@ -6,7 +6,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
@@ -66,6 +65,8 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
+        LOG_TRACE(log, "Removing {} objects", objects.size());
+
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
         try

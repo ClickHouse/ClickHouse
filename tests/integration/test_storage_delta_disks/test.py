@@ -16,6 +16,7 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 
 from helpers.cluster import ClickHouseCluster
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
@@ -37,7 +38,7 @@ SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
 cluster = ClickHouseCluster(__file__, with_spark=True)
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_delta_disks")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
@@ -53,6 +54,13 @@ def get_spark():
         .config("spark.executor.memory", "8g")
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
 
     return builder.getOrCreate()
 
@@ -151,10 +159,17 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
+        if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
+            pytest.skip(
+                "DeltaLake engine is not available"
+            )
+
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

@@ -16,7 +16,7 @@ class ASTKeeperQuery : public IAST
 {
 public:
     String getID(char) const override { return "KeeperQuery"; }
-    ASTPtr clone() const override { return std::make_shared<ASTKeeperQuery>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTKeeperQuery>(*this); }
 
     String command;
     std::vector<Field> args;

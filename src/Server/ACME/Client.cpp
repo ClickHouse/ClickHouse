@@ -1,3 +1,4 @@
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include "config.h"
 
 #if USE_SSL
@@ -84,6 +85,7 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
         return std::nullopt;
     }
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::requestCertificate");
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
@@ -121,6 +123,7 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     if (!config.has("acme"))
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::initialize");
     terms_of_service_agreed = config.getBool("acme.terms_of_service_agreed");
     if (!terms_of_service_agreed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACME certificate provisioning requires accepting the terms of service.");
@@ -191,6 +194,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
     chassert(keys_initialized);
     chassert(api && api->isReady());
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::refreshCertificatesTask");
     try
     {
         auto context = Context::getGlobalContextInstance();
@@ -245,9 +249,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
                 std::string(active_order_path),
-                REFRESH_TASK_AFTER_ERROR_MS
+                REFRESH_TASK_HAPPY_PATH_MS
             );
-            refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
             return;
         }
 
@@ -261,9 +265,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                     log,
                     "Certificate order lock {} is active; retrying after {}ms",
                     std::string(active_order_path),
-                    REFRESH_TASK_AFTER_ERROR_MS
+                    REFRESH_TASK_HAPPY_PATH_MS
                 );
-                refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+                refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
                 return;
             }
 
@@ -286,9 +290,9 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 log,
                 "Certificate order lock {} is active; retrying after {}ms",
                 std::string(active_order_path),
-                REFRESH_TASK_AFTER_ERROR_MS
+                REFRESH_TASK_HAPPY_PATH_MS
             );
-            refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
             return;
         }
 
@@ -322,7 +326,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             LOG_DEBUG(log, "Finalizing order {}", order_url);
             api->finalizeOrder(order_data.finalize_url, domains, key);
 
-            refresh_certificates_task->scheduleAfter(REFRESH_TASK_HAPPY_PATH_MS);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
             return;
         }
 
@@ -330,7 +334,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         {
             LOG_DEBUG(log, "Order {} is not ready yet (status: {}), retrying", order_url, order_data.status);
 
-            refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval_ms);
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
             return;
         }
 
@@ -422,6 +426,8 @@ void Client::refreshKeyTask()
         }
     }
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::refreshKeyTask");
+
     std::string private_key;
 
     try
@@ -437,7 +443,13 @@ void Client::refreshKeyTask()
             auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
             private_key = rsa_key.privateKey();
 
-            zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
+            auto code = zk->tryCreate(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key, zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZNODEEXISTS)
+            {
+                /// Another node has already created the key, use it instead.
+                private_key.clear();
+                zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
+            }
         }
     }
     catch (...)
@@ -467,6 +479,7 @@ std::string Client::requestChallenge(const std::string & uri)
 {
     LOG_TRACE(log, "Challenge requested for uri: {}", uri);
 
+    auto component_guard = Coordination::setCurrentComponent("ACME::Client::requestChallenge");
     /// We may be in a situation when cluster just started,
     /// order is already issued by one of replicas, but some have not loaded private key from Keeper yet.
     /// Routing challenge request to such replica will fail whole order.

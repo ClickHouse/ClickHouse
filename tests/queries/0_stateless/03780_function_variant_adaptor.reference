@@ -39,11 +39,11 @@ C
 Variant(String, UInt64)
 equals with variant on left side
 42	1
-42	\N
+10	0
 ᴺᵁᴸᴸ	\N
 equals with variant on right side
 42	1
-42	\N
+10	0
 ᴺᵁᴸᴸ	\N
 Variant + Nullable
 43

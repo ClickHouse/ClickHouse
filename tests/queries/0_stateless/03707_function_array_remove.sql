@@ -67,6 +67,7 @@ SELECT arrayRemove(
     NULL
 );
 
+-- Variant with incompatible types throws on comparison (strict behavior like Dynamic)
 SELECT arrayRemove(
     [
         1::Variant(UInt8, String),
@@ -74,7 +75,8 @@ SELECT arrayRemove(
         NULL::Variant(UInt8, String)
     ],
     'x'::Variant(UInt8, String)
-);
+); -- {serverError NO_COMMON_TYPE}
+-- NULL comparison works (doesn't require type compatibility)
 SELECT arrayRemove(
     [
         1::Variant(UInt8, String),

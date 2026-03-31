@@ -15,7 +15,7 @@ namespace DB
 ///  where N is a fraction in (0, 1) range (non-inclusive) representing a percentage.
 ///
 /// This processor supports multiple inputs and outputs (the same number).
-/// Each pair of input and output ports works independently.
+/// The output ports are interchangeable, chunks can be pushed to any available output.
 ///
 /// Processor workflow:
 /// while input.read():
@@ -29,12 +29,16 @@ class FractionalOffsetTransform final : public IProcessor
 {
 private:
     Float64 fractional_offset;
-    UInt64 offset = 0; // To hold the remaining integral offset
+    /// Remaining integral offset to apply to the cached chunks once all input is read.
+    UInt64 offset = 0;
+
+    /// Guard for finalizeOffset(): offset depends on total rows_cnt and is later consumed
+    /// (offset is set to 0 after splitting the first chunk), so it must be computed only once.
+    bool offset_is_final = false;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 
-    /// State of port's pair.
-    /// Chunks from different port pairs are not mixed for better cache locality.
+    /// Per-port state.
     struct PortsData
     {
         Chunk current_chunk;
@@ -49,20 +53,23 @@ private:
 
     UInt64 rows_cnt = 0;
     UInt64 evicted_rows_cnt = 0;
-    struct CacheEntity
-    {
-        OutputPort * output_port = nullptr;
-        Chunk chunk;
-    };
-    std::deque<CacheEntity> chunks_cache;
+
+    size_t next_output_port = 0;
+
+    std::deque<Chunk> chunks_cache;
+
+    /// Compute remaining integral offset once total rows_cnt is known.
+    void finalizeOffset();
+
+    OutputPort * getAvailableOutputPort();
+    bool allOutputsFinished() const;
 
 public:
     FractionalOffsetTransform(const Block & header_, Float64 fractional_offset_, size_t num_streams = 1);
 
     String getName() const override { return "FractionalOffset"; }
 
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
-    Status prepare() override; /// Compatibility for TreeExecutor.
+    Status prepare() override;
     Status pullData(PortsData & data);
     Status pushData();
     void splitChunk(Chunk & current_chunk) const;

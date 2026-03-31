@@ -31,7 +31,7 @@ do
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['DiskConnectionsPreserved'] > 0
     FROM system.query_log
-    WHERE type = 'QueryFinish'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
         AND current_database = currentDatabase()
         AND query_id='$query_id';
     ")
@@ -64,7 +64,7 @@ do
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['StorageConnectionsPreserved'] > 0
     FROM system.query_log
-    WHERE type = 'QueryFinish'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
         AND current_database = currentDatabase()
         AND query_id='$query_id';
     ")

@@ -56,10 +56,10 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && is_floating_point<B>)
-        return static_cast<B>(a) / b;
-    else if constexpr (is_big_int_v<B> && is_floating_point<A>)
+    if constexpr (is_floating_point<A> && !is_floating_point<B>)
         return a / static_cast<A>(b);
+    else if constexpr (!is_floating_point<A> && is_floating_point<B>)
+        return static_cast<B>(a) / b;
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
@@ -226,12 +226,26 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
             if (res < 0)
             {
                 if constexpr (is_unsigned_v<B>)
-                    res += static_cast<OriginResultType>(b);
+                {
+                    if constexpr (is_integer<OriginResultType>)
+                    {
+                        /// Perform the addition in unsigned arithmetic to avoid
+                        /// undefined behavior when b does not fit in the signed OriginResultType.
+                        /// This is correct because mathematically 0 <= res + b < b.
+                        return static_cast<ResultType>(
+                            static_cast<make_unsigned_t<OriginResultType>>(res) + static_cast<make_unsigned_t<OriginResultType>>(b));
+                    }
+                    else
+                    {
+                        return static_cast<ResultType>(res + static_cast<OriginResultType>(b));
+                    }
+                }
                 else
                 {
                     if (b == std::numeric_limits<B>::lowest())
                         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
-                    res += b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b);
+                    return static_cast<ResultType>(
+                        res + (b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b)));
                 }
             }
         }

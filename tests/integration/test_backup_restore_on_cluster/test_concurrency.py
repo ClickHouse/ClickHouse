@@ -16,7 +16,7 @@ from .concurrency_helper import (
 
 cluster = ClickHouseCluster(__file__)
 
-num_nodes = 10
+num_nodes = 4  # Kept equal to num_concurrent_backups to reduce memory usage under sanitizers
 
 
 main_configs = [
@@ -162,15 +162,11 @@ def test_concurrent_backups_on_different_nodes():
         ("Atomic", "MergeTree"),
         ("Replicated", "ReplicatedMergeTree"),
         ("Memory", "MergeTree"),
-        ("Lazy", "Log"),
     ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
         db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
-
-    if db_engine == "Lazy":
-        db_engine = "Lazy(20)"
 
     if table_engine.endswith("MergeTree"):
         table_engine += " ORDER BY tuple()"

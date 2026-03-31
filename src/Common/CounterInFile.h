@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <base/types.h>
 

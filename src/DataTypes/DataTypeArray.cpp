@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 
 #include <Parsers/IAST.h>
 
@@ -54,9 +56,11 @@ void DataTypeArray::updateHashImpl(SipHash & hash) const
     nested->updateHash(hash);
 }
 
-SerializationPtr DataTypeArray::doGetDefaultSerialization() const
+SerializationPtr DataTypeArray::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    return std::make_shared<SerializationArray>(nested->getDefaultSerialization());
+    if (settings.propagate_types_serialization_versions_to_nested_types)
+        return SerializationArray::create(nested->getSerialization(settings));
+    return SerializationArray::create(nested->getDefaultSerialization());
 }
 
 size_t DataTypeArray::getNumberOfDimensions() const
@@ -80,14 +84,15 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
     nested->forEachChild(callback);
 }
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
-    auto nested_data = std::make_unique<ISerialization::SubstreamData>(nested_type->getDefaultSerialization());
+    const auto & array_serialization = assert_cast<const SerializationArray &>(*removeNamedSerialization(data.serialization));
+    auto nested_data = std::make_unique<ISerialization::SubstreamData>(array_serialization.getNestedSerialization());
     nested_data->type = nested_type;
     nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
 
-    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, *nested_data, throw_if_null);
+    auto nested_subcolumn_data = getSubcolumnData(subcolumn_name, *nested_data, initial_array_level + 1, throw_if_null);
     if (!nested_subcolumn_data)
         return nullptr;
 

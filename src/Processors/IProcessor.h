@@ -209,6 +209,14 @@ public:
       */
     virtual int schedule();
 
+    /** This method is similar to schedule() but also returns epoll events mask
+      * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
+      * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
+      */
+#ifdef OS_LINUX
+    virtual std::pair<int, uint32_t> scheduleForEvent();
+#endif
+
     /* The method is called right after asynchronous job is done
      * i.e. when file descriptor returned by schedule() is readable.
      * The sequence of method calls:
@@ -362,6 +370,7 @@ public:
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
 protected:
+    /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};

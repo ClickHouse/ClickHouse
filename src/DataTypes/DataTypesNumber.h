@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -23,7 +24,9 @@ public:
     bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
 
     bool canBeUsedAsVersion() const override { return true; }
-    bool isSummable() const override { return true; }
+    /// Custom data types with numeric representations are not necessarily summable.
+    /// For example, the `Bool` type isn't.
+    bool isSummable() const override { return !this->hasCustomName(); }
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeUsedInBooleanContext() const override { return WhichDataType(TypeToTypeIndex<T>).isNativeNumber(); }
     bool canBeInsideNullable() const override { return true; }
@@ -35,9 +38,9 @@ public:
         return std::make_shared<PromotedType>();
     }
 
-    SerializationPtr doGetDefaultSerialization() const override
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
     {
-        return std::make_shared<SerializationNumber<T>>();
+        return SerializationNumber<T>::create();
     }
 
     /// Special constructor for unsigned integers that can also fit into signed integer.

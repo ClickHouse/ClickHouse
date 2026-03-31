@@ -55,7 +55,7 @@ private:
         {
             LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            res[i] = static_cast<ResultType>(intersect_size) / (sizes.left_size + sizes.right_size - intersect_size);
+            res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(sizes.left_size + sizes.right_size - intersect_size);
         }
     }
 

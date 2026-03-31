@@ -95,7 +95,7 @@ bool shouldTrackAllocation(Float64 probability, void * ptr)
 {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
-    return intHash64(uintptr_t(ptr)) < std::numeric_limits<uint64_t>::max() * probability;
+    return static_cast<double>(intHash64(uintptr_t(ptr))) < static_cast<double>(std::numeric_limits<uint64_t>::max()) * probability;
 #pragma clang diagnostic pop
 }
 
@@ -140,23 +140,43 @@ namespace ProfileEvents
 using namespace std::chrono_literals;
 
 static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
+static std::atomic_bool total_memory_tracker_initialized{false};
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
 
-MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_) {}
-MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_) {}
+bool isTotalMemoryTrackerInitialized()
+{
+    return total_memory_tracker_initialized.load(std::memory_order_acquire);
+}
+
+MemoryTracker::MemoryTracker(VariableContext level_) : parent(&total_memory_tracker), level(level_)
+{
+    if (this == &total_memory_tracker)
+        total_memory_tracker_initialized.store(true, std::memory_order_release);
+}
+
+MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : parent(parent_), level(level_)
+{
+    if (this == &total_memory_tracker)
+        total_memory_tracker_initialized.store(true, std::memory_order_release);
+}
 
 MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_)
     : parent(parent_), log_peak_memory_usage_in_destructor(log_peak_memory_usage_in_destructor_), level(level_)
 {
+    if (this == &total_memory_tracker)
+        total_memory_tracker_initialized.store(true, std::memory_order_release);
 }
 
 MemoryTracker::~MemoryTracker()
 {
     /// We need to explicitly reset MainThreadStatus earlier, to avoid using total_memory_tracker after it has been destroyd
     if (this == &total_memory_tracker)
+    {
+        total_memory_tracker_initialized.store(false, std::memory_order_release);
         DB::MainThreadStatus::reset();
+    }
 
     if ((level == VariableContext::Process || level == VariableContext::User) && peak && log_peak_memory_usage_in_destructor)
     {
@@ -247,7 +267,7 @@ void incrementAllocationWithoutCheck(Int64 size)
                 .memory_blocked_context = memory_blocked_context,
             });
         }
-        catch (...) // NOLINT(bugprone-empty-catch)
+        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
             /// Ignore failures, we have ProfileEvents anyway
         }
@@ -270,7 +290,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         if (level == VariableContext::Global)
         {
             /// For global memory tracker always update memory usage.
-            Int64 will_be = amount.fetch_add(size, std::memory_order_relaxed);
+            Int64 will_be = amount.fetch_add(size, std::memory_order_relaxed) + size;
             rss.fetch_add(size, std::memory_order_relaxed);
             updatePeak(will_be, /*log_memory_usage=*/ false);
 
@@ -317,8 +337,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
         allocation_traced = true;
     }
 
-    std::bernoulli_distribution fault(fault_probability);
-    if (unlikely(fault_probability > 0.0 && fault(thread_local_rng)))
+    double current_fault_probability = fault_probability.load(std::memory_order_relaxed);
+    std::bernoulli_distribution fault(current_fault_probability);
+    if (unlikely(current_fault_probability > 0.0 && fault(thread_local_rng)))
     {
         if (memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
         {
@@ -509,7 +530,13 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
             logMemoryUsage(will_be);
 
 #if USE_JEMALLOC
-        if (level == VariableContext::Global && jemalloc_flush_profile_interval_bytes)
+        /// Skip jemalloc profile flushing if allocations are denied in the current scope
+        /// (e.g., in signal handlers or MergeTreeBackgroundExecutor), because flushProfile allocates.
+        if (level == VariableContext::Global && jemalloc_flush_profile_interval_bytes
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+            && !memory_tracker_always_throw_logical_error_on_allocation
+#endif
+            )
         {
             MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
             if (DB::Jemalloc::getValue<bool>("prof.active"))

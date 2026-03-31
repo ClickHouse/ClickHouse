@@ -721,11 +721,17 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
-                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
                 .equivalence_class_stack = { EquivalenceClasses{} }
             };
@@ -763,11 +769,17 @@ void buildQueryPlanForCorrelatedSubquery(
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.
             auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
 
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
+
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
                 .planner_context = planner_context,
                 .query_plan = std::move(query_plan),
-                .correlated_query_plan = std::move(subquery_planner).extractQueryPlan(),
+                .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
                 .equivalence_class_stack = { EquivalenceClasses{} }
             };

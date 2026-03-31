@@ -17,6 +17,14 @@ if(ARCH_AMD64)
     target_compile_options(_simdjson PRIVATE -mno-avx -mno-avx2)
 endif()
 
+# On ppc64le, ClickHouse globally defines __SSE2__ to enable SSE-to-AltiVec emulation.
+# This causes simdjson's experimental json_string_builder to activate its SSE2 code path,
+# which fails to compile due to __m128i vs __m128i_u type mismatch in the PPC SSE wrappers.
+# Disable it since simdjson already has proper AltiVec/VMX support on ppc64.
+if(ARCH_PPC64LE)
+    target_compile_definitions(_simdjson PUBLIC SIMDJSON_EXPERIMENTAL_HAS_SSE2=0)
+endif()
+
 # We allow fallback implementations because binaries are built with all
 # supported instructions, so one implementation will be selected and fallback
 # will be disabled.

@@ -142,14 +142,19 @@ std::shared_ptr<KeeperHTTPClient> createKeeperClient(
         server.config().getUInt("keeper_server.http_control.storage.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS)
         * Poco::Timespan::MILLISECONDS);
 
-    /// Factory lambda allows ZooKeeper to create new sessions on reconnection
-    auto zk_client = zkutil::ZooKeeper::create_from_impl(
-        [keeper_dispatcher, session_timeout]()
-        {
-            return std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, session_timeout);
-        });
+    /// Client is created lazily on first use to avoid blocking server startup
+    /// with synchronous Keeper session creation, which requires Raft consensus
+    /// and can time out if the leader is not yet fully available.
+    auto client_factory = [keeper_dispatcher, session_timeout]() -> std::shared_ptr<zkutil::ZooKeeper>
+    {
+        return zkutil::ZooKeeper::createFromImpl(
+            [keeper_dispatcher, session_timeout]()
+            {
+                return std::make_unique<Coordination::KeeperOverDispatcher>(keeper_dispatcher, session_timeout);
+            });
+    };
 
-    return std::make_shared<KeeperHTTPClient>(std::move(zk_client));
+    return std::make_shared<KeeperHTTPClient>(std::move(client_factory));
 }
 
 void addDefaultHandlersToFactory(
@@ -302,7 +307,7 @@ try
         uri = Poco::URI(request.getURI());
         uri.getPathSegments(uri_segments);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST, "Could not parse request path.");
         *response.send() << "Could not parse request path.\n";

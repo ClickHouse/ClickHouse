@@ -1,3 +1,6 @@
+SET use_variant_as_common_type = 0;
+SET optimize_on_insert = 1;
+
 DROP TABLE IF EXISTS agg_table;
 
 CREATE TABLE IF NOT EXISTS agg_table

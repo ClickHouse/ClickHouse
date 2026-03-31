@@ -11,7 +11,7 @@
             </s3>
             <cached_s3>
                 <type>cache</type>
-                <max_size>1Gi</max_size>
+                <max_size>5Gi</max_size>
                 <path>cached_s3/</path>
                 <disk>s3</disk>
             </cached_s3>

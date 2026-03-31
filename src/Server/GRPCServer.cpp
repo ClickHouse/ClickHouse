@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
@@ -749,7 +750,7 @@ namespace
 
         std::optional<Session> session;
         ContextMutablePtr query_context;
-        std::optional<CurrentThread::QueryScope> query_scope;
+        std::optional<QueryScope> query_scope;
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         String query_text;
         ASTPtr ast;
@@ -927,7 +928,7 @@ namespace
         query_context->applySettingsChanges(settings_changes);
 
         query_context->setCurrentQueryId(query_info.query_id());
-        query_scope.emplace(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
+        query_scope = QueryScope::create(query_context, /* fatal_error_callback */ [this]{ onFatalError(); });
 
         /// Set up tracing context for this query on current thread
         thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("GRPCServer",
@@ -1445,7 +1446,7 @@ namespace
                 addLogsToResult();
                 sendResult();
             }
-            catch (...) // NOLINT(bugprone-empty-catch)
+            catch (const std::exception &) // NOLINT(bugprone-empty-catch)
             {
             }
         }

@@ -19,7 +19,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM STOP MERGES test_02241"
     cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path'")
 
-    echo "SYSTEM DROP FILESYSTEM CACHE"
+    echo "SYSTEM CLEAR FILESYSTEM CACHE"
     drop_filesystem_cache $cache_name
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
@@ -72,7 +72,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) size FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-    echo "SYSTEM DROP FILESYSTEM CACHE"
+    echo "SYSTEM CLEAR FILESYSTEM CACHE"
     drop_filesystem_cache $cache_name
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)"
@@ -122,7 +122,8 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     FROM
         system.query_log
     WHERE
-        query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
+        event_date >= yesterday() AND event_time >= now() - 600
+        AND query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
         AND type = 'QueryFinish'
         AND current_database = currentDatabase()
     ORDER BY

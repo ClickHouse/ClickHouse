@@ -14,6 +14,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
+#include <IO/WriteHelpers.h>
+
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
 #    if defined(__x86_64__) || defined(__i386__)
@@ -464,7 +466,7 @@ private:
             for (size_t bit = 0; bit < precision; ++bit)
             {
                 const auto & col = assert_cast<const ColumnFixedString &>(*arguments[bit].column);
-                Word bit_mask = Word(1) << (sizeof(Word) * 8 - 1 - bit);
+                Word bit_mask = static_cast<Word>(Word(1) << (sizeof(Word) * 8 - 1 - bit));
 
                 for (size_t r = 0; r < rows_in_block; ++r)
                 {

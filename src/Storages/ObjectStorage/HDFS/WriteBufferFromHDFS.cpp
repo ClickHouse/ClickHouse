@@ -9,6 +9,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
+#include <Common/ErrnoException.h>
 #include <Interpreters/BlobStorageLog.h>
 #include <hdfs/hdfs.h>
 
@@ -46,7 +47,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
         fs = createHDFSFS(builder.get());
 
         /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
-        fout = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), flags, 0, replication_, 0);
+        fout = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), flags, 0, static_cast<int16_t>(replication_), 0);
 
         if (fout == nullptr)
         {

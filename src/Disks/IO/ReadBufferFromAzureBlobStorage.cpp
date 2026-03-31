@@ -304,6 +304,11 @@ std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
     return file_size;
 }
 
+std::optional<size_t> ReadBufferFromAzureBlobStorage::getRemoteFileSize() const
+{
+    return static_cast<size_t>(blob_container_client->GetBlobClient(path).GetProperties().Value.BlobSize);
+}
+
 size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & /*progress_callback*/) const
 {
     size_t initial_n = n;
@@ -323,8 +328,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
             Azure::Storage::Blobs::DownloadBlobOptions download_options;
             download_options.Range = {static_cast<int64_t>(range_begin), n};
-            Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), 0);
-
+            Azure::Core::Context azure_context = Azure::Core::Context().WithValue(PocoAzureHTTPClient::getSDKContextKeyForBufferRetry(), size_t{0});
 
             auto download_response = blob_client->Download(download_options, azure_context);
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
@@ -376,7 +380,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
 
 ObjectMetadata ReadBufferFromAzureBlobStorage::getObjectMetadataFromTheLastRequest() const
 {
-    if (last_object_metadata.get()->has_value())
+    if (!last_object_metadata.get()->has_value())
         throw Exception(ErrorCodes::NOT_INITIALIZED, "No Azure object metadata available because there were no successful requests");
 
     return last_object_metadata.get()->value();

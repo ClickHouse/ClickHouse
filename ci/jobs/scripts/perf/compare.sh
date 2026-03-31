@@ -123,6 +123,15 @@ function configure
 
     cp -al db0/ right/db/
     cp -R coordination0 right/coordination
+
+    # Symlink user_files from the repository into both servers' user_files directories
+    if [ -d "$script_dir/../../../../tests/performance/user_files" ]; then
+        for f in "$script_dir/../../../../tests/performance/user_files"/*; do
+            [ -e "$f" ] || continue
+            ln -sf "$(readlink -f "$f")" left/db/user_files/
+            ln -sf "$(readlink -f "$f")" right/db/user_files/
+        done
+    fi
 }
 
 function restart
@@ -811,8 +820,7 @@ create view query_runs as select * from file('analyze/query-runs.tsv', TSV,
 --
 create view test_runs as
     select test,
-        -- Default to 7 runs if there are only 'short' queries in the test, and
-        -- we can't determine the number of runs.
+        -- Default to 7 runs if we can't determine the number of runs.
         if((ceil(median(t.runs), 0) as r) != 0, r, 7) runs
     from (
         select

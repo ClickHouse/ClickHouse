@@ -65,7 +65,7 @@ QUERY id: 0
       ORDER BY
         LIST id: 11, nodes: 1
           SORT id: 12, sort_direction: ASCENDING, with_fill: 0
-            EXPRESSION
+            EXPRESSION x
               COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
 SELECT groupArray(x)
@@ -101,7 +101,7 @@ QUERY id: 0
       ORDER BY
         LIST id: 11, nodes: 1
           SORT id: 12, sort_direction: ASCENDING, with_fill: 0
-            EXPRESSION
+            EXPRESSION x
               COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
 SELECT groupArray(x)
@@ -143,7 +143,7 @@ QUERY id: 0
                   LIST id: 14, nodes: 1
                     COLUMN id: 15, column_name: number, result_type: UInt64, source_id: 8
           SORT id: 16, sort_direction: ASCENDING, with_fill: 0
-            EXPRESSION
+            EXPRESSION x
               COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 8
   SETTINGS enable_analyzer=1
 SELECT *
@@ -202,10 +202,10 @@ QUERY id: 0
   ORDER BY
     LIST id: 25, nodes: 2
       SORT id: 26, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION s.key
           COLUMN id: 27, column_name: key, result_type: UInt64, source_id: 5
       SORT id: 28, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION t.key
           COLUMN id: 29, column_name: key, result_type: UInt64, source_id: 7
   SETTINGS enable_analyzer=1
 SELECT
@@ -229,10 +229,10 @@ QUERY id: 0
   ORDER BY
     LIST id: 5, nodes: 2
       SORT id: 6, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION key
           COLUMN id: 7, column_name: key, result_type: UInt64, source_id: 3
       SORT id: 8, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION a
           COLUMN id: 9, column_name: a, result_type: UInt8, source_id: 3
   SETTINGS enable_analyzer=1
 SELECT
@@ -255,7 +255,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 5, nodes: 2
       SORT id: 6, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION key
           COLUMN id: 7, column_name: key, result_type: UInt64, source_id: 3
       SORT id: 8, sort_direction: ASCENDING, with_fill: 0
         EXPRESSION
@@ -288,7 +288,7 @@ QUERY id: 0
               LIST id: 9, nodes: 1
                 COLUMN id: 10, column_name: a, result_type: UInt8, source_id: 3
       SORT id: 11, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION key
           COLUMN id: 12, column_name: key, result_type: UInt64, source_id: 3
   SETTINGS enable_analyzer=1
 QUERY id: 0
@@ -314,10 +314,10 @@ QUERY id: 0
   ORDER BY
     LIST id: 11, nodes: 2
       SORT id: 12, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION t1.id
           COLUMN id: 13, column_name: id, result_type: UInt64, source_id: 3
       SORT id: 14, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION t2.id
           COLUMN id: 15, column_name: id, result_type: UInt64, source_id: 5
   SETTINGS enable_analyzer=1
 [0,1,2]

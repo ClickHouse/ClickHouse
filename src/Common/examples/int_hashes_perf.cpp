@@ -201,12 +201,12 @@ using Source = std::vector<UInt64>;
 static void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t res)
 {
     std::cerr << name << std::endl
-        << "Done in " << elapsed
-        << " (" << n / elapsed << " elem/sec."
-        << ", " << n * sizeof(UInt64) / elapsed / (1ULL << 30) << " GiB/sec."
-        << ", " << (tsc_diff * 1.0 / n) << " tick/elem)"
-        << "; res = " << res
-        << std::endl << std::endl;
+              << "Done in " << elapsed << " (" << static_cast<double>(n) / elapsed << " elem/sec."
+              << ", " << (static_cast<double>(n) * sizeof(UInt64)) / (elapsed * (1ULL << 30))
+              << " GiB/sec."
+              << ", " << static_cast<double>(tsc_diff) / static_cast<double>(n) << " tick/elem)"
+              << "; res = " << res << std::endl
+              << std::endl;
 }
 
 

@@ -5,6 +5,7 @@
 #include <Common/clearPasswordFromCommandLine.h>
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/SignalHandlers.h>
 #include <Client/JWTProvider.h>
 

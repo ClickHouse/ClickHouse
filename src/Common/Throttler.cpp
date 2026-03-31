@@ -32,7 +32,7 @@ Throttler::Throttler(size_t max_speed_, const ThrottlerPtr & parent_,
     : max_speed(max_speed_)
     , max_burst(max_speed_ * default_burst_seconds)
     , limit_exceeded_exception_message("")
-    , tokens(max_burst)
+    , tokens(static_cast<double>(max_burst))
     , parent(parent_)
     , event_amount(event_amount_)
     , event_sleep_us(event_sleep_us_)
@@ -49,7 +49,7 @@ Throttler::Throttler(size_t max_speed_, size_t limit_, const char * limit_exceed
     , max_burst(max_speed_ * default_burst_seconds)
     , limit(limit_)
     , limit_exceeded_exception_message(limit_exceeded_exception_message_)
-    , tokens(max_burst)
+    , tokens(static_cast<double>(max_burst))
     , parent(parent_)
 {}
 
@@ -82,7 +82,7 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
             timer2.emplace(profile_events.timer(event_sleep_us));
 
         // Calculate how long to sleep
-        double block_ns_double = -tokens_value / max_speed_value * NS;
+        double block_ns_double = -tokens_value / static_cast<double>(max_speed_value) * NS;
         chassert(block_ns_double >= 0.0);
 
         // Clamp to be safe and avoid any UB
@@ -115,7 +115,8 @@ void Throttler::throttleImpl(size_t amount, size_t & count_value, double & token
     {
         max_speed_value = max_speed;
         double delta_seconds = prev_ns ? static_cast<double>(now - prev_ns) / NS : 0;
-        tokens = std::min<double>(tokens + max_speed * delta_seconds - amount, max_burst);
+        tokens = std::min<double>(
+            tokens + static_cast<double>(max_speed) * delta_seconds - static_cast<double>(amount), static_cast<double>(max_burst));
     }
     count += amount;
     count_value = count;
@@ -128,7 +129,7 @@ void Throttler::reset()
     std::lock_guard lock(mutex);
 
     count = 0;
-    tokens = max_burst;
+    tokens = static_cast<double>(max_burst);
     prev_ns = 0;
     // NOTE: do not zero `accumulated_sleep` to avoid races
 }

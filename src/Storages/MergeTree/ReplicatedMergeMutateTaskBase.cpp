@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
@@ -47,6 +48,8 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
     std::exception_ptr saved_exception;
 
     bool need_to_save_exception = true;
+
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeMutateTaskBase::executeStep");
     try
     {
         /// We don't have any backoff for failed entries
@@ -294,7 +297,7 @@ void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estima
 
         if (log_scale)
         {
-            double start_to_sleep_seconds = std::logf(min_parts_size_sleep);
+            double start_to_sleep_seconds = std::logf(static_cast<float>(min_parts_size_sleep));
             right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
         }
 

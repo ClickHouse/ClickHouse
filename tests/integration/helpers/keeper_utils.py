@@ -76,6 +76,10 @@ class KeeperException(Exception):
 
 
 class KeeperClient(object):
+    # In tests-mode, the keeper-client writes this separator to stdout after
+    # each command so we can detect where one command's output ends.
+    # Four BEL (0x07) characters were chosen because they never appear in
+    # normal command output.
     SEPARATOR = b"\a\a\a\a\n"
 
     def __init__(
@@ -143,35 +147,40 @@ class KeeperClient(object):
 
     def execute_query(self, query: str, timeout: float = 60.0) -> str:
         output = io.BytesIO()
+        error = b""
 
         self.proc.stdin.write(query.encode() + b"\n")
         self.proc.stdin.flush()
 
-        events = self.poller.poll(timeout)
-        if not events:
-            raise TimeoutError(f"Keeper client returned no output")
+        while True:
+            events = self.poller.poll(timeout)
+            if not events:
+                raise TimeoutError(f"Keeper client returned no output")
 
-        for fd_num, event in events:
-            if event & (select.EPOLLIN | select.EPOLLPRI):
-                file = self._fd_nums[fd_num]
+            # Process stderr events before stdout to ensure errors are
+            # collected before checking the stdout separator.
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
+                    if file == self.proc.stderr:
+                        error += self.proc.stderr.readline()
+                elif not (event & select.EPOLLHUP):
+                    raise ValueError(f"Failed to read from pipe. Flag {event}")
 
-                if file == self.proc.stdout:
-                    while True:
-                        chunk = file.readline()
-                        if chunk.endswith(self.SEPARATOR):
-                            break
+            for fd_num, event in events:
+                if event & (select.EPOLLIN | select.EPOLLPRI):
+                    file = self._fd_nums[fd_num]
+                    if file == self.proc.stdout:
+                        while True:
+                            chunk = file.readline()
+                            if chunk.endswith(self.SEPARATOR):
+                                if error:
+                                    raise KeeperException(
+                                        error.strip().decode()
+                                    )
+                                return output.getvalue().strip().decode()
 
-                        output.write(chunk)
-
-                elif file == self.proc.stderr:
-                    self.proc.stdout.readline()
-                    raise KeeperException(self.proc.stderr.readline().strip().decode())
-
-            else:
-                raise ValueError(f"Failed to read from pipe. Flag {event}")
-
-        data = output.getvalue().strip().decode()
-        return data
+                            output.write(chunk)
 
     def cd(self, path: str, timeout: float = 60.0):
         self.execute_query(f"cd '{path}'", timeout)
@@ -346,7 +355,7 @@ def wait_until_connected(
         while True:
             zk_cli = None
             try:
-                time_passed = min(time.time() - start, 5.0)
+                time_passed = time.time() - start
                 if time_passed >= timeout:
                     raise Exception(
                         f"{timeout}s timeout while waiting for {node.name} to start serving requests"
@@ -357,7 +366,7 @@ def wait_until_connected(
 
                 zk_cli = KazooClient(
                     hosts=f"{host}:9181",
-                    timeout=timeout - time_passed,
+                    timeout=min(timeout - time_passed, 5.0),
                     client_id=client_id,
                 )
                 zk_cli.start()
@@ -367,7 +376,11 @@ def wait_until_connected(
                 pass
             finally:
                 if zk_cli:
-                    zk_cli.stop()
+                    try:
+                        # stop() can raise if the connection is already broken
+                        zk_cli.stop()
+                    except Exception:
+                        pass
                     zk_cli.close()
 
 

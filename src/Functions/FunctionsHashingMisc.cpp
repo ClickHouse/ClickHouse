@@ -558,6 +558,17 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation xxh3_documentation = {xxh3_description, xxh3_syntax, xxh3_argument, {}, xxh3_returned_value, xxh3_example, xxh3_introduced_in, xxh3_category};
     factory.registerFunction<FunctionXXH3>(xxh3_documentation);
 
+    FunctionDocumentation::Description xxh3_128_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 128-bit hash value.";
+    FunctionDocumentation::Syntax xxh3_128_syntax = "xxh3_128(expr)";
+    FunctionDocumentation::Arguments xxh3_128_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue xxh3_128_returned_value = {"Returns the computed 128-bit `xxh3` hash value", {"UInt128"}};
+    FunctionDocumentation::Examples xxh3_128_example
+        = {{"Usage example", "SELECT hex(xxh3_128('ClickHouse'))", "3A038784C52804B4DBA43A038784C528"}};
+    FunctionDocumentation::Category xxh3_128_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation::IntroducedIn xxh3_128_introduced_in = {26, 2};
+    FunctionDocumentation xxh3_128_documentation = {xxh3_128_description, xxh3_128_syntax, xxh3_128_argument, {}, xxh3_128_returned_value, xxh3_128_example, xxh3_128_introduced_in, xxh3_128_category};
+    factory.registerFunction<FunctionXXH3_128>(xxh3_128_documentation);
+
     FunctionDocumentation::Description wyHash64_description = "Computes a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.";
     FunctionDocumentation::Syntax wyHash64_syntax = "wyHash64(arg)";
     FunctionDocumentation::Arguments wyHash64_argument = {{"arg", "String argument for which to compute the hash.", {"String"}}};
