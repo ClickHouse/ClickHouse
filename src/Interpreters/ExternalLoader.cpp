@@ -401,8 +401,18 @@ public:
     {
         std::unique_lock lock{mutex};
         infos.clear(); /// We clear this map to tell the threads that we don't want any load results anymore.
+        joinLoadingThreads(lock);
+    }
 
-        /// Wait for all the threads to finish.
+    void joinLoadingThreads()
+    {
+        std::unique_lock lock{mutex};
+        joinLoadingThreads(lock);
+    }
+
+private:
+    void joinLoadingThreads(std::unique_lock<std::mutex> & lock)
+    {
         while (!loading_threads.empty())
         {
             auto it = loading_threads.begin();
@@ -414,6 +424,8 @@ public:
             lock.lock();
         }
     }
+
+public:
 
     using ObjectConfigsPtr = LoadablesConfigReader::ObjectConfigsPtr;
 
@@ -1353,6 +1365,11 @@ void ExternalLoader::enableAsyncLoading(bool enable)
 void ExternalLoader::enablePeriodicUpdates(bool enable_)
 {
     periodic_updater->enable(enable_);
+}
+
+void ExternalLoader::joinLoadingThreads()
+{
+    loading_dispatcher->joinLoadingThreads();
 }
 
 bool ExternalLoader::hasLoadedObjects() const
