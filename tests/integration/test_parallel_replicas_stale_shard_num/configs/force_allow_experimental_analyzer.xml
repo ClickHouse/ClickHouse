@@ -1,0 +1,18 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Force allow_experimental_analyzer=1 on remote nodes so that
+                 the new planner is always used even when the initiator sends
+                 allow_experimental_analyzer=0.  The <min> constraint causes
+                 TCPHandler to silently clamp the incoming value (it uses
+                 clampToSettingsConstraints for non-initial / distributed
+                 sub-queries). -->
+            <allow_experimental_analyzer>1</allow_experimental_analyzer>
+            <constraints>
+                <allow_experimental_analyzer>
+                    <min>1</min>
+                </allow_experimental_analyzer>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>

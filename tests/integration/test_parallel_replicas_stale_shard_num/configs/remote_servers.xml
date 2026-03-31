@@ -1,0 +1,76 @@
+<clickhouse>
+    <remote_servers>
+        <!-- Outer Distributed cluster: 2 shards, one node each.
+             shard_num=1 → n2, shard_num=2 → n3. -->
+        <outer_2_shards>
+            <shard>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </outer_2_shards>
+
+        <!-- Parallel-replicas cluster: 1 shard, 2 replicas (n2, n3).
+             cluster_for_parallel_replicas points here. -->
+        <pr_1_shard_2_replicas>
+            <shard>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </pr_1_shard_2_replicas>
+
+        <!-- Outer Distributed cluster: 3 shards.
+             shard_num=1 → n2, shard_num=2 → n2, shard_num=3 → n3.
+             Used to give n3 _shard_num=3 while cluster_for_parallel_replicas has only 2 shards. -->
+        <outer_3_shards>
+            <shard>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </outer_3_shards>
+
+        <!-- Parallel-replicas cluster: 2 shards (n2, n3).
+             shard_count=2 < shard_num=3 from outer_3_shards → triggers Fix 2. -->
+        <pr_2_shards>
+            <shard>
+                <replica>
+                    <host>n2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>n3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </pr_2_shards>
+    </remote_servers>
+</clickhouse>

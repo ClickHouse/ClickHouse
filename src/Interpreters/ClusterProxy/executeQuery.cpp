@@ -84,7 +84,6 @@ namespace DistributedSetting
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
-    extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
@@ -562,20 +561,49 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     {
         const auto shard_count = not_optimized_cluster->getShardCount();
         if (shard_num > shard_count)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Shard number is greater than shard count: shard_num={} shard_count={} cluster={}",
+        {
+            if (shard_count > 1)
+            {
+                /// `_shard_num` is stale (from an outer distributed cluster) and `cluster_for_parallel_replicas`
+                /// has multiple shards — cannot determine which shard to scope to.
+                /// Defensive guard: unreachable given the current call chain, but kept to prevent
+                /// silent mis-behavior if the call chain ever changes.
+                /// - SELECT path: `canUseParallelReplicasOnInitiator` (PlannerJoinTree) throws first.
+                /// - INSERT SELECT path: `isSuitableForInsertSelectWithParallelReplicas` runs the full
+                ///   query planner internally, which calls `canUseParallelReplicasOnInitiator` and throws
+                ///   before `executeInsertSelectWithParallelReplicas` is reached.
+                /// Without this guard the code would fall through to the LOG_WARNING path below and
+                /// silently use a multi-shard cluster as if it were single-shard, producing wrong results.
+                throw DB::Exception(
+                    ErrorCodes::UNEXPECTED_CLUSTER,
+                    "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
+            }
+
+            /// `_shard_num` came from an outer distributed query over a different outer distributed cluster
+            /// (not from `cluster_for_parallel_replicas`). This happens when canUseTaskBasedParallelReplicas()
+            /// was false on the initiator, so cluster_for_parallel_replicas was not overridden to match the
+            /// outer cluster. Use all replicas of this single-shard cluster. shard_num is intentionally kept
+            /// non-zero to preserve the "distributed scope" signal (disables local plan and projection
+            /// optimizations).
+            LOG_WARNING(
+                logger,
+                "Shard number ({}) from query scalar `_shard_num` is greater than shard count ({}) "
+                "in cluster '{}'. Likely inherited from an outer distributed query over a different "
+                "cluster. Using all replicas of the single shard.",
                 shard_num,
                 shard_count,
                 not_optimized_cluster->getName());
+        }
+        else
+        {
+            chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
 
-        chassert(shard_count == not_optimized_cluster->getShardsAddresses().size());
+            LOG_DEBUG(logger, "Parallel replicas query in shard scope: shard_num={} cluster={}", shard_num, not_optimized_cluster->getName());
 
-        LOG_DEBUG(logger, "Parallel replicas query in shard scope: shard_num={} cluster={}", shard_num, not_optimized_cluster->getName());
-
-        // get cluster for shard specified by shard_num
-        // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
-        new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+            // get cluster for shard specified by shard_num
+            // shard_num is 1-based, but getClusterWithSingleShard expects 0-based index
+            new_cluster = not_optimized_cluster->getClusterWithSingleShard(shard_num - 1);
+        }
     }
     else
     {
@@ -938,12 +966,14 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
     {
         const auto shard_count = cluster->getShardCount();
         if (shard_num > shard_count)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Shard number is greater than shard count: shard_num={} shard_count={} cluster={}",
-                shard_num,
-                shard_count,
-                cluster->getName());
+        {
+            /// `_shard_num` is stale and cluster has multiple shards (shard_count > 1 is guaranteed
+            /// here due to early return above for single-shard clusters). Same semantics as
+            /// shard_num == 0 with a multi-shard cluster.
+            throw DB::Exception(
+                ErrorCodes::UNEXPECTED_CLUSTER,
+                "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
+        }
 
         return cluster->getShardsInfo().at(shard_num - 1).getAllNodeCount() > 1;
     }
