@@ -1,0 +1,8 @@
+FOO	0
+foo	0
+Bar	1
+skip	1
+FOO_after_not	1
+foo_after_not	1
+Bar_after_not	0
+skip_after_not	0
