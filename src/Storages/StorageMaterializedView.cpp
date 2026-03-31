@@ -292,6 +292,8 @@ StorageMaterializedView::StorageMaterializedView(
         new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
         if (storage_features.supports_skipping_indices)
         {
+            if (query.columns_list->lookup_indices)
+                new_columns_list->set(new_columns_list->lookup_indices, query.columns_list->lookup_indices->ptr());
             if (query.columns_list->indices)
                 new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
             if (query.columns_list->constraints)

@@ -44,6 +44,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
     , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
+    , lookup_indices(other.lookup_indices)
     , constraints(other.constraints)
     , projections(other.projections.clone())
     , minmax_count_projection(
@@ -76,6 +77,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
     escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
+    lookup_indices = other.lookup_indices;
     constraints = other.constraints;
     projections = other.projections.clone();
     if (other.minmax_count_projection)
@@ -197,6 +199,11 @@ void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_i
     secondary_indices = std::move(secondary_indices_);
 }
 
+void StorageInMemoryMetadata::setLookupIndices(IndicesDescription lookup_indices_)
+{
+    lookup_indices = std::move(lookup_indices_);
+}
+
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
 {
     constraints = std::move(constraints_);
@@ -265,6 +272,16 @@ const IndicesDescription & StorageInMemoryMetadata::getSecondaryIndices() const
 bool StorageInMemoryMetadata::hasSecondaryIndices() const
 {
     return !secondary_indices.empty();
+}
+
+const IndicesDescription & StorageInMemoryMetadata::getLookupIndices() const
+{
+    return lookup_indices;
+}
+
+bool StorageInMemoryMetadata::hasLookupIndices() const
+{
+    return !lookup_indices.empty();
 }
 
 const ConstraintsDescription & StorageInMemoryMetadata::getConstraints() const

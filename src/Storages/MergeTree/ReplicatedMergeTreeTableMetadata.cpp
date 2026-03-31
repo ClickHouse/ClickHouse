@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
@@ -102,6 +103,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     /// We only store skip indices that are explicitly defined by user
     skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
+    lookup_indices = metadata_snapshot->getLookupIndices().explicitToString();
 
     projections = metadata_snapshot->getProjections().toString();
 
@@ -175,6 +177,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
         if (!graphite_params_hash.empty())
             out << "graphite hash: " << graphite_params_hash << "\n";
     }
+
+    if (!lookup_indices.empty())
+        out << "lookup indices: " << lookup_indices << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -244,6 +249,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
         if (checkString("graphite hash: ", in))
             in >> graphite_params_hash >> "\n";
     }
+
+    if (checkString("lookup indices: ", in))
+        in >> lookup_indices >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseRaw(const String & s)
@@ -431,6 +439,13 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
         is_equal = false;
     }
 
+    String parsed_zk_lookup_indices = parseLookupIndices(from_zk.lookup_indices, columns, context).allToString();
+    if (lookup_indices != parsed_zk_lookup_indices)
+    {
+        handleTableMetadataMismatch(table_name_for_error_message, "lookup indexes", from_zk.lookup_indices, parsed_zk_lookup_indices, lookup_indices, strict_check, logger);
+        is_equal = false;
+    }
+
     String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, context).toString();
     if (projections != parsed_zk_projections)
     {
@@ -488,6 +503,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     {
         diff.skip_indices_changed = true;
         diff.new_skip_indices = from_zk.skip_indices;
+    }
+
+    if (lookup_indices != from_zk.lookup_indices)
+    {
+        diff.lookup_indices_changed = true;
+        diff.new_lookup_indices = from_zk.lookup_indices;
     }
 
     if (projections != from_zk.projections)
@@ -561,6 +582,9 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         if (skip_indices_changed)
             new_metadata.secondary_indices = IndicesDescription::parse(new_skip_indices, new_columns, new_metadata.escape_index_filenames, context);
 
+        if (lookup_indices_changed)
+            new_metadata.lookup_indices = parseLookupIndices(new_lookup_indices, new_columns, context);
+
         if (constraints_changed)
             new_metadata.constraints = ConstraintsDescription::parse(new_constraints);
 
@@ -624,6 +648,18 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             }
         }
         new_metadata.secondary_indices = std::move(new_indices);
+    }
+
+    if (!lookup_indices_changed)
+    {
+        IndicesDescription recalculated_lookup_indices;
+        for (auto & index : new_metadata.lookup_indices)
+        {
+            index.recalculateWithNewColumns(new_metadata.columns, context);
+            validateLookupIndex(index);
+            recalculated_lookup_indices.push_back(index);
+        }
+        new_metadata.lookup_indices = std::move(recalculated_lookup_indices);
     }
 
     /// Regenerate implicit indices for the new columns regardless of whether indices were explicitly changed.

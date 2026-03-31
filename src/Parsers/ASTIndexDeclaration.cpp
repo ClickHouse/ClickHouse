@@ -43,6 +43,7 @@ ASTPtr ASTIndexDeclaration::clone() const
 
     auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
     res->granularity = granularity;
+    res->is_lookup_index = is_lookup_index;
 
     return res;
 }

@@ -10,6 +10,12 @@
 namespace DB
 {
 
+enum class KeyValueLookupMode
+{
+    AllMatches,
+    FirstMatch,
+};
+
 /// Interface for entities with key-value semantics.
 class IKeyValueEntity
 {
@@ -40,6 +46,19 @@ public:
         const Names & required_columns,
         PaddedPODArray<UInt8> & out_null_map,
         IColumn::Offsets & out_offsets) const = 0;
+
+    /// Same as `getByKeys`, but allows implementations to optimize lookup based on join strictness.
+    /// `FirstMatch` can return a single row per input key and keep `out_offsets` empty.
+    virtual Chunk getByKeysWithMode(
+        const ColumnsWithTypeAndName & keys,
+        const Names & required_columns,
+        PaddedPODArray<UInt8> & out_null_map,
+        IColumn::Offsets & out_offsets,
+        KeyValueLookupMode mode) const
+    {
+        (void)mode;
+        return getByKeys(keys, required_columns, out_null_map, out_offsets);
+    }
 
     /// Header for getByKeys result
     virtual Block getSampleBlock(const Names & required_columns) const = 0;

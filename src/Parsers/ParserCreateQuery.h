@@ -459,11 +459,16 @@ protected:
 class ParserIndexDeclaration : public IParserBase
 {
 public:
-    ParserIndexDeclaration() = default;
+    explicit ParserIndexDeclaration(bool allow_granularity_ = true)
+        : allow_granularity(allow_granularity_)
+    {
+    }
 
 protected:
     const char * getName() const override { return "index declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    const bool allow_granularity;
 };
 
 class ParserStatisticsDeclaration : public IParserBase

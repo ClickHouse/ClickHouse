@@ -1,0 +1,189 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <drop_query>DROP TABLE IF EXISTS lookup_set_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_small_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_small_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_medium_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_medium_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_large_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_large_plain</drop_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_fact
+        (
+            id UInt64,
+            subid UInt64,
+            payload UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_dim_small_indexed
+        (
+            id UInt64,
+            subid UInt64,
+            LOOKUP INDEX idx_set (id, subid) TYPE table_set
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_dim_small_plain
+        (
+            id UInt64,
+            subid UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_dim_medium_indexed
+        (
+            id UInt64,
+            subid UInt64,
+            LOOKUP INDEX idx_set (id, subid) TYPE table_set
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_dim_medium_plain
+        (
+            id UInt64,
+            subid UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_dim_large_indexed
+        (
+            id UInt64,
+            subid UInt64,
+            LOOKUP INDEX idx_set (id, subid) TYPE table_set
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_set_dim_large_plain
+        (
+            id UInt64,
+            subid UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_fact
+        SELECT
+            number AS id,
+            number % 8 AS subid,
+            number AS payload
+        FROM numbers(500000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_dim_small_indexed
+        SELECT
+            number AS id,
+            number % 8 AS subid
+        FROM numbers(10000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_dim_small_plain SELECT * FROM lookup_set_dim_small_indexed;
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_dim_medium_indexed
+        SELECT
+            number AS id,
+            number % 8 AS subid
+        FROM numbers(100000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_dim_medium_plain SELECT * FROM lookup_set_dim_medium_indexed;
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_dim_large_indexed
+        SELECT
+            number AS id,
+            number % 8 AS subid
+        FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_set_dim_large_plain SELECT * FROM lookup_set_dim_large_indexed;
+    </fill_query>
+
+    <query tag='small indexed table dim=10000'>
+        SELECT count()
+        FROM lookup_set_fact
+        WHERE (id, subid) IN lookup_set_dim_small_indexed
+        FORMAT Null
+        SETTINGS enable_analyzer = 1;
+    </query>
+
+    <query tag='small plain table dim=10000'>
+        SELECT count()
+        FROM lookup_set_fact
+        WHERE (id, subid) IN lookup_set_dim_small_plain
+        FORMAT Null
+        SETTINGS enable_analyzer = 1;
+    </query>
+
+    <query tag='medium indexed table dim=100000'>
+        SELECT count()
+        FROM lookup_set_fact
+        WHERE (id, subid) IN lookup_set_dim_medium_indexed
+        FORMAT Null
+        SETTINGS enable_analyzer = 1;
+    </query>
+
+    <query tag='medium plain table dim=100000'>
+        SELECT count()
+        FROM lookup_set_fact
+        WHERE (id, subid) IN lookup_set_dim_medium_plain
+        FORMAT Null
+        SETTINGS enable_analyzer = 1;
+    </query>
+
+    <query tag='large indexed table dim=1000000'>
+        SELECT count()
+        FROM lookup_set_fact
+        WHERE (id, subid) IN lookup_set_dim_large_indexed
+        FORMAT Null
+        SETTINGS enable_analyzer = 1;
+    </query>
+
+    <query tag='large plain table dim=1000000'>
+        SELECT count()
+        FROM lookup_set_fact
+        WHERE (id, subid) IN lookup_set_dim_large_plain
+        FORMAT Null
+        SETTINGS enable_analyzer = 1;
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS lookup_set_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_small_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_small_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_medium_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_medium_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_large_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_set_dim_large_plain</drop_query>
+</test>

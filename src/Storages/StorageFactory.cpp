@@ -192,6 +192,11 @@ StoragePtr StorageFactory::get(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
 
+            if (query.columns_list && query.columns_list->lookup_indices && !query.columns_list->lookup_indices->children.empty())
+                check_feature(
+                    "lookup indices",
+                    [](StorageFeatures features) { return features.supports_skipping_indices; });
+
             if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
                 check_feature(
                     "skipping indices",

@@ -1,0 +1,210 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <drop_query>DROP TABLE IF EXISTS lookup_join_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_win_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_win_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_equal_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_equal_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_lose_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_lose_plain</drop_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_fact
+        (
+            id UInt64,
+            subid UInt64,
+            payload UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_dim_win_indexed
+        (
+            id UInt64,
+            subid UInt64,
+            value UInt64,
+            LOOKUP INDEX idx_join (id, subid) TYPE table_join
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_dim_win_plain
+        (
+            id UInt64,
+            subid UInt64,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_fact
+        SELECT
+            number AS id,
+            number % 8 AS subid,
+            number AS payload
+        FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_dim_win_indexed
+        SELECT
+            number AS id,
+            number % 8 AS subid,
+            number * 3 AS value
+        FROM numbers(2000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_dim_win_plain SELECT * FROM lookup_join_dim_win_indexed;
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_dim_equal_indexed
+        (
+            id UInt64,
+            subid UInt64,
+            value UInt64,
+            LOOKUP INDEX idx_join (id, subid) TYPE table_join
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_dim_equal_plain
+        (
+            id UInt64,
+            subid UInt64,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_dim_equal_indexed
+        SELECT
+            number AS id,
+            number % 8 AS subid,
+            number * 3 AS value
+        FROM numbers(1000000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_dim_equal_plain SELECT * FROM lookup_join_dim_equal_indexed;
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_dim_lose_indexed
+        (
+            id UInt64,
+            subid UInt64,
+            value UInt64,
+            LOOKUP INDEX idx_join (id, subid) TYPE table_join
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <create_query>
+        CREATE TABLE lookup_join_dim_lose_plain
+        (
+            id UInt64,
+            subid UInt64,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY (id, subid);
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_dim_lose_indexed
+        SELECT
+            number AS id,
+            number % 8 AS subid,
+            number * 3 AS value
+        FROM numbers(500000);
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO lookup_join_dim_lose_plain SELECT * FROM lookup_join_dim_lose_indexed;
+    </fill_query>
+
+    <query tag='win indexed left any direct right=2000000'>
+        SELECT sum(value)
+        FROM lookup_join_fact
+        LEFT ANY JOIN lookup_join_dim_win_indexed
+            ON lookup_join_fact.id = lookup_join_dim_win_indexed.id
+            AND lookup_join_fact.subid = lookup_join_dim_win_indexed.subid
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+    </query>
+
+    <query tag='win plain left any hash right=2000000'>
+        SELECT sum(value)
+        FROM lookup_join_fact
+        LEFT ANY JOIN lookup_join_dim_win_plain
+            ON lookup_join_fact.id = lookup_join_dim_win_plain.id
+            AND lookup_join_fact.subid = lookup_join_dim_win_plain.subid
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash';
+    </query>
+
+    <query tag='equal indexed left any direct right=1000000'>
+        SELECT sum(value)
+        FROM lookup_join_fact
+        LEFT ANY JOIN lookup_join_dim_equal_indexed
+            ON lookup_join_fact.id = lookup_join_dim_equal_indexed.id
+            AND lookup_join_fact.subid = lookup_join_dim_equal_indexed.subid
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+    </query>
+
+    <query tag='equal plain left any hash right=1000000'>
+        SELECT sum(value)
+        FROM lookup_join_fact
+        LEFT ANY JOIN lookup_join_dim_equal_plain
+            ON lookup_join_fact.id = lookup_join_dim_equal_plain.id
+            AND lookup_join_fact.subid = lookup_join_dim_equal_plain.subid
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash';
+    </query>
+
+    <query tag='lose indexed left any direct right=500000'>
+        SELECT sum(value)
+        FROM lookup_join_fact
+        LEFT ANY JOIN lookup_join_dim_lose_indexed
+            ON lookup_join_fact.id = lookup_join_dim_lose_indexed.id
+            AND lookup_join_fact.subid = lookup_join_dim_lose_indexed.subid
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'direct';
+    </query>
+
+    <query tag='lose plain left any hash right=500000'>
+        SELECT sum(value)
+        FROM lookup_join_fact
+        LEFT ANY JOIN lookup_join_dim_lose_plain
+            ON lookup_join_fact.id = lookup_join_dim_lose_plain.id
+            AND lookup_join_fact.subid = lookup_join_dim_lose_plain.subid
+        FORMAT Null
+        SETTINGS enable_analyzer = 1, join_algorithm = 'hash';
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS lookup_join_fact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_win_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_win_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_equal_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_equal_plain</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_lose_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lookup_join_dim_lose_plain</drop_query>
+</test>

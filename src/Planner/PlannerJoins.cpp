@@ -1038,6 +1038,48 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
+PreparedJoinStorage tryGetLookupJoinStorage(
+    const Names & right_key_names,
+    const QueryTreeNodePtr & table_expression,
+    const PlannerContextPtr & planner_context)
+{
+    auto * table_node = table_expression->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    auto storage = std::dynamic_pointer_cast<MergeTreeData>(table_node->getStorage());
+    if (!storage)
+        return {};
+
+    PreparedJoinStorage result;
+    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_expression))
+    {
+        result.column_mapping = table_expression_data->getColumnIdentifierToColumnName();
+    }
+    else
+    {
+        for (const auto & column : table_node->getStorageSnapshot()->metadata->getColumns().getOrdinary())
+            result.column_mapping.emplace(column.name, column.name);
+    }
+
+    Names storage_key_names;
+    storage_key_names.reserve(right_key_names.size());
+    for (const auto & right_key_name : right_key_names)
+    {
+        auto table_column_name_it = result.column_mapping.find(right_key_name);
+        if (table_column_name_it == result.column_mapping.end())
+            return {};
+
+        storage_key_names.push_back(table_column_name_it->second);
+    }
+
+    result.storage_key_value = storage->tryGetLookupJoin(storage_key_names, planner_context->getQueryContext());
+    if (!result.storage_key_value)
+        return {};
+
+    return result;
+}
+
 std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
@@ -1058,29 +1100,30 @@ std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoi
         return {};
 
     const auto & clauses = table_join->getClauses();
-    bool only_one_key = clauses.size() == 1 &&
-        clauses[0].key_names_left.size() == 1 &&
-        clauses[0].key_names_right.size() == 1 &&
+    bool only_lookup_keys = clauses.size() == 1 &&
+        !clauses[0].key_names_left.empty() &&
+        clauses[0].key_names_left.size() == clauses[0].key_names_right.size() &&
         !clauses[0].on_filter_condition_left &&
         !clauses[0].on_filter_condition_right &&
         clauses[0].analyzer_left_filter_condition_column_name.empty() &&
         clauses[0].analyzer_right_filter_condition_column_name.empty();
 
-    if (!only_one_key)
+    if (!only_lookup_keys)
         return {};
 
-    const String & key_name = clauses[0].key_names_right[0];
-
-    if (auto table_column_name_it = right_table_expression.column_mapping.find(key_name); table_column_name_it != right_table_expression.column_mapping.end())
+    Names storage_key_names;
+    storage_key_names.reserve(clauses[0].key_names_right.size());
+    for (const auto & key_name : clauses[0].key_names_right)
     {
-        const auto & storage_primary_key = storage->getPrimaryKey();
-        if (storage_primary_key.size() != 1 || storage_primary_key[0] != table_column_name_it->second)
+        auto table_column_name_it = right_table_expression.column_mapping.find(key_name);
+        if (table_column_name_it == right_table_expression.column_mapping.end())
             return {};
+
+        storage_key_names.push_back(table_column_name_it->second);
     }
-    else
-    {
+
+    if (storage->getPrimaryKey() != storage_key_names)
         return {};
-    }
 
     /** For right table expression during execution columns have unique name.
       * Direct key value join implementation during storage querying must use storage column names.

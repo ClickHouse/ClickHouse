@@ -17,6 +17,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -110,6 +111,8 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         for (const auto & child : columns.indices->children)
             IndexDescription::getIndexFromAST(child, columns_desc, is_implicitly_created, escape_index_filenames, context);
     }
+    if (columns.lookup_indices)
+        getLookupIndicesFromAST(columns.lookup_indices, columns_desc, context);
     if (columns.constraints)
     {
         InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context);
@@ -155,11 +158,13 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (!ast_create_query.is_dictionary && !ast_create_query.isParameterizedView())
     {
         ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+        ASTPtr new_lookup_indices = InterpreterCreateQuery::formatLookupIndices(metadata.lookup_indices);
         ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
         ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
         ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
 
         ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+        ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->lookup_indices, new_lookup_indices);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
         ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);

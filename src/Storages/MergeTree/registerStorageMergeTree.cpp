@@ -1,5 +1,6 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/MergeTreeIndexTableLookup.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
@@ -727,6 +728,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         metadata.add_minmax_index_for_temporal_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_temporal_columns];
         metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
+        metadata.lookup_indices = getLookupIndicesFromAST(args.query.columns_list ? args.query.columns_list->lookup_indices : nullptr, columns, context);
         if (args.query.columns_list && args.query.columns_list->indices)
         {
             for (const auto & index : args.query.columns_list->indices->children)

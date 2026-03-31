@@ -536,11 +536,13 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             break;
         }
         case ASTAlterCommand::ADD_INDEX:
+        case ASTAlterCommand::ADD_LOOKUP_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);
             break;
         }
         case ASTAlterCommand::DROP_INDEX:
+        case ASTAlterCommand::DROP_LOOKUP_INDEX:
         {
             if (command.clear_index)
                 required_access.emplace_back(AccessType::ALTER_CLEAR_INDEX, database, table);

@@ -193,6 +193,20 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             index->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::ADD_LOOKUP_INDEX)
+    {
+        ostr << "ADD LOOKUP INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
+                     ;
+        index_decl->format(ostr, settings, state, frame);
+
+        if (first)
+            ostr << " FIRST ";
+        else if (index) /// AFTER
+        {
+            ostr << " AFTER ";
+            index->format(ostr, settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
         ostr << (clear_index ? "CLEAR " : "DROP ") << "INDEX "
@@ -203,6 +217,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
+    }
+    else if (type == ASTAlterCommand::DROP_LOOKUP_INDEX)
+    {
+        ostr << "DROP LOOKUP INDEX " << (if_exists ? "IF EXISTS " : "");
+        index->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
     {

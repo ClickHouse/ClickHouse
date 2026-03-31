@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -51,6 +52,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_definer(Keyword::MODIFY_DEFINER);
     ParserKeyword s_modify_refresh(Keyword::MODIFY_REFRESH);
 
+    auto s_add_lookup_index = ParserKeyword::createDeprecated("ADD LOOKUP INDEX");
+    auto s_drop_lookup_index = ParserKeyword::createDeprecated("DROP LOOKUP INDEX");
     ParserKeyword s_add_index(Keyword::ADD_INDEX);
     ParserKeyword s_drop_index(Keyword::DROP_INDEX);
     ParserKeyword s_clear_index(Keyword::CLEAR_INDEX);
@@ -137,6 +140,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserIndexDeclaration parser_idx_decl;
+    ParserIndexDeclaration parser_lookup_idx_decl(false);
     ParserStatisticsDeclaration parser_stat_decl;
     ParserStatisticsDeclarationWithoutTypes parser_stat_decl_without_types;
     ParserConstraintDeclaration parser_constraint_decl;
@@ -322,6 +326,25 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                         return false;
                 }
             }
+            else if (s_add_lookup_index.ignore(pos, expected))
+            {
+                if (s_if_not_exists.ignore(pos, expected))
+                    command->if_not_exists = true;
+
+                if (!parser_lookup_idx_decl.parse(pos, command_index_decl, expected))
+                    return false;
+                command_index_decl->as<ASTIndexDeclaration &>().is_lookup_index = true;
+
+                if (s_first.ignore(pos, expected))
+                    command->first = true;
+                else if (s_after.ignore(pos, expected))
+                {
+                    if (!parser_name.parse(pos, command_index, expected))
+                        return false;
+                }
+
+                command->type = ASTAlterCommand::ADD_LOOKUP_INDEX;
+            }
             else if (s_add_index.ignore(pos, expected))
             {
                 if (s_if_not_exists.ignore(pos, expected))
@@ -339,6 +362,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 }
 
                 command->type = ASTAlterCommand::ADD_INDEX;
+            }
+            else if (s_drop_lookup_index.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_name.parse(pos, command_index, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::DROP_LOOKUP_INDEX;
+                command->detach = false;
             }
             else if (s_drop_index.ignore(pos, expected))
             {

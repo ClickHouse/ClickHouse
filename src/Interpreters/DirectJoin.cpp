@@ -70,9 +70,9 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
     , right_sample_block(right_sample_block_)
     , log(getLogger("DirectKeyValueJoin"))
 {
-    if (!table_join->oneDisjunct() ||
-        table_join->getOnlyClause().key_names_left.size() != 1 ||
-        table_join->getOnlyClause().key_names_right.size() != 1)
+    if (!table_join->oneDisjunct()
+        || table_join->getOnlyClause().key_names_left.empty()
+        || table_join->getOnlyClause().key_names_left.size() != table_join->getOnlyClause().key_names_right.size())
     {
         throw DB::Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Not supported by direct JOIN");
     }
@@ -124,14 +124,19 @@ static void selectFirstMatchForEachKey(const IColumn::Offsets & offsets, Mutable
     NullMap filtered_null_map(offsets.size(), 0);
 
     size_t offset = 0;
+    size_t previous_offset = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
-        size_t n = offsets[i] - offsets[i - 1];
+        size_t n = offsets[i] - previous_offset;
         if (n == 0)
+        {
+            previous_offset = offsets[i];
             continue;
+        }
         filtered_null_map[i] = null_map[offset];
         filter[offset] = 1;
         offset += n;
+        previous_offset = offsets[i];
     }
 
     for (auto && col : columns)
@@ -141,10 +146,16 @@ static void selectFirstMatchForEachKey(const IColumn::Offsets & offsets, Mutable
 
 JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
 {
-    const String & key_name = table_join->getOnlyClause().key_names_left[0];
-    const ColumnWithTypeAndName & key_col = block.getByName(key_name);
-    if (!key_col.column)
-        return {};
+    ColumnsWithTypeAndName key_columns;
+    key_columns.reserve(table_join->getOnlyClause().key_names_left.size());
+    for (const auto & key_name : table_join->getOnlyClause().key_names_left)
+    {
+        const auto & key_col = block.getByName(key_name);
+        if (!key_col.column)
+            return {};
+
+        key_columns.push_back(key_col);
+    }
 
     Block original_right_block = originalRightBlock(right_sample_block, *table_join);
     Block right_block_to_use = !right_sample_block_with_storage_column_names.empty() ? right_sample_block_with_storage_column_names : original_right_block;
@@ -156,7 +167,8 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
 
     NullMap null_map;
     IColumn::Offsets offsets;
-    Chunk joined_chunk = storage->getByKeys({key_col}, attribute_names, null_map, offsets);
+    const auto lookup_mode = is_all_join ? KeyValueLookupMode::AllMatches : KeyValueLookupMode::FirstMatch;
+    Chunk joined_chunk = storage->getByKeysWithMode(key_columns, attribute_names, null_map, offsets, lookup_mode);
 
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block sample_storage_block = storage->getSampleBlock(attribute_names);

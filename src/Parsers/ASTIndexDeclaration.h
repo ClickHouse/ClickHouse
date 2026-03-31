@@ -21,6 +21,7 @@ public:
     String name;
     UInt64 granularity;
     bool part_of_create_index_query = false;
+    bool is_lookup_index = false;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }

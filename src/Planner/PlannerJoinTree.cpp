@@ -1769,6 +1769,19 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
+    if (!prepared_join_storage)
+    {
+        const auto & clauses = table_join->getClauses();
+        if (clauses.size() == 1
+            && !clauses[0].key_names_right.empty()
+            && !clauses[0].on_filter_condition_left
+            && !clauses[0].on_filter_condition_right
+            && clauses[0].analyzer_left_filter_condition_column_name.empty()
+            && clauses[0].analyzer_right_filter_condition_column_name.empty())
+        {
+            prepared_join_storage = tryGetLookupJoinStorage(clauses[0].key_names_right, right_table_expression, planner_context);
+        }
+    }
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
     JoinAlgorithmParams params(*planner_context->getQueryContext());
     params.hash_table_key_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
@@ -2516,6 +2529,38 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     right_query_plan.addStep(std::move(join_lookup_step));
 }
 
+std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_operator)
+{
+    bool allowed_inner = isInner(join_operator.kind) && join_operator.strictness == JoinStrictness::All;
+    bool allowed_left = isLeft(join_operator.kind) && (join_operator.strictness == JoinStrictness::Any
+        || join_operator.strictness == JoinStrictness::All
+        || join_operator.strictness == JoinStrictness::Semi
+        || join_operator.strictness == JoinStrictness::Anti);
+    if (!allowed_inner && !allowed_left)
+        return {};
+
+    if (!join_operator.residual_filter.empty() || join_operator.expression.empty())
+        return {};
+
+    Names right_key_names;
+    right_key_names.reserve(join_operator.expression.size());
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [predicate_type, lhs, rhs] = predicate.asBinaryPredicate();
+        if (predicate_type != JoinConditionOperator::Equals)
+            return {};
+
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            return {};
+
+        right_key_names.push_back(rhs.getColumnName());
+    }
+
+    return right_key_names;
+}
+
 JoinTreeQueryPlan buildQueryPlanForJoinNode(
     const QueryTreeNodePtr & join_table_expression,
     JoinTreeQueryPlan left_join_tree_query_plan,
@@ -2551,6 +2596,11 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
         prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
+    if (!prepared_join && allow_storage_join)
+    {
+        if (auto right_key_names = tryExtractLookupJoinRightKeys(join_step_logical->getJoinOperator()))
+            prepared_join = tryGetLookupJoinStorage(*right_key_names, join_node.getRightTableExpression(), planner_context);
+    }
     if (prepared_join)
     {
         bool use_nulls = settings[Setting::join_use_nulls] && isLeftOrFull(join_node.getKind());

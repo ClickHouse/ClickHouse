@@ -297,4 +297,9 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
 
 void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
 
+PreparedJoinStorage tryGetLookupJoinStorage(
+    const Names & right_key_names,
+    const QueryTreeNodePtr & table_expression,
+    const PlannerContextPtr & planner_context);
+
 }

@@ -1,11 +1,14 @@
 #include <Planner/CollectSets.h>
 
 #include <Storages/StorageSet.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
@@ -16,6 +19,7 @@
 #include <Planner/PlannerContext.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <optional>
 #include <unordered_set>
 
 
@@ -35,6 +39,101 @@ namespace ErrorCodes
 
 namespace
 {
+
+struct LookupSetFromStorage
+{
+    SetPtr set;
+    StorageID storage_id;
+};
+
+std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const QueryTreeNodePtr & table_expression, PlannerContext & planner_context)
+{
+    auto * table_node = table_expression->as<TableNode>();
+    if (table_node)
+    {
+        auto storage = std::dynamic_pointer_cast<MergeTreeData>(table_node->getStorage());
+        if (!storage)
+            return std::nullopt;
+
+        auto columns_to_select = table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+        Names key_names;
+        key_names.reserve(columns_to_select.size());
+        for (const auto & column : columns_to_select)
+            key_names.push_back(column.name);
+
+        auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
+        if (!set)
+            return std::nullopt;
+
+        return LookupSetFromStorage{std::move(set), table_node->getStorageID()};
+    }
+
+    auto * query_node = table_expression->as<QueryNode>();
+    if (!query_node
+        || query_node->isDistinct()
+        || query_node->hasPrewhere()
+        || query_node->hasWhere()
+        || query_node->hasGroupBy()
+        || query_node->hasHaving()
+        || query_node->hasWindow()
+        || query_node->hasQualify()
+        || query_node->hasOrderBy()
+        || query_node->hasLimitBy()
+        || query_node->hasLimit()
+        || query_node->hasOffset()
+        || query_node->isGroupByWithTotals())
+    {
+        return std::nullopt;
+    }
+
+    auto inner_table_expression = query_node->getJoinTree();
+    auto * inner_table_node = inner_table_expression->as<TableNode>();
+    if (!inner_table_node)
+        return std::nullopt;
+
+    auto storage = std::dynamic_pointer_cast<MergeTreeData>(inner_table_node->getStorage());
+    if (!storage)
+        return std::nullopt;
+
+    TableExpressionData::ColumnIdentifierToColumnName column_mapping;
+    if (const auto * table_expression_data = planner_context.getTableExpressionDataOrNull(inner_table_expression))
+    {
+        column_mapping = table_expression_data->getColumnIdentifierToColumnName();
+    }
+    else
+    {
+        for (const auto & column : inner_table_node->getStorageSnapshot()->metadata->getColumns().getOrdinary())
+            column_mapping.emplace(column.name, column.name);
+    }
+
+    Names key_names;
+    key_names.reserve(query_node->getProjection().getNodes().size());
+    for (const auto & projection_node : query_node->getProjection().getNodes())
+    {
+        const auto * column_node = projection_node->as<ColumnNode>();
+        if (!column_node || column_node->hasExpression())
+            return std::nullopt;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source.get() != inner_table_expression.get())
+            return std::nullopt;
+
+        auto mapping_it = column_mapping.find(column_node->getColumnName());
+        if (mapping_it == column_mapping.end())
+            return std::nullopt;
+
+        key_names.push_back(mapping_it->second);
+    }
+
+    if (key_names.empty())
+        return std::nullopt;
+
+    auto set = storage->tryGetLookupSet(key_names, planner_context.getQueryContext());
+    if (!set)
+        return std::nullopt;
+
+    return LookupSetFromStorage{std::move(set), inner_table_node->getStorageID()};
+}
 
 class CollectSetsVisitor : public ConstInDepthQueryTreeVisitor<CollectSetsVisitor>
 {
@@ -135,6 +234,17 @@ public:
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
             in_second_argument_node_type == QueryTreeNodeType::TABLE)
         {
+            if (auto lookup_set = tryGetLookupSetFromTableExpression(in_second_argument, planner_context))
+            {
+                auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
+                if (sets.findStorage(set_key))
+                    return;
+
+                auto ast = in_second_argument->toAST({ .set_subquery_cte_name = false });
+                sets.addFromStorage(set_key, std::move(ast), std::move(lookup_set->set), lookup_set->storage_id);
+                return;
+            }
+
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findSubquery(set_key))
                 return;

@@ -89,6 +89,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+class IKeyValueEntity;
 
 namespace ErrorCodes
 {
@@ -630,6 +633,11 @@ public:
 
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
+    SetPtr tryGetLookupSet(const Names & key_names, const ContextPtr & query_context) const;
+    std::shared_ptr<const IKeyValueEntity> tryGetLookupJoin(const Names & key_names, const ContextPtr & query_context) const;
+    bool hasLookupSetIndex() const;
+    bool hasLookupJoinIndex() const;
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
@@ -1405,6 +1413,22 @@ protected:
     String relative_data_path;
 
 private:
+    struct LookupSetCacheEntry
+    {
+        int32_t metadata_version = -1;
+        String schema_signature;
+        Names part_names;
+        SetPtr set;
+    };
+
+    struct LookupJoinCacheEntry
+    {
+        int32_t metadata_version = -1;
+        String schema_signature;
+        Names part_names;
+        std::shared_ptr<const IKeyValueEntity> entity;
+    };
+
     /// Columns and secondary indices sizes can be calculated lazily.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
     mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
@@ -1413,6 +1437,9 @@ private:
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
     mutable IndexSize primary_index_size;
+    mutable std::mutex table_lookup_indices_mutex;
+    mutable std::unordered_map<String, LookupSetCacheEntry> lookup_sets_cache;
+    mutable std::unordered_map<String, LookupJoinCacheEntry> lookup_joins_cache;
 
 protected:
     void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, ContextPtr local_context) const;
