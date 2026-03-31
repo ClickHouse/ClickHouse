@@ -11,7 +11,7 @@ INSERT INTO enum VALUES (4);
 SELECT '======================';
 SELECT * FROM enum ORDER BY x;
 {% if ENUM_TYPE != 'Enum16' -%}
-ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('ThousanD' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000); -- { serverError ARGUMENT_OUT_OF_BOUND }
 {% else %}
 ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES('Thousand' = 1000);
 {% endif %}
