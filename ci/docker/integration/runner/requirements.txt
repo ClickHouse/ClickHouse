@@ -91,7 +91,7 @@ python-dotenv==1.2.2
 python-snappy==0.7.3
 pytz==2023.3.post1
 redis==5.0.1
-requests==2.32.5
+requests==2.33.0
 requests-kerberos==0.15.0
 rich==14.3.3
 rsa==4.9.1
