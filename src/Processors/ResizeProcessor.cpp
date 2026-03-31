@@ -492,6 +492,21 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
             {
                 ++num_finished_outputs;
                 output.status = OutputStatus::Finished;
+
+                /// If an active output finishes, we need to activate another one to avoid deadlock.
+                /// Otherwise, if all active outputs finish before thresholds grow, no data can flow.
+                if (!all_outputs_active && output_number < num_active_outputs)
+                {
+                    while (num_active_outputs < output_ports.size())
+                    {
+                        size_t candidate = num_active_outputs;
+                        ++num_active_outputs;
+                        if (output_ports[candidate].status != OutputStatus::Finished)
+                            break;
+                    }
+                    if (num_active_outputs >= output_ports.size())
+                        all_outputs_active = true;
+                }
             }
             continue;
         }
@@ -555,6 +570,10 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
         auto & waiting_output = output_ports[waiting_outputs.front()];
         waiting_outputs.pop();
 
+        /// Skip outputs that became finished after they were queued.
+        if (waiting_output.status == OutputStatus::Finished)
+            continue;
+
         auto & input_with_data = input_ports[inputs_with_data.front()];
         inputs_with_data.pop();
 
@@ -591,6 +610,9 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
                 auto idx = inactive_waiting_outputs.front();
                 inactive_waiting_outputs.pop();
 
+                if (output_ports[idx].status == OutputStatus::Finished)
+                    continue;
+
                 if (idx < num_active_outputs)
                     waiting_outputs.push(idx);
                 else
@@ -603,6 +625,10 @@ IProcessor::Status GradualResizeProcessor::prepare(const PortNumbers & updated_i
             {
                 auto & waiting_output = output_ports[waiting_outputs.front()];
                 waiting_outputs.pop();
+
+                /// Skip outputs that became finished after they were queued.
+                if (waiting_output.status == OutputStatus::Finished)
+                    continue;
 
                 auto & input_with_data = input_ports[inputs_with_data.front()];
                 inputs_with_data.pop();
