@@ -15,12 +15,12 @@ These rules reuse query parameter feature for query matching which allow substit
 
 The rules are being applied in the order of their creation.
 
-## Syntax
+## Syntax {#syntax}
 
 Query rewrite rules provide three types of queries:
-### CREATE RULE
+### CREATE RULE {#create-rule}
 Rewrite of rule:
-```
+```sql
 CREATE RULE rule_name AS 
 (
     any_query
@@ -31,7 +31,7 @@ REWRITE TO
 );
 ```
 Rejection of rule:
-```
+```sql
 CREATE RULE rule_name AS 
 (
     any_query
@@ -39,9 +39,9 @@ CREATE RULE rule_name AS
 REJECT WITH 'Message';
 ```
 
-### ALTER RULE
+### ALTER RULE {#alter-rule}
 Rewrite of rule:
-```
+```sql
 ALTER RULE rule_name AS 
 (
     any_query
@@ -52,7 +52,7 @@ REWRITE TO
 );
 ```
 Rejection of rule:
-```
+```sql
 ALTER RULE rule_name AS 
 (
     any_query
@@ -60,12 +60,12 @@ ALTER RULE rule_name AS
 REJECT WITH 'Message';
 ```
 
-### DROP RULE
-```
+### DROP RULE {#drop-rule}
+```sql
 DROP RULE rule_name;
 ```
 
-## Types of storages for query rewrite rules
+## Types of storages for query rewrite rules {#types-of-storages}
 
 Query rewrite rules can either be stored on local disk or in ZooKeeper/Keeper. By default local storage is used.
 
@@ -73,7 +73,7 @@ To configure query rewrite rules storage you need to specify a type. This can be
 
 Config example:
 
-```
+```xml
 <clickhouse>
   <query_rules_storage>
     <type>local</type>
@@ -83,31 +83,31 @@ Config example:
 </clickhouse>
 ```
 
-## System tables
+## System tables {#system-tables}
 
-There are two system tables for query rewrite rules: system.query_rules and system.query_rules_log.
+There are two system tables for query rewrite rules: `system.query_rules` and `system.query_rules_log`.
 
-System table system.query_rules stores all created/altered query rules. 
-Format of table: {name:String, rule:String} where name is rule name and rule is whole query.
+System table `system.query_rules` stores all created/altered query rules.
+Format of table: `{name:String, rule:String}` where name is rule name and rule is whole query.
 
-System table system.query_rules_log stores logs of query rules. 
-Format of table: {original_query:String, applied_rules:Array(String), resulting_query: String}.
+System table `system.query_rules_log` stores logs of query rules.
+Format of table: `{original_query:String, applied_rules:Array(String), resulting_query: String}`.
 
-## System setting
+## System setting {#system-setting}
 
-System boolean setting query_rules activates query rewrite rules.  By default value is false.
+System boolean setting `query_rules` activates query rewrite rules.  By default value is false.
 
-## Access grants
+## Access grants {#access-grants}
 
 There are three access grants for query rewrite rules, each of these requires separate permission:
-1. CREATE_RULE
-2. ALTER_RULE
-3. DROP_RULE
+1. `CREATE_RULE`
+2. `ALTER_RULE`
+3. `DROP_RULE`
 
-## Examples
+## Examples {#examples}
 
 Creation:
-```
+```sql
 SET query_rules = 1;
 
 CREATE RULE rule_1 AS 
@@ -127,7 +127,7 @@ REJECT WITH 'REJECT';
 ```
 
 Alteration:
-```
+```sql
 ALTER RULE rule_1 AS (
     SELECT date, sum(hits) FROM stats WHERE date = {name2:String} AND page = {name:String} GROUP BY date
 )
@@ -143,6 +143,6 @@ REJECT WITH 'REJECT';
 ```
 
 Drop:
-```
+```sql
 DROP RULE rule_1;
 ```
