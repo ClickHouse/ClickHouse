@@ -168,10 +168,8 @@ public:
                 }
                 else
                 {
-                    // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-                    if (constant_node.hasSourceExpression()
-                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
-                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
+                    // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -864,10 +862,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
         }
 
-        // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-        if (constant_node.hasSourceExpression()
-            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
-            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
+        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);

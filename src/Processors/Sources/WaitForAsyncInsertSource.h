@@ -62,9 +62,8 @@ protected:
             p.written_bytes = progress_result.bytes;
             p.read_rows = progress_result.rows;
             p.read_bytes = progress_result.bytes;
-            /// Do not set p.result_rows/result_bytes here: flushQueryProgress
-            /// in executeQuery.cpp will derive them from progress_out.written_rows,
-            /// so setting them here would cause double-counting in X-ClickHouse-Summary.
+            p.result_rows = progress_result.rows;
+            p.result_bytes = progress_result.bytes;
             progress_callback(p);
         }
 

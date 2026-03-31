@@ -1235,7 +1235,7 @@ void MongoDBIntegration::documentAppendArray(
     const uint64_t limit = nested_rows_dist(rg.generator);
     /// Array
     auto array = document << cname << bsoncxx::builder::stream::open_array;
-    SQLType * tp = at->subtype.get();
+    SQLType * tp = at->subtype;
     Nullable * nl;
     VariantType * vtp;
     LowCardinality * lc;
@@ -1270,22 +1270,22 @@ void MongoDBIntegration::documentAppendArray(
             || dynamic_cast<EnumType *>(tp) || dynamic_cast<UUIDType *>(tp) || dynamic_cast<IPv4Type *>(tp) || dynamic_cast<IPv6Type *>(tp)
             || dynamic_cast<JSONType *>(tp) || dynamic_cast<GeoType *>(tp) || dynamic_cast<TimeType *>(tp))
         {
-            documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype.get());
+            documentAppendBottomType<decltype(array)>(rg, "", array, at->subtype);
         }
         else if ((lc = dynamic_cast<LowCardinality *>(tp)))
         {
-            if ((nl = dynamic_cast<Nullable *>(lc->subtype.get())))
+            if ((nl = dynamic_cast<Nullable *>(lc->subtype)))
             {
-                documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
+                documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
             }
             else
             {
-                documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype.get());
+                documentAppendBottomType<decltype(array)>(rg, "", array, lc->subtype);
             }
         }
         else if ((nl = dynamic_cast<Nullable *>(tp)))
         {
-            documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype.get());
+            documentAppendBottomType<decltype(array)>(rg, "", array, nl->subtype);
         }
         else if (dynamic_cast<ArrayType *>(tp))
         {
@@ -1346,11 +1346,11 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else if ((lc = dynamic_cast<LowCardinality *>(tp)))
     {
-        documentAppendAnyValue(rg, cname, document, lc->subtype.get());
+        documentAppendAnyValue(rg, cname, document, lc->subtype);
     }
     else if ((nl = dynamic_cast<Nullable *>(tp)))
     {
-        documentAppendAnyValue(rg, cname, document, nl->subtype.get());
+        documentAppendAnyValue(rg, cname, document, nl->subtype);
     }
     else if ((at = dynamic_cast<ArrayType *>(tp)))
     {
@@ -1365,7 +1365,7 @@ void MongoDBIntegration::documentAppendAnyValue(
         }
         else
         {
-            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes).get());
+            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes));
         }
     }
     else
@@ -1669,7 +1669,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
     {
         ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
-        collectColumnPaths("c" + std::to_string(key), val.tp.get(), 0, cpc, entries);
+        collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
     }
     /// Common information
     buf += fmt::format(
