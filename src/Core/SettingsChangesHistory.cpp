@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
+            {"query_rules", false, false, "New setting to enable query rewrite rules."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -1172,7 +1173,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"serialization_info_version", "basic", "basic", "New setting"},
             {"string_serialization_version", "single_stream", "single_stream", "New setting"},
             {"replicated_deduplication_window_seconds", 7 * 24 * 60 * 60, 60*60, "decrease default value"},
-            {"query_rules", "", "", "New setting."},
             {"shared_merge_tree_activate_coordinated_merges_tasks", false, false, "New settings"},
             {"shared_merge_tree_merge_coordinator_factor", 1.1f, 1.1f, "Lower coordinator sleep time after load"},
             {"min_level_for_wide_part", 0, 0, "New setting"},

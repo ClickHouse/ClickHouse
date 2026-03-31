@@ -1,6 +1,5 @@
 #include <Common/RewriteRules/RewriteRules.h>
 #include <Core/Settings.h>
-#include <base/sleep.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -31,7 +30,11 @@ void RewriteRules::shutdown()
 {
     shutdown_called = true;
     if (update_task)
+    {
         update_task->deactivate();
+        update_task.reset();
+    }
+    std::lock_guard lock(mutex);
     storage.reset();
 }
 
@@ -220,45 +223,56 @@ bool RewriteRules::loadIfNot()
 
 void RewriteRules::reload()
 {
-    loadIfNot();
+    if (!loaded)
+    {
+        loadIfNot();
+        return;
+    }
+
+    std::lock_guard lock(mutex);
+    if (!storage)
+        return;
+    auto rules = storage->getAll();
+    loaded_rewrite_rules.clear();
+    add(std::move(rules), lock);
 }
 
 void RewriteRules::updateFunc()
 {
     LOG_TRACE(log, "Rewrite/query rules background updating thread started");
 
-    while (!shutdown_called.load())
+    try
     {
-        if (storage->waitUpdate())
-        {
-            try
-            {
-                reload();
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (Coordination::isHardwareError(e.code))
-                {
-                    LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
-                            DB::getCurrentExceptionMessage(true));
+        std::unique_lock lock(mutex);
+        if (shutdown_called.load() || !storage)
+            return;
+        auto * storage_ptr = storage.get();
+        lock.unlock();
 
-                    sleepForSeconds(1);
-                }
-                else
-                {
-                    tryLogCurrentException(__PRETTY_FUNCTION__);
-                    chassert(false);
-                }
-                continue;
-            }
-            catch (...)
-            {
-                DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-                chassert(false);
-                continue;
-            }
+        if (storage_ptr->waitUpdate())
+            reload();
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (Coordination::isHardwareError(e.code))
+        {
+            LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}",
+                    DB::getCurrentExceptionMessage(true));
+        }
+        else
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
         }
     }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
+    }
+
+    if (!shutdown_called.load() && update_task)
+        update_task->scheduleAfter(1000);
 
     LOG_TRACE(log, "Rewrite/query rules background updating thread finished");
 }
