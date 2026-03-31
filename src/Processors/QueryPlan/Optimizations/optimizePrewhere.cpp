@@ -106,9 +106,19 @@ ActionsDAG splitAndFillPrewhereInfo(
 
     if (conditions.size() == 1)
     {
-        prewhere_info->prewhere_column_name = conditions.front()->result_name;
+        const auto * condition_node = conditions.front();
         if (prewhere_info->remove_prewhere_column)
-            prewhere_info->prewhere_actions.getOutputs().push_back(conditions.front());
+        {
+            prewhere_info->prewhere_actions.getOutputs().push_back(condition_node);
+            prewhere_info->prewhere_column_position = prewhere_info->prewhere_actions.getOutputs().size() - 1;
+        }
+        else
+        {
+            const auto & outputs = prewhere_info->prewhere_actions.getOutputs();
+            auto it = std::find(outputs.begin(), outputs.end(), condition_node);
+            chassert(it != outputs.end());
+            prewhere_info->prewhere_column_position = it - outputs.begin();
+        }
     }
     else
     {
@@ -116,8 +126,8 @@ ActionsDAG splitAndFillPrewhereInfo(
 
         FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         const auto * node = &prewhere_info->prewhere_actions.addFunction(func_builder_and, std::move(conditions), {});
-        prewhere_info->prewhere_column_name = node->result_name;
         prewhere_info->prewhere_actions.getOutputs().push_back(node);
+        prewhere_info->prewhere_column_position = prewhere_info->prewhere_actions.getOutputs().size() - 1;
     }
 
     return std::move(split_result.second);

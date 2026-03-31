@@ -44,13 +44,14 @@ struct PrewhereInfo
 {
     /// Actions which are executed on block in order to get filter column for prewhere step.
     ActionsDAG prewhere_actions;
-    String prewhere_column_name;
+    /// Position of the prewhere column in `prewhere_actions` outputs.
+    size_t prewhere_column_position = 0;
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
     PrewhereInfo() = default;
-    explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
-            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
+    explicit PrewhereInfo(ActionsDAG prewhere_actions_, size_t prewhere_column_position_)
+            : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_position(prewhere_column_position_) {}
 
     std::string dump() const;
 

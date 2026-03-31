@@ -724,7 +724,7 @@ void Reader::preparePrewhere()
         if (!actions_settings.has_value())
             actions_settings.emplace();
 
-        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), dag.findPositionInOutputs(filter_column_name));
         prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
 
@@ -754,7 +754,7 @@ void Reader::preparePrewhere()
     if (row_level_filter)
         add_step(row_level_filter->actions, row_level_filter->column_name, true);
     if (prewhere_info)
-        add_step(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->need_filter);
+        add_step(prewhere_info->prewhere_actions, prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]->result_name, prewhere_info->need_filter);
 
     /// Assert that we found all columns of the sample block, either in the file or in prewhere outputs.
     for (size_t i = 0; i < sample_block_to_output_columns_idx.size(); ++i)

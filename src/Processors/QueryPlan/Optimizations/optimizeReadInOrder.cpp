@@ -237,7 +237,7 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
             limit = 0;
 
             appendExpression(dag, prewhere_info->prewhere_actions);
-            if (const auto * filter_expression = dag->tryFindInOutputs(prewhere_info->prewhere_column_name))
+            if (const auto * filter_expression = dag->getOutputs()[prewhere_info->prewhere_column_position])
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
 
         }

@@ -2224,7 +2224,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             if (deferred_row_level_filter)
                 deferred_column_names.insert(deferred_row_level_filter->column_name);
             if (deferred_prewhere_info)
-                deferred_column_names.insert(deferred_prewhere_info->prewhere_column_name);
+                deferred_column_names.insert(deferred_prewhere_info->prewhere_actions.getOutputs()[deferred_prewhere_info->prewhere_column_position]->result_name);
 
             const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
             NameSet sorting_key_set(sorting_key_columns.begin(), sorting_key_columns.end());
@@ -3533,7 +3533,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     if (deferred_prewhere_info)
         add_deferred_filter(
             deferred_prewhere_info->prewhere_actions.clone(),
-            deferred_prewhere_info->prewhere_column_name,
+            deferred_prewhere_info->prewhere_actions.getOutputs()[deferred_prewhere_info->prewhere_column_position]->result_name,
             deferred_prewhere_info->remove_prewhere_column);
 
     Block cur_header = pipe.getHeader();
@@ -3659,7 +3659,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     if (query_info.prewhere_info)
     {
         format_settings.out << prefix << "Prewhere filter" << '\n';
-        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_column_name;
+        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_actions.getOutputs()[query_info.prewhere_info->prewhere_column_position]->result_name;
         if (query_info.prewhere_info->remove_prewhere_column)
             format_settings.out << " (removed)";
         format_settings.out << '\n';
@@ -3688,7 +3688,7 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
         if (deferred_row_level_filter)
             format_settings.out << prefix << "  Deferred row level filter column: " << deferred_row_level_filter->column_name << '\n';
         if (deferred_prewhere_info)
-            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_column_name << '\n';
+            format_settings.out << prefix << "  Deferred prewhere filter column: " << deferred_prewhere_info->prewhere_actions.getOutputs()[deferred_prewhere_info->prewhere_column_position]->result_name << '\n';
     }
 
     if (virtual_row_conversion)
@@ -3719,7 +3719,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
     if (query_info.prewhere_info)
     {
         std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
-        prewhere_filter_map->add("Prewhere filter column", query_info.prewhere_info->prewhere_column_name);
+        prewhere_filter_map->add("Prewhere filter column", query_info.prewhere_info->prewhere_actions.getOutputs()[query_info.prewhere_info->prewhere_column_position]->result_name);
         prewhere_filter_map->add("Prewhere filter remove filter column", query_info.prewhere_info->remove_prewhere_column);
         auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
         prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
@@ -3746,7 +3746,7 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         if (deferred_row_level_filter)
             deferred_map->add("Deferred row level filter column", deferred_row_level_filter->column_name);
         if (deferred_prewhere_info)
-            deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_column_name);
+            deferred_map->add("Deferred prewhere filter column", deferred_prewhere_info->prewhere_actions.getOutputs()[deferred_prewhere_info->prewhere_column_position]->result_name);
         map.add("Deferred filters (applied after FINAL)", std::move(deferred_map));
     }
 
@@ -4157,11 +4157,16 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
 
 ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
 {
+    std::cerr << "RFMT::removeUnusedColumns called, output_header=" << (output_header ? output_header->dumpStructure() : "null") << "\n";
     if (output_header == nullptr)
         return {};
 
-    /// ReadFromMergeTree output columns are unique (table columns always have distinct names),
-    /// so we can safely convert positions to names for internal use.
+    /// Build a position-based set of required output columns.
+    /// This correctly handles duplicated column names in the output header:
+    /// only the specific positions requested are kept, not all columns sharing a name.
+    std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
+
+    /// Also collect required column names for filtering storage columns and prewhere/row_level_filter outputs.
     NameSet columns_to_keep;
 
     if (query_info.isFinal())
@@ -4175,19 +4180,46 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
     if (query_info.prewhere_info)
     {
         auto & prewhere_outputs = query_info.prewhere_info->prewhere_actions.getOutputs();
-        removed_output_from_prewhere = std::erase_if(
-                                           prewhere_outputs,
-                                           [&](const auto * output)
-                                           {
-                                               return output->result_name != query_info.prewhere_info->prewhere_column_name
-                                                   && !columns_to_keep.contains(output->result_name);
-                                           })
-            > 0;
-
-        if (!query_info.prewhere_info->remove_prewhere_column && !columns_to_keep.contains(query_info.prewhere_info->prewhere_column_name))
+        const size_t pw_pos = query_info.prewhere_info->prewhere_column_position;
+        size_t new_pw_pos = 0;
+        size_t write = 0;
+        for (size_t read = 0; read < prewhere_outputs.size(); ++read)
         {
-            query_info.prewhere_info->remove_prewhere_column = true;
+            if (read == pw_pos || columns_to_keep.contains(prewhere_outputs[read]->result_name))
+            {
+                if (read == pw_pos)
+                    new_pw_pos = write;
+                prewhere_outputs[write++] = prewhere_outputs[read];
+            }
+        }
+        if (write < prewhere_outputs.size())
+        {
+            prewhere_outputs.resize(write);
             removed_output_from_prewhere = true;
+        }
+        query_info.prewhere_info->prewhere_column_position = new_pw_pos;
+
+        /// Check whether the prewhere column is at any required output position.
+        /// This is a position-based check: even if the prewhere column name appears in the output header,
+        /// it should be removed if none of its positions are in the required set.
+        if (!query_info.prewhere_info->remove_prewhere_column)
+        {
+            bool prewhere_column_at_required_position = false;
+            for (size_t i = 0; i < output_header->columns(); ++i)
+            {
+                if (output_header->getByPosition(i).name == query_info.prewhere_info->prewhere_actions.getOutputs()[query_info.prewhere_info->prewhere_column_position]->result_name
+                    && required_positions_set.contains(i))
+                {
+                    prewhere_column_at_required_position = true;
+                    break;
+                }
+            }
+
+            if (!prewhere_column_at_required_position)
+            {
+                query_info.prewhere_info->remove_prewhere_column = true;
+                removed_output_from_prewhere = true;
+            }
         }
 
         /// Preserve filter dependencies: inputs of prewhere must be kept so the filter can be evaluated.
@@ -4210,11 +4242,27 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
                                                    })
             > 0;
 
-        if (!query_info.row_level_filter->do_remove_column && !columns_to_keep.contains(query_info.row_level_filter->column_name))
+        /// Position-based check for row-level filter column, same as for prewhere column above.
+        if (!query_info.row_level_filter->do_remove_column)
         {
-            query_info.row_level_filter->do_remove_column = true;
-            removed_output_from_row_level_filter = true;
+            bool row_filter_at_required_position = false;
+            for (size_t i = 0; i < output_header->columns(); ++i)
+            {
+                if (output_header->getByPosition(i).name == query_info.row_level_filter->column_name
+                    && required_positions_set.contains(i))
+                {
+                    row_filter_at_required_position = true;
+                    break;
+                }
+            }
+
+            if (!row_filter_at_required_position)
+            {
+                query_info.row_level_filter->do_remove_column = true;
+                removed_output_from_row_level_filter = true;
+            }
         }
+
         /// Preserve filter dependencies: inputs of row-level filter must be kept.
         for (const auto * input : query_info.row_level_filter->actions.getInputs())
             columns_to_keep.insert(input->result_name);

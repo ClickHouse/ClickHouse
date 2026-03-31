@@ -46,6 +46,12 @@ public:
         filter_dags.push_back(std::move(filter_dag));
     }
 
+    void addFilter(ActionsDAG filter_dag, size_t column_position)
+    {
+        filter_nodes.nodes.push_back(filter_dag.getOutputs()[column_position]);
+        filter_dags.push_back(std::move(filter_dag));
+    }
+
     void setLimit(size_t limit_value)
     {
         if (limit)

@@ -20,7 +20,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     if (storage_row_level_filter)
         source_step_with_filter->addFilter(storage_row_level_filter->actions.clone(), storage_row_level_filter->column_name);
     if (storage_prewhere_info)
-        source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions.clone(), storage_prewhere_info->prewhere_column_name);
+        source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions.clone(), storage_prewhere_info->prewhere_column_position);
 
     /// Collect ExpressionStep DAGs encountered while walking up the plan.
     /// When a filter references columns produced by expressions (e.g., ALIAS

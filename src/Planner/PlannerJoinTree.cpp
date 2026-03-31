@@ -994,9 +994,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 {
                     prewhere_info = std::make_shared<PrewhereInfo>();
                     prewhere_info->prewhere_actions = prewhere_actions->clone();
-                    prewhere_info->prewhere_column_name = prewhere_actions->getOutputs().at(0)->result_name;
+                    prewhere_info->prewhere_column_position = 0;
                     /// Do not remove prewhere column if it is needed later
-                    bool keep_prewhere_column = std::ranges::contains(columns_names, prewhere_info->prewhere_column_name);
+                    bool keep_prewhere_column = std::ranges::contains(columns_names, prewhere_info->prewhere_actions.getOutputs()[0]->result_name);
                     prewhere_info->remove_prewhere_column = !keep_prewhere_column;
                     prewhere_info->need_filter = true;
                 }

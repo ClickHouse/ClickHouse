@@ -510,6 +510,15 @@ const ActionsDAG::Node & ActionsDAG::findInOutputs(const std::string & name) con
     throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", name);
 }
 
+size_t ActionsDAG::findPositionInOutputs(const std::string & name) const
+{
+    for (size_t i = 0; i < outputs.size(); ++i)
+        if (outputs[i]->result_name == name)
+            return i;
+
+    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown identifier: '{}'", name);
+}
+
 const ActionsDAG::Node * ActionsDAG::tryFindInOutputs(const std::string & name) const
 {
     for (const auto & node : outputs)

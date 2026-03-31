@@ -169,7 +169,7 @@ bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & 
         {
             appendExpression(prewhere_info->prewhere_actions);
             if (const auto * filter_expression
-                = findInOutputs(*dag, prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column))
+                = findInOutputs(*dag, prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]->result_name, prewhere_info->remove_prewhere_column))
                 filter_nodes.push_back(filter_expression);
             else
                 return false;
@@ -441,7 +441,7 @@ void filterPartsAndCollectProjectionCandidates(
         prewhere_info->prewhere_actions
             = projection_query_info.filter_actions_dag->restrictFilterDAGToInputs(filter_node, available_inputs);
         prewhere_info->need_filter = true;
-        prewhere_info->prewhere_column_name = prewhere_info->prewhere_actions.getOutputs().front()->result_name;
+        prewhere_info->prewhere_column_position = 0;
         prewhere_info->remove_prewhere_column = true;
 
         const ActionsDAG::Node * parent_part_offset_node = nullptr;

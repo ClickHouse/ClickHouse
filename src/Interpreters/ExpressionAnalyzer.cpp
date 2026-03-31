@@ -1986,7 +1986,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (prewhere_dag_and_flags)
         {
-            prewhere_info = std::make_shared<PrewhereInfo>(std::move(prewhere_dag_and_flags->dag), query.prewhere()->getColumnName());
+            size_t pw_pos = prewhere_dag_and_flags->dag.findPositionInOutputs(query.prewhere()->getColumnName());
+            prewhere_info = std::make_shared<PrewhereInfo>(std::move(prewhere_dag_and_flags->dag), pw_pos);
             prewhere_dag_and_flags.reset();
         }
 
@@ -2302,7 +2303,7 @@ void ExpressionAnalysisResult::finalize(
         NameSet columns_to_remove;
         for (const auto & [name, can_remove] : step.required_output)
         {
-            if (name == prewhere_info->prewhere_column_name)
+            if (name == prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]->result_name)
                 prewhere_info->remove_prewhere_column = can_remove;
             else if (can_remove)
                 columns_to_remove.insert(name);

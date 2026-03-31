@@ -245,7 +245,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             {
                 auto prewhere_info = reading->getPrewhereInfo();
                 const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                    ? prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]
                     : nullptr;
                 auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
