@@ -1,6 +1,7 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -163,6 +164,23 @@ public:
     {
         if (auto * function = ast->as<ASTFunction>())
             visit(*function, data);
+        else if (auto * assignment = ast->as<ASTAssignment>())
+            visit(*assignment, data);
+    }
+
+    /// Wrap string literal in UPDATE SET when the target column is DateTime without explicit timezone
+    static void visit(ASTAssignment & assignment, Data & data)
+    {
+        auto dt = getDateTimeColumnType(assignment.column_name, data.columns);
+        if (!dt)
+            return;
+
+        auto & expr = assignment.children.at(0);
+        if (const auto * lit = expr->as<ASTLiteral>(); lit && lit->value.getType() == Field::Types::String)
+        {
+            expr = wrapWithTimezone(expr, dt, data.session_timezone);
+            data.modified = true;
+        }
     }
 
     static void visit(ASTFunction & function, Data & data)
