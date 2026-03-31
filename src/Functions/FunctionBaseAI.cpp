@@ -107,8 +107,10 @@ FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTy
     }
 
     if (collection_name.empty())
+    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "No AI named collection specified and default_ai_provider is not set");
+    }
 
     const auto & nc = NamedCollectionFactory::instance().get(collection_name);
 

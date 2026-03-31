@@ -46,6 +46,8 @@ public:
 
 protected:
     String functionName() const override { return name; }
+
+    /// Higher temp for some creativity due to nature of the task.
     float defaultTemperature() const override { return 0.7f; }
 
     String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
@@ -58,6 +60,7 @@ protected:
             if (!system_prompt.empty())
                 return system_prompt;
         }
+
         return "You are a helpful assistant. Provide a clear and concise response.";
     }
 
@@ -73,11 +76,31 @@ protected:
 REGISTER_FUNCTION(AiGenerateContent)
 {
     factory.registerFunction<FunctionAiGenerateContent>(FunctionDocumentation{
-        .description = "Generates text content from a prompt using an LLM.",
+        .description = R"(
+Generates free-form text content from a prompt using an LLM provider.
+
+The function sends the prompt to the configured AI provider and returns the generated text.
+An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
+If no system prompt is given, the default system prompt is: `You are a helpful assistant. Provide a clear and concise response.`
+
+The first argument can optionally be a named collection that specifies the provider, model, endpoint,
+and API key. If omitted, the [default_ai_provider](/operations/settings/settings#default_ai_provider) setting is used.
+Note that `default_ai_provider` is empty by default and must be explicitly set to a named collection before
+omitting the collection argument.
+)",
         .syntax = "aiGenerateContent([collection,] prompt[, system_prompt][, temperature])",
-        .arguments = {{"prompt", "The user prompt or question"}, {"system_prompt", "Optional system prompt to guide generation"}},
-        .returned_value = {"Generated text as String.", {"String"}},
-        .examples = {{"basic", "SELECT aiGenerateContent('Explain what ClickHouse is in one sentence')", ""}},
+        .arguments
+        = {{"collection", "Name of a named collection containing provider credentials and configuration. Optional if `default_ai_provider` is set.", {"String"}},
+           {"prompt", "The user prompt or question to send to the model.", {"String"}},
+           {"system_prompt", "Optional system-level instruction that guides the model's behavior (e.g. persona, output format).", {"String"}},
+           {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},
+        .returned_value = {"The generated text response, or NULL if the request failed and `ai_on_error` is set to `'null'`.", {"Nullable(String)"}},
+        .examples
+        = {{"Simple question", "SELECT aiGenerateContent('ai_credentials', 'What is 2 + 2? Reply with just the number.')", "4"},
+           {"With system prompt", "SELECT aiGenerateContent('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')", ""},
+           {"Summarize column values",
+            "SELECT article_title, aiGenerateContent('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5",
+            ""}},
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
 }
