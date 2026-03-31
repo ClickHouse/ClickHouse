@@ -2,6 +2,12 @@ union_rejects_point
 intersect_rejects_point
 linestring_geometry_treated_as_ring
 4
+multilinestring_geometry_treated_as_polygon
+4
+linestring_geometry_intersect
+4
+multilinestring_geometry_intersect
+4
 convex_hull_rejects_nan
 union_rejects_nan
 intersect_rejects_nan

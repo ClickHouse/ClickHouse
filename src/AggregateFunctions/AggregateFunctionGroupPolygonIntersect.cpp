@@ -293,20 +293,21 @@ void registerAggregateFunctionGroupPolygonIntersection(AggregateFunctionFactory 
     FunctionDocumentation::Description description = R"(
 Computes the intersection of all polygonal geometries in the group.
 
-Accepts `Ring`, `Polygon`, and `MultiPolygon` arguments. Rejects `Point`, `LineString`, and `MultiLineString` with an exception.
+For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `LineString`, and `MultiLineString`.
 
-`Geometry` arguments are also supported if the active value is polygonal.
+For `Geometry` (Variant) columns, accepts any active value that is structurally polygonal. Because `Ring` and `LineString` are structurally identical in `ColumnVariant` (both are `Array(Tuple(Float64, Float64))`), and similarly `Polygon` and `MultiLineString`, a `LineString` or `MultiLineString` stored in a `Geometry` column will be interpreted as `Ring` or `Polygon` respectively.
 
-Empty geometry inputs are treated as the absorbing element: once an empty geometry is encountered, the result is immediately empty.
+Empty geometry inputs are absorbing: once encountered, the result is immediately empty.
 
-The result is a `MultiPolygon` representing the geometric intersection of all input geometries. Returns an empty `MultiPolygon` for empty groups or when the intersection is empty. Invalid polygonal input raises an exception.
+The result is a `MultiPolygon`. Returns an empty `MultiPolygon` for empty groups or when the intersection is empty. Invalid polygonal input raises an exception.
 
 The function short-circuits: once the accumulated intersection becomes empty, further inputs are ignored.
     )";
     FunctionDocumentation::Syntax syntax = "groupPolygonIntersection(polygon)";
     FunctionDocumentation::Arguments arguments
         = {{"polygon",
-            "A polygonal geometry value (`Ring`, `Polygon`, `MultiPolygon`) or a `Geometry` value containing one of these types.",
+            "A polygonal geometry value (`Ring`, `Polygon`, `MultiPolygon`) or a `Geometry` value with a structurally polygonal "
+            "active type.",
             {"Ring", "Polygon", "MultiPolygon", "Geometry"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the intersection as a MultiPolygon.", {"MultiPolygon"}};
     FunctionDocumentation::Examples examples
