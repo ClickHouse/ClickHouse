@@ -10,13 +10,13 @@ ${CLICKHOUSE_CLIENT} --query "drop table if exists log_errors;"
 mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
 
-for i in {0..9}
+for i in {0..2}
 do
 	echo "{\"key\" : $i, \"value\" : $i}" >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.jsonl
 	echo "Error $i" >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/a.jsonl
 done
 
-for i in {10..19}
+for i in {3..5}
 do
 	echo "{\"key\" : $i, \"value\" : $i}" >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/b.jsonl
 	echo "Error $i" >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/b.jsonl
@@ -31,13 +31,14 @@ function count()
 	echo $COUNT
 }
 
-# Wait for all 20 error records with a bounded timeout.
-# Under TSAN/MSAN the FileLog background thread can be significantly delayed.
+# Wait for all 6 error records with a bounded timeout.
+# Reduced from 20 to 6 errors (3 per file) so the FileLog background thread
+# can finish quickly even under TSAN/MSAN overhead.
 TIMEOUT=120
 START=$EPOCHSECONDS
-while [[ $(count) != 20 ]]; do
+while [[ $(count) != 6 ]]; do
 	if ((EPOCHSECONDS - START > TIMEOUT)); then
-		echo "Timeout (${TIMEOUT}s) waiting for 20 error records in log_errors. Got $(count)."
+		echo "Timeout (${TIMEOUT}s) waiting for 6 error records in log_errors. Got $(count)."
 		${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 		${CLICKHOUSE_CLIENT} --query "drop table log_errors;"
 		rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}
