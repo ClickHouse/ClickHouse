@@ -84,6 +84,7 @@ private:
         Classifier(const ClassifierSettings & settings_, const StatePtr & state_, const String & classifier_name);
         bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
+        WorkloadSettings getWorkloadSettings(const String & resource_name) const override;
     private:
         const ClassifierSettings settings;
         std::unordered_map<String, ResourceLink> resources; // accessible resources by names

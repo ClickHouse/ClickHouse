@@ -1,6 +1,7 @@
 [profile.release]
 debug = false
 strip = true
+@RUST_RELEASE_PROFILE_EXTRA@
 
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]
@@ -23,9 +24,9 @@ replace-with = "vendored-sources"
 git = "https://github.com/azat-rust/cursive-flexi-logger-view"
 branch = "next"
 replace-with = "vendored-sources"
-[source."git+https://github.com/azat-rust/cursive?branch=chdig-25.7"]
+[source."git+https://github.com/azat-rust/cursive?branch=chdig-next"]
 git = "https://github.com/azat-rust/cursive"
-branch = "chdig-25.7"
+branch = "chdig-next"
 replace-with = "vendored-sources"
 [source."git+https://github.com/azat-rust/cursive_table_view?branch=next"]
 git = "https://github.com/azat-rust/cursive_table_view"

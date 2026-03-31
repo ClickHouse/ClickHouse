@@ -1,4 +1,5 @@
 #include <Backups/BackupCoordinationFileInfos.h>
+#include <Backups/getBackupDataFileName.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 
@@ -109,7 +110,7 @@ void BackupCoordinationFileInfos::prepare() const
         }
     };
 
-    if (plain_backup)
+    if (config.plain_backup)
     {
         const auto try_resolve_reference = [&](BackupFileInfo & reference)
         {
@@ -194,7 +195,7 @@ void BackupCoordinationFileInfos::prepare() const
                 if (inserted)
                 {
                     /// Found a new file.
-                    info.data_file_name = info.file_name;
+                    info.data_file_name = getBackupDataFileName(info, config.data_file_name_generator, config.data_file_name_prefix_length);
                     info.data_file_index = i;
                     ++num_files;
                     total_size_of_files += info.size - info.base_size;

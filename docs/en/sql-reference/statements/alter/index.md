@@ -23,6 +23,7 @@ Most `ALTER TABLE` queries modify table settings or data:
 | [TTL](/sql-reference/statements/alter/ttl.md)                               |
 | [STATISTICS](/sql-reference/statements/alter/statistics.md)                 |
 | [APPLY DELETED MASK](/sql-reference/statements/alter/apply-deleted-mask.md) |
+| [APPLY PATCHES](/sql-reference/statements/alter/apply-patches.md)           |
 
 :::note
 Most `ALTER TABLE` queries are supported only for [\*MergeTree](/engines/table-engines/mergetree-family/index.md), [Merge](/engines/table-engines/special/merge.md) and [Distributed](/engines/table-engines/special/distributed.md) tables.
@@ -33,7 +34,6 @@ These `ALTER` statements manipulate views:
 | Statement                                                                           | Description                                                                          |
 |-------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
 | [ALTER TABLE ... MODIFY QUERY](/sql-reference/statements/alter/view.md)     | Modifies a [Materialized view](/sql-reference/statements/create/view) structure.                                       |
-| [ALTER LIVE VIEW](/sql-reference/statements/alter/view#alter-live-view-statement) | Refreshes a [Live view](/sql-reference/statements/create/view.md/#live-view).|
 
 These `ALTER` statements modify entities related to role-based access control:
 
@@ -67,7 +67,7 @@ Entries for finished mutations are not deleted right away (the number of preserv
 
 For non-replicated tables, all `ALTER` queries are performed synchronously. For replicated tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
-For `ALTER` queries that creates mutations (e.g.: including, but not limited to `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`) the synchronicity is defined by the [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting.
+For `ALTER` queries that creates mutations (e.g.: including, but not limited to `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`) the synchronicity is defined by the [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting.
 
 For other `ALTER` queries which only modify the metadata, you can use the [alter_sync](/operations/settings/settings#alter_sync) setting to set up waiting.
 

@@ -10,6 +10,7 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -18,6 +19,9 @@
 
 namespace DB
 {
+
+class DeduplicationInfo;
+using DeduplicationInfoPtr = std::shared_ptr<DeduplicationInfo>;
 
 void buildScatterSelector(
     const ColumnRawPtrs & columns,
@@ -28,6 +32,13 @@ void buildScatterSelector(
 
 struct MergeTreeTemporaryPart
 {
+    /// temporary_directory_lock must be declared before part, because members are destroyed
+    /// in reverse declaration order. The part destructor removes the temporary directory on disk
+    /// (via removeIfNeeded), and this must happen while the lock is still held. Otherwise,
+    /// ReplicatedMergeTreeCleanupThread can race: it checks temporary_parts, finds the name
+    /// already unregistered, and removes the directory before the part destructor gets to it.
+    scope_guard temporary_directory_lock;
+
     MergeTreeData::MutableDataPartPtr part;
 
     struct Stream
@@ -37,7 +48,6 @@ struct MergeTreeTemporaryPart
     };
 
     std::vector<Stream> streams;
-    scope_guard temporary_directory_lock;
 
     void cancel();
     void finalize();
@@ -62,7 +72,7 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, AsyncInsertInfoPtr async_insert_info = nullptr);
+    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.

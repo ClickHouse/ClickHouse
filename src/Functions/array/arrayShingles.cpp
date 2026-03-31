@@ -97,7 +97,7 @@ REGISTER_FUNCTION(ArrayShingles)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayShingles([1, 2, 3, 4], 3) as res;", "[[1, 2, 3], [2, 3, 4]]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayShingles>(documentation);
 }

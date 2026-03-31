@@ -1,5 +1,6 @@
 import http
 import json
+import math
 import os
 import requests
 import snappy
@@ -164,18 +165,24 @@ def extract_protobuf_from_remote_read_response(response):
 
 
 # Executes an instant query using Prometheus HTTP API.
-def execute_query_via_http_api(host, port, path, query, timestamp=None):
+def execute_query_via_http_api(
+    host, port, path, query, timestamp=None, expect_error=False
+):
     response = get_response_to_http_api_query(host, port, path, query, timestamp)
+    if expect_error:
+        return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
 # Executes a range query using Prometheus HTTP API.
 def execute_range_query_via_http_api(
-    host, port, path, query, start_timestamp, end_timestamp, step
+    host, port, path, query, start_timestamp, end_timestamp, step, expect_error=False
 ):
     response = get_response_to_http_api_range_query(
         host, port, path, query, start_timestamp, end_timestamp, step
     )
+    if expect_error:
+        return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
@@ -214,3 +221,147 @@ def extract_data_from_http_api_response(response):
         print(f"Response: {response.text}")
         raise Exception(f"Got response with unexpected status: {status}")
     return json.dumps(response_json["data"])
+
+
+def extract_error_from_http_api_response(response):
+    if response.status_code == requests.codes.ok:
+        print(f"Response: {response.text}")
+        raise Exception(
+            f"Expected an error but succeeded with response {response.text}"
+        )
+    return response.text
+
+
+# Returns whether the differences between correspondent values of two HTTP API responses are not greater than `eps`.
+# Also may return False if any response has unexpected structure.
+def http_api_response_close_to(response1, response2, eps=0):
+    if response1 == response2:
+        return True
+
+    if eps == 0:
+        return False
+
+    json1 = json.loads(response1)
+    json2 = json.loads(response2)
+
+    if (
+        ("resultType" not in json1)
+        or ("resultType" not in json2)
+        or ("result" not in json1)
+        or ("result" not in json2)
+    ):
+        return False
+
+    result_type1 = json1["resultType"]
+    result_type2 = json2["resultType"]
+    result1 = json1["result"]
+    result2 = json2["result"]
+
+    if (
+        (result_type1 != result_type2)
+        or (not isinstance(result1, list))
+        or (not isinstance(result2, list))
+    ):
+        return False
+
+    if result_type1 == "scalar":
+        return time_value_pair_close_to(result1, result2, eps=eps)
+
+    if result_type1 == "vector":
+        if len(result1) != len(result2):
+            return False
+
+        for i, ts1 in enumerate(result1):
+            ts2 = result2[i]
+
+            if (
+                ("metric" not in ts1)
+                or ("metric" not in ts2)
+                or ("value" not in ts1)
+                or ("value" not in ts2)
+            ):
+                return False
+
+            labels1 = ts1["metric"]
+            labels2 = ts2["metric"]
+            time_value_pair1 = ts1["value"]
+            time_value_pair2 = ts2["value"]
+
+            if (labels1 != labels2) or (
+                not time_value_pair_close_to(
+                    time_value_pair1, time_value_pair2, eps=eps
+                )
+            ):
+                return False
+
+        return True
+
+    if result_type1 == "matrix":
+        if len(result1) != len(result2):
+            return False
+
+        for i, ts1 in enumerate(result1):
+            ts2 = result2[i]
+
+            if (
+                ("metric" not in ts1)
+                or ("metric" not in ts2)
+                or ("values" not in ts1)
+                or ("values" not in ts2)
+            ):
+                return False
+
+            labels1 = ts1["metric"]
+            labels2 = ts2["metric"]
+            values1 = ts1["values"]
+            values2 = ts2["values"]
+
+            if (
+                (labels1 != labels2)
+                or (not isinstance(values1, list))
+                or (not isinstance(values2, list))
+                or (len(values1) != len(values2))
+            ):
+                return False
+
+            for j, time_value_pair1 in enumerate(values1):
+                time_value_pair2 = values2[j]
+                if not time_value_pair_close_to(
+                    time_value_pair1, time_value_pair2, eps=eps
+                ):
+                    return False
+
+        return True
+
+    # Unexpected result_type
+    return False
+
+
+def time_value_pair_close_to(time_value_pair1, time_value_pair2, eps):
+    if (
+        (not isinstance(time_value_pair1, list))
+        or (not isinstance(time_value_pair2, list))
+        or (len(time_value_pair1) != 2)
+        or (len(time_value_pair2) != 2)
+    ):
+        # Response has unexpected structure
+        return False
+
+    timestamp1, value1 = time_value_pair1
+    timestamp2, value2 = time_value_pair2
+
+    if float(timestamp1) != float(timestamp2):
+        return False
+    if not value_close_to(float(value1), float(value2), eps):
+        return False
+
+    return True
+
+
+def value_close_to(value1, value2, eps):
+    if math.isfinite(value1):
+        return math.isfinite(value2) and abs(float(value1) - float(value2)) <= eps
+    elif math.isinf(value1):
+        return math.isinf(value2) and (value1 > 0) == (value2 > 0)
+    else:
+        return math.isnan(value2)

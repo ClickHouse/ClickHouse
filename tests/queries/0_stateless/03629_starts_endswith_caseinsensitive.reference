@@ -4,11 +4,11 @@
 1	0
 -- Test startsWithCaseInsensitive UTF8 non-Latin
 1	0
--- Test startsWithUTF8CaseInsensitive ASCII
+-- Test startsWithCaseInsensitiveUTF8 ASCII
 1	0
--- Test startsWithUTF8CaseInsensitive UTF8 Latin
+-- Test startsWithCaseInsensitiveUTF8 UTF8 Latin
 1	1
--- Test startsWithUTF8CaseInsensitive UTF8 non-Latin
+-- Test startsWithCaseInsensitiveUTF8 UTF8 non-Latin
 1	0
 -- Test endsWithCaseInsensitive ASCII
 1	0
@@ -16,12 +16,36 @@
 1	0
 -- Test endsWithCaseInsensitive UTF8 non-Latin
 1	0
--- Test endsWithUTF8CaseInsensitive ASCII
+-- Test endsWithCaseInsensitiveUTF8 ASCII
 1	0
--- Test endsWithUTF8CaseInsensitive UTF8 Latin
+-- Test endsWithCaseInsensitiveUTF8 UTF8 Latin
 1	1
--- Test endsWithUTF8CaseInsensitive UTF8 non-Latin
+-- Test endsWithCaseInsensitiveUTF8 UTF8 non-Latin
 1	0
 -- Test invalid UTF8
 1	0
 1	0
+-- Test constant needle with haystack - prefix
+1
+1
+1
+1
+1
+-- Test constant needle with haystack - suffix
+1
+1
+1
+1
+1
+-- Test column needle with haystack - prefix
+3
+1
+0
+3
+1
+-- Test column needle with haystack - suffix
+3
+1
+0
+3
+1

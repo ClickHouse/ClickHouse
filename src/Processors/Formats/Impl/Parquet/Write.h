@@ -46,6 +46,7 @@ struct WriteOptions
     bool write_page_statistics = true;
     bool write_page_index = true;
     bool write_bloom_filter = true;
+    bool write_checksums = true;
 
     size_t max_statistics_size = 4096;
 

@@ -8,7 +8,7 @@ endif()
 set(RDKAFKA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
 
 set(SRCS
-#  "${RDKAFKA_SOURCE_DIR}/cJSON.c"    # see below
+  "${RDKAFKA_SOURCE_DIR}/cJSON.c"    # see below
   "${RDKAFKA_SOURCE_DIR}/crc32c.c"
 #  "${RDKAFKA_SOURCE_DIR}/lz4.c"      # WITH_LZ4_EXT
 #  "${RDKAFKA_SOURCE_DIR}/lz4frame.c" # WITH_LZ4_EXT
@@ -133,14 +133,6 @@ endif()
 
 if(WITH_SASL_OAUTHBEARER)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c")
-endif()
-
-## there is a conflict with the cJSON library from aws-s3
-# so normally we link cJSON lirary from contrib/aws (which have some extra patches to be thread safe)
-# but if we don't use aws-s3, we need to link the cJSON library from librdkafka (hacky)
-# which is (potentially) not thread safe (see https://github.com/confluentinc/librdkafka/issues/4159 ),
-if(NOT ENABLE_AWS_S3)
-   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/cJSON.c")
 endif()
 
 add_library(_rdkafka ${SRCS})

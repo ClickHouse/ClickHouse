@@ -51,7 +51,7 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         boost::program_options::notify(options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < queries.txt\n";
             std::cout << desc << "\n";
@@ -65,7 +65,7 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv)
                       options["hosts"].as<Strings>(),
                       valueToOptional<double>(options["time-limit"]),
                       valueToOptional<double>(options["report-delay"]),
-                      options.count("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
+                      options.contains("continue_on_errors") ? std::optional<bool>(true) : std::nullopt,
                       valueToOptional<size_t>(options["iterations"]));
 
         try

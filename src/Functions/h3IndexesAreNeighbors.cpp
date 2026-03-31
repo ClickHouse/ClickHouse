@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -8,9 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -28,7 +25,11 @@ class FunctionH3IndexesAreNeighbors : public IFunction
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IndexesAreNeighbors>(); }
+    H3Validator validator;
+
+    explicit FunctionH3IndexesAreNeighbors(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3IndexesAreNeighbors>(context); }
 
     std::string getName() const override { return name; }
 
@@ -96,8 +97,14 @@ public:
         {
             const UInt64 hindex_origin = data_hindex_origin[row];
             const UInt64 hindex_dest = data_hindex_dest[row];
+            UInt8 res = 0;
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            if (validator.validateCell(hindex_origin) && validator.validateCell(hindex_dest))
+            {
+                int are_neighbors = 0;
+                if (!areNeighborCells(hindex_origin, hindex_dest, &are_neighbors))
+                    res = static_cast<UInt8>(are_neighbors);
+            }
 
             dst_data[row] = res;
         }
@@ -135,7 +142,7 @@ Returns whether or not the provided [H3](#h3-index) indexes are neighbors.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3IndexesAreNeighbors>(documentation);
 }
 

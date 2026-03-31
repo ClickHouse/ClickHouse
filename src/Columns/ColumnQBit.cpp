@@ -2,18 +2,14 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
+#include <IO/Operators.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 ColumnQBit::ColumnQBit(MutableColumnPtr && tuple_, size_t dimension_)
     : tuple(std::move(tuple_))
@@ -75,19 +71,14 @@ void ColumnQBit::doInsertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 #endif
 
-std::pair<String, DataTypePtr> ColumnQBit::getValueNameAndType(size_t n) const
+void ColumnQBit::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    const size_t tuple_size = getBitsCount();
-
-    String type_name = tuple_size == 16 ? "BFloat16"
-        : tuple_size == 32              ? "Float32"
-        : tuple_size == 64              ? "Float64"
-                           : throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected tuple size 16, 32 or 64. Got: {}", tuple_size);
-
-    auto qbit_type = DataTypeFactory::instance().get(type_name);
-    String value_name = "qbit(" + tuple->getValueNameAndType(n).first + ")";
-
-    return {value_name, std::make_shared<DataTypeQBit>(qbit_type, dimension)};
+    if (options.notFull(name_buf))
+    {
+        name_buf << "qbit(";
+        tuple->getValueNameImpl(name_buf, n, options);
+        name_buf << ")";
+    }
 }
 
 void ColumnQBit::get(size_t n, Field & res) const
@@ -98,6 +89,11 @@ void ColumnQBit::get(size_t n, Field & res) const
 ColumnPtr ColumnQBit::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     return ColumnQBit::create(tuple->filter(filt, result_size_hint), dimension);
+}
+
+void ColumnQBit::filter(const Filter & filt)
+{
+    tuple->filter(filt);
 }
 
 void ColumnQBit::expand(const Filter & mask, bool inverted)
@@ -153,9 +149,9 @@ void ColumnQBit::forEachSubcolumnRecursively(RecursiveColumnCallback callback) c
     tuple->forEachSubcolumnRecursively(callback);
 }
 
-void ColumnQBit::prepareForSquashing(const Columns & source_columns, size_t factor)
+void ColumnQBit::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
 {
-    Columns source_tuple_columns;
+    VectorWithMemoryTracking<ColumnPtr> source_tuple_columns;
     source_tuple_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         source_tuple_columns.push_back(assert_cast<const ColumnQBit &>(*source_column).getTuple());

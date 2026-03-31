@@ -63,8 +63,6 @@ public:
         StorageID main_table;
         SharedHeader header;
 
-        bool has_missing_objects = false;
-
         Cluster::ShardInfo shard_info;
 
         /// If we connect to replicas lazily.
@@ -77,7 +75,6 @@ public:
 
     SelectStreamFactory(
         SharedHeader header_,
-        const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
 
@@ -106,7 +103,6 @@ public:
         AdditionalShardFilterGenerator shard_filter_generator);
 
     SharedHeader header;
-    const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
 
@@ -122,8 +118,7 @@ private:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false) const;
+        AdditionalShardFilterGenerator shard_filter_generator) const;
 };
 
 }

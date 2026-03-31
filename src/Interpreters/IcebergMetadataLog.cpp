@@ -3,28 +3,17 @@
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Processors/LimitTransform.h>
-#include <Processors/Port.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/SelectQueryInfo.h>
-#include <base/Decimal.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/typeid_cast.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -94,7 +83,7 @@ void insertRowToLogTable(
     String row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
-    const String & file_path,
+    const Iceberg::IcebergPathFromMetadata & file_path,
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
@@ -118,7 +107,7 @@ void insertRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
             .table_path = table_path,
-            .file_path = file_path,
+            .file_path = file_path.serialize(),
             .metadata_content = row,
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});

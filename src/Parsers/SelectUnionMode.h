@@ -7,7 +7,7 @@ namespace DB
 {
 enum class SelectUnionMode : uint8_t
 {
-    UNION_DEFAULT,
+    UNION_DEFAULT = 0,
     UNION_ALL,
     UNION_DISTINCT,
     EXCEPT_DEFAULT,

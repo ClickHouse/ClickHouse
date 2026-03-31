@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Storages/StorageTimeSeriesSelector.h>
 #include <TableFunctions/ITableFunction.h>
 
 
@@ -37,10 +36,7 @@ private:
         return "";
     }
 
-    StorageID time_series_storage_id = StorageID::createEmpty();
-    PrometheusQueryTree instant_selector;
-    Field min_time;
-    Field max_time;
+    StorageTimeSeriesSelector::Configuration config;
 };
 
 }

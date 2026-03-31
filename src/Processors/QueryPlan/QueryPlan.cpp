@@ -41,6 +41,10 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("projections", int(projections));
     changes.emplace_back("sorting", int(sorting));
     changes.emplace_back("distributed", int(distributed));
+    changes.emplace_back("input_headers", int(input_headers));
+    changes.emplace_back("column_structure", int(column_structure));
+    changes.emplace_back("pretty", int(pretty));
+    changes.emplace_back("compact", int(compact));
 
     return changes;
 }
@@ -98,7 +102,7 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
                 step->getName(),
-                root->step->getName(),
+                plans[i]->root->step->getName(),
                 plan_header->dumpStructure(),
                 step_header->dumpStructure());
     }
@@ -217,7 +221,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
-    last_pipeline->addResources(std::move(resources));
+    last_pipeline->addResources(resources);
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
     return last_pipeline;
@@ -235,21 +239,40 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
             map.add("Description", description);
     }
 
+    const auto dump_column = [](JSONBuilder::JSONArray & header_array, const ColumnWithTypeAndName & column)
+    {
+        auto column_map = std::make_unique<JSONBuilder::JSONMap>();
+        column_map->add("Name", column.name);
+        if (column.type)
+            column_map->add("Type", column.type->getName());
+        header_array.add(std::move(column_map));
+    };
+
     if (options.header && step.hasOutputHeader())
     {
         auto header_array = std::make_unique<JSONBuilder::JSONArray>();
 
         for (const auto & output_column : *step.getOutputHeader())
-        {
-            auto column_map = std::make_unique<JSONBuilder::JSONMap>();
-            column_map->add("Name", output_column.name);
-            if (output_column.type)
-                column_map->add("Type", output_column.type->getName());
-
-            header_array->add(std::move(column_map));
-        }
+            dump_column(*header_array, output_column);
 
         map.add("Header", std::move(header_array));
+    }
+
+    if (options.input_headers && !step.getInputHeaders().empty())
+    {
+        auto input_headers_array = std::make_unique<JSONBuilder::JSONArray>();
+
+        for (const auto & input_header : step.getInputHeaders())
+        {
+            auto header_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & input_column : *input_header)
+                dump_column(*header_array, input_column);
+
+            input_headers_array->add(std::move(header_array));
+        }
+
+        map.add("Input Headers", std::move(input_headers_array));
     }
 
     if (options.actions)
@@ -325,19 +348,27 @@ static void explainStep(
     IQueryPlanStep & step,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_lengs)
+    size_t max_description_length)
 {
-    std::string prefix(settings.offset, ' ');
-    settings.out << prefix;
-    settings.out << step.getName();
+
+    settings.out << settings.header_prefix << step.getName();
+    const auto & prefix = settings.detail_prefix;
 
     auto description = step.getStepDescription();
-    if (max_description_lengs)
-        description = description.substr(0, max_description_lengs);
+    if (max_description_length)
+        description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 
     settings.out.write('\n');
+
+    const auto dump_column = [&out = settings.out, dump_structure = options.column_structure](const ColumnWithTypeAndName & column)
+    {
+        if (dump_structure)
+            column.dumpStructure(out);
+        else
+            column.dumpNameAndType(out);
+    };
 
     if (options.header)
     {
@@ -355,16 +386,53 @@ static void explainStep(
             for (const auto & elem : *step.getOutputHeader())
             {
                 if (!first)
-                    settings.out << "\n" << prefix << "        ";
+                    settings.out << '\n' << prefix << "        ";
 
                 first = false;
-                elem.dumpNameAndType(settings.out);
-                if (elem.column && isColumnLazy(*elem.column.get()))
-                    settings.out << " (Lazy)";
+                dump_column(elem);
             }
         }
         settings.out.write('\n');
+    }
 
+    if (options.input_headers)
+    {
+        const std::string_view input_headers_title = "Input headers: ";
+        const std::string_view input_header_indent = "               ";
+        settings.out << prefix << input_headers_title;
+
+        bool first_input_header = true;
+        size_t input_header_index = 0;
+
+        if (step.getInputHeaders().empty())
+        {
+            settings.out << "No input headers";
+        }
+        else
+        {
+            for (const auto & input_header : step.getInputHeaders())
+            {
+                if (!first_input_header)
+                    settings.out << '\n' << prefix << input_header_indent;
+                first_input_header = false;
+
+                settings.out << fmt::format("#{}", input_header_index);
+                ++input_header_index;
+
+                if (input_header->empty())
+                {
+                    settings.out << " Empty header";
+                    continue;
+                }
+
+                for (const auto & elem : *input_header)
+                {
+                    settings.out << '\n' << prefix << input_header_indent;
+                    dump_column(elem);
+                }
+            }
+        }
+        settings.out.write('\n');
     }
 
     if (options.sorting)
@@ -394,41 +462,126 @@ std::string debugExplainStep(IQueryPlanStep & step)
 {
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
-    IQueryPlanStep::FormatSettings settings{.out = out};
+    IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = ""};
     explainStep(step, settings, options, 0);
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
+std::string debugExplainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.header = true, .actions = true};
+    plan.explainPlan(out, options);
+    return out.str();
+}
+
+namespace ExplainPlan
+{
+    struct Frame
+    {
+        QueryPlan::Node * node = {};
+        size_t next_child = 0;
+        bool is_description_printed = false;
+        bool is_last_child = true;
+    };
+};
+
+static void buildTreeOffset(
+    const std::deque<ExplainPlan::Frame> & frames,
+    const ExplainPlan::Frame & current,
+    IQueryPlanStep::FormatSettings & settings_format)
+{
+    if (frames.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Frames stack for building tree offset cannot be empty");
+
+    settings_format.header_prefix.clear();
+    settings_format.detail_prefix.clear();
+
+    if (frames.size() == 1)
+    {
+        settings_format.detail_prefix += current.node->children.empty() ? "   " : "│  ";
+        return;
+    }
+
+    for (size_t i = 0; i < frames.size() - 2; ++i)
+    {
+        const auto & segment = frames[i + 1].is_last_child ? "   " : "│  ";
+        settings_format.header_prefix += segment;
+        settings_format.detail_prefix += segment;
+    }
+
+    settings_format.header_prefix += current.is_last_child ? "└──" : "├──";
+    settings_format.detail_prefix += current.is_last_child ? "   " : "│  ";
+    settings_format.detail_prefix += current.node->children.empty() ? "   " : "│  ";
+}
+
+static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
+{
+    settings_format.offset = (frames.size() - 1 + indent_offset) * settings_format.base_indent;
+    settings_format.header_prefix = std::string(settings_format.offset, settings_format.indent_char);
+    settings_format.detail_prefix = settings_format.header_prefix;
+}
+
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset, size_t max_description_length) const
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
-
-    struct Frame
-    {
-        Node * node = {};
-        bool is_description_printed = false;
-        size_t next_child = 0;
+    IQueryPlanStep::FormatSettings settings{
+        .out = buffer,
+        .header_prefix = "",
+        .detail_prefix = "",
+        .write_header = options.header,
+        .compact = options.compact,
+        .pretty = options.pretty
     };
 
-    std::stack<Frame> stack;
-    stack.push(Frame{.node = root});
+    auto skip_expressions = [&](Node * node) -> Node * {
+        while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
+            node = node->children[0];
+        return node;
+    };
+
+    std::deque<ExplainPlan::Frame> stack;
+
+    if (settings.pretty)
+    {
+        QueryPlanFormat::formatOutputColumns(settings.out, *root->step, settings.header_prefix);
+        settings.out << '\n';
+    }
+
+    /// Skip the expression steps if we are in the compact mode
+    auto * first_node = skip_expressions(root);
+
+    stack.push_back(ExplainPlan::Frame{.node = first_node});
 
     while (!stack.empty())
     {
-        auto & frame = stack.top();
+        auto & frame = stack.back();
 
         if (!frame.is_description_printed)
         {
-            settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_lengs);
+            if (options.pretty)
+                buildTreeOffset(stack, frame, settings);
+            else
+                buildIndentOffset(stack, settings, offset);
+
+            explainStep(*frame.node->step, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
         if (frame.next_child < frame.node->children.size())
         {
-            stack.push(Frame{frame.node->children[frame.next_child]});
+            size_t child_idx = frame.next_child;
+
+            bool is_last = (frame.next_child + 1) == (frame.node->children.size());
+            /// Skip the expression steps if we are in the compact mode
+            auto * next_node = skip_expressions(frame.node->children[child_idx]);
+
+            stack.push_back(ExplainPlan::Frame{next_node,
+                0,
+                false,
+                is_last
+            });
             ++frame.next_child;
         }
         else
@@ -436,9 +589,9 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
             auto child_plans = frame.node->step->getChildPlans();
 
             for (const auto & child_plan : child_plans)
-                child_plan->explainPlan(buffer, options, indent + stack.size());
+                child_plan->explainPlan(buffer, options, offset + stack.size());
 
-            stack.pop();
+            stack.pop_back();
         }
     }
 }
@@ -450,14 +603,14 @@ static void explainPipelineStep(IQueryPlanStep & step, IQueryPlanStep::FormatSet
     size_t current_offset = settings.offset;
     step.describePipeline(settings);
     if (current_offset == settings.offset)
-        settings.offset += settings.indent;
+        settings.offset += settings.base_indent;
 }
 
 void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const
 {
     checkInitialized();
 
-    IQueryPlanStep::FormatSettings settings{.out = buffer, .write_header = options.header};
+    IQueryPlanStep::FormatSettings settings{.out = buffer, .header_prefix = "", .detail_prefix = "", .write_header = options.header};
 
     struct Frame
     {
@@ -504,6 +657,8 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 
     QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
     QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes, *this);
+    if (optimization_settings.materialize_ctes)
+        QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
 }
@@ -672,9 +827,10 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
     return new_plan;
 }
 
-QueryPlan QueryPlan::clone() const
+void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 {
-    QueryPlan result;
+    if (!subplan_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
 
     struct Frame
     {
@@ -683,10 +839,7 @@ QueryPlan QueryPlan::clone() const
         std::vector<Node *> children = {};
     };
 
-    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
-    result.root = &result.nodes.back();
-
-    std::vector<Frame> nodes_to_process{ Frame{ .node = root, .clone = result.root } };
+    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {
@@ -702,43 +855,98 @@ QueryPlan QueryPlan::clone() const
             size_t next_child = frame.children.size();
             auto * child = frame.node->children[next_child];
 
-            result.nodes.emplace_back(Node{ .step = {} });
-            result.nodes.back().children.reserve(child->children.size());
-            auto * child_clone = &result.nodes.back();
+            nodes.emplace_back(Node{ .step = {} });
+            nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &nodes.back();
 
             frame.children.push_back(child_clone);
 
             nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
         }
     }
+}
+
+QueryPlan QueryPlan::clone() const
+{
+    QueryPlan result;
+    result.nodes.emplace_back(Node{ .step = {}, .children = {} });
+    auto * current_subplan_copy_root = &result.nodes.back();
+
+    result.cloneInplace(current_subplan_copy_root, root);
+    result.root = current_subplan_copy_root;
 
     return result;
 }
 
+void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
+{
+    if (!subplan_root)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot clone subplan in place because subplan root is null");
 
-void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
+    struct Frame
+    {
+        Node * node;
+        Node * clone;
+        std::vector<Node *> children = {};
+    };
+
+    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+
+    while (!nodes_to_process.empty())
+    {
+        auto & frame = nodes_to_process.back();
+        if (frame.children.size() == frame.node->children.size())
+        {
+            frame.clone->step = frame.node->step->clone();
+            frame.clone->children = std::move(frame.children);
+            nodes_to_process.pop_back();
+        }
+        else
+        {
+            size_t next_child = frame.children.size();
+            auto * child = frame.node->children[next_child];
+
+            nodes.emplace_back(Node{ .step = {} });
+            nodes.back().children.reserve(child->children.size());
+            auto * child_clone = &nodes.back();
+
+            frame.children.push_back(child_clone);
+
+            nodes_to_process.push_back(Frame{ .node = child, .clone = child_clone });
+        }
+    }
+}
+
+
+void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan)
 {
     chassert(nodes.end() != std::find_if(cbegin(nodes), cend(nodes), [node](const Node & n) { return n.step == node->step; }));
 
-    const auto & header = node->step->getOutputHeader();
-    const auto & plan_header = plan->getCurrentHeader();
-
-    if (!blocksHaveEqualStructure(*header, *plan_header))
+    if (node->step)
     {
-        auto converting_dag = ActionsDAG::makeConvertingActions(
-            plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+        const auto & header = node->step->getOutputHeader();
+        const auto & plan_header = plan.getCurrentHeader();
 
-        auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
-        plan->addStep(std::move(expression));
+        if (!blocksHaveEqualStructure(*header, *plan_header))
+        {
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                plan_header->getColumnsWithTypeAndName(),
+                header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
+
+            auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
+            plan.addStep(std::move(expression));
+        }
     }
 
-    nodes.splice(nodes.end(), std::move(plan->nodes));
+    nodes.splice(nodes.end(), std::move(plan.nodes));
 
-    node->step = std::move(plan->getRootNode()->step);
-    node->children = std::move(plan->getRootNode()->children);
+    node->step = std::move(plan.getRootNode()->step);
+    node->children = std::move(plan.getRootNode()->children);
 
-    max_threads = std::max(max_threads, plan->max_threads);
-    resources = std::move(plan->resources);
+    max_threads = std::max(max_threads, plan.max_threads);
+    resources = std::move(plan.resources);
 }
 
 }

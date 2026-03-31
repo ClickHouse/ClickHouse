@@ -86,7 +86,10 @@ void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline,
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
 
     UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
+
+    Chunk chunk;
+    if (num_rows > 0)
+        chunk = Chunk(std::move(res_columns), num_rows);
 
     pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk))));
 }
@@ -102,7 +105,7 @@ void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
     if (sample.columns() == 0)
         return;
 
-    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample);
+    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample, context);
 
     /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
     if (filter)

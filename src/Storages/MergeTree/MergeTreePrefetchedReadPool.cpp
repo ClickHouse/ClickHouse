@@ -1,21 +1,18 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -33,6 +30,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
 }
 
 namespace ErrorCodes
@@ -70,15 +68,15 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     MergeTreePrefetchedReadPool & read_prefetch)
     : is_valid(true)
     , readers(std::move(readers_))
-    , prefetch_runner(pool, "ReadPrepare")
+    , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
-    prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
+    prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
 
     for (const auto & reader : readers.prewhere)
-        prefetch_runner(read_prefetch.createPrefetchedTask(reader.get(), priority_));
+        prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(reader.get(), priority_));
 
     for (const auto & patch_reader : readers.patches)
-        prefetch_runner(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
+        prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
 
     fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
     {
@@ -119,21 +117,23 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : MergeTreeReadPoolBase(
-        std::move(parts_),
-        std::move(mutations_snapshot_),
-        std::move(shared_virtual_fields_),
-        index_read_tasks_,
-        storage_snapshot_,
-        row_level_filter_,
-        prewhere_info_,
-        actions_settings_,
-        reader_settings_,
-        column_names_,
-        settings_,
-        params_,
-        context_)
+          std::move(parts_),
+          std::move(mutations_snapshot_),
+          std::move(shared_virtual_fields_),
+          index_read_tasks_,
+          storage_snapshot_,
+          row_level_filter_,
+          prewhere_info_,
+          actions_settings_,
+          reader_settings_,
+          column_names_,
+          settings_,
+          params_,
+          context_)
+    , updater(std::move(updater_))
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger(
           "MergeTreePrefetchedReadPool("
@@ -182,7 +182,9 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
     [[maybe_unused]] TaskHolder prev;
     [[maybe_unused]] const Priority highest_priority{reader_settings.read_settings.priority.value + 1};
-    assert(prefetch_queue.top().task->priority == highest_priority);
+    /// Due to the difference in `estimated_memory_usage_for_single_prefetch` for different parts (column sizes might be different), it might happen that for the given thread, task number N won't fit in the prefetch memory limit, but the next task will.
+    /// So the top of the queue may have a priority higher than `highest_priority`.
+    assert(prefetch_queue.top().task->priority >= highest_priority);
 
     while (!prefetch_queue.empty())
     {
@@ -330,9 +332,9 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
     if (task.isValidReadersFuture())
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges);
-
-    return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges, updater);
+    else
+        return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task, updater);
 }
 
 void MergeTreePrefetchedReadPool::fillPerPartStatistics()
@@ -354,7 +356,16 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
 
         auto update_stat_for_column = [&](const auto & column_name)
         {
-            size_t column_size = read_info.data_part->getColumnSize(column_name).data_compressed;
+            size_t column_size = 0;
+            auto column = read_info.data_part->tryGetColumn(column_name);
+            if (column)
+            {
+                if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
+                    column_size = read_info.data_part->getSubcolumnSize(column_name).data_compressed;
+                else
+                    column_size = read_info.data_part->getColumnSize(column->getNameInStorage()).data_compressed;
+            }
+
             part_stat.estimated_memory_usage_for_single_prefetch += std::min<size_t>(column_size, settings[Setting::prefetch_buffer_size]);
             ++part_stat.required_readers_num;
         };
@@ -407,7 +418,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             part_stat.prefetch_step_marks = std::max<size_t>(
                 1,
                 static_cast<size_t>(
-                    std::round(static_cast<double>(settings[Setting::filesystem_prefetch_step_bytes]) / part_stat.approx_size_of_mark)));
+                    std::round(static_cast<double>(settings[Setting::filesystem_prefetch_step_bytes]) / static_cast<double>(part_stat.approx_size_of_mark))));
         }
 
         part_stat.prefetch_step_marks = std::max(part_stat.prefetch_step_marks, per_part_infos[i]->min_marks_per_task);

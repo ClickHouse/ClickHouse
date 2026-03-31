@@ -1,7 +1,8 @@
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
+#include <Common/Exception.h>
+#include <Formats/FormatSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -56,6 +57,11 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+
+
+IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"greedy",             JoinOrderAlgorithm::GREEDY},
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -115,6 +121,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
+
+IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"state", FormatSettings::AggregateFunctionInputFormat::State},
+    {"value", FormatSettings::AggregateFunctionInputFormat::Value},
+    {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
@@ -177,7 +188,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
      {"prql", Dialect::prql},
-     {"promql", Dialect::promql}})
+     {"promql", Dialect::promql},
+     {"polyglot", Dialect::polyglot}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -208,6 +220,12 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", AlterColumnSecondaryIndexMode::THROW},
+     {"drop", AlterColumnSecondaryIndexMode::DROP},
+     {"rebuild", AlterColumnSecondaryIndexMode::REBUILD},
+     {"compatibility", AlterColumnSecondaryIndexMode::COMPATIBILITY}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", ParallelReplicasMode::AUTO},
@@ -250,7 +268,23 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE}})
+                        {"delete", ObjectStorageQueueAction::DELETE},
+                        {"move", ObjectStorageQueueAction::MOVE},
+                        {"tag", ObjectStorageQueueAction::TAG}})
+
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ObjectStorageQueuePartitioningMode::NONE},
+     {"NONE", ObjectStorageQueuePartitioningMode::NONE},
+     {"hive", ObjectStorageQueuePartitioningMode::HIVE},
+     {"HIVE", ObjectStorageQueuePartitioningMode::HIVE},
+     {"regex", ObjectStorageQueuePartitioningMode::REGEX},
+     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
+
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ObjectStorageQueueBucketingMode::PATH},
+     {"PATH", ObjectStorageQueueBucketingMode::PATH},
+     {"partition", ObjectStorageQueueBucketingMode::PARTITION},
+     {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -305,7 +339,10 @@ IMPLEMENT_SETTING_ENUM(
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
-     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -313,7 +350,11 @@ IMPLEMENT_SETTING_ENUM(
     {{"lru", FileCachePolicy::LRU},
      {"LRU", FileCachePolicy::LRU},
      {"slru", FileCachePolicy::SLRU},
-     {"SLRU", FileCachePolicy::SLRU}})
+     {"SLRU", FileCachePolicy::SLRU},
+     {"lru_overcommit", FileCachePolicy::LRU_OVERCOMMIT},
+     {"LRU_OVERCOMMIT", FileCachePolicy::LRU_OVERCOMMIT},
+     {"slru_overcommit", FileCachePolicy::SLRU_OVERCOMMIT},
+     {"SLRU_OVERCOMMIT", FileCachePolicy::SLRU_OVERCOMMIT}})
 
 IMPLEMENT_SETTING_ENUM(
     VectorSearchFilterStrategy,
@@ -331,14 +372,20 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeSerializationInfoVersion::DEFAULT},
+    {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeStringSerializationVersion::DEFAULT},
+    {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
      {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeNullableSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeNullableSerializationVersion::BASIC},
+     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,
@@ -346,6 +393,19 @@ IMPLEMENT_SETTING_ENUM(
     {{"v1", MergeTreeObjectSerializationVersion::V1},
      {"v2", MergeTreeObjectSerializationVersion::V2},
      {"v3", MergeTreeObjectSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeMapSerializationVersion::BASIC},
+     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeMapBucketsStrategy,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},
+     {"sqrt", MergeTreeMapBucketsStrategy::SQRT},
+     {"linear", MergeTreeMapBucketsStrategy::LINEAR}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSharedDataSerializationVersion,
@@ -369,6 +429,12 @@ IMPLEMENT_SETTING_ENUM(
      {"none", SearchOrphanedPartsDisks::NONE}})
 
 IMPLEMENT_SETTING_ENUM(
+    DecorrelationJoinKind,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"left", DecorrelationJoinKind::LEFT},
+     {"right", DecorrelationJoinKind::RIGHT}})
+
+IMPLEMENT_SETTING_ENUM(
     IcebergMetadataLogLevel,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", IcebergMetadataLogLevel::None},
@@ -377,4 +443,36 @@ IMPLEMENT_SETTING_ENUM(
      {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
      {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
      {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
+
+IMPLEMENT_SETTING_ENUM(
+    ObjectStorageGranularityLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"file", ObjectStorageGranularityLevel::FILE},
+    {"bucket", ObjectStorageGranularityLevel::BUCKET}})
+
+IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ArrowFlightDescriptorType::Path},
+     {"command", ArrowFlightDescriptorType::Command}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE},
+     {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
+     {"disable", DeduplicateInsertSelectMode::DISABLE},
+     {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"backward_compatible_choice", DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE},
+     {"enable", DeduplicateInsertMode::ENABLE},
+     {"disable", DeduplicateInsertMode::DISABLE}})
+
+IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
+    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
+     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
+     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
+
+IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"raw", JemallocProfileFormat::Raw},
+     {"symbolized", JemallocProfileFormat::Symbolized},
+     {"collapsed", JemallocProfileFormat::Collapsed}})
+
 }

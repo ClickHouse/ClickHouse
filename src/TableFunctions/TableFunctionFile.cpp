@@ -3,7 +3,6 @@
 #include <TableFunctions/TableFunctionFile.h>
 
 #include <TableFunctions/registerTableFunctions.h>
-#include <Access/Common/AccessFlags.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,7 +31,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
     if (context->getApplicationType() != Context::ApplicationType::LOCAL)
     {
         ITableFunctionFileLike::parseFirstArguments(arg, context);
-        StorageFile::parseFileSource(std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+        file_source = StorageFile::FileSource::parse(filename, context);
         return;
     }
 
@@ -48,8 +47,7 @@ void TableFunctionFile::parseFirstArguments(const ASTPtr & arg, const ContextPtr
         else if (filename == "stderr")
             fd = STDERR_FILENO;
         else
-            StorageFile::parseFileSource(
-                std::move(filename), filename, path_to_archive, context->getSettingsRef()[Setting::allow_archive_path_syntax]);
+            file_source = StorageFile::FileSource::parse(filename, context);
     }
     else if (type == Field::Types::Int64 || type == Field::Types::UInt64)
     {
@@ -66,11 +64,13 @@ std::optional<String> TableFunctionFile::tryGetFormatFromFirstArgument()
 {
     if (fd >= 0)
         return FormatFactory::instance().tryGetFormatFromFileDescriptor(fd);
-    return FormatFactory::instance().tryGetFormatFromFileName(filename);
+
+    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
+    return file_source->format_from_filenames;
 }
 
 StoragePtr TableFunctionFile::getStorage(
-    const String & source,
+    const String & /*source*/,
     const String & format_,
     const ColumnsDescription & columns,
     ContextPtr global_context,
@@ -90,13 +90,13 @@ StoragePtr TableFunctionFile::getStorage(
         ConstraintsDescription{},
         String{},
         global_context->getSettingsRef()[Setting::rename_files_after_processing],
-        path_to_archive,
     };
 
     if (fd >= 0)
         return std::make_shared<StorageFile>(fd, args);
 
-    return std::make_shared<StorageFile>(source, global_context->getUserFilesPath(), false, args);
+    chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
+    return std::make_shared<StorageFile>(*file_source, args);
 }
 
 ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
@@ -105,23 +105,16 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
     {
         if (fd >= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema inference is not supported for table function '{}' with file descriptor", getName());
-        size_t total_bytes_to_read = 0;
 
-        Strings paths;
-        std::optional<StorageFile::ArchiveInfo> archive_info;
-        if (path_to_archive.empty())
-            paths = StorageFile::getPathsList(filename, context->getUserFilesPath(), context, total_bytes_to_read);
-        else
-            archive_info
-                = StorageFile::getArchiveInfo(path_to_archive, filename, context->getUserFilesPath(), context, total_bytes_to_read);
+        chassert(file_source); /// TableFunctionFile::parseFirstArguments() initializes either `fd` or `file_source`.
 
         ColumnsDescription columns;
         if (format == "auto")
-            columns = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context, archive_info).first;
+            columns = StorageFile::getTableStructureAndFormatFromFile(file_source->paths, compression_method, std::nullopt, context, file_source->archive_info).first;
         else
-            columns = StorageFile::getTableStructureFromFile(format, paths, compression_method, std::nullopt, context, archive_info);
+            columns = StorageFile::getTableStructureFromFile(format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info);
 
-        auto sample_path = paths.empty() ? String{} : paths.front();
+        auto sample_path = file_source->paths.empty() ? String{} : file_source->paths.front();
 
         HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
             columns,
@@ -138,7 +131,7 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionFile>();
+    factory.registerFunction<TableFunctionFile>({});
 }
 
 }

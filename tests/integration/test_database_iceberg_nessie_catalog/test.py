@@ -24,7 +24,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.test_tools import TSV, csv_compare
 
-BASE_URL_LOCAL = "http://localhost:19120/iceberg/"
 BASE_URL = "http://nessie:19120/iceberg/"
 CATALOG_NAME = "demo"
 WAREHOUSE_NAME = "warehouse"
@@ -94,14 +93,17 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     assert "HIDDEN" in show_result
 
 
+def get_nessie_local_url(cluster):
+    return f"http://localhost:{cluster.iceberg_rest_catalog_port}/iceberg/"
+
+
 def load_catalog_impl(started_cluster):
-    minio_ip = started_cluster.get_instance_ip('minio')
-    s3_endpoint = f"http://{minio_ip}:9002"
+    s3_endpoint = f"http://127.0.0.1:{started_cluster.iceberg_minio_port}"
 
     return RestCatalog(
         name="my_catalog",
         warehouse=WAREHOUSE_NAME,
-        uri=BASE_URL_LOCAL,
+        uri=get_nessie_local_url(started_cluster),
         token="dummy",
         **{
             "s3.endpoint": s3_endpoint,
@@ -185,7 +187,7 @@ def test_list_tables(started_cluster):
     assert (
         "\n".join(sorted(tables_list))
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{namespace_prefix}%' ORDER BY name"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{namespace_prefix}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
         ).strip()
     )
 

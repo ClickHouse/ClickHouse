@@ -1,3 +1,7 @@
+set optimize_syntax_fuse_functions = 0;
+
+set enable_analyzer = 1;
+
 drop table if exists tab;
 create table tab (x UInt32, y UInt32) engine = MergeTree order by x;
 
@@ -8,6 +12,8 @@ set optimize_sorting_by_input_stream_properties=1;
 set optimize_aggregation_in_order=1;
 set enable_memory_bound_merging_of_aggregation_results=1;
 set prefer_localhost_replica=1;
+set optimize_distributed_group_by_sharding_key = 1;
+set optimize_syntax_fuse_functions = 0;
 
 -- Nothing is working here :(
 

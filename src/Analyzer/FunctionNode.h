@@ -67,6 +67,8 @@ public:
     NullsAction getNullsAction() const { return nulls_action; }
     void setNullsAction(NullsAction action) { nulls_action = action; }
 
+    void markAsOperator(bool val = true) { this->is_operator = val; }
+
     /// Get parameters
     const ListNode & getParameters() const { return children[parameters_child_index]->as<const ListNode &>(); }
 
@@ -219,6 +221,8 @@ private:
     NullsAction nulls_action = NullsAction::EMPTY;
     IResolvedFunctionPtr function;
     bool wrap_with_nullable = false;
+    /// Function was parsed as operator. This option is only needed to make AST formatting more consistent.
+    bool is_operator = false;
 
     static constexpr size_t parameters_child_index = 0;
     static constexpr size_t arguments_child_index = 1;

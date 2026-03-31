@@ -37,7 +37,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryCompPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }

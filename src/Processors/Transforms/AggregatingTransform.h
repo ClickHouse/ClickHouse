@@ -6,18 +6,10 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
-}
 
 namespace DB
 {
@@ -34,6 +26,9 @@ public:
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 struct AggregatingTransformParams
 {
     Aggregator::Params params;
@@ -46,27 +41,30 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    Block header;
 
-    AggregatingTransformParams(SharedHeader header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(SharedHeader header_, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header_, params))
         , final(final_)
+        , header(*header_)
     {
     }
 
     AggregatingTransformParams(
-        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        const Block & header_, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header_, params))
         , final(final_)
+        , header(header_)
     {
     }
 
-    Block getHeader() const { return aggregator.getHeader(final); }
+    Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
+    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData
@@ -80,47 +78,7 @@ struct ManyAggregatedData
             elem = std::make_shared<AggregatedDataVariants>();
     }
 
-    ~ManyAggregatedData()
-    {
-        try
-        {
-            if (variants.size() <= 1)
-                return;
-
-            // Aggregation states destruction may be very time-consuming.
-            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::DestroyAggregatesThreads,
-                CurrentMetrics::DestroyAggregatesThreadsActive,
-                CurrentMetrics::DestroyAggregatesThreadsScheduled,
-                variants.size());
-
-            for (auto && variant : variants)
-            {
-                if (variant->size() < 100'000) // some seemingly reasonable constant
-                    continue;
-
-                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-                if (variant->aggregator)
-                {
-                    pool->scheduleOrThrowOnError(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
-                        {
-                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
-
-                            my_variant.reset();
-                        });
-                }
-            }
-
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    ~ManyAggregatedData();
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
@@ -144,7 +102,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -155,7 +113,9 @@ public:
         size_t max_threads,
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
-        bool skip_merging_ = false);
+        bool skip_merging_ = false,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -189,7 +149,8 @@ private:
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
+    /// If we aggregate partitioned data merging is not needed.
+    bool skip_merging = false;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -209,6 +170,8 @@ private:
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
     std::list<TemporaryBlockStreamHolder> tmp_files;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void initGenerate();
 };

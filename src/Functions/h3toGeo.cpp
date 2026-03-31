@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -14,9 +14,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -39,6 +36,7 @@ namespace
 class FunctionH3ToGeo : public IFunction
 {
     const bool h3togeo_lon_lat_result_order;
+    H3Validator validator;
 public:
     static constexpr auto name = "h3ToGeo";
 
@@ -46,6 +44,7 @@ public:
 
     explicit FunctionH3ToGeo(ContextPtr context)
         : h3togeo_lon_lat_result_order(context->getSettingsRef()[Setting::h3togeo_lon_lat_result_order])
+        , validator(context)
     {
     }
 
@@ -107,10 +106,18 @@ public:
         {
             H3Index h3index = data[row];
             LatLng coord{};
+            lon_data[row] = 0;
+            lat_data[row] = 0;
 
-            cellToLatLng(h3index,&coord);
-            lon_data[row] = radsToDegs(coord.lng);
-            lat_data[row] = radsToDegs(coord.lat);
+            if (validator.validateCell(h3index))
+            {
+                H3Error err = cellToLatLng(h3index, &coord);
+                if (!err)
+                {
+                    lon_data[row] = radsToDegs(coord.lng);
+                    lat_data[row] = radsToDegs(coord.lat);
+                }
+            }
         }
 
         MutableColumns columns;
@@ -161,7 +168,7 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeo>(documentation);
 }
 

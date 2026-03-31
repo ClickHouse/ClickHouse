@@ -2,11 +2,8 @@
 
 -- Tests pre vs. post-filtering for vector search.
 
-SET use_query_condition_cache = 0;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -138,7 +135,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT DISTINCT ProfileEvents['USearchSearchCount']
 FROM system.query_log
-WHERE log_comment = '02354_vector_search_post_filter_strategy_query1'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND log_comment = '02354_vector_search_post_filter_strategy_query1'
 AND current_database = currentDatabase()
 AND type = 'QueryFinish';
 

@@ -5,11 +5,12 @@
 
 DROP TABLE IF EXISTS tab;
 
-SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET allow_statistics = 1;
+SET use_statistics = 1;
 SET enable_analyzer = 1;
 
 SET materialize_statistics_on_insert = 0;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 CREATE TABLE tab
 (

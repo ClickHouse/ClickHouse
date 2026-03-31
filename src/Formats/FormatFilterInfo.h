@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/threadPoolCallbackRunner.h>
+#include <exception>
+#include <mutex>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Block.h>
 
@@ -20,14 +21,20 @@ class ColumnMapper
 {
 public:
     /// clickhouse_column_name -> field_id
+    /// For tuples, the map contains both the tuple itself and all its elements, e.g. {t, t.x, t.y}.
+    /// Note that parquet schema reader has to apply the mapping to all tuple fields recursively
+    /// even if the whole tuple was requested, because the names of the fields may be different.
     void setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_);
 
     const std::unordered_map<String, Int64> & getStorageColumnEncoding() const { return storage_encoding; }
+    const std::unordered_map<Int64, String> & getFieldIdToClickHouseName() const { return field_id_to_clickhouse_name; }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
 
 private:
     std::unordered_map<String, Int64> storage_encoding;
+    std::unordered_map<Int64, String> field_id_to_clickhouse_name;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
@@ -63,9 +70,6 @@ struct FormatFilterInfo
     /// all columns of the sample block.
     Block additional_columns;
 
-    /// IInputFormat implementation may put arbitrary state here.
-    std::shared_ptr<void> opaque;
-
     ColumnMapperPtr column_mapper;
 
 private:
@@ -76,13 +80,9 @@ private:
 public:
     bool hasFilter() const;
 
-    /// Creates `key_condition` and `additional_columns`.
-    /// Call inside initOnce.
-    void initKeyCondition(const Block & keys);
-
-    /// Does std::call_once(init_flag, ...).
-    /// If a previous init attempt threw exception, rethrows it instead retrying.
-    void initOnce(std::function<void()> f);
+    /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
+    /// If a previous init attempt threw an exception, rethrows it instead of retrying.
+    void initKeyConditionOnce(const Block & keys);
 };
 
 }

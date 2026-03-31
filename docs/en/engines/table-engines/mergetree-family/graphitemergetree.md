@@ -3,11 +3,11 @@ description: 'Designed for thinning and aggregating/averaging (rollup) Graphite 
 sidebar_label: 'GraphiteMergeTree'
 sidebar_position: 90
 slug: /engines/table-engines/mergetree-family/graphitemergetree
-title: 'GraphiteMergeTree'
+title: 'GraphiteMergeTree table engine'
 doc_type: 'guide'
 ---
 
-# GraphiteMergeTree
+# GraphiteMergeTree table engine
 
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 

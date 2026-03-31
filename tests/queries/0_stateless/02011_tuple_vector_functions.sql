@@ -87,6 +87,29 @@ SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT LpNorm((1, 2, 3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT max2(1, 2, -1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+SELECT '-- Test excess arguments for binary tuple operators';
+SELECT tuplePlus((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleMinus((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleMultiply((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleDivide((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Test wrong type (non-tuple) for binary tuple operators';
+SELECT tuplePlus(1, (3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tupleMinus((1, 2), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Test excess arguments for unary tuple operator';
+SELECT tupleNegate((1, 2), (3, 4)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Test wrong type for unary tuple operator';
+SELECT tupleNegate(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Test excess arguments for tuple-by-number operators';
+SELECT tupleMultiplyByNumber((1, 2), 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleDivideByNumber((1, 2), 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Test wrong type (non-tuple) for tuple-by-number operators';
+SELECT tupleMultiplyByNumber(5, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT LpNorm((1, 2, 3), materialize(4.)); -- { serverError ILLEGAL_COLUMN }
 
 SELECT tuple(*, 1) + tuple(2, *) FROM numbers(3);
@@ -95,7 +118,7 @@ SELECT cosineDistance(tuple(*, * + 1), tuple(1, 2)) FROM numbers(1, 3);
 SELECT -tuple(NULL, * * 2, *) FROM numbers(2);
 
 SELECT normL1((1, 1)), normL2((1, 1)), normLinf((1, 1)), normLp((1, 1), 1.);
-SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.);
+SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.), round(distanceCosine((1, 1), (1, 1)), 7);
 SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normalizeLp((1, 1), 1.);
 
 SELECT LpNorm((1, 2, 3), 2.2);

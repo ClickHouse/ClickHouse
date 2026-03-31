@@ -18,8 +18,8 @@ class FileSegment;
 class WriteBufferToFileSegment : public WriteBufferFromFileBase, public IReadableWriteBuffer, public IFilesystemCacheWriteBuffer
 {
 public:
-    explicit WriteBufferToFileSegment(FileSegment * file_segment_);
-    explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder);
+    explicit WriteBufferToFileSegment(FileSegment * file_segment_, size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_, size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     void nextImpl() override;
 

@@ -15,6 +15,9 @@ namespace DB
 
 class Context;
 
+struct UnavailableShardTracker;
+using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
+
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
@@ -31,7 +34,6 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-/// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
@@ -67,7 +69,8 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -210,17 +213,23 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
+    void setUnavailableShardTracker(UnavailableShardTrackerPtr tracker) { unavailable_shard_tracker = std::move(tracker); }
+
+    void setDistributedFanout(size_t total_connections) { distributed_fanout = total_connections; }
+
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
-    bool needToSkipUnavailableShard() const;
+    bool needToSkipUnavailableShard();
 
     bool isReplicaUnavailable() const { return extension && extension->parallel_reading_coordinator && connections->size() == 0; }
 
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
+
+    bool isFinished() const { return finished; }
 
 private:
     RemoteQueryExecutor(
@@ -311,6 +320,12 @@ private:
     StorageID main_table = StorageID::createEmpty();
 
     LoggerPtr log = nullptr;
+
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
+    bool shard_skip_reported = false;
+
+    /// Total number of remote connections across all shards, used to scale interactive_delay.
+    size_t distributed_fanout = 0;
 
     GetPriorityForLoadBalancing::Func priority_func;
 

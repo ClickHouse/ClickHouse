@@ -1,6 +1,7 @@
 #include <IO/SynchronousReader.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -84,13 +85,12 @@ IAsynchronousReader::Result SynchronousReader::execute(Request request)
 
     /// It reports real time spent including the time spent while thread was preempted doing nothing.
     /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-    /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
-    /// (NetlinkMetricsProvider has about 500K RPS).
+    /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
     watch.stop();
     ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
     ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
-    return Result{ .size = bytes_read, .offset = request.ignore };
+    return Result{ .buf = request.buf, .size = bytes_read, .offset = request.ignore, .file_offset_of_buffer_end = request.offset + bytes_read };
 }
 
 }

@@ -59,7 +59,8 @@ void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader
         auto converting_dag = ActionsDAG::makeConvertingActions(
             block.cloneEmpty().getColumnsWithTypeAndName(),
             remote.getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
 
         auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
         converting_actions->execute(block);

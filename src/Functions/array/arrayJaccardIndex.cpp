@@ -55,7 +55,7 @@ private:
         {
             LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            res[i] = static_cast<ResultType>(intersect_size) / (sizes.left_size + sizes.right_size - intersect_size);
+            res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(sizes.left_size + sizes.right_size - intersect_size);
         }
     }
 
@@ -161,7 +161,7 @@ REGISTER_FUNCTION(ArrayJaccardIndex)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res", "0.3333333333333333"}};
     FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayJaccardIndex>(documentation);
 }

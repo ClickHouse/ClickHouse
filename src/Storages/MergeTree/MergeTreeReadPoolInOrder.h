@@ -22,7 +22,8 @@ public:
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     String getName() const override { return "ReadPoolInOrder"; }
     bool preservesOrderOfRanges() const override { return true; }
@@ -32,6 +33,7 @@ public:
 private:
     const bool has_limit_below_one_block;
     const MergeTreeReadType read_type;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     std::vector<MarkRanges> per_part_mark_ranges;
 };

@@ -3,7 +3,8 @@
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
-#include <arrow/util/rle_encoding.h>
+#include <arrow/util/rle_encoding_internal.h>
+#include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -20,6 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -35,6 +37,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace DB::Parquet
@@ -250,7 +253,76 @@ struct StatisticsStringRef
         int t = memcmp(a.ptr, b.ptr, std::min(a.len, b.len));
         if (t != 0)
             return t;
-        return a.len - b.len;
+        return int(a.len) - int(b.len);
+    }
+};
+
+struct StatisticsStringCopy
+{
+    bool empty = true;
+    String min;
+    String max;
+
+    void add(parquet::ByteArray x)
+    {
+        addMin(x);
+        addMax(x);
+        empty = false;
+    }
+
+    void merge(const StatisticsStringCopy & s)
+    {
+        if (s.empty)
+            return;
+        addMin(parquet::ByteArray(static_cast<UInt32>(s.min.size()), reinterpret_cast<const uint8_t *>(s.min.data())));
+        addMax(parquet::ByteArray(static_cast<UInt32>(s.max.size()), reinterpret_cast<const uint8_t *>(s.max.data())));
+        empty = false;
+    }
+
+    void clear() { *this = {}; }
+
+    parq::Statistics get(const WriteOptions & options) const
+    {
+        parq::Statistics s;
+        if (empty)
+            return s;
+        if (min.size() <= options.max_statistics_size)
+        {
+            s.__set_min_value(std::string(min.data(), min.size()));
+            s.__set_is_min_value_exact(true);
+        }
+        if (max.size() <= options.max_statistics_size)
+        {
+            s.__set_max_value(std::string(max.data(), max.size()));
+            s.__set_is_max_value_exact(true);
+        }
+        return s;
+    }
+
+    void addMin(parquet::ByteArray x)
+    {
+        if (empty || compare(x, min) < 0)
+        {
+            // assign to String to make a copy only when we update min
+            min.assign(reinterpret_cast<const char *>(x.ptr), x.len);
+        }
+    }
+
+    void addMax(parquet::ByteArray x)
+    {
+        if (empty || compare(x, max) > 0)
+        {
+            // assign to String to make a copy only when we update max
+            max.assign(reinterpret_cast<const char *>(x.ptr), x.len);
+        }
+    }
+
+    static int compare(parquet::ByteArray a, const String & b)
+    {
+        int t = memcmp(a.ptr, b.data(), std::min(a.len, static_cast<UInt32>(b.size())));
+        if (t != 0)
+            return t;
+        return int(a.len) - int(b.size());
     }
 };
 
@@ -276,7 +348,7 @@ struct ConverterNumeric
 
     const To * getBatch(size_t offset, size_t count)
     {
-        if constexpr (sizeof(*column.getData().data()) == sizeof(To))
+        if constexpr (sizeof(*column.getData().data()) == sizeof(To) && !std::is_same_v<To, bool>)
             return reinterpret_cast<const To *>(column.getData().data() + offset);
         else
         {
@@ -303,9 +375,14 @@ struct ConverterDateTime64WithMultiplier
     {
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
-            /// Not checking overflow because DateTime64 values should already be in the range where
-            /// they fit in Int64 at any allowed scale (i.e. up to nanoseconds).
-            buf[i] = column.getData()[offset + i].value * multiplier;
+        {
+            Int64 value = column.getData()[offset + i].value;
+            if (common::mulOverflow(value, multiplier, buf[i]))
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "DateTime64 value {} is out of range for Parquet timestamp (multiplier {})",
+                    value, multiplier);
+        }
         return buf.data();
     }
 };
@@ -344,8 +421,8 @@ struct ConverterString
         buf.resize(count);
         for (size_t i = 0; i < count; ++i)
         {
-            StringRef s = column.getDataAt(offset + i);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
+            std::string_view s = column.getDataAt(offset + i);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
         return buf.data();
     }
@@ -372,11 +449,50 @@ struct ConverterEnumAsString
         for (size_t i = 0; i < count; ++i)
         {
             const T value = data[offset + i];
-            const StringRef s = enum_type->getNameForValue(value);
-            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size), reinterpret_cast<const uint8_t *>(s.data));
+            const std::string_view s = enum_type->getNameForValue(value);
+            buf[i] = parquet::ByteArray(static_cast<UInt32>(s.size()), reinterpret_cast<const uint8_t *>(s.data()));
         }
         return buf.data();
     }
+};
+
+struct ConverterUUID
+{
+    using Statistics = StatisticsFixedStringRef;
+
+    const ColumnVector<UUID> & column;
+    PODArray<parquet::FixedLenByteArray> buf;
+    PODArray<UUID> swapped_buf;
+
+    explicit ConverterUUID(const ColumnPtr & c) : column(assert_cast<const ColumnVector<UUID> &>(*c)) {}
+
+    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    {
+        buf.resize(count);
+        swapped_buf.resize(count);
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            UUID res = column.getData()[offset + i];
+            auto * bytes = reinterpret_cast<uint8_t *>(&res);
+
+            if constexpr (std::endian::native == std::endian::little)
+            {
+                std::reverse(bytes, bytes + 8);
+                std::reverse(bytes + 8, bytes + 16);
+            }
+            else
+            {
+                std::swap_ranges(bytes, bytes + 8, bytes + 8);
+            }
+
+            swapped_buf[i] = res;
+            buf[i].ptr = reinterpret_cast<const uint8_t *>(&swapped_buf[i]);
+        }
+        return buf.data();
+    }
+
+    size_t fixedStringSize() { return 16; }
 };
 
 struct ConverterFixedString
@@ -442,7 +558,7 @@ struct ConverterNumberAsFixedString
 
 struct ConverterJSON
 {
-    using Statistics = StatisticsStringRef;
+    using Statistics = StatisticsStringCopy;
 
     const ColumnObject & column;
     DataTypePtr data_type;
@@ -581,19 +697,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
 void encodeRepDefLevelsRLE(const UInt8 * data, size_t size, UInt8 max_level, PODArray<char> & out)
 {
-    using arrow::util::RleEncoder;
+    using arrow::util::RleBitPackedEncoder;
 
     chassert(max_level > 0);
     size_t offset = out.size();
     size_t prefix_size = sizeof(Int32);
 
     int bit_width = bitScanReverse(max_level) + 1;
-    int max_rle_size = RleEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
-                       RleEncoder::MinBufferSize(bit_width);
+    auto max_rle_size = RleBitPackedEncoder::MaxBufferSize(bit_width, static_cast<int>(size)) +
+                        RleBitPackedEncoder::MinBufferSize(bit_width);
 
     out.resize(offset + prefix_size + max_rle_size);
 
-    RleEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), max_rle_size, bit_width);
+    RleBitPackedEncoder encoder(reinterpret_cast<uint8_t *>(out.data() + offset + prefix_size), static_cast<int>(max_rle_size), bit_width);
     for (size_t i = 0; i < size; ++i)
         encoder.Put(data[i]);
     encoder.Flush();
@@ -650,9 +766,9 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     ///  * bloom filter size must be at most 128 MiB.
     /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
     /// requires this.
-    double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
+    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
     size_t num_blocks = 1;
-    while (num_blocks < requested_num_blocks)
+    while (static_cast<double>(num_blocks) < requested_num_blocks)
     {
         if (num_blocks >= 4 * 1024 * 1024)
             return;
@@ -815,8 +931,12 @@ void writeColumnImpl(
         d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
-        /// We could also put checksum in `header.crc`, but apparently no one uses it:
-        /// https://issues.apache.org/jira/browse/PARQUET-594
+
+        if (options.write_checksums)
+        {
+            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            header.__set_crc(crc);
+        }
 
         parq::Statistics page_stats = page_statistics.get(options);
         bool has_null_count = s.max_def == 1 && s.max_rep == 0;
@@ -877,6 +997,12 @@ void writeColumnImpl(
         header.__isset.dictionary_page_header = true;
         header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
         header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
+
+        if (options.write_checksums)
+        {
+            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            header.__set_crc(crc);
+        }
 
         writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
 
@@ -1156,6 +1282,13 @@ void writeColumnChunkBody(
         case TypeIndex::IPv6:    F(IPv6); break;
         #undef F
 
+        case TypeIndex::UUID:
+            writeColumnImpl<parquet::FLBAType>(s,
+                options,
+                out,
+                ConverterUUID(s.primitive_column));
+        break;
+
         #define D(source_type) \
             writeColumnImpl<parquet::FLBAType>( \
                 s, options, out, ConverterDecimal<source_type>(s.primitive_column))
@@ -1244,7 +1377,13 @@ void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-    chassert(!r.columns.empty());
+
+    if (r.columns.empty())
+    {
+        /// All columns are empty tuples, there are no pages.
+        r.__set_file_offset(file.offset);
+    }
+    else
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);
@@ -1311,7 +1450,12 @@ void writeFileFooter(FileWriteState & file,
         meta.num_rows += rg.row_group.num_rows;
         meta.row_groups.push_back(std::move(rg.row_group));
     }
-    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
+
+    /// parquet.thrift sayeth:
+    ///  >  This should be in the format
+    ///  >  <Application> version <App Version> (build <App Build Hash>).
+    ///  >  e.g. impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
+    meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <string_view>
 #include <variant>
 
 namespace DB
@@ -17,6 +17,9 @@ class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
@@ -28,6 +31,14 @@ struct ExplainPlanOptions;
 
 class IQueryPlanStep;
 using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
+
+namespace QueryPlanFormat
+{
+    std::string_view trimColumnIdentifier(std::string_view name);
+    void formatOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+    void formatJoinOutputColumns(WriteBuffer & out, const IQueryPlanStep & step, const String & prefix);
+}
+
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -78,10 +89,14 @@ public:
     struct FormatSettings
     {
         WriteBuffer & out;
+        std::string header_prefix;
+        std::string detail_prefix;
         size_t offset = 0;
-        const size_t indent = 2;
+        const size_t base_indent = 2;
         const char indent_char = ' ';
         const bool write_header = false;
+        bool compact = false;
+        bool pretty = false;
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
@@ -118,6 +133,31 @@ public:
 
     virtual bool hasCorrelatedExpressions() const;
 
+    virtual bool supportsDataflowStatisticsCollection() const { return false; }
+
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);
+
+    /// Returns true if the step has implemented removeUnusedColumns.
+    virtual bool canRemoveUnusedColumns() const { return false; }
+
+    enum class RemovedUnusedColumns
+    {
+        None,
+        OutputOnly,
+        OutputAndInput
+    };
+
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from
+    /// required_outputs and might contain some other columns too.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    /// The order of the remaining outputs must be preserved.
+    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
+
+    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
+    virtual bool canRemoveColumnsFromOutput() const;
+
 protected:
     virtual void updateOutputHeader() = 0;
 
@@ -132,6 +172,8 @@ protected:
     /// This field is used to store added processors from this step.
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 

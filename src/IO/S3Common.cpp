@@ -21,10 +21,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3GetObjectAttributes;
     extern const Event S3GetObjectMetadata;
     extern const Event S3HeadObject;
-    extern const Event DiskS3GetObjectAttributes;
     extern const Event DiskS3GetObjectMetadata;
     extern const Event DiskS3HeadObject;
 }
@@ -45,6 +43,11 @@ bool S3Exception::isRetryableError() const
     };
 
     return !unretryable_errors.contains(code);
+}
+
+bool S3Exception::isAccessTokenExpiredError() const
+{
+    return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE || code == Aws::S3::S3Errors::UNKNOWN;
 }
 
 }

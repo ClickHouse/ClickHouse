@@ -1,6 +1,7 @@
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -116,6 +117,28 @@ void DirectKeyValueJoin::checkTypesOfKeys(const Block & block) const
     }
 }
 
+static void selectFirstMatchForEachKey(const IColumn::Offsets & offsets, MutableColumns & columns, NullMap & null_map)
+{
+    size_t total_rows = offsets.back();
+    IColumn::Filter filter(total_rows, 0);
+    NullMap filtered_null_map(offsets.size(), 0);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        size_t n = offsets[i] - offsets[i - 1];
+        if (n == 0)
+            continue;
+        filtered_null_map[i] = null_map[offset];
+        filter[offset] = 1;
+        offset += n;
+    }
+
+    for (auto && col : columns)
+        col = IColumn::mutate(col->filter(filter, offsets.size()));
+    null_map = std::move(filtered_null_map);
+}
+
 JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
 {
     const String & key_name = table_join->getOnlyClause().key_names_left[0];
@@ -127,12 +150,35 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     Block right_block_to_use = !right_sample_block_with_storage_column_names.empty() ? right_sample_block_with_storage_column_names : original_right_block;
     const Names & attribute_names = right_block_to_use.getNames();
 
+    bool is_all_join = table_join->strictness() == JoinStrictness::All;
+    bool is_semi_join = table_join->strictness() == JoinStrictness::Semi;
+    bool is_anti_join = table_join->strictness() == JoinStrictness::Anti;
+
     NullMap null_map;
-    Chunk joined_chunk = storage->getByKeys({key_col}, null_map, attribute_names);
+    IColumn::Offsets offsets;
+    Chunk joined_chunk = storage->getByKeys({key_col}, attribute_names, null_map, offsets);
 
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block sample_storage_block = storage->getSampleBlock(attribute_names);
     MutableColumns result_columns = convertBlockStructure(sample_storage_block, right_block_to_use, joined_chunk.mutateColumns(), null_map);
+
+    if (!offsets.empty())
+    {
+        /// For ALL semantics with offsets, replicate left rows
+        if (is_all_join)
+        {
+            MutableColumns replicated_columns = block.mutateColumns();
+            for (auto && col : replicated_columns)
+                col = IColumn::mutate(col->replicate(offsets));
+            block.setColumns(std::move(replicated_columns));
+        }
+        else
+        {
+            /// For ANY/ANTI/SEMI semantics right columns are not replicated
+            /// We need to 'unreplicate' them by keeping only the first match
+            selectFirstMatchForEachKey(offsets, result_columns, null_map);
+        }
+    }
 
     for (size_t i = 0; i < result_columns.size(); ++i)
     {
@@ -141,9 +187,6 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
         block.insert(std::move(col));
     }
 
-    bool is_semi_join = table_join->strictness() == JoinStrictness::Semi;
-    bool is_anti_join = table_join->strictness() == JoinStrictness::Anti;
-
     if (is_anti_join)
     {
         /// invert null_map
@@ -151,14 +194,15 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
             val = !val;
     }
 
+    size_t non_null_rows = countBytesInFilter(null_map);
+    bool has_null_matches = non_null_rows < null_map.size();
+    bool need_filtering = (isInner(table_join->kind()) || (isLeft(table_join->kind()) && (is_semi_join || is_anti_join)));
     /// Filter non joined rows
-    if (isInner(table_join->kind()) || (isLeft(table_join->kind()) && (is_semi_join || is_anti_join)))
+    if (has_null_matches && need_filtering)
     {
         MutableColumns dst_columns = block.mutateColumns();
-        for (auto & col : dst_columns)
-        {
-            col = IColumn::mutate(col->filter(null_map, -1));
-        }
+        for (auto && col : dst_columns)
+            col = IColumn::mutate(col->filter(null_map, non_null_rows));
         block.setColumns(std::move(dst_columns));
     }
 

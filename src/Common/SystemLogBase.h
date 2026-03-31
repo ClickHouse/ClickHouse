@@ -6,6 +6,7 @@
 #include <vector>
 #include <base/types.h>
 
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ThreadPool_fwd.h>
@@ -16,6 +17,7 @@
     M(CrashLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
+    M(BackgroundSchedulePoolLogElement) \
     M(QueryLogElement) \
     M(QueryThreadLogElement) \
     M(QueryViewsLogElement) \
@@ -74,6 +76,9 @@ public:
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.
     virtual Index getLastLogIndex() = 0;
+    /// Notifies the implementation that a manual flush up to `target_index` was requested.
+    virtual void setManualFlushTargetIndex(Index /* target_index */) {}
+
     /// Call this method to wake up the flush thread and flush the data in the background. It is non blocking call
     virtual void notifyFlush(Index expected_flushed_index, bool should_prepare_tables_anyway) = 0;
     /// Call this method to wait until the logs are flushed up to expected_flushed_index. It is blocking call.
@@ -171,7 +176,7 @@ private:
     // Flushed log up to this index, exclusive
     Index flushed_index = 0;
 
-    // The same logic for the prepare tables: if requested_prepar_tables > prepared_tables we need to do prepare
+    // The same logic for the prepare tables: if requested_prepare_tables > prepared_tables we need to do prepare
     // except that initial prepared_tables is -1
     // it is due to the difference: when no logs have been written and we call flush logs
     // it becomes in the state: requested_flush_index = 0 and flushed_index = 0 -- we do not want to do anything

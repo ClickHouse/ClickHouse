@@ -42,6 +42,7 @@ QuerySlot::QuerySlot(ResourceLink link_)
 
 QuerySlot::~QuerySlot()
 {
+    acquired_slot_increment.reset();
     if (granted)
         finish();
 }

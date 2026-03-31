@@ -341,7 +341,9 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
             /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it
             /// as a String, so parsing won't fail.
-            if (field[0] == '0' && field.size() != 1)
+            /// When allow_number_leading_zeros is set (for hive partitioning), skip this check
+            /// because hive partitioning handles leading zeros
+            if (field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros)
                 return std::make_shared<DataTypeString>();
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
@@ -458,7 +460,7 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
             result += fmt::format(
                 ", try_infer_numbers_from_strings={}, read_bools_as_numbers={}, read_bools_as_strings={}, read_objects_as_strings={}, "
                 "read_numbers_as_strings={}, "
-                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, try_infer_objects={}, "
+                "read_arrays_as_strings={}, try_infer_objects_as_tuples={}, infer_incomplete_types_as_strings={}, "
                 "use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects={}",
                 settings.json.try_infer_numbers_from_strings,
                 settings.json.read_bools_as_numbers,
@@ -468,7 +470,6 @@ String getAdditionalFormatInfoByEscapingRule(const FormatSettings & settings, Fo
                 settings.json.read_arrays_as_strings,
                 settings.json.try_infer_objects_as_tuples,
                 settings.json.infer_incomplete_types_as_strings,
-                settings.json.allow_deprecated_object_type,
                 settings.json.use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects);
             break;
         default:

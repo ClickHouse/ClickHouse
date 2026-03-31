@@ -105,11 +105,11 @@ void addFoundRowAll(
 
         for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            if (!known_rows.isKnown(makePairNoInit(it->columns, it->row_num)))
+            if (!known_rows.isKnown(makePairNoInit(&it->columns_info->columns, it->row_num)))
             {
                 added.appendFromBlock(*it, false);
                 ++current_offset;
-                new_known_rows_ptr.emplace_back(it->columns, it->row_num);
+                new_known_rows_ptr.emplace_back(&it->columns_info->columns, it->row_num);
 
                 if (used_flags)
                 {

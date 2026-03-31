@@ -29,6 +29,11 @@ struct StorageInMemoryMetadata
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
+    bool add_minmax_index_for_numeric_columns = false;
+    bool add_minmax_index_for_string_columns = false;
+    bool add_minmax_index_for_temporal_columns = false;
+    /// Needed for compatibility
+    bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -51,7 +56,7 @@ struct StorageInMemoryMetadata
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
+    /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
@@ -268,11 +273,15 @@ struct StorageInMemoryMetadata
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
+    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
+
+    /// If any of the columns has statistics.
+    bool hasStatistics() const;
 
     /// Get version of metadata
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -295,7 +304,10 @@ struct StorageInMemoryMetadata
     std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
-    NameSet getColumnsWithoutDefaultExpressions() const;
+    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
+
+    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
+    void dropImplicitIndicesForColumn(const String & column_name);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import pyarrow as pa
-import pyarrow.flight as fl
 import argparse
 import base64
 import json
+
+import pyarrow as pa
+import pyarrow.flight as fl
 
 
 class FlightServer(fl.FlightServerBase):
@@ -14,14 +15,20 @@ class FlightServer(fl.FlightServerBase):
         )
         self._location = location
         self._schema = pa.schema([("column1", pa.string()), ("column2", pa.string())])
+        self._schema_xyz = pa.schema([("column3", pa.int32()), ("column4", pa.int32())])
         self._tables = dict()
         self._empty_table = pa.table(
             {"column1": pa.array([]), "column2": pa.array([])}, schema=self._schema
         )
         column1_data = pa.array(["test_value_1", "abcadbc", "123456789"])
         column2_data = pa.array(["data1", "text_text_text", "data3"])
+        column3_data = pa.array([1, 2, 3])
+        column4_data = pa.array([4, 5, 6])
         self._tables["ABC"] = pa.table(
             {"column1": column1_data, "column2": column2_data}, schema=self._schema
+        )
+        self._tables["XYZ"] = pa.table(
+            {"column3": column3_data, "column4": column4_data}, schema=self._schema_xyz
         )
 
     def do_get(self, context, ticket):
@@ -41,15 +48,25 @@ class FlightServer(fl.FlightServerBase):
         self._tables[dataset] = pa.concat_tables(tables_to_concat)
 
     def get_schema(self, context, descriptor):
-        return fl.SchemaResult(self._schema)
+        dataset = descriptor.path[0].decode()
+        if dataset in self._tables:
+            return fl.SchemaResult(self._tables[dataset].schema)
+        else:
+            return fl.SchemaResult(self._schema)
 
     def do_action(self, context, action):
         return fl.FlightDescriptor.for_command("Action executed")
 
     def get_flight_info(self, context, descriptor):
-        path_0 = descriptor.path[0].decode()
-        dataset = json.loads(path_0)["dataset"]
-        endpoints = [pa.flight.FlightEndpoint(dataset, [self._location])]
+        descriptor_ok = (descriptor.descriptor_type == fl.DescriptorType.PATH) and (
+            len(descriptor.path) == 1
+        )
+        if not descriptor_ok:
+            raise fl.FlightServerError(
+                f"Descriptor {descriptor} is not supported. Only single-component path descriptors are supported"
+            )
+        ticket = descriptor.path[0]
+        endpoints = [pa.flight.FlightEndpoint(ticket, [self._location])]
         return fl.FlightInfo(self._schema, descriptor, endpoints)
 
 

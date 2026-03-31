@@ -64,7 +64,7 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(const String & name)
+    void start(ThreadName name)
     {
         if (!scheduler.joinable())
             scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
@@ -80,6 +80,8 @@ public:
             scheduler.join();
             if (graceful)
             {
+                // Attach to event queue for graceful shutdown processing
+                EventQueue::SchedulerThread scheduler_thread(&events);
                 // Do the same cycle as schedulerThread() but never block or wait postponed events
                 bool has_work = true;
                 while (has_work)
@@ -232,9 +234,11 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(const String & name)
+    void schedulerThread(ThreadName name)
     {
-        setThreadName(name.c_str(), true);
+        DB::setThreadName(name);
+        EventQueue::SchedulerThread scheduler_thread(&events);
+
         while (!stop_flag.load())
         {
             // Dequeue and execute single request
@@ -250,9 +254,11 @@ private:
     }
 
     Resource * current = nullptr; // round-robin pointer
-    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
+    /// Resources by pointer. Must be destroyed before the "events",
+    /// because the descructor of ISchedulerNode might access the mutex in that queue.
+    std::unordered_map<ISchedulerNode *, Resource> children;
     ThreadFromGlobalPool scheduler;
 };
 

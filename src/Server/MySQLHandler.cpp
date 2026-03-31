@@ -23,6 +23,7 @@
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/config_version.h>
@@ -237,7 +238,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
+    DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -532,7 +533,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        CurrentThread::QueryScope query_scope{query_context};
+        QueryScope query_scope = QueryScope::create(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -564,10 +565,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)

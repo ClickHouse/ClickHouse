@@ -24,7 +24,6 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/FileEncryptionCommon.h>
-#include <IO/WriteBufferFromEncryptedFile.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
@@ -250,8 +249,7 @@ struct Client : DB::S3::Client
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
-            /* get_request_throttler = */ {},
-            /* put_request_throttler = */ {});
+            /* request_throttler = */ {});
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)

@@ -10,7 +10,7 @@ doc_type: 'guide'
 # Custom partitioning key
 
 :::note
-In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by months.
+In most cases you do not need a partition key, and in most other cases you do not need a partition key more granular than by month, unless targeting an observability use case where partitioning by day is common.
 
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::

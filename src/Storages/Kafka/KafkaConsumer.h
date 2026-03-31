@@ -36,7 +36,8 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics
+        const Names & _topics,
+        size_t skip_bytes_ = 0
     );
 
     ~KafkaConsumer() override;
@@ -126,6 +127,7 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
+    const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
     bool current_subscription_valid = false;
 

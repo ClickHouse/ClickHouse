@@ -9,8 +9,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <string>
-
 
 namespace DB
 {
@@ -65,7 +63,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view encoded_string = encoded->getDataAt(i).toView();
+            std::string_view encoded_string = encoded->getDataAt(i);
             geohashDecode(encoded_string.data(), encoded_string.size(), &lon_data[i], &lat_data[i]);
         }
 
@@ -119,7 +117,7 @@ Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeohashDecode>(documentation);
 }
 

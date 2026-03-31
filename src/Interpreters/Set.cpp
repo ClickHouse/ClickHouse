@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -44,6 +45,11 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
+
+Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
+    :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
+    , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
+{}
 
 
 template <typename Method>
@@ -110,8 +116,10 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-            type = low_cardinality_type->getDictionaryType();
+        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
+        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
+        /// compound types like Tuple(LowCardinality(T), ...).
+        type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
             type = removeNullable(type);
@@ -149,10 +157,15 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
         {
             data_types.back() = low_cardinality_type->getDictionaryType();
-            set_elements_types.back() = low_cardinality_type->getDictionaryType();
             materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
             key_columns.back() = materialized_columns.back().get();
         }
+
+        /// Strip LowCardinality recursively from set_elements_types so they match what
+        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
+        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
+        /// in the type while the column has it stripped, causing type/column mismatches later.
+        set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
     /// We will insert to the Set only keys, where all components are not NULL.
@@ -267,7 +280,7 @@ void Set::appendSetElements(SetKeyColumns & holder)
     {
         auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
         if (set_elements[i]->empty())
-            set_elements[i] = filtered_column;
+            set_elements[i] = IColumn::mutate(std::move(filtered_column));
         else
             set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         if (transform_null_in && holder.null_map_holder)
@@ -279,6 +292,16 @@ void Set::checkIsCreated() const
 {
     if (!is_created.load())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
+}
+
+Columns Set::getSetElements() const
+{
+    checkIsCreated();
+    Columns result;
+    result.reserve(set_elements.size());
+    for (const auto & col : set_elements)
+        result.push_back(col->getPtr());
+    return result;
 }
 
 ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
@@ -299,7 +322,7 @@ ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_
     size_t vec_res_size = original_data.size();
 
     // Prepare the precision null map
-    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, 0);
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
     NullMap & precision_null_map = precision_null_map_column->getData();
 
     // Determine which rows should be null based on precision loss
@@ -431,7 +454,16 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        if (!transform_null_in && data_types[i]->canBeInsideNullable())
+        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
+        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
+        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
+        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
+        auto target_type_without_nullable = removeNullable(data_types[i]);
+        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
+
+        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+
+        if (use_cast_accurate_or_null)
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
@@ -633,6 +665,10 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
+    /// Deduplicate key columns. This can make the condition weaker, e.g.:
+    ///     (x + 1, x + 2) IN (10, 10)
+    /// effectively turns into:
+    ///     (x + 1) IN (10)
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
@@ -761,7 +797,17 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
         }) - indices.begin();
 
     if (begin > end)
+    {
+        /// TODO: Remove the #ifndef and always throw after
+        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
+        ///        nonmonotonic functions, and we end up with left > right.)
+#ifndef NDEBUG
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
+#else
+        return {true, true};
+#endif
+    }
 
     bool can_be_true = begin < end;
 

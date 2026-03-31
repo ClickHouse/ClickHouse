@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -29,7 +30,6 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForNothing() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
@@ -62,14 +62,6 @@ public:
     /// Helper function to implement CASE WHEN equality semantics where NULL = NULL is true
     ColumnPtr caseWhenEquals(const ColumnWithTypeAndName & expr, const ColumnWithTypeAndName & when_value, size_t input_rows_count) const
     {
-        // handle Nothing type - it's an empty type that can't contain any values
-        // if either argument is Nothing, the result should be an empty column
-        if (expr.type->onlyNull() || when_value.type->onlyNull())
-        {
-            // return a constant false column
-            return DataTypeUInt8().createColumnConst(input_rows_count, 0u);
-        }
-
         // for CASE WHEN semantics, NULL should match NULL
         // we need: if (isNull(expr)) then (isNull(when)) else if (isNull(when)) then 0 else (expr = when)
 
@@ -95,7 +87,7 @@ public:
         auto equals_result = function_base->execute(equals_args, equals_return_type, input_rows_count, false);
 
         // convert nullable equals result to non-nullable
-        if (isColumnNullable(*equals_result))
+        if (equals_return_type->isNullable())
         {
             auto if_null_func = FunctionFactory::instance().get("ifNull", context);
             auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
@@ -152,76 +144,97 @@ public:
             }
         }
 
-        /// In the following code, we turn the construction:
-        /// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
-        /// into the construction transform(expr, src, dest, branchN)
-        /// where:
-        /// src = [val[0], val[1], ..., val[N-1]]
-        /// dst = [branch[0], ..., branch[N-1]]
-        /// then we perform it.
-
-        /// Create the arrays required by the transform function.
-        ColumnsWithTypeAndName src_array_elems;
-        DataTypes src_array_types;
-
-        ColumnsWithTypeAndName dst_array_elems;
-        DataTypes dst_array_types;
-
-        for (size_t i = 1; i < (args.size() - 1); ++i)
-        {
-            if (i % 2)
-            {
-                src_array_elems.push_back(args[i]);
-                src_array_types.push_back(args[i].type);
-            }
-            else
-            {
-                dst_array_elems.push_back(args[i]);
-                dst_array_types.push_back(args[i].type);
-            }
-        }
-
-        DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
-        DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
-
-        ColumnWithTypeAndName src_array_col{nullptr, src_array_type, ""};
-        ColumnWithTypeAndName dst_array_col{nullptr, dst_array_type, ""};
-
-        auto fun_array = FunctionFactory::instance().get("array", context);
-
-        src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count, /* dry_run = */ false);
-        dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
-
-        /// If we have non-constant arguments, we execute the transform function, which is highly optimized, which uses precomputed lookup tables.
-        /// Else we should use the multiIf implementation
+        /// Try the optimized `transform` path when all WHEN/THEN values are constant.
+        /// `transform(expr, [when1, when2, ...], [then1, then2, ...], else)` uses a precomputed
+        /// lookup table and is faster than `multiIf`. However, `transform` has limitations:
+        /// - It casts WHEN values to the expression type, which fails when WHEN values are
+        ///   Nullable but the expression is non-Nullable (NULL cannot be cast).
+        /// - It requires a common supertype for all WHEN values and all THEN values.
+        /// - It doesn't support types larger than 8 bytes (e.g. Int128).
+        /// When `transform` is not applicable, we fall through to the `multiIf` path.
         if (all_when_then_values_constant)
         {
-            ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-            return FunctionFactory::instance().get("transform", context)->build(transform_args)
-                ->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
-        }
-        else
-        {
-            ColumnsWithTypeAndName multi_if_args;
+            ColumnsWithTypeAndName src_array_elems;
+            DataTypes src_array_types;
+            ColumnsWithTypeAndName dst_array_elems;
+            DataTypes dst_array_types;
 
-            // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
-            for (size_t i = 1; i < args.size() - 1; i += 2)
+            for (size_t i = 1; i < (args.size() - 1); ++i)
             {
-                // use CASE WHEN equality semantics (NULL = NULL is true)
-                auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
-
-                multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
-                multi_if_args.push_back(args[i + 1]); // Then value
+                if (i % 2)
+                {
+                    src_array_elems.push_back(args[i]);
+                    src_array_types.push_back(args[i].type);
+                }
+                else
+                {
+                    dst_array_elems.push_back(args[i]);
+                    dst_array_types.push_back(args[i].type);
+                }
             }
 
-            // Add an ELSE value
-            multi_if_args.push_back(args.back());
+            /// Check whether `transform` can handle these types.
+            /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
+            /// but the expression is non-Nullable, the cast will fail on NULLs.
+            auto src_supertype = tryGetLeastSupertype(src_array_types);
+            auto dst_supertype = tryGetLeastSupertype(dst_array_types);
 
-            // Execute multiIf
-            return FunctionFactory::instance().get("multiIf", context)
-                ->build(multi_if_args)
-                ->execute(multi_if_args, result_type, input_rows_count, false);
+            bool can_use_transform = src_supertype && dst_supertype
+                && !(src_supertype->isNullable() && !args.front().type->isNullable());
+
+            if (can_use_transform)
+            {
+                DataTypePtr src_array_type = std::make_shared<DataTypeArray>(src_supertype);
+                DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(dst_supertype);
+
+                ColumnWithTypeAndName src_array_col{nullptr, src_array_type, ""};
+                ColumnWithTypeAndName dst_array_col{nullptr, dst_array_type, ""};
+
+                auto fun_array = FunctionFactory::instance().get("array", context);
+
+                src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count, /* dry_run = */ false);
+                dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
+
+                ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
+
+                FunctionBasePtr function_base;
+                try
+                {
+                    function_base = FunctionFactory::instance().get("transform", context)->build(transform_args);
+                }
+                catch (Exception & e)
+                {
+                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                        throw;
+
+                    /// Function `transform` doesn't support some data types, e.g. Int128.
+                    /// Fall back to multiIf.
+                }
+
+                if (function_base)
+                    return function_base->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
+            }
         }
+
+        ColumnsWithTypeAndName multi_if_args;
+
+        // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
+        for (size_t i = 1; i < args.size() - 1; i += 2)
+        {
+            // use CASE WHEN equality semantics (NULL = NULL is true)
+            auto condition = caseWhenEquals(args.front(), args[i], input_rows_count);
+
+            multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
+            multi_if_args.push_back(args[i + 1]); // Then value
+        }
+
+        // Add an ELSE value
+        multi_if_args.push_back(args.back());
+
+        // Execute multiIf
+        return FunctionFactory::instance().get("multiIf", context)
+            ->build(multi_if_args)
+            ->execute(multi_if_args, result_type, input_rows_count, false);
     }
 
 private:
@@ -232,7 +245,23 @@ private:
 
 REGISTER_FUNCTION(CaseWithExpression)
 {
-    factory.registerFunction<FunctionCaseWithExpression>();
+    FunctionDocumentation::Description description = R"(
+Implements the `CASE expr WHEN val1 THEN result1 ... ELSE default END` expression. Internally transforms into a series of `multiIf` calls using equality comparison. Note that `NULL = NULL` evaluates to true in this context, unlike standard SQL equality.
+    )";
+    FunctionDocumentation::Syntax syntax = "caseWithExpression(expr, val1, result1[, val2, result2, ...], default)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "The expression to compare.", {"Expression"}},
+        {"val1", "Value to compare against.", {"Any"}},
+        {"result1", "Value to return when expr equals val1.", {"Any"}},
+        {"default", "Default value to return if no match is found.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result corresponding to the first matching value, or the default.", {"Any"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT CASE 1 WHEN 1 THEN 'one' WHEN 2 THEN 'two' ELSE 'other' END", "one"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCaseWithExpression>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithExpr", "caseWithExpression");

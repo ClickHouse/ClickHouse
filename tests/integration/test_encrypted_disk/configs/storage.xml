@@ -9,7 +9,7 @@
             </disk_s3>
             <disk_local>
                 <type>local</type>
-                <path>/disk/</path>
+                <path>/test_encrypted_disk/</path>
             </disk_local>
             <disk_s3_encrypted>
                 <type>encrypted</type>

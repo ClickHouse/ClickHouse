@@ -4,9 +4,7 @@
 
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
-
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
+SET query_plan_optimize_lazy_materialization = 1;
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 

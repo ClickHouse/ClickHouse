@@ -366,6 +366,7 @@
             position: absolute;
             color: var(--error-color);
             padding: 2rem;
+            top: 2rem;
         }
 
         textarea {
@@ -1273,15 +1274,19 @@ async function draw(idx, chart, url_params, query) {
 
     let error_div = chart.querySelector('.query-error');
     let title_div = chart.querySelector('.title');
+
+    /// Set title before handling errors so it is visible even when the query fails
+    const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
+    title_div.firstChild.data = title;
+    title_div.style.display = 'block';
+
     if (error) {
         error_div.firstChild.data = error;
-        title_div.style.display = 'none';
         error_div.style.display = 'block';
         return false;
     } else {
         error_div.firstChild.data = '';
         error_div.style.display = 'none';
-        title_div.style.display = 'block';
     }
 
     const color_rotate = Math.abs(stringHash(query));
@@ -1372,9 +1377,6 @@ async function draw(idx, chart, url_params, query) {
     plots[idx] = new uPlot(opts, data, chart);
     sync.sub(plots[idx]);
 
-    /// Set title
-    const title = queries[idx] && queries[idx].title ? queries[idx].title.replaceAll(/\{(\w+)\}/g, (_, name) => params[name] ) : '';
-    chart.querySelector('.title').firstChild.data = title;
     return true;
 }
 
@@ -1406,38 +1408,40 @@ async function drawAll() {
     if (is_drawing) return;
     is_drawing = true;
 
-    let params = getParamsForURL();
-    const chartsArray = document.getElementsByClassName('chart');
-
-    if (!firstLoad) {
+    try {
         hideError();
-    }
-    await Promise.all([...Array(queries.length)].map(async (_, i) => {
-        return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
-            if (!firstLoad) {
+
+        let params = getParamsForURL();
+        const chartsArray = document.getElementsByClassName('chart');
+
+        let had_global_error = false;
+        const results = await Promise.all([...Array(queries.length)].map(async (_, i) => {
+            return draw(i, chartsArray[i], params, queries[i].query).catch((e) => {
                 showError(e.message);
-            }
-            return false;
-        });
-    })).then((results) => {
+                had_global_error = true;
+                return false;
+            });
+        }));
+
         if (firstLoad) {
             firstLoad = false;
         } else {
             enableButtons();
         }
-        if (results.includes(true)) {
+
+        if (!had_global_error && results.length > 0) {
+            /// At least one chart was processed without a global error
+            /// (auth/connection).  Show the connected UI.  Individual charts
+            /// may still have per-chart query errors displayed in their divs.
             const element = document.querySelector('.inputs');
             element.classList.remove('unconnected');
             document.getElementById('add').style.display = 'inline-block';
             document.getElementById('edit').style.display = 'inline-block';
             document.getElementById('search-span').style.display = '';
-            hideError();
-        } else {
-            document.getElementById('charts').style.height = '0px';
         }
-    });
-
-    is_drawing = false;
+    } finally {
+        is_drawing = false;
+    }
 }
 
 function resize() {

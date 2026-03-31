@@ -1,6 +1,9 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,8 +16,8 @@ extern const int LOGICAL_ERROR;
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<Columns> source_columns;
-    source_columns.resize(columns.size());
+    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
         if (!input.chunk)
@@ -22,13 +25,27 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
 
         const auto & input_columns = input.chunk.getColumns();
         for (size_t i = 0; i != input_columns.size(); ++i)
+        {
             source_columns[i].push_back(input_columns[i]);
+            is_replicated[i] = is_replicated[i] || input_columns[i]->isReplicated();
+        }
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
     {
+        /// Sometimes header can contain Sparse columns, we don't support Sparse in merge algorithms.
+        columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
+        if (is_replicated[i])
+            columns[i] = ColumnReplicated::create(std::move(columns[i]));
+        /// Columns with dynamic structure (like JSON/Dynamic) need their structure to be
+        /// merged from all source columns before the merge starts.
         if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
+            columns[i]->chooseDynamicStructureForMerge(source_columns[i], max_dynamic_subcolumns);
+        /// Columns with statistics (like Map with adaptive buckets) need their statistics to be
+        /// merged from all source columns before the merge starts.
+        /// Must be called after `chooseDynamicStructureForMerge` for columns that have both.
+        if (columns[i]->hasStatistics())
+            columns[i]->takeOrCalculateStatisticsFrom(source_columns[i]);
     }
 }
 
@@ -80,13 +97,25 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
         {
             columns[i] = columns[i]->cloneResized(num_rows);
         }
-        /// For columns with Dynamic structure we cannot just take column from input chunk because resulting column may have
-        /// different Dynamic structure (and have some merge statistics after calling takeDynamicStructureFromSourceColumns).
-        /// We should insert into data resulting column using insertRangeFrom.
+        /// For columns with dynamic structure (like JSON/Dynamic) we cannot just take the column from
+        /// the input chunk because the resulting column may have different dynamic structure
+        /// (after calling `chooseDynamicStructureForMerge`).
+        /// We need to use `cloneEmpty` + `insertRangeFrom` to properly re-insert data.
         else if (columns[i]->hasDynamicStructure())
         {
             columns[i] = columns[i]->cloneEmpty();
             columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
+        }
+        /// For columns with statistics (like Map with adaptive buckets) we can reuse the column
+        /// from the input chunk, but need to preserve the merged statistics computed during `initialize`.
+        else if (columns[i]->hasStatistics())
+        {
+            chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
+            columns[i] = std::move(chunk_columns[i]);
+        }
+        else if (columns[i]->isReplicated() && !chunk_columns[i]->isReplicated())
+        {
+            columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
         }
         else
         {

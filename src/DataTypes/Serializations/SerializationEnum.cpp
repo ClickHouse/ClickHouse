@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 
 #include <Columns/ColumnVector.h>
@@ -19,7 +20,7 @@ void SerializationEnum<Type>::serializeText(const IColumn & column, size_t row_n
 template <typename Type>
 void SerializationEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    writeEscapedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -32,7 +33,7 @@ void SerializationEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffe
         /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
         std::string field_name;
         settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field_name, istr) : readEscapedString(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
     }
 }
 
@@ -49,7 +50,7 @@ bool SerializationEnum<Type>::tryDeserializeTextEscaped(IColumn & column, ReadBu
     {
         std::string field_name;
         readEscapedString(field_name, istr);
-        if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
+        if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
             return false;
     }
 
@@ -68,7 +69,7 @@ void SerializationEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer
 {
     std::string field_name;
     readQuotedStringWithSQLStyle(field_name, istr);
-    assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
+    assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
 }
 
 template <typename Type>
@@ -79,7 +80,7 @@ bool SerializationEnum<Type>::tryDeserializeTextQuoted(IColumn & column, ReadBuf
         return false;
 
     FieldType x;
-    if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
+    if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
     return true;
@@ -98,7 +99,7 @@ void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer 
     {
         std::string field_name;
         readStringUntilEOF(field_name, istr);
-        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
     }
 }
 
@@ -115,7 +116,7 @@ bool SerializationEnum<Type>::tryDeserializeWholeText(IColumn & column, ReadBuff
     {
         std::string field_name;
         readStringUntilEOF(field_name, istr);
-        if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
+        if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
             return false;
     }
 
@@ -126,13 +127,13 @@ bool SerializationEnum<Type>::tryDeserializeWholeText(IColumn & column, ReadBuff
 template <typename Type>
 void SerializationEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr, settings);
+    writeJSONString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
 }
 
 template <typename Type>
 void SerializationEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+    writeXMLStringForTextElement(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
@@ -144,7 +145,7 @@ void SerializationEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer &
     {
         std::string field_name;
         readJSONString(field_name, istr, settings.json);
-        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
     }
 }
 
@@ -161,7 +162,7 @@ bool SerializationEnum<Type>::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     {
         std::string field_name;
         readJSONString(field_name, istr, settings.json);
-        if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
+        if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
             return false;
     }
 
@@ -184,7 +185,7 @@ void SerializationEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & 
     {
         std::string field_name;
         readCSVString(field_name, istr, settings.csv);
-        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(StringRef(field_name)));
+        assert_cast<ColumnType &>(column).getData().push_back(ref_enum_values.getValue(std::string_view(field_name)));
     }
 }
 
@@ -202,7 +203,7 @@ bool SerializationEnum<Type>::tryDeserializeTextCSV(IColumn & column, ReadBuffer
     {
         std::string field_name;
         readCSVString(field_name, istr, settings.csv);
-        if (!ref_enum_values.tryGetValue(x, StringRef(field_name)))
+        if (!ref_enum_values.tryGetValue(x, std::string_view(field_name)))
             return false;
     }
 
@@ -215,9 +216,50 @@ void SerializationEnum<Type>::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.markdown.escape_special_characters)
-        writeMarkdownEscapedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]).toView(), ostr);
+        writeMarkdownEscapedString(ref_enum_values.getNameForValue(assert_cast<const ColumnType &>(column).getData()[row_num]), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);
+}
+
+template <typename Type>
+UInt128 SerializationEnum<Type>::getHash(const Values & values)
+{
+    SipHash hash;
+    hash.update("Enum");
+    hash.update(TypeName<Type>);
+    for (const auto & [name, value] : values)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(value);
+    }
+    return hash.get128();
+}
+
+template <typename Type>
+SerializationPtr SerializationEnum<Type>::create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type)
+{
+    return ISerialization::pooled(getHash(enum_type->getValues()), [&] { return new SerializationEnum(enum_type); });
+}
+
+template <typename Type>
+SerializationPtr SerializationEnum<Type>::create(const Values & values_)
+{
+    return ISerialization::pooled(getHash(values_), [&] { return new SerializationEnum(values_); });
+}
+
+template <typename Type>
+size_t SerializationEnum<Type>::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    if (own_enum_values)
+    {
+        const auto & vals = own_enum_values->getValues();
+        bytes += vals.capacity() * sizeof(typename EnumValues<Type>::Value);
+        for (const auto & [name, _] : vals)
+            bytes += name.capacity();
+    }
+    return bytes;
 }
 
 template class SerializationEnum<Int8>;

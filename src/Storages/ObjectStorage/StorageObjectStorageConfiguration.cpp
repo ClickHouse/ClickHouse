@@ -6,7 +6,12 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/Common.h>
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace DB
 {
@@ -25,11 +30,17 @@ namespace ErrorCodes
 
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
-    ContextPtr context,
-    bool /* if_not_updated_before */)
+    ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+}
+
+void StorageObjectStorageConfiguration::lazyInitializeIfNeeded(
+    ObjectStoragePtr object_storage_ptr,
+    ContextPtr context)
+{
+    update(object_storage_ptr, context);
 }
 
 void StorageObjectStorageConfiguration::create( ///NOLINT
@@ -37,6 +48,7 @@ void StorageObjectStorageConfiguration::create( ///NOLINT
     ContextPtr /*context*/,
     const std::optional<ColumnsDescription> & /*columns*/,
     ASTPtr /*partition_by*/,
+    ASTPtr /*order_by*/,
     bool /*if_not_exists*/,
     std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
@@ -60,9 +72,20 @@ std::optional<ColumnsDescription> StorageObjectStorageConfiguration::tryGetTable
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryGetTableStructureFromMetadata is not implemented for basic configuration");
 }
 
-StorageInMemoryMetadata StorageObjectStorageConfiguration::getStorageSnapshotMetadata(ContextPtr) const
+std::optional<DataLakeTableStateSnapshot> StorageObjectStorageConfiguration::getTableStateSnapshot(ContextPtr) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getStorageSnapshotMetadata is not implemented for basic configuration");
+    return std::nullopt;
+}
+
+std::unique_ptr<StorageInMemoryMetadata> StorageObjectStorageConfiguration::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot &, ContextPtr) const
+{
+    return nullptr;
+}
+
+bool StorageObjectStorageConfiguration::shouldReloadSchemaForConsistency(ContextPtr) const
+{
+    return false;
 }
 
 
@@ -70,7 +93,8 @@ void StorageObjectStorageConfiguration::initialize(
     StorageObjectStorageConfiguration & configuration_to_initialize,
     ASTs & engine_args,
     ContextPtr local_context,
-    bool with_table_structure)
+    bool with_table_structure,
+    const StorageID * table_id)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -82,7 +106,7 @@ void StorageObjectStorageConfiguration::initialize(
     }
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -132,6 +156,27 @@ void StorageObjectStorageConfiguration::initialize(
     configuration_to_initialize.initialized = true;
 }
 
+String StorageObjectStorageConfiguration::computeSchemaHash(const ColumnsDescription & columns)
+{
+    SipHash hash;
+    auto columns_str = columns.getAllPhysical().toString();
+    hash.update(columns_str.data(), columns_str.size());
+    return getSipHash128AsHexString(hash);
+}
+
+void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
+{
+    schema_hash = hash;
+    boost::replace_all(read_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
+    if (getPaths().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one path when setting schema hash, got {}", getPaths().size());
+    auto path = getRawPath();
+    boost::replace_all(path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+    setRawPath(path);
+    setPaths({path});
+}
+
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
     partition_strategy = PartitionStrategyFactory::get(
@@ -140,7 +185,7 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         columns.getOrdinary(),
         context,
         format,
-        getRawPath().hasGlobs(),
+        getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
 
@@ -160,6 +205,9 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
 {
     auto raw_path = getRawPath();
 
+    if (!schema_hash.empty())
+        boost::replace_all(raw_path.path, SCHEMA_HASH_WILDCARD, schema_hash);
+
     if (!partition_strategy)
     {
         return raw_path;
@@ -174,11 +222,18 @@ bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
     return path.find(PARTITION_ID_WILDCARD) != String::npos;
 }
 
-bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePartitionWildcard() const
+bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
 {
-    if (!hasPartitionWildcard())
+    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
+}
+
+bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
+{
+    if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
         return hasGlobs();
-    return PartitionedSink::replaceWildcards(path, "").find_first_of("*?{") != std::string::npos;
+    String cleaned = PartitionedSink::replaceWildcards(path, "");
+    boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
+    return cleaned.find_first_of("*?{") != std::string::npos;
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobs() const
@@ -232,7 +287,18 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     ObjectInfoPtr,
     QueryPipelineBuilder &,
     const std::optional<FormatSettings> &,
+    FormatParserSharedResourcesPtr,
     ContextPtr) const
 {
+}
+
+void StorageObjectStorageConfiguration::initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments)
+{
+    format = parsed_arguments.format;
+    compression_method = parsed_arguments.compression_method;
+    structure = parsed_arguments.structure;
+    partition_strategy_type = parsed_arguments.partition_strategy_type;
+    partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
+    partition_strategy = parsed_arguments.partition_strategy;
 }
 }

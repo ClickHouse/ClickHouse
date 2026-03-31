@@ -17,7 +17,7 @@ public:
     void merge(const StatisticsPtr & other_stats) override;
 
     void serialize(WriteBuffer & buf) override;
-    void deserialize(ReadBuffer & buf) override;
+    void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     UInt64 estimateCardinality() const override;
 
@@ -29,7 +29,7 @@ private:
 
 };
 
-void uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr uniqStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

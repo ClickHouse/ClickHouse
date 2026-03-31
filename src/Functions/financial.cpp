@@ -105,7 +105,7 @@ struct NpvCalculator
         if constexpr (index_mode == IndexMode::ZeroBased)
         {
             // First cashflow (t=0) is not discounted
-            npv = cashflows[0];
+            npv = static_cast<double>(cashflows[0]);
 
             // Discount subsequent cashflows (t=1, t=2, ...)
             double discount_factor = growth_factor; // (1+r)^1
@@ -141,7 +141,7 @@ struct NpvCalculator
         for (size_t i = 1; i < cashflows.size(); ++i)
         {
             compound *= (1.0 + rate);
-            derivative += -static_cast<FloatType>(cashflows[i]) * i / compound;
+            derivative += -static_cast<FloatType>(cashflows[i]) * static_cast<FloatType>(i) / compound;
         }
         return derivative;
     }
@@ -183,7 +183,7 @@ struct XnpvCalculator
         {
             double time = yearFraction<day_count>(dates[0], dates[i]);
             if (time == 0.0)
-                npv += cashflows[i];
+                npv += static_cast<double>(cashflows[i]);
             else
                 npv += static_cast<FloatType>(cashflows[i]) / std::pow(1.0 + rate, time);
         }
@@ -282,7 +282,7 @@ std::expected<double, SolverErrorCode> solver(Function && fun, Derivative && der
     {
         return std::unexpected(SolverErrorCode::CANNOT_CONVERGE_DUE_TO_INVALID_ARGUMENTS);
     }
-    catch (...)
+    catch (...) // Ok: return generic error for unexpected exception types
     {
         return std::unexpected(SolverErrorCode::OTHER_ERROR);
     }
@@ -339,7 +339,7 @@ bool isCashFlowColumn(const IDataType & type)
     if (isArray(type))
     {
         const auto & nested = checkAndGetDataType<DataTypeArray>(type).getNestedType();
-        return isNativeInt(nested) || isFloat(nested);
+        return isNativeInt(nested) || isNativeFloat(nested);
     }
     return false;
 }
@@ -404,7 +404,7 @@ public:
         };
 
         auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
             {"daycount", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
         };
 
@@ -442,7 +442,7 @@ public:
         {
             if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
-            auto day_count_str = arguments[3].column->getDataAt(0).toString();
+            auto day_count_str = arguments[3].column->getDataAt(0);
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
@@ -521,7 +521,7 @@ public:
         };
 
         auto optional_args = FunctionArgumentDescriptors{
-            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
+            {"guess", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
         };
 
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -611,7 +611,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
             {"cashflow",
              static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
              nullptr,
@@ -650,7 +650,7 @@ public:
         {
             if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
-            auto day_count_str = arguments[3].column->getDataAt(0).toString();
+            auto day_count_str = arguments[3].column->getDataAt(0);
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
@@ -728,7 +728,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto mandatory_args = FunctionArgumentDescriptors{
-            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float32|Float64"},
+            {"rate", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32|Float64"},
             {"cashflow",
              static_cast<FunctionArgumentDescriptor::TypeValidator>(&isCashFlowColumn),
              nullptr,
@@ -873,7 +873,7 @@ SELECT round(financialInternalRateOfReturnExtended([100000, -110000], [toDate('2
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionXirr>(documentation);
 }
@@ -902,7 +902,7 @@ $$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIRR>(documentation);
 }
@@ -934,7 +934,7 @@ Arrays should be sorted by date in ascending order. Dates need to be unique.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionXnpv>(documentation);
 }
@@ -969,7 +969,7 @@ $$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Financial;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionNPV>(documentation);
 }

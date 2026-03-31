@@ -31,7 +31,7 @@ Expression ((Projection + Before ORDER BY))
 Expression ((Project names + Projection))
   Filter (WHERE)
     Expression (Post Join Actions)
-      Join
+      Join (JOIN FillRightFirst)
         Expression (Left Pre Join Actions)
           Expression ((WHERE + Change column names to column identifiers))
             ReadFromMergeTree (default.t1)

@@ -27,8 +27,13 @@ public:
         SortDescription description_,
         size_t max_block_size_rows_,
         size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
         Graphite::Params params_,
         time_t time_of_merge_);
+
+    /// Reset merged_data before params is destroyed, because GraphiteRollupMergedData
+    /// holds raw pointers into params.patterns and its destructor accesses them.
+    ~GraphiteRollupSortedAlgorithm() override;
 
     const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;

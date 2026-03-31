@@ -1,9 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <unordered_map>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -56,7 +57,7 @@ public:
 
         std::string command;
 
-        std::vector<std::string> arguments;
+        VectorWithMemoryTracking<std::string> arguments;
 
         std::vector<int> read_fds;
 

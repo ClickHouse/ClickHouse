@@ -47,7 +47,7 @@ SELECT * FROM t1 ALL INNER JOIN tj ON 1 != 1; -- { serverError INCOMPATIBLE_TYPE
 -- Here is another error code because equality is handled differently in CollectJoinOnKeysVisitor.
 -- We can change the error code, but it will become inconsistent for other cases
 -- where we actually expect AMBIGUOUS_COLUMN_NAME instead of INVALID_JOIN_ON_EXPRESSION/INCOMPATIBLE_TYPE_OF_JOIN.
--- These checks are more reliable after switching to a new analyzer, they return INCOMPATIBLE_TYPE_OF_JOIN consistent with cases above
+-- These checks are more reliable after switching to the analyzer, they return INCOMPATIBLE_TYPE_OF_JOIN consistent with cases above
 SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 1; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,AMBIGUOUS_COLUMN_NAME }
 SELECT * FROM t1 ALL INNER JOIN tj ON 1 == 2; -- { serverError INCOMPATIBLE_TYPE_OF_JOIN,AMBIGUOUS_COLUMN_NAME }
 

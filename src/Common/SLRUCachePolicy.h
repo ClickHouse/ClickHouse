@@ -68,6 +68,11 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
         max_count = max_count_;
@@ -274,7 +279,7 @@ private:
 
     static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
     {
-        return static_cast<size_t>(max_size_in_bytes * std::max(0.0, std::min(1.0, size_ratio)));
+        return static_cast<size_t>(static_cast<double>(max_size_in_bytes) * std::max(0.0, std::min(1.0, size_ratio)));
     }
 
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)

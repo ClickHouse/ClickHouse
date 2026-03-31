@@ -1,6 +1,7 @@
 #pragma once
 
 #include <concepts>
+#include <Common/ThreadGroupSwitcher.h>
 #include <deque>
 #include <future>
 #include <memory>
@@ -16,6 +17,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 
 namespace CurrentMetrics
@@ -94,8 +96,6 @@ public:
     };
 
 private:
-    ThreadPool thread_pool;
-
     std::mutex mutex;
     std::unordered_map<TBaseHolderPtr, RequestInfo> current_requests TSA_GUARDED_BY(mutex);
     std::deque<Request> requests_to_schedule TSA_GUARDED_BY(mutex);
@@ -103,16 +103,33 @@ private:
 
     LoggerPtr log;
 
+    /// thread_pool must be declared last so it is destroyed first.
+    /// ~ThreadPool calls finalize() which sets shutdown = true, wakes idle workers,
+    /// and joins them. By destroying thread_pool before other members, we guarantee
+    /// that worker threads (which access mutex, current_requests, and log) have all
+    /// exited before those members are destroyed.
+    ThreadPool thread_pool;
+
 public:
     explicit StatusRequestsPool(const size_t max_threads)
-        : thread_pool(create_pool(max_threads))
-        , log(getLogger("StatusRequestsPool"))
+        : log(getLogger("StatusRequestsPool"))
+        , thread_pool(create_pool(max_threads))
     {
     }
 
     ~StatusRequestsPool()
     {
-        thread_pool.wait();
+        /// Do not call thread_pool.wait() here:
+        /// wait() only waits for scheduled_jobs == 0 but does NOT set shutdown = true,
+        /// so idle worker threads remain blocked on the local pool's condition variable
+        /// (new_job_or_shutdown at ThreadPool.cpp:736) forever.
+        /// When GlobalThreadPool::shutdown() later tries to pthread_join the underlying
+        /// OS threads stuck in these worker loops, it deadlocks.
+        ///
+        /// The fix: thread_pool is declared as the last member, so ~ThreadPool runs first.
+        /// It calls finalize() which sets shutdown = true, wakes all workers, and joins
+        /// them while mutex, current_requests, and log are still alive.
+
         for (auto & request : requests_to_schedule)
             request.promise->set_exception(
                 std::make_exception_ptr(DB::Exception(ErrorCodes::QUERY_WAS_CANCELLED, "StatusRequestsPool is destroyed")));
@@ -171,7 +188,7 @@ public:
                 requests_to_schedule.pop_front();
             }
 
-            auto get_status_task = [this, req, thread_group = CurrentThread::getGroup()]() mutable
+            auto get_status_task = [this, req, thread_group = getCurrentThreadGroup()]() mutable
             {
                 ThreadGroupSwitcher switcher(thread_group, get_thread_name());
 
@@ -241,9 +258,9 @@ private:
     static constexpr auto get_thread_name()
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return "DBReplicas";
+            return ThreadName::DATABASE_REPLICAS;
         else
-            return "SystemReplicas";
+            return ThreadName::SYSTEM_REPLICAS;
     }
 
     static std::string get_holder_name(const TBaseHolderPtr & base_holder)

@@ -8,7 +8,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -237,10 +236,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
         case IntervalKind::Kind::Day:
             return "toDayOfMonth";
         case IntervalKind::Kind::Week:
-            // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
-            // else if (ParserKeyword(Keyword::WEEK).ignore(pos, expected))
-            //    function_name = "toRelativeWeekNum";
-            throw Exception(ErrorCodes::SYNTAX_ERROR, "The syntax 'EXTRACT(WEEK FROM date)' is not supported, cannot extract the number of a week");
+            return "toISOWeek";
         case IntervalKind::Kind::Month:
             return "toMonth";
         case IntervalKind::Kind::Quarter:

@@ -2,6 +2,7 @@
 -- Check that with these settings the plan contains a join
 SELECT explain FROM (
     EXPLAIN keep_logical_steps=1, description=0 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
+    SETTINGS enable_join_runtime_filters = 0
 ) WHERE explain ILIKE '%join%';
   JoinLogical
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3);
@@ -51,7 +52,8 @@ SELECT number IN (SELECT number FROM numbers(2) WHERE number NOT IN (SELECT * FR
 EXPLAIN keep_logical_steps=1, description=0
 SELECT *
 FROM numbers(8)
-WHERE number IN (select number from numbers(5));
+WHERE number IN (select number from numbers(5))
+SETTINGS enable_join_runtime_filters = 0;
 Expression
   JoinLogical
     Expression
@@ -65,7 +67,8 @@ WITH
     t as (select number from numbers(5))
 SELECT *
 FROM numbers(8)
-WHERE number IN t;
+WHERE number IN t
+SETTINGS enable_join_runtime_filters = 0;
 Expression
   JoinLogical
     Expression
@@ -110,3 +113,16 @@ WITH
 SELECT *
 FROM numbers(8)
 WHERE (number+1, number+2, number+3) IN (t); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT}
+-- Inside IF function condition and arguments
+SELECT c0 = ANY(SELECT 1) ? 1 : 2 FROM (SELECT 1 c0) tx;
+1
+SELECT if(dummy IN (SELECT 1) AS in_expression, 11, 22) FROM system.one;
+22
+SELECT if(dummy IN (SELECT 1) AS in_expression, 11, 22) FROM system.one;
+22
+SELECT if(dummy IN (SELECT 1) AS in_expression, in_expression, 22) FROM system.one;
+22
+SELECT if(dummy IN (SELECT 1) AS in_expression, 11, in_expression) FROM system.one;
+0
+SELECT if(dummy IN (SELECT 1) AS in_expression, in_expression, in_expression) FROM system.one;
+0

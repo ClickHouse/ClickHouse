@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, TextIO, Tuple
 import tqdm  # type: ignore
 from github.GithubException import RateLimitExceededException, UnknownObjectException
 from github.NamedUser import NamedUser
-from thefuzz.fuzz import ratio  # type: ignore
+from rapidfuzz.distance import Levenshtein  # type: ignore
 
 from ci_utils import Shell
 from git_helper import git_runner, is_shallow
@@ -39,6 +39,89 @@ categories_preferred_order = (
     "Other",
 )
 
+
+def _normalize_for_matching(cat: str) -> str:
+    """Normalize category for matching: strip parenthetical suffix, collapse whitespace, casefold."""
+    pos = cat.find("(")
+    result = cat[:pos] if pos != -1 else cat
+    return re.sub(r"\s+", " ", result.strip()).casefold()
+
+
+# Maximum normalized Levenshtein distance for fuzzy matching (20%)
+MAX_NORMALIZED_DISTANCE = 0.2
+
+
+# Categories that should be skipped in the changelog, grouped by skip reason.
+# Uses the same canonical names as LABEL_CATEGORIES in pr_labels_and_category.py.
+_SKIP_CATEGORIES = {
+    "documentation": ["Documentation"],
+    "not-for-changelog": [
+        "Not for changelog",
+        "CI Fix or Improvement",
+    ],
+}
+
+# Also match historical/legacy category names not present in LABEL_CATEGORIES.
+_SKIP_LEGACY_PATTERN = re.compile(
+    r"(?i)((non|in|not|un)[-\s]*significant)"
+    r"|(changelog[ ]*entry[ ]*is[ ]*not[ ]*required)"
+)
+
+
+def _match_skip_category(category: str) -> Optional[str]:
+    """Check if a category should be skipped from the changelog.
+
+    Returns the skip reason ("documentation" or "not-for-changelog") or None.
+    Uses normalized Levenshtein matching with the same 20% threshold.
+    """
+    norm = _normalize_for_matching(category)
+    compact = norm.replace(" ", "")
+
+    for reason, names in _SKIP_CATEGORIES.items():
+        for name in names:
+            name_norm = _normalize_for_matching(name)
+            if name_norm == norm:
+                return reason
+            name_compact = name_norm.replace(" ", "")
+            if Levenshtein.normalized_distance(compact, name_compact) <= MAX_NORMALIZED_DISTANCE:
+                return reason
+
+    # Handle legacy names that don't match any current category
+    if _SKIP_LEGACY_PATTERN.search(category):
+        return "not-for-changelog"
+
+    return None
+
+
+def _match_changelog_category(category: str) -> Optional[str]:
+    """Match a PR category to a preferred changelog category.
+
+    Uses the same rules as the CI check: case-insensitive, whitespace-insensitive,
+    normalized Levenshtein distance up to 20% (with whitespace removed for comparison).
+    """
+    norm = _normalize_for_matching(category)
+    compact = norm.replace(" ", "")
+
+    # Exact normalized match first
+    for pref in categories_preferred_order:
+        if _normalize_for_matching(pref) == norm:
+            return pref
+
+    # Fuzzy match with normalized Levenshtein distance <= 20%
+    best_dist = MAX_NORMALIZED_DISTANCE + 1e-9
+    best_match = None
+    for pref in categories_preferred_order:
+        pref_compact = _normalize_for_matching(pref).replace(" ", "")
+        dist = Levenshtein.normalized_distance(compact, pref_compact)
+        if dist < best_dist:
+            best_dist = dist
+            best_match = pref
+
+    return best_match
+
+
+BOT_AUTHORS = {"dependabot[bot]"}
+
 FROM_REF = ""
 TO_REF = ""
 SHA_IN_CHANGELOG = []  # type: List[str]
@@ -53,11 +136,13 @@ class Description:
         self.number = number
         self.html_url = html_url
         user_login = user._rawData["login"]
-        if user_login == 'Copilot':
+        if user_login == "Copilot":
+
             class CopilotUser:
                 name = "Copilot"
                 login = "Copilot"
                 html_url = ""
+
             self.user = CopilotUser()
         else:
             self.user = gh.get_user_cached(user_login)  # type: ignore
@@ -91,7 +176,9 @@ class Description:
                 break
             except RateLimitExceededException:
                 gh.sleep_on_rate_limit()
-        user_display = f"[{user_name}]({self.user.html_url})" if self.user.html_url else user_name
+        user_display = (
+            f"[{user_name}]({self.user.html_url})" if self.user.html_url else user_name
+        )
         return f"* {entry} [#{self.number}]({self.html_url}) ({user_display})."
 
     # Sort PR descriptions by numbers
@@ -215,6 +302,14 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
                 item.head.ref,
                 item.number,
             )
+    # Skip PRs by bot authors (e.g., dependabot)
+    # pylint: disable=protected-access
+    user_login = item.user._rawData["login"]
+    # pylint: enable=protected-access
+    if user_login in BOT_AUTHORS:
+        logging.info("Skipping PR %s by bot author '%s'", item.number, user_login)
+        return None
+
     description = item.body
     # Don't skip empty lines because they delimit parts of description
     lines = [x.strip() for x in (description.split("\n") if description else [])]
@@ -226,28 +321,55 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if lines:
         i = 0
         while i < len(lines):
-            if re.match(r"(?i)^[#>*_ ]*change\s*log\s*category", lines[i]):
-                i += 1
-                if i >= len(lines):
-                    break
-                # Can have one empty line between header and the category itself.
-                # Filter it out.
-                if not lines[i]:
+            m_cat = re.match(
+                r"(?i)^[#>*_ ]*change\s*log\s*category(?:[^:]*:\s*(.*))?$",
+                lines[i],
+            )
+            m_entry = re.match(
+                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)(?:\s*\(.*\))?(?:[^:]*:\s*(.*))?$",
+                lines[i],
+            )
+            if m_cat:
+                # Check if the category is on the same line
+                inline = (m_cat.group(1) or "").strip()
+                inline = re.sub(r"^[-*_\s]*", "", inline)
+                inline = re.sub(r"[-*_\s]*$", "", inline)
+                if inline:
+                    new_category = inline
+                    i += 1
+                else:
                     i += 1
                     if i >= len(lines):
                         break
-                category = re.sub(r"^[-*\s]*", "", lines[i])
-                i += 1
-            elif re.match(
-                r"(?i)^[#>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
-            ):
-                i += 1
-                # Can have one empty line between header and the entry itself.
-                # Filter it out.
-                if i < len(lines) and not lines[i]:
+                    # Can have one empty line between header and the category itself.
+                    # Filter it out.
+                    if not lines[i]:
+                        i += 1
+                        if i >= len(lines):
+                            break
+                    new_category = re.sub(r"^[-*\s]*", "", lines[i])
                     i += 1
+                # If we already found a category, this is a duplicate — skip
+                # silently (changelog.py doesn't report errors, just picks the first).
+                if not category:
+                    category = new_category
+            elif m_entry:
+                # Check if the entry is on the same line
+                inline = (m_entry.group(2) or "").strip()
+                # Strip markdown formatting markers (e.g. "**Changelog entry:**" yields "**")
+                inline = re.sub(r"^[-*_\s]*", "", inline)
+                inline = re.sub(r"[-*_\s]*$", "", inline)
+                if inline:
+                    entry_lines = [inline]
+                    i += 1
+                else:
+                    i += 1
+                    # Can have one empty line between header and the entry itself.
+                    # Filter it out.
+                    if i < len(lines) and not lines[i]:
+                        i += 1
+                    entry_lines = []
                 # All following lines until empty one are the changelog entry.
-                entry_lines = []
                 while i < len(lines) and lines[i]:
                     entry_lines.append(lines[i])
                     i += 1
@@ -268,20 +390,12 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
         # Fall through, so that it shows up in output and the user can fix it.
         category = "NO CL CATEGORY"
 
-    # Filter out documentations changelog before not-for-changelog
-    if re.match(
-        r"(?i)doc",
-        category,
-    ):
+    # Filter out categories that are not for changelog, using the same
+    # fuzzy matching as the CI check.
+    skip_label = _match_skip_category(category)
+    if skip_label == "documentation":
         return None
-
-    # Filter out the PR categories that are not for changelog.
-    if re.search(
-        r"(?i)((non|in|not|un)[-\s]*significant)|"
-        r"(not[ ]*for[ ]*changelog)|"
-        r"(changelog[ ]*entry[ ]*is[ ]*not[ ]*required)",
-        category,
-    ):
+    if skip_label == "not-for-changelog":
         category = "NOT FOR CHANGELOG / INSIGNIFICANT"
         # Sometimes we declare not for changelog but still write a description. Keep it
         if len(entry) <= 4 or "Documentation entry" in entry:
@@ -310,10 +424,9 @@ def generate_description(item: PullRequest, repo: Repository) -> Optional[Descri
     if entry[-1] != ".":
         entry += "."
 
-    for c in categories_preferred_order:
-        if ratio(category.lower(), c.lower()) >= 90:
-            category = c
-            break
+    matched = _match_changelog_category(category)
+    if matched:
+        category = matched
 
     return Description(item.number, item.user, item.html_url, entry, category)
 
