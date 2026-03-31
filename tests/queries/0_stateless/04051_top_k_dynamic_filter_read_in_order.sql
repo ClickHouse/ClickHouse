@@ -31,7 +31,7 @@ WHERE has_topk_filter;
 -- With read-in-order + LIMIT 5, we should read far fewer than 1 000 000 rows.
 SYSTEM FLUSH LOGS query_log;
 
-SELECT read_rows < 500000
+SELECT read_rows < 100000
 FROM system.query_log
 WHERE
     current_database = currentDatabase()

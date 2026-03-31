@@ -25,6 +25,7 @@ SET query_plan_filter_push_down = 1;
 SET query_plan_merge_filter_into_join_condition = 0;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
+SET enable_multiple_prewhere_read_steps = 1;
 
 SELECT l.name || '_' || toString(r.val + 1) || toTypeName(r.val) || '_' || toString(r2.val2 + 1) || toTypeName(r2.val2)
 FROM t1 AS l

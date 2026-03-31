@@ -18,6 +18,7 @@ insert into aliases_lazyness(x) select * from numbers(100);
 ${CLICKHOUSE_CLIENT} --profile-events-delay-ms=-1 --print-profile-events --query "
 SET query_plan_optimize_lazy_materialization = 0;
 SET query_plan_remove_unused_columns = 0;
+SET query_plan_split_filter = 1;
 SELECT x, y FROM aliases_lazyness WHERE x = 1 FORMAT Null
 " |& grep -o -e "SleepFunctionMicroseconds.*" -e "SleepFunctionCalls.*"
 

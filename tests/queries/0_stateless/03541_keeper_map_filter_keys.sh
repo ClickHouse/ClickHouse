@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS keeper_map_with_filter;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE keeper_map_with_filter (key String, value String) ENGINE=KeeperMap(concat(currentDatabase(), '_simple')) PRIMARY KEY key;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO keeper_map_with_filter (*) SELECT n.number, n.number*10 FROM numbers(10) n;"
 
-$CLICKHOUSE_CLIENT --query_plan_merge_expressions=1 --query "EXPLAIN actions=1 SELECT value FROM keeper_map_with_filter LIMIT 1" | grep -A 2 "ReadFromKeeperMap"
+$CLICKHOUSE_CLIENT --query_plan_merge_expressions=1 --query_plan_push_down_limit=1 --query "EXPLAIN actions=1 SELECT value FROM keeper_map_with_filter LIMIT 1" | grep -A 2 "ReadFromKeeperMap"
 $CLICKHOUSE_CLIENT --query "EXPLAIN actions=1,optimize=0 SELECT value FROM keeper_map_with_filter" | grep -A 2 "ReadFromKeeperMap" | tr -d "[:blank:]"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM keeper_map_with_filter WHERE key = '5'"

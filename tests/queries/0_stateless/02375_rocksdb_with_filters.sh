@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS rocksdb_with_filter;"
 $CLICKHOUSE_CLIENT --query="CREATE TABLE rocksdb_with_filter (key String, value String) ENGINE=EmbeddedRocksDB PRIMARY KEY key;"
 $CLICKHOUSE_CLIENT --query="INSERT INTO rocksdb_with_filter (*) SELECT n.number, n.number*10 FROM numbers(10000) n;"
 
-$CLICKHOUSE_CLIENT --query_plan_merge_expressions=1 --query_plan_optimize_lazy_materialization=0 --query "EXPLAIN actions=1 SELECT value FROM rocksdb_with_filter LIMIT 1" | grep -A 2 "ReadFromEmbeddedRocksDB"
+$CLICKHOUSE_CLIENT --query_plan_merge_expressions=1 --query_plan_optimize_lazy_materialization=0 --query_plan_push_down_limit=1 --query "EXPLAIN actions=1 SELECT value FROM rocksdb_with_filter LIMIT 1" | grep -A 2 "ReadFromEmbeddedRocksDB"
 $CLICKHOUSE_CLIENT --query "EXPLAIN actions=1,optimize=0 SELECT value FROM rocksdb_with_filter" | grep -A 2 "ReadFromEmbeddedRocksDB" | tr -d "[:blank:]"
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM rocksdb_with_filter WHERE key = '5000'"

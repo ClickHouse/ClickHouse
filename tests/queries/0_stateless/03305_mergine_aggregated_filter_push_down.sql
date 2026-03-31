@@ -10,6 +10,8 @@ set optimize_aggregation_in_order=0, optimize_read_in_order=0;
 set query_plan_optimize_prewhere=1, optimize_move_to_prewhere=1, query_plan_optimize_lazy_materialization=0;
 set query_plan_merge_expressions=1;
 set query_plan_filter_push_down=1;
+set query_plan_split_filter=1;
+set query_plan_lift_up_union=1;
 
 -- { echoOn }
 

@@ -1,4 +1,6 @@
 SET enable_analyzer = 1;
 SET query_plan_merge_expressions = 1;
+SET query_plan_filter_push_down = 1;
+SET query_plan_execute_functions_after_sorting = 1;
 
 EXPLAIN header = 1, actions = 1 SELECT number FROM (SELECT number FROM numbers(2) ORDER BY ignore(2)) WHERE ignore(2);
