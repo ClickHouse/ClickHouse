@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/ShufflingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -296,13 +297,22 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         return false;
 
     auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
-    if (!sorting_step)
+    auto * shuffling_step = typeid_cast<ShufflingStep *>(root.children.front()->step.get());
+    if (!sorting_step && !shuffling_step)
         return false;
 
-    if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
-        return false;
+    if (sorting_step)
+    {
+        if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
+            return false;
+    }
+    else if (shuffling_step)
+    {
+        if (shuffling_step->getType() != ShufflingStep::Type::Full)
+            return false;
+    }
 
-    bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
+    bool reading_in_order = sorting_step && sorting_step->getType() == SortingStep::Type::FinishSorting;
 
     const auto limit = limit_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
@@ -318,11 +328,18 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (!canUseLazyMaterializationForReadingStep(reading_step))
         return false;
 
-    const auto & sorting_header = *sorting_step->getOutputHeader();
+    const auto & sorting_header = sorting_step ? *sorting_step->getOutputHeader() : *shuffling_step->getOutputHeader();
     std::vector<bool> required_columns(sorting_header.columns(), false);
 
-    for (const auto & descr : sorting_step->getSortDescription())
-        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    if (sorting_step)
+    {
+        for (const auto & descr : sorting_step->getSortDescription())
+            required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    }
+    else if(shuffling_step)
+    {
+        required_columns[0] = true;
+    }
 
     bool has_filter = false;
 
@@ -366,8 +383,15 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     required_columns.assign(sorting_header.columns(), false);
 
-    for (const auto & descr : sorting_step->getSortDescription())
-        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    if (sorting_step)
+    {
+        for (const auto & descr : sorting_step->getSortDescription())
+            required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+    }
+    else if (shuffling_step)
+    {
+        required_columns[0] = true;
+    }
 
     node = sorting_node->children.front();
     while (!node->children.empty())
