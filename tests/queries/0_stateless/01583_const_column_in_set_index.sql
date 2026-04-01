@@ -1,4 +1,7 @@
 SET query_plan_optimize_prewhere = 1;
+-- Parallel replicas with local plan execute the IN subquery in both local and remote
+-- contexts, doubling the rows read from numbers(10) and exceeding max_rows_to_read.
+SET enable_parallel_replicas = 0;
 
 drop table if exists insub;
 
