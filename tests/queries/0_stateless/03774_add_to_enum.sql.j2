@@ -51,6 +51,20 @@ ALTER TABLE enum_relative MODIFY COLUMN x ADD ENUM VALUES('three', 'two' = 2); -
 SHOW CREATE TABLE enum_relative;
 DROP TABLE enum_relative;
 
+CREATE OR REPLACE TABLE enum_relative_mixed (x Enum8('base' = 10)) ENGINE = Memory;
+ALTER TABLE enum_relative_mixed MODIFY COLUMN x ADD ENUM VALUES('a', 'b' = 20, 'c' = 1);
+SHOW CREATE TABLE enum_relative_mixed;
+INSERT INTO enum_relative_mixed VALUES (11), (20), (1);
+SELECT * FROM enum_relative_mixed ORDER BY x;
+DROP TABLE enum_relative_mixed;
+
+CREATE OR REPLACE TABLE enum_relative_adjacent (x Enum8('base' = 10)) ENGINE = Memory;
+ALTER TABLE enum_relative_adjacent MODIFY COLUMN x ADD ENUM VALUES('a', 'c' = 1);
+SHOW CREATE TABLE enum_relative_adjacent;
+INSERT INTO enum_relative_adjacent VALUES (11), (1);
+SELECT * FROM enum_relative_adjacent ORDER BY x;
+DROP TABLE enum_relative_adjacent;
+
 SELECT '======= SHORTHAND AUTO ASSIGN ===============';
 CREATE OR REPLACE TABLE enum_shorthand (x Enum8('One' = 1, 'Two')) ENGINE = Memory;
 ALTER TABLE enum_shorthand MODIFY COLUMN x ADD ENUM VALUES('Three');

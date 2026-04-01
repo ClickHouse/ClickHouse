@@ -1,8 +1,11 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
+#include <string_view>
+#include <vector>
 #include <Core/Names.h>
 #include <Common/NamePrompter.h>
 
@@ -16,6 +19,14 @@ class EnumValues : public IHints<>
 public:
     using Value = std::pair<std::string, T>;
     using Values = std::vector<Value>;
+    /// `TemporaryAdd` is only for intermediate `ADD ENUM VALUES` state:
+    /// values stay in parser order and duplicate numeric placeholders are allowed
+    /// until `mergeEnumTypes` remaps and validates the final enum values.
+    enum class ValidationMode
+    {
+        Normal,
+        TemporaryAdd,
+    };
 
 private:
     class NameToValueMap;
@@ -25,10 +36,10 @@ private:
     std::unique_ptr<NameToValueMap> name_to_value_map;
     ValueToNameMap value_to_name_map;
 
-    void fillMaps();
+    void fillMaps(ValidationMode validation_mode);
 
 public:
-    explicit EnumValues(const Values & values_);
+    explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
     ~EnumValues() override;
 
     const Values & getValues() const { return values; }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
@@ -27,7 +28,6 @@ public:
 
     virtual bool contains(const IDataType & rhs) const = 0;
     virtual bool isAdd() const = 0;
-    virtual bool isRelative() const = 0;
 };
 
 
@@ -39,6 +39,7 @@ public:
     using ColumnType = ColumnVector<FieldType>;
     static constexpr auto type_id = sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16;
     using typename EnumValues<Type>::Values;
+    using RelativeFlags = std::vector<UInt8>;
 
     static constexpr bool is_parametric = true;
 
@@ -46,10 +47,14 @@ private:
     std::string type_name;
     static std::string generateName(const Values & values);
     bool is_add; // created by ALTER ... ADD ENUM VALUES
-    Int64 relative_max = 0; // ADD ENUM VALUES is able to renumber up to
+    /// Aligned with temporary `ADD ENUM VALUES` elements in parser order.
+    /// Whenever this vector is populated, the base `EnumValues` must use
+    /// `ValidationMode::TemporaryAdd` so the element order stays unchanged.
+    /// `1` marks shorthand values remapped relative to the base enum.
+    RelativeFlags relative_flags;
 
 public:
-    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, Int64 relative_max_ = 0);
+    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, RelativeFlags relative_flags_ = {});
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
@@ -82,8 +87,8 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     bool isAdd() const override  { return is_add; }
-    bool isRelative() const override  { return relative_max > 0; }
-    Int64 getRelativeMax() const { return relative_max; }
+    bool isRelativeAt(size_t index) const { return index < relative_flags.size() && relative_flags[index]; }
+    size_t getRelativeFlagsSize() const { return relative_flags.size(); }
 };
 
 template <typename TypeBase>

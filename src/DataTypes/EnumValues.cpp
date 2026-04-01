@@ -22,26 +22,31 @@ template <typename T>
 class EnumValues<T>::NameToValueMap : public HashMap<std::string_view, T, StringViewHash> {};
 
 template <typename T>
-EnumValues<T>::EnumValues(const Values & values_)
+EnumValues<T>::EnumValues(const Values & values_, ValidationMode validation_mode)
     : values(values_)
     , name_to_value_map(std::make_unique<NameToValueMap>())
 {
     if (values.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
 
-    ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+    /// Temporary `ADD ENUM VALUES` entries carry per-element relative flags, so their order
+    /// must stay exactly as parsed until `mergeEnumTypes` consumes those flags.
+    if (validation_mode == ValidationMode::Normal)
     {
-        return left.second < right.second;
-    });
+        ::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+        {
+            return left.second < right.second;
+        });
+    }
 
-    fillMaps();
+    fillMaps(validation_mode);
 }
 
 template <typename T>
 EnumValues<T>::~EnumValues() = default;
 
 template <typename T>
-void EnumValues<T>::fillMaps()
+void EnumValues<T>::fillMaps(ValidationMode validation_mode)
 {
     for (const auto & name_and_value : values)
     {
@@ -55,7 +60,10 @@ void EnumValues<T>::fillMaps()
         const auto inserted_name = value_to_name_map.insert(
             { name_and_value.second, std::string_view{name_and_value.first} });
 
-        if (!inserted_name.second)
+        /// `ADD ENUM VALUES` may temporarily rewrite a leading implicit prefix to `1..N`.
+        /// These numbers are only relative placeholders until `mergeEnumTypes` remaps them,
+        /// so duplicate-value validation has to happen after the merge, not here.
+        if (!inserted_name.second && validation_mode != ValidationMode::TemporaryAdd)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate values in enum: '{}' = {} and '{}'",
                     name_and_value.first, toString(name_and_value.second), toString((*inserted_name.first).first));
     }
