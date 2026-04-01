@@ -1,3 +1,5 @@
+SET optimize_respect_aliases = 1;
+
 -- https://github.com/ClickHouse/ClickHouse/issues/77558
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Int, c1 Int ALIAS 1) ENGINE = Memory;

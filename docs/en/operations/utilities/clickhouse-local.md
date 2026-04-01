@@ -239,6 +239,44 @@ Arguments:
 
 Also, there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 
+## Commands {#commands}
+
+### LS Command {#ls-command}
+
+Lists all the files in the current working directory accessible to clickhouse-local.
+
+You can run it in interactive mode like:
+
+```sql 
+ClickHouse local version 26.3.1.1.
+
+:) ls
+
+SELECT _file AS file
+FROM file('*', 'One')
+ORDER BY file ASC
+```
+
+```text title="Response"
+┌─file────────┐
+│ file1.csv   │
+│ file2.json  │
+│ file3.xml   │
+└─────────────┘
+```
+
+You can also run it as a query using the argument -q:
+
+```sh
+./clickhouse-local -q ls
+```
+
+```text title="Response"
+file1.csv
+file2.json
+file3.xml
+```
+
 ## Examples {#examples}
 
 ```bash

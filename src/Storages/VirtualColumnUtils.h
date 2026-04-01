@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -129,17 +130,26 @@ void filterByPathOrFile(
 struct VirtualsForFileLikeStorage
 {
     const String & path;
+    const StorageID & storage_id;
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
     const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
+    /// Original file path as stored in Iceberg metadata (before resolution to storage path).
+    /// Used by Iceberg position deletes to reference data files in the metadata path format.
+    const String * iceberg_metadata_file_path { nullptr };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
+
+/// Returns true if the requested virtual columns contain columns that depend on
+/// per-row information (e.g. _row_number). Such columns are incompatible with
+/// the "need only count" optimization that skips actual row parsing.
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
 
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g

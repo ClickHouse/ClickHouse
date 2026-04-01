@@ -270,6 +270,9 @@ struct QueryPlanSettings
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
             {"column_structure", query_plan_options.column_structure},
+            {"compact", query_plan_options.compact},
+            {"pretty", query_plan_options.pretty},
+
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;

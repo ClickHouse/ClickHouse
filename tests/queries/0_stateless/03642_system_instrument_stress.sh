@@ -56,6 +56,6 @@ wait
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.text_log, system.trace_log;
-    SELECT count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%';
-    SELECT count() >= 1 FROM system.trace_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE '%QueryMetricLog%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
+    SELECT count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '$query_id_prefix%';
+    SELECT count() >= 1 FROM system.trace_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE '%QueryMetricLog%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
 """

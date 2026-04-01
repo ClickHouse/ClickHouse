@@ -10,7 +10,7 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Contains information about [dictionaries](../../sql-reference/statements/create/dictionary/index.md).
+Contains information about [dictionaries](../../sql-reference/statements/create/dictionary/overview.md).
 
 Columns:
 

@@ -632,95 +632,72 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
                 f"ALTER TABLE {table}{suffix} MODIFY SETTING merge_with_ttl_timeout=0",
             )
 
-    # After restart, tables can be in readonly mode, so use retry for all.
-    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_delete FINAL", timeout=timeout)
-    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
-    exec_query_with_retry(node_right, f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
-
-    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_delete FINAL", timeout=timeout)
-    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
-    exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
-
-    # After OPTIMIZE TABLE, it is not guaranteed that everything is merged.
-    # Possible scenario (for test_ttl_group_by):
-    # 1. Two independent merges assigned: [0_0, 1_1] -> 0_1 and [2_2, 3_3] -> 2_3
-    # 2. Another one merge assigned: [0_1, 2_3] -> 0_3
-    # 3. Merge to 0_3 is delayed:
-    #    `Not executing log entry for part 0_3 because 2 merges with TTL already executing, maximum 2
-    # 4. OPTIMIZE FINAL does nothing, cause there is an entry for 0_3
+    # Wait for all TTL merges to complete on both replicas in a single shared
+    # loop.  Previous versions used 6 sequential assert_eq_with_retry calls,
+    # each with an independent timeout equal to `timeout` seconds.  Under
+    # sanitizers, where merges are slow, the cumulative wait could exceed the
+    # test-framework's 900 s limit.
     #
-    # So, let's also sync replicas for node_right (for now).
+    # This loop shares a single time budget and periodically re-triggers
+    # OPTIMIZE TABLE FINAL + SYSTEM SYNC REPLICA to nudge stalled TTL merges
+    # (which can get stuck behind the concurrent-TTL-merge limit).
+    expectations = [
+        (node_left,  f"SELECT id FROM {table}_delete ORDER BY id",   "2\n4\n"),
+        (node_right, f"SELECT id FROM {table}_delete ORDER BY id",   "2\n4\n"),
+        (node_left,  f"SELECT val FROM {table}_group_by ORDER BY id", "10\n"),
+        (node_right, f"SELECT val FROM {table}_group_by ORDER BY id", "10\n"),
+        (node_left,  f"SELECT id FROM {table}_where ORDER BY id",    "2\n4\n"),
+        (node_right, f"SELECT id FROM {table}_where ORDER BY id",    "2\n4\n"),
+    ]
 
-    # Best-effort SYSTEM SYNC REPLICA: the assert_eq_with_retry calls below
-    # handle the actual waiting for correct results.  A timeout here (common
-    # with sanitiser/old-binary builds) must not kill the whole test.
-    # Use a short timeout to avoid wasting the test time budget.
-    sync_timeout = min(timeout, 60)
-    for suffix in ["_delete", "_group_by", "_where"]:
-        for node in [node_right, node_left]:
+    deadline = time.monotonic() + timeout
+    optimize_interval = 10  # re-trigger OPTIMIZE every N seconds
+    last_optimize = 0
+
+    while time.monotonic() < deadline:
+        now = time.monotonic()
+
+        # Periodically re-trigger OPTIMIZE FINAL and SYNC REPLICA to push
+        # stalled merges forward.
+        if now - last_optimize >= optimize_interval:
+            last_optimize = now
+            for suffix in ["_delete", "_group_by", "_where"]:
+                for node in [node_left, node_right]:
+                    try:
+                        node.query(f"OPTIMIZE TABLE {table}{suffix} FINAL", timeout=30)
+                    except Exception:
+                        pass
+                    try:
+                        node.query(f"SYSTEM SYNC REPLICA {table}{suffix}", timeout=30)
+                    except Exception:
+                        pass
+
+        # Check all expectations.
+        all_ok = True
+        last_mismatch = None
+        for node, query, expected in expectations:
             try:
-                node.query(f"SYSTEM SYNC REPLICA {table}{suffix}", timeout=sync_timeout)
+                result = node.query(query)
+                if TSV(result) != TSV(expected):
+                    all_ok = False
+                    last_mismatch = (node.name, query, expected.strip(), result.strip())
             except Exception:
-                pass
+                all_ok = False
 
-    # After SYNC REPLICA, new parts may have arrived from the other replica.
-    # A second OPTIMIZE FINAL is needed to merge them with locally-merged parts.
-    # Without this, the GROUP BY TTL result can be partial (e.g. 7 instead of 10)
-    # because each replica merged only its own inserts during the first OPTIMIZE.
-    for suffix in ["_delete", "_group_by", "_where"]:
-        for node in [node_right, node_left]:
-            exec_query_with_retry(
-                node,
-                f"OPTIMIZE TABLE {table}{suffix} FINAL",
-                timeout=timeout,
+        if all_ok:
+            break
+
+        time.sleep(1)
+    else:
+        if last_mismatch:
+            node_name, query, expected, got = last_mismatch
+            raise AssertionError(
+                f"Timeout waiting for TTL results on {node_name}.\n"
+                f"  Query:    {query}\n"
+                f"  Expected: {expected}\n"
+                f"  Got:      {got}"
             )
-
-    # Use assert_eq_with_retry because merges with TTL may still be pending
-    # after OPTIMIZE TABLE FINAL due to concurrent merge limits.
-    assert_eq_with_retry(
-        node_left,
-        f"SELECT id FROM {table}_delete ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-    assert_eq_with_retry(
-        node_right,
-        f"SELECT id FROM {table}_delete ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-
-    assert_eq_with_retry(
-        node_left,
-        f"SELECT val FROM {table}_group_by ORDER BY id",
-        "10\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-    assert_eq_with_retry(
-        node_right,
-        f"SELECT val FROM {table}_group_by ORDER BY id",
-        "10\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-
-    assert_eq_with_retry(
-        node_left,
-        f"SELECT id FROM {table}_where ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
-    assert_eq_with_retry(
-        node_right,
-        f"SELECT id FROM {table}_where ORDER BY id",
-        "2\n4\n",
-        retry_count=timeout * 2,
-        sleep_time=0.5,
-    )
+        raise AssertionError("Timeout waiting for TTL results (all queries failed)")
 
     # Cleanup
     for node in [node_left, node_right]:

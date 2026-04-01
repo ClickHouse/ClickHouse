@@ -1,3 +1,6 @@
+# local CI environment overrides (see ci/local.env.example)
+ci/local.env
+
 # emacs files
 *~
 *\#
@@ -12,6 +15,7 @@
 /build
 /build_*
 /build-*
+/ci/tmp
 /tests/venv
 /obj-x86_64-linux-gnu/
 

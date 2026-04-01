@@ -51,6 +51,7 @@ class JobTypes:
     BUGFIX_VALIDATION_FUNCTIONAL = "Bugfix validation functional"
     BUGFIX_VALIDATION_INTEGRATION = "Bugfix validation integration"
     CLICKBENCH = "ClickBench"
+    UNIT_TESTS = "Unit tests"
 
 
 class CreateIssue:
@@ -149,6 +150,28 @@ Test output:
         return cls.create_and_link_gh_issue(title, body, labels)
 
     @classmethod
+    def extract_unit_test_title(cls, result):
+        """
+        Extract a meaningful issue title from unit test output.
+        Looks for sanitizer summaries or gtest failure markers.
+        Falls back to the result name if nothing is found.
+        """
+        info = result.info or ""
+        # Look for sanitizer SUMMARY line, e.g.:
+        #   SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /path/File.h:229:25
+        m = re.search(
+            r"SUMMARY:\s+(\w+):\s+\S+\s+\S*/([^/\s]+:\d+)", info
+        )
+        if m:
+            return f"{m.group(1)} in {m.group(2)}"
+        # Look for gtest FAILED marker, e.g.:
+        #   [  FAILED  ] TestSuite.TestName (123 ms)
+        m = re.search(r"\[\s+FAILED\s+\]\s+(\S+)", info)
+        if m:
+            return m.group(1)
+        return result.name
+
+    @classmethod
     def create_gh_issue_on_fuzzer_or_stress_finding(cls, result, job_name):
         title = result.name
         body = f"""\
@@ -195,7 +218,7 @@ Test output:
             print("Cannot handle OOM errors - skip")
             return False
         if (
-            any(key in job_result.name for key in ("Buzz", "AST"))
+            any(key in job_result.name for key in ("Buzz", "AST", "Unit tests"))
             and job_result.results
         ):
             return True
@@ -236,7 +259,9 @@ Test output:
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                     result, job_name
                 )
-        elif any(key in job_name for key in ("Buzz", "AST", "Stress")):
+        elif any(key in job_name for key in ("Buzz", "AST", "Stress", "Unit tests")):
+            if "Unit tests" in job_name and result.name == job_name:
+                result.name = cls.extract_unit_test_title(result)
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
                 result, job_name
             )
@@ -806,19 +831,40 @@ def main():
     )
 
     if Shell.check(f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"):
-        # Check if PR was successfully added to the merge queue
-        # uncomment/fix if GH misses became regular
-        # merge_status = Shell.check(
-        #     f"gh pr view {pr_number} --json mergeStateStatus -q '.mergeStateStatus'",
-        #     capture_output=True,
-        # )
-        # if merge_status != "QUEUED":
-        #     print(
-        #         f"⚠ PR #{pr_number} auto-merge enabled but merge queue status unclear [{merge_status}]. "
-        #         f"If PR is not in queue, try redoing 'Merge when ready' button on GitHub."
-        #     )
-        # else:
-        print(f"✓ PR #{pr_number} added to the merge queue")
+        # Give GitHub a moment to process auto-merge and update merge state
+        time.sleep(5)
+        merge_status = Shell.get_output(
+            f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
+        )
+        if merge_status == "CLEAN":
+            # PR checks already passed but GitHub didn't enqueue it — the
+            # state transition was missed. Disable and re-enable auto-merge
+            # to force GitHub to re-evaluate.
+            print(
+                f"WARNING: PR #{pr_number} has mergeStateStatus=CLEAN (checks passed but not queued). "
+                f"Retoggling auto-merge to fix..."
+            )
+            Shell.check(
+                f"gh pr merge {pr_number} --disable-auto --repo ClickHouse/ClickHouse",
+                verbose=True,
+            )
+            time.sleep(2)
+            if Shell.check(
+                f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse",
+                verbose=True,
+            ):
+                print(f"OK: Auto-merge retoggled for PR #{pr_number}")
+            else:
+                print(
+                    f"ERROR: Failed to re-enable auto-merge for PR #{pr_number}. "
+                    f"Please manually click 'Merge when ready' on GitHub."
+                )
+        elif merge_status == "QUEUED":
+            print(f"OK: PR #{pr_number} added to the merge queue")
+        else:
+            print(
+                f"OK: PR #{pr_number} auto-merge enabled (mergeStateStatus={merge_status})"
+            )
 
 
 if __name__ == "__main__":

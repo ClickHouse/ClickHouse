@@ -1,5 +1,6 @@
 -- add_minmax_index_for_numeric_columns=0: Different plan
 SET use_statistics = 0;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SELECT * FROM (SELECT col1, col2 FROM (select '1' as col1, '2' as col2) GROUP by col1, col2) AS expr_qry WHERE col2 != '';
 SELECT * FROM (SELECT materialize('1') AS s1, materialize('2') AS s2 GROUP BY s1, s2) WHERE s2 = '2';
 SELECT * FROM (SELECT materialize([1]) AS s1, materialize('2') AS s2 GROUP BY s1, s2) WHERE s2 = '2';

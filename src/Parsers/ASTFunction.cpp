@@ -35,6 +35,19 @@ namespace ErrorCodes
 }
 
 
+void ASTFunction::setNoEmptyArgs(bool value)
+{
+    flags<ASTFunctionFlags>().no_empty_args = value;
+    /// Also clear the empty arguments node to keep formatting round-trip consistent:
+    /// `MergeTree()` with noEmptyArgs formats as `MergeTree`, which re-parses without arguments.
+    if (value && arguments && arguments->children.empty())
+    {
+        children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
+        arguments.reset();
+    }
+}
+
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
@@ -148,7 +161,6 @@ ASTPtr ASTFunction::clone() const
 
     return res;
 }
-
 
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -345,18 +357,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
-                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
+                /// Also extra parentheses are needed for subqueries with NOT, because NOT (SELECT 1) is ambiguous.
+                /// Note: Tuples no longer need inside_parens for NOT because NOT is now always parsed as a
+                /// unary prefix operator (not a function call), so NOT (1, 2, 3) correctly produces NOT(tuple(1,2,3)).
                 /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
                 bool inside_parens = !has_alias
                     && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                        || (subquery && name == "not") || (is_tuple && name == "not"));
+                        || (subquery && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
+                /// Only negate (-) can safely move before parentheses: -(x + y) is unambiguous.
+                /// NOT cannot: NOT (subquery) NOT LIKE x would be parsed as NOT ((subquery) NOT LIKE x),
+                /// because boolean NOT has lower precedence than comparison operators.
+                bool can_move_before_parens = frame.allow_moving_operators_before_parens && (name == "negate");
+                bool outside_parens = frame.need_parens && (!can_move_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
@@ -498,7 +514,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
             }
 
-            if (!written && name == "tupleElement"sv)
+            if (!written && name == "tupleElement"sv && arguments->children.size() == 2)
             {
                 // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
@@ -513,6 +529,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 //
                 // So instead of printing it as regular tuple,
                 // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                //
+                // Only use dot-syntax for 2-argument tupleElement (expr.field).
+                // The 3-argument form tupleElement(expr, field, default) cannot use
+                // dot-syntax because the default value would be lost during formatting.
                 bool tuple_arguments_valid = true;
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
@@ -637,7 +657,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
         }
 
-        if (!written && name == "array"sv)
+        if (!written && name == "array"sv && isOperator())
         {
             ostr << '[';
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -653,7 +673,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && !(frame.need_parens && !alias.empty()))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
             ostr << '(';
 
@@ -704,7 +724,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << ')';
     }
 
-    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
+    /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
+    /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
+    bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
+    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
+
+    if (need_parens)
         ostr << '(';
 
     if (arguments)
@@ -778,9 +803,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 nested_dont_need_parens.current_function = this;
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
+
     }
 
-    if ((arguments && !arguments->children.empty()) || !noEmptyArgs())
+    if (need_parens)
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

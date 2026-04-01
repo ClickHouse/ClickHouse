@@ -11,6 +11,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 
 #include <utility>
@@ -45,16 +46,23 @@ namespace ErrorCodes
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
     : marks(std::move(marks_)), num_columns_in_mark(num_columns_in_mark_)
 {
-    assert(marks);
+    if (!marks)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null marks passed to MergeTreeMarksGetter");
+
+    if (num_columns_in_mark == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of columns in mark is zero");
+
+    if (marks->getNumberOfMarks() % num_columns_in_mark != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of marks {} is not divisible by number of columns in mark {}",
+            marks->getNumberOfMarks(), num_columns_in_mark);
 }
 
 MarkInCompressedFile MergeTreeMarksGetter::getMark(size_t row_index, size_t column_index) const
 {
-#ifndef NDEBUG
     if (column_index >= num_columns_in_mark)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Column index: {} is out of range [0, {})", column_index, num_columns_in_mark);
-#endif
+            "Column index {} is out of range [0, {})", column_index, num_columns_in_mark);
 
     return marks->get(row_index * num_columns_in_mark + column_index);
 }
@@ -275,6 +283,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
+            auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);

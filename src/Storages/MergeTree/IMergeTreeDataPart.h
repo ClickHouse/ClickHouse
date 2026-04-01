@@ -84,11 +84,13 @@ public:
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
     using Index = Columns;
     using IndexPtr = std::shared_ptr<const Index>;
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+    using IndexSizeByNameConstPtr = std::shared_ptr<const IndexSizeByName>;
 
     using Type = MergeTreeDataPartType;
 
@@ -108,7 +110,7 @@ public:
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
-    const ColumnSizeByName & getColumnSizes() const;
+    ColumnSizeByNameConstPtr getColumnSizes() const;
     /// Return the size of all files required to read the specified subcolumn.
     ColumnSize getSubcolumnSize(const String & /*subcolumn_name*/) const;
 
@@ -117,6 +119,7 @@ public:
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+    IndexSizeByNameConstPtr getSecondaryIndexSizes() const;
 
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
@@ -188,6 +191,12 @@ public:
 
     /// Removes marks from cache for all columns in part.
     virtual void removeMarksFromCache(MarkCache * mark_cache) const = 0;
+
+    /// Loads index marks for secondary indices and saves them into the index mark cache.
+    void loadIndexMarksToCache(MarkCache * index_mark_cache) const;
+
+    /// Removes index marks for secondary indices from the index mark cache.
+    void removeIndexMarksFromCache(MarkCache * index_mark_cache) const;
 
     /// Removes data related to data part from mark and primary index caches.
     void clearCaches();
@@ -660,17 +669,19 @@ protected:
     mutable IndexPtr index;
 
 private:
+    void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
+
     /// Columns and secondary indices sizes can be calculated lazily on first request.
     mutable std::mutex columns_and_secondary_indices_sizes_mutex;
-    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
+    mutable bool are_columns_and_secondary_indices_sizes_calculated TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex) = false;
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
-    mutable ColumnSize total_columns_size;
+    mutable ColumnSize total_columns_size TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
-    mutable ColumnSizeByName columns_sizes;
-    mutable ColumnSize total_secondary_indices_size;
+    mutable ColumnSizeByNameConstPtr columns_sizes TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
+    mutable ColumnSize total_secondary_indices_size TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
 
-    mutable IndexSizeByName secondary_index_sizes;
+    mutable IndexSizeByNameConstPtr secondary_index_sizes TSA_GUARDED_BY(columns_and_secondary_indices_sizes_mutex);
 
     /// Sometimes we need to calculate the size of all files required to read a specific subcolumn.
     /// We do it on the first request and save it in the subcolumns_sizes_cache.
@@ -788,9 +799,8 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk() const;
-
-    void calculateSecondaryIndicesSizesOnDisk() const;
+    void calculateColumnsSizesOnDisk() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
+    void calculateSecondaryIndicesSizesOnDisk() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without

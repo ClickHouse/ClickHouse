@@ -5,7 +5,7 @@
 SELECT name
 FROM system.functions
 WHERE
-    length(description) < 10
+    (length(description) < 10 OR length(syntax) == 0 OR introduced_in = '')
     AND NOT is_aggregate -- TODO remove this condition
     AND origin = 'System'
     AND alias_to = ''

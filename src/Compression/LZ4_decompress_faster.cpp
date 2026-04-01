@@ -16,6 +16,7 @@
 #include <arm_neon.h>
 #endif
 
+
 namespace LZ4
 {
 
@@ -37,7 +38,8 @@ ALWAYS_INLINE void copyFromOutput(UInt8 * dst, UInt8 * src)
 template <size_t block_size>
 ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __restrict src, size_t size)
 {
-    /// Unrolling with clang is doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade on x86.
+    /// On ARM (Graviton 4) the pragma has no measurable effect.
     size_t i = 0;
     #pragma nounroll
     do
@@ -53,7 +55,8 @@ ALWAYS_INLINE void wildCopyFromInput(UInt8 * __restrict dst, const UInt8 * __res
 template <size_t block_size>
 ALWAYS_INLINE void wildCopyFromOutput(UInt8 * dst, const UInt8 * src, size_t size)
 {
-    /// Unrolling with clang is doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade on x86.
+    /// On ARM (Graviton 4) the pragma has no measurable effect.
     size_t i = 0;
     #pragma nounroll
     do
@@ -175,6 +178,10 @@ template <>
 
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
+    /// Single `vtbl1_u8` is a native 8-byte D-register operation on ARM — measured 6% faster
+    /// than the scalar fallback on Graviton 4 (geo mean 0.940x across test.hits columns).
+    /// Unlike `copyOverlap<16>` and `copyOverlap<32>` where NEON `vtbl2_u8` was slower
+    /// than scalar due to needing multiple calls, this single-instruction path is a clear win.
     static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
         0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
@@ -244,35 +251,9 @@ template <>
     /// MSAN does not recognize the store as initializing the memory
     __msan_unpoison(op, 16);
 
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-
-    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
-    {
-        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
-        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
-        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
-        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
-        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
-        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
-        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
-    };
-
-    unalignedStore<uint8x8_t>(op,
-        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
-
-    unalignedStore<uint8x8_t>(op + 8,
-        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
-
-    match += masks[offset];
+    /// Note: an ARM NEON path using `vqtbl1q_u8` (Q-register 16-byte table lookup) was tested
+    /// on Graviton 4 but showed no improvement over the scalar fallback (geo mean 1.0000x across
+    /// test.hits columns). The previous `vtbl2_u8` (D-register) path was actively slower.
 
 #else
     /// 4 % n.
@@ -399,6 +380,11 @@ template <>
     }
 
     match += shifts[offset];
+
+    /// Note: an ARM NEON path using two `vqtbl1q_u8` calls (Q-register 16-byte table lookup)
+    /// was tested on Graviton 4 but showed no improvement over the scalar fallback (geo mean
+    /// 1.0000x across test.hits columns). The previous `vtbl2_u8` (D-register) path was also
+    /// slower due to needing four calls per 32 bytes.
 
 #else
     /** Fallback implementation without SIMD instructions.
@@ -610,6 +596,24 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
 }
 
+/** Three variants of the decompression loop are instantiated, differing in copy granularity:
+  *   variant 0: `decompressImpl<8>`  — copies 8 bytes at a time
+  *   variant 1: `decompressImpl<16>` — copies 16 bytes at a time
+  *   variant 2: `decompressImpl<32>` — copies 32 bytes at a time
+  *
+  * No single variant is universally fastest. On x86 with SSSE3:
+  * - Variant 0 has the lowest per-iteration overhead (wins most files by count).
+  * - Variant 1 matches the natural 16-byte `pshufb` width (best aggregate throughput).
+  * - Variant 2 amortizes two `pshufb` ops per iteration (wins on large, high-repetition blocks).
+  *
+  * Measured on AMD 7950X3D with test.hits columns (175 files, 10 iterations each, min taken):
+  *   variant 0:  total 1,099M cycles — best for 57% of files
+  *   variant 1:  total   972M cycles — best for 26% of files (best single variant overall)
+  *   variant 2:  total 1,079M cycles — best for 17% of files
+  *   oracle:     total   869M cycles — per-file best, 10.6% faster than always-variant-1
+  *
+  * The adaptive bandit algorithm converges toward the oracle, making all three variants useful.
+  */
 bool decompress(
     const char * const source,
     char * const dest,
@@ -620,8 +624,10 @@ bool decompress(
     if (source_size == 0 || dest_size == 0)
         return true;
 
-    /// Don't run timer if the block is too small.
-    if (dest_size >= 32768)
+    /// When a specific method is forced, always use it regardless of block size.
+    /// The size threshold below only applies to the adaptive bandit algorithm
+    /// where timing very small blocks would add too much noise.
+    if (statistics.choose_method >= 0 || dest_size >= 32768)
     {
         size_t variant_size = 3;
         size_t best_variant = statistics.select(variant_size);
@@ -641,6 +647,14 @@ bool decompress(
         return success;
     }
 
+    /// For small blocks (< 32 KiB), skip the bandit and always use variant 0 (8-byte copies).
+    /// Timing such small blocks would add too much noise to the bandit's statistics.
+    /// Variant 0 is the right default here: it has the lowest per-iteration overhead
+    /// and wins the majority of files (57% on test.hits), especially smaller ones.
+    /// Note: the exact threshold value is not performance-sensitive. On test.hits columns
+    /// (AMD 7950X3D), sweeping it from 0 to 32K changes the oracle total by only 0.003%,
+    /// because variant 0 is available in the bandit anyway and would be selected for
+    /// the same files. The threshold is purely a noise-reduction measure.
     return decompressImpl<8>(source, dest, source_size, dest_size);
 }
 

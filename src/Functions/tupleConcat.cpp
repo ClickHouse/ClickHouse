@@ -11,7 +11,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -28,30 +27,22 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Function {} requires at least one argument.",
-                getName());
+        FunctionArgumentDescriptor variadic_args{"tupleN", &isTuple, nullptr, "Tuple"};
+        FunctionArgumentDescriptors mandatory_args{variadic_args};
+
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
 
         DataTypes tuple_arg_types;
 
-        for (const auto arg_idx : collections::range(0, arguments.size()))
+        for (const auto & arg : arguments)
         {
-            const auto * arg = arguments[arg_idx].get();
-            if (!isTuple(arg))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument {} of function {}",
-                    arg->getName(),
-                    arg_idx + 1,
-                    getName());
-
-            const auto * type = checkAndGetDataType<DataTypeTuple>(arg);
+            const auto * type = checkAndGetDataType<DataTypeTuple>(arg.type.get());
             for (const auto & elem : type->getElements())
+            {
                 tuple_arg_types.push_back(elem);
+            }
         }
 
         return std::make_shared<DataTypeTuple>(tuple_arg_types);

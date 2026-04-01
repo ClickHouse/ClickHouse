@@ -328,6 +328,8 @@ public:
     DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
+    /// NOTE: `operation_with_data_parts_mutex` is also locked directly via `std::lock` in
+    /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat
@@ -534,7 +536,7 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
@@ -638,13 +640,21 @@ public:
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
-    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
-    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const;
-    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
-    MarkCachePtr getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const;
 
-    /// Prewarm mark cache and primary index cache for the most recent data parts.
-    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
+    struct CachesToPrewarm
+    {
+        MarkCachePtr mark_cache;
+        MarkCachePtr index_mark_cache;
+        PrimaryIndexCachePtr primary_index_cache;
+
+        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache; }
+    };
+
+    /// Returns caches that should be prewarmed for a part of the given size.
+    CachesToPrewarm getCachesToPrewarm(size_t part_uncompressed_bytes) const;
+
+    /// Prewarm mark cache, index mark cache, and primary index cache for the most recent data parts.
+    void prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches);
 
     String getLogName() const { return log.loadName(); }
 
@@ -1696,7 +1706,8 @@ protected:
         const DataPartsVector & source_parts,
         const MergeListEntry * merge_entry,
         std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters,
-        const Strings & mutation_ids = {});
+        const Strings & mutation_ids,
+        const std::map<String, UInt64> & projections_duration_ms);
 
     /// If part is assigned to merge or mutation (possibly replicated)
     /// Should be overridden by children, because they can have different

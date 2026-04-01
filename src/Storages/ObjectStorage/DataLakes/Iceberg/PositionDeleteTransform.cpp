@@ -60,7 +60,7 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
     /// Create filter on the data object to get interested rows
-    auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key;
+    auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
     ASTPtr where_ast = makeASTFunction(
         "equals",
         make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
@@ -155,10 +155,10 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             {
                 // Add filename matching check
                 auto filename_in_delete_record = filename_column->getDataAt(i);
-                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_key;
+                auto current_data_file_path = iceberg_object_info->info.data_object_file_path_key.serialize();
 
                 // Only add to delete bitmap when the filename in delete record matches current data file path
-                if (filename_in_delete_record == current_data_file_path || filename_in_delete_record == "/" + current_data_file_path)
+                if (filename_in_delete_record == current_data_file_path)
                 {
                     auto position_to_delete = position_column->get64(i);
                     bitmap.add(position_to_delete);
