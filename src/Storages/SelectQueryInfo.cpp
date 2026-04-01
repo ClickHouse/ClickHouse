@@ -43,8 +43,7 @@ PrewhereInfo PrewhereInfo::clone() const
     PrewhereInfo prewhere_info;
 
     prewhere_info.prewhere_actions = prewhere_actions.clone();
-    /// Position is stable across clone since clone preserves output order.
-    prewhere_info.prewhere_column_position = prewhere_column_position;
+    prewhere_info.prewhere_column_name = prewhere_column_name;
     prewhere_info.remove_prewhere_column = remove_prewhere_column;
     prewhere_info.need_filter = need_filter;
 
@@ -54,7 +53,7 @@ PrewhereInfo PrewhereInfo::clone() const
 void PrewhereInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     prewhere_actions.serialize(ctx.out, ctx.registry);
-    writeVarUInt(prewhere_column_position, ctx.out);
+    writeStringBinary(prewhere_column_name, ctx.out);
     writeBinary(remove_prewhere_column, ctx.out);
 }
 
@@ -63,7 +62,7 @@ PrewhereInfo PrewhereInfo::deserialize(IQueryPlanStep::Deserialization & ctx)
     PrewhereInfo prewhere_info;
 
     prewhere_info.prewhere_actions = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
-    readVarUInt(prewhere_info.prewhere_column_position, ctx.in);
+    readStringBinary(prewhere_info.prewhere_column_name, ctx.in);
     readBinary(prewhere_info.remove_prewhere_column, ctx.in);
     prewhere_info.need_filter = true;
 

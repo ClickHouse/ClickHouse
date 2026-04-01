@@ -180,9 +180,6 @@ public:
     /// Find first column by name in output nodes. This search is linear.
     const Node & findInOutputs(const std::string & name) const;
 
-    /// Find the position of the first column by name in output nodes.
-    size_t findPositionInOutputs(const std::string & name) const;
-
     /// Same, but return nullptr if node not found.
     const Node * tryFindInOutputs(const std::string & name) const;
 

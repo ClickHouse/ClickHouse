@@ -512,7 +512,7 @@ void StorageBuffer::read(
                 return std::make_shared<FilterTransform>(
                         header,
                         actions,
-                        query_info.prewhere_info->prewhere_actions.getOutputs()[query_info.prewhere_info->prewhere_column_position]->result_name,
+                        query_info.prewhere_info->prewhere_column_name,
                         query_info.prewhere_info->remove_prewhere_column);
             });
         }

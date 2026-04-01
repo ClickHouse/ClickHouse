@@ -210,7 +210,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         {
             .type = PrewhereExprStep::Filter,
             .actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone(), actions_settings),
-            .filter_column_name = prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]->result_name,
+            .filter_column_name = prewhere_info->prewhere_column_name,
             .remove_filter_column = prewhere_info->remove_prewhere_column,
             .need_filter = prewhere_info->need_filter,
             .perform_alter_conversions = true,
@@ -280,23 +280,30 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// Update the query condition cache for filters in PREWHERE stage
                 if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    const auto * output = prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position];
-                    if (VirtualColumnUtils::isDeterministic(output))
+                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
                     {
-                        auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                        auto data_part = task->getInfo().data_part;
+                        if (output->result_name == prewhere_info->prewhere_column_name)
+                        {
+                            if (!VirtualColumnUtils::isDeterministic(output))
+                                continue;
 
-                        String part_name = data_part->isProjectionPart()
-                            ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                            : data_part->name;
-                        query_condition_cache->write(
-                            data_part->storage.getStorageID().uuid,
-                            part_name,
-                            output->getHash(),
-                            prewhere_info->prewhere_actions.getNames()[0],
-                            task->getPrewhereUnmatchedMarks(),
-                            data_part->index_granularity->getMarksCount(),
-                            data_part->index_granularity->hasFinalMark());
+                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                            auto data_part = task->getInfo().data_part;
+
+                            String part_name = data_part->isProjectionPart()
+                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                                : data_part->name;
+                            query_condition_cache->write(
+                                data_part->storage.getStorageID().uuid,
+                                part_name,
+                                output->getHash(),
+                                prewhere_info->prewhere_actions.getNames()[0],
+                                task->getPrewhereUnmatchedMarks(),
+                                data_part->index_granularity->getMarksCount(),
+                                data_part->index_granularity->hasFinalMark());
+
+                            break;
+                        }
                     }
                 }
 

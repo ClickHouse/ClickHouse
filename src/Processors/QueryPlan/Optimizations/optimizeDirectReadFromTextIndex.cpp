@@ -646,7 +646,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
 {
     read_from_merge_tree_step.updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_actions.getOutputs()[cloned_prewhere_info.prewhere_column_position]->result_name, direct_read_from_text_index);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name, direct_read_from_text_index);
 
     if (!result_filter_node)
     {
@@ -654,7 +654,7 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
         return false;
     }
 
-    cloned_prewhere_info.prewhere_column_position = cloned_prewhere_info.prewhere_actions.findPositionInOutputs(result_filter_node->result_name);
+    cloned_prewhere_info.prewhere_column_name = result_filter_node->result_name;
     auto modified_prewhere_info = std::make_shared<PrewhereInfo>(std::move(cloned_prewhere_info));
     read_from_merge_tree_step.updatePrewhereInfo(modified_prewhere_info);
     return true;

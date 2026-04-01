@@ -208,8 +208,7 @@ bool tryBuildPrewhereSteps(
         return true;
 
     /// 1. List all condition nodes that are combined with AND into PREWHERE condition
-    const auto * condition_root_ptr = prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position];
-    const auto & condition_root = *condition_root_ptr;
+    const auto & condition_root = prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name);
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
@@ -297,7 +296,7 @@ bool tryBuildPrewhereSteps(
             if (std::ranges::find(new_outputs, new_node_info.node) == new_outputs.end())
                 new_outputs.push_back(new_node_info.node);
         }
-        else if (output == original_outputs[prewhere_info->prewhere_column_position])
+        else if (output->result_name == prewhere_info->prewhere_column_name)
         {
             /// Special case for final PREWHERE column: it is an AND combination of all conditions,
             /// but we have only the condition for the last step here. We know that the combined filter is equivalent to

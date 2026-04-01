@@ -38,7 +38,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const FilterDAGInf
         {
             block = prewhere_info->prewhere_actions.updateHeader(block);
 
-            auto & prewhere_column = block.getByPosition(prewhere_info->prewhere_column_position);
+            auto & prewhere_column = block.getByName(prewhere_info->prewhere_column_name);
             if (!prewhere_column.type->canBeUsedInBooleanContext())
             {
                 throw Exception(
@@ -49,7 +49,7 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const FilterDAGInf
 
             if (prewhere_info->remove_prewhere_column)
             {
-                block.erase(prewhere_info->prewhere_column_position);
+                block.erase(prewhere_info->prewhere_column_name);
             }
             else if (prewhere_info->need_filter)
             {
@@ -113,7 +113,7 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
     if (query_info.prewhere_info)
     {
         format_settings.out << prefix << "Prewhere filter" << '\n';
-        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_actions.getOutputs()[query_info.prewhere_info->prewhere_column_position]->result_name;
+        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_column_name;
         if (query_info.prewhere_info->remove_prewhere_column)
             format_settings.out << " (removed)";
         format_settings.out << '\n';
@@ -150,7 +150,7 @@ void SourceStepWithFilter::describeActions(JSONBuilder::JSONMap & map) const
     if (query_info.prewhere_info)
     {
         std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
-        prewhere_filter_map->add("Prewhere filter column", query_info.prewhere_info->prewhere_actions.getOutputs()[query_info.prewhere_info->prewhere_column_position]->result_name);
+        prewhere_filter_map->add("Prewhere filter column", query_info.prewhere_info->prewhere_column_name);
         prewhere_filter_map->add("Prewhere filter remove filter column", query_info.prewhere_info->remove_prewhere_column);
         auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
         prewhere_filter_map->add("Prewhere filter expression", expression->toTree());

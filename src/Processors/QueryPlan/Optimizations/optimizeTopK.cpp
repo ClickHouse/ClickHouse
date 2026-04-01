@@ -168,7 +168,7 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
         const auto & prewhere_node = new_prewhere_info->prewhere_actions.addFunction(
                 filter_function, {new_prewhere_info->prewhere_actions.getInputs().front()}, {});
         new_prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_node);
-        new_prewhere_info->prewhere_column_position = new_prewhere_info->prewhere_actions.getOutputs().size() - 1;
+        new_prewhere_info->prewhere_column_name = prewhere_node.result_name;
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 

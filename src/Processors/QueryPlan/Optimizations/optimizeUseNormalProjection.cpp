@@ -404,7 +404,7 @@ std::optional<String> optimizeUseNormalProjections(
                     return std::make_shared<FilterTransform>(
                         header,
                         filter_actions,
-                        projection_query_info.prewhere_info->prewhere_actions.getOutputs()[projection_query_info.prewhere_info->prewhere_column_position]->result_name,
+                        projection_query_info.prewhere_info->prewhere_column_name,
                         projection_query_info.prewhere_info->remove_prewhere_column);
                 });
         }

@@ -1112,8 +1112,9 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
     if (query_info_copy.prewhere_info)
     {
         {
-            added_filter_nodes.nodes.push_back(
-                query_info_copy.prewhere_info->prewhere_actions.getOutputs()[query_info_copy.prewhere_info->prewhere_column_position]);
+            const auto & node
+                = query_info_copy.prewhere_info->prewhere_actions.findInOutputs(query_info_copy.prewhere_info->prewhere_column_name);
+            added_filter_nodes.nodes.push_back(&node);
         }
     }
 
@@ -1235,7 +1236,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
         {
             header = analysis_result.prewhere_info->prewhere_actions.updateHeader(header);
             if (analysis_result.prewhere_info->remove_prewhere_column)
-                header.erase(analysis_result.prewhere_info->prewhere_column_position);
+                header.erase(analysis_result.prewhere_info->prewhere_column_name);
         }
         return header;
     }
@@ -1761,7 +1762,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             auto prewhere_step = std::make_unique<FilterStep>(
                 query_plan.getCurrentHeader(),
                 expressions.prewhere_info->prewhere_actions.clone(),
-                expressions.prewhere_info->prewhere_actions.getOutputs()[expressions.prewhere_info->prewhere_column_position]->result_name,
+                expressions.prewhere_info->prewhere_column_name,
                 expressions.prewhere_info->remove_prewhere_column);
 
             prewhere_step->setStepDescription("PREWHERE");
@@ -2348,7 +2349,7 @@ void InterpreterSelectQuery::addEmptySourceToQueryPlan(QueryPlan & query_plan, c
         {
             return std::make_shared<FilterTransform>(
                 header, filter_actions,
-                prewhere_info.prewhere_actions.getOutputs()[prewhere_info.prewhere_column_position]->result_name, prewhere_info.remove_prewhere_column);
+                prewhere_info.prewhere_column_name, prewhere_info.remove_prewhere_column);
         });
     }
 
@@ -2484,10 +2485,9 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
             /// Populate required columns with the columns, added by PREWHERE actions and not removed afterwards.
             /// XXX: looks hacky that we already know which columns after PREWHERE we won't need for sure.
-            for (size_t i = 0; i < prewhere_actions_result.columns(); ++i)
+            for (const auto & column : prewhere_actions_result)
             {
-                const auto & column = prewhere_actions_result.getByPosition(i);
-                if (prewhere_info->remove_prewhere_column && i == prewhere_info->prewhere_column_position)
+                if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
                     continue;
 
                 if (columns_to_remove.contains(column.name))
@@ -2510,8 +2510,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
         /// Do not remove prewhere filter if it is a column which is used as alias.
         if (prewhere_info && prewhere_info->remove_prewhere_column)
-            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(),
-                prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]->result_name))
+            if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_column_name))
                 prewhere_info->remove_prewhere_column = false;
 
         /// Remove columns which will be added by prewhere.
@@ -2588,7 +2587,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
     if (analysis_result.hasPrewhere())
     {
         auto & prewhere_info = analysis_result.prewhere_info;
-        filter_nodes.push_back(prewhere_info->prewhere_actions.getOutputs()[prewhere_info->prewhere_column_position]);
+        filter_nodes.push_back(&prewhere_info->prewhere_actions.findInOutputs(prewhere_info->prewhere_column_name));
     }
     if (analysis_result.hasWhere())
     {
