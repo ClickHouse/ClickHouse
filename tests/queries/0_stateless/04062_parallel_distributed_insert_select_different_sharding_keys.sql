@@ -1,4 +1,6 @@
--- Tags: shard
+-- Tags: distributed, no-replicated-database, no-parallel-replicas
+-- Tag no-replicated-database: ON CLUSTER is not allowed
+-- Tag no-parallel-replicas: adjust_settings_for_autopr(args, tags, random_settings) forces random_settings["parallel_distributed_insert_select"] = 0
 -- https://github.com/ClickHouse/ClickHouse/issues/100788
 -- parallel_distributed_insert_select=2 does not reshard data when source
 -- and target distributed tables have different sharding keys.
@@ -6,9 +8,9 @@
 SET distributed_ddl_output_mode = 'none';
 
 DROP DATABASE IF EXISTS 04062_test ON CLUSTER test_cluster_two_shards SYNC;
-
 CREATE DATABASE 04062_test ON CLUSTER test_cluster_two_shards;
-USE DATABASE 04062_test;
+
+USE 04062_test;
 
 DROP TABLE IF EXISTS dist_tgt_04062;
 DROP TABLE IF EXISTS dist_src_04062;
@@ -38,6 +40,7 @@ SYSTEM FLUSH DISTRIBUTED dist_src_04062;
 -- Test 1: parallel_distributed_insert_select=2 (default).
 -- Each shard copies local_src to local_tgt without resharding by SecondaryId.
 INSERT INTO dist_tgt_04062 SELECT * FROM dist_src_04062;
+SYSTEM FLUSH DISTRIBUTED dist_tgt_04062;
 
 SELECT count() FROM dist_tgt_04062;
 SELECT sum(Value) FROM dist_tgt_04062;
