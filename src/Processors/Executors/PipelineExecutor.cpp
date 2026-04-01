@@ -473,13 +473,20 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
 
         if (query_context)
         {
-            String master_thread_resource_name = query_context->getWorkloadEntityStorage().getMasterThreadResourceName();
-            if (!master_thread_resource_name.empty())
-                master_thread_link = query_context->getWorkloadClassifier()->get(master_thread_resource_name);
-            String worker_thread_resource_name = query_context->getWorkloadEntityStorage().getWorkerThreadResourceName();
-            if (!worker_thread_resource_name.empty())
-                worker_thread_link = query_context->getWorkloadClassifier()->get(worker_thread_resource_name);
-            workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();
+            /// Hold a shared_ptr to keep the storage alive for the duration of this call.
+            /// The storage can be destroyed during server shutdown while a query is still
+            /// in pipeline initialization, causing a use-after-free of the internal mutex.
+            auto workload_storage = query_context->getWorkloadEntityStoragePtr();
+            if (workload_storage)
+            {
+                String master_thread_resource_name = workload_storage->getMasterThreadResourceName();
+                if (!master_thread_resource_name.empty())
+                    master_thread_link = query_context->getWorkloadClassifier()->get(master_thread_resource_name);
+                String worker_thread_resource_name = workload_storage->getWorkerThreadResourceName();
+                if (!worker_thread_resource_name.empty())
+                    worker_thread_link = query_context->getWorkloadClassifier()->get(worker_thread_resource_name);
+                workload_cpu_scheduling_is_enabled = !master_thread_resource_name.empty() || !worker_thread_resource_name.empty();
+            }
         }
 
         if (workload_cpu_scheduling_is_enabled)

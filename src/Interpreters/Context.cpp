@@ -503,7 +503,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
 
     mutable OnceFlag workload_entity_storage_initialized;
-    mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
+    mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
 
     mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
 
@@ -943,7 +943,7 @@ struct ContextSharedPart : boost::noncopyable
         std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
         std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
         std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
-        std::unique_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
+        std::shared_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
         std::unique_ptr<DDLWorker> delete_ddl_worker;
 
         BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
@@ -3676,13 +3676,18 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
-IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
+std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const
 {
     callOnce(shared->workload_entity_storage_initialized, [&] {
         shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
     });
 
-    return *shared->workload_entity_storage;
+    return shared->workload_entity_storage;
+}
+
+IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
+{
+    return *getWorkloadEntityStoragePtr();
 }
 
 WasmModuleManager * Context::initWasmModuleManager()

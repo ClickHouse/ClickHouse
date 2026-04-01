@@ -1129,6 +1129,7 @@ public:
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+    std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
     WasmModuleManager & getWasmModuleManager() const;
