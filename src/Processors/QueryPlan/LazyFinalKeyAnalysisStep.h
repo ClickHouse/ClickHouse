@@ -14,12 +14,14 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class LazyFinalKeyAnalysisStep : public ITransformingStep
 {
 public:
+    using MutableRangesInDataPartsPtr = std::shared_ptr<RangesInDataParts>;
+
     LazyFinalKeyAnalysisStep(
         SharedHeader input_header_,
         FutureSetPtr future_set_,
         ContextPtr query_context_,
         StorageMetadataPtr metadata_snapshot_,
-        RangesInDataParts ranges_);
+        MutableRangesInDataPartsPtr ranges_);
 
     String getName() const override { return "LazyFinalKeyAnalysis"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -30,7 +32,7 @@ private:
     FutureSetPtr future_set;
     ContextPtr query_context;
     StorageMetadataPtr metadata_snapshot;
-    RangesInDataParts ranges;
+    MutableRangesInDataPartsPtr ranges;
 };
 
 }

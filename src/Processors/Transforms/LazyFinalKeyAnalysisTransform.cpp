@@ -24,7 +24,7 @@ LazyFinalKeyAnalysisTransform::LazyFinalKeyAnalysisTransform(
     FutureSetPtr future_set_,
     ContextPtr query_context_,
     StorageMetadataPtr metadata_snapshot_,
-    RangesInDataParts ranges_)
+    LazyFinalKeyAnalysisTransform::MutableRangesInDataPartsPtr ranges_)
     : IProcessor(InputPorts{InputPort(Block())}, OutputPorts{OutputPort(Block())})
     , future_set(std::move(future_set_))
     , ranges(std::move(ranges_))
@@ -121,7 +121,7 @@ void LazyFinalKeyAnalysisTransform::work()
         .has_projections = false,
         .result = analysis_result,
     };
-    ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, std::move(ranges), analysis_result.index_stats);
+    *ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, std::move(*ranges), analysis_result.index_stats);
 
     is_done = true;
 }

@@ -359,6 +359,10 @@ QueryPipelineBuilderPtr QueryPipelineBuilder::selectPipeline(
     signal->pipe.header = signal->pipe.output_ports.front()->getSharedHeader();
     signal->pipe.max_parallel_streams = std::max({signal->pipe.max_parallel_streams, true_pipeline->pipe.max_parallel_streams, false_pipeline->pipe.max_parallel_streams});
 
+    /// Transfer resources so they stay alive while processors execute.
+    signal->resources = std::move(true_pipeline->resources);
+    signal->resources = std::move(false_pipeline->resources);
+
     signal->pipe.resize(num_streams);
     return signal;
 }

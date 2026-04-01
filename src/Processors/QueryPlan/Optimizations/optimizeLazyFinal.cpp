@@ -233,13 +233,14 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         nullptr));
 
     /// LazyFinalKeyAnalysisStep: uses the set for index analysis, outputs signal.
+    /// The ranges_ptr is shared with LazyReadReplacingFinalStep so filtered ranges are visible.
     auto ranges_ptr = std::make_shared<RangesInDataParts>(reading_step->getParts());
     set_plan.addStep(std::make_unique<LazyFinalKeyAnalysisStep>(
         set_plan.getCurrentHeader(),
         future_set,
         context,
         metadata_snapshot,
-        *ranges_ptr));
+        ranges_ptr));
 
     /// True branch (signal = set OK): LazyReadReplacingFinalSource + JoinLazyColumnsStep.
     QueryPlan true_plan;

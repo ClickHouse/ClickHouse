@@ -15,11 +15,13 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class LazyFinalKeyAnalysisTransform : public IProcessor
 {
 public:
+    using MutableRangesInDataPartsPtr = std::shared_ptr<RangesInDataParts>;
+
     LazyFinalKeyAnalysisTransform(
         FutureSetPtr future_set_,
         ContextPtr query_context_,
         StorageMetadataPtr metadata_snapshot_,
-        RangesInDataParts ranges_);
+        MutableRangesInDataPartsPtr ranges_);
 
     String getName() const override { return "LazyFinalKeyAnalysisTransform"; }
     Status prepare() override;
@@ -27,7 +29,7 @@ public:
 
 private:
     FutureSetPtr future_set;
-    RangesInDataParts ranges;
+    MutableRangesInDataPartsPtr ranges;
     StorageMetadataPtr metadata_snapshot;
     ContextPtr query_context;
 

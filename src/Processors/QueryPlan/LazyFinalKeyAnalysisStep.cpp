@@ -11,7 +11,7 @@ LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(
     FutureSetPtr future_set_,
     ContextPtr query_context_,
     StorageMetadataPtr metadata_snapshot_,
-    RangesInDataParts ranges_)
+    MutableRangesInDataPartsPtr ranges_)
     : ITransformingStep(
         input_header_,
         input_header_,
