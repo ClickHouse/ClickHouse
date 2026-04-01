@@ -14,6 +14,8 @@ They are designed for fast key-value style lookups on the right-hand side of a q
 
 Unlike data skipping indexes, lookup indexes do not prune parts or granules.
 Instead, ClickHouse builds an in-memory lookup structure from the indexed table and reuses it across queries.
+The feature is experimental and disabled by default. Enable it with the setting `allow_experimental_lookup_index = 1`.
+
 This means:
 
 - the first query may pay the cost of building the lookup structure;

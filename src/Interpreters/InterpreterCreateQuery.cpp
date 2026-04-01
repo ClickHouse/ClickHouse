@@ -114,6 +114,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -184,6 +185,21 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
+
+namespace
+{
+
+void checkExperimentalLookupIndexIsEnabled(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental `LOOKUP INDEX` is not enabled (the setting 'allow_experimental_lookup_index')");
+    }
+}
+
+}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -778,7 +794,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->lookup_indices)
+        {
+            if (mode <= LoadingStrictnessLevel::CREATE)
+                checkExperimentalLookupIndexIsEnabled(getContext());
+
             properties.lookup_indices = getLookupIndicesFromAST(create.columns_list->lookup_indices, properties.columns, getContext());
+        }
 
         if (create.columns_list->indices)
         {
@@ -843,6 +864,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                     properties.indices.push_back(index);
 
             properties.lookup_indices = as_storage_metadata->getLookupIndices();
+            if (mode <= LoadingStrictnessLevel::CREATE && !properties.lookup_indices.empty())
+                checkExperimentalLookupIndexIsEnabled(getContext());
 
             /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();

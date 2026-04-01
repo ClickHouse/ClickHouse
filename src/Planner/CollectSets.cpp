@@ -27,6 +27,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool validate_enum_literals_in_operators;
 }
@@ -56,6 +57,9 @@ bool hasUnsupportedLookupModifiers(const std::optional<TableExpressionModifiers>
 
 std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const QueryTreeNodePtr & table_expression, PlannerContext & planner_context)
 {
+    if (!planner_context.getQueryContext()->getSettingsRef()[Setting::allow_experimental_lookup_index])
+        return std::nullopt;
+
     auto * table_node = table_expression->as<TableNode>();
     if (table_node)
     {

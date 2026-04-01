@@ -2,8 +2,31 @@ SET enable_analyzer = 1;
 SET join_algorithm = 'direct,hash';
 
 DROP TABLE IF EXISTS table_lookup_validation SYNC;
+DROP TABLE IF EXISTS table_lookup_validation_disabled SYNC;
+DROP TABLE IF EXISTS table_lookup_alter_disabled SYNC;
 DROP TABLE IF EXISTS table_lookup_alter_dim SYNC;
 DROP TABLE IF EXISTS table_lookup_alter_fact SYNC;
+
+CREATE TABLE table_lookup_validation_disabled
+(
+    id UInt64,
+    LOOKUP INDEX idx_set_disabled (id) TYPE table_set
+)
+ENGINE = MergeTree
+ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+
+CREATE TABLE table_lookup_alter_disabled
+(
+    id UInt64
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+ALTER TABLE table_lookup_alter_disabled ADD LOOKUP INDEX idx_set_disabled (id) TYPE table_set; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE table_lookup_alter_disabled SYNC;
+
+SET allow_experimental_lookup_index = 1;
 
 CREATE TABLE table_lookup_validation
 (

@@ -56,6 +56,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
@@ -1043,6 +1044,9 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     const QueryTreeNodePtr & table_expression,
     const PlannerContextPtr & planner_context)
 {
+    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::allow_experimental_lookup_index])
+        return {};
+
     auto * table_node = table_expression->as<TableNode>();
     if (!table_node)
         return {};

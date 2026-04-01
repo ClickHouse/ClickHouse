@@ -60,6 +60,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -76,10 +77,21 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+
+void checkExperimentalLookupIndexIsEnabled(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Experimental `LOOKUP INDEX` is not enabled (the setting 'allow_experimental_lookup_index')");
+    }
+}
 
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
@@ -780,6 +792,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_LOOKUP_INDEX)
     {
+        checkExperimentalLookupIndexIsEnabled(context);
+
         auto name_exists = metadata.lookup_indices.has(index_name) || metadata.secondary_indices.has(index_name);
         if (name_exists)
         {

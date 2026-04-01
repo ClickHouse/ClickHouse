@@ -197,6 +197,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_lookup_index;
     extern const SettingsNonZeroUInt64 max_block_size;
 }
 
@@ -10818,6 +10819,9 @@ bool MergeTreeData::hasLookupJoinIndex() const
 
 SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr & query_context) const
 {
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+        return {};
+
     const auto & metadata_snapshot = getInMemoryMetadataPtr();
     if (!findLookupIndex(metadata_snapshot->getLookupIndices(), TABLE_SET_INDEX_TYPE, key_names))
         return {};
@@ -10863,6 +10867,9 @@ SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr 
 
 std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Names & key_names, const ContextPtr & query_context) const
 {
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_lookup_index])
+        return {};
+
     const auto & metadata_snapshot = getInMemoryMetadataPtr();
     if (!findLookupIndex(metadata_snapshot->getLookupIndices(), TABLE_JOIN_INDEX_TYPE, key_names))
         return {};

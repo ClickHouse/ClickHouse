@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET allow_experimental_lookup_index = 1;
 SET join_algorithm = 'direct,hash';
 
 DROP TABLE IF EXISTS table_lookup_dim_join SYNC;

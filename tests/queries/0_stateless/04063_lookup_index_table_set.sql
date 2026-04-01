@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET allow_experimental_lookup_index = 1;
 
 DROP TABLE IF EXISTS table_lookup_dim_only SYNC;
 DROP TABLE IF EXISTS table_lookup_dim_extra SYNC;

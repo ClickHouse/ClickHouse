@@ -2,6 +2,7 @@
     <settings>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
+        <allow_experimental_lookup_index>1</allow_experimental_lookup_index>
     </settings>
 
     <drop_query>DROP TABLE IF EXISTS lookup_set_fact</drop_query>
