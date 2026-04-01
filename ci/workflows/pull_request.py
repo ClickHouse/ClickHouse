@@ -5,6 +5,7 @@ from ci.defs.defs import (
     DOCKERS,
     SECRETS,
     ArtifactConfigs,
+    ArtifactNames,
     JobNames,
 )
 from ci.defs.job_configs import JobConfigs
@@ -136,6 +137,11 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
+        # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
+        # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
+        JobConfigs.keeper_stress_job
+            .set_name("Keeper Stress Tests (PR)")
+            .set_timeout(3 * 3600),
         *JobConfigs.toolchain_build_jobs,
         # TODO: uncomment when praktika supports depends-on-all-jobs;
         # currently set_dependency requires an explicit list, but CI Results Review

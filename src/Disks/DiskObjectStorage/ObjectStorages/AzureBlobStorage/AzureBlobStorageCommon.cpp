@@ -181,6 +181,21 @@ bool ContainerClientWrapper::IsClientForDisk() const
     return client.GetClickhouseOptions().IsClientForDisk;
 }
 
+BlobContainerBatch ContainerClientWrapper::CreateBatch() const
+{
+    return client.CreateBatch();
+}
+
+BlobBatchResultResponse ContainerClientWrapper::SubmitBatch(const BlobContainerBatch & batch) const
+{
+    return client.SubmitBatch(batch);
+}
+
+String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
+{
+    return blob_prefix + blob_name;
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
