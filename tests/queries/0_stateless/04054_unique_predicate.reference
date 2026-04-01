@@ -1,14 +1,27 @@
+All distinct rows
 1
+Duplicate rows
 0
+Empty subquery (vacuously unique)
 1
+Single row
 1
+All same values
 0
+Multiple columns, all distinct
 1
+Multiple columns with duplicates
 0
+UNIQUE in WHERE clause
 in_where_true
+NULL rows are never duplicates (SQL standard)
 1
 1
+Multiple columns with NULLs: rows with any NULL column are skipped
+1
+Nullable column with actual duplicates among non-NULL rows
+0
+LowCardinality(Nullable(...)) columns
 1
 0
-1
-0
+Correlated subquery: not supported
