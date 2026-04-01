@@ -74,11 +74,6 @@ using namespace std::chrono_literals;
 namespace DB
 {
 
-namespace FailPoints
-{
-    extern const char keeper_ttl_gc_pause_before_remove[];
-}
-
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
@@ -625,7 +620,6 @@ void KeeperDispatcher::garbageCollectorThread()
             if (server->checkInit() && isLeader())
             {
                 std::vector<std::string> paths = server->getExpiredTTLPathsForGarbageCollector();
-                FailPointInjection::pauseFailPoint(FailPoints::keeper_ttl_gc_pause_before_remove);
                 for (auto & path : paths)
                 {
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
@@ -634,12 +628,11 @@ void KeeperDispatcher::garbageCollectorThread()
                     rem.version = -1;
                     rem.try_remove = true;
                     rem.xid = Coordination::CLOSE_XID;
-                    using namespace std::chrono;
 
                     KeeperRequestForSession info;
 
                     info.session_id = keeper_internal_ttl_garbage_collector_session_id;
-                    info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+                    info.time = duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                     info.request = std::move(request);
 
                     if (!requests_queue->push(std::move(info)))
