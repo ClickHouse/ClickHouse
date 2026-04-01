@@ -42,27 +42,28 @@ TEST_CONFIGS = [
     TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_concurrent/", True, "no idea why i'm sequential"),
+    TC("test_export_replicated_mt_partition_to_object_storage/", True, "ZooKeeper can't handle too many parallel requests"),
 ]
 
 IMAGES_ENV = {
-    "clickhouse/dotnet-client": "DOCKER_DOTNET_CLIENT_TAG",
-    "clickhouse/integration-helper": "DOCKER_HELPER_TAG",
-    "clickhouse/integration-test": "DOCKER_BASE_TAG",
-    "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
-    "clickhouse/test-mysql80": "DOCKER_TEST_MYSQL80_TAG",
-    "clickhouse/test-mysql57": "DOCKER_TEST_MYSQL57_TAG",
-    "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
-    "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
-    "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
-    "clickhouse/arrowflight-server-test": "DOCKER_ARROWFLIGHT_SERVER_TAG",
-    "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
-    "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
-    "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
-    "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
-    "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
-    "clickhouse/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
-    "clickhouse/mysql_dotnet_client": "DOCKER_MYSQL_DOTNET_CLIENT_TAG",
-    "clickhouse/s3-proxy": "DOCKER_S3_PROXY_TAG",
+    "altinityinfra/dotnet-client": "DOCKER_DOTNET_CLIENT_TAG",
+    "altinityinfra/integration-helper": "DOCKER_HELPER_TAG",
+    "altinityinfra/integration-test": "DOCKER_BASE_TAG",
+    "altinityinfra/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
+    "altinityinfra/test-mysql80": "DOCKER_TEST_MYSQL80_TAG",
+    "altinityinfra/test-mysql57": "DOCKER_TEST_MYSQL57_TAG",
+    "altinityinfra/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
+    "altinityinfra/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
+    "altinityinfra/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "altinityinfra/arrowflight-server-test": "DOCKER_ARROWFLIGHT_SERVER_TAG",
+    "altinityinfra/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
+    "altinityinfra/nginx-dav": "DOCKER_NGINX_DAV_TAG",
+    "altinityinfra/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
+    "altinityinfra/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
+    "altinityinfra/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
+    "altinityinfra/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
+    "altinityinfra/mysql_dotnet_client": "DOCKER_MYSQL_DOTNET_CLIENT_TAG",
+    "altinityinfra/s3-proxy": "DOCKER_S3_PROXY_TAG",
 }
 
 
@@ -249,6 +250,11 @@ def get_tests_execution_time(info: Info, job_options: str) -> dict[str, int]:
     assert info.updated_at
     start_time_filter = f"parseDateTimeBestEffort('{info.updated_at}')"
 
+    if info.pr_number == 0:
+        branch_filter = f"head_ref = '{info.git_branch}'"
+    else:
+        branch_filter = f"head_ref = '{info.base_branch}'"
+
     build = job_options.split(",", 1)[0]
 
     query = f"""
@@ -260,12 +266,12 @@ def get_tests_execution_time(info: Info, job_options: str) -> dict[str, int]:
             SELECT
                 splitByString('::', test_name)[1] AS file,
                 median(test_duration_ms) AS test_duration_ms
-            FROM checks
+            FROM `gh-data`.checks
             WHERE (check_name LIKE 'Integration tests%')
                 AND (check_name LIKE '%{build}%')
                 AND (check_start_time >= ({start_time_filter} - toIntervalDay(20)))
                 AND (check_start_time <= ({start_time_filter} - toIntervalHour(5)))
-                AND ((head_ref = 'master') AND startsWith(head_repo, 'ClickHouse/'))
+                AND ({branch_filter})
                 AND (file != '')
                 AND (test_status != 'SKIPPED')
                 AND (test_status != 'FAIL')

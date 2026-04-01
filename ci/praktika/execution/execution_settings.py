@@ -11,7 +11,7 @@ class ScalingType(metaclass=MetaClasses.WithIter):
 
 class DefaultExecutionSettings:
     GH_ACTIONS_DIRECTORY: str = "/home/ubuntu/gh_actions"
-    RUNNER_SCALING_TYPE: str = ScalingType.AUTOMATIC_SCALE_UP_DOWN
+    RUNNER_SCALING_TYPE: str = ScalingType.DISABLED
     MAX_WAIT_TIME_BEFORE_SCALE_DOWN_SEC: int = 30
 
 

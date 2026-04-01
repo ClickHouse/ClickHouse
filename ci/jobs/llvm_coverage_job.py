@@ -95,12 +95,12 @@ def get_git_info() -> tuple[str, list[str], str, str, str, int]:
     master_track_commits: list[str] = info.get_kv_data("master_track_commits_sha") or []
     if not master_track_commits:
         merge_base = Shell.get_output(
-            f"gh api repos/ClickHouse/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
+            f"gh api repos/Altinity/ClickHouse/compare/master...{current_commit_sha} -q .merge_base_commit.sha",
             verbose=True,
         ).strip()
         if merge_base:
             raw = Shell.get_output(
-                f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
+                f"gh api 'repos/Altinity/ClickHouse/commits?sha={merge_base}&per_page=30' -q '.[].sha'",
                 verbose=True,
             )
             master_track_commits = raw.splitlines()

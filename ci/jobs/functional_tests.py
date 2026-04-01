@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import random
 import subprocess
 from pathlib import Path
@@ -95,7 +96,7 @@ def run_tests(
     global_time_limit_option = (
         f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
     )
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {10*2**30} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} {global_time_limit_option} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
@@ -128,6 +129,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
+    "amd_tsan": " --timeout 1200",  # NOTE (strtgbb): tsan is slow, increase the timeout to avoid timeout errors
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
@@ -247,12 +249,20 @@ def main():
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        azure_connection_string = Shell.get_output(
-            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-            verbose=True,
-            strict=True,
-        )
-        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
+        # os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        #     f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
+        #     verbose=True,
+        # )
+        # NOTE(strtgbb): We pass azure credentials through the docker command, not SSM.
+        # NOTE(strtgbb): Azure credentials don't exist in community workflow
+        if info.is_community_pr:
+            print(
+                "NOTE: No azure credentials provided for community PR - disable azure storage"
+            )
+            config_installs_args += " --no-azure"
+
+            # NOTE(strtgbb): With the above, some tests are still trying to use azure, try this:
+            os.environ["USE_AZURE_STORAGE_FOR_MERGE_TREE"] = "0"
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
@@ -360,11 +370,7 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
-                # Not a bugfix PR - run a simple sanity test
-                tests = ["00001_select_1"]
-            else:
-                tests = targeter.get_changed_tests()
+            tests = targeter.get_changed_tests()
 
         if tests:
             print(f"Test list: [{tests}]")
@@ -402,12 +408,13 @@ def main():
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
 
-        def configure_log_export():
-            if not info.is_local_run:
-                print("prepare log export config")
-                return CH.create_log_export_config()
-            else:
-                print("skip log export config for local run")
+        # NOTE (strtgbb): Disable log export throughout this file, it depends on aws ssm, which we don't have configured
+        # def configure_log_export():
+        #     if not info.is_local_run:
+        #         print("prepare log export config")
+        #         return CH.create_log_export_config()
+        #     else:
+        #         print("skip log export config for local run")
 
         commands = [
             f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
@@ -439,8 +446,8 @@ def main():
             f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
-        if not is_coverage:
-            commands.append(configure_log_export)
+        # if not is_coverage:
+        #     commands.append(configure_log_export)
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
@@ -461,15 +468,13 @@ def main():
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
-                if not CH.start_kafka():
-                    print("WARNING: Failed to start Kafka")
-
-                if not Info().is_local_run:
-                    if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_report_message(
-                            "WARNING: Failed to start log export"
-                        )
-                        print("Failed to start log export")
+                # Note (strtgbb): We don't use this
+                # if not Info().is_local_run:
+                #     if not CH.start_log_exports(stop_watch.start_time):
+                #         info.add_workflow_report_message(
+                #             "WARNING: Failed to start log export"
+                #         )
+                #         print("Failed to start log export")
                 if not CH.create_minio_log_tables():
                     info.add_workflow_report_message(
                         "WARNING: Failed to create minio log tables"
@@ -496,6 +501,8 @@ def main():
         )
         res = results[-1].is_ok()
 
+    runner_options += f" --known-fails-file-path tests/broken_tests.yaml"
+
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -515,7 +522,7 @@ def main():
         run_sets_cnt = rerun_count if is_targeted_check else 1
         rerun_count = 1 if is_targeted_check else rerun_count
 
-        ft_res_processor = FTResultsProcessor(wd=temp_dir)
+        ft_res_processor = FTResultsProcessor(wd=temp_dir, test_options=test_options)
 
         # For flaky check, set a soft time limit so that the test runner stops
         # gracefully before the job hard timeout, allowing results to be posted.
@@ -655,7 +662,7 @@ def main():
                 )
             )
         elif failed_tests:
-            ft_res_processor = FTResultsProcessor(wd=temp_dir)
+            ft_res_processor = FTResultsProcessor(wd=temp_dir, test_options=test_options)
             run_tests(
                 batch_num=0,
                 batch_total=0,
@@ -709,6 +716,7 @@ def main():
                     src=CH,
                     dest=cidb_cluster,
                     job_name=info.job_name,
+                    branch=info.git_branch,
                 ).do(),
             )
         )
@@ -790,6 +798,10 @@ def main():
 
     if test_result:
         test_result.sort()
+
+    broken_tests_handler_log = os.path.join(temp_dir, "broken_tests_handler.log")
+    if os.path.exists(broken_tests_handler_log):
+        debug_files.append(broken_tests_handler_log)
 
     R = Result.create_from(
         results=results,

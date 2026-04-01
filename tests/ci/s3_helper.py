@@ -6,6 +6,7 @@ import time
 from multiprocessing.dummy import Pool
 from pathlib import Path
 from typing import Any, List, Union
+import os
 
 import boto3  # type: ignore
 import botocore  # type: ignore
@@ -19,6 +20,38 @@ from env_helper import (
     S3_TEST_REPORTS_BUCKET,
     S3_URL,
 )
+
+sensitive_var_pattern = re.compile(r"[A-Z_]*(SECRET|PASSWORD|KEY|TOKEN)[A-Z_]*")
+sensitive_strings = {
+    var: value for var, value in os.environ.items() if sensitive_var_pattern.match(var)
+}
+
+
+def scan_file_for_sensitive_data(file_content, file_name):
+    """
+    Scan the content of a file for sensitive strings.
+    Raises ValueError if any sensitive values are found.
+    """
+
+    def clean_line(line):
+        for name, value in sensitive_strings.items():
+            line = line.replace(value, f"SECRET[{name}]")
+        return line
+
+    matches = []
+    for line_number, line in enumerate(file_content.splitlines(), start=1):
+        for name, value in sensitive_strings.items():
+            if value in line:
+                matches.append((file_name, line_number, clean_line(line)))
+
+    if not matches:
+        return
+
+    logging.error(f"Sensitive values found in {file_name}")
+    for file_name, line_number, match in matches:
+        logging.error(f"{file_name}:{line_number}: {match}")
+
+    raise ValueError(f"Sensitive values found in {file_name}")
 
 
 def _flatten_list(lst):
@@ -46,6 +79,14 @@ class S3Helper:
     def _upload_file_to_s3(
         self, bucket_name: str, file_path: Path, s3_path: str
     ) -> str:
+        logging.debug("Checking %s for sensitive values", file_path)
+        try:
+            file_content = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            logging.warning("Failed to scan file %s, unknown encoding", file_path)
+        else:
+            scan_file_for_sensitive_data(file_content, file_path.name)
+
         logging.debug(
             "Start uploading %s to bucket=%s path=%s", file_path, bucket_name, s3_path
         )

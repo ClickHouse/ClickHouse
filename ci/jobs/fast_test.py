@@ -172,16 +172,18 @@ def main():
     os.environ["SCCACHE_LOG"] = "info"
 
     info = Info()
-    if info.is_local_run:
-        print("NOTE: It's a local run")
+    if info.is_local_run or info..is_community_pr:
+        print("NOTE: Community contribution or local run - set sccache to run without AWS credentials")
         os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
+        pass
+        # NOTE (strtgbb): Not used yet, but we should look into setting up the secrets for it
+        # os.environ["CH_HOSTNAME"] = (
+        #     "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
+        # )
+        # os.environ["CH_USER"] = "ci_builder"
+        # os.environ["CH_PASSWORD"] = chcache_secret.get_value()
+        # os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"

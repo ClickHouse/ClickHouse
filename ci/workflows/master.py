@@ -13,7 +13,7 @@ from ci.workflows.pull_request import REGULAR_BUILD_NAMES
 
 # Add long retention tags to subset of artifacts
 clickhouse_binaries_with_tags = []
-for artifact in ArtifactConfigs.clickhouse_binaries:
+for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse_stripped_binaries:
     if artifact.name in BINARIES_WITH_LONG_RETENTION:
         artifact = artifact.add_tags({"retention": "long"})
     clickhouse_binaries_with_tags.append(artifact)
@@ -21,19 +21,20 @@ for artifact in ArtifactConfigs.clickhouse_binaries:
 workflow = Workflow.Config(
     name="MasterCI",
     event=Workflow.Event.PUSH,
-    branches=[BASE_BRANCH],
+    branches=[BASE_BRANCH, "releases/*", "antalya-*"],
     jobs=[
-        *JobConfigs.tidy_build_arm_jobs,
+        # *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
         *JobConfigs.build_llvm_coverage_job,
+        *JobConfigs.coverage_build_jobs,
         *JobConfigs.release_build_jobs,
-        *[
-            job.set_dependency(
-                REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
-            )
-            for job in JobConfigs.special_build_jobs
-        ],
-        JobConfigs.smoke_tests_macos,
+        # *[ # NOTE (strtgbb): we don't run special build jobs
+        #     job.set_dependency(
+        #         REGULAR_BUILD_NAMES  # + [JobConfigs.tidy_build_arm_jobs[0].name]  # NOTE (strtgbb): we don't run tidy build jobs
+        #     )
+        #     for job in JobConfigs.special_build_jobs
+        # ],
+        # JobConfigs.smoke_tests_macos,
         *JobConfigs.unittest_jobs,
         *JobConfigs.unittest_llvm_coverage_job,
         JobConfigs.docker_server,
@@ -50,8 +51,8 @@ workflow = Workflow.Config(
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_with_master_head_jobs,
-        *JobConfigs.performance_comparison_with_release_base_jobs,
+        # *JobConfigs.performance_comparison_with_master_head_jobs, # NOTE (strtgbb): fails due to GH secrets not being handled properly
+        # *JobConfigs.performance_comparison_with_release_base_jobs,
         *JobConfigs.clickbench_master_jobs,
         # TODO: sqlancer needs adjustment after https://github.com/ClickHouse/ClickHouse/pull/81835
         #   job error: java.lang.AssertionError: CREATE TABLE IF NOT EXISTS database0NoREC.t1 (c0 String MATERIALIZED (-1457864079) CODEC (NONE)) ENGINE = MergeTree()  ORDER BY tuple()  SETTINGS allow_suspicious_indices=1;
@@ -59,6 +60,14 @@ workflow = Workflow.Config(
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.llvm_coverage_job,
+        *JobConfigs.functional_tests_jobs_coverage,
+    ],
+    additional_jobs=[
+        "GrypeScan",
+        "Regression",
+        "SignRelease",
+        "CIReport",
+        "SourceUpload",
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
@@ -76,16 +85,17 @@ workflow = Workflow.Config(
     enable_dockers_manifest_merge=True,
     set_latest_for_docker_merged_manifest=True,
     secrets=SECRETS,
-    enable_job_filtering_by_changes=True,
+    enable_job_filtering_by_changes=False,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
-    enable_slack_feed=True,
+    enable_slack_feed=False,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/parse_ci_tags.py",
+        # "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py", # NOTE (strtgbb): we don't do this
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

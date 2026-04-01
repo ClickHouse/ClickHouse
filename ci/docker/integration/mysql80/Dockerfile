@@ -1,4 +1,4 @@
-# docker build -t clickhouse/test-mysql80 .
+# docker build -t altinityinfra/test-mysql80 .
 
 FROM ubuntu/mysql:8.0-22.04_edge
 

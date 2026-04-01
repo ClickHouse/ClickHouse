@@ -1,5 +1,6 @@
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
@@ -13,6 +14,7 @@ class CoverageExporter:
         src: ClickHouseProc,
         dest: CIDBCluster,
         job_name: str,
+        branch: str,
         check_start_time="",
         to_file=False,
     ):
@@ -20,6 +22,7 @@ class CoverageExporter:
         self.dest = dest
         assert to_file or self.dest.is_ready(), "Destination cluster is not ready"
         self.job_name = job_name
+        self.branch = branch
         self.check_start_time = check_start_time or Utils.timestamp_to_str(
             Utils.timestamp()
         )
@@ -59,8 +62,10 @@ class CoverageExporter:
 
             if not self.to_file:
                 query = (
-                    f"INSERT INTO FUNCTION remoteSecure('{self.dest.url.removeprefix('https://')}', 'default.checks_coverage_inverted', '{self.dest.user}', '{self.dest.pwd}') "
+                    f"INSERT INTO FUNCTION remoteSecure('{self.dest.url.removeprefix('https://').split(':')[0]}', '{Settings.CI_DB_DB_NAME}.checks_coverage_inverted', '{self.dest.user}', '{self.dest.pwd}') "
+                    "(branch, symbol, check_start_time, check_name, test_name) "
                     "SELECT DISTINCT "
+                    f"'{self.branch}' AS branch, "
                     "arrayJoin(symbol) AS symbol, "
                     f"'{self.check_start_time}' AS check_start_time, "
                     f"'{self.job_name}' AS check_name, "

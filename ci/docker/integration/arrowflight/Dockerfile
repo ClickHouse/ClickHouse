@@ -1,4 +1,4 @@
-# docker build -t clickhouse/arrowflight-server-test .
+# docker build -t altinityinfra/arrowflight-server-test .
 # Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 FROM python:3.9-slim
 

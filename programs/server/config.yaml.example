@@ -928,8 +928,8 @@ query_masking_rules:
 #           response_content: config://http_server_default_response
 
 send_crash_reports:
-    enabled: true
-    endpoint: 'https://crash.clickhouse.com/'
+    enabled: false
+    endpoint: ''
 
 # Uncomment to disable ClickHouse internal DNS caching.
 # disable_internal_dns_cache: 1

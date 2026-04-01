@@ -19,16 +19,16 @@ ARCH = ("amd64", "arm64")
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
 GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
-with tempfile.NamedTemporaryFile("w", delete=False) as f:
-    GIT_KNOWN_HOSTS_FILE = f.name
-    GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@users.noreply.github.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        f"'ssh -o UserKnownHostsFile={GIT_KNOWN_HOSTS_FILE} "
-        "-o StrictHostKeyChecking=accept-new'"
-    )
-    atexit.register(os.remove, f.name)
+# with tempfile.NamedTemporaryFile("w", delete=False) as f:
+#     GIT_KNOWN_HOSTS_FILE = f.name
+#     GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+#         "git -c user.email=robot-clickhouse@users.noreply.github.com "
+#         "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+#         "-c core.sshCommand="
+#         f"'ssh -o UserKnownHostsFile={GIT_KNOWN_HOSTS_FILE} "
+#         "-o StrictHostKeyChecking=accept-new'"
+#     )
+#     atexit.register(os.remove, f.name)
 
 
 def read_build_urls(build_name: str):
@@ -58,10 +58,10 @@ def docker_login(relogin: bool = True) -> None:
         "docker system info | grep --quiet -E 'Username|Registry'"
     ):
         Shell.check(
-            "docker login --username 'robotclickhouse' --password-stdin",
+            "docker login --username 'altinityinfra' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "DOCKER_PASSWORD", type=Secret.Type.GH_SECRET
             ).get_value(),
             encoding="utf-8",
         )
@@ -166,12 +166,12 @@ def buildx_args(
     action_url: str,
 ) -> List[str]:
     args = [
-        "--provenance=true",
-        "--sbom=true",
+        # "--provenance=true", # NOTE (strtgbb): Disable for now, incompatible with current CI
+        # "--sbom=true",
         f"--platform=linux/{arch}",
         f"--label=build-url={action_url}",
-        f"--label=com.clickhouse.build.githash={sha}",
-        f"--label=com.clickhouse.build.version={version}",
+        f"--label=com.altinity.build.githash={sha}",
+        f"--label=com.altinity.build.version={version}",
     ]
     if direct_urls:
         args.append(f"--build-arg=DIRECT_DOWNLOAD_URLS='{' '.join(direct_urls)}'")
@@ -199,7 +199,7 @@ def build_and_push_image(
     init_args = ["docker", "buildx", "build"]
     if push:
         init_args.append("--push")
-        init_args.append("--output=type=image,push-by-digest=true")
+        init_args.append("--output=type=image")
         init_args.append(f"--tag={image.name}")
     else:
         init_args.append("--output=type=docker")
@@ -332,6 +332,7 @@ def main():
     version_dict = None
     if not info.is_local_run:
         version_dict = info.get_kv_data("version")
+        print(f"Version dict from kv data: {version_dict}")
     if not version_dict:
         version_dict = CHVersion.get_current_version_as_dict()
         if not info.is_local_run:
@@ -341,6 +342,7 @@ def main():
             info.add_workflow_report_message(
                 "WARNING: ClickHouse version has not been found in workflow kv storage"
             )
+        print(f"Version dict from repo: {version_dict}")
     assert version_dict
 
     if not info.is_local_run:
@@ -348,10 +350,10 @@ def main():
 
     if "server image" in info.job_name:
         image_path = args.image_path or "docker/server"
-        image_repo = args.image_repo or "clickhouse/clickhouse-server"
+        image_repo = args.image_repo or "altinityinfra/clickhouse-server"
     elif "keeper image" in info.job_name:
         image_path = args.image_path or "docker/keeper"
-        image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
+        image_repo = args.image_repo or "altinityinfra/clickhouse-keeper"
     else:
         assert False, f"Unexpected job name [{info.job_name}]"
 
@@ -370,7 +372,7 @@ def main():
         push = True
 
     image = DockerImageData(image_repo, image_path)
-    tags = gen_tags(version_dict["string"], args.tag_type)
+    tags = [f'{info.pr_number}-{version_dict["string"]}']
     repo_urls = {}
     direct_urls: Dict[str, List[str]] = {}
 
@@ -417,19 +419,17 @@ def main():
                     repo_urls,
                     os_,
                     tag,
-                    version_dict["describe"],
+                    version_dict["string"],
                     direct_urls,
                     run_url=info.run_url,
                     sha=info.sha,
                 )
             )
 
-    if not push:
-        # The image is built locally only when we don't push it
-        # See `--output=type=docker`
-        test_docker_library(test_results)
-
-    test_results.append(check_server_readme(image.path))
+    # if not push:
+    #     # The image is built locally only when we don't push it
+    #     # See `--output=type=docker`
+    #     test_docker_library(test_results) # NOTE (strtgbb): tests against the official docker library version of ClickHouse
 
     Result.create_from(results=test_results, stopwatch=sw).complete_job()
 

@@ -1,1 +1,1 @@
-[ClickHouse Inc.](%%GITHUB-REPO%%)
+[Altinity Inc.](%%GITHUB-REPO%%)

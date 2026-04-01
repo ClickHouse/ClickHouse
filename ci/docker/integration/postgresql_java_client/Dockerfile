@@ -1,4 +1,4 @@
-# docker build -t clickhouse/postgresql-java-client .
+# docker build -t altinityinfra/postgresql-java-client .
 # PostgreSQL Java client docker container
 # Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 

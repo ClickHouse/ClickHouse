@@ -1,0 +1,508 @@
+name: Regression test workflow - Release
+'on':
+  workflow_call:
+    inputs:
+      runner_type:
+        description: the (meta-)label of runner to use
+        required: true
+        type: string
+      commit:
+        description: commit hash of the regression tests.
+        required: true
+        type: string
+      arch:
+        description: arch to run the tests on.
+        required: true
+        type: string
+      timeout_minutes:
+        description: Maximum number of minutes to let workflow run before GitHub cancels it.
+        default: 210
+        type: number
+      build_sha:
+        description: commit sha of the workflow run for artifact upload.
+        required: true
+        type: string
+      checkout_depth:
+        description: the value of the git shallow checkout
+        required: false
+        type: number
+        default: 1
+      submodules:
+        description: if the submodules should be checked out
+        required: false
+        type: boolean
+        default: false
+      additional_envs:
+        description: additional ENV variables to setup the job
+        type: string
+      workflow_config:
+        description: workflow config for the run
+        required: true
+        type: string
+    secrets:
+      secret_envs:
+        description: if given, it's passed to the environments
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
+      AWS_DEFAULT_REGION:
+        description: the region of the aws param store.
+        required: true
+      AWS_REPORT_KEY_ID:
+        description: aws s3 key id used for regression test reports.
+        required: true
+      AWS_REPORT_SECRET_ACCESS_KEY:
+        description: aws s3 secret access key used for regression test reports.
+        required: true
+      AWS_REPORT_REGION:
+        description: aws s3 region used for regression test reports.
+        required: true
+      DOCKER_USERNAME:
+        description: username of the docker user.
+        required: true
+      DOCKER_PASSWORD:
+        description: password to the docker user.
+        required: true
+      REGRESSION_AWS_S3_BUCKET:
+        description: aws s3 bucket used for regression tests.
+        required: true
+      REGRESSION_AWS_S3_KEY_ID:
+        description: aws s3 key id used for regression tests.
+        required: true
+      REGRESSION_AWS_S3_SECRET_ACCESS_KEY:
+        description: aws s3 secret access key used for regression tests.
+        required: true
+      REGRESSION_AWS_S3_REGION:
+        description: aws s3 region used for regression tests.
+        required: true
+      REGRESSION_GCS_KEY_ID:
+        description: gcs key id used for regression tests.
+        required: true
+      REGRESSION_GCS_KEY_SECRET:
+        description: gcs key secret used for regression tests.
+        required: true
+      REGRESSION_GCS_URI:
+        description: gcs uri used for regression tests.
+        required: true
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
+  CHECKS_DATABASE_USER: ${{ secrets.CLICKHOUSE_TEST_STAT_LOGIN }}
+  CHECKS_DATABASE_PASSWORD:  ${{ secrets.CLICKHOUSE_TEST_STAT_PASSWORD }}
+  args: --test-to-end
+    --no-colors
+    --local
+    --collect-service-logs
+    --output new-fails
+    --parallel 1
+    --log raw.log
+    --with-analyzer
+  artifact_paths: |
+    ./report.html
+    ./*.log.txt
+    ./*.log
+    ./*.html
+    ./*/_instances/*.log
+    ./*/_instances/*/logs/*.log
+    ./*/*/_instances/*/logs/*.log
+    ./*/*/_instances/*.log
+
+jobs:
+  Common:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'common')
+    strategy:
+      fail-fast: false
+      matrix:
+        SUITE: [aes_encryption, atomic_insert, attach, base_58, clickhouse_keeper_failover,data_types, datetime64_extended_range, disk_level_encryption, dns, engines, example, extended_precision_data_types, functions, jwt_authentication, kafka, kerberos, key_value, lightweight_delete, memory, part_moves_between_shards, selects, session_timezone, settings, version, window_functions]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: ${{ matrix.SUITE }}
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: ${{ matrix.SUITE }}
+    secrets: inherit
+
+  AggregateFunctions:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'aggregate_functions')
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2, 3]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: aggregate_functions
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: aggregate_functions
+      extra_args: --only "part ${{ matrix.PART }}/*"
+    secrets: inherit
+  Alter:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'alter')
+    strategy:
+      fail-fast: false
+      matrix:
+        ONLY: [replace, move]
+        include:
+          - ONLY: attach
+            PART: 1
+          - ONLY: attach
+            PART: 2
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: alter
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /${{ matrix.ONLY }}_partition
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: alter_${{ matrix.ONLY }}
+      extra_args: --only "/alter/${{ matrix.ONLY }} partition/${{ matrix.PART && format('part {0}/', matrix.PART) || '' }}*"
+    secrets: inherit
+
+  Benchmark:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'benchmark')
+    strategy:
+      fail-fast: false
+      matrix:
+        STORAGE: [minio, aws_s3, gcs]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: ontime_benchmark
+      suite_executable: benchmark.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /${{ matrix.STORAGE }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: benchmark_${{ matrix.STORAGE }}
+      regression_args: --storage ${{ matrix.STORAGE }} --gcs-uri {{GCS_URI}} --gcs-key-id {{GCS_KEY_ID}} --gcs-key-secret {{GCS_KEY_SECRET}} --aws-s3-bucket {{AWS_BUCKET}} --aws-s3-region {{AWS_REGION}} --aws-s3-key-id {{AWS_KEY_ID}} --aws-s3-access-key {{AWS_ACCESS_KEY}}
+    secrets: inherit
+
+  ClickHouseKeeper:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'clickhouse_keeper')
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2]
+        SSL: [ssl, no_ssl]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: clickhouse_keeper
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /${{ matrix.SSL }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: clickhouse_keeper_${{ matrix.SSL }}
+      extra_args: ${{ matrix.SSL == 'ssl' && '--ssl' || '' }} --only "part ${{ matrix.PART }}/*"
+    secrets: inherit
+
+  Iceberg:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'iceberg')
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: iceberg
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: iceberg
+      extra_args: --only ${{ matrix.PART == 1 && '"/iceberg/iceberg engine/rest catalog/*" "/iceberg/s3 table function/*" "/iceberg/icebergS3 table function/*" "/iceberg/iceberg cache/*"' || '"/iceberg/iceberg engine/glue catalog/*" "/iceberg/iceberg table engine/*"' }}
+    secrets: inherit
+  LDAP:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'ldap')
+    strategy:
+      fail-fast: false
+      matrix:
+        SUITE: [authentication, external_user_directory, role_mapping]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: ldap/${{ matrix.SUITE }}
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: ldap_${{ matrix.SUITE }}
+    secrets: inherit
+
+  Parquet:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'parquet')
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: parquet
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: parquet
+    secrets: inherit
+
+  ParquetS3:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'parquet')
+    strategy:
+      fail-fast: false
+      matrix:
+        STORAGE: [minio, aws_s3]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: parquet
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: ${{ matrix.STORAGE }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: parquet_${{ matrix.STORAGE }}
+      regression_args: --storage ${{ matrix.STORAGE }} --aws-s3-bucket {{AWS_BUCKET}} --aws-s3-region {{AWS_REGION}} --aws-s3-key-id {{AWS_KEY_ID}} --aws-s3-access-key {{AWS_ACCESS_KEY}} --only "/parquet/${{ matrix.STORAGE }}/*"
+    secrets: inherit
+
+  RBAC:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'rbac')
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2, 3]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: rbac
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: rbac
+      extra_args: --only "/rbac/part ${{ matrix.PART }}/*"
+    secrets: inherit
+  SSLServer:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'ssl_server')
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [1, 2, 3]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: ssl_server
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: ssl_server
+      extra_args: --only "part ${{ matrix.PART }}/*"
+    secrets: inherit
+
+  S3:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 's3')
+    strategy:
+      fail-fast: false
+      matrix:
+        STORAGE: [aws_s3, gcs, azure, minio]
+        PART: [1, 2]
+        include:
+          - STORAGE: minio
+            PART: 3
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: s3
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /${{ matrix.STORAGE }}
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: s3_${{ matrix.STORAGE }}
+      regression_args: --storage ${{ matrix.STORAGE }} --gcs-uri {{GCS_URI}} --gcs-key-id {{GCS_KEY_ID}} --gcs-key-secret {{GCS_KEY_SECRET}} --aws-s3-bucket {{AWS_BUCKET}} --aws-s3-region {{AWS_REGION}} --aws-s3-key-id {{AWS_KEY_ID}} --aws-s3-access-key {{AWS_ACCESS_KEY}} --azure-account-name {{AZURE_ACCOUNT_NAME}} --azure-storage-key {{AZURE_STORAGE_KEY}} --azure-container {{AZURE_CONTAINER_NAME}}
+      extra_args: --only ":/try*" ":/part ${{ matrix.PART }}/*"
+    secrets: inherit
+
+  S3Export:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 's3_export')
+    strategy:
+      fail-fast: false
+      matrix:
+        PART: [part, partition]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: s3
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /minio
+      part: ${{ matrix.PART }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: s3_export
+      regression_args: --storage minio
+      extra_args: --only ":/try*" "minio/export tests/export ${{ matrix.PART }}/*"
+    secrets: inherit
+
+  Swarms:
+      if: |
+        fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+        contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'swarms')
+      uses: ./.github/workflows/regression-reusable-suite.yml
+      with:
+        ref: ${{ inputs.commit }}
+        workflow_config: ${{ inputs.workflow_config }}
+        suite_name: swarms
+        suite_executable: regression.py
+        output_format: new-fails
+        flags: --with-analyzer
+        timeout_minutes: ${{ inputs.timeout_minutes }}
+        runner_arch: ${{ inputs.arch }}
+        runner_type: ${{ inputs.runner_type }}
+        build_sha: ${{ inputs.build_sha }}
+        set_commit_status: true
+        job_name: swarms
+      secrets: inherit
+
+  TieredStorage:
+    if: |
+      fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs[0] == null ||
+      contains(fromJson(inputs.workflow_config).JOB_KV_DATA.ci_regression_jobs, 'tiered_storage')
+    strategy:
+      fail-fast: false
+      matrix:
+        STORAGE: [local, minio, s3amazon, s3gcs]
+    uses: ./.github/workflows/regression-reusable-suite.yml
+    with:
+      ref: ${{ inputs.commit }}
+      workflow_config: ${{ inputs.workflow_config }}
+      suite_name: tiered_storage
+      suite_executable: regression.py
+      output_format: new-fails
+      flags: --with-analyzer
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      runner_arch: ${{ inputs.arch }}
+      runner_type: ${{ inputs.runner_type }}
+      storage_path: /${{ matrix.STORAGE }}
+      build_sha: ${{ inputs.build_sha }}
+      set_commit_status: true
+      job_name: tiered_storage_${{ matrix.STORAGE }}
+      regression_args: --aws-s3-access-key {{AWS_ACCESS_KEY}} --aws-s3-key-id {{AWS_KEY_ID}} --aws-s3-uri https://s3.{{AWS_REGION}}.amazonaws.com/{{AWS_BUCKET}}/data/ --gcs-key-id {{GCS_KEY_ID}} --gcs-key-secret {{GCS_KEY_SECRET}} --gcs-uri {{GCS_URI}}
+      extra_args: ${{ matrix.STORAGE != 'local' && format('--with-{0}', matrix.STORAGE) || '' }}
+    secrets: inherit

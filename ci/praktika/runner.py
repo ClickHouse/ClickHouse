@@ -140,6 +140,14 @@ class Runner:
         else:
             print("Read GH Environment from workflow data")
             env = _Environment.from_workflow_data()
+
+        try:
+            version_string = Info().get_kv_data("version")['string']
+            os.environ["CLICKHOUSE_VERSION_STRING"] = version_string
+            env.CLICKHOUSE_VERSION_STRING = version_string
+        except Exception as e:
+            print(e)
+
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -774,6 +782,11 @@ class Runner:
                 print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
+            # Altinity workflow report
+            cmd = f"PR_NUMBER={env.PR_NUMBER} ./.github/actions/create_workflow_report/workflow_report_hook.sh"
+            workflow_report_url = Shell.get_output(cmd).splitlines()[-1]
+            print(f"::notice ::Workflow report: {workflow_report_url}")
+
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
 

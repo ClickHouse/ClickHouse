@@ -1,0 +1,567 @@
+name: Sign and Release packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      workflow_url:
+        description: 'The URL to the workflow run that produced the packages'
+        required: true
+      release_environment:
+        description: 'The environment to release to. "staging" or "production"'
+        required: true
+        default: 'staging'
+      package_version:
+        description: 'The version of the package to release'
+        required: true
+        type: string
+      GPG_PASSPHRASE:
+        description: 'GPG passphrase for signing (required for production releases)'
+        required: false
+        type: string
+
+env:
+  ARTIFACT_NAME: build_report_package_release
+  AWS_REGION: us-east-1
+  SRC_BUCKET: altinity-build-artifacts
+  S3_STORAGE_BUCKET: altinity-test-reports
+
+jobs:
+  extract-package-info:
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
+    outputs:
+      docker_version: ${{ env.DOCKER_VERSION }}-${{ env.PACKAGE_VERSION }}
+      commit_hash: ${{ env.COMMIT_HASH }}
+      folder_time: ${{ env.FOLDER_TIME }}
+      needs_binary_processing: ${{ env.NEEDS_BINARY_PROCESSING }}
+      package_version: ${{ env.PACKAGE_VERSION }}
+      src_dir: ${{ env.SRC_DIR }}
+      test_results_src: ${{ env.TEST_RESULTS_SRC }}
+      altinity_build_feature: ${{ env.ALTINITY_BUILD_FEATURE }}
+      repo_prefix: ${{ env.REPO_PREFIX }}
+      src_url: ${{ env.SRC_URL }}
+      dest_url: ${{ env.DEST_URL }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ inputs.workflow_url }}" ]; then
+            echo "Error: workflow_url is required"
+            exit 1
+          fi
+          if [ -z "${{ inputs.package_version }}" ]; then
+            echo "Error: package_version is required"
+            exit 1
+          fi
+          if [ "${{ inputs.release_environment }}" != "staging" ] && [ "${{ inputs.release_environment }}" != "production" ]; then
+            echo "Error: release_environment must be either 'staging' or 'production'"
+            exit 1
+          fi
+
+      - name: Download artifact "${{ env.ARTIFACT_NAME }}"
+        run: |
+          run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
+
+          # Get artifact ID
+          artifact_id=$(curl -s "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+            | jq '.artifacts[] | select(.name == "'"${{ env.ARTIFACT_NAME }}"'") | .id')
+
+          # Download artifact
+          curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -o "${{ env.ARTIFACT_NAME }}" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"
+
+      - name: Unzip Artifact
+        run: |
+          unzip -o "${{ env.ARTIFACT_NAME }}" -d "artifact"
+
+      - name: Extract and Parse JSON File
+        run: |
+          cd artifact
+          JSON_FILE=$(ls | grep "build_report.*package_release\.json" | head -n 1)
+          if [ -z "$JSON_FILE" ]; then
+            echo "Error: No JSON file matching the pattern was found"
+            exit 1
+          fi
+          echo "Found JSON file: ${JSON_FILE}"
+
+          # Extract client URL
+          CLIENT_URL=$(jq -r '.build_urls[] | select(test("clickhouse-client-.*-amd64.tgz$"))' "$JSON_FILE")
+          if [ -z "$CLIENT_URL" ]; then
+            echo "Error: No matching client URL found in JSON"
+            exit 1
+          fi
+          echo "Found client URL: ${CLIENT_URL}"
+          echo "CLIENT_URL=$CLIENT_URL" >> $GITHUB_ENV
+
+      - name: Extract and Validate Package Information
+        run: |
+          # Define regex patterns
+          PR_REGEX="PRs/([^/]+)/([^/]+)/([^/]+)/clickhouse-client-([^-]+)-amd64.tgz"
+          NONPR_REGEX="s3.amazonaws.com/([^/]+)/([^/]+)/([^/]+)/([^/]+)/clickhouse-client-([^-]+)-amd64.tgz"
+
+          # Extract information based on URL pattern
+          if [[ "$CLIENT_URL" =~ $PR_REGEX ]]; then
+            echo "Matched PR pattern"
+            PR_NUMBER="${BASH_REMATCH[1]}"
+            COMMIT_HASH="${BASH_REMATCH[2]}"
+            PACKAGE_TYPE="${BASH_REMATCH[3]}"
+            PACKAGE_VERSION="${BASH_REMATCH[4]}"
+            DOCKER_VERSION="${PR_NUMBER}"
+            TEST_RESULTS_SRC="${PR_NUMBER}"
+            SRC_DIR="PRs/${PR_NUMBER}"
+          elif [[ "$CLIENT_URL" =~ $NONPR_REGEX ]]; then
+            echo "Matched non-PR pattern"
+            BRANCH="${BASH_REMATCH[2]}"
+            COMMIT_HASH="${BASH_REMATCH[3]}"
+            PACKAGE_TYPE="${BASH_REMATCH[4]}"
+            PACKAGE_VERSION="${BASH_REMATCH[5]}"
+            DOCKER_VERSION="0"
+            TEST_RESULTS_SRC="0"
+            SRC_DIR="${BRANCH}"
+          else
+            echo "Error: The client URL did not match any expected pattern"
+            exit 1
+          fi
+
+          # Verify package version
+          if [ "$PACKAGE_VERSION" != "${{ inputs.package_version }}" ]; then
+            echo "Error: Extracted package version ($PACKAGE_VERSION) does not match input package version (${{ inputs.package_version }})"
+            exit 1
+          fi
+
+          # Extract major version and determine binary processing need
+          MAJOR_VERSION=$(echo "$PACKAGE_VERSION" | cut -d. -f1)
+          NEEDS_BINARY_PROCESSING=$([ "$MAJOR_VERSION" -ge 24 ] && echo "true" || echo "false")
+
+          # Extract feature and set repo prefix
+          ALTINITY_BUILD_FEATURE=$(echo "$PACKAGE_VERSION" | rev | cut -d. -f1 | rev)
+          case "$ALTINITY_BUILD_FEATURE" in
+            "altinityhotfix") REPO_PREFIX="hotfix-" ;;
+            "altinityfips") REPO_PREFIX="fips-" ;;
+            "altinityantalya") REPO_PREFIX="antalya-" ;;
+            "altinitystable"|"altinitytest") REPO_PREFIX="" ;;
+            *)
+              echo "Error: Build feature not supported: ${ALTINITY_BUILD_FEATURE}"
+              exit 1
+              ;;
+          esac
+
+          # Generate folder time
+          FOLDER_TIME=$(date -u +"%Y-%m-%dT%H-%M-%S.%3N")
+
+          # Set all environment variables at once
+          {
+            echo "COMMIT_HASH=${COMMIT_HASH}"
+            echo "DOCKER_VERSION=${DOCKER_VERSION}"
+            echo "FOLDER_TIME=${FOLDER_TIME}"
+            echo "NEEDS_BINARY_PROCESSING=${NEEDS_BINARY_PROCESSING}"
+            echo "PACKAGE_VERSION=${PACKAGE_VERSION}"
+            echo "SRC_DIR=${SRC_DIR}"
+            echo "TEST_RESULTS_SRC=${TEST_RESULTS_SRC}"
+            echo "ALTINITY_BUILD_FEATURE=${ALTINITY_BUILD_FEATURE}"
+            echo "REPO_PREFIX=${REPO_PREFIX}"
+            echo "SRC_URL=s3://${SRC_BUCKET}/${SRC_DIR}/${COMMIT_HASH}"
+            echo "DEST_URL=s3://${S3_STORAGE_BUCKET}/builds/stable/v${PACKAGE_VERSION}/${FOLDER_TIME}"
+          } >> $GITHUB_ENV
+
+      - name: Display Extracted Information
+        run: |
+          echo "Extracted information:"
+          echo "altinity_build_feature: ${ALTINITY_BUILD_FEATURE}"
+          echo "commit_hash: ${COMMIT_HASH}"
+          echo "docker_version: ${DOCKER_VERSION}"
+          echo "folder_time: ${FOLDER_TIME}"
+          echo "needs_binary_processing: ${NEEDS_BINARY_PROCESSING}"
+          echo "package_version: ${PACKAGE_VERSION}"
+          echo "repo_prefix: ${REPO_PREFIX}"
+          echo "src_bucket: ${SRC_BUCKET}"
+          echo "src_dir: ${SRC_DIR}"
+          echo "test_results_src: ${TEST_RESULTS_SRC}"
+          echo "src_url: ${SRC_URL}"
+          echo "dest_url: ${DEST_URL}"
+
+      - name: Install aws cli
+        if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Process ARM binary
+        if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
+        env:
+         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          echo "Downloading clickhouse binary..."
+          if ! aws s3 cp "${SRC_URL}/package_aarch64/clickhouse" clickhouse; then
+            echo "Failed to download clickhouse binary"
+            exit 1
+          fi
+          chmod +x clickhouse
+
+          echo "Running clickhouse binary..."
+          ./clickhouse -q'q'
+
+          echo "Stripping the binary..."
+          strip clickhouse -o clickhouse-stripped
+
+          echo "Uploading processed binaries..."
+          if ! aws s3 cp clickhouse "${SRC_URL}/package_aarch64/arm-bin/non-self-extracting/"; then
+            echo "Failed to upload clickhouse binary"
+            exit 1
+          fi
+          if ! aws s3 cp clickhouse-stripped "${SRC_URL}/package_aarch64/arm-bin/non-self-extracting/"; then
+            echo "Failed to upload stripped clickhouse binary"
+            exit 1
+          fi
+
+  copy-packages:
+    needs: extract-package-info
+    runs-on: [altinity-func-tester, altinity-on-demand]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      SRC_URL: ${{ needs.extract-package-info.outputs.src_url }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+      NEEDS_BINARY_PROCESSING: ${{ needs.extract-package-info.outputs.needs_binary_processing }}
+    steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: amd64
+
+      # - name: Download signed hash artifacts
+      #   run: |
+      #     run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
+      #     mkdir -p signed-hashes/amd64 signed-hashes/arm64
+
+      #     # Download AMD64 hashes
+      #     artifact_id=$(curl -s \
+      #       -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+      #       -H "Accept: application/vnd.github.v3+json" \
+      #       "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts?per_page=1000" \
+      #       | jq -r --arg NAME "Sign release signed-hashes" '.artifacts[] | select(.name == $NAME) | .id')
+      #     if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
+      #       echo "Error: Could not find artifact 'Sign release signed-hashes' for run $run_id"
+      #       exit 1
+      #     fi
+      #     if ! curl -L \
+      #       -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+      #       -H "Accept: application/vnd.github.v3+json" \
+      #       -o "signed-hashes/amd64/hashes.zip" \
+      #       "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"; then
+      #       echo "Error: Failed to download AMD64 hashes"
+      #       exit 1
+      #     fi
+      #     unzip -o "signed-hashes/amd64/hashes.zip" -d signed-hashes/amd64
+
+      #     # Download ARM64 hashes
+      #     artifact_id=$(curl -s \
+      #       -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+      #       -H "Accept: application/vnd.github.v3+json" \
+      #       "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts?per_page=1000" \
+      #       | jq -r --arg NAME "Sign aarch64 signed-hashes" '.artifacts[] | select(.name == $NAME) | .id')
+      #     if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
+      #       echo "Error: Could not find artifact 'Sign aarch64 signed-hashes' for run $run_id"
+      #       exit 1
+      #     fi
+      #     if ! curl -L \
+      #       -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+      #       -H "Accept: application/vnd.github.v3+json" \
+      #       -o "signed-hashes/arm64/hashes.zip" \
+      #       "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"; then
+      #       echo "Error: Failed to download ARM64 hashes"
+      #       exit 1
+      #     fi
+      #     unzip -o "signed-hashes/arm64/hashes.zip" -d signed-hashes/arm64
+
+      # - name: Download packages for verification
+      #   run: |
+      #     # Create temporary directories for downloaded packages
+      #     mkdir -p /tmp/arm_packages /tmp/amd_packages
+
+      #     # Download ARM packages
+      #     echo "Downloading ARM packages for verification..."
+      #     if ! aws s3 sync "${SRC_URL}/package_aarch64/" /tmp/arm_packages; then
+      #       echo "Failed to download ARM packages"
+      #       exit 1
+      #     fi
+
+      #     # Download AMD packages
+      #     echo "Downloading AMD packages for verification..."
+      #     if ! aws s3 sync "${SRC_URL}/package_release/" /tmp/amd_packages; then
+      #       echo "Failed to download AMD packages"
+      #       exit 1
+      #     fi
+
+      # - name: Verify ARM packages
+      #   run: |
+      #     cd signed-hashes/arm64
+      #     # Verify all files
+      #     find /tmp/arm_packages -type f | while read -r file; do
+      #       if [ -f "$file" ]; then
+      #         file_name=$(basename "$file")
+      #         echo "Verifying $file_name..."
+
+      #         if ! gpg --verify "$file_name.sha256.gpg" 2>/dev/null; then
+      #           echo "GPG verification failed for $file_name"
+      #           exit 1
+      #         fi
+      #         if ! sha256sum -c "$file_name.sha256.gpg" 2>/dev/null; then
+      #           echo "SHA256 verification failed for $file_name"
+      #           exit 1
+      #         fi
+      #       fi
+      #     done
+
+      # - name: Verify AMD packages
+      #   run: |
+      #     cd signed-hashes/amd64
+      #     # Verify all files
+      #     find /tmp/amd_packages -type f | while read -r file; do
+      #       if [ -f "$file" ]; then
+      #         file_name=$(basename "$file")
+      #         echo "Verifying $file_name..."
+
+      #         if ! gpg --verify "$file_name.sha256.gpg" 2>/dev/null; then
+      #           echo "GPG verification failed for $file_name"
+      #           exit 1
+      #         fi
+      #         if ! sha256sum -c "$file_name.sha256.gpg" 2>/dev/null; then
+      #           echo "SHA256 verification failed for $file_name"
+      #           exit 1
+      #         fi
+      #       fi
+      #     done
+
+      - name: Move verified packages to destination
+        run: |
+          # Move ARM packages
+          echo "Moving verified ARM packages to destination..."
+          if ! aws s3 cp "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/" --recursive; then
+            echo "Failed to move ARM packages to destination"
+            exit 1
+          fi
+
+          # Move AMD packages
+          echo "Moving verified AMD packages to destination..."
+          if ! aws s3 cp "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/" --recursive; then
+            echo "Failed to move AMD packages to destination"
+            exit 1
+          fi
+
+          # Clean up temporary directories
+          rm -rf /tmp/arm_packages /tmp/amd_packages
+
+      - name: Separate ARM binary
+        run: |
+          aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse" "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse"
+          aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse-stripped"
+
+      - name: Separate AMD binary
+        run: |
+          aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse" "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse"
+          aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse-stripped"
+
+      - name: Process AMD binary
+        if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
+        run: |
+          echo "Downloading clickhouse binary..."
+          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse" clickhouse; then
+            echo "Failed to download clickhouse binary"
+            exit 1
+          fi
+          chmod +x clickhouse
+
+          echo "Running clickhouse binary..."
+          ./clickhouse -q'q'
+
+          echo "Stripping the binary..."
+          strip clickhouse -o clickhouse-stripped
+
+          echo "Uploading processed binaries..."
+          if ! aws s3 cp clickhouse "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/non-self-extracting/"; then
+            echo "Failed to upload clickhouse binary"
+            exit 1
+          fi
+          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/non-self-extracting/"; then
+            echo "Failed to upload stripped clickhouse binary"
+            exit 1
+          fi
+
+  copy-test-results:
+    needs: extract-package-info
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TEST_RESULTS_SRC: ${{ needs.extract-package-info.outputs.test_results_src }}
+      COMMIT_HASH: ${{ needs.extract-package-info.outputs.commit_hash }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+    steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+      - name: Copy test results to S3
+        run: |
+          # Copy test results
+          echo "Copying test results..."
+          if ! aws s3 sync "s3://${SRC_BUCKET}/${TEST_RESULTS_SRC}/${COMMIT_HASH}" \
+              "${DEST_URL}/test_results/"; then
+            echo "Failed to copy test results"
+            exit 1
+          fi
+
+  # publish-docker:
+  #   needs: extract-package-info
+  #   strategy:
+  #     matrix:
+  #       image_type: [server, keeper]
+  #       variant: ['', '-alpine']
+  #   uses: ./.github/workflows/docker_publish.yml
+  #   with:
+  #     docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}${{ matrix.variant }}
+  #     release_environment: ${{ inputs.release_environment }}
+  #     upload_artifacts: false
+  #     s3_upload_path: "${{ needs.extract-package-info.outputs.dest_url }}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
+  #   secrets: inherit
+
+  sign-and-publish:
+    needs: [extract-package-info, copy-packages]
+    runs-on: arc-runners-clickhouse-signer
+    env:
+      GPG_PASSPHRASE: ${{ inputs.release_environment == 'production' && inputs.GPG_PASSPHRASE || secrets.GPG_PASSPHRASE }}
+      REPO_DNS_NAME: ${{ inputs.release_environment == 'production' && 'builds.altinity.cloud' || 'builds.staging.altinity.cloud' }}
+      REPO_NAME: ${{ inputs.release_environment == 'production' && 'altinity' || 'altinity-staging' }}
+      REPO_SUBTITLE: ${{ inputs.release_environment == 'production' && 'Stable Builds' || 'Staging Builds' }}
+      PACKAGE_VERSION: ${{ needs.extract-package-info.outputs.package_version }}
+      FOLDER_TIME: ${{ needs.extract-package-info.outputs.folder_time }}
+      REPO_PREFIX: ${{ needs.extract-package-info.outputs.repo_prefix }}
+      NEEDS_BINARY_PROCESSING: ${{ needs.extract-package-info.outputs.needs_binary_processing }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+      RELEASE_ENVIRONMENT: ${{ inputs.release_environment }}
+    steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          repository: Altinity/ClickHouse
+          ref: antalya
+          path: ClickHouse
+
+      - name: Download packages
+        run: |
+          if ! aws s3 cp "${DEST_URL}/packages/ARM_PACKAGES/" /home/runner/.cache/tmp/packages --recursive; then
+            echo "Failed to download ARM packages"
+            exit 1
+          fi
+          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/" /home/runner/.cache/tmp/packages --recursive; then
+            echo "Failed to download AMD packages"
+            exit 1
+          fi
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Setup GPG
+        run: |
+          if [ -z ${GPG_PASSPHRASE} ]
+          then
+            echo "GPG_PASSPHRASE is not set"
+            exit 1
+          fi
+
+      - name: Process GPG key
+        run: |
+          echo "Processing GPG key..."
+          if ! aws secretsmanager get-secret-value --secret-id arn:aws:secretsmanager:us-east-1:446527654354:secret:altinity_staging_gpg-Rqbe8S --query SecretString --output text | sed -e "s/^'//" -e "s/'$//" | jq -r '.altinity_staging_gpg | @base64d' | gpg --batch --import; then
+            echo "Failed to import GPG key"
+            exit 1
+          fi
+          gpg --list-secret-keys --with-keygrip
+          gpgconf --kill gpg-agent
+          gpg-agent --daemon --allow-preset-passphrase
+          if ! aws ssm get-parameter --name /gitlab-runner/key-encrypting-key --with-decryption --query Parameter.Value --output text | sudo tee /root/.key-encrypting-key >/dev/null; then
+            echo "Failed to get key encrypting key"
+            exit 1
+          fi
+          GPG_KEY_NAME=$(gpg --list-secret-keys | grep uid | head --lines 1 | tr -s " " | cut -d " " -f 4-)
+          GPG_KEY_ID=$(gpg --list-secret-keys --with-keygrip "${GPG_KEY_NAME}" | grep Keygrip | head --lines 1 | tr -s " " | cut -d " " -f 4)
+          echo "$GPG_PASSPHRASE" | base64 -d | sudo openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/root/.key-encrypting-key -in - -out - | /usr/lib/gnupg/gpg-preset-passphrase --preset $GPG_KEY_ID
+
+      - name: Run Ansible playbook
+        run: |
+          echo "Running Ansible playbook for signing and publishing..."
+          echo "ansible-playbook -i ClickHouse/tests/ci/release/packaging/ansible/inventory/localhost.yml -e aws_region=$AWS_REGION -e gpg_key_id=\"$GPG_KEY_ID\" -e gpg_key_name=\"$GPG_KEY_NAME\" -e local_repo_path="/home/runner/.cache/${{ inputs.release_environment }}" -e pkgver=\"${PACKAGE_VERSION}\" -e release_environment=$RELEASE_ENVIRONMENT -e repo_dns_name=$REPO_DNS_NAME -e repo_name=$REPO_NAME -e repo_prefix=\"$REPO_PREFIX\" -e repo_subtitle=\"$REPO_SUBTITLE\" -e s3_pkgs_bucket=$S3_STORAGE_BUCKET -e s3_pkgs_path=\"builds/stable/v${PACKAGE_VERSION}/${FOLDER_TIME}\" -e repo_path=\"/home/runner/.cache/${{ inputs.release_environment }}\" ClickHouse/tests/ci/release/packaging/ansible/sign-and-release.yml "
+          if ! ansible-playbook -i ClickHouse/tests/ci/release/packaging/ansible/inventory/localhost.yml \
+            -e aws_region=$AWS_REGION \
+            -e gpg_key_id="$GPG_KEY_ID" \
+            -e gpg_key_name="$GPG_KEY_NAME" \
+            -e local_repo_path="/home/runner/.cache/${{ inputs.release_environment }}" \
+            -e pkgver="${PACKAGE_VERSION}" \
+            -e release_environment=$RELEASE_ENVIRONMENT \
+            -e repo_dns_name=$REPO_DNS_NAME \
+            -e repo_name=$REPO_NAME \
+            -e repo_prefix="$REPO_PREFIX" \
+            -e repo_subtitle="$REPO_SUBTITLE" \
+            -e s3_pkgs_bucket=$S3_STORAGE_BUCKET \
+            -e s3_pkgs_path="builds/stable/v${PACKAGE_VERSION}/${FOLDER_TIME}" \
+            ClickHouse/tests/ci/release/packaging/ansible/sign-and-release.yml; then
+            echo "Ansible playbook failed"
+            exit 1
+          fi
+          gpgconf --kill gpg-agent
+          ls -hal
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          echo "Cleaning up temporary files..."
+          rm -rf /home/runner/.cache/tmp/packages || true
+
+  repo-sanity-check:
+    needs: sign-and-publish
+    uses: Altinity/ClickHouse/.github/workflows/repo-sanity-checks.yml@antalya
+
+  copy-to-released:
+    needs: [sign-and-publish]
+    if: ${{ inputs.release_environment == 'production' }}
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      PACKAGE_VERSION: ${{ needs.extract-package-info.outputs.package_version }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+    steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Copy to released directory
+        run: |
+      - name: Copy to released directory
+        run: |
+          echo "Copying to released directory..."
+          echo "Source: ${DEST_URL}/"
+          echo "Destination: s3://${S3_STORAGE_BUCKET}/builds/released/v${PACKAGE_VERSION}/"
+          
+          if ! aws s3 sync "${DEST_URL}/" "s3://${S3_STORAGE_BUCKET}/builds/released/v${PACKAGE_VERSION}/" --no-progress; then
+            echo "Failed to copy to released directory"
+            exit 1
+          fi
+          
+          echo "Verifying copy operation..."
+          if ! aws s3 ls "s3://${S3_STORAGE_BUCKET}/builds/released/v${PACKAGE_VERSION}/" | grep -q "packages"; then
+            echo "Error: Packages directory not found in destination"
+            exit 1
+          fi

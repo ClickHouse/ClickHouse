@@ -70,7 +70,7 @@ class Job:
 
         allow_merge_on_failure: bool = False
 
-        enable_commit_status: bool = False
+        enable_commit_status: bool = True
 
         enable_gh_auth: bool = False
 

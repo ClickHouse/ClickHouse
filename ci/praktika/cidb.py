@@ -93,7 +93,7 @@ class CIDB:
         tn = (test_name or "").replace("'", "''")
         jn = (job_name or "").replace("'", "''") if job_name else None
         # Prefer configured table name if available, fall back to default
-        table = Settings.CI_DB_TABLE_NAME or "checks"
+        table = f"`{Settings.CI_DB_DB_NAME}`.{Settings.CI_DB_TABLE_NAME or 'checks'}"
 
         # Find first matching failure pattern in test output
         matched_pattern = None
@@ -105,11 +105,12 @@ class CIDB:
                     break
 
         # Build failure pattern filter line
-        if matched_pattern:
-            failure_filter = f"    AND test_context_raw LIKE '%{matched_pattern}%'"
-        else:
-            # Add commented placeholder for manual editing
-            failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
+        # NOTE (strtgbb): our db does not have test_context_raw column
+        # if matched_pattern:
+        #     failure_filter = f"    AND test_context_raw LIKE '%{matched_pattern}%'"
+        # else:
+        #     # Add commented placeholder for manual editing
+        #     failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
 
         # Build PR filter based on pr_base_branches parameter
         if pr_base_branches:

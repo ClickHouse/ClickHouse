@@ -20,7 +20,7 @@ def main():
             res = ch.install_clickbench_config()
             if info.is_local_run:
                 return res
-            return res and ch.create_log_export_config()
+            return res # and ch.create_log_export_config()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -32,9 +32,9 @@ def main():
 
         def start():
             res = ch.start_light()
-            if not info.is_local_run:
-                if not ch.start_log_exports(check_start_time=stop_watch.start_time):
-                    print("WARNING: Failed to start log export")
+            # if not info.is_local_run:
+                # if not ch.start_log_exports(check_start_time=stop_watch.start_time):
+                #     print("WARNING: Failed to start log export")
             return res
 
         results.append(

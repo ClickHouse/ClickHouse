@@ -267,7 +267,7 @@ def started_cluster():
         sts = cluster.add_instance(
             name="sts.us-east-1.amazonaws.com",
             hostname="sts.us-east-1.amazonaws.com",
-            image="clickhouse/python-bottle",
+            image="altinityinfra/python-bottle",
             tag="latest",
             stay_alive=True,
         )

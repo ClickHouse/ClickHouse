@@ -101,6 +101,10 @@ class Info:
         return self.env.FORK_NAME
 
     @property
+    def is_community_pr(self):
+        return "community" in self.env.WORKFLOW_NAME.lower()
+
+    @property
     def commit_message(self):
         return self.env.COMMIT_MESSAGE
 

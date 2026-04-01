@@ -1,0 +1,51 @@
+- name: Copy new rpms
+  shell: mv /home/runner/.cache/tmp/packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}yum-repo/{{ item }}"
+  loop: "{{ rpm_pkg_names }}"
+
+- name: Copy library-bridge and obdc-bridge if version is 24.8
+  when: (pkgver | regex_replace('^(\\d+\\.\\d+).*$', '\\1')) is version('24.8', '==')
+  shell: mv /home/runner/.cache/tmp/packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}yum-repo/{{ item }}"
+  loop:
+    - "clickhouse-library-bridge-{{ pkgver }}.x86_64.rpm"
+    - "clickhouse-library-bridge-{{ pkgver }}.aarch64.rpm"
+    - "clickhouse-odbc-bridge-{{ pkgver }}.x86_64.rpm"
+    - "clickhouse-odbc-bridge-{{ pkgver }}.aarch64.rpm"
+
+- name: Create rpmmacros file
+  template:
+    src: "rpmmacros.j2"
+    dest: "{{ local_repo_path }}/rpmmacros"
+
+- name: Sign new RPMs
+  shell: 'rpmsign --addsign --load "{{ local_repo_path }}/rpmmacros" "{{ local_repo_path }}/{{ repo_prefix }}yum-repo/{{ item }}"'
+  loop: "{{ rpm_pkg_names }}"
+
+- name: Sign library-bridge and obdc-bridge if version is 24.8
+  when: (pkgver | regex_replace('^(\\d+\\.\\d+).*$', '\\1')) is version('24.8', '==')
+  shell: 'rpmsign --addsign --load "{{ local_repo_path }}/rpmmacros" "{{ local_repo_path }}/{{ repo_prefix }}yum-repo/{{ item }}"'
+  loop:
+    - "clickhouse-library-bridge-{{ pkgver }}.x86_64.rpm"
+    - "clickhouse-library-bridge-{{ pkgver }}.aarch64.rpm"
+    - "clickhouse-odbc-bridge-{{ pkgver }}.x86_64.rpm"
+    - "clickhouse-odbc-bridge-{{ pkgver }}.aarch64.rpm"
+
+- name: Build and sign yum repo
+  shell:
+    chdir: "{{ local_repo_path }}/{{ repo_prefix }}yum-repo"
+    cmd: |
+      set -e
+      createrepo --update .
+      gpg --detach-sign --armor --yes repodata/repomd.xml
+
+- name: Export GPG public key to repo
+  shell: 'gpg --export --armor "{{ gpg_key_name }}" > "{{ local_repo_path }}/{{ repo_prefix }}yum-repo/RPM-GPG-KEY-{{ repo_name }}"'
+
+- name: Export .repo file to repo
+  template:
+    src: "repo.j2"
+    dest: "{{ local_repo_path }}/{{ repo_prefix }}yum-repo/{{ repo_name }}.repo"
+
+- name: Sync repos between source and target
+  shell: 'aws s3 sync --delete "{{ local_repo_path }}/{{ item }}" "{{ s3_repo_target_path }}/{{ release_environment }}/{{ item }}"'
+  loop: "{{ yum_repos }}"
+  when: cloudfront_origin_path != ""
