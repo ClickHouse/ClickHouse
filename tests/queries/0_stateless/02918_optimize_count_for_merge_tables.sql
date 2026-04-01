@@ -20,7 +20,9 @@ SET apply_patch_parts = 0;
 SELECT count() FROM merge;
 
 -- can use the trivial count optimization
-EXPLAIN SELECT count() FROM merge settings enable_analyzer=0;
+-- Pin query_plan_merge_expressions: when disabled (randomized by CI), Expression steps
+-- are shown separately ("Projection" + "Before ORDER BY") instead of merged, breaking the reference.
+EXPLAIN SELECT count() FROM merge settings enable_analyzer=0, query_plan_merge_expressions=1;
 
 CREATE TABLE mt3 (id UInt64) ENGINE = TinyLog;
 
@@ -29,7 +31,7 @@ INSERT INTO mt2 VALUES (2);
 SELECT count() FROM merge;
 
 -- can't use the trivial count optimization as TinyLog doesn't support it
-EXPLAIN SELECT count() FROM merge settings enable_analyzer=0;
+EXPLAIN SELECT count() FROM merge settings enable_analyzer=0, query_plan_merge_expressions=1;
 
 DROP TABLE IF EXISTS mt1;
 DROP TABLE IF EXISTS mt2;
