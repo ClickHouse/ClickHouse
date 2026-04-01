@@ -61,8 +61,32 @@ FROM
 
 SELECT '--';
 
+SET allow_experimental_parallel_reading_from_replicas = 1;
+SET max_parallel_replicas = 2;
+SET parallel_replicas_mode = 'read_tasks';
+SET automatic_parallel_replicas_mode = 0;
+
+SELECT
+    countIf(explain like '%Algorithm: DirectKeyValueJoin%'),
+    countIf(explain like '%ReadFromMergeTree (%table_lookup_dim_join%)%')
+FROM
+(
+    EXPLAIN PLAN actions = 1
+    SELECT id, subid, value
+    FROM table_lookup_fact_join
+    LEFT ANY JOIN table_lookup_dim_join
+        ON table_lookup_fact_join.id = table_lookup_dim_join.id
+        AND table_lookup_fact_join.subid = table_lookup_dim_join.subid
+    ORDER BY id, subid
+);
+
+SELECT '--';
+
 DROP TABLE table_lookup_dim_join SYNC;
 DROP TABLE table_lookup_fact_join SYNC;
+
+SET allow_experimental_parallel_reading_from_replicas = 0;
+SET max_parallel_replicas = 1;
 
 SET join_use_nulls = 1;
 SET apply_mutations_on_fly = 1;

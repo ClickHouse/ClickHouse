@@ -2465,6 +2465,9 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
+    if (query_context->canUseParallelReplicasOnInitiator())
+        return;
+
     /// In chooseJoinAlgorithm, direct has the highest priority (automatically used with dictionary or storage join).
     /// Use direct join with MergeTree only if 'direct' is explicitly specified as the single option.
     if (settings[Setting::join_algorithm].value != std::vector{JoinAlgorithm::DIRECT})
@@ -2590,13 +2593,14 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
         join_node,
         planner_context);
 
+    bool allow_lookup_join = !query_context->canUseParallelReplicasOnInitiator();
     PreparedJoinStorage prepared_join;
     bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
-    if (allow_storage_join)
+    if (allow_storage_join && allow_lookup_join)
         prepared_join = tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context);
-    if (!prepared_join && allow_storage_join)
+    if (!prepared_join && allow_storage_join && allow_lookup_join)
     {
         if (auto right_key_names = tryExtractLookupJoinRightKeys(join_step_logical->getJoinOperator()))
             prepared_join = tryGetLookupJoinStorage(*right_key_names, join_node.getRightTableExpression(), planner_context);
