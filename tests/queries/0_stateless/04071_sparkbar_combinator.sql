@@ -66,6 +66,12 @@ SELECT countSparkbar(5, toDateTime64('1969-12-31 23:59:58', 3), toDateTime64('19
     toDateTime64('1969-12-31 23:59:58', 3) + INTERVAL (number * 1000) MILLISECOND
 ) FROM numbers(5);
 
+-- DateTime64 scale mismatch: column scale=6 (μs), parameters scale=3 (ms)
+SELECT 'countSparkbar with DateTime64 scale mismatch (col=6, params=3):';
+SELECT countSparkbar(5, toDateTime64('2024-01-01 00:00:00', 3), toDateTime64('2024-01-05 00:00:00', 3))(
+    toDateTime64('2024-01-01 00:00:00', 6) + INTERVAL (number) DAY
+) FROM numbers(5);
+
 -- Error: wrong number of parameters
 SELECT countSparkbar(5, 0, 9, 1)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT countSparkbar(5, 0)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

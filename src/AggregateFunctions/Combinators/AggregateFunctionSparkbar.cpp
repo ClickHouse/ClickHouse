@@ -1,5 +1,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionSparkbar.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB
@@ -93,11 +94,20 @@ public:
 
         if (which.isDateTime64())
         {
-            /// DateTime64 parameters are DecimalField<DateTime64>; extract raw ticks as Int64
-            /// to correctly handle pre-epoch timestamps (negative tick counts).
-            const auto extract = [](const Field & f) -> Int64
+            /// Rescale parameter ticks to the column scale so that begin_x/end_x and
+            /// the keys read in add() are in the same unit.
+            const UInt32 col_scale = typeid_cast<const DataTypeDateTime64 &>(*arguments[0]).getScale();
+
+            const auto extract = [col_scale](const Field & f) -> Int64
             {
-                return static_cast<Int64>(f.safeGet<DecimalField<DateTime64>>().getValue());
+                const auto & dec = f.safeGet<DecimalField<DateTime64>>();
+                const Int64 ticks = static_cast<Int64>(dec.getValue());
+                const UInt32 param_scale = dec.getScale();
+                if (param_scale == col_scale)
+                    return ticks;
+                if (col_scale > param_scale)
+                    return ticks * static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(col_scale - param_scale));
+                return ticks / static_cast<Int64>(DecimalUtils::scaleMultiplier<Int64>(param_scale - col_scale));
             };
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
                 nested_function, width, extract(params[1]), extract(params[2]), arguments, params);
