@@ -291,9 +291,7 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     FetchResult result_of_fetch_from_storage;
 
     {
-        /// Write lock on storage
-        const ProfiledExclusiveLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs, ProfileEvents::DictCacheLockWriteHoldNs};
-
+        const ProfiledSharedLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs, ProfileEvents::DictCacheLockReadHoldNs};
         result_of_fetch_from_storage = cache_storage_ptr->fetchColumnsForKeys(keys, request, /*default_mask*/ nullptr);
     }
 
