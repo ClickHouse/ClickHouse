@@ -46,11 +46,22 @@ struct LookupSetFromStorage
     StorageID storage_id;
 };
 
+bool hasUnsupportedLookupModifiers(const std::optional<TableExpressionModifiers> & table_expression_modifiers)
+{
+    return table_expression_modifiers
+        && (table_expression_modifiers->hasFinal()
+            || table_expression_modifiers->hasSampleSizeRatio()
+            || table_expression_modifiers->hasSampleOffsetRatio());
+}
+
 std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const QueryTreeNodePtr & table_expression, PlannerContext & planner_context)
 {
     auto * table_node = table_expression->as<TableNode>();
     if (table_node)
     {
+        if (hasUnsupportedLookupModifiers(table_node->getTableExpressionModifiers()))
+            return std::nullopt;
+
         auto storage = std::dynamic_pointer_cast<MergeTreeData>(table_node->getStorage());
         if (!storage)
             return std::nullopt;
@@ -89,6 +100,9 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     auto inner_table_expression = query_node->getJoinTree();
     auto * inner_table_node = inner_table_expression->as<TableNode>();
     if (!inner_table_node)
+        return std::nullopt;
+
+    if (hasUnsupportedLookupModifiers(inner_table_node->getTableExpressionModifiers()))
         return std::nullopt;
 
     auto storage = std::dynamic_pointer_cast<MergeTreeData>(inner_table_node->getStorage());
