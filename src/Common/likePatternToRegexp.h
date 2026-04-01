@@ -3,7 +3,7 @@
 #include <base/types.h>
 #include <string_view>
 
-/// SIMILAR TO's metachacraters consist of LIKE's and a subset of re2's:
+/// SIMILAR TO's metacharacters consist of LIKE's and a subset of re2's:
 /// - LIKE's: %_
 /// - regex's: |*+?[](){}
 /// - Exclude regex's: ^$.

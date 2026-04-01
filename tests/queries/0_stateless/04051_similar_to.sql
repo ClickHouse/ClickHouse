@@ -50,6 +50,14 @@ SELECT 'aab'     SIMILAR TO 'a\+b';           -- Returns: 0
 SELECT 'a(b)'    SIMILAR TO 'a\(b\)';         -- Returns: 1
 SELECT 'a[b]'    SIMILAR TO 'a\[b\]';         -- Returns: 1
 
+SELECT '-- Escaping inside brackets';
+SELECT '%'       SIMILAR TO '[\%]';           -- Returns: 1
+SELECT '_'       SIMILAR TO '[\_]';           -- Returns: 1
+SELECT '|'       SIMILAR TO '[\|]';           -- Returns: 1
+SELECT '+'       SIMILAR TO '[\+]';           -- Returns: 1
+SELECT '('       SIMILAR TO '[\(]';           -- Returns: 1
+SELECT '\\'      SIMILAR TO '[\\\\]';         -- Returns: 1
+
 SELECT '-- % and _ are literal inside bracket expressions';
 SELECT '%'       SIMILAR TO '[%_]';            -- Returns: 1
 SELECT 'a'       SIMILAR TO '[%_]';            -- Returns: 0
@@ -64,7 +72,7 @@ SELECT 'ac'      SIMILAR TO '((a|b)c|d)';     -- Returns: 1
 SELECT 'd'       SIMILAR TO '((a|b)c|d)';     -- Returns: 1
 SELECT 'ab'      SIMILAR TO '((a|b)c|d)';     -- Returns: 0
 
-SELECT '-- All patterns in one';
+SELECT '-- Many patterns in one';
 SELECT 'AB5 xfoo!+doneZZ' SIMILAR TO '[[:upper:]]{2,3}[0-9][[:space:]]_((foo|bar)_\+[^0-9]?[[:lower:]]*)%[[:upper:]]+';  -- Returns: 1
 
 SELECT '-- Function syntax';

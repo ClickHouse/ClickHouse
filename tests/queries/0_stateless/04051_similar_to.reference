@@ -37,6 +37,13 @@
 0
 1
 1
+-- Escaping inside brackets
+1
+1
+1
+1
+1
+1
 -- % and _ are literal inside bracket expressions
 1
 0
@@ -48,7 +55,7 @@
 1
 1
 0
--- All patterns in one
+-- Many patterns in one
 1
 -- Function syntax
 1

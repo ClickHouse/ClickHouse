@@ -152,6 +152,7 @@ String similarToPatternToRegexp(std::string_view pattern)
                 else
                     res += *pos;
                 break;
+            /// Handle escape sequence
             case '\\':
                 if (pos + 1 == end)
                     throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of SIMILAR TO pattern '{}'", pattern);
