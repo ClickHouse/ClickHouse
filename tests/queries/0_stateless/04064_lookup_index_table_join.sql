@@ -27,7 +27,7 @@ ORDER BY (id, subid);
 INSERT INTO table_lookup_dim_join VALUES (1, 1, 'a'), (1, 2, 'b'), (3, 1, 'c'), (4, 1, 'd1'), (4, 1, 'd2');
 INSERT INTO table_lookup_fact_join VALUES (1, 1, 'x'), (1, 2, 'y'), (2, 1, 'z'), (3, 1, 'w'), (4, 1, 'q');
 
-SELECT id, subid, value
+SELECT id, subid, if(value = '', '<empty>', value)
 FROM table_lookup_fact_join
 LEFT ANY JOIN table_lookup_dim_join
     ON table_lookup_fact_join.id = table_lookup_dim_join.id
