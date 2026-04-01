@@ -17,6 +17,8 @@ class ReadBuffer;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
+const UInt64 PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL = 2;
+
 /** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter, WithMutableContext

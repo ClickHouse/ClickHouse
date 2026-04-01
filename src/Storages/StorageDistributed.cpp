@@ -128,8 +128,6 @@ const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
 const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 
 const UInt64 DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION = 2;
-
-const UInt64 PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL = 2;
 }
 
 namespace ProfileEvents
@@ -1352,6 +1350,11 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
+
+    /// We do not know that the table is sharded according to sharding_key
+    if (!settings[Setting::optimize_skip_unused_shards])
+        return {};
+
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 

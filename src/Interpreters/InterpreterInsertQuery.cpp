@@ -657,7 +657,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!settings[Setting::allow_experimental_analyzer])
         return {};
 
-    if (settings[Setting::parallel_distributed_insert_select] != 2)
+    if (settings[Setting::parallel_distributed_insert_select] != PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
         return {};
 
     /// Create a context with automatic_parallel_replicas_mode disabled upfront.

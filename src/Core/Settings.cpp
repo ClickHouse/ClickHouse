@@ -1255,7 +1255,9 @@ Possible values:
 - `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
-Setting `enable_parallel_replicas = 1` is needed when using this setting.
+Note:
+- `enable_parallel_replicas = 1` is needed for parallel replicas,
+- `optimize_skip_unused_shards = 1` is needed for distributed engine.
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
