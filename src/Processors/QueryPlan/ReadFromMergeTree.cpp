@@ -1301,82 +1301,79 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     if (is_parallel_reading_from_replicas && !is_initiator)
         all_parts_for_replicas = parts_with_ranges;
 
-    // TODO(nickitat): remove indent
+    const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
     std::vector<RangesInDataParts> split_parts_and_ranges;
     split_parts_and_ranges.reserve(num_streams);
+
+    for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
     {
-        const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
+        size_t need_marks = min_marks_per_stream;
+        RangesInDataParts new_parts;
 
-        for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
+        /// Loop over parts.
+        /// We will iteratively take part or some subrange of a part from the back
+        ///  and assign a stream to read from it.
+        while (need_marks > 0 && !parts_with_ranges.empty())
         {
-            size_t need_marks = min_marks_per_stream;
-            RangesInDataParts new_parts;
+            RangesInDataPart part = parts_with_ranges.back();
+            parts_with_ranges.pop_back();
+            size_t & marks_in_part = info.sum_marks_in_parts.back();
 
-            /// Loop over parts.
-            /// We will iteratively take part or some subrange of a part from the back
-            ///  and assign a stream to read from it.
-            while (need_marks > 0 && !parts_with_ranges.empty())
+            /// We will not take too few rows from a part.
+            if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
+                need_marks = info.min_marks_for_concurrent_read;
+
+            /// Do not leave too few rows in the part.
+            if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
+                need_marks = marks_in_part;
+
+            MarkRanges ranges_to_get_from_part;
+
+            /// We take full part if it contains enough marks or
+            /// if we know limit and part contains less than 'limit' rows.
+            bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
+
+            /// We take the whole part if it is small enough.
+            if (take_full_part)
             {
-                RangesInDataPart part = parts_with_ranges.back();
-                parts_with_ranges.pop_back();
-                size_t & marks_in_part = info.sum_marks_in_parts.back();
+                ranges_to_get_from_part = part.ranges;
 
-                /// We will not take too few rows from a part.
-                if (marks_in_part >= info.min_marks_for_concurrent_read && need_marks < info.min_marks_for_concurrent_read)
-                    need_marks = info.min_marks_for_concurrent_read;
-
-                /// Do not leave too few rows in the part.
-                if (marks_in_part > need_marks && marks_in_part - need_marks < info.min_marks_for_concurrent_read)
-                    need_marks = marks_in_part;
-
-                MarkRanges ranges_to_get_from_part;
-
-                /// We take full part if it contains enough marks or
-                /// if we know limit and part contains less than 'limit' rows.
-                bool take_full_part = marks_in_part <= need_marks || (input_order_info->limit && input_order_info->limit < part.getRowsCount());
-
-                /// We take the whole part if it is small enough.
-                if (take_full_part)
+                need_marks -= marks_in_part;
+                info.sum_marks_in_parts.pop_back();
+            }
+            else
+            {
+                /// Loop through ranges in part. Take enough ranges to cover "need_marks".
+                while (need_marks > 0)
                 {
-                    ranges_to_get_from_part = part.ranges;
+                    if (part.ranges.empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
 
-                    need_marks -= marks_in_part;
-                    info.sum_marks_in_parts.pop_back();
+                    MarkRange & range = part.ranges.front();
+
+                    const size_t marks_in_range = range.end - range.begin;
+                    const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+
+                    ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
+                    range.begin += marks_to_get_from_range;
+                    marks_in_part -= marks_to_get_from_range;
+                    need_marks -= marks_to_get_from_range;
+                    if (range.begin == range.end)
+                        part.ranges.pop_front();
                 }
-                else
-                {
-                    /// Loop through ranges in part. Take enough ranges to cover "need_marks".
-                    while (need_marks > 0)
-                    {
-                        if (part.ranges.empty())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of ranges while spreading marks among streams");
-
-                        MarkRange & range = part.ranges.front();
-
-                        const size_t marks_in_range = range.end - range.begin;
-                        const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
-
-                        ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
-                        range.begin += marks_to_get_from_range;
-                        marks_in_part -= marks_to_get_from_range;
-                        need_marks -= marks_to_get_from_range;
-                        if (range.begin == range.end)
-                            part.ranges.pop_front();
-                    }
-                    parts_with_ranges.emplace_back(part);
-                }
-
-                ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
-                new_parts.emplace_back(
-                    part.data_part,
-                    part.parent_part,
-                    part.part_index_in_query,
-                    part.part_starting_offset_in_query,
-                    std::move(ranges_to_get_from_part));
+                parts_with_ranges.emplace_back(part);
             }
 
-            split_parts_and_ranges.emplace_back(std::move(new_parts));
+            ranges_to_get_from_part = split_ranges(ranges_to_get_from_part, input_order_info->direction);
+            new_parts.emplace_back(
+                part.data_part,
+                part.parent_part,
+                part.part_index_in_query,
+                part.part_starting_offset_in_query,
+                std::move(ranges_to_get_from_part));
         }
+
+        split_parts_and_ranges.emplace_back(std::move(new_parts));
     }
 
     Pipes pipes;
@@ -1412,15 +1409,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else
     {
-        for (size_t i = 0; i < split_parts_and_ranges.size(); ++i)
+        for (auto & split_parts_and_range : split_parts_and_ranges)
         {
             pipes.emplace_back(readInOrder(
-                std::move(split_parts_and_ranges[i]),
-                index_build_context,
-                column_names,
-                pool_settings,
-                read_type,
-                input_order_info->limit));
+                std::move(split_parts_and_range), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
         }
     }
 
