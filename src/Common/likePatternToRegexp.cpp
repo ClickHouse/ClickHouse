@@ -109,10 +109,12 @@ String similarToPatternToRegexp(std::string_view pattern)
     bool in_bracket = false;
     while (pos < end)
     {
-        /// SIMILAR TO's metachacraters consist of LIKE's and a subset of re2's:
+        /// SIMILAR TO's metacharacters consist of LIKE's and a subset of re2's:
         /// - LIKE's: %_         --> Convert to .* or . in re2
         /// - re2's: |*+?[](){}  --> Keep in re2
         /// - Exclude re2's: ^$. --> Quote in re2
+        /// \ always starts an escape sequence. 
+        /// When in a bracket, all lose their special meaning when inside a bracket, except ^\-]
         switch (*pos)
         {
             /// Keep unescaped brackets. Remember in bracket or not.

@@ -3,9 +3,11 @@
 #include <base/types.h>
 #include <string_view>
 
-namespace DB
-{
-
+/// SIMILAR TO's metachacraters consist of LIKE's and a subset of re2's:
+/// - LIKE's: %_
+/// - regex's: |*+?[](){}
+/// - Exclude regex's: ^$.
+/// Below we only focus on those not in LIKE's for case handling
 #define SIMILAR_TO_EXCLUDING_LIKE_METACHARS(X) \
     X('|') \
     X('*') \
@@ -18,6 +20,8 @@ namespace DB
     X('[') \
     X(']')
 
+namespace DB
+{
 
 /// Transforms the [I]LIKE expression into regexp re2. For example, abc%def -> ^abc.*def$
 String likePatternToRegexp(std::string_view pattern);
