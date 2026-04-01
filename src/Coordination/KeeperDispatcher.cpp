@@ -500,22 +500,16 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 std::lock_guard lock(read_request_queue_mutex);
                 if (auto it = read_request_queue.find(key); it != read_request_queue.end())
                 {
-                    pending_reads = std::move(it->second);
+                    for (const auto & read_request : it->second)
+                    {
+                        if (server->isLeaderAlive())
+                            server->putLocalReadRequest(read_request);
+                        else
+                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
+                    }
+
                     read_request_queue.erase(it);
                 }
-            }
-
-            /// Dispatch reads outside the lock — putLocalReadRequest and addErrorResponses
-            /// push to thread-safe queues, so no lock is needed here.
-            for (const auto & read_request : pending_reads)
-            {
-                if (!server->isLeaderAlive())
-                {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
-                    continue;
-                }
-
-                server->putLocalReadRequest(read_request);
             }
         });
 
@@ -750,15 +744,6 @@ void KeeperDispatcher::finishSession(int64_t session_id)
             CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
-
-    /// Notify the callback that session is being closed before removing it
-    /// This allows clients to mark themselves as expired
-    if (callback)
-    {
-        auto close_response = std::make_shared<Coordination::ZooKeeperCloseResponse>();
-        close_response->error = Coordination::Error::ZSESSIONEXPIRED;
-        callback(close_response, nullptr);
-    }
 }
 
 void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads)
@@ -782,7 +767,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         if (may_have_dependent_reads)
         {
             SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+            std::lock_guard lock(read_request_queue_mutex);
             if (auto it = read_request_queue.find(key); it != read_request_queue.end())
             {
                 dependent_reads.insert(dependent_reads.end(), std::move_iterator(it->second.begin()), std::move_iterator(it->second.end()));
