@@ -1047,6 +1047,13 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     if (!table_node)
         return {};
 
+    if (const auto & table_expression_modifiers = table_node->getTableExpressionModifiers();
+        table_expression_modifiers
+        && (table_expression_modifiers->hasFinal()
+            || table_expression_modifiers->hasSampleSizeRatio()
+            || table_expression_modifiers->hasSampleOffsetRatio()))
+        return {};
+
     auto storage = std::dynamic_pointer_cast<MergeTreeData>(table_node->getStorage());
     if (!storage)
         return {};

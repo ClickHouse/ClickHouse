@@ -196,5 +196,54 @@ LEFT ANY JOIN table_lookup_dim_join_cache
     AND table_lookup_fact_join_cache.subid = table_lookup_dim_join_cache.subid
 ORDER BY id, subid;
 
+SELECT '--';
+
+SET query_plan_use_new_logical_join_step = 0;
+
+DROP TABLE IF EXISTS table_lookup_dim_join_final SYNC;
+DROP TABLE IF EXISTS table_lookup_fact_join_final SYNC;
+
+CREATE TABLE table_lookup_dim_join_final
+(
+    id UInt64,
+    ver UInt64,
+    value String,
+    LOOKUP INDEX idx_join (id) TYPE table_join
+)
+ENGINE = ReplacingMergeTree(ver)
+ORDER BY id;
+
+CREATE TABLE table_lookup_fact_join_final
+(
+    id UInt64
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO table_lookup_dim_join_final VALUES (1, 1, 'a'), (1, 2, 'b');
+INSERT INTO table_lookup_fact_join_final VALUES (1);
+
+SELECT value
+FROM table_lookup_fact_join_final
+INNER ALL JOIN table_lookup_dim_join_final FINAL USING (id)
+ORDER BY value;
+
+SELECT '--';
+
+SELECT
+    countIf(explain like '%Algorithm: DirectKeyValueJoin%'),
+    countIf(explain like '%ReadFromMergeTree (%table_lookup_dim_join_final%)%')
+FROM
+(
+    EXPLAIN PLAN actions = 1
+    SELECT value
+    FROM table_lookup_fact_join_final
+    INNER ALL JOIN table_lookup_dim_join_final FINAL USING (id)
+    ORDER BY value
+);
+
+DROP TABLE table_lookup_dim_join_final SYNC;
+DROP TABLE table_lookup_fact_join_final SYNC;
+
 DROP TABLE table_lookup_dim_join_cache SYNC;
 DROP TABLE table_lookup_fact_join_cache SYNC;
