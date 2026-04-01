@@ -5122,6 +5122,9 @@ Automatically choose implicit projections to perform SELECT query
     DECLARE(Bool, optimize_use_projection_filtering, true, R"(
 Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0) \
+    DECLARE(Float, optimize_projection_skip_index_ratio, 0.5, R"(
+When `use_skip_indexes_on_data_read` is enabled, perform skip index analysis on primary parts if there are useful skip indexes and the ratio of marks selected by the projection to the marks selected by primary parts is greater than this setting.
+)", 0) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
 

@@ -25,6 +25,12 @@ namespace Setting
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsFloat optimize_projection_skip_index_ratio;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -227,69 +233,6 @@ std::optional<String> optimizeUseNormalProjections(
 
     auto logger = getLogger("optimizeUseNormalProjections");
 
-    /// When use_skip_indexes_on_data_read is enabled, the parent's mark count was estimated
-    /// by primary-key analysis only — skip indexes are deferred to data-read time and were
-    /// not applied. Before comparing projection candidates against the parent, run a skip
-    /// index filtering pass on the parent's PK-filtered ranges and update
-    /// `parent_reading_select_result` so that the comparison reflects the marks that will
-    /// actually be read from the parent table.
-    const auto * parent_indexes = reading->getIndexes() ? &*reading->getIndexes() : nullptr;
-    if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
-        && query.filter_node != nullptr
-        && parent_indexes != nullptr
-        && parent_indexes->use_skip_indexes
-        && !parent_indexes->skip_indexes.useful_indices.empty())
-    {
-        /// Copy the parent's Indexes and disable the data-read deferral so that
-        /// filterPartsByPrimaryKeyAndSkipIndexes applies the skip indexes immediately.
-        /// The PK condition is unchanged; re-running it on already-PK-filtered ranges
-        /// is a no-op and the skip indexes further reduce the mark count.
-        ReadFromMergeTree::Indexes indexes_for_skip_pass = *parent_indexes;
-        indexes_for_skip_pass.use_skip_indexes_on_data_read = false;
-
-        ReadFromMergeTree::AnalysisResult tmp_result;
-        ReadFromMergeTree::IndexStats tmp_index_stats;
-        const std::optional<TopKFilterInfo> no_top_k;
-        const auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
-
-        MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
-        {
-            .metadata_snapshot = reading->getStorageMetadata(),
-            .mutations_snapshot = reading->getMutationsSnapshot(),
-            .query_info = query_info,
-            .context = context,
-            .indexes = indexes_for_skip_pass,
-            .top_k_filter_info = no_top_k,
-            .reader_settings = reader_settings,
-            .log = logger,
-            .num_streams = reading->getNumStreams(),
-            .find_exact_ranges = false,
-            .is_parallel_reading_from_replicas = false,
-            .has_projections = true,
-            .use_primary_key = false,
-            .result = tmp_result,
-        };
-
-        auto filtered_parts = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            filter_context,
-            parent_reading_select_result->parts_with_ranges,
-            tmp_index_stats);
-
-        size_t total_marks_after_skip = 0;
-        for (const auto & part : filtered_parts)
-            total_marks_after_skip += part.ranges.getNumberOfMarks();
-
-        if (total_marks_after_skip < parent_reading_select_result->selected_marks)
-        {
-            LOG_DEBUG(logger,
-                "Parent marks reduced from {} to {} after skip index filtering; "
-                "using refined count for projection candidate comparison",
-                parent_reading_select_result->selected_marks, total_marks_after_skip);
-            parent_reading_select_result->parts_with_ranges = std::move(filtered_parts);
-            parent_reading_select_result->selected_marks = total_marks_after_skip;
-        }
-    }
-
     auto projection_virtuals = reading->getMergeTreeData().getProjectionVirtualsPtr();
     auto has_all_required_columns = [&](const ProjectionDescription * projection)
     {
@@ -303,6 +246,7 @@ std::optional<String> optimizeUseNormalProjections(
     };
 
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
+    bool skip_index_filtering_done = false;
     auto projection_query_info = query_info;
     projection_query_info.prewhere_info = nullptr;
     projection_query_info.row_level_filter = nullptr;
@@ -349,12 +293,14 @@ std::optional<String> optimizeUseNormalProjections(
 
         auto & stat = parent_reading_select_result->projection_stats.emplace_back();
         stat.name = candidate.projection->name;
+        bool projection_pk_was_useful = false;
         for (const auto & index_stat : candidate.merge_tree_projection_select_result_ptr->index_stats)
         {
             if (index_stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
             {
                 stat.condition = index_stat.condition;
                 stat.search_algorithm = index_stat.search_algorithm;
+                projection_pk_was_useful = !index_stat.used_keys.empty();
             }
         }
         stat.selected_parts = candidate.selected_parts;
@@ -365,6 +311,79 @@ std::optional<String> optimizeUseNormalProjections(
         candidate.stat = &stat;
 
         size_t parent_reading_marks = parent_reading_select_result->selected_marks;
+
+        /// When use_skip_indexes_on_data_read is enabled, the parent's mark count was estimated
+        /// by primary-key analysis only — skip indexes are deferred to data-read time. If the
+        /// projection candidate reads more than optimize_projection_skip_index_ratio times the
+        /// current parent mark count, refine the parent estimate by applying skip-index filtering
+        /// now so the comparison reflects the marks that will actually be read from the parent.
+        auto ratio =  static_cast<double>(context->getSettingsRef()[Setting::optimize_projection_skip_index_ratio]);
+        LOG_DEBUG(logger, "Projection marks {}, part marks {}, ratio {}, projection condition {} - {}", candidate.sum_marks, parent_reading_marks, ratio, stat.condition, projection_pk_was_useful);
+        if (ratio < 0 || ratio > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
+        if (!skip_index_filtering_done
+            && projection_pk_was_useful
+            && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+            && static_cast<double>(candidate.sum_marks) > static_cast<double>(parent_reading_marks) * ratio
+            && query.filter_node != nullptr)
+        {
+            const auto * parent_indexes = reading->getIndexes() ? &*reading->getIndexes() : nullptr;
+            if (parent_indexes != nullptr
+                && parent_indexes->use_skip_indexes
+                && !parent_indexes->skip_indexes.useful_indices.empty())
+            {
+                skip_index_filtering_done = true;
+
+                /// Copy the parent's Indexes and disable the data-read deferral so that
+                /// filterPartsByPrimaryKeyAndSkipIndexes applies the skip indexes immediately.
+                /// PK filtering has already beem done, hence pass use_primary_key = false.
+                ReadFromMergeTree::Indexes indexes_for_skip_pass = *parent_indexes;
+                indexes_for_skip_pass.use_skip_indexes_on_data_read = false;
+
+                ReadFromMergeTree::AnalysisResult tmp_result;
+                ReadFromMergeTree::IndexStats tmp_index_stats;
+                const std::optional<TopKFilterInfo> no_top_k;
+                const auto reader_settings = MergeTreeReaderSettings::createFromContext(context);
+
+                MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
+                {
+                    .metadata_snapshot = reading->getStorageMetadata(),
+                    .mutations_snapshot = reading->getMutationsSnapshot(),
+                    .query_info = query_info,
+                    .context = context,
+                    .indexes = indexes_for_skip_pass,
+                    .top_k_filter_info = no_top_k,
+                    .reader_settings = reader_settings,
+                    .log = logger,
+                    .num_streams = reading->getNumStreams(),
+                    .find_exact_ranges = false,
+                    .is_parallel_reading_from_replicas = false,
+                    .has_projections = true,
+                    .use_primary_key = false,
+                    .result = tmp_result,
+                };
+
+                auto filtered_parts = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
+                    filter_context,
+                    parent_reading_select_result->parts_with_ranges,
+                    tmp_index_stats);
+
+                size_t total_marks_after_skip = 0;
+                for (const auto & part : filtered_parts)
+                    total_marks_after_skip += part.ranges.getNumberOfMarks();
+
+                if (total_marks_after_skip < parent_reading_marks)
+                {
+                    LOG_DEBUG(logger,
+                        "Parent marks reduced from {} to {} after skip index filtering; "
+                        "using refined count for projection candidate comparison",
+                        parent_reading_marks, total_marks_after_skip);
+                    parent_reading_select_result->parts_with_ranges = std::move(filtered_parts);
+                    parent_reading_select_result->selected_marks = total_marks_after_skip;
+                    parent_reading_marks = total_marks_after_skip;
+                }
+            }
+        }
 
         /// Consider projections with equal read cost only if:
         /// - `force_optimize_projection` is enabled, or
