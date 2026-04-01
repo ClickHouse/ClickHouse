@@ -2092,9 +2092,9 @@ void NO_INLINE Aggregator::executeImplOnSubsetRows(
         && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     if (prefetch)
-        executeImplBatchOnSubsetRows<true>(method, state, aggregates_pool, row_indices, key_hashes, aggregate_instructions);
+        executeImplBatchOnSubsetRows<true>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
     else
-        executeImplBatchOnSubsetRows<false>(method, state, aggregates_pool, row_indices, key_hashes, aggregate_instructions);
+        executeImplBatchOnSubsetRows<false>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
 }
 
 
@@ -2105,12 +2105,15 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
     Arena * aggregates_pool,
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
+    const ColumnRawPtrs & key_columns,
     const AggregateFunctionInstruction * aggregate_instructions) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
 
     const size_t num_indices = row_indices.size();
+    const size_t chunk_num_rows = key_columns[0]->size();
     chassert(num_indices > 0);
+    chassert(num_indices <= chunk_num_rows);
     chassert(key_hashes);
 
     /// No aggregate functions - just insert keys.
@@ -2193,9 +2196,14 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
         places[j] = aggregate_data;
     }
 
-    const bool has_only_one_value = state.hasOnlyOneValueSinceLastReset();
+    const bool has_only_one_key = state.hasOnlyOneValueSinceLastReset();
+    /// When this shard received all rows from the chunk (num_indices == chunk_num_rows),
+    /// the row_indices are [0, 1, ..., N-1] — a contiguous range. In that case we can
+    /// use the standard addBatch/addBatchSinglePlace which may have optimized (SIMD) implementations.
+    const bool has_all_chunk_rows = (num_indices == chunk_num_rows);
     executeAggregateInstructionsOnSubsetRows(
-        aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get(), has_only_one_value);
+        aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get(),
+        has_only_one_key, has_all_chunk_rows);
 }
 
 void Aggregator::executeAggregateInstructionsOnSubsetRows(
@@ -2204,16 +2212,35 @@ void Aggregator::executeAggregateInstructionsOnSubsetRows(
     size_t num_rows,
     const AggregateFunctionInstruction * aggregate_instructions,
     AggregateDataPtr * places,
-    bool has_only_one_value) const
+    bool has_only_one_key,
+    bool has_all_chunk_rows) const
 {
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
         const AggregateFunctionInstruction * instruction = aggregate_instructions + i;
 
-        if (has_only_one_value && instruction->can_optimize_equal_keys_ranges)
+        if (has_only_one_key && instruction->can_optimize_equal_keys_ranges)
         {
-            instruction->batch_that->addBatchSinglePlaceForRows(
-                row_indices, num_rows, places[0] + instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+            if (has_all_chunk_rows)
+            {
+                /// All rows in the chunk belong to this shard and share one key.
+                /// Use the standard addBatchSinglePlace with contiguous range — this
+                /// has optimized (SIMD) implementations in many aggregate functions.
+                instruction->batch_that->addBatchSinglePlace(
+                    0, num_rows, places[0] + instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+            }
+            else
+            {
+                instruction->batch_that->addBatchSinglePlaceForRows(
+                    row_indices, num_rows, places[0] + instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+            }
+        }
+        else if (has_all_chunk_rows)
+        {
+            /// All rows in the chunk belong to this shard but have different keys.
+            /// Use the standard addBatch with contiguous range.
+            instruction->batch_that->addBatch(
+                0, num_rows, places, instruction->state_offset, instruction->batch_arguments, aggregates_pool);
         }
         else
         {

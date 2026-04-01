@@ -489,6 +489,7 @@ private:
         Arena * aggregates_pool,
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
+        const ColumnRawPtrs & key_columns,
         const AggregateFunctionInstruction * aggregate_instructions) const;
 
     void executeAggregateInstructionsOnSubsetRows(
@@ -497,7 +498,8 @@ private:
         size_t num_rows,
         const AggregateFunctionInstruction * aggregate_instructions,
         AggregateDataPtr * places,
-        bool has_only_one_value) const;
+        bool has_only_one_key,
+        bool has_all_chunk_rows) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
