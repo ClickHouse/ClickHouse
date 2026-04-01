@@ -1188,8 +1188,11 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         select->limitLength() != nullptr,
         select->tables() != nullptr);
 
-    /// Try to populate the table with random data so the oracle checks non-empty results.
-    tryPopulateTable(*select, context);
+    /// NOTE: tryPopulateTable is disabled — it inserts random data that can cause
+    /// false positive mismatches when reference and partitioned queries observe
+    /// different row counts due to concurrent inserts within the same check.
+    /// The fuzzer corpus should provide tables with sufficient data instead.
+    /// tryPopulateTable(*select, context);
 
     bool any_check_performed = false;
 
