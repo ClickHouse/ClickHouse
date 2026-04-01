@@ -26,7 +26,7 @@ USER_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS ma
 
 
 def test_user_overcommit():
-    if node.is_built_with_memory_sanitizer() or node.is_built_with_address_sanitizer():
+    if node.is_built_with_memory_sanitizer() or node.is_built_with_address_sanitizer() or node.is_built_with_llvm_coverage():
         pytest.skip(
             "doesn't fit in memory limits under sanitizers (memory overhead causes timeouts)"
         )
