@@ -179,6 +179,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::number, replxx::color::rgb666(0, 4, 0)},
         {Highlight::string, Replxx::Color::GREEN},
         {Highlight::string_like, Replxx::Color::GREEN},
+        {Highlight::string_similar_to, Replxx::Color::GREEN},
         {Highlight::string_regexp, Replxx::Color::GREEN},
     };
 
@@ -243,6 +244,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         const char * metacharacters = "";
         if (range.highlight == Highlight::string_like)
             metacharacters = "%_";
+        if (range.highlight == Highlight::string_similar_to)
+            metacharacters = "%_|()[]?*+{:-";
         if (range.highlight == Highlight::string_regexp)
             metacharacters = "|()^$.[]?*+{:-";
 

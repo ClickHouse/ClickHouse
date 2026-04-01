@@ -36,6 +36,7 @@ enum class Highlight : uint8_t
     string,
     /// This will highlight similarly to a string but also with highlighting metacharacters.
     string_like,
+    string_similar_to,
     string_regexp,
 };
 
@@ -66,7 +67,7 @@ struct Expected
 
     /// Optional map for capturing literal token positions during parsing.
     /// Used by ValuesBlockInputFormat for ConstantExpressionTemplate construction
-    /// and for LIKE/REGEXP syntax highlighting.
+    /// and for LIKE/SIMILAR_TO/REGEXP syntax highlighting.
     /// The caller must allocate and manage the map's lifetime.
     LiteralTokenMap * literal_token_map = nullptr;
 
