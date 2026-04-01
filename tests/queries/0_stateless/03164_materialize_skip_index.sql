@@ -1,6 +1,8 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan FOR b
 DROP TABLE IF EXISTS t_skip_index_insert;
 
+SET use_statistics_for_part_pruning = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
+
 CREATE TABLE t_skip_index_insert
 (
     a UInt64,
@@ -12,6 +14,9 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4, add_minmax_i
 
 SET enable_analyzer = 1;
 SET materialize_skip_indexes_on_insert = 0;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 SYSTEM STOP MERGES t_skip_index_insert;
 
@@ -46,6 +51,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query LIKE 'INSERT INTO t_skip_index_insert SELECT%'
     AND type = 'QueryFinish';

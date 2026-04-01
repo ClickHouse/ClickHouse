@@ -113,7 +113,7 @@ public:
     /// use for provide deduplication hash for the chunk with maybe multiple partitions in it
     void setPartWriterHashes(const std::vector<UInt128> & partitions_hashes, size_t count) const;
     /// hash from part writer would be used as user token for dependent views if no user token has been set before
-    void redefineTokensWithDataHash();
+    void redefineTokensWithDataHash(const Block & block);
 
     void setViewID(const StorageID & id);
     void setViewBlockNumber(size_t block_number);
@@ -126,7 +126,7 @@ public:
 private:
     DeduplicationInfo(bool async_insert_, InsertDeduplicationVersions unification_stage_);
 
-    UInt128 calculateDataHash(size_t offset) const;
+    UInt128 calculateDataHash(size_t offset, const Block & block) const;
     // the old one hash
     DeduplicationHash getBlockHash(size_t offset, const std::string & partition_) const;
     // the new unified hash

@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/ServerSettings.h>
@@ -87,6 +88,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     const size_t backoff_ms = 100 * ((consecutive_check_failures + 1) * (consecutive_check_failures + 2)) / 2;
     const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeRestartingThread");
     try
     {
         bool replica_is_active = runImpl();

@@ -88,8 +88,8 @@ SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileBFloat16::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16>, {}, documentation});
-    factory.registerFunction(NameQuantilesBFloat16::name, { createAggregateFunctionQuantile<FuncQuantilesBFloat16>, properties });
+    factory.registerFunction(NameQuantileBFloat16::name, {createAggregateFunctionQuantile<FuncQuantileBFloat16>, documentation});
+    factory.registerFunction(NameQuantilesBFloat16::name, { createAggregateFunctionQuantile<FuncQuantilesBFloat16>, {}, properties });
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianBFloat16", NameQuantileBFloat16::name);

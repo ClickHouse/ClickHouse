@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 CLICKHOUSE_CLIENT_TRACE=${CLICKHOUSE_CLIENT/"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"/"--send_logs_level=trace"}
 
-PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas=1, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, parallel_replicas_filter_pushdown=1"
+PARALLEL_REPLICAS_SETTINGS="enable_parallel_replicas=1, automatic_parallel_replicas_mode = 0, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1, enable_analyzer=1, parallel_replicas_filter_pushdown=1, optimize_move_to_prewhere=1, query_plan_optimize_prewhere=1"
 
 $CLICKHOUSE_CLIENT --query "
 drop table if exists t_03733;

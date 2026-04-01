@@ -78,6 +78,9 @@ public:
             return;
         }
 
+        if (column_source_node_type == QueryTreeNodeType::CROSS_JOIN)
+            return;
+
         auto & table_expression_data = planner_context->getOrCreateTableExpressionData(column_source_node);
 
         if (isAliasColumn(node))
@@ -207,6 +210,9 @@ public:
 
     bool needChildVisit(const QueryTreeNodePtr & parent_node, const QueryTreeNodePtr & child_node)
     {
+        /// Do not traverse Materialized CTE subquery, because it is executed separately.
+        if (auto * table_node = parent_node->as<TableNode>())
+            return child_node != table_node->getMaterializedCTESubquery();
         return !(checkSubquery(child_node) || isAliasColumn(parent_node));
     }
 

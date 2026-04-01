@@ -269,7 +269,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_index(Keyword::INDEX);
     ParserKeyword s_type(Keyword::TYPE);
     ParserExpressionWithOptionalArguments type_p;
-    ParserExpression expression_p;
+    ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
@@ -290,7 +290,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else if (s_index.ignore(pos, expected))
     {
-        if (!expression_p.parse(pos, index, expected))
+        if (!expression_list_p.parse(pos, index, expected))
             return false;
 
         if (!s_type.ignore(pos, expected))
@@ -559,9 +559,31 @@ bool ParserStorageOrderByClause::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!s_rparen.ignore(pos, expected))
         return false;
 
+    /// Remove ASTStorageOrderByElement wrappers when ALL elements have default (ASC) direction.
+    /// We must unwrap all-or-nothing because KeyDescription expects either all children to be
+    /// wrapped in ASTStorageOrderByElement, or none of them.
+    bool all_default_direction = true;
+    for (const auto & child : order_by->children)
+    {
+        if (const auto * elem = child->as<ASTStorageOrderByElement>(); !elem || elem->direction < 0)
+        {
+            all_default_direction = false;
+            break;
+        }
+    }
+    if (all_default_direction)
+    {
+        for (auto & child : order_by->children)
+        {
+            if (const auto * elem = child->as<ASTStorageOrderByElement>())
+                child = elem->children.front();
+        }
+    }
+
     auto tuple_function = make_intrusive<ASTFunction>();
     tuple_function->name = "tuple";
     tuple_function->arguments = std::move(order_by);
+    tuple_function->children.push_back(tuple_function->arguments);
 
     node = std::move(tuple_function);
     return true;
@@ -851,20 +873,15 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return true;
     };
 
-    auto need_parse_as_select = [&is_create_empty, &is_clone_as, &pos, &expected]()
+    /// Try to parse EMPTY or CLONE keywords (they can appear before or after COMMENT).
+    auto try_parse_empty_or_clone = [&is_create_empty, &is_clone_as, &pos, &expected]()
     {
-        if (ParserKeyword{Keyword::EMPTY_AS}.ignore(pos, expected))
-        {
+        if (is_create_empty || is_clone_as)
+            return;
+        if (ParserKeyword{Keyword::EMPTY}.ignore(pos, expected))
             is_create_empty = true;
-            return true;
-        }
-        if (ParserKeyword{Keyword::CLONE_AS}.ignore(pos, expected))
-        {
+        else if (ParserKeyword{Keyword::CLONE}.ignore(pos, expected))
             is_clone_as = true;
-            return true;
-        }
-
-        return ParserKeyword{Keyword::AS}.ignore(pos, expected);
     };
 
     ASTPtr comment;
@@ -885,17 +902,31 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         auto storage_parse_result = parse_storage();
 
+        /// Accept both "EMPTY COMMENT ... AS" and "COMMENT ... EMPTY AS" orderings.
+        try_parse_empty_or_clone();
         comment = parseComment(pos, expected);
+        try_parse_empty_or_clone();
 
-        if ((storage_parse_result || is_temporary) && need_parse_as_select())
+        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
+        bool has_as = false;
+        if (is_create_empty || is_clone_as)
+        {
+            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+                return false;
+            has_as = true;
+        }
+        else
+            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
+
+        if ((storage_parse_result || is_temporary) && has_as)
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
         }
 
-        if (!storage_parse_result && !is_temporary)
+        if (!storage_parse_result && !is_temporary && has_as)
         {
-            if (need_parse_as_select() && !table_function_p.parse(pos, as_table_function, expected))
+            if (!table_function_p.parse(pos, as_table_function, expected))
                 return false;
         }
 
@@ -909,11 +940,24 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     {
         parse_storage();
 
+        try_parse_empty_or_clone();
         if (!comment)
             comment = parseComment(pos, expected);
+        try_parse_empty_or_clone();
+
+        /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
+        bool has_as = false;
+        if (is_create_empty || is_clone_as)
+        {
+            if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
+                return false;
+            has_as = true;
+        }
+        else
+            has_as = ParserKeyword{Keyword::AS}.ignore(pos, expected);
 
         /// CREATE|ATTACH TABLE ... AS ...
-        if (need_parse_as_select())
+        if (has_as)
         {
             if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
@@ -980,7 +1024,12 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->set(query->storage->primary_key, query->columns_list->primary_key->ptr());
-
+        /// Remove from columns_list: ASTColumns::formatImpl does not output primary_key,
+        /// so keeping it causes AST inconsistency after format+reparse.
+        query->columns_list->reset(query->columns_list->primary_key);
+        /// Normalize children order: `set()` always appends, but the canonical order
+        /// (used by clone/format) expects primary_key before order_by.
+        query->storage->normalizeChildrenOrder();
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -992,6 +1041,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
         query->storage->set(query->storage->primary_key, query->columns_list->primary_key_from_columns->ptr());
+        /// Remove from columns_list for the same reason as above.
+        query->columns_list->reset(query->columns_list->primary_key_from_columns);
+        query->storage->normalizeChildrenOrder();
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
@@ -1167,12 +1219,20 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-    if (s_populate.ignore(pos, expected))
-        is_populate = true;
-    else if (s_empty.ignore(pos, expected))
-        is_create_empty = true;
+    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings.
+    auto try_parse_populate_or_empty = [&is_populate, &is_create_empty, &pos, &expected, &s_populate, &s_empty]()
+    {
+        if (is_populate || is_create_empty)
+            return;
+        if (s_populate.ignore(pos, expected))
+            is_populate = true;
+        else if (s_empty.ignore(pos, expected))
+            is_create_empty = true;
+    };
 
+    try_parse_populate_or_empty();
     auto comment = parseComment(pos, expected);
+    try_parse_populate_or_empty();
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1621,7 +1681,38 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!sql_security)
         sql_security_p.parse(pos, sql_security, expected);
 
+    /// Accept both "POPULATE/EMPTY COMMENT" and "COMMENT POPULATE/EMPTY" orderings for materialized views.
+    auto try_parse_populate_or_empty = [&]()
+    {
+        if (!is_materialized_view || is_populate || is_create_empty)
+            return;
+        if (!to_table)
+        {
+            if (s_populate.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
+                is_create_empty = true;
+        }
+        else
+        {
+            if (s_populate.ignore(pos, expected))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
+
+            if (s_empty.ignore(pos, expected))
+            {
+                if (!refresh_strategy)
+                    throw Exception(
+                        ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'EMPTY'");
+
+                is_create_empty = true;
+            }
+        }
+    };
+
+    try_parse_populate_or_empty();
     auto comment = parseComment(pos, expected);
+    try_parse_populate_or_empty();
 
     /// AS SELECT ...
     if (!s_as.ignore(pos, expected))
@@ -1675,6 +1766,10 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
         storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key->ptr());
+        /// Remove from columns_list: ASTColumns::formatImpl does not output primary_key,
+        /// so keeping it causes AST inconsistency after format+reparse.
+        query->columns_list->reset(query->columns_list->primary_key);
+        storage_ref.normalizeChildrenOrder();
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -1686,6 +1781,9 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
         storage_ref.set(storage_ref.primary_key, query->columns_list->primary_key_from_columns->ptr());
+        /// Remove from columns_list for the same reason as above.
+        query->columns_list->reset(query->columns_list->primary_key_from_columns);
+        storage_ref.normalizeChildrenOrder();
     }
 
     boost::intrusive_ptr<ASTViewTargets> targets;

@@ -2,6 +2,7 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Exception.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>

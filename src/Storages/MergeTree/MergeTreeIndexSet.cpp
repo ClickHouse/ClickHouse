@@ -126,9 +126,9 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
 
         if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
-            column_nullable->getExtremesNullLast(min_val, max_val);
+            column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());
         else
-            elem.column->getExtremes(min_val, max_val);
+            elem.column->getExtremes(min_val, max_val, 0, elem.column->size());
 
         set_hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -270,9 +270,9 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
 
             if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
-                column_nullable->getExtremesNullLast(field_min, field_max);
+                column_nullable->getExtremesNullLast(field_min, field_max, 0, filtered_column->size());
             else
-                filtered_column->getExtremes(field_min, field_max);
+                filtered_column->getExtremes(field_min, field_max, 0, filtered_column->size());
 
             if (set_hyperrectangle.size() <= i)
             {
@@ -730,6 +730,14 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             bool all_useless = true;
             for (const auto & arg : arguments)
             {
+                /// For OR, skip constant false children — they are identity elements
+                /// of OR and don't affect filtering. Without this, the constant
+                /// check above returns false (not useless) for `getBool(0) == 0`,
+                /// which would incorrectly make the entire OR appear non-useless
+                /// even when no indexed columns are referenced.
+                if (function_name == "or" && arg->column && isColumnConst(*arg->column) && !arg->column->getBool(0))
+                    continue;
+
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
                 all_useless = all_useless && u;
             }
@@ -740,7 +748,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         return std::any_of(
             arguments.begin(),
             arguments.end(),
-            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
+            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, /*atomic=*/ true); });
     }
 
     auto column_name = tree_node.getColumnName();

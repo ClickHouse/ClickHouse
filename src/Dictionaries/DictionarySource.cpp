@@ -200,6 +200,15 @@ DictionarySourceCoordinator::cutColumns(const ColumnsWithTypeAndName & columns_w
 
 Pipe DictionarySourceCoordinator::read(size_t num_streams)
 {
+    /// Limit the number of streams to the number of data blocks,
+    /// because creating more streams is useless and may cause excessive memory usage.
+    if (!key_columns_with_type.empty() && max_block_size > 0)
+    {
+        size_t keys_size = key_columns_with_type[0].column->size();
+        size_t num_blocks = (keys_size + max_block_size - 1) / max_block_size;
+        num_streams = std::min(num_streams, std::max<size_t>(1, num_blocks));
+    }
+
     Pipes pipes;
     pipes.reserve(num_streams);
 

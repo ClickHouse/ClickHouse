@@ -1,6 +1,7 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Common/Exception.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>

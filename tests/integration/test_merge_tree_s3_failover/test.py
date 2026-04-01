@@ -205,8 +205,10 @@ def test_move_failover(cluster):
         """
     )
 
-    # Fail a request to S3 to break first TTL move.
-    fail_request(cluster, 1)
+    # Fail the first PUT request to S3 to break first TTL move.
+    # Use PUT method filter to avoid counting background GET/DELETE
+    # requests that could consume the fail counter and make the test flaky.
+    fail_request(cluster, 1, "PUT")
 
     node.query(
         "INSERT INTO s3_failover_test VALUES (now() - 1, 0, 'data'), (now() - 1, 1, 'data')"

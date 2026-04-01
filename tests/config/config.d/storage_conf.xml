@@ -10,6 +10,7 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <request_timeout_ms>20000</request_timeout_ms>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_disk>
             <s3_plain_disk>
                 <type>s3_plain</type>
@@ -145,4 +146,12 @@
             </s3_cache_encrypted>
         </policies>
     </storage_configuration>
+    <filesystem_caches>
+        <cache_for_readbigat>
+            <path>./cache_for_readbigat/</path>
+            <max_size>1Gi</max_size>
+            <max_file_segment_size>1Mi</max_file_segment_size>
+            <boundary_alignment>1Mi</boundary_alignment>
+        </cache_for_readbigat>
+    </filesystem_caches>
 </clickhouse>

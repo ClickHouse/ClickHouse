@@ -133,7 +133,7 @@ SELECT studentTTest(sample_data, sample_index) FROM student_ttest;
     FunctionDocumentation::Category category_studentTTest = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_studentTTest = {description_studentTTest, syntax_studentTTest, arguments_studentTTest, parameters_studentTTest, returned_value_studentTTest, examples_studentTTest, introduced_in_studentTTest, category_studentTTest};
 
-    factory.registerFunction("studentTTest", {createAggregateFunctionStudentTTest, {}, documentation_studentTTest});
+    factory.registerFunction("studentTTest", {createAggregateFunctionStudentTTest, documentation_studentTTest});
 }
 
 }

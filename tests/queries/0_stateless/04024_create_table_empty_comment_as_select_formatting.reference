@@ -1,0 +1,6 @@
+CREATE TABLE t\n(\n    `c` Int8\n)\nENGINE = MergeTree\nORDER BY c EMPTY\nCOMMENT \'test\'\nAS SELECT 1
+CREATE TABLE t\n(\n    `c` Int8\n)\nENGINE = MergeTree\nORDER BY c EMPTY\nCOMMENT \'test\'\nAS SELECT 1
+CREATE TABLE t\n(\n    `c` Int8\n)\nENGINE = MergeTree\nORDER BY c EMPTY\nAS SELECT 1
+CREATE TABLE t\n(\n    `c` Int8\n)\nENGINE = MergeTree\nORDER BY c\nCOMMENT \'test\'\nAS SELECT 1
+CREATE MATERIALIZED VIEW v\n(\n    `c` Int8\n)\nENGINE = MergeTree\nORDER BY c EMPTY\nCOMMENT \'test\'\nAS SELECT 1
+CREATE MATERIALIZED VIEW v\n(\n    `c` Int8\n)\nENGINE = MergeTree\nORDER BY c EMPTY\nCOMMENT \'test\'\nAS SELECT 1

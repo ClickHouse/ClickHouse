@@ -109,12 +109,14 @@ function fuzz
 
     # server.log -> All server logs, including sanitizer
     # stderr.log -> Process logs (sanitizer) only
-    clickhouse-server \
-        --config-file $CONFIG_DIR/config.xml \
-        --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
-        --  --path $CONFIG_DIR \
-            --logger.console=0 \
-            --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1 &
+    ( clickhouse-server \
+          --config-file $CONFIG_DIR/config.xml \
+          --pid-file /var/run/clickhouse-server/clickhouse-server.pid \
+          --  --path $CONFIG_DIR \
+              --logger.console=0 \
+              --logger.log=server.log 2>&1 | tee -a stderr.log >> server.log 2>&1
+      exit "${PIPESTATUS[0]}" ) &
+    server_bg_pid=$!
     for _ in {1..30}
     do
         if clickhouse-client --query "select 1"
@@ -190,8 +192,21 @@ function fuzz
 
     if [[ "$FUZZER_TO_RUN" = "AST Fuzzer" ]];
     then
-        QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        if [[ -n "${TARGETED_QUERIES_FILE:-}" ]] && [[ -f "${TARGETED_QUERIES_FILE}" ]];
+        then
+            QUERIES_FILE="$(cat "${TARGETED_QUERIES_FILE}")"
+            echo "Using targeted AST fuzzer corpus from ${TARGETED_QUERIES_FILE}"
+        else
+            QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
+        fi
+        if [[ -n "${FUZZER_COMPATIBILITY:-}" ]];
+        then
+            COMPAT_ARG="--compatibility=${FUZZER_COMPATIBILITY}"
+            echo "Using AST fuzzer compatibility setting: ${FUZZER_COMPATIBILITY}"
+        else
+            COMPAT_ARG=""
+        fi
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 $COMPAT_ARG --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
         FUZZER_ARGS="--buzz-house-config=fuzz.json"
@@ -276,12 +291,15 @@ function fuzz
         fi
     done
 
-    # wait in background to call wait in foreground and ensure that the
-    # process is alive, since w/o job control this is the only way to obtain
-    # the exit code
+    # Stop the server in background so we can wait for the subshell to
+    # finish in the foreground. We wait on server_bg_pid (the subshell running
+    # the server pipeline) rather than server_pid (from the PID file), because
+    # the PID file contains the forked server process which is not a direct
+    # child of this shell, so wait would fail with "not a child of this shell".
+    # The subshell exits with clickhouse-server's exit code via PIPESTATUS.
     stop_server &
     server_exit_code=0
-    wait $server_pid || server_exit_code=$?
+    wait $server_bg_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
 
     echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv

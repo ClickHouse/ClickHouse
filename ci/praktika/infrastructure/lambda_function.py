@@ -347,6 +347,7 @@ class Lambda:
                 ).decode("utf-8")
 
                 # Compare code hashes
+                code_updated = False
                 if existing_code_sha256 == new_code_sha256:
                     print(
                         f"Code unchanged for Lambda function: {function_name} (SHA256: {new_code_sha256})"
@@ -362,14 +363,22 @@ class Lambda:
                     lambda_client.update_function_code(
                         FunctionName=function_name, ZipFile=zip_data
                     )
-
+                    code_updated = True
                     print(f"Successfully updated Lambda function code: {function_name}")
 
-                # Update function configuration if secrets are provided
-                if self.secrets:
-                    print(f"Waiting for code update to complete...")
-                    waiter = lambda_client.get_waiter("function_updated")
-                    waiter.wait(FunctionName=function_name)
+                # Update function configuration only if something changed
+                current_env = self.ext.get("environment", {})
+                config_changed = (
+                    self.ext.get("handler") != handler
+                    or self.ext.get("timeout") != timeout
+                    or self.ext.get("memory_size") != memory_size
+                    or current_env != environment
+                )
+                if config_changed:
+                    if code_updated:
+                        print(f"Waiting for code update to complete...")
+                        waiter = lambda_client.get_waiter("function_updated")
+                        waiter.wait(FunctionName=function_name)
 
                     print(
                         f"Updating Lambda configuration (timeout={timeout}s, memory={memory_size}MB, handler={handler})..."
@@ -384,6 +393,10 @@ class Lambda:
                     )
                     print(
                         f"Successfully updated Lambda function configuration: {function_name}"
+                    )
+                elif not code_updated:
+                    print(
+                        f"Lambda '{function_name}' is already up to date, skipping"
                     )
 
             except lambda_client.exceptions.ResourceNotFoundException:
@@ -583,7 +596,7 @@ lambda_worker_config = Lambda.Config(
     secrets={
         "praktika_slack_app_token": "SLACK_BOT_TOKEN",
     },
-    timeout_ms=10 * 1000,
+    timeout_ms=30 * 1000,
     memory_size_mb=128,
 )
 

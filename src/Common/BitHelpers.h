@@ -32,7 +32,7 @@ inline uint32_t getLeadingZeroBitsUnsafe(T x)
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
-        return __builtin_clz(x);
+        return __builtin_clz(x); // NOLINT(readability-redundant-casting)
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
@@ -40,7 +40,7 @@ inline uint32_t getLeadingZeroBitsUnsafe(T x)
     }
     else
     {
-        return __builtin_clzll(x);
+        return __builtin_clzll(x); // NOLINT(readability-redundant-casting)
     }
 }
 

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -41,9 +42,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
+    auto prewarm_caches = data_part->storage.getCachesToPrewarm(part_uncompressed_bytes);
+    bool save_marks_in_cache = prewarm_caches.mark_cache != nullptr || prewarm_caches.index_mark_cache != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || prewarm_caches.primary_index_cache;
 
     writer_settings = MergeTreeWriterSettings(
         data_part->storage.getContext()->getSettingsRef(),
@@ -245,6 +247,14 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (auto new_index_granularity = new_part->index_granularity->optimize())
             new_part->index_granularity = std::move(new_index_granularity);
     }
+
+    /// For constant granularity parts (non-adaptive marks), the writer's in-memory
+    /// granularity has all marks at the constant value. Fix the last mark granularity
+    /// to match the actual row count, same as done when loading parts from disk.
+    /// Note: the granularity pointer may be shared with the source part (mutations reuse it),
+    /// so we use fixedFromRowsCount which returns a new object to avoid racing with concurrent readers.
+    if (const auto * constant_granularity = dynamic_cast<const MergeTreeIndexGranularityConstant *>(new_part->index_granularity.get()))
+        new_part->index_granularity = constant_granularity->fixedFromRowsCount(rows_count);
 
     /// It's important to set index after index granularity.
     if (auto computed_index = writer->releaseIndexColumns())

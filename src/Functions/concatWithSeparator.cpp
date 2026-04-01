@@ -136,17 +136,21 @@ public:
             }
             else
             {
-                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
-                auto full_column = column->convertToFullIfNeeded();
+                /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String.
+                /// Only strip top-level wrappers (Const, Sparse, LowCardinality) without recursing into subcolumns.
+                /// Using the recursive convertToFullIfNeeded would strip LowCardinality from inside
+                /// compound types like Variant while the type is not updated, creating a type/column mismatch.
+                auto full_column
+                    = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
 
                 chassert(full_column->size() == input_rows_count);
 
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, input_rows_count);
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t row = 0; row < column->size(); ++row)
+                for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.finishRow();

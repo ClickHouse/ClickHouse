@@ -53,7 +53,7 @@ Setting fields:
 | `db` | Name of the database. Omit it if the database name is set in the `<connection_string>` parameters. |
 | `table` | Name of the table and schema if exists. |
 | `connection_string` | Connection string. |
-| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](../lifetime.md#refreshing-dictionary-data-using-lifetime). |
+| `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](../lifetime.md). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
 | `query` | The custom query. Optional. |
 

@@ -77,6 +77,7 @@ public:
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , WithContext(context_)
         , storage(storage_)
+        , non_materialized_header(metadata_snapshot_->getSampleBlockNonMaterialized())
     {
     }
 
@@ -88,6 +89,10 @@ public:
             return;
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
+
+        Block non_materialized_block;
+        for (const auto & col : non_materialized_header)
+            non_materialized_block.insert(block.getByName(col.name));
 
         StoragePtr target = storage.getTargetTable();
         StorageID target_id = target->getStorageID();
@@ -110,12 +115,13 @@ public:
         BlockIO block_io = interpreter.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
         executor.start();
-        executor.push(std::move(block));
+        executor.push(std::move(non_materialized_block));
         executor.finish();
     }
 
 private:
     StorageAlias & storage;
+    Block non_materialized_header;
 };
 
 void StorageAlias::read(
@@ -321,8 +327,8 @@ void registerStorageAlias(StorageFactory & factory)
         else if (args.engine_args.size() == 1)
         {
             // Syntax: ENGINE = Alias(table_name) or ENGINE = Alias(db.table_name)
-            auto evaluated_arg = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            String table_arg = checkAndGetLiteralArgument<String>(evaluated_arg, "table_name");
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            String table_arg = checkAndGetLiteralArgument<String>(args.engine_args[0], "table_name");
 
             auto dot_pos = table_arg.find('.');
             if (dot_pos != String::npos)
@@ -339,10 +345,10 @@ void registerStorageAlias(StorageFactory & factory)
         else if (args.engine_args.size() == 2)
         {
             // Syntax: ENGINE = Alias(database_name, table_name)
-            auto evaluated_db = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
-            auto evaluated_table = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
-            target_database = checkAndGetLiteralArgument<String>(evaluated_db, "database_name");
-            target_table = checkAndGetLiteralArgument<String>(evaluated_table, "table_name");
+            args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], local_context);
+            args.engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[1], local_context);
+            target_database = checkAndGetLiteralArgument<String>(args.engine_args[0], "database_name");
+            target_table = checkAndGetLiteralArgument<String>(args.engine_args[1], "table_name");
         }
         else
         {

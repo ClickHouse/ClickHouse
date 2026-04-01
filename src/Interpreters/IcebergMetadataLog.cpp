@@ -13,6 +13,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/ErrnoException.h>
 
 namespace DB
 {
@@ -82,7 +83,7 @@ void insertRowToLogTable(
     String row,
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
-    const String & file_path,
+    const Iceberg::IcebergPathFromMetadata & file_path,
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
@@ -106,7 +107,7 @@ void insertRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
             .table_path = table_path,
-            .file_path = file_path,
+            .file_path = file_path.serialize(),
             .metadata_content = row,
             .row_in_file = row_in_file,
             .pruning_status = pruning_status});
