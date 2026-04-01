@@ -671,19 +671,73 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 scope.scope_node->formatASTForErrorMessage());
         }
 
-        /// Rewrite UNIQUE(subquery) into SELECT allUnique(*) FROM (subquery)
+        /// Rewrite UNIQUE(subquery) into:
+        ///   SELECT count() = uniqExact(*) FROM (subquery) WHERE isNotNull(c1) AND isNotNull(c2) AND ...
+        /// The WHERE clause filters rows with any NULL column, because per the SQL standard
+        /// rows containing NULL are never considered duplicates.
+
+        /// First, build a preliminary subquery on a clone to resolve column names and detect correlation.
+        /// We clone the subquery argument so that the probe resolution does not mutate the original.
+        auto probe_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+        probe_subquery->setIsSubquery(true);
+        auto probe_matcher = std::make_shared<MatcherNode>();
+        probe_subquery->getProjection().getNodes().push_back(probe_matcher);
+        probe_subquery->getJoinTree() = unique_subquery_argument->clone();
+
+        QueryTreeNodePtr probe_argument = probe_subquery;
+        resolveExpressionNode(
+            probe_argument,
+            scope,
+            true /*allow_lambda_expression*/,
+            true /*allow_table_expression*/,
+            allow_niladic_functions
+        );
+
+        if (probe_subquery->isCorrelated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported for the UNIQUE predicate. In scope {}",
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Now build the real rewrite: SELECT count() = uniqExact(*) FROM (subquery) WHERE <not-null filter>
         auto new_unique_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
         new_unique_subquery->setIsSubquery(true);
 
-        auto has_no_duplicates_function = std::make_shared<FunctionNode>("allUnique");
-        has_no_duplicates_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
+        auto count_function = std::make_shared<FunctionNode>("count");
+        auto uniq_exact_function = std::make_shared<FunctionNode>("uniqExact");
+        uniq_exact_function->getArguments().getNodes().push_back(std::make_shared<MatcherNode>());
 
-        new_unique_subquery->getProjection().getNodes().push_back(has_no_duplicates_function);
+        auto equals_function = std::make_shared<FunctionNode>("equals");
+        equals_function->getArguments().getNodes().push_back(count_function);
+        equals_function->getArguments().getNodes().push_back(uniq_exact_function);
+
+        new_unique_subquery->getProjection().getNodes().push_back(equals_function);
         new_unique_subquery->getJoinTree() = unique_subquery_argument;
+
+        /// Build WHERE: isNotNull(c1) AND isNotNull(c2) AND ... for each projected column.
+        /// This filters out rows with any NULL, matching SQL standard NULL semantics.
+        auto projection_columns = probe_subquery->getProjectionColumns();
+        QueryTreeNodePtr where_condition;
+        for (const auto & col : projection_columns)
+        {
+            auto col_ref = std::make_shared<IdentifierNode>(Identifier{col.name});
+            auto is_not_null_func = std::make_shared<FunctionNode>("isNotNull");
+            is_not_null_func->getArguments().getNodes().push_back(std::move(col_ref));
+
+            if (!where_condition)
+                where_condition = std::move(is_not_null_func);
+            else
+            {
+                auto and_func = std::make_shared<FunctionNode>("and");
+                and_func->getArguments().getNodes().push_back(std::move(where_condition));
+                and_func->getArguments().getNodes().push_back(std::move(is_not_null_func));
+                where_condition = std::move(and_func);
+            }
+        }
+        if (where_condition)
+            new_unique_subquery->getWhere() = std::move(where_condition);
 
         QueryTreeNodePtr new_unique_argument = new_unique_subquery;
 
-        /// Resolve the rewritten subquery first to detect correlation.
         auto unique_arguments_projection_names = resolveExpressionNode(
             new_unique_argument,
             scope,
@@ -691,11 +745,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             true /*allow_table_expression*/,
             allow_niladic_functions
         );
-
-        if (new_unique_subquery->isCorrelated())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Correlated subqueries are not supported for the UNIQUE predicate. In scope {}",
-                scope.scope_node->formatASTForErrorMessage());
 
         if (only_analyze)
         {

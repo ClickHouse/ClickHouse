@@ -32,7 +32,7 @@ Per the SQL standard, rows containing `NULL` in any column are never considered 
 
 **Implementation details**
 
-Internally, `UNIQUE(subquery)` is rewritten to `SELECT allUnique(*) FROM (subquery)`. The `allUnique` aggregate function maintains a hash set and can terminate early — as soon as the first duplicate is found, it stops reading further data from the subquery.
+Internally, `UNIQUE(subquery)` is rewritten to `SELECT count() = uniqExact(*) FROM (subquery) WHERE isNotNull(c1) AND isNotNull(c2) AND ...`, where `c1`, `c2`, etc. are the projected columns. Rows containing `NULL` in any column are filtered out before comparison. The remaining row count is compared against the number of distinct rows — if they are equal, all rows are unique.
 
 Correlated subqueries are not currently supported with `UNIQUE`.
 
