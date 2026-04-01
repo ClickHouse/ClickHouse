@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, long
+-- Tags: no-replicated-database
 -- Tag no-replicated-database: profile events for mutations may differ because of additional replicas.
 
 DROP TABLE IF EXISTS t_apply_patches SYNC;
@@ -30,12 +30,12 @@ ALTER TABLE t_apply_patches APPLY PATCHES;
 
 SELECT b, c, count() FROM t_apply_patches GROUP BY b, c ORDER BY b, c SETTINGS apply_patch_parts = 0;
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
     ProfileEvents['MutatedUncompressedBytes'] -- 2 * 8 * 10000 = 160000, because only 2 columns must be affected.
-FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_apply_patches' AND event_type = 'MutatePart'
+FROM system.part_log WHERE database = currentDatabase() AND table = 't_apply_patches' AND event_type = 'MutatePart'
 ORDER BY ALL;
 
 CREATE TABLE t_apply_patches_smt (a UInt64, b UInt64, c UInt64, d UInt64)
@@ -62,12 +62,12 @@ ALTER TABLE t_apply_patches_smt APPLY PATCHES;
 
 SELECT b, c, count() FROM t_apply_patches GROUP BY b, c ORDER BY b, c SETTINGS apply_patch_parts = 0;
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
     ProfileEvents['MutatedUncompressedBytes'] -- 2 * 8 * 10000 = 160000, because only 2 columns must be affected.
-FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_apply_patches_smt' AND event_type = 'MutatePart'
+FROM system.part_log WHERE database = currentDatabase() AND table = 't_apply_patches_smt' AND event_type = 'MutatePart'
 ORDER BY ALL;
 
 DROP TABLE IF EXISTS t_apply_patches SYNC;

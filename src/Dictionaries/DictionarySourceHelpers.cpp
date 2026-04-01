@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 Block blockForIds(
     const DictionaryStructure & dict_struct,
-    const VectorWithMemoryTracking<UInt64> & ids)
+    const std::vector<UInt64> & ids)
 {
     auto column = ColumnUInt64::create(ids.size());
     memcpy(column->getData().data(), ids.data(), ids.size() * sizeof(ids.front()));
@@ -36,7 +36,7 @@ Block blockForIds(
 Block blockForKeys(
     const DictionaryStructure & dict_struct,
     const Columns & key_columns,
-    const VectorWithMemoryTracking<size_t> & requested_rows)
+    const std::vector<size_t> & requested_rows)
 {
     Block block;
 
