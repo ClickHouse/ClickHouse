@@ -2,6 +2,7 @@
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 SET use_statistics = 0; -- auto_statistics_types causes extra rows to be read
+SET enable_parallel_replicas = 0; -- parallel replicas execute IN subquery on each replica, inflating max_rows_to_read count
 
 drop table if exists xp;
 drop table if exists xp_d;
