@@ -121,14 +121,15 @@ void NamesAndTypesList::readText(ReadBuffer & buf, bool check_eof)
         assertEOF(buf);
 }
 
-void NamesAndTypesList::writeText(WriteBuffer & buf) const
+void NamesAndTypesList::writeText(WriteBuffer & buf, bool use_column_ids) const
 {
     writeString("columns format version: 1\n", buf);
     DB::writeText(size(), buf);
     writeString(" columns:\n", buf);
     for (const auto & it : *this)
     {
-        writeBackQuotedString(it.name, buf);
+        const auto & col_name = (use_column_ids && !it.column_id.empty()) ? it.column_id : it.name;
+        writeBackQuotedString(col_name, buf);
         writeChar(' ', buf);
         writeString(it.type->getName(), buf);
         writeChar('\n', buf);

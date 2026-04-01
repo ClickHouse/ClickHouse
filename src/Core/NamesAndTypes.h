@@ -101,7 +101,11 @@ public:
     NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
 
     void readText(ReadBuffer & buf, bool check_eof = true);
-    void writeText(WriteBuffer & buf) const;
+    /// When use_column_ids is true, columns that have a non-empty
+    /// column_id write that id instead of the logical name.  This is
+    /// used when persisting columns.txt for MergeTree parts so that the
+    /// on-disk file contains stable column IDs that survive renames.
+    void writeText(WriteBuffer & buf, bool use_column_ids = false) const;
 
     String toString() const;
     static NamesAndTypesList parse(const String & s);

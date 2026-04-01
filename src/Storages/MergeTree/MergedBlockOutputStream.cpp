@@ -385,7 +385,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
 
     write_plain_file("columns.txt", [&](auto & buffer)
     {
-        new_part->getColumns().writeText(buffer);
+        new_part->getColumns().writeText(buffer, /*use_column_ids=*/true);
     });
 
     /// Merge columns substreams from current writer and additional columns substreams

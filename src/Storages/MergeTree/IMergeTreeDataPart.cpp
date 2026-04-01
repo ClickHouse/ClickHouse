@@ -1546,7 +1546,7 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
 {
     writeMetadata("columns.txt", settings, [&columns_](auto & buffer)
     {
-        columns_.writeText(buffer);
+        columns_.writeText(buffer, /*use_column_ids=*/true);
     });
 }
 
