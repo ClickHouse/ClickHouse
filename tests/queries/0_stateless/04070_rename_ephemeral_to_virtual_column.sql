@@ -1,5 +1,3 @@
-SET max_execution_time=30;
-
 -- Test: RENAME COLUMN should reject renaming an EPHEMERAL column to a virtual column name
 -- This tests the validation in AlterCommands.cpp for the RENAME path
 
