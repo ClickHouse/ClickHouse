@@ -36,6 +36,8 @@ ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
  *   - time (time of day in microseconds since midnight)
  *   - timestamp (in microseconds since 1970-01-01)
  *   - timestamptz (timestamp with timezone, stores values in UTC timezone)
+ *   - timestamp_ns (in nanoseconds since 1970-01-01, format version 3+)
+ *   - timestamptz_ns (timestamp with timezone in nanoseconds, format version 3+)
  *   - string
  *   - uuid
  *   - fixed(L) (fixed-length byte array of length L)

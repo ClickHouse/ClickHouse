@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
 #include <Columns/ColumnFixedString.h>
@@ -25,6 +26,15 @@ namespace ErrorCodes
 }
 
 static constexpr size_t MAX_STRINGS_SIZE = 1ULL << 30;
+
+
+UInt128 SerializationFixedString::getHash(size_t n_)
+{
+    SipHash hash;
+    hash.update("FixedString");
+    hash.update(n_);
+    return hash.get128();
+}
 
 static const char * getEndWithOptionalTrim(const char * pos, size_t n, const FormatSettings & settings)
 {
@@ -203,6 +213,11 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
         data.resize_assume_reserved(prev_size);
         return false;
     }
+}
+
+SerializationPtr SerializationFixedString::create(size_t n_)
+{
+    return ISerialization::pooled(getHash(n_), [=] { return new SerializationFixedString(n_); });
 }
 
 

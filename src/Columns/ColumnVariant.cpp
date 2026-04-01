@@ -932,7 +932,10 @@ ColumnPtr ColumnVariant::filter(const Filter & filt, ssize_t result_size_hint) c
     /// If we have only NULLs, just filter local_discriminators column.
     if (hasOnlyNulls())
     {
-        Columns new_variants(variants.begin(), variants.end());
+        Columns new_variants;
+        new_variants.reserve(variants.size());
+        for (const auto & variant : variants)
+            new_variants.emplace_back(variant->cloneEmpty());
         auto new_discriminators = local_discriminators->filter(filt, result_size_hint);
         /// In case of all NULL values offsets doesn't contain any useful values, just resize it.
         ColumnPtr new_offsets = offsets->cloneResized(new_discriminators->size());
@@ -1819,7 +1822,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     /// List of source columns for each variant. In global order.
     VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> variants_source_columns;
@@ -1830,21 +1833,23 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const VectorWithMemory
 
     for (const auto & source_column : source_columns)
     {
-        const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
+        const auto & source_variant_col = assert_cast<const ColumnVariant &>(*source_column);
         for (size_t i = 0; i != num_variants; ++i)
-            variants_source_columns[i].push_back(source_variant.getVariantPtrByGlobalDiscriminator(i));
+            variants_source_columns[i].push_back(source_variant_col.getVariantPtrByGlobalDiscriminator(i));
     }
 
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
+        getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnVariant::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_variant = assert_cast<const ColumnVariant &>(*source_column);
-    for (size_t i = 0; i != variants.size(); ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant.getVariantPtrByGlobalDiscriminator(i));
+    const auto & source_variant = assert_cast<const ColumnVariant &>(source);
+    size_t num_variants = variants.size();
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(source_variant.getVariantByGlobalDiscriminator(i));
 }
+
 
 void ColumnVariant::fixDynamicStructure()
 {
@@ -1879,6 +1884,29 @@ void ColumnVariant::validateState() const
     {
         if (variants[i]->size() != expected_variant_sizes[i])
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant {} ({}) has size {}, but expected {}", i, variants[i]->getName(), variants[i]->size(), expected_variant_sizes[i]);
+    }
+}
+
+bool ColumnVariant::hasStatistics() const
+{
+    for (const auto & variant : variants)
+    {
+        if (variant->hasStatistics())
+            return true;
+    }
+
+    return false;
+}
+
+void ColumnVariant::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> variant_source_columns;
+        variant_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+            variant_source_columns.push_back(assert_cast<const ColumnVariant &>(*source_column).getVariantPtrByGlobalDiscriminator(i));
+        variants[i]->takeOrCalculateStatisticsFrom(variant_source_columns);
     }
 }
 

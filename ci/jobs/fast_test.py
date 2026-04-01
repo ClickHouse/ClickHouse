@@ -120,7 +120,12 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
-    parser.add_argument("--test", help="Optional test_case name to run", default="")
+    parser.add_argument(
+        "--test",
+        help="Optional. Space-separated test name patterns",
+        default=[],
+        nargs="+",
+        action="extend")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
     parser.add_argument("--set-status-success", help="Forcefully set a green status", action="store_true")
     return parser.parse_args()
@@ -170,11 +175,15 @@ def main():
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
-
     info = Info()
     if info.is_local_run:
         print("NOTE: It's a local run")
-        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
+        if os.environ.get("SCCACHE_ENDPOINT"):
+            print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
+        if os.environ.get("AWS_ACCESS_KEY_ID"):
+            print("NOTE: Using custom AWS credentials for sccache")
+        else:
+            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
     else:
         os.environ["CH_HOSTNAME"] = (
             "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
@@ -303,7 +312,8 @@ def main():
 
         fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast}"
         if args.test:
-            fast_test_command += f" -- '{args.test}'"
+            test_pattern = "|".join(args.test)
+            fast_test_command += f" -- '{test_pattern}'"
 
         res = CH.run_test(fast_test_command)
 
