@@ -206,6 +206,8 @@ namespace
 struct LookupReadResult
 {
     Block block;
+    int32_t metadata_version = -1;
+    String schema_signature;
     Names part_names;
     bool cacheable = true;
 };
@@ -276,6 +278,8 @@ LookupReadResult readLookupIndexColumns(
     LookupReadResult result;
     result.block = storage_snapshot->getSampleBlockForColumns(columns_to_read).cloneEmpty();
     auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, columns_to_read);
+    result.metadata_version = lookup_table_state.metadata_version;
+    result.schema_signature = lookup_table_state.schema_signature;
     result.part_names = lookup_table_state.part_names;
     result.cacheable = lookup_table_state.cacheable;
 
@@ -10841,14 +10845,16 @@ SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr 
     std::lock_guard lock(table_lookup_indices_mutex);
     if (auto cache_it = lookup_sets_cache.find(cache_key); cache_it != lookup_sets_cache.end())
     {
-        if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
+        if (cache_it->second.metadata_version == lookup_result.metadata_version
+            && cache_it->second.schema_signature == lookup_result.schema_signature
+            && cache_it->second.part_names == lookup_result.part_names)
             return cache_it->second.set;
     }
 
     lookup_sets_cache[cache_key] = LookupSetCacheEntry
     {
-        lookup_table_state.metadata_version,
-        lookup_table_state.schema_signature,
+        lookup_result.metadata_version,
+        lookup_result.schema_signature,
         std::move(lookup_result.part_names),
         set,
     };
@@ -10884,14 +10890,16 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Nam
     std::lock_guard lock(table_lookup_indices_mutex);
     if (auto cache_it = lookup_joins_cache.find(cache_key); cache_it != lookup_joins_cache.end())
     {
-        if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
+        if (cache_it->second.metadata_version == lookup_result.metadata_version
+            && cache_it->second.schema_signature == lookup_result.schema_signature
+            && cache_it->second.part_names == lookup_result.part_names)
             return cache_it->second.entity;
     }
 
     lookup_joins_cache[cache_key] = LookupJoinCacheEntry
     {
-        lookup_table_state.metadata_version,
-        lookup_table_state.schema_signature,
+        lookup_result.metadata_version,
+        lookup_result.schema_signature,
         std::move(lookup_result.part_names),
         entity,
     };
