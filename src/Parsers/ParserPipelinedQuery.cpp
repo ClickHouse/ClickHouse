@@ -194,7 +194,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else if (startsWithJoinClause(pos))
         {
-            if (SQLClauseOrder::JOIN <= highest_op)
+            if (SQLClauseOrder::JOIN < highest_op)
                 wrap_current_query();
 
             if (!pipe_join_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
