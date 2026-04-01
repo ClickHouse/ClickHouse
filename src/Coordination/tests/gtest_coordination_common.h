@@ -6,6 +6,7 @@
 
 #include <filesystem>
 
+#include <Coordination/ACLMap.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperStorage_fwd.h>
@@ -77,7 +78,8 @@ public:
     {
         Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
         Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
+        const char * log_level = std::getenv("TEST_LOG_LEVEL"); // NOLINT(concurrency-mt-unsafe)
+        Poco::Logger::root().setLevel(log_level ? log_level : "none");
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
 #if USE_ROCKSDB
@@ -110,7 +112,7 @@ public:
 };
 
 template <typename Storage>
-void addNode(Storage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, uint64_t acl_id = 0)
+void addNode(Storage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner = 0, DB::ACLId acl_id = 0)
 {
     using Node = typename Storage::Node;
     Node node{};
@@ -126,7 +128,7 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
         [&](auto & parent)
         {
             parent.addChild(child_path);
-            parent.stats.increaseNumChildren();
+            parent.increaseNumChildren();
         });
 }
 
