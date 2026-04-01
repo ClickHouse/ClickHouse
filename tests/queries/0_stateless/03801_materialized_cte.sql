@@ -6,6 +6,7 @@ SET enable_materialized_cte = 1;
 SET optimize_group_by_function_keys = 1;
 SET query_plan_use_logical_join_step = 1; -- canonical name; runner may inject 0 via alias, breaking Post Join Actions in second EXPLAIN
 SET enable_join_runtime_filters = 1; -- reference includes BuildRuntimeFilter node in first EXPLAIN
+SET query_plan_merge_expressions = 1; -- EXPLAIN output changes when adjacent Expression steps are not merged
 
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=Memory;
 
