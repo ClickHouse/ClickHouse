@@ -393,7 +393,7 @@ namespace
 {
 
 /// Clamp (row_offset + num_rows) to uint32_t max to avoid narrowing overflow.
-static inline uint32_t clampRowEnd(size_t row_offset, size_t num_rows)
+inline uint32_t clampRowEnd(size_t row_offset, size_t num_rows)
 {
     size_t sum = row_offset + num_rows;
     return sum > std::numeric_limits<uint32_t>::max()
