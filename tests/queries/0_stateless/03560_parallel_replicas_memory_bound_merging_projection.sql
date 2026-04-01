@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 drop table if exists pr_t;
 
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;

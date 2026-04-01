@@ -462,7 +462,9 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit);
+        UInt64 limit,
+        size_t split_id = 0 // Used only for in-order reading with parallel replicas
+    );
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,

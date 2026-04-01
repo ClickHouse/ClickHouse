@@ -210,14 +210,29 @@ public:
     virtual bool isReadingCompleted() const { return false; }
     virtual bool initializedWithEmptyRanges() const { return false; }
 
+    /// The snapshot replica (first to announce). Its announcements define the authoritative split structure.
+    std::optional<size_t> snapshot_replica_num;
+
+    bool isSnapshotReplica(size_t replica_num) const { return snapshot_replica_num && *snapshot_replica_num == replica_num; }
+
     void handleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
     {
-        if (++received_initial_requests > replicas_count)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
+        ++received_initial_requests;
 
-        if (replica_status[announcement.replica_num].is_announcement_received)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", announcement.replica_num);
+        if (!snapshot_replica_num)
+            snapshot_replica_num = announcement.replica_num;
+
+        /// For in-order mode with splits, a single replica may send multiple announcements
+        /// (one per split). Only check for duplicates in non-split scenarios.
+        if (!isInOrder(mode))
+        {
+            if (received_initial_requests > replicas_count)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
+
+            if (replica_status[announcement.replica_num].is_announcement_received)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", announcement.replica_num);
+        }
 
         replica_status[announcement.replica_num].is_announcement_received = true;
 
@@ -930,16 +945,14 @@ public:
     void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
-    /// Global part set with ranges and replica membership, populated from announcements.
-    /// Ranges are moved out into per-split state on first request from each split.
+    /// Global part set for replica membership tracking and progress reporting.
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
-    bool state_initialized{false};
 
-    /// Per-split read state. Each split owns a non-intersecting portion of the ranges.
+    /// Per-split read state, populated from announcements.
+    /// Each split owns a non-intersecting portion of the ranges.
     std::map<size_t, Parts> split_states;
 
-    Parts & getOrCreateSplitState(size_t split_id);
 
     LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
@@ -962,68 +975,38 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     ++stats[announcement.replica_num].number_of_requests;
 
     size_t new_rows_to_read = 0;
+    auto & split_parts = split_states[announcement.split_id];
 
-    /// To get rid of duplicates
-    for (auto && part: announcement.description)
+    /// Only the first replica (initiator) defines the authoritative split structure.
+    /// Other replicas only add replica membership to existing parts in existing splits.
+    bool can_add_new_parts = isSnapshotReplica(announcement.replica_num);
+
+    for (auto && part : announcement.description)
     {
+        /// Track in global set for progress reporting (dedup by part info).
         auto the_same_it = all_parts_to_read.find(Part{.description = part, .replicas = {}});
-
-        /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
-        {
             the_same_it->replicas.insert(announcement.replica_num);
-            continue;
-        }
-
-        if (state_initialized)
-            continue;
-
-        /// Look for the first part >= current
-        auto covering_it = all_parts_to_read.lower_bound(Part{.description = part, .replicas = {}});
-
-        if (covering_it != all_parts_to_read.end())
+        else if (can_add_new_parts)
         {
-            /// Checks if other part covers this one or this one covers the other
-            auto is_covered_or_covering = [&part] (const Part & other)
-                {
-                    return other.description.info.contains(part.info) || part.info.contains(other.description.info);
-                };
-
-            if (is_covered_or_covering(*covering_it))
-                continue;
-
-            /// Also look at the previous part, it could be covering the current one
-            if (covering_it != all_parts_to_read.begin())
-            {
-                --covering_it;
-                if (is_covered_or_covering(*covering_it))
-                    continue;
-            }
+            new_rows_to_read += part.rows;
+            all_parts_to_read.emplace(Part{.description = part, .replicas = {announcement.replica_num}});
         }
 
-        new_rows_to_read += part.rows;
-
-        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
-        auto & ranges = inserted_it->description.ranges;
-        std::sort(ranges.begin(), ranges.end());
+        /// Populate the split state.
+        auto split_part_it = split_parts.find(Part{.description = part, .replicas = {}});
+        if (split_part_it != split_parts.end())
+        {
+            /// Part already in this split — just add replica membership.
+            split_part_it->replicas.insert(announcement.replica_num);
+        }
+        else if (can_add_new_parts)
+        {
+            auto & ranges = part.ranges;
+            std::sort(ranges.begin(), ranges.end());
+            split_parts.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        }
     }
-
-#ifndef NDEBUG
-    /// Double check that there are no intersecting parts
-    {
-        auto intersecting_part_it = std::adjacent_find(all_parts_to_read.begin(), all_parts_to_read.end(),
-            [] (const Part & lhs, const Part & rhs)
-            {
-                return !lhs.description.info.isDisjoint(rhs.description.info);
-            });
-
-        if (intersecting_part_it != all_parts_to_read.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts {} and {} intersect",
-                intersecting_part_it->description.info.getPartNameV1(), std::next(intersecting_part_it)->description.info.getPartNameV1());
-    }
-#endif
-
-    state_initialized = true;
 
     // progress_callback is not set when local plan is used for initiator
     if (progress_callback && new_rows_to_read > 0)
@@ -1038,30 +1021,6 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     }
 }
 
-Parts & InOrderCoordinator::getOrCreateSplitState(size_t split_id)
-{
-    auto it = split_states.find(split_id);
-    if (it != split_states.end())
-        return it->second;
-
-    /// Initialize this split's state by moving ranges from the global part set.
-    /// With one split (the current case), all ranges are moved into split 0.
-    /// With multiple splits, this is where we'd partition them.
-    Parts split_parts;
-    for (auto & part : all_parts_to_read)
-    {
-        Part split_part{.description = part.description, .replicas = part.replicas};
-        /// Move ranges from the global state into the split — they are consumed, not shared.
-        split_part.description.ranges = std::move(part.description.ranges);
-        part.description.ranges = {};
-        split_parts.insert(std::move(split_part));
-    }
-
-    auto [inserted_it, _] = split_states.emplace(split_id, std::move(split_parts));
-    LOG_TRACE(log, "Initialized split state for split_id {}", split_id);
-    return inserted_it->second;
-}
-
 ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest request)
 {
     const size_t effective_min_marks_per_request
@@ -1069,7 +1028,14 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
     LOG_TRACE(log, "Got read request: {}", request.describe());
 
-    auto & parts_to_read = getOrCreateSplitState(request.split_id);
+    auto split_it = split_states.find(request.split_id);
+    if (split_it == split_states.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Got request for unknown split_id {} from replica {}",
+            request.split_id, request.replica_num);
+
+    auto & parts_to_read = split_it->second;
 
     /// Build the response part list.
     /// For old protocol requests (description is non-empty), use it for compatibility.
@@ -1233,7 +1199,10 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
         const auto replica_num = request.replica_num;
 
-        if (pimpl->replica_status[replica_num].is_finished)
+        /// For in-order mode with splits, a replica has multiple independent reading streams.
+        /// A replica is only truly finished when all its splits are done, so we don't check
+        /// is_finished per-replica in that case.
+        if (!isInOrder(request.mode) && pimpl->replica_status[replica_num].is_finished)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Got request from replica {} after ranges assignment has been completed for the replica",
@@ -1249,6 +1218,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
         else
         {
+            /// TODO: for in-order mode with multiple splits, track per-split finish state
+            /// and only mark the replica as finished when all its splits are done.
             pimpl->replica_status[replica_num].is_finished = true;
 
             if (isReadingCompleted())

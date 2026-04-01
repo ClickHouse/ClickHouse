@@ -78,9 +78,9 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
+void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request, size_t split_id) const
 {
-    all_callback(InitialAllRangesAnnouncement{mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request});
+    all_callback(InitialAllRangesAnnouncement{mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request, split_id});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(

@@ -639,7 +639,8 @@ Pipe ReadFromMergeTree::readInOrder(
     Names required_columns,
     PoolSettings pool_settings,
     ReadType read_type,
-    UInt64 read_limit)
+    UInt64 read_limit,
+    size_t split_id)
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
@@ -675,7 +676,8 @@ Pipe ReadFromMergeTree::readInOrder(
             required_columns,
             pool_settings,
             block_size,
-            context);
+            context,
+            split_id);
     }
     else
     {
@@ -1291,19 +1293,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
-    Pipes pipes;
-    /// For parallel replicas the split will be performed on the initiator side.
-    if (is_parallel_reading_from_replicas)
-    {
-        pipes.emplace_back(readInOrder(
-            std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
-    }
-    else
+    const bool is_initiator = isParallelReplicasLocalPlanForInitiator();
+
+    /// For non-initiator parallel replicas, keep a copy of all parts before splitting.
+    /// Non-initiator replicas use a single pool with all parts (split_id=0).
+    RangesInDataParts all_parts_for_replicas;
+    if (is_parallel_reading_from_replicas && !is_initiator)
+        all_parts_for_replicas = parts_with_ranges;
+
+    // TODO(nickitat): remove indent
+    std::vector<RangesInDataParts> split_parts_and_ranges;
+    split_parts_and_ranges.reserve(num_streams);
     {
         const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
-
-        std::vector<RangesInDataParts> split_parts_and_ranges;
-        split_parts_and_ranges.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
         {
@@ -1375,10 +1377,51 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
+    }
 
-        for (auto && item : split_parts_and_ranges)
+    Pipes pipes;
+    if (is_initiator)
+    {
+        /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
+        const size_t num_splits = split_parts_and_ranges.size();
+        for (size_t i = 0; i < num_splits; ++i)
+        {
             pipes.emplace_back(readInOrder(
-                std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+                std::move(split_parts_and_ranges[i]), index_build_context, column_names, pool_settings, read_type,
+                input_order_info->limit, /*split_id=*/i));
+        }
+    }
+    else if (is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan])
+    {
+        /// Non-initiator with local_plan=1: N splits, each with ALL parts.
+        /// The coordinator uses the initiator's split structure for range partitioning.
+        const size_t num_splits = split_parts_and_ranges.size();
+        for (size_t i = 0; i < num_splits; ++i)
+        {
+            pipes.emplace_back(readInOrder(
+                RangesInDataParts(all_parts_for_replicas), index_build_context, column_names, pool_settings, read_type,
+                input_order_info->limit, /*split_id=*/i));
+        }
+    }
+    else if (is_parallel_reading_from_replicas)
+    {
+        /// parallel_replicas_local_plan=0: old behavior, single pool with all parts.
+        pipes.emplace_back(readInOrder(
+            std::move(all_parts_for_replicas), index_build_context, column_names, pool_settings, read_type,
+            input_order_info->limit));
+    }
+    else
+    {
+        for (size_t i = 0; i < split_parts_and_ranges.size(); ++i)
+        {
+            pipes.emplace_back(readInOrder(
+                std::move(split_parts_and_ranges[i]),
+                index_build_context,
+                column_names,
+                pool_settings,
+                read_type,
+                input_order_info->limit));
+        }
     }
 
     Block pipe_header;

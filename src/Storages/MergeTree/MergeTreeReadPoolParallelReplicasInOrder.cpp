@@ -82,7 +82,11 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     for (size_t i = 0; i < descriptions.size(); ++i)
         descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
     extension.sendInitialRequest(
-        mode, std::move(descriptions), /*mark_segment_size=*/0, /*min_marks_per_request=*/min_marks_per_task * per_part_infos.size());
+        mode,
+        std::move(descriptions),
+        /*mark_segment_size=*/0,
+        /*min_marks_per_request=*/min_marks_per_task * per_part_infos.size(),
+        split_id);
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
@@ -226,15 +230,23 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    /// Fill the buffer
-    for (size_t i = 0; i < request.size(); ++i)
+    /// Fill the buffer — match response parts to buffered_tasks by part info,
+    /// not by position, because the coordinator may return parts in a different order.
+    for (auto & received_part : response->description)
     {
-        auto & received_ranges = response->description[i].ranges;
-        auto & ranges = buffered_tasks[i].ranges;
+        auto it = std::find_if(buffered_tasks.begin(), buffered_tasks.end(),
+            [&](const RangesInDataPartDescription & task)
+            {
+                return task.info == received_part.info && task.projection_name == received_part.projection_name;
+            });
+
+        if (it == buffered_tasks.end())
+            continue;
+
         if (mode == CoordinationMode::WithOrder)
-            ranges.insert(ranges.end(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
+            it->ranges.insert(it->ranges.end(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
         else
-            ranges.insert(ranges.begin(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
+            it->ranges.insert(it->ranges.begin(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
     }
 
     if (auto result = get_from_buffer())

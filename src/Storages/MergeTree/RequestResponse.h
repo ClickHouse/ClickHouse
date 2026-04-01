@@ -123,12 +123,14 @@ struct InitialAllRangesAnnouncement
         RangesInDataPartsDescription description_,
         size_t replica_num_,
         size_t mark_segment_size_,
-        size_t min_marks_per_request_)
+        size_t min_marks_per_request_,
+        size_t split_id_ = 0)
         : mode(mode_)
         , description(std::move(description_))
         , replica_num(replica_num_)
         , mark_segment_size(mark_segment_size_)
         , min_marks_per_request(min_marks_per_request_)
+        , split_id(split_id_)
     {}
 
     CoordinationMode mode;
@@ -140,6 +142,10 @@ struct InitialAllRangesAnnouncement
     /// this value is sent once in the initial announcement.
     /// Total number of marks the replica wants per coordinator request.
     size_t min_marks_per_request;
+
+    /// Identifies the reading stream (split) within a replica.
+    /// Each split announces its own subset of ranges.
+    size_t split_id{0};
 
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
     String describe();

@@ -35,7 +35,7 @@ public:
         size_t number_of_current_replica_,
         size_t total_nodes_count_);
 
-    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
+    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request, size_t split_id = 0) const;
 
     std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request) const;
 
