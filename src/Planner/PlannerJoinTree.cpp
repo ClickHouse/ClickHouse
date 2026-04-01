@@ -1767,9 +1767,11 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             set_used_column_with_duplicates(columns_from_right_table, JoinTableSide::Right);
     }
 
+    bool allow_lookup_join = !query_context->canUseParallelReplicasOnInitiator();
+
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
-    if (!prepared_join_storage)
+    if (!prepared_join_storage && allow_lookup_join)
     {
         const auto & clauses = table_join->getClauses();
         if (clauses.size() == 1
