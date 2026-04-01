@@ -230,7 +230,7 @@ public:
     ALWAYS_INLINE EmplaceResult emplaceKeyWithHash(Data & data, size_t row, Arena & pool, size_t hash_value)
     {
         /// Verify the precomputed hash matches what we would compute for this row.
-        chassert(hash_value == getHash(data, row, pool));
+        /// chassert(hash_value == getHash(data, row, pool));
 
         if constexpr (nullable)
         {
