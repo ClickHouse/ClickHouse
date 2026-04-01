@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- Disable force_primary_key_reverse_order: tests EXPLAIN monotonicity key conditions sensitive to key direction
+SET force_primary_key_reverse_order = 0;
 
 -- { echoOn }
 

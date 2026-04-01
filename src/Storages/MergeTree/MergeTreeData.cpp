@@ -211,6 +211,7 @@ namespace Setting
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool force_primary_key_reverse_order;
 }
 
 namespace MergeTreeSetting
@@ -682,7 +683,8 @@ MergeTreeData::MergeTreeData(
     bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
-    allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key];
+    allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key]
+        || context_->getSettingsRef()[Setting::force_primary_key_reverse_order];
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
@@ -984,6 +986,7 @@ void MergeTreeData::checkProperties(
 
     ASTPtr added_key_column_expr_list = make_intrusive<ASTExpressionList>();
     const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
+    const auto & old_sorting_key_reverse_flags = old_metadata.getSortingKey().reverse_flags;
     for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
     {
         if (old_i < old_sorting_key_columns.size())
@@ -991,7 +994,18 @@ void MergeTreeData::checkProperties(
             if (new_sorting_key_columns[new_i] != old_sorting_key_columns[old_i])
                 added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);
             else
+            {
+                /// Check that the sort direction hasn't changed for this column.
+                bool old_reversed = !old_sorting_key_reverse_flags.empty() && old_sorting_key_reverse_flags[old_i];
+                bool new_reversed = !new_sorting_key.reverse_flags.empty() && new_sorting_key.reverse_flags[new_i];
+                if (old_reversed != new_reversed)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot change sort direction of column '{}' in ORDER BY because existing data parts "
+                        "are physically sorted in the {} order. Drop and recreate the table to change sort direction",
+                        new_sorting_key_columns[new_i],
+                        old_reversed ? "descending" : "ascending");
                 ++old_i;
+            }
         }
         else
             added_key_column_expr_list->children.push_back(new_sorting_key.expression_list_ast->children[new_i]);

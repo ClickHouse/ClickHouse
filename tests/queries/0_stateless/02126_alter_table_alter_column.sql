@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS alter_column_02126;
 CREATE TABLE alter_column_02126 (a Int, x Int, y Int) ENGINE = MergeTree ORDER BY a;
 SHOW CREATE TABLE alter_column_02126;

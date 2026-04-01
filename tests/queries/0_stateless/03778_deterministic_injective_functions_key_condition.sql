@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- Disable force_primary_key_reverse_order: EXPLAIN indexes key condition depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;

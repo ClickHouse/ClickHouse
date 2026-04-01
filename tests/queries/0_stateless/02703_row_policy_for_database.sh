@@ -3,9 +3,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 CLICKHOUSE_USER="user_$CLICKHOUSE_DATABASE"
 
-$CLICKHOUSE_CLIENT "
+$CLICKHOUSE_CLIENT --query "
 
 DROP USER IF EXISTS ${CLICKHOUSE_USER};
 CREATE USER ${CLICKHOUSE_USER};
@@ -28,7 +32,7 @@ DROP POLICY ${CLICKHOUSE_DATABASE}_tb_policy ON ${CLICKHOUSE_DATABASE}.table;
 
 $CLICKHOUSE_CLIENT --query "CREATE ROW POLICY any_02703 ON *.some_table USING 1 AS PERMISSIVE TO ALL;" 2>&1 | grep -q "SYNTAX_ERROR"
 
-$CLICKHOUSE_CLIENT "
+$CLICKHOUSE_CLIENT --query "
 CREATE TABLE 02703_rqtable_default (x UInt8) ENGINE = MergeTree ORDER BY x;
 
 CREATE ROW POLICY ${CLICKHOUSE_DATABASE}_filter_11_db_policy ON * USING x=1 AS permissive TO ALL;

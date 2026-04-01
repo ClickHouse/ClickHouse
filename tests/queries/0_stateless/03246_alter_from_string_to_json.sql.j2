@@ -1,5 +1,7 @@
 -- Random settings limits: index_granularity=(100, 60000); index_granularity_bytes=(10000, None)
 -- Tags: long
+-- Disable force_primary_key_reverse_order: ALTER from String to JSON depends on physical row order for JSON merge
+SET force_primary_key_reverse_order = 0;
 
 SET enable_json_type = 1;
 set max_block_size = 20000;

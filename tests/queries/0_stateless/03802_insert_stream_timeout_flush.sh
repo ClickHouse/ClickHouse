@@ -8,6 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, tests INSERT streaming behavior
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_insert_timeout"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_timeout (id UInt64, data String) ENGINE MergeTree ORDER BY id"

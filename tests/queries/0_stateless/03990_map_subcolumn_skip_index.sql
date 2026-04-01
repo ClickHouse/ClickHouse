@@ -4,6 +4,8 @@
 -- When optimize_functions_to_subcolumns is enabled and Map uses with_buckets serialization,
 -- m['key'] is rewritten to m.key_key. The index analysis must handle both forms.
 
+-- Skip index granule counts and row order in NOT IN queries depend on physical storage order
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 

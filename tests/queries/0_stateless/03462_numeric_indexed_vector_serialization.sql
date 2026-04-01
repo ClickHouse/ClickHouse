@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests numeric indexed vector functions, creates MergeTree internally
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS uin_value_details_int32_float64;
 CREATE TABLE uin_value_details_int32_float64
 (

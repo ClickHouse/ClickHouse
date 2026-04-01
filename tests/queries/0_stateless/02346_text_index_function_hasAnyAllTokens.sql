@@ -1,4 +1,6 @@
 -- Tags: no-parallel-replicas, long
+-- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking max_rows_to_read limits
+SET force_primary_key_reverse_order = 0;
 
 SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;

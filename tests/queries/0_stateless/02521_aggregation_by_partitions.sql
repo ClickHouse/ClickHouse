@@ -1,4 +1,6 @@
 -- Tags: long, no-object-storage, no-msan
+-- Disable force_primary_key_reverse_order: reversed key changes aggregation-in-order behavior and EXPLAIN PIPELINE output
+SET force_primary_key_reverse_order = 0;
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 

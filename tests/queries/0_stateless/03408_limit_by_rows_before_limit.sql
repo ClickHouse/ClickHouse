@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order affecting rows_before_limit counts
+SET force_primary_key_reverse_order = 0;
 SET output_format_write_statistics = 0;
 
 DROP TABLE IF EXISTS 03408_unsorted;

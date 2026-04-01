@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings, no-object-storage
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
 
 SET optimize_read_in_order = 1, merge_tree_min_rows_for_concurrent_read = 1000, read_in_order_use_virtual_row = 1;
 

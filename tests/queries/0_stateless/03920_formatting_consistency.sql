@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE TABLE output checks ORDER BY clause
+SET force_primary_key_reverse_order = 0;
 -- Test that AST formatting is consistent for a wide variety of SQL constructs.
 -- In debug builds, the server verifies that format(parse(query)) == format(parse(format(parse(query)))),
 -- and aborts on inconsistency. This test simply runs many SQL constructs to trigger that check.

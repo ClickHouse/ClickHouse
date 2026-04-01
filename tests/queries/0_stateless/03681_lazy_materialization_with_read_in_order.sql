@@ -1,5 +1,7 @@
 -- Test that lazy materialization works together with read-in-order optimization
 -- Tags: no-random-settings
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
 
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10;

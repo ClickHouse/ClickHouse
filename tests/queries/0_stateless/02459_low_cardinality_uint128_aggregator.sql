@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests aggregation-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 SET allow_suspicious_low_cardinality_types = 1;
 -- LC UInt128
 CREATE TABLE group_by_pk_lc_uint128 (`k` LowCardinality(UInt128), `v` UInt32) ENGINE = MergeTree ORDER BY k PARTITION BY v%50;

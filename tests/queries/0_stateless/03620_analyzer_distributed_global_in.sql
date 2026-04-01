@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Query plan output depends on sort direction
+SET force_primary_key_reverse_order = 0;
+
 -- add_minmax_index_for_numeric_columns=0: Different plan
 set serialize_query_plan = 0;
 set enable_analyzer=1;

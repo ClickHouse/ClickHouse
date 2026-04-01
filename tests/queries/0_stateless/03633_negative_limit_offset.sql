@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests negative limit/offset, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer=0;
 SELECT 'Old Analyzer:';
 

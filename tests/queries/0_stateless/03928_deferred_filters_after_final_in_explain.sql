@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 -- test that EXPLAIN shows deferred filter information for apply_prewhere_after_final / apply_row_policy_after_final
+-- Disable force_primary_key_reverse_order: tests FINAL with deferred filters in EXPLAIN, behavior depends on key direction
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS tab;
 DROP ROW POLICY IF EXISTS pol1 ON tab;

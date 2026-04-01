@@ -1,4 +1,6 @@
 -- Tags: no-random-settings
+-- Disable force_primary_key_reverse_order: tests mergeTreeIndex function, output depends on physical sort order
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS t_merge_tree_index;
 

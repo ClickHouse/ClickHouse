@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- add_minmax_index_for_numeric_columns=0: Changes how many rows are read
 drop table if exists test1;
 drop table if exists test_tuple;

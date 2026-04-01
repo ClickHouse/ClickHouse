@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests join with nested types on MergeTree, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS ta;
 DROP TABLE IF EXISTS tb;
 DROP TABLE IF EXISTS ttta;
@@ -35,7 +38,6 @@ SET enable_analyzer = 1;
 SET join_algorithm = 'hash'; -- parallel_hash does not guarantee the right order
 
 {% for join_use_nulls in [0, 1] -%}
-
 SET join_use_nulls = {{ join_use_nulls }};
 
 SELECT t FROM (SELECT [(1, 'a')] :: Nested(t UInt32, s String) AS t) AS na, (SELECT [(1, 'a')] :: Nested(t Int32, s String) AS t) AS t;

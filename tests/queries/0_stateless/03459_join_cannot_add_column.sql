@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests join with rowNumberInAllBlocks, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 SET enable_analyzer = 1, max_threads = 1;
 
 DROP TABLE IF EXISTS t1, t2, t3;

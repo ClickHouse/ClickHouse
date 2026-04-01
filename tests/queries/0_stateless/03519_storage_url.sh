@@ -4,6 +4,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Disable force_primary_key_reverse_order: creates MergeTree with ORDER BY, materialized view depends on order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 set -eu
 
 $CLICKHOUSE_CLIENT -q "

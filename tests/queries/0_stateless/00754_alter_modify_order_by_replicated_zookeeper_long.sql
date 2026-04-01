@@ -1,6 +1,8 @@
 -- Tags: long, replica, no-replicated-database, no-shared-merge-tree
 -- Tag no-replicated-database: Old syntax is not allowed
 -- no-shared-merge-tree -- old syntax not supported, for new syntax additional test
+-- Disable force_primary_key_reverse_order: ALTER MODIFY ORDER BY logic and SHOW CREATE TABLE output depend on key direction
+SET force_primary_key_reverse_order = 0;
 
 SET optimize_on_insert = 0;
 

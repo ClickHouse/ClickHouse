@@ -6,6 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 for i in $(seq 0 1)
 do
     # Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.

@@ -3,6 +3,8 @@
 
 -- Basic tests for text index stored in compact vs. wide format, respectively full vs. packed parts
 
+-- Disable force_primary_key_reverse_order: tests text index part format on MergeTree, behavior depends on key direction
+SET force_primary_key_reverse_order = 0;
 SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab_compact_full;

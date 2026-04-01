@@ -8,6 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Part checksums depend on physical data sort order
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT -q "drop table if exists rmt sync;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE rmt (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16))
 ENGINE = ReplicatedMergeTree('/test/02253/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmtt', '1') ORDER BY a PARTITION BY b % 10

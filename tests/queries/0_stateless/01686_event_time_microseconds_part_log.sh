@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests part_log with MergeTree, output depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 ${CLICKHOUSE_CLIENT} -q 'DROP TABLE IF EXISTS table_with_single_pk'
 
 ${CLICKHOUSE_CLIENT} -q '

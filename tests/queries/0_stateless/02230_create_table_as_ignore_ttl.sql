@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists data_02230_ttl;
 drop table if exists null_02230_ttl;
 create table data_02230_ttl (date Date, key Int) Engine=MergeTree() order by key TTL date + 14;

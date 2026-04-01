@@ -1,4 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
+-- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking EXPLAIN index output
+SET force_primary_key_reverse_order = 0;
 
 -- Tests pre vs. post-filtering for vector search.
 

@@ -1,6 +1,8 @@
 -- Tags: no-fasttest
 -- no-fasttest: It can be slow
 
+-- Disable force_primary_key_reverse_order: tests text index query behavior on MergeTree with query_log validation
+SET force_primary_key_reverse_order = 0;
 SET log_queries = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 

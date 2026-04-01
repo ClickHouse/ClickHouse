@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests projection behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists test;
 create table test (`my.json` JSON) engine=Memory;
 insert into test select '{"a" : 42}';

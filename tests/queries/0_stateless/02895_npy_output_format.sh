@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests NPY output format, output row order depends on key direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 mkdir -p ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}/*
 chmod 777 ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/
@@ -103,12 +107,12 @@ CREATE TABLE 02896_npy_exceptions
 INSERT INTO 02896_npy_exceptions VALUES (1, '2019-01-01', (1, 1), [1, 1], [1, 1], []), (0, '2019-01-01', (0, 0), [0, 0], [0], [0]);
 "
 
-$CLICKHOUSE_CLIENT "SELECT * FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "TOO_MANY_COLUMNS" || echo 'Missing TOO_MANY_COLUMNS error';
-$CLICKHOUSE_CLIENT "SELECT unsupported_u FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_u';
-$CLICKHOUSE_CLIENT "SELECT unsupported_date FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_date';
-$CLICKHOUSE_CLIENT "SELECT unsupported_tuple FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_tuple';
-$CLICKHOUSE_CLIENT "SELECT unsupported_nested_i FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_nested_i';
-$CLICKHOUSE_CLIENT "SELECT ragged_dimention FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "ILLEGAL_COLUMN" || echo 'Missing ILLEGAL_COLUMN error for ragged_dimention';
-$CLICKHOUSE_CLIENT "SELECT zero_dimension FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "ILLEGAL_COLUMN" || echo 'Missing ILLEGAL_COLUMN error for zero_dimension';
+$CLICKHOUSE_CLIENT --query "SELECT * FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "TOO_MANY_COLUMNS" || echo 'Missing TOO_MANY_COLUMNS error';
+$CLICKHOUSE_CLIENT --query "SELECT unsupported_u FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_u';
+$CLICKHOUSE_CLIENT --query "SELECT unsupported_date FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_date';
+$CLICKHOUSE_CLIENT --query "SELECT unsupported_tuple FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_tuple';
+$CLICKHOUSE_CLIENT --query "SELECT unsupported_nested_i FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "BAD_ARGUMENTS" || echo 'Missing BAD_ARGUMENTS error for unsupported_nested_i';
+$CLICKHOUSE_CLIENT --query "SELECT ragged_dimention FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "ILLEGAL_COLUMN" || echo 'Missing ILLEGAL_COLUMN error for ragged_dimention';
+$CLICKHOUSE_CLIENT --query "SELECT zero_dimension FROM 02896_npy_exceptions FORMAT Npy;" 2>&1 | grep -q "ILLEGAL_COLUMN" || echo 'Missing ILLEGAL_COLUMN error for zero_dimension';
 
 rm -rf ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}

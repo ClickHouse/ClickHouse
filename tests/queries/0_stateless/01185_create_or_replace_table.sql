@@ -1,4 +1,6 @@
 -- Tags: no-ordinary-database
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 drop table if exists t1;
 

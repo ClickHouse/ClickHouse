@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes read-in-order direction breaking EXPLAIN output checks
+SET force_primary_key_reverse_order = 0;
 -- Test: read-in-order optimization should use InReverseOrder when constant ORDER BY columns are skipped
 
 -- This test specifically tests read-in-order optimization, so we need to ensure it's enabled

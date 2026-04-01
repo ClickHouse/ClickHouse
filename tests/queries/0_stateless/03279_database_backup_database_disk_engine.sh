@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Backup database ATTACH fails when tables have reverse key without allow_experimental_reverse_key
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 db=${CLICKHOUSE_DATABASE}_inner
 $CLICKHOUSE_CLIENT -nm -q "
 DROP DATABASE IF EXISTS ${db};

@@ -1,5 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
+-- Disable force_primary_key_reverse_order: EXPLAIN key conditions depend on key direction
+SET force_primary_key_reverse_order = 0;
 
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;

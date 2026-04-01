@@ -1,4 +1,6 @@
 -- Tags: no-parallel, no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: tests compact parts with specific aggregation expectations depending on full table scan
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS codecs;
 
