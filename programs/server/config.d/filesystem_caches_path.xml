@@ -1,4 +1,4 @@
 <clickhouse>
-    <filesystem_caches_path>/data/Guang/Play/ClickHouse/filesystem_caches/</filesystem_caches_path>
-    <custom_cached_disks_base_directory replace="replace">/data/Guang/Play/ClickHouse/filesystem_caches/</custom_cached_disks_base_directory>
+    <filesystem_caches_path>/tmp/filesystem_caches/</filesystem_caches_path>
+    <custom_cached_disks_base_directory replace="replace">/tmp/filesystem_caches/</custom_cached_disks_base_directory>
 </clickhouse>
