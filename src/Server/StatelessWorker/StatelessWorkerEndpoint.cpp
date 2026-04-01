@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 StatelessWorkerEndpoint::StatelessWorkerEndpoint()
     : endpoint_name("stateless_worker/")
     , log(Poco::Logger::getShared("StatelessWorkerEndpoint"))
@@ -33,6 +38,8 @@ std::string StatelessWorkerEndpoint::getId(const std::string & path) const
 
 void serializeTask(const DistributedQueryTaskDescription & task_description, WriteBuffer & out)
 {
+    writeVarUInt(DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION, out);
+
     writeStringBinary(task_description.initial_query_id, out);
 
     const auto & task = task_description.task;
@@ -83,6 +90,13 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
 
 void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuffer & in)
 {
+    UInt64 version;
+    readVarUInt(version, in);
+    if (version > DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Distributed task serialization version {} is not supported. The last supported version is {}",
+            version, DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION);
+
     readStringBinary(task_description.initial_query_id, in);
 
     auto & task = task_description.task;
