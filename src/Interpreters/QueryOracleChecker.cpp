@@ -62,6 +62,7 @@ const std::unordered_set<String> non_deterministic_functions = {
     "materialize",
     /// Non-deterministic or approximate aggregate functions.
     "any", "anyLast", "anyHeavy",
+    "anyRespectNulls", "anyLastRespectNulls",
     "first_value", "last_value",
     "topK", "topKWeighted",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
@@ -876,7 +877,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         /// The variant query might fail with a different error — that's OK.
         LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
@@ -929,7 +930,8 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
             || name.ends_with("ForEach") || name.ends_with("Distinct")
             || name.ends_with("OrDefault") || name.ends_with("OrNull")
             || name.ends_with("Resample") || name.ends_with("ArgMin")
-            || name.ends_with("ArgMax"))
+            || name.ends_with("ArgMax")
+            || name.ends_with("RespectNulls") || name.ends_with("IgnoreNulls"))
             return false;
     }
 
@@ -1183,8 +1185,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
-            throw; /// Oracle mismatch — re-throw the exception
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
+            throw;
         LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", e.message());
     }
     catch (...)
@@ -1200,7 +1202,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", e.message());
     }
@@ -1217,7 +1219,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", e.message());
     }
@@ -1234,7 +1236,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", e.message());
     }
@@ -1251,7 +1253,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", e.message());
     }
@@ -1268,7 +1270,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", e.message());
     }
@@ -1285,7 +1287,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+        if (e.code() == ErrorCodes::LOGICAL_ERROR && e.message().find("oracle mismatch") != String::npos)
             throw;
         LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", e.message());
     }
