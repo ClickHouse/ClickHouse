@@ -1,5 +1,6 @@
 {
     "settings": {
-        "join_use_nulls": 1
+        "join_use_nulls": 1,
+        "max_memory_usage": 0
     }
 }
