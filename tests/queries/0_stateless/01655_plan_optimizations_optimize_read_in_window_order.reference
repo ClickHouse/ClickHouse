@@ -2,7 +2,7 @@ Partial sorting plan
   optimize_read_in_window_order=0
     Sort description: n ASC, x ASC
   optimize_read_in_window_order=0, enable_analyzer=1
-    Sort description: n ASC, x ASC
+    Sort description: __table1.n ASC, __table1.x ASC
   optimize_read_in_window_order=1
     Prefix sort description: n ASC
     Result sort description: n ASC, x ASC
