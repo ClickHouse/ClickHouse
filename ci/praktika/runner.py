@@ -413,7 +413,8 @@ class Runner:
                     rewritten_settings.append(s)
                 settings = rewritten_settings
 
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -509,13 +510,10 @@ class Runner:
 
         return exit_code
 
-    def _post_run(
-        self, workflow, job, setup_env_exit_code, prerun_exit_code, run_exit_code
-    ):
-        info_errors = []
-        env = _Environment.get()
+    def _get_result_object(
+        self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
+    ) -> Result:
         result_exist = Result.exist(job.name)
-        is_ok = True
 
         if setup_env_exit_code != 0:
             info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
@@ -571,7 +569,16 @@ class Runner:
             Shell.check(result.get_on_error_hook(), verbose=True)
 
         result.update_duration()
-        result.set_files([Settings.RUN_LOG])
+        result.set_files([Settings.RUN_LOG], strict=False)
+        return result
+
+    def _post_run(
+        self, result, workflow, job, run_exit_code,
+    ) -> bool:
+        info_errors = []
+        env = _Environment.get()
+        is_ok = True
+
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
@@ -638,19 +645,6 @@ class Runner:
                         s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
-
-        if job.post_hooks:
-            sw_ = Utils.Stopwatch()
-            results_ = []
-            for check in job.post_hooks:
-                if callable(check):
-                    name = check.__name__
-                else:
-                    name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
-            result.results.append(
-                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
-            )
 
         # run after post hooks as they might modify workflow kv data
         job_outputs = env.JOB_KV_DATA
@@ -886,12 +880,30 @@ class Runner:
 
         return is_ok
 
+    LOCAL_ENV_FILE = "ci/local.env"
+
+    @classmethod
+    def _load_local_env(cls):
+        """Load environment variables from a gitignored local env file (KEY=VALUE format)."""
+        try:
+            with open(cls.LOCAL_ENV_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        os.environ[key.strip()] = value.strip()
+        except FileNotFoundError:
+            pass
+
     def run(
         self,
         workflow,
         job,
         docker="",
         local_run=False,
+        run_hooks=True,
         no_docker=False,
         param=None,
         test="",
@@ -904,6 +916,8 @@ class Runner:
         path_1="",
         workers=None,
     ):
+        self._load_local_env()
+
         res = True
         setup_env_code = -10
         prerun_code = -10
@@ -945,6 +959,19 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Pre run finished ===\n\n")
 
+        prehook_result = None
+        if res and run_hooks and job.pre_hooks:
+            print(f"=== Pre-hooks [{job.name}], workflow [{workflow.name}] ===")
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.pre_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(Result.from_commands_run(name=name, command=check))
+            prehook_result = Result.create_from(name="Pre Hooks", results=results_, stopwatch=sw_)
+
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
             run_code = None
@@ -980,13 +1007,37 @@ class Runner:
 
             print(f"=== Run script finished ===\n\n")
 
-        if not local_run:
-            print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            post_res = self._post_run(
-                workflow, job, setup_env_code, prerun_code, run_code
+        if run_hooks:
+            result = self._get_result_object(
+                job, setup_env_code, prerun_code, run_code
             )
-            res = res and post_res
-            print(f"=== Post run script finished ===")
+
+            if prehook_result:
+                result.results.append(prehook_result)
+            if job.post_hooks:
+                print(f"=== Post hooks [{job.name}], workflow [{workflow.name}] ===")
+                sw_ = Utils.Stopwatch()
+                results_ = []
+                for check in job.post_hooks:
+                    if callable(check):
+                        name = check.__name__
+                    else:
+                        name = str(check)
+                    results_.append(Result.from_commands_run(name=name, command=check))
+                result.results.append(
+                    Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+                )
+                print(f"=== Post hooks finished ===")
+
+            if not local_run:
+                print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
+                post_res = self._post_run(
+                    result, workflow, job, run_code
+                )
+                res = res and post_res
+                print(f"=== Post run script finished ===")
+
+            result.dump()
 
         if not res:
             sys.exit(1)
