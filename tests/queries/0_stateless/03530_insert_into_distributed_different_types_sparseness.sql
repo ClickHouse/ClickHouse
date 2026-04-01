@@ -12,7 +12,7 @@ drop table if exists mv_log;
 create table sparse (key String) engine=MergeTree order by () settings ratio_of_defaults_for_sparse_serialization=0.01;
 insert into sparse select ''::String from numbers(100);
 -- Pin max_block_size to ensure dumpColumnStructure output is deterministic (size=1 per block).
-select dumpColumnStructure(*) from sparse limit 1 SETTINGS max_block_size = 1;
+select dumpColumnStructure(*) from sparse limit 1 SETTINGS max_block_size = 1, query_plan_optimize_lazy_materialization = 0;
 
 -- we need a table that supports sparse columns as intermediate, hence MergeTree
 create table intermediate (key String) engine=MergeTree order by ();

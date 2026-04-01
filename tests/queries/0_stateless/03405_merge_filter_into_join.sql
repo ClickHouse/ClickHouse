@@ -12,6 +12,7 @@ set enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
 set parallel_hash_join_threshold = 0;
 set query_plan_merge_expressions = 1;
 set query_plan_filter_push_down = 1;
+set query_plan_merge_filter_into_join_condition = 1;
 
 -- { echoOn }
 

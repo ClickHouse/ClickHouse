@@ -8,6 +8,7 @@ SET query_plan_remove_unused_columns = 1;
 SET query_plan_split_filter = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 SET query_plan_filter_push_down = 1;
+SET query_plan_merge_filter_into_join_condition = 1;
 
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;

@@ -4,6 +4,9 @@
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
+SET use_skip_indexes_for_top_k = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_max_limit_for_top_k_optimization = 100000;
 
 DROP TABLE IF EXISTS tab;
 
@@ -112,7 +115,7 @@ LIMIT 20;
 SELECT 'Ensure that optimization was effective for above query, _distance should be seen';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
-    SELECT id, attr1, attr2, L2Distance(vec, [0.2, 0.3]),
+    SELECT id, attr1, attr2, L2Distance(vec, [0.2, 0.3])
     FROM tab
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20

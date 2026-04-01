@@ -30,7 +30,7 @@ INSERT INTO test_table_2 VALUES (2, 'Value_2'), (3, 'Value_3');
 
 
 EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE rhs.id != 0
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0, query_plan_split_filter = 0, query_plan_filter_push_down = 1
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0, query_plan_split_filter = 0, query_plan_filter_push_down = 1, query_plan_optimize_lazy_materialization = 0
 ;
 
 SELECT '--';
@@ -40,7 +40,7 @@ SELECT * FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.
 SELECT '--';
 
 EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0, query_plan_split_filter = 0, query_plan_filter_push_down = 1
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0, query_plan_split_filter = 0, query_plan_filter_push_down = 1, query_plan_optimize_lazy_materialization = 0
 ;
 
 SELECT '--';
@@ -50,7 +50,7 @@ SELECT * FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs
 SELECT '--';
 
 EXPLAIN header = 1, actions = 1 SELECT * FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0 AND rhs.id != 0
-SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0, query_plan_split_filter = 0, query_plan_filter_push_down = 1
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0, query_plan_split_filter = 0, query_plan_filter_push_down = 1, query_plan_optimize_lazy_materialization = 0
 ;
 
 SELECT '--';

@@ -2,6 +2,7 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_merge_expressions = 1;
 SET query_plan_optimize_lazy_materialization = 0;
+SET query_plan_execute_functions_after_sorting = 0;
 SET enable_join_runtime_filters = 0;
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

@@ -8,6 +8,7 @@
 
 SET enable_analyzer = 1;
 SET query_plan_push_down_limit = 1;
+SET use_skip_indexes_for_top_k = 1;
 
 DROP TABLE IF EXISTS dbpedia;
 
@@ -116,7 +117,7 @@ INSERT INTO tab VALUES
 
 SELECT '-- Result without rescoring';
 -- Expect 1.
-SELECT id,
+SELECT id
 FROM tab
 ORDER by cosineDistance(vec, [-0.25, 0.25, 0.10, 0.10, 0.9, 0.9, 0.9, 0.9])
 LIMIT 1

@@ -1,4 +1,6 @@
 SET optimize_use_projections = 1;
+SET query_plan_merge_expressions = 1;
+SET query_plan_execute_functions_after_sorting = 0;
 
 -- { echoOn }
 DROP TABLE IF EXISTS visits_order;

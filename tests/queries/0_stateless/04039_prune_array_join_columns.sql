@@ -1,6 +1,8 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_execute_functions_after_sorting = 1;
+SET query_plan_merge_expressions = 1;
+SET query_plan_optimize_lazy_materialization = 0;
 
 DROP TABLE IF EXISTS t_nested;
 CREATE TABLE t_nested (`n.a` Array(Int64), `n.b` Array(Int64), `n.c` Array(Int64)) ENGINE = MergeTree ORDER BY tuple();
