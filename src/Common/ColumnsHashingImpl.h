@@ -72,10 +72,14 @@ template <typename Value>
 struct LastElementCache<Value, true> : public LastElementCacheBase
 {
     Value value{};
+    size_t saved_hash = 0;
     bool is_null = false;
 
     template <typename Key>
     bool check(const Key & key) const { return !is_null && value.first == key; }
+
+    template <typename Key>
+    bool checkWithHash(const Key & key, size_t hash_value) const { return !is_null && saved_hash == hash_value && value.first == key; }
 
     bool check(const Value & rhs) const { return !is_null && value == rhs; }
 };
@@ -84,9 +88,13 @@ template <typename Value>
 struct LastElementCache<Value, false> : public LastElementCacheBase
 {
     Value value{};
+    size_t saved_hash = 0;
 
     template <typename Key>
     bool check(const Key & key) const { return value.first == key; }
+
+    template <typename Key>
+    bool checkWithHash(const Key & key, size_t hash_value) const { return saved_hash == hash_value && value.first == key; }
 
     bool check(const Value & rhs) const { return value == rhs; }
 };
