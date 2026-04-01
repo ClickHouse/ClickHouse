@@ -195,6 +195,13 @@ StorageMergeTree::StorageMergeTree(
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
+    auto table_disks = getDisks();
+    for (const auto & disk : table_disks)
+    {
+        if (disk->getDataSourceDescription().metadata_type == MetadataStorageType::Keeper)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree doesn't work with 's3_with_keeper' disk type");
+    }
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
