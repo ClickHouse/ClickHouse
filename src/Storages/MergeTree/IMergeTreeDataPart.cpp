@@ -2125,15 +2125,15 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnsWithPhysicalNames(
         {
             /// Case (b): columns.txt has a logical name (pre-activation part);
             /// verify the physical files actually exist before using the mapping.
-            auto current_column = current_columns.tryGetByName(column.name);
-            if (current_column)
+            /// Use the on-disk type from columns.txt (not the current metadata type)
+            /// because pending MODIFY COLUMN mutations may have changed the type
+            /// (e.g. UInt32 → Nullable(UInt64)), adding streams that do not exist
+            /// on disk yet. Checking with the wrong type would skip the column.
+            auto candidate_column_id = mapping.getColumnId(column.name);
+            if (has_column_files_in_checksums(column, candidate_column_id))
             {
-                auto candidate_column_id = mapping.getColumnId(column.name);
-                if (has_column_files_in_checksums(*current_column, candidate_column_id))
-                {
-                    column_id = candidate_column_id;
-                    logical_name = column.name;
-                }
+                column_id = candidate_column_id;
+                logical_name = column.name;
             }
         }
 
