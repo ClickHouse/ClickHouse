@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Port.h>
 
+#include <typeinfo>
+
 namespace DB
 {
 
@@ -523,7 +525,7 @@ IColumn::Permutation TopNDirectAggregatingTransform::getSortPermutation(const IC
 void TopNDirectAggregatingTransform::refreshThresholdFromStates()
 {
     size_t n = group_states.size();
-    if (n < limit)
+    if (limit == 0 || n < limit)
         return;
 
     auto result_type = aggregates[order_by_agg_index].function->getResultType();
@@ -599,7 +601,9 @@ bool TopNDirectAggregatingTransform::isBelowThreshold(const IColumn & col, size_
     if (!threshold_active)
         return false;
 
-    int cmp = col.compareAt(row, 0, *boundary_column, sort_description.front().nulls_direction);
+    const auto & boundary_ref = *boundary_column;
+    chassert(typeid(col) == typeid(boundary_ref));
+    int cmp = col.compareAt(row, 0, boundary_ref, sort_description.front().nulls_direction);
     return (sort_direction < 0) ? (cmp < 0) : (cmp > 0);
 }
 
@@ -607,6 +611,9 @@ ColumnPtr TopNDirectAggregatingTransform::buildThresholdKeepMask(const ColumnPtr
 {
     if (!threshold_active)
         return {};
+    const auto & col_ref = *column;
+    const auto & boundary_ref = *boundary_column;
+    chassert(typeid(col_ref) == typeid(boundary_ref));
     PaddedPODArray<Int8> compare_results;
     column->compareColumn(*boundary_column, 0, nullptr, compare_results, sort_direction, sort_description.front().nulls_direction);
     if (compare_results.size() != rows)

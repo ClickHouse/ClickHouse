@@ -58,6 +58,14 @@ ORDER BY m DESC
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 1;
 
+SELECT '-- max + any: reference';
+SELECT trace_id, max(start_time) AS m, any(service_name) AS s
+FROM t_topn
+GROUP BY trace_id
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
 -- Edge case: K > total groups (small table, 10 groups)
 DROP TABLE IF EXISTS t_topn_small;
 CREATE TABLE t_topn_small (trace_id String, start_time DateTime)
@@ -233,7 +241,7 @@ ORDER BY latest DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- Tie-heavy dataset: many rows per group, same aggregate value for many groups
+-- Many-rows-per-group dataset: 100 groups, 10 rows each; aggregate values are distinct
 DROP TABLE IF EXISTS t_topn_ties;
 CREATE TABLE t_topn_ties (grp String, val UInt64)
 ENGINE = MergeTree ORDER BY val;
@@ -356,6 +364,7 @@ DROP TABLE IF EXISTS t_topn_lc;
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TABLE t_topn_lc (grp String, val LowCardinality(UInt64))
 ENGINE = MergeTree ORDER BY grp;
+SET allow_suspicious_low_cardinality_types = 0;
 
 INSERT INTO t_topn_lc SELECT
     'g' || toString(number % 200),

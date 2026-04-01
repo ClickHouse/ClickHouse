@@ -89,6 +89,11 @@ SELECT grp, max(val) AS m, any(grp) AS g FROM t_topn_pr
 GROUP BY grp ORDER BY m DESC LIMIT 3
 SETTINGS optimize_topn_aggregation = 1;
 
+SELECT '-- max + any: reference';
+SELECT grp, max(val) AS m, any(grp) AS g FROM t_topn_pr
+GROUP BY grp ORDER BY m DESC LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
 -- Edge case: LIMIT larger than number of groups
 SELECT '-- K larger than groups';
 SELECT grp, max(val) AS m FROM t_topn_pr

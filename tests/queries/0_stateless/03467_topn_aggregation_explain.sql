@@ -41,6 +41,7 @@ DROP TABLE IF EXISTS t_topn_lc;
 SET allow_suspicious_low_cardinality_types = 1;
 CREATE TABLE t_topn_lc (grp String, val LowCardinality(UInt64))
 ENGINE = MergeTree ORDER BY grp;
+SET allow_suspicious_low_cardinality_types = 0;
 
 INSERT INTO t_topn_lc SELECT
     'g' || toString(number % 200),
@@ -91,6 +92,30 @@ SELECT count() > 0 FROM (
     FROM t_topn
     GROUP BY trace_id
     ORDER BY m ASC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
+
+-- Negative: wrong sort direction (min + DESC)
+SELECT '-- EXPLAIN min DESC: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, min(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC
+    LIMIT 5
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%TopNAggregating%';
+
+-- Negative: multi-column ORDER BY
+SELECT '-- EXPLAIN multi-column ORDER BY: no TopNAggregating';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT trace_id, max(start_time) AS m
+    FROM t_topn
+    GROUP BY trace_id
+    ORDER BY m DESC, trace_id ASC
     LIMIT 5
     SETTINGS optimize_topn_aggregation = 1
 ) WHERE explain LIKE '%TopNAggregating%';

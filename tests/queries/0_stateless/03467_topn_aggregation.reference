@@ -26,6 +26,10 @@ trace_4	2024-01-01 00:00:04
 trace_999	2024-01-01 02:46:39	service_4
 trace_998	2024-01-01 02:46:38	service_3
 trace_997	2024-01-01 02:46:37	service_2
+-- max + any: reference
+trace_999	2024-01-01 02:46:39	service_4
+trace_998	2024-01-01 02:46:38	service_3
+trace_997	2024-01-01 02:46:37	service_2
 -- K larger than groups
 trace_9	2024-01-01 00:01:39
 trace_8	2024-01-01 00:01:38

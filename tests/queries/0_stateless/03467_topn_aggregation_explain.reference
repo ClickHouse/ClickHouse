@@ -6,6 +6,10 @@
 0
 -- EXPLAIN max ASC: no TopNAggregating
 0
+-- EXPLAIN min DESC: no TopNAggregating
+0
+-- EXPLAIN multi-column ORDER BY: no TopNAggregating
+0
 -- EXPLAIN LIMIT OFFSET: no TopNAggregating
 0
 -- mode 1: has TopNAggregating
