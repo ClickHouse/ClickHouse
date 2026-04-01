@@ -4,6 +4,7 @@
 SET send_logs_level = 'fatal';
 
 SET prefer_localhost_replica = 1;
+SET optimize_skip_unused_shards = 1;
 
 DROP TABLE IF EXISTS local_01099_a;
 DROP TABLE IF EXISTS local_01099_b;

@@ -4,6 +4,8 @@ create table dst_02224 (key Int) engine=Memory();
 create table src_02224 (key Int) engine=Memory();
 insert into src_02224 values (1);
 
+SET optimize_skip_unused_shards = 1;
+
 -- { echoOn }
 truncate table dst_02224;
 insert into function cluster('test_cluster_two_shards', currentDatabase(), dst_02224, key)
