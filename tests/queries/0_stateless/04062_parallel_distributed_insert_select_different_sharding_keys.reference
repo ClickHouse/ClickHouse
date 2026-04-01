@@ -1,0 +1,10 @@
+parallel_distributed_insert_select=2
+2
+300
+3	2	200
+2	3	100
+parallel_distributed_insert_select=0
+2
+300
+3	2	200
+2	3	100
