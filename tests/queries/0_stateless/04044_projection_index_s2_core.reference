@@ -15,9 +15,9 @@ Expression ((Project names + Projection))
         Condition: __s2CoveringIntersects
         Search Algorithm: generic exclusion search
         Parts: 2
-        Marks: 16
+        Marks: 14
         Ranges: 5
-        Rows: 16
+        Rows: 14
         Filtered Parts: 3
 1
 Expression ((Project names + Projection))
@@ -35,9 +35,9 @@ Expression ((Project names + Projection))
         Condition: __s2CoveringIntersects
         Search Algorithm: generic exclusion search
         Parts: 2
-        Marks: 16
+        Marks: 14
         Ranges: 5
-        Rows: 16
+        Rows: 14
         Filtered Parts: 3
 1
 Expression ((Project names + Projection))

@@ -44,6 +44,8 @@
 #include <s2/s2error.h>
 #include <s2/s2latlng.h>
 #include <s2/s2latlng_rect.h>
+#include <s2/s2loop.h>
+#include <s2/s2polygon.h>
 #include <s2/s2polyline.h>
 #include <s2/s2region_coverer.h>
 #endif
@@ -189,7 +191,7 @@ PaddedPODArray<UInt64> buildParentOffsets(size_t rows, UInt64 starting_offset, c
 /// ── Projection block sorting ─────────────────────────────────────────────────
 /// Sort the output block by (cell_id, _parent_part_offset) so that the projection
 /// data is stored in primary key order. This enables efficient index pruning when
-/// the rewritten s2CellsIntersect predicate is evaluated against the projection.
+/// the rewritten __s2CoveringIntersects predicate is evaluated against the projection.
 
 void sortProjectionIndexS2Block(Block & out)
 {
@@ -325,6 +327,8 @@ struct GeometryDecodeCache
 
 /// Helper: check if inner_type matches a named geometry type and, if so,
 /// decode the column using the given Converter and populate the cache.
+/// Uses the custom type name for matching to distinguish types with identical
+/// underlying structure (e.g. Polygon vs MultiLineString).
 template <typename Converter, GeometryDecodeCache::Kind CacheKind>
 bool tryDecodeTypedColumn(
     const DataTypePtr & inner_type,
@@ -333,8 +337,8 @@ bool tryDecodeTypedColumn(
     const String & type_name,
     std::optional<GeometryDecodeCache> & result)
 {
-    const auto & factory = DataTypeFactory::instance();
-    if (!factory.get(type_name)->equals(*inner_type))
+    auto custom_name = inner_type->getCustomName();
+    if (!custom_name || custom_name->getName() != type_name)
         return false;
 
     auto decoded = Converter::convert(full_column);
@@ -526,14 +530,17 @@ std::optional<DecodedGeometry> tryDecodeGeometry(const GeometryDecodeCache & cac
 #if USE_S2_GEOMETRY
 
 /// ── S2 covering computation ──────────────────────────────────────────────────
-/// Build an S2 cell covering for a geometry. For linestrings, we convert to
-/// native S2Polyline for tight coverings. For polygons, rings, and multi-polygons,
-/// we compute an S2LatLngRect bounding box from all vertices and cover that
-/// rectangle. The bounding box is a conservative approximation (no false
-/// negatives, only potential false positives). We cannot use S2Polygon due to
-/// linker issues with S2ValidationQueryBase in ClickHouse's S2 library build,
-/// and S2Loop has subtle winding-order semantics that can cause coverings to
-/// represent the complement of the intended region.
+/// Build an S2 cell covering for a geometry.
+///   Point           → single S2CellId at max_level
+///   LineString      → native S2Polyline covering (tight)
+///   MultiLineString → native S2Polyline per segment, union
+///   Ring            → S2Loop → S2Polygon → S2RegionCoverer (tight)
+///   Polygon         → S2Polygon (outer + inner loops) → S2RegionCoverer (tight)
+///   MultiPolygon    → S2Polygon union → S2RegionCoverer (tight)
+///
+/// All polygon-like types use native S2Polygon for tight coverings.
+/// S2LatLngRect bounding-box is used only as a fallback when S2Polygon
+/// construction fails (e.g., degenerate geometry).
 
 struct S2CoveringBuildOptions
 {
@@ -544,6 +551,7 @@ struct S2CoveringBuildOptions
 };
 
 /// Add a single (lon, lat) point to the S2LatLngRect bounding box.
+/// Used only as a fallback when S2Polygon construction fails.
 bool addPointToRect(const SphericalPoint & point, S2LatLngRect & rect, bool & initialized)
 {
     const double lon = boost::geometry::get<0>(point);
@@ -569,8 +577,8 @@ bool addPointToRect(const SphericalPoint & point, S2LatLngRect & rect, bool & in
     return true;
 }
 
-/// Expand the bounding box to include all vertices of a point sequence
-/// (works for SphericalRing, SphericalLineString, or any range of SphericalPoint).
+/// Expand the bounding box to include all vertices of a point sequence.
+/// Used only as a fallback when S2Polygon construction fails.
 template <typename PointRange>
 bool addPointsToRect(const PointRange & points, S2LatLngRect & rect, bool & initialized)
 {
@@ -582,27 +590,57 @@ bool addPointsToRect(const PointRange & points, S2LatLngRect & rect, bool & init
     return true;
 }
 
-/// Expand the bounding box to include all vertices (outer ring + inner rings) of a polygon.
-bool addPolygonToRect(const SphericalPolygon & polygon, S2LatLngRect & rect, bool & initialized)
+/// Compute the bounding S2LatLngRect for a decoded geometry.
+/// Used only as a fallback when S2Polygon construction fails.
+std::optional<S2LatLngRect> computeBoundingRect(const DecodedGeometry & geometry)
 {
-    SphericalPolygon corrected = polygon;
-    boost::geometry::correct(corrected);
+    S2LatLngRect rect;
+    bool initialized = false;
 
-    if (!addPointsToRect(corrected.outer(), rect, initialized))
-        return false;
-
-    for (const auto & inner : corrected.inners())
+    auto ok = std::visit([&](const auto & value) -> bool
     {
-        if (!addPointsToRect(inner, rect, initialized))
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, SphericalPoint>)
+            return addPointToRect(value, rect, initialized);
+        else if constexpr (std::is_same_v<T, SphericalRing> || std::is_same_v<T, SphericalLineString>)
+            return addPointsToRect(value, rect, initialized);
+        else if constexpr (std::is_same_v<T, SphericalMultiLineString>)
+        {
+            for (const auto & ls : value)
+                if (!addPointsToRect(ls, rect, initialized))
+                    return false;
+            return true;
+        }
+        else if constexpr (std::is_same_v<T, SphericalPolygon>)
+        {
+            /// Only the outer ring is needed for a bounding box — inner rings
+            /// are always contained within the outer ring.
+            SphericalPolygon corrected = value;
+            boost::geometry::correct(corrected);
+            return addPointsToRect(corrected.outer(), rect, initialized);
+        }
+        else if constexpr (std::is_same_v<T, SphericalMultiPolygon>)
+        {
+            for (const auto & poly : value)
+            {
+                SphericalPolygon corrected = poly;
+                boost::geometry::correct(corrected);
+                if (!addPointsToRect(corrected.outer(), rect, initialized))
+                    return false;
+            }
+            return true;
+        }
+        else
             return false;
-    }
+    }, geometry.value);
 
-    return true;
+    if (!ok || !initialized || !rect.is_valid())
+        return std::nullopt;
+
+    return rect;
 }
 
 /// ── Native S2 type conversion helpers ─────────────────────────────────────────
-/// Convert boost::geometry linestring types to native S2Polyline for tight S2
-/// coverings. Used by `buildS2Covering` for LineString/MultiLineString.
 
 /// Convert a boost (lon, lat) point in degrees to an S2Point on the unit sphere.
 std::optional<S2Point> boostPointToS2Point(const SphericalPoint & point)
@@ -620,23 +658,37 @@ std::optional<S2Point> boostPointToS2Point(const SphericalPoint & point)
     return lat_lng.ToPoint();
 }
 
-/// Convert a boost linestring to a vector of S2Points (no closing vertex removal).
-std::optional<std::vector<S2Point>> convertBoostLineStringToS2Points(const SphericalLineString & linestring)
+/// Convert a boost point range (Ring or LineString) to a vector of S2Points.
+/// If `remove_closing_vertex` is true and the last vertex equals the first,
+/// the closing vertex is removed (S2Loop does not want it).
+template <typename PointRange>
+std::optional<std::vector<S2Point>> convertBoostPointsToS2Points(const PointRange & points, bool remove_closing_vertex)
 {
-    if (linestring.empty())
+    if (points.empty())
         return std::nullopt;
 
-    std::vector<S2Point> points;
-    points.reserve(linestring.size());
-    for (const auto & vertex : linestring)
+    std::vector<S2Point> result;
+    result.reserve(points.size());
+
+    for (const auto & vertex : points)
     {
         auto s2point = boostPointToS2Point(vertex);
         if (!s2point)
             return std::nullopt;
-        points.push_back(*s2point);
+        result.push_back(*s2point);
     }
 
-    return points;
+    /// Remove closing vertex if it duplicates the first (boost rings are Closed=true).
+    if (remove_closing_vertex && result.size() >= 2 && result.front() == result.back())
+        result.pop_back();
+
+    return result;
+}
+
+/// Convert a boost linestring to a vector of S2Points (no closing vertex removal).
+std::optional<std::vector<S2Point>> convertBoostLineStringToS2Points(const SphericalLineString & linestring)
+{
+    return convertBoostPointsToS2Points(linestring, /*remove_closing_vertex=*/false);
 }
 
 /// Try to convert a boost linestring to an S2Polyline. Returns nullptr on failure.
@@ -655,6 +707,75 @@ std::unique_ptr<S2Polyline> tryConvertLineStringToS2Polyline(const SphericalLine
         return nullptr;
 
     return polyline;
+}
+
+/// Try to convert a boost ring (closed point sequence) to an S2Loop.
+/// boost::geometry Ring has ClockWise=true, Closed=true; S2Loop expects CCW
+/// vertices without a closing duplicate. We use S2Loop::Normalize to ensure
+/// the loop encloses the smaller region (≤ 2π steradians).
+std::unique_ptr<S2Loop> tryConvertRingToS2Loop(const SphericalRing & ring)
+{
+    auto points_opt = convertBoostPointsToS2Points(ring, /*remove_closing_vertex=*/true);
+    if (!points_opt || points_opt->size() < 3)
+        return nullptr;
+
+    auto loop = std::make_unique<S2Loop>();
+    loop->set_s2debug_override(S2Debug::DISABLE);
+    loop->Init(*points_opt);
+
+    /// Normalize ensures the loop covers ≤ half the sphere, fixing the
+    /// CW→CCW conversion issue for convex / small-area rings.
+    loop->Normalize();
+
+    S2Error error;
+    if (loop->FindValidationError(&error))
+        return nullptr;
+
+    return loop;
+}
+
+/// Try to convert a boost SphericalPolygon (outer ring + inner rings) to an S2Polygon.
+/// Uses S2Polygon::InitOriented: outer loop is CCW (interior on left),
+/// inner loops (holes) are CW (interior on left = hole interior).
+std::unique_ptr<S2Polygon> tryConvertPolygonToS2Polygon(const SphericalPolygon & polygon)
+{
+    SphericalPolygon corrected = polygon;
+    boost::geometry::correct(corrected);
+
+    /// Convert outer ring.
+    auto outer_loop = tryConvertRingToS2Loop(corrected.outer());
+    if (!outer_loop)
+        return nullptr;
+
+    std::vector<std::unique_ptr<S2Loop>> loops;
+
+    /// The outer loop must be CCW (Normalize already ensured ≤ 2π).
+    /// For InitOriented, interior is on the left side of edges, so CCW = shell.
+    loops.push_back(std::move(outer_loop));
+
+    /// Convert inner rings (holes). After boost::geometry::correct, inners
+    /// are CCW (boost convention for holes with ClockWise=true outer).
+    /// For S2Polygon::InitOriented, holes must be CW (interior on left = hole),
+    /// so we Invert each inner loop after Normalize.
+    for (const auto & inner : corrected.inners())
+    {
+        auto inner_loop = tryConvertRingToS2Loop(inner);
+        if (!inner_loop)
+            return nullptr;
+        /// Normalize made it CCW (small area). Invert to CW for a hole.
+        inner_loop->Invert();
+        loops.push_back(std::move(inner_loop));
+    }
+
+    auto s2polygon = std::make_unique<S2Polygon>();
+    s2polygon->set_s2debug_override(S2Debug::DISABLE);
+    s2polygon->InitOriented(std::move(loops));
+
+    S2Error error;
+    if (s2polygon->FindValidationError(&error))
+        return nullptr;
+
+    return s2polygon;
 }
 
 /// Create an S2RegionCoverer configured from the given options.
@@ -679,57 +800,15 @@ std::optional<S2CellUnion> getCovering(const S2Region & region, const S2Covering
     return result;
 }
 
-/// Compute the bounding S2LatLngRect for a decoded geometry.
-/// Returns nullopt if any vertex has invalid coordinates.
-std::optional<S2LatLngRect> computeBoundingRect(const DecodedGeometry & geometry)
-{
-    S2LatLngRect rect;
-    bool initialized = false;
-
-    auto ok = std::visit([&](const auto & value) -> bool
-    {
-        using T = std::decay_t<decltype(value)>;
-        if constexpr (std::is_same_v<T, SphericalPoint>)
-            return addPointToRect(value, rect, initialized);
-        else if constexpr (std::is_same_v<T, SphericalRing> || std::is_same_v<T, SphericalLineString>)
-            return addPointsToRect(value, rect, initialized);
-        else if constexpr (std::is_same_v<T, SphericalMultiLineString>)
-        {
-            for (const auto & ls : value)
-                if (!addPointsToRect(ls, rect, initialized))
-                    return false;
-            return true;
-        }
-        else if constexpr (std::is_same_v<T, SphericalPolygon>)
-            return addPolygonToRect(value, rect, initialized);
-        else if constexpr (std::is_same_v<T, SphericalMultiPolygon>)
-        {
-            for (const auto & poly : value)
-                if (!addPolygonToRect(poly, rect, initialized))
-                    return false;
-            return true;
-        }
-        else
-            return false;
-    }, geometry.value);
-
-    if (!ok || !initialized || !rect.is_valid())
-        return std::nullopt;
-
-    return rect;
-}
-
 /// Build an S2CellUnion covering for a decoded geometry.
 ///
 /// Strategy per geometry kind:
 ///   Point           → single S2CellId at max_level (no coverer needed)
 ///   LineString      → native S2Polyline covering (tight); bounding-box fallback
 ///   MultiLineString → native S2Polyline per segment, union; bounding-box fallback
-///   Ring/Polygon/MultiPolygon → S2LatLngRect bounding-box covering
-///
-/// LineStrings prefer native S2Polyline because `S2RegionCoverer` can produce
-/// a tight covering along the line. Polygons use bounding-box because `S2Polygon`
-/// cannot be linked (missing symbols) and `S2Loop` has winding-order ambiguity.
+///   Ring            → S2Loop → S2Polygon covering (tight); bounding-box fallback
+///   Polygon         → S2Polygon covering (tight); bounding-box fallback
+///   MultiPolygon    → S2Polygon per element, union; bounding-box fallback
 std::optional<S2CellUnion> buildS2Covering(
     const DecodedGeometry & geometry,
     const S2CoveringBuildOptions & options)
@@ -794,8 +873,72 @@ std::optional<S2CellUnion> buildS2Covering(
         }
     }
 
-    /// Bounding-box path for Ring, Polygon, MultiPolygon, and as fallback
-    /// for LineString/MultiLineString when native conversion fails.
+    /// Ring: convert to S2Polygon (single loop) for a tight covering.
+    if (geometry.kind == DecodedGeometry::Kind::Ring)
+    {
+        /// Wrap the ring as a single-loop S2Polygon for covering.
+        auto loop = tryConvertRingToS2Loop(std::get<SphericalRing>(geometry.value));
+        if (loop)
+        {
+            auto s2polygon = std::make_unique<S2Polygon>();
+            s2polygon->set_s2debug_override(S2Debug::DISABLE);
+            s2polygon->Init(std::move(loop));
+
+            S2Error error;
+            if (!s2polygon->FindValidationError(&error))
+            {
+                if (auto result = getCovering(*s2polygon, options))
+                    return result;
+            }
+        }
+    }
+
+    /// Polygon: convert to S2Polygon (outer + inner loops) for a tight covering.
+    if (geometry.kind == DecodedGeometry::Kind::Polygon)
+    {
+        auto s2polygon = tryConvertPolygonToS2Polygon(std::get<SphericalPolygon>(geometry.value));
+        if (s2polygon)
+        {
+            if (auto result = getCovering(*s2polygon, options))
+                return result;
+        }
+    }
+
+    /// MultiPolygon: convert each polygon to S2Polygon, union coverings.
+    if (geometry.kind == DecodedGeometry::Kind::MultiPolygon)
+    {
+        const auto & multi = std::get<SphericalMultiPolygon>(geometry.value);
+        S2CellUnion combined;
+        bool all_converted = true;
+
+        for (const auto & poly : multi)
+        {
+            auto s2polygon = tryConvertPolygonToS2Polygon(poly);
+            if (!s2polygon)
+            {
+                all_converted = false;
+                break;
+            }
+            auto sub = getCovering(*s2polygon, options);
+            if (!sub)
+            {
+                all_converted = false;
+                break;
+            }
+            combined = combined.empty() ? std::move(*sub) : combined.Union(*sub);
+        }
+
+        if (all_converted)
+        {
+            if (options.normalize_covering)
+                combined.Normalize();
+            if (!combined.empty())
+                return combined;
+        }
+    }
+
+    /// Bounding-box fallback for all geometry types when native conversion fails.
+    LOG_DEBUG(getLogger("ProjectionIndexS2"), "Fallback to bounding box");
     auto rect = computeBoundingRect(geometry);
     if (!rect)
         return std::nullopt;
@@ -904,6 +1047,9 @@ std::optional<DecodedGeometry> buildBoxGeometry(Float64 xmin, Float64 ymin, Floa
 }
 
 /// Helper: try to decode a single geometry from a one-row column of a specific type.
+/// Uses the custom type name (e.g. "Polygon", "MultiLineString") for matching,
+/// not just the underlying data structure, because some geometry types share
+/// the same structure (e.g. Polygon = Array(Array(Point)) = MultiLineString).
 template <typename Converter, DecodedGeometry::Kind GeoKind>
 bool tryDecodeFieldAsType(
     const DataTypePtr & type,
@@ -911,8 +1057,10 @@ bool tryDecodeFieldAsType(
     const String & type_name,
     std::optional<DecodedGeometry> & result)
 {
-    const auto & factory = DataTypeFactory::instance();
-    if (!factory.get(type_name)->equals(*type))
+    /// Check custom name first — this distinguishes types with identical
+    /// underlying structure (Polygon vs MultiLineString, Ring vs LineString).
+    auto custom_name = type->getCustomName();
+    if (!custom_name || custom_name->getName() != type_name)
         return false;
 
     auto decoded = Converter::convert(one_row);
@@ -1183,14 +1331,11 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         /// can binary-search the sorted covering — preserving the tight spatial
         /// resolution instead of diluting it to a single ancestor cell.
         ///
-        /// IMPORTANT: We do NOT use the projection's min_level/max_level here.
-        /// Those params constrain how data cells are stored in the projection,
-        /// but the query covering must cover the region at ALL levels. Using
-        /// unconstrained levels lets S2RegionCoverer choose optimal cell sizes
-        /// that correctly cover the region without gaps in Hilbert space.
+        /// We use the projection's min_level to match the data-side cell levels,
+        /// and max_level=30 to allow the coverer full flexibility upward.
         S2CoveringBuildOptions covering_options;
         covering_options.max_cells = params.max_cells;
-        covering_options.min_level = 0;
+        covering_options.min_level = params.min_level;
         covering_options.max_level = 30;
         covering_options.normalize_covering = true;
 
@@ -1208,7 +1353,7 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
             covering->Expand(radius, /*max_level_diff=*/4);
         }
 
-        LOG_DEBUG(log, "Query covering cells: {}", covering->size());
+        LOG_DEBUG(log, "Query geometry: {}, has {} covering cells: , {}", geometry->kind, covering->size(), covering->ToString());
 
         /// Build Array(UInt64) constant with all covering cell IDs.
         Array cell_ids;
