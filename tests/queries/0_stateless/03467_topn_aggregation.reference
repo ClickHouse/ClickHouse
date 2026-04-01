@@ -230,6 +230,22 @@ e	50
 b	nan
 d	nan
 e	50
+-- NaN DESC level 2: optimized
+c	300
+f	200
+a	100
+-- NaN DESC level 2: reference
+c	300
+f	200
+a	100
+-- NaN ASC level 2: optimized
+e	50
+a	100
+f	200
+-- NaN ASC level 2: reference
+e	50
+a	100
+f	200
 -- nullable key DESC NULLS LAST: optimized
 a	2024-01-05 00:00:00
 f	2024-01-04 00:00:00

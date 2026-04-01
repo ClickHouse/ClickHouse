@@ -81,7 +81,10 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type))
+            /// Float types must use the general path because the vectorized
+            /// greaterOrEquals/lessOrEquals return false for NaN comparisons,
+            /// while compareColumn with nulls_direction correctly orders NaN.
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || isFloat(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);

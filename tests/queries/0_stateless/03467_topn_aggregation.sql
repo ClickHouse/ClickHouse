@@ -487,6 +487,39 @@ ORDER BY m ASC NULLS FIRST
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 0;
 
+-- Float64 NaN at pruning level 2 (dynamic __topKFilter prewhere regression)
+SELECT '-- NaN DESC level 2: optimized';
+SELECT grp, max(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1;
+
+SELECT '-- NaN DESC level 2: reference';
+SELECT grp, max(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m DESC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- NaN ASC level 2: optimized';
+SELECT grp, min(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m ASC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1;
+
+SELECT '-- NaN ASC level 2: reference';
+SELECT grp, min(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m ASC
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
 -- =====================================================
 -- Nullable primary key: Mode 1 guard (allow_nullable_key)
 -- =====================================================
