@@ -188,6 +188,10 @@ public:
     {
         bool is_finished{false};
         bool is_announcement_received{false};
+        /// For in-order mode with splits: tracks which splits have finished for this replica.
+        /// The replica is only truly finished when all its announced splits are done.
+        std::set<size_t> finished_splits;
+        std::set<size_t> announced_splits;
     };
     std::vector<ReplicaStatus> replica_status;
 
@@ -235,6 +239,7 @@ public:
         }
 
         replica_status[announcement.replica_num].is_announcement_received = true;
+        replica_status[announcement.replica_num].announced_splits.insert(announcement.split_id);
 
         /// Use `min_marks_per_request` from the first announcement (the local replica that did PK analysis).
         /// Old replicas (protocol < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK) don't send
@@ -1199,15 +1204,13 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
         const auto replica_num = request.replica_num;
 
-        /// For in-order mode with splits, a replica has multiple independent reading streams.
-        /// A replica is only truly finished when all its splits are done, so we don't check
-        /// is_finished per-replica in that case.
-        if (!isInOrder(request.mode) && pimpl->replica_status[replica_num].is_finished)
+        if (pimpl->replica_status[replica_num].is_finished)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Got request from replica {} after ranges assignment has been completed for the replica",
                 request.replica_num);
 
+        const auto split_id = request.split_id;
         response = pimpl->handleRequest(std::move(request));
         if (!response.finish)
         {
@@ -1218,9 +1221,12 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
         else
         {
-            /// TODO: for in-order mode with multiple splits, track per-split finish state
-            /// and only mark the replica as finished when all its splits are done.
-            pimpl->replica_status[replica_num].is_finished = true;
+            auto & status = pimpl->replica_status[replica_num];
+            status.finished_splits.insert(split_id);
+
+            /// A replica is finished when all its announced splits are done.
+            if (status.finished_splits == status.announced_splits)
+                status.is_finished = true;
 
             if (isReadingCompleted())
             {
