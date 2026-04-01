@@ -241,6 +241,9 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
 
+    show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
+    assert minio_secret_key not in show_result
+
 def drop_clickhouse_glue_table(
     node, database_name, table_name
 ):
