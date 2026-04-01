@@ -61,7 +61,8 @@ LIMIT 4
 SETTINGS query_plan_optimize_prewhere = 0,
          optimize_move_to_prewhere = 0,
          query_plan_max_limit_for_top_k_optimization = 100000,
-         use_top_k_dynamic_filtering = 0;
+         use_top_k_dynamic_filtering = 0,
+         use_skip_indexes_for_top_k = 1;
 
 SELECT id
 FROM tab
@@ -71,7 +72,8 @@ LIMIT 4
 SETTINGS query_plan_optimize_prewhere = 1,
          optimize_move_to_prewhere = 1,
          query_plan_max_limit_for_top_k_optimization = 100000,
-         use_top_k_dynamic_filtering = 0;
+         use_top_k_dynamic_filtering = 0,
+         use_skip_indexes_for_top_k = 1;
 
 SELECT 'Test with enabled rescoring';
 -- Expect 16 & 19, and additionally 18 and 17 because they are in the same granules
@@ -83,7 +85,8 @@ ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
          query_plan_max_limit_for_top_k_optimization = 100000,
-         use_top_k_dynamic_filtering = 0;
+         use_top_k_dynamic_filtering = 0,
+         use_skip_indexes_for_top_k = 1;
 
 SELECT 'With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)';
 SELECT id
@@ -115,7 +118,8 @@ PREWHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
-         use_top_k_dynamic_filtering = 0;
+         use_top_k_dynamic_filtering = 0,
+         use_skip_indexes_for_top_k = 1;
 
 SELECT 'Select all 20 neighbours with the rescoring optimization, distances got from vector index';
 SELECT id, attr1, attr2
@@ -133,7 +137,8 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20
     SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
-             use_top_k_dynamic_filtering = 0
+             use_top_k_dynamic_filtering = 0,
+             use_skip_indexes_for_top_k = 1
     )
 WHERE (explain LIKE '%_distance%');
 
@@ -145,6 +150,7 @@ WHERE attr1 > 110 AND attr2 > 50
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
-         use_top_k_dynamic_filtering = 0;
+         use_top_k_dynamic_filtering = 0,
+         use_skip_indexes_for_top_k = 1;
 
 DROP TABLE tab;

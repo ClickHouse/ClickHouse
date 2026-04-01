@@ -24,7 +24,7 @@ $CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 5"
 $CLICKHOUSE_CLIENT -q "SELECT a, s FROM m ORDER BY a, s LIMIT 10"
 
 # Not a single .sql test with max_rows_to_read because it doesn't work with Merge storage
-rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 --query_plan_read_in_order=1 --query_plan_lift_up_union=1 --query_plan_push_down_limit=1 --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 --use_top_k_dynamic_filtering=0 --use_skip_indexes_for_top_k=0 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0 | grep "rows_read" | sed 's/[^0-9]*//g')
+rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 --query_plan_read_in_order=1 --query_plan_lift_up_union=1 --query_plan_push_down_limit=1 --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 --use_top_k_dynamic_filtering=0 --use_skip_indexes_for_top_k=0 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0 --query_plan_execute_functions_after_sorting=0 | grep "rows_read" | sed 's/[^0-9]*//g')
 
 # Expected number of read rows with a bit margin
 if [[ $rows_read -lt 500 ]]

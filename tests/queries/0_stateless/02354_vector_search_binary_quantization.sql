@@ -9,6 +9,7 @@
 SET enable_analyzer = 1;
 SET query_plan_push_down_limit = 1;
 SET use_skip_indexes_for_top_k = 1;
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS dbpedia;
 

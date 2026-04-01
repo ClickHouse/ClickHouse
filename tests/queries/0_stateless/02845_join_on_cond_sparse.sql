@@ -1,3 +1,5 @@
+SET query_plan_merge_filter_into_join_condition = 0;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 

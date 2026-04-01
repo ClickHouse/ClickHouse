@@ -18,7 +18,7 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 13	13	0	0	0	0
 14	14	14	14	0	0
 15	15	0	0	0	0
-explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z;
+explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z SETTINGS query_plan_merge_expressions = 1;
 Union
   Expression
     Expression
@@ -68,7 +68,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Union
@@ -109,7 +109,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from sub3 ll any left join sub4 rr on ll.z = rr.z group by x % 2 as key)
-select * from sub5 order by key;
+select * from sub5 order by key SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression
@@ -165,7 +165,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression
@@ -222,7 +222,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression
@@ -283,7 +283,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5;
+select * from sub5 SETTINGS query_plan_merge_expressions = 1;
 Union
   Expression
     Expression
@@ -333,7 +333,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Union
@@ -388,7 +388,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Union
@@ -427,7 +427,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0, query_plan_merge_expressions = 1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -450,7 +450,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;-- { echoOn }
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0, query_plan_merge_expressions = 1;-- { echoOn }
 Expression
   Sorting
     Expression
@@ -502,7 +502,7 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 13	13	0	0	0	0
 14	14	14	14	0	0
 15	15	0	0	0	0
-explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z;
+explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z SETTINGS query_plan_merge_expressions = 1;
 Union
   Expression
     Expression
@@ -554,7 +554,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Union
@@ -597,7 +597,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select sum(x), sum(y), sum(r.y), sum(z), sum(rr.z), sum(a), key from sub3 ll any left join sub4 rr on ll.z = rr.z group by x % 2 as key)
-select * from sub5 order by key;
+select * from sub5 order by key SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression
@@ -655,7 +655,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y order by l.x),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression
@@ -713,7 +713,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression
@@ -774,7 +774,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5;
+select * from sub5 SETTINGS query_plan_merge_expressions = 1;
 Union
   Expression
     Expression
@@ -823,7 +823,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Union
@@ -875,7 +875,7 @@ sub2 as (select y, z from tab2 where y != 4),
 sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y = r.y),
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
-select * from sub5 order by x;
+select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
     Union
@@ -916,7 +916,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0, query_plan_merge_expressions = 1;
 0	0	0	0	0	0
 1	1	0	0	0	0
 3	3	0	0	0	0
@@ -939,7 +939,7 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub1 l any left join sub2 r on l.y 
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 order by x
-SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0;
+SETTINGS enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0, query_plan_merge_expressions = 1;
 Expression
   Sorting
     Expression

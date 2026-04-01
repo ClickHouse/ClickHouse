@@ -67,6 +67,6 @@ INSERT INTO nested SELECT number, arrayMap(x -> (x, arrayMap(y -> (toString(y * 
 SELECT id % 10, sum(length(col1)), sumArray(arrayMap(x -> length(x), col1.n.b)) FROM nested GROUP BY id % 10;
 
 SELECT arraySum(col1.a), arrayMap(x -> x * x * 2, col1.a) FROM nested ORDER BY id LIMIT 5;
-SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10;
+SELECT untuple(arrayJoin(arrayJoin(col1.n))) FROM nested ORDER BY id LIMIT 10 OFFSET 10 SETTINGS query_plan_push_down_limit = 0;
 
 DROP TABLE nested;

@@ -9,11 +9,11 @@ INSERT INTO t VALUES (1), (2), (3);
 
 -- With partition pruning enabled (default): MinMax and Partition should prune
 EXPLAIN indexes = 1 SELECT * FROM t WHERE x = 1
-SETTINGS use_partition_pruning = 1;
+SETTINGS use_partition_pruning = 1, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
 
 -- With partition pruning disabled: both MinMax and Partition should show always true
 EXPLAIN indexes = 1 SELECT * FROM t WHERE x = 1
-SETTINGS use_partition_pruning = 0;
+SETTINGS use_partition_pruning = 0, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
 
 -- Verify correctness: results must be the same regardless of the setting
 SELECT * FROM t WHERE x = 1 SETTINGS use_partition_pruning = 1;

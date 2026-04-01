@@ -18,8 +18,8 @@ settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_gra
 insert into test1 select * from numbers(10);
 insert into test1 select * from numbers(11, 20);
 
-explain indexes = 1 select * from test1 where a > 10 settings enable_analyzer = 0;
-explain indexes = 1 select * from test1 where a > 10 settings enable_analyzer = 1;
+explain indexes = 1 select * from test1 where a > 10 settings enable_analyzer = 0, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
+explain indexes = 1 select * from test1 where a > 10 settings enable_analyzer = 1, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
 
 create table test2
 (
@@ -35,5 +35,5 @@ settings index_granularity = 8192, min_index_granularity_bytes = 1024, index_gra
 insert into test2 select * from numbers(10);
 insert into test2 select * from numbers(11, 20);
 
-explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 0;
-explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 1;
+explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 0, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
+explain indexes = 1 select * from test2 where a2 > 15 settings enable_analyzer = 1, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;

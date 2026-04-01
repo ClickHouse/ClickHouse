@@ -2,6 +2,7 @@
 
 -- This test specifically tests read-in-order optimization, so we need to ensure it's enabled
 SET optimize_read_in_order = 1;
+SET query_plan_read_in_order = 1;
 -- Ensure plan stabiliity with parallel replicas
 SET parallel_replicas_local_plan = 1;
 

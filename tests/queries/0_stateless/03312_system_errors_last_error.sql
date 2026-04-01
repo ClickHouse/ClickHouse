@@ -3,6 +3,7 @@
 
 -- For the old analyzer last_error_message is slightly different.
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1;
 
 SELECT throwIf(1); -- {serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO}
 

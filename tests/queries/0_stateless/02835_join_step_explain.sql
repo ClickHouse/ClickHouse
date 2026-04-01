@@ -25,12 +25,14 @@ INSERT INTO test_table_2 VALUES (0, 'Value', 0);
 SET query_plan_join_swap_table = 'false';
 
 EXPLAIN header = 1, actions = 1 SELECT lhs.id, lhs.value_1, rhs.id, rhs.value_1
-FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id;
+FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
+SETTINGS query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
 
 SELECT '--';
 
 EXPLAIN header = 1, actions = 1 SELECT lhs.id, lhs.value_1, rhs.id, rhs.value_1
-FROM test_table_1 AS lhs ASOF JOIN test_table_2 AS rhs ON lhs.id = rhs.id AND lhs.value_2 < rhs.value_2;
+FROM test_table_1 AS lhs ASOF JOIN test_table_2 AS rhs ON lhs.id = rhs.id AND lhs.value_2 < rhs.value_2
+SETTINGS query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0;
 
 DROP TABLE test_table_1;
 DROP TABLE test_table_2;

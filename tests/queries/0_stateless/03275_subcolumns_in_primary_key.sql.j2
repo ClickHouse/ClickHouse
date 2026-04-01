@@ -26,17 +26,17 @@ insert into test select number, tuple(tuple(number % 2, 'str_' || number % 3, ra
 insert into test select number, tuple(tuple(number % 2 + 4, 'str_' || number % 3 + 4, range(number))), 'Hello, World!' from numbers(4, 4);
 
 select * from test order by a.b.c, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c desc, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c desc, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc) SETTINGS optimize_read_in_order=1;
 
 select * from test where a.b.c = 0 order by id;
 select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0);
@@ -53,21 +53,21 @@ optimize table test final;
 select count() from system.parts where active and table = 'test' and database = currentDatabase();
 
 select * from test order by a.b.c, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.d desc) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c desc, a.b.d, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c, a.b.d desc) SETTINGS optimize_read_in_order=1;
 select * from test order by a.b.c desc, a.b.d desc, id;
-select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc);
+select trimLeft(explain) from (explain sorting=1 select * from test order by a.b.c desc, a.b.d desc) SETTINGS optimize_read_in_order=1;
 
 select * from test where a.b.c = 0 order by id;
 select trimLeft(explain) from (explain indexes=1 select * from test where a.b.c = 0);
