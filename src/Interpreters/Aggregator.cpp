@@ -1883,10 +1883,7 @@ static void computeHashesForShardingImpl(
 {
     Arena pool;
 
-    /// TODO: Consider using the consecutive keys cache. It helps when consecutive rows have the
-    /// same key (e.g., sorted data). Currently disabled because sharded aggregation targets
-    /// high-cardinality keys where cache hit rate is expected to be low. Also, `emplaceKeyWithHash`
-    /// does not check the cache - that would need to be added first.
+    /// Since we only need the hash, we do not need the consecutive keys cache optimization.
     typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
     result_hashes.resize_exact(row_count);
     for (size_t i = 0; i < row_count; ++i)
@@ -2089,11 +2086,9 @@ void NO_INLINE Aggregator::executeImplOnSubsetRows(
     const ColumnRawPtrs & key_columns,
     const AggregateFunctionInstruction * aggregate_instructions) const
 {
-    /// TODO: Consider using the consecutive keys cache. It helps when consecutive rows have the
-    /// same key (e.g., sorted data). Currently disabled because sharded aggregation targets
-    /// high-cardinality keys where cache hit rate is expected to be low. Also, `emplaceKeyWithHash`
-    /// does not check the cache - that would need to be added first.
-    typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+    /// Use the consecutive keys cache — it helps when consecutive rows within a shard
+    /// have the same key (e.g., sorted data)
+    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
 
     const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
@@ -2200,10 +2195,6 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
         places[j] = aggregate_data;
     }
 
-    /// TODO: With `StateNoCache`, `hasOnlyOneValueSinceLastReset` always returns false,
-    /// so the equal-keys optimization in `executeAggregateInstructionsOnSubsetRows` never fires.
-    /// Enabling the consecutive keys cache (switching to `State`) would allow this optimization
-    /// for sorted data where all rows in a shard's batch share the same key.
     executeAggregateInstructionsOnSubsetRows(aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get());
 }
 

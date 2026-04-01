@@ -236,6 +236,15 @@ public:
         {
             if (isNullAt(row))
             {
+                if constexpr (consecutive_keys_optimization)
+                {
+                    if (!cache.is_null)
+                    {
+                        cache.onNewValue(true);
+                        cache.is_null = true;
+                    }
+                }
+
                 bool has_null_key = data.hasNullKeyData();
                 data.hasNullKeyData() = true;
 
@@ -409,10 +418,36 @@ protected:
     template <typename Data, typename KeyHolder>
     ALWAYS_INLINE EmplaceResult emplaceImplWithHash(KeyHolder & key_holder, Data & data, size_t hash_value)
     {
+        if constexpr (consecutive_keys_optimization)
+        {
+            /// For small fixed-size keys (e.g., OneNumber with UInt16/UInt32/UInt64),
+            /// the key comparison is a single integer ==, so the hash pre-check adds
+            /// no benefit. For larger keys (String, FixedString, Serialized), the hash
+            /// comparison short-circuits the more expensive key comparison on cache miss.
+            using KeyType = std::decay_t<decltype(keyHolderGetKey(key_holder))>;
+            bool hit;
+            if constexpr (std::is_arithmetic_v<KeyType> || sizeof(KeyType) <= 8)
+                hit = cache.found && cache.check(keyHolderGetKey(key_holder));
+            else
+                hit = cache.found && cache.checkWithHash(keyHolderGetKey(key_holder), hash_value);
+
+            if (hit)
+            {
+                if constexpr (has_mapped)
+                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                else
+                    return EmplaceResult(false);
+            }
+        }
+
         typename Data::LookupResult it;
         bool inserted = false;
 
         data.emplace(key_holder, it, inserted, hash_value);
+
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
+            cached = &it->getMapped();
 
         if constexpr (has_mapped)
         {
@@ -420,8 +455,28 @@ protected:
                 new (&it->getMapped()) Mapped();
         }
 
+        if constexpr (consecutive_keys_optimization)
+        {
+            cache.onNewValue(true);
+            cache.saved_hash = hash_value;
+
+            if constexpr (nullable)
+                cache.is_null = false;
+
+            if constexpr (has_mapped)
+            {
+                cache.value.first = it->getKey();
+                cache.value.second = it->getMapped();
+                cached = &cache.value.second;
+            }
+            else
+            {
+                cache.value = it->getKey();
+            }
+        }
+
         if constexpr (has_mapped)
-            return EmplaceResult(it->getMapped(), it->getMapped(), inserted);
+            return EmplaceResult(it->getMapped(), *cached, inserted);
         else
             return EmplaceResult(inserted);
     }
