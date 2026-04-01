@@ -5,6 +5,7 @@
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
@@ -219,6 +220,7 @@ static inline void updateBlockData(Block & old_block, const Block & new_block)
         auto col_name = it.name;
         auto & col_with_type_name = old_block.getByName(col_name);
         col_with_type_name.column = it.column;
+        col_with_type_name.type = it.type;
     }
 }
 
@@ -351,6 +353,57 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
             total_size_bytes.store(new_total_bytes, std::memory_order_relaxed);
         }
         *memory_settings = std::move(changed_settings);
+    }
+
+    /// When column types change, convert existing data blocks to match the new schema.
+    /// Without this, stored blocks retain old column types while metadata is updated,
+    /// causing type/column mismatches in subsequent reads and mutations.
+    {
+        const auto & old_columns = getInMemoryMetadata().getColumns().getAllPhysical();
+        const auto & new_columns = new_metadata.getColumns().getAllPhysical();
+
+        /// Build a map of columns whose types changed.
+        std::unordered_map<std::string, DataTypePtr> changed_columns;
+        for (const auto & new_col : new_columns)
+        {
+            if (auto old_col = old_columns.tryGetByName(new_col.name))
+            {
+                if (!old_col->type->equals(*new_col.type))
+                    changed_columns.emplace(new_col.name, new_col.type);
+            }
+        }
+
+        if (!changed_columns.empty())
+        {
+            std::lock_guard lock(mutex);
+            auto new_data = std::make_unique<Blocks>(*(data.get()));
+            size_t rows = 0;
+            size_t bytes = 0;
+
+            for (auto & block : *new_data)
+            {
+                for (auto & [col_name, new_type] : changed_columns)
+                {
+                    if (!block.has(col_name))
+                        continue;
+
+                    auto & col_with_type = block.getByName(col_name);
+                    if (col_with_type.type->equals(*new_type))
+                        continue;
+
+                    col_with_type.column = castColumn(
+                        {col_with_type.column, col_with_type.type, col_name}, new_type);
+                    col_with_type.type = new_type;
+                }
+
+                rows += block.rows();
+                bytes += block.bytes();
+            }
+
+            data.set(std::move(new_data));
+            total_size_rows.store(rows, std::memory_order_relaxed);
+            total_size_bytes.store(bytes, std::memory_order_relaxed);
+        }
     }
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
