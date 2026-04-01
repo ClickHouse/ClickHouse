@@ -260,7 +260,7 @@ String extractJSONStringValue(const String & json, const char * key)
     {
         readJSONString(result, buf, json_settings);
     }
-    catch (...)
+    catch (...) // Ok: malformed JSON string, return empty
     {
         return {};
     }
