@@ -786,6 +786,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool find_exact_ranges = filter_context.find_exact_ranges;
     bool is_final_query = filter_context.query_info.isFinal();
     bool has_projections = filter_context.has_projections;
+    bool use_primary_key = filter_context.use_primary_key;
     auto & result = filter_context.result;
 
     const auto original_num_parts = parts_with_ranges.size();
@@ -895,7 +896,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 query_status->checkTimeLimit();
 
             auto & ranges = parts_with_ranges[part_index];
-            if (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition)
+            if (use_primary_key && (metadata_snapshot->hasPrimaryKey() || part_offset_condition || total_offset_condition))
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithPrimaryKey);
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithPrimaryKeyMicroseconds);
