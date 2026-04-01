@@ -119,6 +119,7 @@ static struct InitFiu
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
     PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
+    PAUSEABLE(keeper_ttl_gc_pause_before_remove) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
