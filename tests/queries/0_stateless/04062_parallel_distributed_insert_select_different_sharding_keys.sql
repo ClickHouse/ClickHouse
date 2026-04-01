@@ -36,9 +36,7 @@ SYSTEM FLUSH DISTRIBUTED dist_src_04062;
 
 -- Test 1: parallel_distributed_insert_select=2 (default).
 -- Each shard copies local_src to local_tgt without resharding by SecondaryId.
-SELECT 'parallel_distributed_insert_select=2';
-INSERT INTO dist_tgt_04062 SELECT * FROM dist_src_04062
-    SETTINGS parallel_distributed_insert_select = 2;
+INSERT INTO dist_tgt_04062 SELECT * FROM dist_src_04062;
 
 SELECT count() FROM dist_tgt_04062;
 SELECT sum(Value) FROM dist_tgt_04062;
@@ -53,7 +51,7 @@ SELECT PrimaryId, SecondaryId, Value FROM dist_tgt_04062
     SETTINGS optimize_skip_unused_shards = 1;
 
 -- Reset target for next test.
-TRUNCATE TABLE local_tgt_04062 ON CLUSTER test_cluster_two_shards;
+TRUNCATE TABLE local_tgt_04062 ON CLUSTER test_cluster_two_shards SYNC;
 
 -- Test 2: parallel_distributed_insert_select=0 (workaround, reshards correctly).
 SELECT 'parallel_distributed_insert_select=0';
@@ -75,3 +73,4 @@ DROP TABLE dist_tgt_04062;
 DROP TABLE dist_src_04062;
 DROP TABLE local_tgt_04062 ON CLUSTER test_cluster_two_shards SYNC;
 DROP TABLE local_src_04062 ON CLUSTER test_cluster_two_shards SYNC;
+DROP DATABASE 04062_test ON CLUSTER test_cluster_two_shards;
