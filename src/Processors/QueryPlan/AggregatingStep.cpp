@@ -333,9 +333,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Sharded aggregation does not implement temporary-file spill/merge yet.
         params.max_bytes_before_external_group_by = 0;
 
-        /// TODO: Make it work correctly. Currently, there is some slowdown if sharded run is followed by
-        /// non-sharded run of the same query.
-        params.stats_collecting_params.disable();
+        /// Derive a separate stats cache key so that per-shard hash table sizes from sharded
+        /// aggregation don't interfere with non-sharded execution of the same query.
+        static constexpr UInt64 sharded_aggregation_stats_salt = 0x9ae16a3b2f90404fULL;
+        if (params.stats_collecting_params.isCollectionAndUseEnabled())
+            params.stats_collecting_params.setKey(params.stats_collecting_params.key ^ sharded_aggregation_stats_salt);
     }
 
     /** Two-level aggregation is useful in two cases:
