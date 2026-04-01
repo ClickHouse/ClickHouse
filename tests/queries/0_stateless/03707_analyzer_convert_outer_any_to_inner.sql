@@ -18,7 +18,7 @@ WHERE uid = (
     FROM users u2
     WHERE u1.name = u2.name
 )
-SETTINGS enable_join_runtime_filters = 0;
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_expressions = 1, query_plan_merge_filter_into_join_condition = 0;
 
 SELECT *
 FROM users u1

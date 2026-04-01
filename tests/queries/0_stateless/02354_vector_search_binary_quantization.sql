@@ -7,6 +7,7 @@
 -- Also has good number of calls to reinterpret() to test conversion of native floats to Array(Float32)
 
 SET enable_analyzer = 1;
+SET query_plan_push_down_limit = 1;
 
 DROP TABLE IF EXISTS dbpedia;
 

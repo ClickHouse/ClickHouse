@@ -1,4 +1,5 @@
 SET optimize_substitute_columns = 1;
+SET enable_optimize_predicate_expression = 1;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

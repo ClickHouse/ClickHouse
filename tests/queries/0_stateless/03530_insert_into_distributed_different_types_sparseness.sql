@@ -1,6 +1,4 @@
 -- Ensure that sparse columns does not leads to any errors/warnings while pushing via Distributed
--- Pin max_block_size to ensure dumpColumnStructure output is deterministic (size=1 per block).
-SET max_block_size = 1;
 
 drop table if exists sparse;
 drop table if exists intermediate;
@@ -13,7 +11,8 @@ drop table if exists mv_log;
 
 create table sparse (key String) engine=MergeTree order by () settings ratio_of_defaults_for_sparse_serialization=0.01;
 insert into sparse select ''::String from numbers(100);
-select dumpColumnStructure(*) from sparse limit 1;
+-- Pin max_block_size to ensure dumpColumnStructure output is deterministic (size=1 per block).
+select dumpColumnStructure(*) from sparse limit 1 SETTINGS max_block_size = 1;
 
 -- we need a table that supports sparse columns as intermediate, hence MergeTree
 create table intermediate (key String) engine=MergeTree order by ();

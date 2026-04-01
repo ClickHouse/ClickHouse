@@ -11,6 +11,7 @@ SET enable_parallel_replicas = 0;
 
 SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 SET query_plan_merge_expressions = 1;
+SET query_plan_filter_push_down = 1;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_runtime_filters = 0;

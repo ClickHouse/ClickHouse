@@ -2,6 +2,8 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 
+SET query_plan_merge_expressions = 1;
+
 -- { echo }
 
 DROP TABLE IF EXISTS t_modulo_legacy_partition_key;

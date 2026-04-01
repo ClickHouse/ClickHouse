@@ -9,6 +9,7 @@ SET mutations_sync = 1;
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
+SET query_plan_optimize_lazy_materialization = 0;
 
 DROP TABLE IF EXISTS tab;
 

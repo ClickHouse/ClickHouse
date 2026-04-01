@@ -3,6 +3,7 @@
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 SET query_plan_optimize_lazy_materialization = 0;
 SET query_plan_push_down_limit = 1;
+SET query_plan_merge_expressions = 1;
 
 drop table if exists t;
 
