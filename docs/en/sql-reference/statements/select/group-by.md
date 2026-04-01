@@ -373,6 +373,47 @@ Aggregation is one of the most important features of a column-oriented DBMS, and
 
 The aggregation can be performed more effectively, if a table is sorted by some key, and `GROUP BY` expression contains at least prefix of sorting key or injective functions. In this case when a new key is read from table, the in-between result of aggregation can be finalized and sent to client. This behaviour is switched on by the [optimize_aggregation_in_order](../../../operations/settings/settings.md#optimize_aggregation_in_order) setting. Such optimization reduces memory usage during aggregation, but in some cases may slow down the query execution.
 
+### TopN Aggregation Optimization {#topn-aggregation-optimization}
+
+For queries of the form `GROUP BY ... ORDER BY aggregate LIMIT K`, ClickHouse can fuse aggregation, sorting, and limiting into a single optimized pass.
+This is controlled by the [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) setting (disabled by default).
+
+When enabled, the optimizer rewrites eligible queries to use a `TopNAggregating` operator with one of two modes:
+
+- **Mode 1 (sorted input):** When the MergeTree table is sorted by the ORDER BY aggregate argument (for example, `ORDER BY max(ts) DESC` on a table with `ORDER BY ts`), the operator reads data in key order and terminates early after `K` distinct groups. This avoids scanning the entire table.
+- **Mode 2 (unsorted input):** When the table is not sorted by the aggregate argument, the operator uses hash-based aggregation with in-transform threshold pruning. Rows whose aggregate argument is already worse than the current K-th boundary are skipped. At [topn_aggregation_pruning_level](/operations/settings/settings#topn_aggregation_pruning_level) 2, a dynamic `PREWHERE` filter is also injected for storage-level row skipping (requires [use_top_k_dynamic_filtering](/operations/settings/settings#use_top_k_dynamic_filtering)).
+
+**Eligibility requirements:**
+
+- All aggregate functions must be from the `min`/`max`/`any`/`argMin`/`argMax` family.
+- The `ORDER BY` expression must reference exactly one aggregate.
+- The sort direction must be compatible with the aggregate (for example, `max` + `DESC` or `min` + `ASC`).
+- No `OFFSET`, `WITH TIES`, or `HAVING` clause.
+
+**Current limitations:**
+
+- Mode 1 is disabled for nullable sorting-key columns and collation-sensitive `ORDER BY`.
+- Mode 2 requires a numeric, non-nullable ORDER BY aggregate argument and is disabled when the table already has a `PREWHERE`.
+- Mode 2 is gated by [topn_aggregation_max_limit](/operations/settings/settings#topn_aggregation_max_limit) (default 1000) to avoid regressions for large `K`.
+
+**Example:**
+
+```sql
+SET optimize_topn_aggregation = 1;
+
+SELECT user_id, max(event_time) AS latest
+FROM events
+GROUP BY user_id
+ORDER BY latest DESC
+LIMIT 10;
+```
+
+**Related settings:**
+
+- [optimize_topn_aggregation](/operations/settings/settings#optimize_topn_aggregation) — enable or disable the optimization.
+- [topn_aggregation_pruning_level](/operations/settings/settings#topn_aggregation_pruning_level) — controls Mode 2 activation and pruning layers (0 = disabled, 1 = threshold pruning, 2 = threshold + dynamic prewhere).
+- [topn_aggregation_max_limit](/operations/settings/settings#topn_aggregation_max_limit) — maximum `LIMIT` value for Mode 2.
+
 ### GROUP BY in External Memory {#group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during `GROUP BY`.
