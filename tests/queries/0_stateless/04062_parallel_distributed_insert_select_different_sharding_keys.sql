@@ -5,7 +5,8 @@
 
 SET distributed_ddl_output_mode = 'none';
 
-DROP DATABASE IF EXISTS 04062_test ON CLUSTER test_cluster_two_shards;
+DROP DATABASE IF EXISTS 04062_test ON CLUSTER test_cluster_two_shards SYNC;
+
 CREATE DATABASE 04062_test ON CLUSTER test_cluster_two_shards;
 USE DATABASE 04062_test;
 
@@ -73,4 +74,4 @@ DROP TABLE dist_tgt_04062;
 DROP TABLE dist_src_04062;
 DROP TABLE local_tgt_04062 ON CLUSTER test_cluster_two_shards SYNC;
 DROP TABLE local_src_04062 ON CLUSTER test_cluster_two_shards SYNC;
-DROP DATABASE 04062_test ON CLUSTER test_cluster_two_shards;
+DROP DATABASE 04062_test ON CLUSTER test_cluster_two_shards SYNC;
