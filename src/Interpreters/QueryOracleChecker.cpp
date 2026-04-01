@@ -73,8 +73,9 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileGK", "quantileBFloat16", "quantileDD",
     "quantileTiming", "quantileTimingWeighted",
     "quantileDeterministic",
-    /// Floating-point aggregates whose State/Merge path can differ from direct
-    /// computation due to accumulation order (not numerically stable across partitions).
+    /// Order-dependent or floating-point aggregates whose State/Merge path
+    /// can differ from direct computation.
+    "deltaSum", "deltaSumTimestamp",
     "stddevPop", "stddevSamp", "varPop", "varSamp",
     "covarPop", "covarSamp", "corr",
     "avg", "avgWeighted",
@@ -197,8 +198,9 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
         return false;
     if (select.limitBy())
         return false;
-    if (select.prewhere())
-        return false;
+    /// PREWHERE is safe — it filters rows before WHERE, so the TLP partition
+    /// on WHERE is still complete for the surviving rows. We keep PREWHERE
+    /// unchanged across all partitions.
     if (select.qualify())
         return false;
     if (!select.tables())
@@ -1170,7 +1172,21 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 {
     const ASTSelectQuery * select = extractSimpleSelect(query_ast);
     if (!select)
+    {
+        LOG_TRACE(logger, "Oracle skip: not a simple SELECT");
         return false;
+    }
+
+    /// Log which features the query has, to understand oracle coverage.
+    LOG_TRACE(logger, "Oracle candidate: WHERE={} GROUP_BY={} HAVING={} DISTINCT={} agg={} PREWHERE={} LIMIT={} tables={}",
+        select->where() != nullptr,
+        select->groupBy() != nullptr,
+        select->having() != nullptr,
+        select->distinct,
+        hasAggregates(*select),
+        select->prewhere() != nullptr,
+        select->limitLength() != nullptr,
+        select->tables() != nullptr);
 
     /// Try to populate the table with random data so the oracle checks non-empty results.
     tryPopulateTable(*select, context);
