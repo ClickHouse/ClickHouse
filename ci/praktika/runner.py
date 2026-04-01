@@ -296,7 +296,10 @@ class Runner:
         if job.enable_gh_auth:
             _GH_Auth(workflow=workflow)
 
+        print("INFO: disk status before running a job:")
+        Shell.run("df -h")
         if job.run_in_docker and not no_docker:
+            Shell.run("docker system df")
             job.run_in_docker, docker_settings = (
                 job.run_in_docker.split("+")[0],
                 job.run_in_docker.split("+")[1:],
@@ -410,7 +413,8 @@ class Runner:
                     rewritten_settings.append(s)
                 settings = rewritten_settings
 
-            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
+            local_env_flag = f"--env-file {self.LOCAL_ENV_FILE}" if Path(self.LOCAL_ENV_FILE).exists() else ""
+            cmd = f"docker run {tty} --rm --name {container_name} {'--user $(id -u):$(id -g)' if not from_root else ''} -e PYTHONUNBUFFERED=1 -e PYTHONPATH='.:./ci' {local_env_flag} --volume {host_dir_q}:{current_dir} {extra_mounts} {gh_mount} {workdir} {' '.join(settings)} {docker} {job.command}"
         else:
             cmd = job.command
             python_path = os.getenv("PYTHONPATH", ":")
@@ -487,6 +491,9 @@ class Runner:
                         process.get_latest_log(max_lines=20)
                     ).set_info("---")
             result.dump()
+
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         # When running Docker containers as root (non-rootless mode), any files created
         # by the job will be owned by root. This causes issues when:
@@ -567,35 +574,8 @@ class Runner:
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
-        if job.post_hooks:
-            sw_ = Utils.Stopwatch()
-            results_ = []
-            for check in job.post_hooks:
-                if callable(check):
-                    name = check.__name__
-                else:
-                    name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
-            result.results.append(
-                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
-            )
-
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
-
-        # run after post hooks as they might modify workflow kv data
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        if is_initial_job:
-            output = dataclasses.asdict(env)
-            output["pipeline_status"] = "success"
-        else:
-            output = job_outputs
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(output)}",
-                file=f,
-            )
 
         if run_exit_code == 0 or result.do_not_block_pipeline_on_failure():
             providing_artifacts = []
@@ -659,6 +639,33 @@ class Runner:
                         s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
+
+        if job.post_hooks:
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.post_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(Result.from_commands_run(name=name, command=check))
+            result.results.append(
+                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(output)}",
+                file=f,
+            )
 
         ci_db = None
         if workflow.enable_cidb:
@@ -880,6 +887,23 @@ class Runner:
 
         return is_ok
 
+    LOCAL_ENV_FILE = "ci/local.env"
+
+    @classmethod
+    def _load_local_env(cls):
+        """Load environment variables from a gitignored local env file (KEY=VALUE format)."""
+        try:
+            with open(cls.LOCAL_ENV_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        os.environ[key.strip()] = value.strip()
+        except FileNotFoundError:
+            pass
+
     def run(
         self,
         workflow,
@@ -898,6 +922,8 @@ class Runner:
         path_1="",
         workers=None,
     ):
+        self._load_local_env()
+
         res = True
         setup_env_code = -10
         prerun_code = -10
