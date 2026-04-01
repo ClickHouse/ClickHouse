@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel-replicas
 
 DROP TABLE IF EXISTS t_text_idx_in_empty;
 
