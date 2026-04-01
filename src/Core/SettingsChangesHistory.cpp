@@ -41,6 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.2",
         {
+            {"query_plan_optimize_lazy_final", false, false, "New setting to optimize reading with FINAL from ReplacingMergeTree using set-based index analysis"},
+            {"max_rows_for_lazy_final", 10000000, 10000000, "New setting for maximum number of rows in the set for lazy FINAL optimization"},
+            {"max_bytes_for_lazy_final", 256000000, 256000000, "New setting for maximum number of bytes in the set for lazy FINAL optimization"},
             {"allow_calculating_subcolumns_sizes_for_merge_tree_reading", false, true, "Allow calculating subcolumns sizes for merge tree reading to improve read tasks splitting"},
             {"allow_fuzz_query_functions", false, false, "New setting to enable the fuzzQuery function."},
             {"ast_fuzzer_runs", 0, 0, "New setting to enable server-side AST fuzzer."},
