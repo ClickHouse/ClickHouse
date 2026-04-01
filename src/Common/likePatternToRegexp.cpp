@@ -130,13 +130,13 @@ String similarToPatternToRegexp(std::string_view pattern)
             case '^':
             case '$':
             case '.':
-                if (! in_bracket)
+                if (!in_bracket)
                     res += '\\';
                 res += *pos;
                 break;
             /// Convert LIKE's metacharacters to re2's. Don't convert when in bracket.
             case '%':
-                if (! in_bracket)
+                if (!in_bracket)
                 {
                     if (pos + 1 != end)
                         res += ".*";
@@ -147,7 +147,7 @@ String similarToPatternToRegexp(std::string_view pattern)
                     res += *pos;
                 break;
             case '_':
-                if (! in_bracket)
+                if (!in_bracket)
                     res += ".";
                 else
                     res += *pos;
