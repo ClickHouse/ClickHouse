@@ -267,6 +267,13 @@ void BlobKillerThread::shutdown()
     auto component_guard = Coordination::setCurrentComponent("BlobKillerThread::shutdown");
     LOG_INFO(log, "Shutting down Blob Killer thread");
 
+    /// Signal shutdown to unblock any threads waiting in waitRound().
+    /// This must happen before task->deactivate() because deactivate() cancels
+    /// any pending scheduled task, which means run() will never execute and
+    /// finished_rounds will never be incremented — leaving waiters stuck forever.
+    is_shutdown = true;
+    finished_rounds.notify_all();
+
     task->deactivate();
 
     /// We need to execute it here explicitly because some blobs may be in the metadata storage queue.
@@ -291,6 +298,8 @@ void BlobKillerThread::waitRound(int64_t expected_round)
     int64_t current_round = finished_rounds.load();
     while (current_round < expected_round)
     {
+        if (is_shutdown)
+            return;
         finished_rounds.wait(current_round);
         current_round = finished_rounds.load();
     }
@@ -298,6 +307,9 @@ void BlobKillerThread::waitRound(int64_t expected_round)
 
 void BlobKillerThread::triggerAndWait()
 {
+    if (is_shutdown)
+        return;
+
     int64_t expected_round = trigger();
 
     if (wrapped_blob_killer)

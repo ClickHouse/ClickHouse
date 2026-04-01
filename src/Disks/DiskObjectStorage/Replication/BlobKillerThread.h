@@ -40,6 +40,7 @@ private:
 
     std::atomic<bool> started{false};
     std::atomic<bool> enabled{true};
+    std::atomic<bool> is_shutdown{false};
     std::atomic<int64_t> finished_rounds{0};
     std::atomic<int64_t> reschedule_interval_sec{0};
     std::atomic<int64_t> metadata_request_batch{0};
