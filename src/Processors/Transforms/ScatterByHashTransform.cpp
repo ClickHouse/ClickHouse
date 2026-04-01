@@ -149,7 +149,12 @@ void ScatterByHashTransform::generateOutputChunks()
     chassert(key_hashes->size() == num_rows);
     chassert(std::all_of(payload_columns.begin(), payload_columns.end(), [num_rows](const auto & col) { return col->size() == num_rows; }));
 
-    /// Partition rows by hash(key) % num_shards.
+    /// Partition rows by shard using Fibonacci hashing to derive shard bits that are
+    /// independent of the hash table's bucket selection (which uses the low bits via
+    /// hash & mask). Without mixing, all keys in a shard would share the same low bits,
+    /// causing them to cluster into a small subset of hash table buckets.
+    /// The golden ratio constant ensures thorough bit mixing with a single multiply.
+    static constexpr size_t fibonacci_hash_multiplier = 0x9e3779b97f4a7c15ULL;
     std::vector<IColumn::Selector> per_shard_indices(num_shards);
     for (size_t shard = 0; shard < num_shards; ++shard)
         /// Assume uniform distribution of keys.
@@ -157,7 +162,7 @@ void ScatterByHashTransform::generateOutputChunks()
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        size_t shard = (*key_hashes)[row] % num_shards;
+        size_t shard = ((*key_hashes)[row] * fibonacci_hash_multiplier >> 32) % num_shards;
         per_shard_indices[shard].push_back(row);
     }
 
