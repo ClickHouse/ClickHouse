@@ -5,13 +5,16 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <Storages/System/StorageSystemStackTrace.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/setThreadName.h>
+#include <csignal>
 
 namespace CurrentMetrics
 {
@@ -86,6 +89,24 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     auto thread_status = std::make_shared<ThreadStatus>();
     std::lock_guard lock(self->thread_statuses_mutex);
     self->thread_statuses.emplace_back(std::move(thread_status));
+
+    /// Due to [1] librdkafka blocks all signals before creating threads,
+    /// and broker threads are created while signals are already all-blocked
+    /// (inside rd_kafka_new), so they inherit the all-blocked mask.
+    /// We unblock only the specific signals needed by `system.stack_trace`
+    /// (SIGRTMIN) and the query profiler (SIGUSR1/SIGUSR2), rather than
+    /// the full mask — otherwise we would also drop the process-wide
+    /// SIGPIPE block installed by the daemon.
+    ///
+    ///   [1]: https://github.com/confluentinc/librdkafka/issues/4571
+    sigset_t mask;
+    sigemptyset(&mask);
+#ifdef OS_LINUX
+    sigaddset(&mask, STACK_TRACE_SERVICE_SIGNAL);
+#endif
+    sigaddset(&mask, QueryProfilerReal::PAUSE_SIGNAL);
+    sigaddset(&mask, QueryProfilerCPU::PAUSE_SIGNAL);
+    pthread_sigmask(SIG_UNBLOCK, &mask, nullptr);
 
     return RD_KAFKA_RESP_ERR_NO_ERROR;
 }

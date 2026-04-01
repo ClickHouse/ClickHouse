@@ -2,6 +2,7 @@
 
 #include <sys/mman.h>
 #include <Common/Allocator.h>
+#include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
@@ -260,7 +261,7 @@ PageCacheCell::PageCacheCell(PageCacheKey key_, bool temporary) : key(std::move(
         blocker.emplace();
 
     /// Allow throwing out-of-memory exceptions from here.
-    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size, DEFAULT_AIO_FILE_BLOCK_SIZE));
+    m_data = reinterpret_cast<char *>(JemallocCacheAllocator().alloc(m_size, DEFAULT_AIO_FILE_BLOCK_SIZE));
 }
 
 PageCacheCell::~PageCacheCell()
@@ -268,7 +269,7 @@ PageCacheCell::~PageCacheCell()
     std::optional<MemoryTrackerBlockerInThread> blocker;
     if (!m_temporary)
         blocker.emplace();
-    Allocator<false>().free(m_data, m_size);
+    JemallocCacheAllocator().free(m_data, m_size);
 }
 
 }

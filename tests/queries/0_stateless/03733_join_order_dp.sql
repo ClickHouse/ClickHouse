@@ -3,6 +3,9 @@ SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
 SET query_plan_join_swap_table='auto';
 SET enable_join_runtime_filters = 0;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_join_order_algorithm = 'dpsize,greedy';
 
 -- R1: Small dimension table (Demo size: 10)
 CREATE TABLE R1 (
@@ -135,6 +138,11 @@ SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize';
 
 SELECT '===========================================';
 SELECT 'Fallback to greedy';
+
+-- Reset to greedy-only so that setting dpsize alone (without greedy fallback) triggers the experimental error check.
+-- If the session already has dpsize in query_plan_optimize_join_order_algorithm (e.g. injected by the test runner),
+-- the validation is skipped because dpsize is already considered enabled.
+SET query_plan_optimize_join_order_algorithm = 'greedy';
 
 SELECT 1 FROM (SELECT 1 c0) t0 LEFT JOIN (SELECT 1 c0) t1 ON t0.c0 = t1.c0
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', enable_parallel_replicas=0; --{serverError EXPERIMENTAL_FEATURE_ERROR}

@@ -178,3 +178,4 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 > **Note**  
 > • You can set `validate_polygons = 0` to bypass geometry validation.  
 > • `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
+> • When the polygon argument is constant and the point is expressed using indexed key columns (for example, `pointInPolygon((x, y), constant_polygon)` on a table where `x, y` are part of the `PRIMARY KEY` or covered by a `minmax` index), ClickHouse can use both the primary key and `minmax` data-skipping indexes to prune irrelevant granules.

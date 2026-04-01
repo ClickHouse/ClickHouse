@@ -329,6 +329,38 @@ String RandomGenerator::nextTokenString()
     return pickRandomly(this->nextSmallNumber() < 3 ? nasty_strings : (this->nextBool() ? common_english : common_chinese));
 }
 
+/// Returns a backtick-safe identifier string.
+/// When allow_nasty is true, embeds spaces, special characters, unicode, or SQL keywords.
+/// Callers must backtick-quote the result in SQL output.
+String RandomGenerator::nextIdentifier(const String & prefix, const uint32_t counter, const bool allow_nasty)
+{
+    if (!allow_nasty || nextMediumNumber() < 6)
+        return prefix + std::to_string(counter);
+
+    /// SQL keyword or nasty identifier as leading part
+    String res = pickRandomly(nextSmallNumber() < 3 ? nasty_identifier_keywords : nasty_identifiers);
+
+    /// ~20% chance: build a long identifier by concatenating more parts
+    if (nextSmallNumber() < 3)
+    {
+        const uint32_t extra = randomInt<uint32_t>(1, 5);
+
+        for (uint32_t i = 0; i < extra; i++)
+        {
+            /// Occasionally insert a separator between parts
+            if (nextSmallNumber() < 3)
+                res += pickRandomly(DB::Strings{" ", "_", "-", "."});
+            res += pickRandomly(nasty_identifiers);
+        }
+    }
+    if (nextSmallNumber() < 9)
+    {
+        /// Add suffix most of the time, to increase variability and uniqueness
+        res += std::to_string(counter);
+    }
+    return res;
+}
+
 String RandomGenerator::nextString(const String & delimiter, const bool allow_nasty, const uint32_t limit)
 {
     String ret;
@@ -533,6 +565,27 @@ String RandomGenerator::nextIPv6()
         hexDigits[hex_digits_dist(generator)],
         hexDigits[hex_digits_dist(generator)],
         hexDigits[hex_digits_dist(generator)]);
+}
+
+void RandomGenerator::pickWeighted(std::initializer_list<std::pair<uint32_t, std::function<void()>>> options)
+{
+    uint32_t prob_space = 0;
+    for (const auto & [w, f] : options)
+        prob_space += w;
+    chassert(prob_space > 0, "At least one option must have a non-zero weight");
+    std::uniform_int_distribution<uint32_t> dist(1, prob_space);
+    const uint32_t nopt = dist(generator);
+    uint32_t cumulative = 0;
+    for (const auto & [w, f] : options)
+    {
+        cumulative += w;
+        if (w != 0 && nopt <= cumulative)
+        {
+            f();
+            return;
+        }
+    }
+    UNREACHABLE();
 }
 
 }
