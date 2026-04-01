@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 namespace DB
@@ -20,7 +21,11 @@ namespace DB
 class ShardedAggregatingTransform : public IProcessor
 {
 public:
-    ShardedAggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_);
+    ShardedAggregatingTransform(
+        SharedHeader header,
+        AggregatingTransformParamsPtr params_,
+        size_t shard_index_,
+        std::shared_ptr<ShardedStatsCollector> stats_collector_);
 
     String getName() const override { return "ShardedAggregatingTransform"; }
 
@@ -32,6 +37,8 @@ private:
     void initGenerate();
 
     AggregatingTransformParamsPtr params;
+    size_t shard_index;
+    std::shared_ptr<ShardedStatsCollector> stats_collector;
     AggregatedDataVariants variants;
 
     /// State tracking.

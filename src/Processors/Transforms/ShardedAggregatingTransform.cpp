@@ -5,9 +5,15 @@
 namespace DB
 {
 
-ShardedAggregatingTransform::ShardedAggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_)
+ShardedAggregatingTransform::ShardedAggregatingTransform(
+    SharedHeader header,
+    AggregatingTransformParamsPtr params_,
+    size_t shard_index_,
+    std::shared_ptr<ShardedStatsCollector> stats_collector_)
     : IProcessor({std::move(header)}, {std::make_shared<const Block>(params_->getHeader())})
     , params(std::move(params_))
+    , shard_index(shard_index_)
+    , stats_collector(std::move(stats_collector_))
 {
 }
 
@@ -88,6 +94,7 @@ void ShardedAggregatingTransform::consume(Chunk chunk)
     chassert(shard_info->key_hashes && !shard_info->key_hashes->empty());
 
     const auto & aggregator = params->aggregator;
+
     auto payload_columns = chunk.detachColumns();
 
     /// We only build instructions on first chunk; Subsequent calls just update column pointers.
@@ -98,8 +105,14 @@ void ShardedAggregatingTransform::consume(Chunk chunk)
     for (size_t i = 0; i < key_columns.size(); ++i)
         key_columns[i] = payload_columns[i].get();
 
+    /// On first chunk, try to get a per-shard size hint from a previous run to preallocate the hash table.
+    std::optional<size_t> size_hint;
+    if (variants.empty() && stats_collector)
+        size_hint = stats_collector->getSizeHintForShard(shard_index);
+
     /// Insert this shard's rows into the hash table using precomputed hashes.
-    aggregator.executeOnSubsetRows(variants, shard_info->row_indices, shard_info->key_hashes->data(), key_columns, aggregate_instructions.data());
+    aggregator.executeOnSubsetRows(
+        variants, shard_info->row_indices, shard_info->key_hashes->data(), key_columns, aggregate_instructions.data(), size_hint);
 }
 
 /// Convert the hash table into output chunks. Called once after all input is consumed.
@@ -109,6 +122,11 @@ void ShardedAggregatingTransform::initGenerate()
 
     /// Sharded aggregation does not support spilling to disk.
     chassert(!params->aggregator.hasTemporaryData());
+
+    /// Report this shard's hash table size. The last shard to report writes the full
+    /// per-shard size array to the global stats cache for use by subsequent runs.
+    if (stats_collector)
+        stats_collector->reportShardSize(shard_index, variants.size());
 
     if (variants.empty())
         return;

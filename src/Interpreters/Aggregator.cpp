@@ -2035,12 +2035,14 @@ void Aggregator::prepareInstructionsForSharding(
     }
 }
 
+
 void Aggregator::executeOnSubsetRows(
     AggregatedDataVariants & result,
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
     const ColumnRawPtrs & key_columns,
-    const AggregateFunctionInstruction * aggregate_instructions) const
+    const AggregateFunctionInstruction * aggregate_instructions,
+    std::optional<size_t> size_hint) const
 {
     chassert(!row_indices.empty());
     chassert(key_hashes);
@@ -2049,7 +2051,7 @@ void Aggregator::executeOnSubsetRows(
 
     if (result.empty())
     {
-        result.init(method_chosen);
+        result.init(method_chosen, size_hint);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());

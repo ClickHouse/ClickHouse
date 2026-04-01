@@ -333,11 +333,6 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// Sharded aggregation does not implement temporary-file spill/merge yet.
         params.max_bytes_before_external_group_by = 0;
 
-        /// Derive a separate stats cache key so that per-shard hash table sizes from sharded
-        /// aggregation don't interfere with non-sharded execution of the same query.
-        static constexpr UInt64 sharded_aggregation_stats_salt = 0x9ae16a3b2f90404fULL;
-        if (params.stats_collecting_params.isCollectionAndUseEnabled())
-            params.stats_collecting_params.setKey(params.stats_collecting_params.key ^ sharded_aggregation_stats_salt);
     }
 
     /** Two-level aggregation is useful in two cases:
@@ -616,9 +611,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return resize_processors;
             });
 
+        /// Create a shared stats collector for per-shard hash table size tracking.
+        auto stats_collector = std::make_shared<ShardedStatsCollector>(
+            num_shards, transform_params->aggregator.getParams().stats_collecting_params);
+
         /// Add an independent ShardedAggregatingTransform per shard which aggregates data.
+        size_t shard_counter = 0;
         pipeline.addSimpleTransform([&](const SharedHeader & shard_header)
-                                    { return std::make_shared<ShardedAggregatingTransform>(shard_header, transform_params); });
+                                    { return std::make_shared<ShardedAggregatingTransform>(
+                                        shard_header, transform_params, shard_counter++, stats_collector); });
 
         chassert(!should_produce_results_in_order_of_bucket_number);
 

@@ -254,12 +254,14 @@ public:
 
     /// Used by Sharded Aggregation
     /// Aggregate a subset of rows (identified by row_indices) using precomputed hashes.
+    /// If size_hint is provided, uses it to preallocate the hash table on first call.
     void executeOnSubsetRows(
         AggregatedDataVariants & result,
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
         const ColumnRawPtrs & key_columns,
-        const AggregateFunctionInstruction * aggregate_instructions) const;
+        const AggregateFunctionInstruction * aggregate_instructions,
+        std::optional<size_t> size_hint) const;
 
     /// Used for optimize_aggregation_in_order:
     /// - No two-level aggregation
