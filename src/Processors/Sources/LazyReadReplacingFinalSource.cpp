@@ -291,12 +291,6 @@ void LazyReadReplacingFinalSource::work()
         }
     }
 
-    {
-        WriteBufferFromOwnString out;
-        plan.explainPlan(out, {.header = true, .actions = true});
-        LOG_DEBUG(getLogger("LazyReadReplacingFinalSource"), "Plan:\n{}", out.str());
-    }
-
     auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(query_context), BuildQueryPipelineSettings(query_context));
 
     QueryPlanResourceHolder resources;

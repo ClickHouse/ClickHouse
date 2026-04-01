@@ -122,16 +122,6 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             add_columns(row_filter->actions);
     }
 
-    {
-        String cols;
-        for (const auto & c : set_columns)
-            cols += c + ", ";
-        String sk_inputs;
-        for (const auto * input : sorting_key_dag.getInputs())
-            sk_inputs += input->result_name + ", ";
-        LOG_DEBUG(getLogger("optimizeLazyFinal"), "set_columns: [{}], sorting_key_dag inputs: [{}]", cols, sk_inputs);
-    }
-
     QueryPlan set_plan;
 
     {
@@ -203,16 +193,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             if (input != filter_output)
                 sub_dag.getOutputs().push_back(input);
 
-        LOG_DEBUG(getLogger("optimizeLazyFinal"), "sub_dag:\n{}", sub_dag.dumpDAG());
-        LOG_DEBUG(getLogger("optimizeLazyFinal"), "set_plan header: {}", set_plan.getCurrentHeader()->dumpStructure());
-
         set_plan.addStep(std::make_unique<FilterStep>(
             set_plan.getCurrentHeader(),
             std::move(sub_dag),
             filter_step->getFilterColumnName(),
             /*remove_filter_column=*/ true));
-
-        LOG_DEBUG(getLogger("optimizeLazyFinal"), "after filter header: {}", set_plan.getCurrentHeader()->dumpStructure());
     }
 
     /// Compute sorting key expression and project to key columns only.
@@ -232,12 +217,6 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             projection.emplace_back(col, "");
         dag.project(projection);
         set_plan.addStep(std::make_unique<ExpressionStep>(set_plan.getCurrentHeader(), std::move(dag)));
-    }
-
-    {
-        WriteBufferFromOwnString out;
-        set_plan.explainPlan(out, {.header = true, .actions = true});
-        LOG_DEBUG(getLogger("optimizeLazyFinal"), "set_plan before tryRemoveUnusedColumns:\n{}", out.str());
     }
 
     /// Remove columns from ReadFromMergeTree that are not needed by the steps above.
@@ -292,12 +271,6 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                     if (existing.insert(input->result_name).second)
                         lazy_columns.push_back(input->result_name);
         }
-        {
-            String cols;
-            for (const auto & c : lazy_columns)
-                cols += c + ", ";
-            LOG_DEBUG(getLogger("optimizeLazyFinal"), "lazy_columns: [{}]", cols);
-        }
         auto lazy_header = std::make_shared<const Block>(
             storage_snapshot->getSampleBlockForColumns(lazy_columns));
 
@@ -325,23 +298,22 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         true_plan.unitePlans(std::move(join_lazy_columns), {std::move(join_plans)});
 
         /// Apply row policy and prewhere as FilterSteps on top.
-        /// Use cloneFilterSubDAG to avoid column renames/removals from the original DAGs.
         const auto & query_info = reading_step->getQueryInfo();
         if (const auto & row_level_filter = query_info.row_level_filter)
         {
             true_plan.addStep(std::make_unique<FilterStep>(
                 true_plan.getCurrentHeader(),
-                cloneFilterSubDAG(row_level_filter->actions, row_level_filter->column_name),
+                row_level_filter->actions.clone(),
                 row_level_filter->column_name,
-                /*remove_filter_column=*/ true));
+                row_level_filter->do_remove_column));
         }
         if (const auto & prewhere_info = query_info.prewhere_info)
         {
             true_plan.addStep(std::make_unique<FilterStep>(
                 true_plan.getCurrentHeader(),
-                cloneFilterSubDAG(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name),
+                prewhere_info->prewhere_actions.clone(),
                 prewhere_info->prewhere_column_name,
-                /*remove_filter_column=*/ true));
+                prewhere_info->remove_prewhere_column));
         }
     }
 
