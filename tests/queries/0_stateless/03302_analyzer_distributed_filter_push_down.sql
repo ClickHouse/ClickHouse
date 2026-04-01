@@ -3,6 +3,7 @@
 
 set enable_analyzer=1;
 set query_plan_merge_expressions = 1;
+set query_plan_filter_push_down = 1;
 set query_plan_merge_filters = 0;
 set serialize_query_plan = 0;
 set enable_parallel_replicas = 0;

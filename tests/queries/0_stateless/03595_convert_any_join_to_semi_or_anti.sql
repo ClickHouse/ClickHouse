@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET query_plan_merge_expressions = 1;
+SET query_plan_remove_unused_columns = 1;
 SET query_plan_join_swap_table = false;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;

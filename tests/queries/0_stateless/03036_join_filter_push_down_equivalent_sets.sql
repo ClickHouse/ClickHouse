@@ -5,6 +5,7 @@ SET parallel_hash_join_threshold = 0;
 SET query_plan_join_shard_by_pk_ranges = 0; -- adds 'Sharding:' lines to EXPLAIN output when enabled
 SET query_plan_merge_expressions = 1;
 SET query_plan_merge_filters = 1;
+SET query_plan_filter_push_down = 1;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1

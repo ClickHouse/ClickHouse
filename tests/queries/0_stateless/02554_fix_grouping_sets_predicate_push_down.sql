@@ -8,6 +8,7 @@ SET query_plan_filter_push_down = 1;
 SET query_plan_split_filter = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
+SET enable_optimize_predicate_expression = 1;
 
 DROP TABLE IF EXISTS test_grouping_sets_predicate;
 

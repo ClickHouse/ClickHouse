@@ -1,5 +1,7 @@
 -- This test validates Statistics-based part pruning functionality.
 
+SET query_plan_merge_expressions = 1;
+
 DROP TABLE IF EXISTS test_stats_pruning;
 
 CREATE TABLE test_stats_pruning (

@@ -4,6 +4,9 @@
 -- order, preventing early LIMIT cancellation and causing a full table scan.
 
 SET query_plan_read_in_order = 1;
+SET query_plan_merge_expressions = 1;
+SET use_top_k_dynamic_filtering = 1;
+SET query_plan_max_limit_for_top_k_optimization = 100;
 
 DROP TABLE IF EXISTS t_topk_rio;
 

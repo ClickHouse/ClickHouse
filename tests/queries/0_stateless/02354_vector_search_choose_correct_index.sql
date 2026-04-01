@@ -3,6 +3,7 @@
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 SET use_skip_indexes_for_top_k = 1; -- vector similarity requires top-k index usage
 SET query_plan_max_limit_for_top_k_optimization = 100; -- must be >= LIMIT used in queries below
+SET query_plan_merge_expressions = 1; -- top-k optimizer needs merged expressions to recognize ORDER BY distance LIMIT pattern
 
 -- Test for issue #77978
 

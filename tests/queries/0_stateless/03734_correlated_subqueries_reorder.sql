@@ -14,6 +14,7 @@ SET query_plan_merge_expressions = 1;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_join_shard_by_pk_ranges = 0;
 SET enable_join_runtime_filters = 0;
+SET query_plan_convert_outer_join_to_inner_join = 1;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,

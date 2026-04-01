@@ -39,6 +39,7 @@ SET enable_parallel_replicas = 0;
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET query_plan_filter_push_down = 1;
+SET query_plan_merge_expressions = 1;
 
 SELECT 1
 FROM t2
