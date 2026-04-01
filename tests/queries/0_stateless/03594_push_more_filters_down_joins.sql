@@ -63,6 +63,6 @@ FROM (
     LEFT JOIN t1 ON t2.id = t1.fid
     LEFT JOIN t3 ON t1.tid = t3.id
     WHERE true AND (t2.resource_id IS NOT NULL) AND (t2.status IN ('OPEN')) AND (t3.status IN ('BACKLOG'))
-    SETTINGS enable_join_runtime_filters=0, query_plan_filter_push_down=1
+    SETTINGS enable_join_runtime_filters=0, query_plan_filter_push_down=1, query_plan_convert_outer_join_to_inner_join=1
 )
 WHERE step ILIKE 'Join%' OR step ILIKE '%Filter%';

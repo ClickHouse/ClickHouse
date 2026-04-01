@@ -4,6 +4,11 @@
 -- Basic tests for vector similarity index stored in compact vs. wide format, respectively full vs. packed parts
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET use_skip_indexes_for_top_k = 1;
+SET use_skip_indexes_on_data_read = 1;
+SET query_plan_max_limit_for_top_k_optimization = 100000;
+SET use_top_k_dynamic_filtering = 0;
+SET query_plan_push_down_limit = 1;
 
 DROP TABLE IF EXISTS tab_compact_full;
 DROP TABLE IF EXISTS tab_wide_full;
@@ -33,6 +38,11 @@ SELECT trimLeft(explain) AS explain FROM (
     FROM tab_compact_full
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
+    SETTINGS use_skip_indexes_for_top_k = 1,
+             use_skip_indexes_on_data_read = 1,
+             query_plan_max_limit_for_top_k_optimization = 100000,
+             use_top_k_dynamic_filtering = 0,
+             query_plan_push_down_limit = 1
 )
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules:%';
 
@@ -51,6 +61,11 @@ SELECT trimLeft(explain) AS explain FROM (
     FROM tab_wide_full
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
+    SETTINGS use_skip_indexes_for_top_k = 1,
+             use_skip_indexes_on_data_read = 1,
+             query_plan_max_limit_for_top_k_optimization = 100000,
+             use_top_k_dynamic_filtering = 0,
+             query_plan_push_down_limit = 1
 )
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules:%';
 

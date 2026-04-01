@@ -7,6 +7,7 @@ SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it expl
 SET use_skip_indexes_for_top_k = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_max_limit_for_top_k_optimization = 100000;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS tab;
 
@@ -58,7 +59,9 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS query_plan_optimize_prewhere = 0,
-         optimize_move_to_prewhere = 0;
+         optimize_move_to_prewhere = 0,
+         query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 SELECT id
 FROM tab
@@ -66,7 +69,9 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS query_plan_optimize_prewhere = 1,
-         optimize_move_to_prewhere = 1;
+         optimize_move_to_prewhere = 1,
+         query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 SELECT 'Test with enabled rescoring';
 -- Expect 16 & 19, and additionally 18 and 17 because they are in the same granules
@@ -76,7 +81,9 @@ FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS vector_search_with_rescoring = 1;
+SETTINGS vector_search_with_rescoring = 1,
+         query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 SELECT 'With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)';
 SELECT id
@@ -85,7 +92,9 @@ WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
 SETTINGS vector_search_with_rescoring = 1,
-         vector_search_index_fetch_multiplier = 3;
+         vector_search_index_fetch_multiplier = 3,
+         query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 SELECT 'Check that explicit PREWHERE disables the optimization';
 -- Expect no _distance column in result
@@ -104,13 +113,17 @@ SELECT id
 FROM tab
 PREWHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
-LIMIT 4;
+LIMIT 4
+SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 SELECT 'Select all 20 neighbours with the rescoring optimization, distances got from vector index';
 SELECT id, attr1, attr2
 FROM tab
 ORDER BY L2Distance(vec, [0.2, 0.3])
-LIMIT 20;
+LIMIT 20
+SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 SELECT 'Ensure that optimization was effective for above query, _distance should be seen';
 SELECT trimLeft(explain) AS explain FROM (
@@ -119,6 +132,8 @@ SELECT trimLeft(explain) AS explain FROM (
     FROM tab
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20
+    SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
+             use_top_k_dynamic_filtering = 0
     )
 WHERE (explain LIKE '%_distance%');
 
@@ -128,6 +143,8 @@ SELECT id
 FROM tab
 WHERE attr1 > 110 AND attr2 > 50
 ORDER BY L2Distance(vec, [0.2, 0.3])
-LIMIT 4;
+LIMIT 4
+SETTINGS query_plan_max_limit_for_top_k_optimization = 100000,
+         use_top_k_dynamic_filtering = 0;
 
 DROP TABLE tab;
