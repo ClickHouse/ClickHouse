@@ -454,6 +454,85 @@ ORDER BY m ASC
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 0;
 
+-- Float64 NaN with explicit NULLS FIRST / NULLS LAST (Mode 2 threshold regression)
+SELECT '-- NaN DESC NULLS LAST: optimized';
+SELECT grp, max(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m DESC NULLS LAST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+
+SELECT '-- NaN DESC NULLS LAST: reference';
+SELECT grp, max(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m DESC NULLS LAST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- NaN ASC NULLS FIRST: optimized';
+SELECT grp, min(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m ASC NULLS FIRST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1;
+
+SELECT '-- NaN ASC NULLS FIRST: reference';
+SELECT grp, min(val) AS m
+FROM t_topn_nan
+GROUP BY grp
+ORDER BY m ASC NULLS FIRST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+-- =====================================================
+-- Nullable primary key: Mode 1 guard (allow_nullable_key)
+-- =====================================================
+-- Mode 1 must NOT activate for nullable sorting-key columns because
+-- physical NULL ordering may differ from the query's NULLS FIRST/LAST.
+DROP TABLE IF EXISTS t_topn_nullable_key;
+CREATE TABLE t_topn_nullable_key (key String, val Nullable(DateTime))
+ENGINE = MergeTree ORDER BY val
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO t_topn_nullable_key VALUES
+    ('a', '2024-01-05'), ('b', NULL), ('c', '2024-01-03'),
+    ('d', '2024-01-01'), ('e', NULL), ('f', '2024-01-04');
+
+SELECT '-- nullable key DESC NULLS LAST: optimized';
+SELECT key, max(val) AS m
+FROM t_topn_nullable_key
+GROUP BY key
+ORDER BY m DESC NULLS LAST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- nullable key DESC NULLS LAST: reference';
+SELECT key, max(val) AS m
+FROM t_topn_nullable_key
+GROUP BY key
+ORDER BY m DESC NULLS LAST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
+SELECT '-- nullable key DESC NULLS FIRST: optimized';
+SELECT key, max(val) AS m
+FROM t_topn_nullable_key
+GROUP BY key
+ORDER BY m DESC NULLS FIRST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 1;
+
+SELECT '-- nullable key DESC NULLS FIRST: reference';
+SELECT key, max(val) AS m
+FROM t_topn_nullable_key
+GROUP BY key
+ORDER BY m DESC NULLS FIRST
+LIMIT 3
+SETTINGS optimize_topn_aggregation = 0;
+
 DROP TABLE t_topn;
 DROP TABLE t_topn_small;
 DROP TABLE t_topn_unsorted;
@@ -464,3 +543,4 @@ DROP TABLE t_topn_ties;
 DROP TABLE t_topn_lc;
 DROP TABLE t_topn_limit1;
 DROP TABLE t_topn_nan;
+DROP TABLE t_topn_nullable_key;

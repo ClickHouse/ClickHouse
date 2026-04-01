@@ -259,7 +259,26 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_topn_aggregation = 1
 ) WHERE explain LIKE '%TopNAggregating%';
 
+-- Negative: Mode 1 must not activate for nullable sorting-key column
+DROP TABLE IF EXISTS t_topn_nullable_key;
+CREATE TABLE t_topn_nullable_key (key String, val Nullable(DateTime))
+ENGINE = MergeTree ORDER BY val
+SETTINGS allow_nullable_key = 1;
+INSERT INTO t_topn_nullable_key VALUES ('a', '2024-01-05'), ('b', NULL), ('c', '2024-01-03');
+
+SELECT '-- EXPLAIN nullable key: no Sorted input true';
+SELECT count() > 0 FROM (
+    EXPLAIN actions=1
+    SELECT key, max(val) AS m
+    FROM t_topn_nullable_key
+    GROUP BY key
+    ORDER BY m DESC
+    LIMIT 3
+    SETTINGS optimize_topn_aggregation = 1
+) WHERE explain LIKE '%Sorted input: true%';
+
 DROP TABLE t_topn;
 DROP TABLE t_topn_unsorted;
 DROP TABLE t_topn_argminmax;
 DROP TABLE t_topn_lc;
+DROP TABLE t_topn_nullable_key;

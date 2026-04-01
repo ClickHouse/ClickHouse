@@ -3859,10 +3859,23 @@ Possible values:
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
     DECLARE(Bool, optimize_topn_aggregation, false, R"(
-Enables fused TopN aggregation optimization for queries of the form GROUP BY ... ORDER BY aggregate LIMIT K.
-When enabled, combines aggregation, sorting, and limiting into a single pass. Supports early termination
-when the table sorting key matches the ORDER BY aggregate argument.
-Only applies when all aggregate functions are min/max/any/argMin/argMax family.
+Enables fused TopN aggregation optimization for queries of the form `GROUP BY ... ORDER BY aggregate LIMIT K`.
+When enabled, combines aggregation, sorting, and limiting into a single pass.
+
+Two modes exist:
+- **Mode 1 (sorted input)**: applies when the MergeTree table is sorted by the ORDER BY aggregate argument. Enables early termination after K distinct groups. Requires a single-column ORDER BY with no OFFSET and no WITH TIES.
+- **Mode 2 (unsorted input)**: applies when the table is not sorted by the aggregate argument. Uses hash-based aggregation with optional threshold pruning and dynamic prewhere filtering. Controlled by `topn_aggregation_pruning_level` and `topn_aggregation_max_limit`.
+
+Eligibility requirements:
+- All aggregate functions must be min/max/any/argMin/argMax family.
+- The ORDER BY expression must reference exactly one aggregate.
+- No OFFSET, no WITH TIES, no HAVING.
+- The ORDER BY sort direction must be compatible with the aggregate (e.g. max+DESC or min+ASC).
+
+Current limitations:
+- Mode 1 is disabled for nullable sorting-key columns and collation-sensitive ORDER BY.
+- Mode 2 requires a numeric, non-nullable ORDER BY aggregate argument.
+- Mode 2 is disabled when the table already has a PREWHERE clause.
 
 Possible values:
 

@@ -34,3 +34,5 @@
 1
 -- LowCardinality Mode 2: has TopNAggregating
 1
+-- EXPLAIN nullable key: no Sorted input true
+0

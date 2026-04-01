@@ -1,19 +1,46 @@
 #include <Processors/TopKThresholdTracker.h>
 #include <Columns/Collator.h>
 
+#include <cmath>
+
 namespace DB
 {
+
+namespace
+{
+
+/// ClickHouse columns treat NaN the same as NULL for ordering purposes,
+/// using nan_direction_hint (which maps to nulls_direction from the query).
+/// Field::operator< does NOT handle this — NaN compares as "equal" to
+/// everything — so we must detect NaN explicitly and apply the same
+/// semantics as IColumn::compareAt to keep the shared threshold consistent
+/// with column-level pruning in TopNDirectAggregatingTransform and
+/// FunctionTopKFilter.
+bool fieldIsNaN(const Field & f)
+{
+    if (f.getType() == Field::Types::Float64)
+        return std::isnan(f.safeGet<Float64>());
+    return false;
+}
+
+}
 
 int TopKThresholdTracker::compareFields(const Field & lhs, const Field & rhs) const
 {
     bool lhs_null = lhs.isNull();
     bool rhs_null = rhs.isNull();
 
-    if (lhs_null && rhs_null)
+    bool lhs_nan = !lhs_null && fieldIsNaN(lhs);
+    bool rhs_nan = !rhs_null && fieldIsNaN(rhs);
+
+    bool lhs_special = lhs_null || lhs_nan;
+    bool rhs_special = rhs_null || rhs_nan;
+
+    if (lhs_special && rhs_special)
         return 0;
-    if (lhs_null)
+    if (lhs_special)
         return sort_desc.nulls_direction;
-    if (rhs_null)
+    if (rhs_special)
         return -sort_desc.nulls_direction;
 
     if (sort_desc.collator && lhs.getType() == Field::Types::String)

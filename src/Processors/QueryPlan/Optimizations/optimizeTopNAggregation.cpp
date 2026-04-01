@@ -392,6 +392,9 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Collation-sensitive ORDER BY is rejected because physical MergeTree order is
     /// not guaranteed to match collation order, so early termination after K groups
     /// could return wrong results.
+    /// Nullable determining arguments are rejected because MergeTree physical NULL
+    /// ordering (allow_nullable_key) may differ from the query's NULLS FIRST/LAST,
+    /// so early termination could return wrong groups.
     if (read_from_mt && order_info.output_ordered_by_sort_key && !sort_desc[0].collator)
     {
         String order_arg_name = resolveOriginalArgName(
@@ -401,7 +404,11 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         const auto & sorting_key_columns = read_from_mt->getStorageMetadata()->getSortingKeyColumns();
         if (!sorting_key_columns.empty() && sorting_key_columns[0] == order_arg_name)
         {
-            if (read_from_mt->requestReadingInOrder(1, required_direction, limit_value))
+            const auto & mt_header = *read_from_mt->getOutputHeader();
+            bool arg_is_nullable = mt_header.has(order_arg_name)
+                && mt_header.getByName(order_arg_name).type->isNullable();
+
+            if (!arg_is_nullable && read_from_mt->requestReadingInOrder(1, required_direction, limit_value))
             {
                 sorted_input = true;
                 /// TopNAggregatingStep consumes the pre-aggregation header where the
