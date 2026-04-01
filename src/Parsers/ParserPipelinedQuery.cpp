@@ -150,7 +150,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else if (s_order_by.ignore(pos, expected))
         {
-            if (SQLClauseOrder::ORDER_BY < highest_op)
+            if (SQLClauseOrder::ORDER_BY <= highest_op)
                 wrap_current_query();
 
             if (!pipe_order_by_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
@@ -160,7 +160,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else if (s_limit.ignore(pos, expected))
         {
-            if (SQLClauseOrder::LIMIT_OFFSET < highest_op)
+            if (SQLClauseOrder::LIMIT_OFFSET <= highest_op)
                 wrap_current_query();
 
             if (!pipe_limit_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
@@ -170,7 +170,7 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else if (s_offset.ignore(pos, expected))
         {
-            if (SQLClauseOrder::LIMIT_OFFSET < highest_op)
+            if (SQLClauseOrder::LIMIT_OFFSET <= highest_op)
                 wrap_current_query();
 
             if (!pipe_offset_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
@@ -180,17 +180,21 @@ bool ParserPipelinedQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         }
         else if (s_aggregate.ignore(pos, expected))
         {
-            if (SQLClauseOrder::AGGREGATE < highest_op)
+            if (SQLClauseOrder::GROUP_BY <= highest_op)
                 wrap_current_query();
 
             if (!pipe_aggregate_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))
                 return false;
 
             highest_op = std::max(highest_op, SQLClauseOrder::AGGREGATE);
+            if (current_query->groupBy())
+            {
+                highest_op = std::max(highest_op, SQLClauseOrder::GROUP_BY);
+            }
         }
         else if (startsWithJoinClause(pos))
         {
-            if (SQLClauseOrder::JOIN < highest_op)
+            if (SQLClauseOrder::JOIN <= highest_op)
                 wrap_current_query();
 
             if (!pipe_join_parser.parse(pos, current_query->as<ASTSelectQuery &>(), expected))

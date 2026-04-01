@@ -337,6 +337,30 @@ bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expe
         query.group_by_with_totals = true;
     }
 
+    if (group_expression_list)
+    {
+        // new vector created in order to preserve order SELECT <group_cols>, <agg_expr>
+        ASTs prepended_grouping_cols;
+        if (query.group_by_with_grouping_sets)
+        {
+            for (const auto & grouping_set : group_expression_list->children)
+                for (const auto & expr : grouping_set->children)
+                    prepended_grouping_cols.push_back(expr->clone());
+        }
+        else
+        {
+            for (const auto & expr : group_expression_list->children)
+                prepended_grouping_cols.push_back(expr->clone());
+        }
+
+        for (const auto & expr : select_expression_list->children)
+        {
+            prepended_grouping_cols.push_back(expr->clone());
+        }
+
+        select_expression_list->children = std::move(prepended_grouping_cols);
+    }
+
     query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     query.setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     return true;
