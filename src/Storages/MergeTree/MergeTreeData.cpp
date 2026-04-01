@@ -337,6 +337,14 @@ LookupTableState getLookupTableState(
     return result;
 }
 
+template <typename CacheEntry>
+bool isLookupCacheEntryValid(const CacheEntry & cache_entry, const LookupTableState & lookup_table_state)
+{
+    return cache_entry.metadata_version == lookup_table_state.metadata_version
+        && cache_entry.schema_signature == lookup_table_state.schema_signature
+        && cache_entry.part_names == lookup_table_state.part_names;
+}
+
 SetPtr buildLookupSet(const Block & block, bool transform_null_in)
 {
     auto set = std::make_shared<Set>(SizeLimits{}, 0, transform_null_in);
@@ -10820,9 +10828,7 @@ SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr 
         std::lock_guard lock(table_lookup_indices_mutex);
         if (auto cache_it = lookup_sets_cache.find(cache_key); cache_it != lookup_sets_cache.end())
         {
-            if (cache_it->second.metadata_version == lookup_table_state.metadata_version
-                && cache_it->second.schema_signature == lookup_table_state.schema_signature
-                && cache_it->second.part_names == lookup_table_state.part_names)
+            if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
                 return cache_it->second.set;
         }
     }
@@ -10833,10 +10839,16 @@ SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr 
         return set;
 
     std::lock_guard lock(table_lookup_indices_mutex);
+    if (auto cache_it = lookup_sets_cache.find(cache_key); cache_it != lookup_sets_cache.end())
+    {
+        if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
+            return cache_it->second.set;
+    }
+
     lookup_sets_cache[cache_key] = LookupSetCacheEntry
     {
         lookup_table_state.metadata_version,
-        std::move(lookup_table_state.schema_signature),
+        lookup_table_state.schema_signature,
         std::move(lookup_result.part_names),
         set,
     };
@@ -10859,9 +10871,7 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Nam
         std::lock_guard lock(table_lookup_indices_mutex);
         if (auto cache_it = lookup_joins_cache.find(cache_key); cache_it != lookup_joins_cache.end())
         {
-            if (cache_it->second.metadata_version == lookup_table_state.metadata_version
-                && cache_it->second.schema_signature == lookup_table_state.schema_signature
-                && cache_it->second.part_names == lookup_table_state.part_names)
+            if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
                 return cache_it->second.entity;
         }
     }
@@ -10872,10 +10882,16 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Nam
         return entity;
 
     std::lock_guard lock(table_lookup_indices_mutex);
+    if (auto cache_it = lookup_joins_cache.find(cache_key); cache_it != lookup_joins_cache.end())
+    {
+        if (isLookupCacheEntryValid(cache_it->second, lookup_table_state))
+            return cache_it->second.entity;
+    }
+
     lookup_joins_cache[cache_key] = LookupJoinCacheEntry
     {
         lookup_table_state.metadata_version,
-        std::move(lookup_table_state.schema_signature),
+        lookup_table_state.schema_signature,
         std::move(lookup_result.part_names),
         entity,
     };
