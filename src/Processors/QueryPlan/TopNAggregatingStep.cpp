@@ -119,9 +119,9 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 
         pipeline.addSimpleTransform([&](const SharedHeader &)
         {
-            return std::make_shared<TopNAggregatingTransform>(
+            return std::make_shared<TopNDirectAggregatingTransform>(
                 in_header, intermediate_header, key_names, aggregates,
-                sort_description, limit, /*sorted_input=*/false, /*partial=*/true,
+                sort_description, limit, /*partial=*/true,
                 enable_threshold_pruning, threshold_tracker);
         });
 
@@ -164,8 +164,8 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
             pipeline.resize(1);
         }
 
-        pipeline.addTransform(std::make_shared<TopNAggregatingTransform>(
-            in_header, out_header, key_names, aggregates, sort_description, limit, sorted_input));
+        pipeline.addTransform(std::make_shared<TopNSortedAggregatingTransform>(
+            in_header, out_header, key_names, aggregates, sort_description, limit));
     }
     else
     {
@@ -177,9 +177,9 @@ void TopNAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, con
 
         pipeline.addSimpleTransform([&](const SharedHeader &)
         {
-            return std::make_shared<TopNAggregatingTransform>(
+            return std::make_shared<TopNDirectAggregatingTransform>(
                 in_header, intermediate_header, key_names, aggregates,
-                sort_description, limit, /*sorted_input=*/false, /*partial=*/true,
+                sort_description, limit, /*partial=*/true,
                 enable_threshold_pruning, threshold_tracker);
         });
 
