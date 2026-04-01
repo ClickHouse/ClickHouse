@@ -22,7 +22,7 @@ namespace impl
 {
 
 /// Is the [I]LIKE/SIMILAR TO expression equivalent to a substring search?
-template<bool is_similar_to>
+template <bool is_similar_to>
 inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 {
     /// TODO: ignore multiple leading or trailing %
@@ -37,25 +37,25 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 
     while (pos < end)
     {
-	switch (*pos)
-	{
-	    case '%':
-	    case '_':
-		return false;
-	    case '\\':
-		++pos;
-		if (pos == end)
-		    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
-		    return false;
+        switch (*pos)
+        {
+            case '%':
+            case '_':
+                return false;
+            case '\\':
+                ++pos;
+                if (pos == end)
+                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
+                    return false;
 
-		switch (*pos)
-		{
-		    /// Known LIKE escape sequences:
-		    case '%':
-		    case '_':
-		    case '\\':
-			res += *pos;
-			break;
+                switch (*pos)
+                {
+                    /// Known LIKE escape sequences:
+                    case '%':
+                    case '_':
+                    case '\\':
+                        res += *pos;
+                        break;
 #define CASES(c) case c:
                     SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
 #undef CASES
@@ -64,25 +64,27 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
                             res += *pos;
                             break;
                         }
-                        ABSL_FALLTHROUGH_INTENDED;
+                        else
+                            ABSL_FALLTHROUGH_INTENDED;
                     /// For all other escape sequences, the backslash loses its special meaning
-		    default:
-			res += '\\';
-			res += *pos;
-			break;
-		}
+                    default:
+                        res += '\\';
+                        res += *pos;
+                        break;
+                }
 
-		break;
+                break;
 #define CASES(c) case c:
             SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
 #undef CASES
                 if constexpr (is_similar_to)
                     return false;
-                ABSL_FALLTHROUGH_INTENDED;
-	    default:
-		res += *pos;
-		break;
-	}
+                else
+                    ABSL_FALLTHROUGH_INTENDED;
+            default:
+                res += *pos;
+                break;
+        }
         ++pos;
     }
 

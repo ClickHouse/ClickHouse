@@ -65,4 +65,17 @@ SELECT 'd'       SIMILAR TO '((a|b)c|d)';     -- Returns: 1
 SELECT 'ab'      SIMILAR TO '((a|b)c|d)';     -- Returns: 0
 
 SELECT '-- All patterns in one';
-SELECT 'AB5 xfoo!+doneZZ' SIMILAR TO '[[:upper:]]{2,3}[0-9][[:space:]]_((foo|bar)_\+[^0-9]?[[:lower:]]*)%[[:upper:]]+';
+SELECT 'AB5 xfoo!+doneZZ' SIMILAR TO '[[:upper:]]{2,3}[0-9][[:space:]]_((foo|bar)_\+[^0-9]?[[:lower:]]*)%[[:upper:]]+';  -- Returns: 1
+
+SELECT '-- Function syntax';
+SELECT similarTo('hello', 'hel+o');           -- Returns: 1
+
+SELECT '-- Regex but non-SIMILAR-TO metachars: ^$.';
+SELECT '^hello' SIMILAR TO '^hello';          -- Returns: 1
+SELECT 'hello$' SIMILAR TO 'hello$';          -- Returns: 1
+SELECT 'h.llo'  SIMILAR TO 'h.llo';           -- Returns: 1
+
+SELECT '-- NOT SIMILAR TO';
+SELECT 'hello' NOT SIMILAR TO 'hel+o';        -- Returns: 0
+SELECT 'hello' NOT SIMILAR TO 'he+lo';        -- Returns: 1
+

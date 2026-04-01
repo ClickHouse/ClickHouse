@@ -50,3 +50,12 @@
 0
 -- All patterns in one
 1
+-- Function syntax
+1
+-- Regex but non-SIMILAR-TO metachars: ^$.
+1
+1
+1
+-- NOT SIMILAR TO
+0
+1

@@ -110,11 +110,11 @@ String similarToPatternToRegexp(std::string_view pattern)
     while (pos < end)
     {
         /// SIMILAR TO's metacharacters consist of LIKE's and a subset of re2's:
-        /// - LIKE's: %_         --> Convert to .* or . in re2
-        /// - re2's: |*+?[](){}  --> Keep in re2
-        /// - Exclude re2's: ^$. --> Quote in re2
-        /// \ always starts an escape sequence. 
-        /// When in a bracket, all lose their special meaning when inside a bracket, except ^\-]
+        ///   - LIKE's: %_         --> Convert to .* or . in re2
+        ///   - re2's: |*+?[](){}  --> Keep in re2
+        ///   - Exclude re2's: ^$. --> Quote in re2
+        /// \ always starts an escape sequence
+        /// Inside a bracket expression, only ^, \, -, ] are special; all others are literal
         switch (*pos)
         {
             /// Keep unescaped brackets. Remember in bracket or not.
@@ -154,7 +154,7 @@ String similarToPatternToRegexp(std::string_view pattern)
                 break;
             case '\\':
                 if (pos + 1 == end)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of LIKE pattern '{}'", pattern);
+                    throw Exception(ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE, "Invalid escape sequence at the end of SIMILAR TO pattern '{}'", pattern);
                 switch (pos[1])
                 {
                     /// Unquote LIKE metacharacters %, _ and \ as literals for re2:
@@ -171,7 +171,7 @@ String similarToPatternToRegexp(std::string_view pattern)
                         res += pos[1];
                         ++pos;
                         break;
-                    /// Quote blackslash
+                    /// Quote backslash
                     case '\\':
                         res += "\\\\";
                         ++pos;
