@@ -4,6 +4,7 @@
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -174,38 +175,117 @@ void LazyReadReplacingFinalSource::work()
         plan.addStep(std::move(expression));
     }
 
+    /// When there's a version column, compute a tiebreaker for argMax so that
+    /// equal versions resolve to the last inserted row (highest __global_row_index).
+    /// For version types ≤ 64 bits, pack (version, __global_row_index) into UInt128.
+    /// For wider types, use tuple(version, __global_row_index).
+    /// When there's no version column, just use max(__global_row_index).
+    bool has_version = !merging_params.version_column.empty();
+    static constexpr auto tiebreaker_column_name = "__lazy_final_tiebreaker";
+
+    if (has_version)
+    {
+        const auto & header = plan.getCurrentHeader();
+        auto version_type = header->getByName(merging_params.version_column).type;
+        WhichDataType which(version_type);
+        bool use_packed = which.isNativeUInt() || which.isNativeInt() || which.isDate() || which.isDate32() || which.isDateTime();
+
+        ActionsDAG dag(header->getColumnsWithTypeAndName());
+        const auto * version_node = &dag.findInOutputs(merging_params.version_column);
+        const auto * row_index_node = &dag.findInOutputs("__global_row_index");
+
+        if (use_packed)
+        {
+            auto to_uint128 = FunctionFactory::instance().get("toUInt128", nullptr);
+            auto bit_shift_left = FunctionFactory::instance().get("bitShiftLeft", nullptr);
+            auto plus_func = FunctionFactory::instance().get("plus", nullptr);
+
+            /// For signed types, widen to Int64 first, then flip the sign bit
+            /// to convert signed order to unsigned order.
+            if (which.isNativeInt())
+            {
+                auto to_int64 = FunctionFactory::instance().get("toInt64", nullptr);
+                auto reinterpret_func = FunctionFactory::instance().get("reinterpretAsUInt64", nullptr);
+                auto bitxor_func = FunctionFactory::instance().get("bitXor", nullptr);
+                ColumnWithTypeAndName sign_bit_const;
+                sign_bit_const.type = std::make_shared<DataTypeUInt64>();
+                sign_bit_const.column = sign_bit_const.type->createColumnConst(1, Field(UInt64(1) << 63));
+                sign_bit_const.name = "__sign_bit";
+                const auto * sign_bit_node = &dag.addColumn(std::move(sign_bit_const));
+                const auto * version_int64 = &dag.addFunction(to_int64, {version_node}, {});
+                const auto * version_uint64 = &dag.addFunction(reinterpret_func, {version_int64}, {});
+                version_node = &dag.addFunction(bitxor_func, {version_uint64, sign_bit_node}, {});
+            }
+
+            const auto * version_128 = &dag.addFunction(to_uint128, {version_node}, {});
+            const auto * row_index_128 = &dag.addFunction(to_uint128, {row_index_node}, {});
+            ColumnWithTypeAndName shift_const;
+            shift_const.type = std::make_shared<DataTypeUInt8>();
+            shift_const.column = shift_const.type->createColumnConst(1, Field(UInt8(64)));
+            shift_const.name = "__shift_64";
+            const auto * shift_amount = &dag.addColumn(std::move(shift_const));
+            const auto * shifted = &dag.addFunction(bit_shift_left, {version_128, shift_amount}, {});
+            const auto * tiebreaker = &dag.addFunction(plus_func, {shifted, row_index_128}, {});
+            tiebreaker = &dag.addAlias(*tiebreaker, tiebreaker_column_name);
+            dag.getOutputs().push_back(tiebreaker);
+        }
+        else
+        {
+            auto tuple_func = FunctionFactory::instance().get("tuple", query_context);
+            const auto * tiebreaker = &dag.addFunction(tuple_func, {version_node, row_index_node}, {});
+            tiebreaker = &dag.addAlias(*tiebreaker, tiebreaker_column_name);
+            dag.getOutputs().push_back(tiebreaker);
+        }
+
+        plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+    }
+
     {
         const auto & header = plan.getCurrentHeader();
         AggregateFunctionProperties properties;
         AggregateDescriptions aggregates;
+        auto uint64_type = std::make_shared<DataTypeUInt64>();
 
-        auto version_type = header->getByName(merging_params.version_column).type;
-        String argmax_row_index_name = fmt::format("argMax(__global_row_index, {})", merging_params.version_column);
+        String argmax_row_index_name;
         String argmax_is_deleted_name;
 
-        /// argMax(__global_row_index, version)
+        if (has_version)
         {
-            auto uint64_type = std::make_shared<DataTypeUInt64>();
+            auto tiebreaker_type = header->getByName(tiebreaker_column_name).type;
+            argmax_row_index_name = fmt::format("argMax(__global_row_index, {})", tiebreaker_column_name);
 
+            /// argMax(__global_row_index, __tiebreaker)
             AggregateDescription desc;
-            desc.function
-                = AggregateFunctionFactory::instance().get("argMax", NullsAction::EMPTY, {uint64_type, version_type}, {}, properties);
-            desc.argument_names = {"__global_row_index", merging_params.version_column};
+            desc.function = AggregateFunctionFactory::instance().get(
+                "argMax", NullsAction::EMPTY, {uint64_type, tiebreaker_type}, {}, properties);
+            desc.argument_names = {"__global_row_index", tiebreaker_column_name};
             desc.column_name = argmax_row_index_name;
             aggregates.push_back(std::move(desc));
-        }
 
-        /// argMax(is_deleted, version) if is_deleted column exists
-        if (!merging_params.is_deleted_column.empty())
+            /// argMax(is_deleted, __tiebreaker) if is_deleted column exists
+            if (!merging_params.is_deleted_column.empty())
+            {
+                argmax_is_deleted_name = fmt::format("argMax({}, {})", merging_params.is_deleted_column, tiebreaker_column_name);
+                auto is_deleted_type = header->getByName(merging_params.is_deleted_column).type;
+
+                AggregateDescription desc2;
+                desc2.function = AggregateFunctionFactory::instance().get(
+                    "argMax", NullsAction::EMPTY, {is_deleted_type, tiebreaker_type}, {}, properties);
+                desc2.argument_names = {merging_params.is_deleted_column, tiebreaker_column_name};
+                desc2.column_name = argmax_is_deleted_name;
+                aggregates.push_back(std::move(desc2));
+            }
+        }
+        else
         {
-            argmax_is_deleted_name = fmt::format("argMax({}, {})", merging_params.is_deleted_column, merging_params.version_column);
-            auto is_deleted_type = header->getByName(merging_params.is_deleted_column).type;
+            /// No version column — just pick the last inserted row.
+            argmax_row_index_name = "max(__global_row_index)";
 
             AggregateDescription desc;
-            desc.function
-                = AggregateFunctionFactory::instance().get("argMax", NullsAction::EMPTY, {is_deleted_type, version_type}, {}, properties);
-            desc.argument_names = {merging_params.is_deleted_column, merging_params.version_column};
-            desc.column_name = argmax_is_deleted_name;
+            desc.function = AggregateFunctionFactory::instance().get(
+                "max", NullsAction::EMPTY, {uint64_type}, {}, properties);
+            desc.argument_names = {"__global_row_index"};
+            desc.column_name = argmax_row_index_name;
             aggregates.push_back(std::move(desc));
         }
 

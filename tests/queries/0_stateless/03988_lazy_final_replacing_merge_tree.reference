@@ -23,3 +23,21 @@
 0
 -- plan: no filter has no InputSelector
 0
+-- tiebreaker: same version
+third
+third
+-- signed version
+positive_last
+positive_last
+-- Int32 version
+positive_last
+positive_last
+-- UInt128 version
+second_last
+second_last
+-- Int128 version
+positive_last
+positive_last
+-- no version column
+second
+second
