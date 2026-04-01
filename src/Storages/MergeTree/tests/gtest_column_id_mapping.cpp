@@ -183,3 +183,18 @@ TEST(ColumnIdMapping, ConcurrentDropAddCycle)
     EXPECT_EQ(mapping.getColumnId("a"), "2");
     EXPECT_NE(a_column_id, b_column_id);
 }
+
+TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
+{
+    auto mapping = ColumnIdMapping::createForExistingTable(makeColumns({"a", "b"}));
+    auto id = mapping.allocateColumnId();
+    mapping.addColumn("c", id);
+
+    /// Renaming "a" to "1" collides with column c's ID "1".
+    EXPECT_THROW(mapping.renameColumn("a", id), Exception);
+    EXPECT_THROW(mapping.beginRename("a", id), Exception);
+
+    /// Self-case: renaming "c" to its own ID "1" is allowed.
+    EXPECT_NO_THROW(mapping.renameColumn("c", id));
+    EXPECT_EQ(mapping.getColumnId(id), id);
+}

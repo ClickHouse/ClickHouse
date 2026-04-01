@@ -181,6 +181,12 @@ void ColumnIdMapping::renameColumn(const String & old_logical_name, const String
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical column name '{}' is already registered in `ColumnIdMapping`", new_logical_name);
 
     auto column_id = it->second;
+
+    if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
+            old_logical_name, new_logical_name);
+
     logical_to_id.erase(it);
     logical_to_id.emplace(new_logical_name, column_id);
     id_to_logical[column_id] = new_logical_name;
@@ -196,6 +202,12 @@ void ColumnIdMapping::beginRename(const String & old_logical_name, const String 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical column name '{}' is already registered in `ColumnIdMapping`", new_logical_name);
 
     auto column_id = it->second;
+
+    if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
+            old_logical_name, new_logical_name);
+
     logical_to_id.emplace(new_logical_name, column_id);
     /// Do NOT update id_to_logical here — keep it pointing to
     /// old_logical_name so the reverse map stays consistent with the
