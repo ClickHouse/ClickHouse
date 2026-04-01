@@ -99,9 +99,7 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
 #include <Storages/System/StorageSystemTokenizers.h>
-#if USE_NLP
-#   include <Storages/System/StorageSystemStemmers.h>
-#endif
+#include <Storages/System/StorageSystemStemmers.h>
 #include <Storages/System/StorageSystemSchemaInferenceCache.h>
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>

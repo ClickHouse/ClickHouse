@@ -6,11 +6,7 @@ title: 'system.stemmers'
 doc_type: 'reference'
 ---
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
 # system.stemmers
-
-<SystemTableCloud/>
 
 Shows all available stemmers.
 These can be used in the function [stem](../../sql-reference/functions/nlp-functions.md).

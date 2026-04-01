@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_NLP
+
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 namespace DB
@@ -19,3 +23,5 @@ protected:
 };
 
 }
+
+#endif

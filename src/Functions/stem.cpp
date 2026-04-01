@@ -135,6 +135,7 @@ REGISTER_FUNCTION(Stem)
 {
     FunctionDocumentation::Description description = R"(
 Performs stemming on a given word.
+The list of supported language identifiers is available in [system.stemmers](/operations/system-tables/stemmers).
 )";
     FunctionDocumentation::Syntax syntax = "stem(lang, word)";
     FunctionDocumentation::Arguments arguments = {

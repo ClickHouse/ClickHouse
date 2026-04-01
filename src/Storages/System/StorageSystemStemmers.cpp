@@ -27,7 +27,7 @@ ColumnsDescription StorageSystemStemmers::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"name", std::make_shared<DataTypeString>(), "Name of the stemmer language"}
+        {"name", std::make_shared<DataTypeString>(), "Identifier of the Snowball stemmer (language/algorithm)"}
     };
 }
 
