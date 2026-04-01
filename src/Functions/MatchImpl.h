@@ -1,15 +1,13 @@
 #pragma once
 
 #include <type_traits>
+#include <absl/base/attributes.h>
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Functions/Regexps.h>
-
-#include "config.h"
-
 
 namespace DB
 {
@@ -19,10 +17,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+#define SIMILAR_TO_EXCLUDING_LIKE_METACHARS(X) \
+    X('|') \
+    X('*') \
+    X('+') \
+    X('?') \
+    X('{') \
+    X('}') \
+    X('(') \
+    X(')') \
+    X('[') \
+    X(']')
+
 namespace impl
 {
 
-/// Is the [I]LIKE expression equivalent to a substring search?
+/// Is the [I]LIKE/SIMILAR TO expression equivalent to a substring search?
+template<bool is_similar_to>
 inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 {
     /// TODO: ignore multiple leading or trailing %
@@ -37,44 +48,58 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 
     while (pos < end)
     {
-        switch (*pos)
-        {
-            case '%':
-            case '_':
-                return false;
-            case '\\':
-                ++pos;
-                if (pos == end)
-                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
-                    return false;
+	switch (*pos)
+	{
+	    case '%':
+	    case '_':
+		return false;
+	    case '\\':
+		++pos;
+		if (pos == end)
+		    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
+		    return false;
 
-                switch (*pos)
-                {
-                    /// Known LIKE escape sequences:
-                    case '%':
-                    case '_':
-                    case '\\':
-                        res += *pos;
-                        break;
+		switch (*pos)
+		{
+		    /// Known LIKE escape sequences:
+		    case '%':
+		    case '_':
+		    case '\\':
+			res += *pos;
+			break;
+#define CASES(c) case c:
+                    SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                        if constexpr (is_similar_to)
+                        {
+                            res += *pos;
+                            break;
+                        }
+                        ABSL_FALLTHROUGH_INTENDED;
                     /// For all other escape sequences, the backslash loses its special meaning
-                    default:
-                        res += '\\';
-                        res += *pos;
-                        break;
-                }
+		    default:
+			res += '\\';
+			res += *pos;
+			break;
+		}
 
-                break;
-            default:
-                res += *pos;
-                break;
-        }
+		break;
+#define CASES(c) case c:
+            SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                if constexpr (is_similar_to)
+                    return false;
+                ABSL_FALLTHROUGH_INTENDED;
+	    default:
+		res += *pos;
+		break;
+	}
         ++pos;
     }
 
     return true;
 }
 
-// TODO: is SIMILAR TO equivalent to a substring search?
 
 }
 
@@ -155,7 +180,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE or SIMILAR TO expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -318,7 +343,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -503,7 +528,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -612,7 +637,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
