@@ -5973,11 +5973,10 @@ Use in-memory buffer for correlated subquery input to avoid its repeated evaluat
 )", 0) \
     DECLARE(Bool, query_plan_filter_push_down_over_window, false, R"(
 Toggles a query-plan-level optimization which moves filters down over windows in the execution plan.
-This will change the result of some queries.
 Only takes effect if setting [query_plan_filter_push_down](#query_plan_filter_push_down) is 1.
 
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::warning
+Enabling this setting will potentially return incorrect results.
 :::
 
 Possible values:
