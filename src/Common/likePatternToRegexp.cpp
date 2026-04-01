@@ -106,6 +106,7 @@ String similarToPatternToRegexp(std::string_view pattern)
     else
         res = "^";
 
+    bool in_bracket = false;
     while (pos < end)
     {
         /// SIMILAR TO's metachacraters consist of LIKE's and a subset of re2's:
@@ -114,22 +115,40 @@ String similarToPatternToRegexp(std::string_view pattern)
         /// - Exclude re2's: ^$. --> Quote in re2
         switch (*pos)
         {
-            /// Quote characters which have a special meaning in re2
+            /// Keep unescaped brackets. Remember in bracket or not.
+            case '[':
+                in_bracket = true;
+                res += *pos;
+                break;
+            case ']':
+                in_bracket = false;
+                res += *pos;
+                break;
+            /// Quote characters which have a special meaning in re2. Don't quote when in bracket.
             case '^':
             case '$':
             case '.':
-                res += '\\';
+                if (! in_bracket)
+                    res += '\\';
                 res += *pos;
                 break;
-            /// Convert LIKE's metacharacters to re2's
+            /// Convert LIKE's metacharacters to re2's. Don't convert when in bracket.
             case '%':
-                if (pos + 1 != end)
-                    res += ".*";
+                if (! in_bracket)
+                {
+                    if (pos + 1 != end)
+                        res += ".*";
+                    else
+                        return res;
+                }
                 else
-                    return res;
+                    res += *pos;
                 break;
             case '_':
-                res += ".";
+                if (! in_bracket)
+                    res += ".";
+                else
+                    res += *pos;
                 break;
             case '\\':
                 if (pos + 1 == end)
@@ -139,6 +158,14 @@ String similarToPatternToRegexp(std::string_view pattern)
                     /// Unquote LIKE metacharacters %, _ and \ as literals for re2:
                     case '%':
                     case '_':
+                        res += pos[1];
+                        ++pos;
+                        break;
+                    /// Keep escaped SIMILAR TO excluding LIKE metacharacters for re2:
+#define CASES(c) case c:
+                    SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                        res += '\\';
                         res += pos[1];
                         ++pos;
                         break;

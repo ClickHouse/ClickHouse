@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <absl/base/attributes.h>
 #include <base/types.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,18 +17,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
 }
-
-#define SIMILAR_TO_EXCLUDING_LIKE_METACHARS(X) \
-    X('|') \
-    X('*') \
-    X('+') \
-    X('?') \
-    X('{') \
-    X('}') \
-    X('(') \
-    X(')') \
-    X('[') \
-    X(']')
 
 namespace impl
 {

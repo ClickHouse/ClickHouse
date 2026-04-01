@@ -1,45 +1,68 @@
 -- tests of SIMILAR TO pattern search
 
 SELECT '-- +: one or more';
-SELECT 'hello'   SIMILAR TO 'hel+o';           -- Returns: 1 (+ = one or more)
-SELECT 'helo'    SIMILAR TO 'hel+o';           -- Returns: 1
-SELECT 'heo'     SIMILAR TO 'hel+o';           -- Returns: 0 (+ requires at least one l)
+SELECT 'hello'   SIMILAR TO 'hel+o';           -- Returns: 1
+SELECT 'heo'     SIMILAR TO 'hel+o';           -- Returns: 0
 
-SELECT '-- Substring with pattern';
+SELECT '-- *: zero or more';
+SELECT 'heo'     SIMILAR TO 'hel*o';           -- Returns: 1
+SELECT 'hello'   SIMILAR TO 'hel*o';           -- Returns: 1
+
+SELECT '-- ?: zero or one';
+SELECT 'helo'    SIMILAR TO 'hel?o';           -- Returns: 1
+SELECT 'hello'   SIMILAR TO 'hel?o';           -- Returns: 0
+
+SELECT '-- _: any single char';
+SELECT 'hello'   SIMILAR TO 'hel_o';           -- Returns: 1
+
+SELECT '-- %: zero or more chars (substring match)';
 SELECT 'hello'   SIMILAR TO '%(el|er)%';       -- Returns: 1
 SELECT 'herring' SIMILAR TO '%(el|er)%';       -- Returns: 1
 
-SELECT '-- Substring without pattern';
-SELECT 'hello'   SIMILAR TO '%el%';            -- Returns: 1
-SELECT 'hello'   SIMILAR TO '%er%';            -- Returns: 0
-
-SELECT '-- _: any single char';
-SELECT 'hello'   SIMILAR TO 'hel_o';           -- Returns: 1 (_ = any single char)
+SELECT '-- Anchored by default (matches full string)';
+SELECT 'hello world' SIMILAR TO 'hello';       -- Returns: 0
+SELECT 'hello world' SIMILAR TO '%hello%';     -- Returns: 1
 
 SELECT '-- []: character class';
 SELECT 'hello'   SIMILAR TO 'he[l]+o';         -- Returns: 1
 SELECT 'hello'   SIMILAR TO 'he[r]+o';         -- Returns: 0
 SELECT 'test123' SIMILAR TO '[a-z]+[0-9]+';    -- Returns: 1
+
+SELECT '-- [^]: negated bracket expression';
+SELECT 'hello'   SIMILAR TO 'hell[^aeiou]';    -- Returns: 0
+SELECT 'hellx'   SIMILAR TO 'hell[^aeiou]';    -- Returns: 1
+
+SELECT '-- POSIX character classes';
 SELECT '123'     SIMILAR TO '[[:digit:]]+';    -- Returns: 1
-
-SELECT '-- Anchored by default (matches full string)';
-SELECT 'hello world' SIMILAR TO 'hello';       -- Returns: 0 (not full match)
-SELECT 'hello world' SIMILAR TO '%hello%';     -- Returns: 1
-
-SELECT '-- Escaping rule';
-SELECT '%%'     SIMILAR TO '\%[\%]+';          -- Returns: 1
-SELECT '%_'     SIMILAR TO '(\%\_|\_\%)';      -- Returns: 1
+SELECT 'hello'   SIMILAR TO '[[:alpha:]]+';    -- Returns: 1
+SELECT 'hello'   SIMILAR TO '[[:lower:]]+';    -- Returns: 1
+SELECT 'Hello'   SIMILAR TO '[[:lower:]]+';    -- Returns: 0
 
 SELECT '-- Repeated count';
 SELECT 'abc123' SIMILAR TO '%[0-9]{3}';        -- Returns: 1
 SELECT 'abc12'  SIMILAR TO '%[0-9]{3}';        -- Returns: 0
-SELECT 'abcd'   SIMILAR TO '[a-z]{2,}';        -- Returns: 1
-SELECT 'a'      SIMILAR TO '[a-z]{2,}';        -- Returns: 0
 SELECT '123'    SIMILAR TO '[0-9]{2,4}';       -- Returns: 1
 SELECT '12345'  SIMILAR TO '[0-9]{2,4}';       -- Returns: 0
 
+SELECT '-- Escaping metacharacters';
+SELECT 'a+b'     SIMILAR TO 'a\+b';           -- Returns: 1
+SELECT 'aab'     SIMILAR TO 'a\+b';           -- Returns: 0
+SELECT 'a(b)'    SIMILAR TO 'a\(b\)';         -- Returns: 1
+SELECT 'a[b]'    SIMILAR TO 'a\[b\]';         -- Returns: 1
+
+SELECT '-- % and _ are literal inside bracket expressions';
+SELECT '%'       SIMILAR TO '[%_]';            -- Returns: 1
+SELECT 'a'       SIMILAR TO '[%_]';            -- Returns: 0
+
+SELECT '-- Empty string';
+SELECT ''        SIMILAR TO '';                -- Returns: 1
+SELECT ''        SIMILAR TO '%';              -- Returns: 1
+SELECT ''        SIMILAR TO '_';              -- Returns: 0
+
+SELECT '-- Nested grouping';
+SELECT 'ac'      SIMILAR TO '((a|b)c|d)';     -- Returns: 1
+SELECT 'd'       SIMILAR TO '((a|b)c|d)';     -- Returns: 1
+SELECT 'ab'      SIMILAR TO '((a|b)c|d)';     -- Returns: 0
+
 SELECT '-- All patterns in one';
--- Match: 2-3 uppercase letters, then a digit, then optional whitespace,
--- then one or more alphanumeric chars, then either "foo" or "bar",
--- then any single char, then zero or more of anything
-SELECT 'AB5 xyzfoo!done' SIMILAR TO '[[:upper:]]{2,3}[0-9][[:space:]]_[[:alnum:]]+(foo|bar)_%';
+SELECT 'AB5 xfoo!+doneZZ' SIMILAR TO '[[:upper:]]{2,3}[0-9][[:space:]]_((foo|bar)_\+[^0-9]?[[:lower:]]*)%[[:upper:]]+';

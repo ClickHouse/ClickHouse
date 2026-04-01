@@ -1,31 +1,51 @@
 -- +: one or more
 1
-1
 0
--- Substring with pattern
+-- *: zero or more
 1
 1
--- Substring without pattern
+-- ?: zero or one
 1
 0
 -- _: any single char
 1
--- []: character class
-1
-0
+-- %: zero or more chars (substring match)
 1
 1
 -- Anchored by default (matches full string)
 0
 1
--- Escaping rule
+-- []: character class
+1
+0
+1
+-- [^]: negated bracket expression
+0
+1
+-- POSIX character classes
 1
 1
+1
+0
 -- Repeated count
 1
 0
 1
 0
+-- Escaping metacharacters
+1
+0
+1
+1
+-- % and _ are literal inside bracket expressions
+1
+0
+-- Empty string
+1
+1
+0
+-- Nested grouping
+1
 1
 0
 -- All patterns in one
