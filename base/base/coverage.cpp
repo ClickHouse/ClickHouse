@@ -326,6 +326,7 @@ std::vector<IndirectCallEntry> getCurrentIndirectCalls()
             {
                 if (node->count == 0 || node->value == 0)
                     continue;
+                const uint64_t call_count = node->count;
                 node->count = 0; /// reset for next test — prevents cross-test accumulation
                 /// Only record callees that lie above __executable_start (main binary).
                 /// Shared-library callees with ASLR addresses below the binary base are
@@ -335,7 +336,7 @@ std::vector<IndirectCallEntry> getCurrentIndirectCalls()
                 if (node->value < load_base)
                     continue;
                 const uint64_t offset = node->value - load_base;
-                result.push_back({data->NameRef, data->FuncHash, offset, node->count});
+                result.push_back({data->NameRef, data->FuncHash, offset, call_count});
             }
         }
     }
