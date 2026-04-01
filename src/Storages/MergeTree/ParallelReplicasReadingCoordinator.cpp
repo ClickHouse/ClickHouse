@@ -930,9 +930,16 @@ public:
     void doHandleInitialAllRangesAnnouncement([[maybe_unused]] InitialAllRangesAnnouncement announcement) override;
     void markReplicaAsUnavailable(size_t replica_number) override;
 
+    /// Global part set with ranges and replica membership, populated from announcements.
+    /// Ranges are moved out into per-split state on first request from each split.
     Parts all_parts_to_read;
     size_t total_rows_to_read = 0;
     bool state_initialized{false};
+
+    /// Per-split read state. Each split owns a non-intersecting portion of the ranges.
+    std::map<size_t, Parts> split_states;
+
+    Parts & getOrCreateSplitState(size_t split_id);
 
     LoggerPtr log = getLogger(fmt::format("{}{}", magic_enum::enum_name(mode), "Coordinator"));
 };
@@ -1031,6 +1038,30 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
     }
 }
 
+Parts & InOrderCoordinator::getOrCreateSplitState(size_t split_id)
+{
+    auto it = split_states.find(split_id);
+    if (it != split_states.end())
+        return it->second;
+
+    /// Initialize this split's state by moving ranges from the global part set.
+    /// With one split (the current case), all ranges are moved into split 0.
+    /// With multiple splits, this is where we'd partition them.
+    Parts split_parts;
+    for (auto & part : all_parts_to_read)
+    {
+        Part split_part{.description = part.description, .replicas = part.replicas};
+        /// Move ranges from the global state into the split — they are consumed, not shared.
+        split_part.description.ranges = std::move(part.description.ranges);
+        part.description.ranges = {};
+        split_parts.insert(std::move(split_part));
+    }
+
+    auto [inserted_it, _] = split_states.emplace(split_id, std::move(split_parts));
+    LOG_TRACE(log, "Initialized split state for split_id {}", split_id);
+    return inserted_it->second;
+}
+
 ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest request)
 {
     const size_t effective_min_marks_per_request
@@ -1038,56 +1069,50 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
     LOG_TRACE(log, "Got read request: {}", request.describe());
 
-    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS, in-order requests
-    /// no longer carry part descriptions — build the part list from the coordinator's state.
+    auto & parts_to_read = getOrCreateSplitState(request.split_id);
+
+    /// Build the response part list.
+    /// For old protocol requests (description is non-empty), use it for compatibility.
+    RangesInDataPartsDescription response_parts;
     if (request.description.empty())
     {
-        for (const auto & part : all_parts_to_read)
-        {
-            if (part.replicas.contains(request.replica_num))
-                request.description.push_back(
-                    {.info = part.description.info, .ranges = {}, .projection_name = part.description.projection_name});
-        }
+        for (const auto & part : parts_to_read)
+            response_parts.push_back(
+                {.info = part.description.info, .ranges = {}, .projection_name = part.description.projection_name});
+    }
+    else
+    {
+        response_parts = std::move(request.description);
     }
 
     ParallelReadResponse response;
-    response.description = request.description;
+    response.description = std::move(response_parts);
     size_t overall_number_of_marks = 0;
 
     for (auto & part : response.description)
     {
-        auto global_part_it = std::find_if(
-            all_parts_to_read.begin(),
-            all_parts_to_read.end(),
+        auto split_part_it = std::find_if(
+            parts_to_read.begin(),
+            parts_to_read.end(),
             [&part](const Part & other)
             {
                 return other.description.info == part.info && other.description.projection_name == part.projection_name;
             });
 
-        if (global_part_it == all_parts_to_read.end())
-            continue;
-
-        if (global_part_it->replicas.empty())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Part {} requested by replica {} is not registered in working set",
-                part.info.getPartNameV1(),
-                request.replica_num);
-
-        if (!global_part_it->replicas.contains(request.replica_num))
+        if (split_part_it == parts_to_read.end())
             continue;
 
         /// Propagate min_marks_per_task from the coordinator's stored data (set by the first announcement).
-        part.min_marks_per_task = global_part_it->description.min_marks_per_task;
+        part.min_marks_per_task = split_part_it->description.min_marks_per_task;
 
         size_t current_mark_size = 0;
 
         /// Now we can recommend to read more intervals
         if (mode == CoordinationMode::ReverseOrder)
         {
-            while (!global_part_it->description.ranges.empty() && current_mark_size < effective_min_marks_per_request)
+            while (!split_part_it->description.ranges.empty() && current_mark_size < effective_min_marks_per_request)
             {
-                auto & range = global_part_it->description.ranges.back();
+                auto & range = split_part_it->description.ranges.back();
                 const size_t needed = effective_min_marks_per_request - current_mark_size;
 
                 if (range.getNumberOfMarks() > needed)
@@ -1102,14 +1127,14 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
                 part.ranges.emplace_front(range);
                 current_mark_size += range.getNumberOfMarks();
-                global_part_it->description.ranges.pop_back();
+                split_part_it->description.ranges.pop_back();
             }
         }
         else if (mode == CoordinationMode::WithOrder)
         {
-            while (!global_part_it->description.ranges.empty() && current_mark_size < effective_min_marks_per_request)
+            while (!split_part_it->description.ranges.empty() && current_mark_size < effective_min_marks_per_request)
             {
-                auto & range = global_part_it->description.ranges.front();
+                auto & range = split_part_it->description.ranges.front();
                 const size_t needed = effective_min_marks_per_request - current_mark_size;
 
                 if (range.getNumberOfMarks() > needed)
@@ -1124,7 +1149,7 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
 
                 part.ranges.emplace_back(range);
                 current_mark_size += range.getNumberOfMarks();
-                global_part_it->description.ranges.pop_front();
+                split_part_it->description.ranges.pop_front();
             }
         }
 
