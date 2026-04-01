@@ -4,7 +4,21 @@ set -euxf -o pipefail
 
 KAFKA_BROKER=${KAFKA_BROKER:-127.0.0.1:9092}
 
+stop_redpanda() {
+    if pgrep -f redpanda > /dev/null 2>&1; then
+        echo "Stopping existing Redpanda process..."
+        pkill -f redpanda || true
+        sleep 2
+        # Force kill if still running
+        if pgrep -f redpanda > /dev/null 2>&1; then
+            pkill -9 -f redpanda || true
+            sleep 1
+        fi
+    fi
+}
+
 start_redpanda() {
+    stop_redpanda
     rm -rf /tmp/redpanda-data
 
     echo "Starting Redpanda broker..."
