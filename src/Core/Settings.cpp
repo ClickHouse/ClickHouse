@@ -1244,7 +1244,7 @@ If the ratio of unavailable shards to total shards exceeds this value, an except
 A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
 )", 0) \
     \
-    DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
+    DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
@@ -1255,7 +1255,32 @@ Possible values:
 - `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
 - `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
 
-Setting `enable_parallel_replicas = 1` is needed when using this setting.
+**Example with Distributed tables**
+
+With `parallel_distributed_insert_select = 1`, the `SELECT` is rewritten to read from the local (underlying) table, while the `INSERT` still goes through the Distributed table:
+
+```sql
+-- Original query:
+INSERT INTO dist_dst SELECT * FROM dist_src
+SETTINGS parallel_distributed_insert_select = 1, optimize_skip_unused_shards = 1;
+-- Each shard executes:
+--   INSERT INTO dist_dst SELECT * FROM local_src
+```
+
+With `parallel_distributed_insert_select = 2`, both the `SELECT` and `INSERT` are rewritten to use local tables on each shard, bypassing Distributed sends entirely:
+
+```sql
+-- Original query:
+INSERT INTO dist_dst SELECT * FROM dist_src
+SETTINGS parallel_distributed_insert_select = 2, optimize_skip_unused_shards = 1;
+-- Each shard executes:
+--   INSERT INTO local_dst SELECT * FROM local_src
+```
+)", 0) \
+    DECLARE(Bool, parallel_replicas_parallel_distributed_insert_select, 1, R"(
+Enables parallel distributed `INSERT ... SELECT` query for parallel replicas.
+
+Requires `enable_parallel_replicas = 1` (and `max_parallel_replicas > 1`). Each replica reads a coordinated portion of the source table and inserts into the local table:
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards

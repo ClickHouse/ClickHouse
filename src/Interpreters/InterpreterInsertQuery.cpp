@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
+    extern const SettingsBool parallel_replicas_parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
@@ -657,9 +658,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!settings[Setting::allow_experimental_analyzer])
         return {};
 
-    if (settings[Setting::parallel_distributed_insert_select] != 2)
-        return {};
-
     /// Create a context with automatic_parallel_replicas_mode disabled upfront.
     /// INSERT SELECT should use parallel replicas regardless of automatic mode,
     /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
@@ -943,12 +941,17 @@ BlockIO InterpreterInsertQuery::execute()
                 if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
                     res.pipeline = std::move(*pipeline);
             }
-            if (!res.pipeline.initialized())
-            {
-                auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
-                if (pipeline)
-                    res.pipeline = std::move(*pipeline);
-            }
+
+            query.select = std::move(saved_select);
+        }
+        if (!res.pipeline.initialized())
+        {
+            /// parallel replicas path also mutates the SELECT AST, so keep a backup
+            auto saved_select = query.select->clone();
+
+            auto pipeline = buildInsertSelectPipelineParallelReplicas(query, table);
+            if (pipeline)
+                res.pipeline = std::move(*pipeline);
 
             query.select = std::move(saved_select);
         }

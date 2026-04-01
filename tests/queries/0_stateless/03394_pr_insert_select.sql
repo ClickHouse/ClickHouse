@@ -1,5 +1,5 @@
 SET enable_analyzer=1; -- parallel distributed insert select for replicated tables works only with analyzer
-SET parallel_distributed_insert_select=2;
+SET parallel_replicas_parallel_distributed_insert_select=1;
 
 DROP TABLE IF EXISTS t_mt_source;
 DROP TABLE IF EXISTS t_rmt_target SYNC;
