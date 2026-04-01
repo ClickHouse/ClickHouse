@@ -16,6 +16,14 @@ def server():
                      "kaRv8XJbra0IeIINmKv0F4--ww8ZxXTR6cvI-MsArUiAPwzf7s5dMR4DNRG6YNTrPA0pTOqQE9sRPd62XsfU08plYm27naOUZ"
                      "O5avIPl1YO5I6Gi4kPdTvv3WFIy-QvoKoPhPCaD6EbdBpe8BbTQ",
                 "e": "AQAB"},
+            {
+                "kty": "EC",
+                "alg": "ES384",
+                "kid": "ecmykid",
+                "crv": "P-384",
+                "x": "ewdB5ypKwp641N5cYmKJvTiwWLIc_IJduJwur2mit1SgQpPZdUwpDV3aNIAmry4Y",
+                "y": "Jajx21k25o2K-ik86kaaawu6O84awaSmvSirJn8WCeEuotu3O-4Gn-ryOMuDsH76",
+            },
         ]
     }
     response.status = 200

@@ -80,3 +80,20 @@ def test_jwks_server(started_cluster):
         ]
     )
     assert res == "jwt_user\n"
+
+
+def test_jwks_server_ec_es384(started_cluster):
+    res = client.exec_in_container(
+        [
+            "bash",
+            "-c",
+            curl_with_jwt(
+                token="eyJhbGciOiJFUzM4NCIsImtpZCI6ImVjbXlraWQiLCJ0eXAiOiJKV1QifQ."
+                      "eyJzdWIiOiJqd3RfdXNlciIsImlzcyI6InRlc3RfaXNzIn0."
+                      "3iGUcKfc07oLN4XmBA6BJSGSfu7cBsdQ6KAFh1sV64rWYkVL5VzYlAskHaWZ4R9hR3QK0Bv0EPjia8Vo-xdN9jS7-fVB7RF0"
+                      "rGvbTOIuxE-yDumCyji3MYoLpcbOVasU",
+                ip=cluster.get_instance_ip(instance.name),
+            ),
+        ]
+    )
+    assert res == "jwt_user\n"

@@ -102,7 +102,7 @@ Only one of `static_jwks` or `static_jwks_file` keys must be present in one veri
 :::
 
 :::note
-Only RS* family algorithms are supported!
+For JWKS-based validators (`jwt_static_jwks` and `jwt_dynamic_jwks`), RS* and ES* family algorithms are supported.
 :::
 
 ### JWT with remote JWKS
