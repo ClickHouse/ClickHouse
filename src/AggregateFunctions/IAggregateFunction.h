@@ -255,6 +255,16 @@ public:
         const IColumn ** columns,
         Arena * arena) const = 0;
 
+    /** Like addBatchSinglePlace, but processes only rows at positions given by row_indices[0..num_rows-1].
+      * All rows are aggregated into a single place.
+      */
+    virtual void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const = 0;
+
     virtual void mergeBatch(
         size_t row_begin,
         size_t row_end,
@@ -524,6 +534,17 @@ public:
     {
         for (size_t j = 0; j < num_rows; ++j)
             static_cast<const Derived *>(this)->add(places[j] + place_offset, columns, row_indices[j], arena);
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            static_cast<const Derived *>(this)->add(place, columns, row_indices[j], arena);
     }
 
     void mergeBatch(

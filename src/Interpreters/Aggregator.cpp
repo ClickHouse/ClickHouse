@@ -2016,9 +2016,7 @@ void Aggregator::prepareInstructionsForSharding(
             /// TODO: We currently materialize sparse argument columns and do not support sparse-aware execution
             instruction.has_sparse_arguments = false;
 
-            /// TODO: Not used yet - `executeAggregateInstructionsOnSubsetRows` doesn't check it
-            /// because the consecutive keys cache is disabled.
-            instruction.can_optimize_equal_keys_ranges = false;
+            instruction.can_optimize_equal_keys_ranges = aggregate_functions[i]->canOptimizeEqualKeysRanges();
             /// arguments/batch_arguments are set below per chunk and point into aggregate_columns_holder[i]
         }
     }
@@ -2195,7 +2193,9 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
         places[j] = aggregate_data;
     }
 
-    executeAggregateInstructionsOnSubsetRows(aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get());
+    const bool has_only_one_value = state.hasOnlyOneValueSinceLastReset();
+    executeAggregateInstructionsOnSubsetRows(
+        aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get(), has_only_one_value);
 }
 
 void Aggregator::executeAggregateInstructionsOnSubsetRows(
@@ -2203,13 +2203,23 @@ void Aggregator::executeAggregateInstructionsOnSubsetRows(
     const UInt64 * row_indices,
     size_t num_rows,
     const AggregateFunctionInstruction * aggregate_instructions,
-    AggregateDataPtr * places) const
+    AggregateDataPtr * places,
+    bool has_only_one_value) const
 {
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
         const AggregateFunctionInstruction * instruction = aggregate_instructions + i;
-        instruction->batch_that->addBatchForRows(
-            row_indices, num_rows, places, instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+
+        if (has_only_one_value && instruction->can_optimize_equal_keys_ranges)
+        {
+            instruction->batch_that->addBatchSinglePlaceForRows(
+                row_indices, num_rows, places[0] + instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+        }
+        else
+        {
+            instruction->batch_that->addBatchForRows(
+                row_indices, num_rows, places, instruction->state_offset, instruction->batch_arguments, aggregates_pool);
+        }
     }
 }
 

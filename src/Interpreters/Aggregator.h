@@ -496,7 +496,8 @@ private:
         const UInt64 * row_indices,
         size_t num_rows,
         const AggregateFunctionInstruction * aggregate_instructions,
-        AggregateDataPtr * places) const;
+        AggregateDataPtr * places,
+        bool has_only_one_value) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
