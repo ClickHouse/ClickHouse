@@ -389,7 +389,10 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Mode 1 requires output_ordered_by_sort_key because early termination depends
     /// on the aggregate result being monotonically ordered with the sort key. For example,
     /// argMin(payload, ts) returns payload which has different ordering than ts.
-    if (read_from_mt && order_info.output_ordered_by_sort_key)
+    /// Collation-sensitive ORDER BY is rejected because physical MergeTree order is
+    /// not guaranteed to match collation order, so early termination after K groups
+    /// could return wrong results.
+    if (read_from_mt && order_info.output_ordered_by_sort_key && !sort_desc[0].collator)
     {
         String order_arg_name = resolveOriginalArgName(
             order_agg.argument_names.back(),
@@ -414,15 +417,14 @@ void optimizeTopNAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// threshold comparison semantics and SQL ordering semantics for NULL / collation.
     /// TODO: Relax this gate after adding threshold/filter support for NULL ordering
     /// and collation-aware comparisons, so Mode 2 can handle broader ORDER BY types.
-    /// The pruning_level setting controls which optimizations are layered on:
-    ///   level 0 — direct compute only (no threshold, no filter); slower than baseline
-    ///   level 1 — + in-transform threshold pruning (skip rows below K-th aggregate)
+    /// The pruning_level setting controls Mode 2 activation and pruning layers:
+    ///   level 0 — Mode 2 disabled entirely; only Mode 1 can apply
+    ///   level 1 — Mode 2 with in-transform threshold pruning (skip rows below K-th)
     ///   level 2 — + dynamic __topKFilter prewhere (requires use_top_k_dynamic_filtering;
     ///              falls back to level 1 behavior when that setting is off)
     /// Mode 2 also uses a conservative LIMIT gate because performance degrades when
     /// K is large relative to group cardinality. For large LIMIT, fallback to the
     /// standard Aggregator + Sorting pipeline is usually better.
-    /// Mode 2 requires at least level 1 to avoid the known direct-compute regression.
     bool mode2_eligible = false;
     UInt64 pruning_level = optimization_settings.topn_aggregation_pruning_level;
     bool mode2_limit_ok = limit_value <= optimization_settings.topn_aggregation_max_limit;

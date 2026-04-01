@@ -3870,10 +3870,11 @@ Possible values:
 - 1 — TopN aggregation optimization is enabled.
 )", 0) \
     DECLARE(UInt64, topn_aggregation_pruning_level, 2, R"(
-Controls Mode 2 pruning optimizations when optimize_topn_aggregation is enabled.
-- 0 — Direct compute only: no in-transform threshold pruning or dynamic filter pushdown. Not recommended (slower than baseline).
-- 1 — In-transform threshold pruning: rows below the current K-th aggregate value are skipped.
-- 2 — Full: in-transform threshold pruning plus dynamic __topKFilter prewhere for storage-level row skipping. The prewhere filter is only injected when use_top_k_dynamic_filtering is also enabled; otherwise level 2 behaves like level 1.
+Controls Mode 2 (unsorted-input) activation and pruning when optimize_topn_aggregation is enabled.
+Mode 1 (sorted-input early termination) is not affected by this setting.
+- 0 — Mode 2 is disabled entirely. Only Mode 1 (sorted-input early termination) can apply.
+- 1 — Mode 2 enabled with in-transform threshold pruning: rows below the current K-th aggregate value are skipped.
+- 2 — Mode 2 enabled with in-transform threshold pruning plus dynamic __topKFilter prewhere for storage-level row skipping. The prewhere filter is only injected when use_top_k_dynamic_filtering is also enabled; otherwise level 2 behaves like level 1.
 )", 0) \
     DECLARE(UInt64, topn_aggregation_max_limit, 1000, R"(
 Maximum LIMIT value for applying TopN Mode 2 optimization (`GROUP BY ... ORDER BY aggregate LIMIT K` on unsorted input).

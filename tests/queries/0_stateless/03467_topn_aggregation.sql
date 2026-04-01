@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-fasttest, no-parallel-replicas
+-- Tags: no-parallel-replicas
 
 DROP TABLE IF EXISTS t_topn;
 
@@ -58,58 +58,6 @@ ORDER BY m DESC
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 1;
 
--- EXPLAIN: verify TopNAggregating step appears (grep-based, analyzer-independent)
-
-SELECT '-- EXPLAIN PLAN: has TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
--- Negative case: incompatible aggregate (count) - optimization should NOT apply
-
-SELECT '-- EXPLAIN with count: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m, count(*) AS c
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
--- Negative case: WITH TIES - should NOT apply
-
-SELECT '-- EXPLAIN WITH TIES: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5 WITH TIES
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
--- Negative case: wrong sort direction (max + ASC) - should NOT apply
-
-SELECT '-- EXPLAIN max ASC: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m ASC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
 -- Edge case: K > total groups (small table, 10 groups)
 DROP TABLE IF EXISTS t_topn_small;
 CREATE TABLE t_topn_small (trace_id String, start_time DateTime)
@@ -161,19 +109,6 @@ GROUP BY trace_id
 ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
-
--- Negative case: OFFSET should NOT optimize
-
-SELECT '-- EXPLAIN LIMIT OFFSET: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5 OFFSET 10
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
 
 -- Nullable column with NULLS FIRST/LAST
 
@@ -237,29 +172,6 @@ GROUP BY key
 ORDER BY m ASC COLLATE 'en'
 LIMIT 3
 SETTINGS optimize_topn_aggregation = 0;
-
--- Mode 1 early termination: verify sorted input via grep
-SELECT '-- mode 1: has TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 3
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
-SELECT '-- mode 1: sorted input true';
-SELECT count() > 0 FROM (
-    EXPLAIN actions=1
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 3
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%Sorted input: true%';
 
 -- Mode 1: correctness with small limit
 SELECT '-- mode 1 small limit: optimized';
@@ -365,18 +277,6 @@ ORDER BY latest_ts DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- EXPLAIN: argMin falls through to standard pipeline (output sort != determining column)
-SELECT '-- EXPLAIN argMin: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT grp, argMin(payload, ts) AS earliest
-    FROM t_topn_argminmax
-    GROUP BY grp
-    ORDER BY earliest ASC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
 -- ====== Threshold pruning (Mode 2) ======
 
 -- Test threshold pruning with max DESC on unsorted table
@@ -414,7 +314,7 @@ LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
 -- Pruning level tests: verify correctness at each level on MergeTree table
--- Level 0: direct compute only (no threshold, no filter)
+-- Level 0: Mode 2 disabled, falls through to standard aggregation
 SELECT '-- Pruning level 0: max DESC';
 SELECT trace_id, max(start_time) AS m
 FROM t_topn_unsorted
@@ -450,86 +350,6 @@ ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
 
--- EXPLAIN at each level: verify plan differences (grep-based)
-SELECT '-- EXPLAIN pruning level 0: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 0
-) WHERE explain LIKE '%TopNAggregating%';
-
-SELECT '-- EXPLAIN pruning level 1: has TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
--- EXPLAIN topn_aggregation_max_limit gate:
--- large LIMIT should disable Mode 2 by default.
-SELECT '-- EXPLAIN max-limit gate default: no TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5000
-    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
--- Raising topn_aggregation_max_limit should re-enable Mode 2 for the same query.
-SELECT '-- EXPLAIN max-limit gate override: has TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5000
-    SETTINGS optimize_topn_aggregation = 1, topn_aggregation_pruning_level = 2, use_top_k_dynamic_filtering = 1, topn_aggregation_max_limit = 10000
-) WHERE explain LIKE '%TopNAggregating%';
-
--- EXPLAIN: verify threshold pruning and __topKFilter prewhere
-SELECT '-- EXPLAIN threshold pruning: has TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN actions=1
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
-) WHERE explain LIKE '%TopNAggregating%';
-
-SELECT '-- EXPLAIN threshold pruning: has Threshold pruning true';
-SELECT count() > 0 FROM (
-    EXPLAIN actions=1
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
-) WHERE explain LIKE '%Threshold pruning: true%';
-
-SELECT '-- EXPLAIN threshold pruning: has __topKFilter prewhere';
-SELECT count() > 0 FROM (
-    EXPLAIN actions=1
-    SELECT trace_id, max(start_time) AS m
-    FROM t_topn_unsorted
-    GROUP BY trace_id
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1, use_top_k_dynamic_filtering = 1
-) WHERE explain LIKE '%__topKFilter%';
-
 -- ====== LowCardinality aggregate argument (Mode 2) ======
 
 DROP TABLE IF EXISTS t_topn_lc;
@@ -557,17 +377,6 @@ GROUP BY grp
 ORDER BY m DESC
 LIMIT 5
 SETTINGS optimize_topn_aggregation = 0;
-
-SELECT '-- LowCardinality Mode 2: has TopNAggregating';
-SELECT count() > 0 FROM (
-    EXPLAIN PLAN
-    SELECT grp, max(val) AS m
-    FROM t_topn_lc
-    GROUP BY grp
-    ORDER BY m DESC
-    LIMIT 5
-    SETTINGS optimize_topn_aggregation = 1
-) WHERE explain LIKE '%TopNAggregating%';
 
 -- ====== LIMIT 1 with high cardinality (threshold activation stress) ======
 

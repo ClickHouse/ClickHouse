@@ -1,0 +1,32 @@
+-- EXPLAIN PLAN: has TopNAggregating
+1
+-- EXPLAIN with count: no TopNAggregating
+0
+-- EXPLAIN WITH TIES: no TopNAggregating
+0
+-- EXPLAIN max ASC: no TopNAggregating
+0
+-- EXPLAIN LIMIT OFFSET: no TopNAggregating
+0
+-- mode 1: has TopNAggregating
+1
+-- mode 1: sorted input true
+1
+-- EXPLAIN argMin: no TopNAggregating
+0
+-- EXPLAIN pruning level 0: no TopNAggregating
+0
+-- EXPLAIN pruning level 1: has TopNAggregating
+1
+-- EXPLAIN max-limit gate default: no TopNAggregating
+0
+-- EXPLAIN max-limit gate override: has TopNAggregating
+1
+-- EXPLAIN threshold pruning: has TopNAggregating
+1
+-- EXPLAIN threshold pruning: has Threshold pruning true
+1
+-- EXPLAIN threshold pruning: has __topKFilter prewhere
+1
+-- LowCardinality Mode 2: has TopNAggregating
+1

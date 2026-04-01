@@ -26,14 +26,6 @@ trace_4	2024-01-01 00:00:04
 trace_999	2024-01-01 02:46:39	service_4
 trace_998	2024-01-01 02:46:38	service_3
 trace_997	2024-01-01 02:46:37	service_2
--- EXPLAIN PLAN: has TopNAggregating
-1
--- EXPLAIN with count: no TopNAggregating
-0
--- EXPLAIN WITH TIES: no TopNAggregating
-0
--- EXPLAIN max ASC: no TopNAggregating
-0
 -- K larger than groups
 trace_9	2024-01-01 00:01:39
 trace_8	2024-01-01 00:01:38
@@ -58,8 +50,6 @@ trace_98	2024-01-01 00:16:38
 trace_97	2024-01-01 00:16:37
 trace_96	2024-01-01 00:16:36
 trace_95	2024-01-01 00:16:35
--- EXPLAIN LIMIT OFFSET: no TopNAggregating
-0
 -- NULLS LAST: optimized
 d	200
 f	150
@@ -84,10 +74,6 @@ f	150
 3	a
 1	ä
 5	b
--- mode 1: has TopNAggregating
-1
--- mode 1: sorted input true
-1
 -- mode 1 small limit: optimized
 trace_999	2024-01-01 02:46:39
 trace_998	2024-01-01 02:46:38
@@ -144,8 +130,6 @@ g48	2024-01-01 00:08:18	payload_498
 g47	2024-01-01 00:08:17	payload_497
 g46	2024-01-01 00:08:16	payload_496
 g45	2024-01-01 00:08:15	payload_495
--- EXPLAIN argMin: no TopNAggregating
-0
 -- Mode 2 threshold pruning: max DESC
 49	4999
 48	4998
@@ -194,20 +178,6 @@ trace_98	2024-01-01 00:16:38
 trace_97	2024-01-01 00:16:37
 trace_96	2024-01-01 00:16:36
 trace_95	2024-01-01 00:16:35
--- EXPLAIN pruning level 0: no TopNAggregating
-0
--- EXPLAIN pruning level 1: has TopNAggregating
-1
--- EXPLAIN max-limit gate default: no TopNAggregating
-0
--- EXPLAIN max-limit gate override: has TopNAggregating
-1
--- EXPLAIN threshold pruning: has TopNAggregating
-1
--- EXPLAIN threshold pruning: has Threshold pruning true
-1
--- EXPLAIN threshold pruning: has __topKFilter prewhere
-1
 -- LowCardinality Mode 2: optimized
 g199	9999
 g198	9998
@@ -220,8 +190,6 @@ g198	9998
 g197	9997
 g196	9996
 g195	9995
--- LowCardinality Mode 2: has TopNAggregating
-1
 -- LIMIT 1 high cardinality: optimized
 99999	99999
 -- LIMIT 1 high cardinality: reference

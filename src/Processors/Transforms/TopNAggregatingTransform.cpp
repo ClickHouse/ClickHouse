@@ -513,7 +513,7 @@ IColumn::Permutation TopNDirectAggregatingTransform::getSortPermutation(const IC
     IColumn::Permutation perm;
     order_col.getPermutation(
         direction, IColumn::PermutationSortStability::Unstable,
-        output_limit, sort_direction, perm);
+        output_limit, sort_description.front().nulls_direction, perm);
     return perm;
 }
 
@@ -599,7 +599,7 @@ bool TopNDirectAggregatingTransform::isBelowThreshold(const IColumn & col, size_
     if (!threshold_active)
         return false;
 
-    int cmp = col.compareAt(row, 0, *boundary_column, sort_direction);
+    int cmp = col.compareAt(row, 0, *boundary_column, sort_description.front().nulls_direction);
     return (sort_direction < 0) ? (cmp < 0) : (cmp > 0);
 }
 
@@ -608,7 +608,7 @@ ColumnPtr TopNDirectAggregatingTransform::buildThresholdKeepMask(const ColumnPtr
     if (!threshold_active)
         return {};
     PaddedPODArray<Int8> compare_results;
-    column->compareColumn(*boundary_column, 0, nullptr, compare_results, sort_direction, sort_direction);
+    column->compareColumn(*boundary_column, 0, nullptr, compare_results, sort_direction, sort_description.front().nulls_direction);
     if (compare_results.size() != rows)
         return {};
 
