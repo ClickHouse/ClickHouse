@@ -13,8 +13,8 @@ aiGenerateContent
 -- Explicit collection overrides default
 0
 -- aiGenerateContent return type
-result	Nullable(String)
--- NULL input returns NULL
+result	String
+-- NULL input returns empty string
 1
 -- Empty string input accepted
 0

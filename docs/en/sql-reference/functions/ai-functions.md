@@ -59,12 +59,12 @@ Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `p
 | [`ai_max_retries`](/operations/settings/settings#ai_max_retries) | UInt64 | `3` | Number of retry attempts on transient failure. |
 | [`ai_retry_initial_delay_ms`](/operations/settings/settings#ai_retry_initial_delay_ms) | UInt64 | `1000` | Initial retry delay in milliseconds (doubles on each retry). |
 | [`ai_cache_ttl_sec`](/operations/settings/settings#ai_cache_ttl_sec) | UInt64 | `86400` | Cache time-to-live in seconds. Set to `0` to disable caching. |
-| [`ai_on_error`](/operations/settings/settings#ai_on_error) | String | `'throw'` | Behavior on API error: `'throw'` raises an exception, `'null'` returns NULL. |
+| [`ai_on_error`](/operations/settings/settings#ai_on_error) | String | `'throw'` | Behavior on API error: `'throw'` raises an exception, `'default'` returns the default value for the column type (empty string for `String`). |
 | [`ai_max_rows_per_query`](/operations/settings/settings#ai_max_rows_per_query) | UInt64 | `100000` | Maximum rows processed by AI functions per query. |
 | [`ai_max_input_tokens_per_query`](/operations/settings/settings#ai_max_input_tokens_per_query) | UInt64 | `1000000` | Maximum input tokens per query. |
 | [`ai_max_output_tokens_per_query`](/operations/settings/settings#ai_max_output_tokens_per_query) | UInt64 | `500000` | Maximum output tokens per query. |
 | [`ai_max_api_calls_per_query`](/operations/settings/settings#ai_max_api_calls_per_query) | UInt64 | `1000` | Maximum API calls per query. |
-| [`ai_on_quota_exceeded`](/operations/settings/settings#ai_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'null'` returns NULL for remaining rows. |
+| [`ai_on_quota_exceeded`](/operations/settings/settings#ai_on_quota_exceeded) | String | `'throw'` | Behavior when quota is exceeded: `'throw'` raises an exception, `'default'` returns the default value for the column type (empty string for `String`) for remaining rows. |
 
 <!--
 The inner content of the tags below are replaced at doc framework build time with

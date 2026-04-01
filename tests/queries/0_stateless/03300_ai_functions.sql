@@ -143,11 +143,11 @@ DROP TABLE IF EXISTS _03300_null_input;
 CREATE TABLE _03300_null_input (x Nullable(String)) ENGINE = Memory;
 INSERT INTO _03300_null_input VALUES (NULL);
 
-SELECT '-- NULL input returns NULL';
+SELECT '-- NULL input returns empty string';
 DROP TABLE IF EXISTS _03300_null_result;
 CREATE TABLE _03300_null_result ENGINE = Memory AS
     SELECT aiGenerateContent(x) AS result FROM _03300_null_input;
-SELECT result IS NULL FROM _03300_null_result;
+SELECT result = '' FROM _03300_null_result;
 DROP TABLE IF EXISTS _03300_null_result;
 DROP TABLE IF EXISTS _03300_null_input;
 

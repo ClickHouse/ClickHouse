@@ -6,19 +6,14 @@
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Common/CurrentMetrics.h>
 
 #include <unordered_map>
-#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -182,20 +177,14 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     String response_format = buildResponseFormatJSON(arguments);
 
     auto result_col = ColumnString::create();
-    auto null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
     std::unordered_map<UInt128, std::vector<size_t>, UInt128Hash> dedup_map;
-
-    std::unordered_set<size_t> null_input_rows;
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
         const auto & text_col = arguments[getFirstDataArgIndex(arguments)].column;
         if (text_col->isNullAt(i))
-        {
-            null_input_rows.insert(i);
             continue;
-        }
 
         String user_message = buildUserMessage(arguments, i);
         std::vector<String> cache_args = {user_message, system_prompt};
@@ -326,12 +315,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     UInt64 rows_processed_count = 0;
     UInt64 rows_skipped_count = 0;
 
-    for (size_t i : null_input_rows)
-    {
-        null_map->getData()[i] = 1;
-        ++rows_skipped_count;
-    }
-
     for (const auto & [key, rows] : dedup_map)
     {
         auto it = results.find(key);
@@ -341,16 +324,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (size_t row : rows)
         {
+            ordered_results[row] = value;
             if (value.empty() && quota->isQuotaExceeded())
-            {
-                null_map->getData()[row] = 1;
                 ++rows_skipped_count;
-            }
             else
-            {
-                ordered_results[row] = value;
                 ++rows_processed_count;
-            }
         }
     }
 
@@ -360,7 +338,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     for (size_t i = 0; i < input_rows_count; ++i)
         result_col->insertData(ordered_results[i].data(), ordered_results[i].size());
 
-    return ColumnNullable::create(std::move(result_col), std::move(null_map));
+    return result_col;
 }
 
 }

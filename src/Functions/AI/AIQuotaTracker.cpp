@@ -11,7 +11,7 @@ namespace ErrorCodes
 
 static bool isGracefulQuotaMode(const String & mode)
 {
-    return mode == "null";
+    return mode == "default";
 }
 
 bool AIQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 batch_rows)
@@ -29,7 +29,7 @@ bool AIQuotaTracker::checkBeforeDispatch(UInt64 estimated_input_tokens, UInt64 b
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                     "Limit for AI rows exceeded: {} rows processed, maximum: {}. "
                     "This is controlled by the 'ai_max_rows_per_query' setting. "
-                    "Set 'ai_on_quota_exceeded' to 'null' to return NULL for remaining rows instead of failing",
+                    "Set 'ai_on_quota_exceeded' to 'default' to return the default value for remaining rows instead of failing",
                     prev, max_rows);
             quota_exceeded.store(true, std::memory_order_relaxed);
             return false;
@@ -89,7 +89,7 @@ void AIQuotaTracker::recordResponse(UInt64 in_tokens, UInt64 out_tokens)
 
 bool AIQuotaTracker::handleRowError()
 {
-    if (on_error == "null")
+    if (on_error == "default")
     {
         rows_skipped.fetch_add(1, std::memory_order_relaxed);
         return true;

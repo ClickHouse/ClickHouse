@@ -3,7 +3,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Common/Exception.h>
 
@@ -41,7 +40,7 @@ public:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} with a named collection as first argument requires at least a prompt argument", name);
 
-        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+        return std::make_shared<DataTypeString>();
     }
 
 protected:
@@ -94,7 +93,7 @@ omitting the collection argument.
            {"prompt", "The user prompt or question to send to the model.", {"String"}},
            {"system_prompt", "Optional system-level instruction that guides the model's behavior (e.g. persona, output format).", {"String"}},
            {"temperature", "Sampling temperature controlling randomness. Default: `0.7`.", {"Float64"}}},
-        .returned_value = {"The generated text response, or NULL if the request failed and `ai_on_error` is set to `'null'`.", {"Nullable(String)"}},
+        .returned_value = {"The generated text response, or the default value for the column type (empty string) if the request failed and `ai_on_error` is set to `'default'`.", {"String"}},
         .examples
         = {{"Simple question", "SELECT aiGenerateContent('ai_credentials', 'What is 2 + 2? Reply with just the number.')", "4"},
            {"With system prompt", "SELECT aiGenerateContent('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')", ""},
