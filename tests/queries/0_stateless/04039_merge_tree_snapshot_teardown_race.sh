@@ -8,6 +8,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Fallback for release branches (26.1, 26.2) where wait_for_query_to_start
+# has not been moved to shell_config.sh yet (master commit 62405eb3113).
+if ! type wait_for_query_to_start &>/dev/null; then
+    function wait_for_query_to_start()
+    {
+        local query_id="$1"
+        local timeout="${2:-120}"
+        local start=$EPOCHSECONDS
+        while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$query_id' SETTINGS use_query_cache = 0") == 0 ]]; do
+            if ((EPOCHSECONDS - start > timeout)); then
+                echo "Timeout waiting for query $query_id to start" >&2
+                exit 1
+            fi
+            sleep 0.1
+        done
+    }
+fi
+
 TABLE="test_04039_snapshot_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 TABLE_PROJ="test_04039_proj_teardown_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ITERATIONS=20
