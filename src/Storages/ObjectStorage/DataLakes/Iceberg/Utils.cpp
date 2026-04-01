@@ -97,7 +97,7 @@ namespace DB::Setting
 
 /// Hard to imagine a hint file larger than 10 MB
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
-static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
 namespace DB::Iceberg
 {
