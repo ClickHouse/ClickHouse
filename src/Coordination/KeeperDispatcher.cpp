@@ -599,33 +599,30 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
                 std::lock_guard lock(read_request_queue_mutex);
                 if (auto it = read_request_queue.find(key); it != read_request_queue.end())
                 {
-                    pending_reads = std::move(it->second);
+                    for (const auto & read_request : it->second)
+                    {
+                        if (!server->isLeaderAlive())
+                        {
+                            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
+                            continue;
+                        }
+
+                        ZooKeeperOpentelemetrySpans::maybeFinalize(
+                            read_request.request->spans.read_wait_for_write,
+                            [&]
+                            {
+                                return std::vector<OpenTelemetry::SpanAttribute>{
+                                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                                    {"keeper.session_id", read_request.session_id},
+                                    {"keeper.xid", read_request.request->xid},
+                                };
+                            });
+
+                        server->putLocalReadRequest(read_request);
+                    }
+
                     read_request_queue.erase(it);
                 }
-            }
-
-            /// Dispatch reads outside the lock — putLocalReadRequest and addErrorResponses
-            /// push to thread-safe queues, so no lock is needed here.
-            for (const auto & read_request : pending_reads)
-            {
-                if (!server->isLeaderAlive())
-                {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
-                    continue;
-                }
-
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    read_request.request->spans.read_wait_for_write,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                            {"keeper.session_id", read_request.session_id},
-                            {"keeper.xid", read_request.request->xid},
-                        };
-                    });
-
-                server->putLocalReadRequest(read_request);
             }
         });
 
@@ -898,7 +895,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         if (may_have_dependent_reads)
         {
             SessionAndXID key(request_for_session.session_id, request_for_session.request->xid);
-            ProfiledMutexLock lock(read_request_queue_mutex, ProfileEvents::KeeperReadRequestQueueLockWaitMicroseconds, ProfileEvents::KeeperReadRequestQueueLockHoldMicroseconds);
+            std::lock_guard lock(read_request_queue_mutex);
             if (auto it = read_request_queue.find(key); it != read_request_queue.end())
             {
                 dependent_reads.insert(dependent_reads.end(), std::move_iterator(it->second.begin()), std::move_iterator(it->second.end()));
