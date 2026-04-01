@@ -29,7 +29,6 @@
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/CurrentThread.h>
-#include <Common/QueryScope.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
@@ -387,7 +386,7 @@ TEST_F(FileCacheTest, LRUPolicy)
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     chassert(&DB::CurrentThread::get() == &thread_status);
-    auto query_scope_holder = DB::QueryScope::create(query_context);
+    auto query_scope_holder = DB::CurrentThread::QueryScope::create(query_context);
 
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
@@ -660,7 +659,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
-                auto query_scope_holder_1 = DB::QueryScope::create(query_context_1);
+                auto query_scope_holder_1 = DB::CurrentThread::QueryScope::create(query_context_1);
 
                 auto holder2 = get_or_set(25, 5); /// Get [25, 29] once again.
                 assertEqual(holder2,
@@ -726,7 +725,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 query_context_1->makeQueryContext();
                 query_context_1->setCurrentQueryId("query_id_1");
                 chassert(&DB::CurrentThread::get() == &thread_status_1);
-                auto query_scope_holder_1 = DB::QueryScope::create(query_context_1);
+                auto query_scope_holder_1 = DB::CurrentThread::QueryScope::create(query_context_1);
 
                 auto holder2 = get_or_set(3, 23); /// get [3, 25] once again.
                 assertEqual(holder,
@@ -1120,7 +1119,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     chassert(&DB::CurrentThread::get() == &thread_status);
-    auto query_scope_holder = DB::QueryScope::create(query_context);
+    auto query_scope_holder = DB::CurrentThread::QueryScope::create(query_context);
 
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;
@@ -1250,7 +1249,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     chassert(&DB::CurrentThread::get() == &thread_status);
-    auto query_scope_holder = DB::QueryScope::create(query_context);
+    auto query_scope_holder = DB::CurrentThread::QueryScope::create(query_context);
 
     DB::FileCacheSettings settings;
     settings[FileCacheSetting::path] = cache_base_path;

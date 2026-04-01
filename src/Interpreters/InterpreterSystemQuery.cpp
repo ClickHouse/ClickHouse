@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
-#include <utility>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -61,7 +60,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
-#include <Common/CoverageCollection.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -149,12 +147,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char restart_replica_fail_after_detach[];
 }
 
 namespace ActionLocks
@@ -424,14 +416,6 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
-#if USE_PARQUET
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
-            system_context->clearParquetMetadataCache();
-            break;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
-#endif
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
@@ -452,9 +436,9 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
-            system_context->clearTextIndexTokensCache();
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
+            system_context->clearTextIndexDictionaryBlockCache();
             break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
@@ -466,7 +450,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            system_context->clearTextIndexTokensCache();
+            system_context->clearTextIndexDictionaryBlockCache();
             system_context->clearTextIndexHeaderCache();
             system_context->clearTextIndexPostingsCache();
             break;
@@ -677,7 +661,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError({
-                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
+                [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
             ExternalDictionariesLoader::resetAll();
@@ -1044,41 +1028,6 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
-        case Type::SET_COVERAGE_TEST:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM);
-            LOG_INFO(getLogger("InterpreterSystemQuery"),
-                "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
-#if WITH_COVERAGE_DEPTH
-            {
-                /// Register (or re-register) the flush callback so coverage data is
-                /// resolved and inserted into system.coverage_log when the previous
-                /// test's counters are flushed.  We re-register on each call so the
-                /// captured global context stays fresh after server restart scenarios,
-                /// and so that the callback is available even on the very first call.
-                ContextPtr global_ctx = getContext()->getGlobalContext();
-                registerCoverageFlushCallback(
-                    [global_ctx](std::string_view prev_test,
-                                 const std::vector<CovCounter> & name_refs,
-                                 const std::vector<IndirectCallEntry> & indirect_calls)
-                    {
-                        LOG_INFO(getLogger("CoverageCollection"),
-                            "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
-                            prev_test, name_refs.size(), indirect_calls.size());
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-                        DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
-#else
-                        (void)prev_test;
-                        (void)name_refs;
-                        (void)indirect_calls;
-                        (void)global_ctx;
-#endif
-                    });
-            }
-#endif
-            setCoverageTest(query.coverage_test_name);
-            break;
-        }
         case Type::LOAD_PRIMARY_KEY: {
             loadPrimaryKeys();
             break;
@@ -1297,86 +1246,55 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
     /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
     /// should always eventually succeed for transient errors.
-    /// If all retries fail (or the query is cancelled), we adjust the in-memory metadata digest
-    /// to reflect the table's absence, preventing false "Digest does not match" assertions.
 
     StoragePtr new_table;
-    try
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
+    while (true)
     {
-        size_t non_zk_retries = 0;
-        constexpr size_t max_non_zk_retries = 10;
-        while (true)
+        try
         {
-            try
-            {
-                fiu_do_on(FailPoints::restart_replica_fail_after_detach,
-                {
-                    throw Exception(ErrorCodes::FAULT_INJECTED,
-                        "Injected failure by failpoint restart_replica_fail_after_detach");
-                });
+            new_table = StorageFactory::instance().get(create,
+                data_path,
+                system_context,
+                system_context->getGlobalContext(),
+                columns,
+                constraints,
+                LoadingStrictnessLevel::ATTACH);
 
-                new_table = StorageFactory::instance().get(create,
-                    data_path,
-                    system_context,
-                    system_context->getGlobalContext(),
-                    columns,
-                    constraints,
-                    LoadingStrictnessLevel::ATTACH);
-
-                break;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
-                if (!Coordination::isHardwareError(e.code))
-                    throw;
-
-                tryLogCurrentException(
-                    getLogger("InterpreterSystemQuery"),
-                    fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
-
-                /// Check if the query was cancelled (e.g. server is shutting down)
-                if (auto process_list_element = getContext()->getProcessListElementSafe())
-                    process_list_element->checkTimeLimit();
-
-                sleepForSeconds(1);
-            }
-            catch (...)
-            {
-                if (++non_zk_retries > max_non_zk_retries)
-                    throw;
-
-                tryLogCurrentException(
-                    getLogger("InterpreterSystemQuery"),
-                    fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
-                        replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
-
-                if (auto process_list_element = getContext()->getProcessListElementSafe())
-                    process_list_element->checkTimeLimit();
-
-                sleepForSeconds(1);
-            }
+            break;
         }
-    }
-    catch (...)
-    {
-        /// The table is left permanently detached from the in-memory tables map.
-        /// Adjust the metadata digest so it stays consistent with the tables map,
-        /// preventing false "Digest does not match" LOGICAL_ERROR exceptions.
-        /// The table's metadata file still exists on disk, so it will be restored
-        /// on server restart or after DatabaseReplicated recovery.
-        if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
+        catch (const Coordination::Exception & e)
         {
-            try
-            {
-                replicated_db->adjustDigestOnTableLostFromRestart(replica_table_id.table_name);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to adjust digest after failed SYSTEM RESTART REPLICA for table " + replica_table_id.table_name + "; digest mismatch will persist until server restart or DatabaseReplicated recovery");
-            }
+            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
+
+            /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
         }
-        throw;
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
     }
 
     database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);
@@ -1575,10 +1493,10 @@ void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & quer
 }
 
 DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
-    const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::restoreDatabaseFromKeeperPath");
-    auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
+    auto zookeeper = getContext()->getZooKeeper();
 
     String metadata_path = zookeeper_path + "/metadata";
     if (!zookeeper->exists(metadata_path))
@@ -1826,8 +1744,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(
-                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated, cannot drop replica", query.getDatabase());
@@ -1854,8 +1771,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
-            DatabaseReplicated::dropReplica(
-                replicated, replicated->getZooKeeperName(), replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
+            DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1892,7 +1808,6 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 executeQuery(drop_query, drop_ctx);
             });
             auto database = restoreDatabaseFromKeeperPath(
-                /*zookeeper_name=*/query.zk_name,
                 /*zookeeper_path=*/query.replica_zk_path,
                 /*full_replica_name=*/full_replica_name,
                 /*restoring_database_name=*/restoring_database_name);
@@ -1903,8 +1818,8 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             }
         }
 
-        DatabaseReplicated::dropReplica(nullptr, query.zk_name, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
-        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.full_replica_zk_path);
+        DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
+        LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
     }
 }
 
@@ -2231,7 +2146,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-        case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
@@ -2241,7 +2155,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_INDEX_MARK_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
@@ -2577,7 +2491,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
-        case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::RESET_DDL_WORKER:
         case Type::END: break;

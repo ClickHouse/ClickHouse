@@ -113,7 +113,6 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char lightweight_show_tables[];
-    extern const char datalake_try_get_table_return_nullptr[];
 }
 
 DatabaseDataLake::DatabaseDataLake(
@@ -504,11 +503,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         std::this_thread::sleep_for(std::chrono::seconds(10));
     });
 
-    fiu_do_on(FailPoints::datalake_try_get_table_return_nullptr,
-    {
-        return nullptr;
-    });
-
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
@@ -850,17 +844,6 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
     return create_query;
-}
-
-void DatabaseDataLake::checkDatabase() const
-{
-    auto catalog = getCatalog();
-    /// This function checks if we can access catalog and get tables list.
-    /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
-    std::ignore = catalog->empty();
-
-
-    LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(

@@ -101,14 +101,10 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
-            Int64 res = -1;
+            Int64 res = 0;
 
             if (validator.validateCell(start) && validator.validateCell(end))
-            {
-                int64_t distance = 0;
-                if (!gridDistance(start, end, &distance))
-                    res = distance;
-            }
+                res = gridPathCellsSize(start, end);
 
             dst_data[row] = res;
         }

@@ -1,4 +1,3 @@
-SET automatic_parallel_replicas_mode = 0;
 SELECT 1
 FROM
 (

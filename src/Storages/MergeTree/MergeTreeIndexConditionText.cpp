@@ -1,20 +1,19 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-
-#include <Core/Settings.h>
-#include <Functions/IFunctionAdaptors.h>
-#include <Functions/hasAnyAllTokens.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ITokenizer.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
-#include <DataTypes/DataTypeMapHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/misc.h>
+#include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Interpreters/Set.h>
+#include <Interpreters/PreparedSets.h>
 
 namespace DB
 {
@@ -28,7 +27,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool query_plan_text_index_add_hint;
-    extern const SettingsBool use_text_index_tokens_cache;
+    extern const SettingsBool use_text_index_dictionary_cache;
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
@@ -83,10 +82,10 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
-    if (settings[Setting::use_text_index_tokens_cache])
-        tokens_cache = context_->getTextIndexTokensCache();
+    if (settings[Setting::use_text_index_dictionary_cache])
+        dictionary_block_cache = context_->getTextIndexDictionaryBlockCache();
     else
-        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_memory_usage, 0, 1.0);
+        dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_memory_usage, 0, 1.0);
 
     if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
@@ -501,22 +500,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
     }
 
-    /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
-    if (!has_index_column && !has_map_keys_column && !has_map_values_column)
-    {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
-        {
-            auto & [map_column_name, _] = *parsed;
-            if (header.has(fmt::format("mapValues({})", map_column_name))
-                && value_field.getType() == Field::Types::String
-                && !value_field.safeGet<String>().empty())
-            {
-                has_index_column = true;
-                direct_read_mode = getHintOrNoneMode();
-            }
-        }
-    }
-
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
@@ -667,9 +650,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
-    /// Also handles map subcolumn references like `func(m.key_<serialized_key>, ...)`.
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
-    /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
+    /// It is true because `arrayElement` return default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
 
     const auto * dag_node = function_node.getDAGNode();
@@ -686,57 +668,43 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     auto required_column = required_columns.front();
     auto output_column_name = outputs.front()->result_name;
 
+    if (!isMap(required_column.type) || !header.has(fmt::format("mapKeys({})", required_column.name)))
+        return false;
+
     std::optional<String> key_const_value;
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(outputs.front());
 
-    if (isMap(required_column.type) && header.has(fmt::format("mapKeys({})", required_column.name)))
+    /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
+    while (!stack.empty())
     {
-        /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
-        std::vector<const ActionsDAG::Node *> stack;
-        stack.push_back(outputs.front());
+        const auto * node = stack.back();
+        stack.pop_back();
 
-        while (!stack.empty())
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->children.size() == 2
+            && node->function_base
+            && node->function_base->getName() == "arrayElement")
         {
-            const auto * node = stack.back();
-            stack.pop_back();
+            if (key_const_value.has_value())
+                return false;
 
-            if (node->type == ActionsDAG::ActionType::FUNCTION
-                && node->children.size() == 2
-                && node->function_base
-                && node->function_base->getName() == "arrayElement")
-            {
-                if (key_const_value.has_value())
-                    return false;
+            const auto & map_argument = node->children[0];
+            const auto & const_key_argument = node->children[1];
 
-                const auto & map_argument = node->children[0];
-                const auto & const_key_argument = node->children[1];
+            if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
+                return false;
 
-                if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
-                    return false;
+            if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
-                    return false;
-
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
-            }
-            else
-            {
-                for (const auto & child : node->children)
-                    stack.push_back(child);
-            }
+            key_const_value = std::string{const_key_argument->column->getDataAt(0)};
         }
-    }
-    else
-    {
-        /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name);
-        if (!parsed)
-            return false;
-
-        auto & [map_column_name, serialized_key] = *parsed;
-        if (!header.has(fmt::format("mapKeys({})", map_column_name)))
-            return false;
-
-        key_const_value = std::move(serialized_key);
+        else
+        {
+            for (const auto & child : node->children)
+                stack.push_back(child);
+        }
     }
 
     if (!key_const_value.has_value())
@@ -780,24 +748,15 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
-    /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
-    if (node.isFunction())
-    {
-        const auto function = node.toFunctionNode();
-        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
-        {
-            const auto column_name = function.getArgumentAt(0).getColumnName();
-            return header.has(fmt::format("mapValues({})", column_name));
-        }
+    if (!node.isFunction())
         return false;
-    }
 
-    /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
-    if (!parsed)
+    const auto function = node.toFunctionNode();
+    if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
         return false;
-    auto & [map_column_name, serialized_key] = *parsed;
-    return header.has(fmt::format("mapValues({})", map_column_name));
+
+    const auto column_name = function.getArgumentAt(0).getColumnName();
+    return header.has(fmt::format("mapValues({})", column_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
