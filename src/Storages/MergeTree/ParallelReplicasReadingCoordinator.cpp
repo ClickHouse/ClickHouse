@@ -919,7 +919,7 @@ public:
     InOrderCoordinator([[maybe_unused]] size_t replicas_count_, CoordinationMode mode_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
     {
-        chassert(mode_ == CoordinationMode::WithOrder || mode_ == CoordinationMode::ReverseOrder);
+        chassert(isInOrder(mode_));
     }
     ~InOrderCoordinator() override
     {

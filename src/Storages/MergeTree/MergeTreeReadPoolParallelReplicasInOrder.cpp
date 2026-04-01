@@ -36,7 +36,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    size_t split_id_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -54,6 +55,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     , extension(std::move(extension_))
     , mode(mode_)
     , has_limit_below_one_block(has_limit_below_one_block_)
+    , split_id(split_id_)
     , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
     for (const auto & info : per_part_infos)
@@ -197,9 +199,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     std::optional<ParallelReadResponse> response;
     try
     {
-        response = extension.sendReadRequest(
+        response = extension.sendReadInOrderRequest(
             mode,
             min_marks_per_task * per_part_infos.size(),
+            split_id,
             request // Send for compatibility with old initiators
         );
         if (response)

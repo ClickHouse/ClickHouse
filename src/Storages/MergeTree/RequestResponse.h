@@ -27,6 +27,11 @@ enum class CoordinationMode : uint8_t
     MAX = ReverseOrder,
 };
 
+constexpr bool isInOrder(CoordinationMode mode)
+{
+    return mode == CoordinationMode::WithOrder || mode == CoordinationMode::ReverseOrder;
+}
+
 /// Represents a segment [left; right]
 struct PartBlockRange
 {
@@ -48,17 +53,23 @@ struct PartBlockRange
 /// is still serialized for backward compatibility.
 struct ParallelReadRequest
 {
+    /// Default mode: no part descriptions needed, coordinator uses hash-based distribution.
     ParallelReadRequest(CoordinationMode mode_, size_t replica_num_, size_t min_marks_per_request_)
         : mode(mode_), replica_num(replica_num_), min_marks_per_request(min_marks_per_request_)
     {}
 
-    /// Backward-compatible constructor: carries part descriptions (used by old protocol
-    /// for in-order mode, currently unused for Default mode).
+    /// In-order mode for new protocol
     ParallelReadRequest(
-        CoordinationMode mode_, size_t replica_num_, size_t min_marks_per_request_, RangesInDataPartsDescription description_)
+        CoordinationMode mode_,
+        size_t replica_num_,
+        size_t min_marks_per_request_,
+        size_t split_id_,
+        RangesInDataPartsDescription description_ = {} // Empty in new protocol versions
+        )
         : mode(mode_)
         , replica_num(replica_num_)
         , min_marks_per_request(min_marks_per_request_)
+        , split_id(split_id_)
         , description(std::move(description_))
     {}
 
@@ -69,6 +80,10 @@ struct ParallelReadRequest
     /// initial announcement and the coordinator uses the announced value. Retained here for backward
     /// compatibility with older initiators that still read it from each request.
     size_t min_marks_per_request;
+
+    /// Identifies which reading stream (split) within a replica this request is for.
+    /// Used by the coordinator to maintain independent read positions per split.
+    size_t split_id{0};
 
     /// Part descriptions for backward compatibility with old in-order protocol.
     /// Empty for Default mode and for new in-order protocol.

@@ -84,9 +84,15 @@ void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, RangesI
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
-    CoordinationMode mode, size_t min_marks_per_request, RangesInDataPartsDescription description) const
+    CoordinationMode mode, size_t min_marks_per_request) const
 {
-    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, std::move(description)});
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request});
+}
+
+std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadInOrderRequest(
+    CoordinationMode mode, size_t min_marks_per_request, size_t split_id, RangesInDataPartsDescription description) const
+{
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, split_id, std::move(description)});
 }
 
 MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(

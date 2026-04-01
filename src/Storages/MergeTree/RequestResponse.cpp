@@ -42,13 +42,15 @@ void ParallelReadRequest::serialize(WriteBuffer & out, UInt64 initiator_pr_proto
     writeIntBinary(replica_num, out);
     writeIntBinary(min_marks_per_request, out);
 
-    if (initiator_pr_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS)
+    if (isInOrder(mode) && initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS)
+        writeIntBinary(split_id, out);
+    else if (initiator_pr_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS)
         description.serialize(out, initiator_pr_protocol_version);
 }
 
 String ParallelReadRequest::describe() const
 {
-    String result = fmt::format("replica_num {}, min_num_of_marks {}", replica_num, min_marks_per_request);
+    String result = fmt::format("replica_num {}, min_num_of_marks {}, split_id {}", replica_num, min_marks_per_request, split_id);
     if (!description.empty())
     {
         result += ", ";
@@ -78,11 +80,18 @@ ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 rep
     readIntBinary(replica_num, in);
     readIntBinary(min_marks_per_request, in);
 
+    if (isInOrder(mode) && replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS)
+    {
+        size_t split_id;
+        readIntBinary(split_id, in);
+        return ParallelReadRequest(mode, replica_num, min_marks_per_request, split_id);
+    }
+
     if (replica_pr_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MODE_SPECIFIC_REQUESTS)
     {
         RangesInDataPartsDescription description;
         description.deserialize(in, replica_pr_protocol_version);
-        return ParallelReadRequest(mode, replica_num, min_marks_per_request, std::move(description));
+        return ParallelReadRequest(mode, replica_num, min_marks_per_request, /*split_id_=*/0, std::move(description));
     }
 
     return ParallelReadRequest(mode, replica_num, min_marks_per_request);

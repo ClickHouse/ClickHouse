@@ -24,7 +24,8 @@ public:
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        size_t split_id_ = 0);
 
     String getName() const override { return "ReadPoolParallelReplicasInOrder"; }
     bool preservesOrderOfRanges() const override { return true; }
@@ -36,6 +37,7 @@ private:
     const ParallelReadingExtension extension;
     const CoordinationMode mode;
     const bool has_limit_below_one_block;
+    const size_t split_id;
 
     size_t min_marks_per_task{0};
     bool no_more_tasks{false};
