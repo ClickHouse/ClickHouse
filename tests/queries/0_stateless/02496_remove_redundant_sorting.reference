@@ -332,7 +332,7 @@ SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it d
 Expression (Projection)
   Sorting (Sorting for ORDER BY)
     Expression (Before ORDER BY)
-      Filter ((WHERE + (Projection + Before ORDER BY)))
+      Filter (((WHERE + (Projection + Before ORDER BY)) + HAVING))
         Aggregating
           Expression ((Before GROUP BY + Projection))
             Sorting (Sorting for ORDER BY)
