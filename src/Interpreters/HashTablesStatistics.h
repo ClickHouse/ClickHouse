@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <vector>
 #include <Common/CacheBase.h>
 
 namespace DB
@@ -61,6 +63,21 @@ struct HashJoinEntry
     size_t source_rows; // the number of rows in the source table
 };
 
+/// Stats entry for sharded aggregation. Stores per-shard hash table sizes so that
+/// subsequent runs can preallocate each shard's hash table to the exact right size.
+struct ShardedAggregationEntry
+{
+    std::vector<size_t> per_shard_sizes;
+    size_t total_size = 0;
+
+    bool shouldBeUpdated(const ShardedAggregationEntry & new_entry) const
+    {
+        return new_entry.total_size < total_size / 2 || total_size < new_entry.total_size;
+    }
+
+    std::string dump() const { return fmt::format("total_size={}, num_shards={}", total_size, per_shard_sizes.size()); }
+};
+
 /** Collects observed HashTable-s sizes to avoid redundant intermediate resizes.
   */
 template <typename Entry>
@@ -97,4 +114,70 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 
 std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt);
 std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params);
+
+/// Collects per-shard sizes during sharded aggregation execution.
+/// Shared across all ShardedAggregatingTransform instances. The last shard
+/// to finish writes the collected sizes to the global stats cache.
+struct ShardedStatsCollector
+{
+    ShardedStatsCollector(size_t num_shards_, const StatsCollectingParams & params_)
+        : per_shard_sizes(num_shards_, 0)
+        , shards_finished(0)
+        , num_shards(num_shards_)
+        , params(params_)
+    {
+    }
+
+    void reportShardSize(size_t shard_index, size_t size)
+    {
+        per_shard_sizes[shard_index] = size;
+
+        if (shards_finished.fetch_add(1) + 1 == num_shards)
+            flush();
+    }
+
+    /// Read the cached hint for a specific shard. Returns nullopt on cache miss
+    /// or if num_shards changed since the cached run.
+    std::optional<size_t> getSizeHintForShard(size_t shard_index) const
+    {
+        if (!params.isCollectionAndUseEnabled())
+            return std::nullopt;
+
+        auto entry = getHashTablesStatistics<ShardedAggregationEntry>().getSizeHint(params);
+        if (!entry)
+            return std::nullopt;
+
+        if (entry->per_shard_sizes.size() == num_shards)
+            return entry->per_shard_sizes[shard_index];
+
+        /// num_shards changed — fall back to average
+        if (num_shards > 0)
+            return entry->total_size / num_shards;
+
+        return std::nullopt;
+    }
+
+private:
+    void flush()
+    {
+        if (!params.isCollectionAndUseEnabled())
+            return;
+
+        size_t total = 0;
+        for (auto shard_size : per_shard_sizes)
+            total += shard_size;
+
+        ShardedAggregationEntry entry;
+        entry.per_shard_sizes = per_shard_sizes;
+        entry.total_size = total;
+
+        getHashTablesStatistics<ShardedAggregationEntry>().update(entry, params);
+    }
+
+    std::vector<size_t> per_shard_sizes;
+    std::atomic<size_t> shards_finished;
+    size_t num_shards;
+    StatsCollectingParams params;
+};
+
 }

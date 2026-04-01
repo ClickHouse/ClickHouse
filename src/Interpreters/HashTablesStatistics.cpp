@@ -138,4 +138,5 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
 
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
+template class HashTablesStatistics<ShardedAggregationEntry>;
 }
