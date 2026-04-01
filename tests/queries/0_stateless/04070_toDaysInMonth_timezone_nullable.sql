@@ -1,3 +1,4 @@
+-- Tags: no-msan
 
 -- Timezone argument: UTC Jan 31 23:30 is Feb 1 in Asia/Tokyo (2024 is leap year, Feb has 29 days)
 SELECT toDaysInMonth(toDateTime('2024-01-31 23:30:00', 'UTC'), 'Asia/Tokyo') ORDER BY 1;
