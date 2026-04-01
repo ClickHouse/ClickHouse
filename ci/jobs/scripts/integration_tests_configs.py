@@ -42,7 +42,6 @@ TEST_CONFIGS = [
     TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_concurrent/", True, "no idea why i'm sequential"),
-    TC("test_export_replicated_mt_partition_to_object_storage/", True, "ZooKeeper can't handle too many parallel requests"),
 ]
 
 IMAGES_ENV = {
