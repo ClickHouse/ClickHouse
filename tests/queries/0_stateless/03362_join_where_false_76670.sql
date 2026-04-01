@@ -8,6 +8,7 @@ INSERT INTO t0 SELECT number FROM numbers(10);
 INSERT INTO t1 SELECT number + 2 FROM numbers(10);
 
 SET enable_analyzer = 1;
+SET query_plan_convert_outer_join_to_inner_join = 1;
 
 SELECT * FROM t1
 RIGHT JOIN t0 AS t2

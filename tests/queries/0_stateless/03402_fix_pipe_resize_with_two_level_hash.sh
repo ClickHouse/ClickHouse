@@ -16,7 +16,7 @@ for i in {1..10}; do
     done
 done
 
-$CLICKHOUSE_CLIENT --query "EXPLAIN PIPELINE SELECT cityHash64(n) % 65536 AS n, sum(1) FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/file{1..10}.csv', 'CSV', 'n UInt32') GROUP BY n SETTINGS distributed_aggregation_memory_efficient=1, max_threads = 8"
+$CLICKHOUSE_CLIENT --query "EXPLAIN PIPELINE SELECT cityHash64(n) % 65536 AS n, sum(1) FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/file{1..10}.csv', 'CSV', 'n UInt32') GROUP BY n SETTINGS distributed_aggregation_memory_efficient=1, max_threads = 8, query_plan_merge_expressions=1"
 
 $CLICKHOUSE_CLIENT --query "SELECT cityHash64(n) % 65536 AS n, sum(1) FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/file{1..10}.csv', 'CSV', 'n UInt32') GROUP BY n FORMAT NULL SETTINGS distributed_aggregation_memory_efficient=1, max_threads = 8"
 

@@ -55,7 +55,7 @@ WHERE (ts >= '2024-01-01 00:00:00') AND (ts < '2024-01-02 00:00:00')
     AND (round(arraySum(x -> if(x.account = 'acct1' AND x.after > x.before,
                                  toFloat64(x.after - x.before), toFloat64(0)),
                         balance_changes) / 1000000000) > 0)
-SETTINGS use_statistics = 1, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 1; -- { serverError DECIMAL_OVERFLOW }
+SETTINGS use_statistics = 1, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 1, query_plan_merge_expressions = 1; -- { serverError DECIMAL_OVERFLOW }
 
 -- Workaround: disable reordering to preserve the original WHERE order.
 SELECT sig

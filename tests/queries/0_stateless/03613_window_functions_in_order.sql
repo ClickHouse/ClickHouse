@@ -19,5 +19,6 @@ SELECT countIf(explain like '%ScatterByPartitionTransform%')
 FROM (
     EXPLAIN pipeline
     SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b DESC) AS rn FROM t
-    SETTINGS query_plan_reuse_storage_ordering_for_window_functions=1
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions=1,
+             query_plan_read_in_order=1
 );

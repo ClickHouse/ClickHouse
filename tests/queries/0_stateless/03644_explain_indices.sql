@@ -6,6 +6,8 @@
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET use_skip_indexes_on_data_read = 1;
+SET query_plan_merge_expressions = 1;
+SET query_plan_filter_push_down = 1;
 
 DROP TABLE IF EXISTS test_indexed;
 
