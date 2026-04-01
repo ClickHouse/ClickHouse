@@ -70,10 +70,9 @@ struct ShardedAggregationEntry
     std::vector<size_t> per_shard_sizes;
     size_t total_size = 0;
 
-    bool shouldBeUpdated(const ShardedAggregationEntry & new_entry) const
-    {
-        return new_entry.total_size < total_size / 2 || total_size < new_entry.total_size;
-    }
+    /// Always update: per-shard sizes are deterministic for the same query and data,
+    /// so the latest observation is always the most accurate.
+    bool shouldBeUpdated(const ShardedAggregationEntry &) const { return true; }
 
     std::string dump() const { return fmt::format("total_size={}, num_shards={}", total_size, per_shard_sizes.size()); }
 };
