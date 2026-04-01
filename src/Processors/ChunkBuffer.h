@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Chunk.h>
-#include <base/defines.h>
 
 #include <mutex>
 #include <queue>
@@ -50,7 +49,6 @@ struct ChunkBuffer
     void onInputFinish()
     {
         std::lock_guard lock(mutex);
-        chassert(unfinished_inputs > 0);
         --unfinished_inputs;
     }
 

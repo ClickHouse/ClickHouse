@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Common/VectorWithMemoryTracking.h>
+#include <vector>
 #include <Poco/Exception.h>
 #include <base/StringViewHash.h>
 #include <base/types.h>
@@ -63,11 +63,11 @@ private:
         #undef M
     };
 
-    using NamesSources = VectorWithMemoryTracking<std::shared_ptr<ILanguageRegionsNamesDataSource>>;
+    using NamesSources = std::vector<std::shared_ptr<ILanguageRegionsNamesDataSource>>;
 
-    using Chars = VectorWithMemoryTracking<char>;
-    using CharsForLanguageID = VectorWithMemoryTracking<Chars>;
-    using StringViewsForLanguageID = VectorWithMemoryTracking<StringViews>;
+    using Chars = std::vector<char>;
+    using CharsForLanguageID = std::vector<Chars>;
+    using StringViewsForLanguageID = std::vector<StringViews>;
 
 
     NamesSources names_sources = NamesSources(total_languages);

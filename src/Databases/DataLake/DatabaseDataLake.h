@@ -42,12 +42,11 @@ public:
         bool skip_not_loaded) const override;
 
     /// skip_not_loaded flag ignores all non-iceberg tables
-    std::vector<LightWeightTableDetails> getLightweightTablesIterator(
+    DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
-    void checkDatabase() const override;
 
     void shutdown() override {}
 

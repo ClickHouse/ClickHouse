@@ -20,7 +20,6 @@
 #include <Common/TargetSpecific.h>
 #include <Common/logger_useful.h>
 
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
 #ifdef __SSE2__
@@ -378,8 +377,9 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
 
     /// When no rows were physically read (e.g., all columns are defaults/missing,
-    /// or a constant PREWHERE expression), the granule sizes were determined from
-    /// the index granularity and are already accurate. No adjustment is needed.
+    /// or a constant PREWHERE expression like `PREWHERE 1`), the granule sizes
+    /// were determined directly from the index granularity and are already accurate.
+    /// No adjustment is needed in this case.
     if (num_read_rows == 0)
         return;
 
@@ -388,15 +388,8 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     if (num_rows_to_subtract > rows_per_granule.back())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows "
-                        "(num_read_rows = {}, total_rows_per_granule = {}, rows_per_granule = [{}], "
-                        "debug: max_rows={}, rows_from_read={}, rows_from_finalize_loop={}, rows_from_finalize_post={}, "
-                        "ranges_processed={}, skipped_marks={}, use_query_condition_cache={}, can_read_incomplete_granules={})",
-                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, total_rows_per_granule,
-                        fmt::join(rows_per_granule, ", "),
-                        debug_max_rows, debug_rows_from_read_in_loop, debug_rows_from_finalize_in_loop,
-                        debug_rows_from_finalize_post_loop, debug_num_ranges_processed, debug_skipped_marks,
-                        debug_use_query_condition_cache, debug_can_read_incomplete_granules);
+                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows (num_read_rows = {}, rows_per_granule = [{}])",
+                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, fmt::join(rows_per_granule, ", "));
     }
 
     rows_per_granule.back() -= num_rows_to_subtract;
@@ -744,7 +737,7 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
     new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
-DECLARE_X86_64_V4_SPECIFIC_CODE(
+DECLARE_AVX512BW_SPECIFIC_CODE(
 size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
@@ -775,7 +768,7 @@ size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 }
 ) /// DECLARE_AVX512BW_SPECIFIC_CODE
 
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+DECLARE_AVX2_SPECIFIC_CODE(
 size_t numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
@@ -814,10 +807,10 @@ size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, con
 {
 #if USE_MULTITARGET_CODE
     /// check if cpu support avx512 dynamically, haveAVX512BW contains check of haveAVX512F
-    if (isArchSupported(TargetArch::x86_64_v4))
-        return TargetSpecific::x86_64_v4::numZerosInTail(begin, end);
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return TargetSpecific::x86_64_v3::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::AVX512BW))
+        return TargetSpecific::AVX512BW::numZerosInTail(begin, end);
+    if (isArchSupported(TargetArch::AVX2))
+        return TargetSpecific::AVX2::numZerosInTail(begin, end);
 #endif
 
     size_t count = 0;
@@ -995,32 +988,6 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
     return stream.isFinished();
 }
 
-static size_t getBytesInColumn(const IColumn & column)
-{
-    if (const auto * col_str = typeid_cast<const ColumnString *>(&column))
-    {
-        /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
-        /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
-        return col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
-    }
-    else if (const auto * col_sparse = typeid_cast<const ColumnSparse *>(&column))
-    {
-        /// Same logic as ColumnString for sparse columns.
-        const auto & values = col_sparse->getValuesColumn();
-        const auto & offsets = col_sparse->getOffsetsColumn();
-
-        if (offsets.empty())
-            return 0;
-
-        /// Offsets are stored as VarInt; estimate their total size using the last offset's length.
-        return getBytesInColumn(values)
-            + offsets.size() * getLengthOfVarInt(offsets.getInt(offsets.size() - 1));
-    }
-    else
-    {
-        return column.byteSize();
-    }
-}
 
 static size_t getTotalBytesInColumns(const Columns & columns)
 {
@@ -1028,7 +995,18 @@ static size_t getTotalBytesInColumns(const Columns & columns)
     for (const auto & column : columns)
     {
         if (column)
-            total_bytes += getBytesInColumn(*column);
+        {
+            if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
+            {
+                /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
+                /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
+                total_bytes += col_str->getChars().size() + col_str->getOffsets().size() * getLengthOfVarUInt(col_str->getOffsets().back());
+            }
+            else
+            {
+                total_bytes += column->byteSize();
+            }
+        }
     }
     return total_bytes;
 }
@@ -1056,17 +1034,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
     {
         bool use_query_condition_cache = merge_tree_reader->getMergeTreeReaderSettings().use_query_condition_cache;
-        result.debug_max_rows = max_rows;
-        result.debug_use_query_condition_cache = use_query_condition_cache;
-        result.debug_can_read_incomplete_granules = can_read_incomplete_granules;
         size_t space_left = max_rows;
         while (space_left && (!stream.isFinished() || !ranges.empty()))
         {
             if (stream.isFinished())
             {
-                size_t finalized = stream.finalize(result.columns);
-                result.debug_rows_from_finalize_in_loop += finalized;
-                result.addRows(finalized);
+                result.addRows(stream.finalize(result.columns));
                 if (current_mark && *current_mark < stream.last_mark)
                     result.addReadRange(MarkRange(*current_mark, stream.last_mark));
 
@@ -1074,14 +1047,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 result.addRange(ranges.front());
                 ranges.pop_front();
                 current_mark = stream.current_mark;
-                ++result.debug_num_ranges_processed;
             }
 
             if (merge_tree_reader->canSkipMark(currentMark(), stream.stream.currentTaskLastMark()))
             {
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
                 stream.toNextMark();
-                ++result.debug_skipped_marks;
                 continue;
             }
 
@@ -1098,19 +1069,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             bool last = rows_to_read == space_left;
             UInt64 starting_offset = stream.currentPartOffset();
             UInt64 granule_offset = stream.current_mark;
-            size_t read_rows = stream.read(result.columns, rows_to_read, !last);
-            result.debug_rows_from_read_in_loop += read_rows;
-            result.addRows(read_rows);
+            result.addRows(stream.read(result.columns, rows_to_read, !last));
             result.addGranule(rows_to_read, {starting_offset, granule_offset});
             space_left = (rows_to_read > space_left ? 0 : space_left - rows_to_read);
         }
     }
 
-    {
-        size_t finalized = stream.finalize(result.columns);
-        result.debug_rows_from_finalize_post_loop += finalized;
-        result.addRows(finalized);
-    }
+    result.addRows(stream.finalize(result.columns));
     size_t last_mark = stream.isFinished() ? stream.last_mark : stream.current_mark;
     if (current_mark && current_mark < last_mark)
         result.addReadRange(MarkRange{*current_mark, last_mark});
@@ -1120,11 +1085,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// When no columns were physically read (e.g., constant PREWHERE expression),
-    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
-    /// from the index granularity. Use it so the reading chain can continue
-    /// to subsequent readers that read actual data columns.
-    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
+    /// Use total_rows_per_granule because:
+    /// - In normal cases, after adjustLastGranule, it equals numReadRows()
+    /// - When no columns are read (e.g., constant PREWHERE), it has the correct value from index granularity
+    result.num_rows = result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1190,37 +1154,6 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
-    }
-
-    /// Always compute min/max part offset from granule offsets.
-    /// Patch parts reading (MergeTreePatchReaderMerge) requires these values
-    /// to determine which patches are relevant for the current block,
-    /// even when `_part_offset` column is not explicitly requested.
-    if (!result.min_part_offset.has_value())
-    {
-        if (result.granule_offsets.empty())
-        {
-            result.min_part_offset = 0;
-            result.max_part_offset = 0;
-        }
-        else if (result.total_rows_per_granule == 0)
-        {
-            result.min_part_offset = 0;
-            result.max_part_offset = 0;
-        }
-        else
-        {
-            result.min_part_offset = result.granule_offsets.front().starting_offset;
-
-            /// Find the last granule with non-zero rows to avoid unsigned underflow in `rows_per_granule[i] - 1`.
-            /// Zero-row granules can appear after `adjustLastGranule` subtracts all rows or after `clear`.
-            size_t last = result.rows_per_granule.size();
-            while (last > 0 && result.rows_per_granule[last - 1] == 0)
-                --last;
-
-            chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
-        }
     }
 }
 
@@ -1401,7 +1334,7 @@ static void checkCombinedFiltersSize(size_t bytes_in_first_filter, size_t second
             "does not match second filter size ({})", bytes_in_first_filter, second_filter_size);
 }
 
-DECLARE_X86_ICELAKE_SPECIFIC_CODE(
+DECLARE_AVX512VBMI2_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t AVX512_VEC_SIZE_IN_BYTES = 64;
@@ -1466,7 +1399,7 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
  * 1. https://www.felixcloutier.com/x86/pdep
  * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
  */
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+DECLARE_AVX2_SPECIFIC_CODE(
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
     constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
@@ -1545,13 +1478,13 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     const auto * second_data = second_descr.data->data();
 
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_icelake))
+    if (isArchSupported(TargetArch::AVX512VBMI2))
     {
-        TargetSpecific::x86_64_icelake::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+        TargetSpecific::AVX512VBMI2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
-    else if (isArchSupported(TargetArch::x86_64_v3))
+    else if (isArchSupported(TargetArch::AVX2))
     {
-        TargetSpecific::x86_64_v3::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
+        TargetSpecific::AVX2::combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
     }
     else
 #endif

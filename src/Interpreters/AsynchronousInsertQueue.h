@@ -3,13 +3,12 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Common/StringWithMemoryTracking.h>
+#include <Common/StrictString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
 
@@ -21,21 +20,12 @@ namespace DB
 
 struct Settings;
 
-/// Statistics of a successfully flushed async insert entry,
-/// communicated back to the waiting client via the future.
-struct AsyncInsertProgress
-{
-    size_t rows = 0;
-    size_t bytes = 0;
-};
-
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
 class AsynchronousInsertQueue : public WithContext
 {
 public:
     using Milliseconds = std::chrono::milliseconds;
-    using ResultProgress = AsyncInsertProgress;
 
     AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
     ~AsynchronousInsertQueue();
@@ -51,8 +41,7 @@ public:
         Status status;
 
         /// Future that allows to wait until the query is flushed.
-        /// On success, returns the number of rows/bytes actually written.
-        std::future<ResultProgress> future{};
+        std::future<void> future{};
 
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
@@ -108,9 +97,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<StringWithMemoryTracking, Block>
+    struct DataChunk : public std::variant<StrictString, Block>
     {
-        using std::variant<StringWithMemoryTracking, Block>::variant;
+        using std::variant<StrictString, Block>::variant;
 
         size_t byteSize() const
         {
@@ -141,7 +130,7 @@ private:
             }, *this);
         }
 
-        const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
+        const StrictString * asString() const { return std::get_if<StrictString>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
@@ -166,14 +155,13 @@ private:
                 MemoryTracker * user_memory_tracker_);
 
             void resetChunk();
-            void finish(ResultProgress result = {});
-            void finish(std::exception_ptr exception_);
+            void finish(std::exception_ptr exception_ = nullptr);
 
-            std::future<ResultProgress> getFuture() { return promise.get_future(); }
+            std::future<void> getFuture() { return promise.get_future(); }
             bool isFinished() const { return finished; }
 
         private:
-            std::promise<ResultProgress> promise;
+            std::promise<void> promise;
             std::atomic_bool finished = false;
         };
 
@@ -292,10 +280,10 @@ private:
     void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
 
     void processBatchDeadlines(size_t shard_num);
-    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
@@ -316,8 +304,6 @@ private:
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
-
-    static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
 public:
     auto getQueueLocked(size_t shard_num) const

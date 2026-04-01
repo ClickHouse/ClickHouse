@@ -21,27 +21,16 @@ namespace DB
         extern const int INCORRECT_DATA;
     }
 
+    template <typename Name, typename ArgDataType, typename ConcurrencyDataType>
     class ExecutableFunctionRunningConcurrency : public IExecutableFunction
     {
     public:
         String getName() const override
         {
-            return "runningConcurrency";
+            return Name::name;
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
-        {
-            return executeForType(arguments, input_rows_count);
-        }
-
-        bool useDefaultImplementationForConstants() const override
-        {
-            return true;
-        }
-
-    private:
-        template <typename ArgDataType>
-        ColumnPtr executeTyped(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
         {
             using ColVecArg = typename ArgDataType::ColumnType;
             const ColVecArg * col_begin = checkAndGetColumn<ColVecArg>(arguments[0].column.get());
@@ -51,7 +40,8 @@ namespace DB
             const typename ColVecArg::Container & vec_begin = col_begin->getData();
             const typename ColVecArg::Container & vec_end   = col_end->getData();
 
-            using ColVecConc = ColumnVector<UInt32>;
+            using ColVecConc = typename ConcurrencyDataType::ColumnType;
+            using FieldType = typename ConcurrencyDataType::FieldType;
             typename ColVecConc::MutablePtr col_concurrency = ColVecConc::create(input_rows_count);
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
@@ -82,25 +72,19 @@ namespace DB
                 ongoing_until.erase(
                     ongoing_until.begin(), ongoing_until.upper_bound(begin));
 
-                vec_concurrency[i] = static_cast<UInt32>(ongoing_until.size());
+                vec_concurrency[i] = static_cast<FieldType>(ongoing_until.size());
             }
 
             return col_concurrency;
         }
 
-        ColumnPtr executeForType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+        bool useDefaultImplementationForConstants() const override
         {
-            WhichDataType which(arguments[0].type);
-            if (which.isDate())
-                return executeTyped<DataTypeDate>(arguments, input_rows_count);
-            if (which.isDateTime())
-                return executeTyped<DataTypeDateTime>(arguments, input_rows_count);
-            if (which.isDateTime64())
-                return executeTyped<DataTypeDateTime64>(arguments, input_rows_count);
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function runningConcurrency must be Date, DateTime, or DateTime64.");
+            return true;
         }
     };
 
+    template <typename Name, typename ArgDataType, typename ConcurrencyDataType>
     class FunctionBaseRunningConcurrency : public IFunctionBase
     {
     public:
@@ -110,7 +94,7 @@ namespace DB
 
         String getName() const override
         {
-            return "runningConcurrency";
+            return Name::name;
         }
 
         const DataTypes & getArgumentTypes() const override
@@ -125,7 +109,7 @@ namespace DB
 
         ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
         {
-            return std::make_unique<ExecutableFunctionRunningConcurrency>();
+            return std::make_unique<ExecutableFunctionRunningConcurrency<Name, ArgDataType, ConcurrencyDataType>>();
         }
 
         bool isStateful() const override
@@ -140,19 +124,42 @@ namespace DB
         DataTypePtr return_type;
     };
 
+    template <typename Name, typename ConcurrencyDataType>
     class RunningConcurrencyOverloadResolver : public IFunctionOverloadResolver
     {
+        template <typename T>
+        struct TypeTag
+        {
+            using Type = T;
+        };
+
+        /// Call a polymorphic lambda with a type tag of src_type.
+        template <typename F>
+        void dispatchForSourceType(const IDataType & src_type, F && f) const
+        {
+            WhichDataType which(src_type);
+
+            switch (which.idx)
+            {
+            case TypeIndex::Date:       f(TypeTag<DataTypeDate>());       break;
+            case TypeIndex::DateTime:   f(TypeTag<DataTypeDateTime>());   break;
+            case TypeIndex::DateTime64: f(TypeTag<DataTypeDateTime64>()); break;
+            default:
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments for function {} must be Date, DateTime, or DateTime64.", getName());
+            }
+        }
+
     public:
-        static constexpr auto name = "runningConcurrency";
+        static constexpr auto name = Name::name;
 
         static FunctionOverloadResolverPtr create(ContextPtr)
         {
-            return std::make_unique<RunningConcurrencyOverloadResolver>();
+            return std::make_unique<RunningConcurrencyOverloadResolver<Name, ConcurrencyDataType>>();
         }
 
         String getName() const override
         {
-            return name;
+            return Name::name;
         }
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -163,22 +170,22 @@ namespace DB
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
-            // Validate the argument type early so that unsupported types
-            // (e.g. NULL literals) are rejected before execution.
-            WhichDataType which(arguments[0].type);
-            if (!which.isDate() && !which.isDateTime() && !which.isDateTime64())
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments for function {} must be Date, DateTime, or DateTime64.", getName());
-            }
-
             DataTypes argument_types = { arguments[0].type, arguments[1].type };
-            return std::make_unique<FunctionBaseRunningConcurrency>(argument_types, return_type);
+            FunctionBasePtr base;
+            dispatchForSourceType(*(arguments[0].type), [&](auto arg_type_tag) // Throws when the type is inappropriate.
+            {
+                using Tag = decltype(arg_type_tag);
+                using ArgDataType = typename Tag::Type;
+
+                base = std::make_unique<FunctionBaseRunningConcurrency<Name, ArgDataType, ConcurrencyDataType>>(argument_types, return_type);
+            });
+
+            return base;
         }
 
         DataTypePtr getReturnTypeImpl(const DataTypes &) const override
         {
-            return std::make_shared<DataTypeUInt32>();
+            return std::make_shared<ConcurrencyDataType>();
         }
 
         size_t getNumberOfArguments() const override
@@ -202,9 +209,14 @@ namespace DB
         }
     };
 
+    struct NameRunningConcurrency
+    {
+        static constexpr auto name = "runningConcurrency";
+    };
+
     REGISTER_FUNCTION(RunningConcurrency)
     {
-        FunctionDocumentation::Description description = R"(
+        FunctionDocumentation::Description description_runningConcurrency = R"(
 Calculates the number of concurrent events.
 Each event has a start time and an end time.
 The start time is included in the event, while the end time is excluded.
@@ -222,13 +234,13 @@ If events from different data blocks overlap then they can not be processed corr
 It is advised to use [window functions](/sql-reference/window-functions) instead.
 :::
 )";
-        FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";
-        FunctionDocumentation::Arguments arguments = {
+        FunctionDocumentation::Syntax syntax_runningConcurrency = "runningConcurrency(start, end)";
+        FunctionDocumentation::Arguments arguments_runningConcurrency = {
             {"start", "A column with the start time of events.", {"Date", "DateTime", "DateTime64"}},
             {"end", "A column with the end time of events.", {"Date", "DateTime", "DateTime64"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of concurrent events at each event start time.", {"UInt32"}};
-        FunctionDocumentation::Examples examples = {
+        FunctionDocumentation::ReturnedValue returned_value_runningConcurrency = {"Returns the number of concurrent events at each event start time.", {"UInt32"}};
+        FunctionDocumentation::Examples examples_runningConcurrency = {
         {
             "Usage example",
             R"(
@@ -244,10 +256,10 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
             )"
         }
         };
-        FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
-        FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+        FunctionDocumentation::IntroducedIn introduced_in_runningConcurrency = {21, 3};
+        FunctionDocumentation::Category category_runningConcurrency = FunctionDocumentation::Category::Other;
+        FunctionDocumentation documentation_runningConcurrency = {description_runningConcurrency, syntax_runningConcurrency, arguments_runningConcurrency, {}, returned_value_runningConcurrency, examples_runningConcurrency, introduced_in_runningConcurrency, category_runningConcurrency};
 
-        factory.registerFunction<RunningConcurrencyOverloadResolver>(documentation);
+        factory.registerFunction<RunningConcurrencyOverloadResolver<NameRunningConcurrency, DataTypeUInt32>>(documentation_runningConcurrency);
     }
 }

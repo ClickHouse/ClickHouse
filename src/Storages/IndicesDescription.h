@@ -35,9 +35,8 @@ struct IndexDescription
     /// Prepared expressions for index calculations
     ExpressionActionsPtr expression;
 
-    /// Index arguments, for example probability for bloom filter.
-    /// Stored as ASTExpressionList with children being ASTLiteral or ASTIdentifier nodes.
-    ASTPtr arguments;
+    /// Index arguments, for example probability for bloom filter
+    FieldVector arguments;
 
     /// Names of index columns (not to be confused with required columns)
     Names column_names;
@@ -51,8 +50,7 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
-    /// True if index is created implicitly using settings:
-    /// add_minmax_index_for_numeric_columns, add_minmax_index_for_string_columns, or add_minmax_index_for_temporal_columns
+    /// True if index is created implicitly using settings add_minmax_index_for_numeric_columns or add_minmax_index_for_string_columns
     bool is_implicitly_created;
 
     /// This is here for compatibility reasons. Prior to 26.1 index filenames weren't escaped, which could lead to issues with some
@@ -84,6 +82,9 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
+
+private:
+    static FieldVector parsePositionalArgumentsFromAST(const ASTPtr & arguments);
 };
 
 /// All secondary indices in storage
@@ -91,8 +92,6 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 {
     /// Index with name exists
     bool has(const String & name) const;
-    /// Get index by name; throws if not found
-    const IndexDescription & getByName(const String & name) const;
     /// Index with type exists
     bool hasType(const String & type) const;
 
@@ -112,13 +111,6 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 
     Names getAllRegisteredNames() const override;
 };
-
-/// Extract Field value from an index argument AST node.
-/// ASTLiteral yields its value; ASTIdentifier yields its name as a String.
-Field getFieldFromIndexArgumentAST(const ASTPtr & ast);
-
-/// Convert all children of an index arguments AST (ASTExpressionList) to a FieldVector.
-FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments);
 
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
 IndexDescription createImplicitMinMaxIndexDescription(

@@ -9,13 +9,10 @@
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
-#include <mutex>
 #include <optional>
 
 namespace DB
 {
-
-class QueryFuzzer;
 
 class IInterpreter;
 class ReadBuffer;
@@ -135,7 +132,4 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal);
-
-/// Returns the global AST fuzzer instance with a lock held.
-std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();
 }

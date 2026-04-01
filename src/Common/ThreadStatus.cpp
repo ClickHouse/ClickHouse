@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
@@ -186,7 +185,7 @@ const String & ThreadStatus::getQueryId() const
     return query_id;
 }
 
-ContextPtr ThreadStatus::tryGetQueryContext() const
+ContextPtr ThreadStatus::getQueryContext() const
 {
     return query_context.lock();
 }

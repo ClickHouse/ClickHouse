@@ -780,18 +780,21 @@ Union
     Expression
       Join
         Expression
-          Join
+          Expression
             Expression
-              Expression
-                ReadFromMergeTree
-            Expression
-              BuildRuntimeFilter
+              Join
                 Expression
                   Expression
-                    ReadFromMergeTree
+                    Expression
+                      ReadFromMergeTree
+                Expression
+                  Expression
+                    Expression
+                      ReadFromMergeTree
         Expression
           Expression
-            ReadFromMergeTree
+            Expression
+              ReadFromMergeTree
   Expression
     ReadFromRemoteParallelReplicas
 --
@@ -830,20 +833,24 @@ Expression
       Expression
         Sorting
           Expression
-            Join
-              Expression
+            Expression
+              Join
                 Expression
-                  ReadFromMergeTree
-              Expression
-                BuildRuntimeFilter
                   Expression
-                    Join
-                      Expression
+                    Expression
+                      ReadFromMergeTree
+                Expression
+                  Expression
+                    Expression
+                      Join
                         Expression
-                          ReadFromMergeTree
-                      Expression
+                          Expression
+                            Expression
+                              ReadFromMergeTree
                         Expression
-                          ReadFromMergeTree
+                          Expression
+                            Expression
+                              ReadFromMergeTree
       Expression
         ReadFromRemoteParallelReplicas
 --

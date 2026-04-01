@@ -1,5 +1,4 @@
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/OSThreadNiceValue.h>
 
 #if defined(OS_LINUX)
