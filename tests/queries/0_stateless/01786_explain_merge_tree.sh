@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for i in $(seq 0 1)
 do
     # Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-    CH_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --optimize_move_to_prewhere_if_final=0 --convert_query_to_cnf=0 --optimize_read_in_order=1 --read_in_order_use_virtual_row=1 --use_skip_indexes_on_data_read=1 --query_plan_optimize_prewhere=1 --enable_analyzer=$i"
+    CH_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --optimize_move_to_prewhere_if_final=0 --convert_query_to_cnf=0 --optimize_read_in_order=1 --read_in_order_use_virtual_row=1 --use_skip_indexes_on_data_read=1 --query_plan_optimize_prewhere=1 --use_partition_pruning=1 --enable_analyzer=$i"
 
     $CH_CLIENT -q "drop table if exists test_index"
     $CH_CLIENT -q "drop table if exists idx"

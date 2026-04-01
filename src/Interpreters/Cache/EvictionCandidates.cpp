@@ -251,8 +251,11 @@ void EvictionCandidates::evict()
         auto locked_key = key_candidates.key_metadata->tryLock();
         if (!locked_key)
         {
-            /// key could become invalid (meaning all cache by this key was dropped)
-            /// after we released the key lock above, just skip it.
+            /// A key cannot be removed while eviction candidates are still there.
+            chassert(
+                false, fmt::format(
+                    "Failed to lock key {} (state: {}), but had {} eviction candidates from it",
+                    key, key_candidates.key_metadata->getState(), key_candidates.candidates.size()));
             continue;
         }
 
