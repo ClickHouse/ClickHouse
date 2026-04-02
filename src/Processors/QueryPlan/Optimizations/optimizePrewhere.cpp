@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
+#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -28,7 +29,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -259,20 +260,23 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
             /// The parent step returned the positions it needs from its child (child 0).
             /// Pass them directly to the source step.
             chassert(unused_column_removal_result.required_input_positions.size() == 1);
-            source_step_with_filter->removeUnusedColumns(unused_column_removal_result.required_input_positions[0], true);
+            const auto & required_positions = unused_column_removal_result.required_input_positions[0];
+            auto source_removal_result = source_step_with_filter->removeUnusedColumns(required_positions, true);
 
-            // Here the output of the source step should match the input of the parent step, even though that is not
-            // generally true after unused column removal. There might be outputs that are not removed in some step
-            // (e.g. JoinLogicalStep). However as currently the only source that implements unused column removal is
-            // ReadFromMergeTree, which can remove any columns, therefore let's throw a logical error in case this is
-            // not true.
+            /// The source step might keep extra columns it cannot remove (e.g., `ReadFromMergeTree` with
+            /// FINAL must keep sort key columns for merging). If so, absorb them into the parent's DAG.
+            /// The parent step is always an ExpressionStep or FilterStep (created above), so absorption
+            /// must succeed.
             if (!blocksHaveEqualStructure(*parent_step->getInputHeaders().at(0), *source_step_with_filter->getOutputHeader()))
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Input-output header mismatch after removing unused columns after pushing down filters to prewhere. Input header: {}, "
-                    "output header: {}",
-                    parent_step->getInputHeaders().at(0)->dumpStructure(),
-                    source_step_with_filter->getOutputHeader()->dumpStructure());
+            {
+                if (!absorbExtraChildColumns(parent_node, 0, required_positions, source_removal_result.kept_output_positions))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Input-output header mismatch after removing unused columns after pushing down filters to prewhere "
+                        "and failed to absorb extra columns. Input header: {}, output header: {}",
+                        parent_step->getInputHeaders().at(0)->dumpStructure(),
+                        source_step_with_filter->getOutputHeader()->dumpStructure());
+            }
         }
     }
 }
