@@ -39,8 +39,8 @@ ENGINE = MergeTree
 ORDER BY event_time
 SETTINGS index_granularity = 1000, add_minmax_index_for_numeric_columns=0;
 
-INSERT INTO test_has_skip_set 
-SELECT 
+INSERT INTO test_has_skip_set
+SELECT
     toUInt32(intDiv(number, 1000)) AS user_id,
     now() - INTERVAL number MINUTE AS event_time
 FROM numbers(100000);
