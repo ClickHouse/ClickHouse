@@ -6,7 +6,6 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/config.xml"],
     user_configs=[
         "configs/users.d/users.xml",
     ],
@@ -22,12 +21,12 @@ def start_cluster():
         cluster.shutdown()
 
 
-USER_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS max_memory_usage_for_user=2000000000,memory_overcommit_ratio_denominator=1"
-USER_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS max_memory_usage_for_user=2000000000,memory_overcommit_ratio_denominator=80000000"
+USER_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS max_threads=1, max_memory_usage_for_user=2000000000, memory_overcommit_ratio_denominator=1"
+USER_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS max_threads=1, max_memory_usage_for_user=2000000000, memory_overcommit_ratio_denominator=80000000"
 
 
 def test_user_overcommit():
-    if node.is_built_with_memory_sanitizer() or node.is_built_with_address_sanitizer():
+    if node.is_built_with_memory_sanitizer() or node.is_built_with_address_sanitizer() or node.is_built_with_llvm_coverage():
         pytest.skip(
             "doesn't fit in memory limits under sanitizers (memory overhead causes timeouts)"
         )
