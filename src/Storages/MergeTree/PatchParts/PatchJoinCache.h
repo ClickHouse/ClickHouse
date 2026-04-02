@@ -1,7 +1,5 @@
 #pragma once
-#include <mutex>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/SharedMutex.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
@@ -54,15 +52,14 @@ using PatchHashMap = absl::node_hash_map<
     AllocatorWithMemoryTracking<std::pair<const UInt64, PatchOffsetsMap>>>;
 
 /**  A cache of maps and blocks for applying patch parts in Join mode.
-  *  It avoids re-reading the same ranges of patch parts and rebuilding maps multiple times.
-  *  The cache (and patch map) is optimized for the case when patch parts are almost sorted by _block_number,
-  *  i.e., when data is inserted almost in the order of the order key (the order key has a timestamp value), which is the typical case.
+  *  The cache is pre-built as a separate step before reading from MergeTree table.
+  *  Data from all Join-mode patch parts is distributed into `num_buckets` global entries
+  *  by `_block_number % num_buckets`, so that each entry can be built independently
+  *  without contention. After the cache is built, it is read-only and no locking is needed.
   *
-  *  The cache allows reading data from patches in small ranges and lowers the amount of patch parts
-  *  to apply by aggregating data from multiple read blocks into a single map in the entry.
-  *
-  *  A single cache entry is created for each patch part. All read ranges are accumulated into
-  *  a single block and hash map within the entry.
+  *  Build is parallelized by mark ranges (not by patch parts), so even a single
+  *  large patch part benefits from multiple threads. Each bucket is filled
+  *  by exactly one thread, so no locking is required.
   */
 struct PatchJoinCache
 {
@@ -73,41 +70,53 @@ struct PatchJoinCache
     {
         PatchHashMap hash_map;
         Block block;
-        MarkRanges read_ranges;
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
-        std::exception_ptr error;
-        mutable SharedMutex mutex;
 
-        void addBlock(Block read_block, const MarkRanges & new_ranges = {});
-        MarkRanges getUnreadRanges(const MarkRanges & ranges) const;
-    };
-
-    struct PatchStatsEntry
-    {
-        bool initialized = false;
-        PatchStatsMap stats;
-        mutable std::mutex mutex;
+        /// Lock-free: used during pre-build when each bucket has a single writer.
+        void addBlock(Block read_block);
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
-    using PatchStatsEntryPtr = std::shared_ptr<PatchStatsEntry>;
+    using Entries = std::vector<EntryPtr>;
 
-    /// Initializes the cache, creates one entry per patch name.
-    void init(const RangesInPatchParts & ranges_in_patches);
+    /// A callback that creates a reader function for a given patch part name.
+    /// The returned Reader reads a set of mark ranges and returns a Block with patch data.
+    using ReaderFactory = std::function<Reader(const String & patch_name)>;
 
-    PatchStatsEntryPtr getStatsEntry(const DataPartPtr & patch_part, const MergeTreeReaderSettings & settings);
-    EntryPtr getEntry(const String & patch_name);
+    /// Initializes the cache with `num_buckets` global entries.
+    void init(const RangesInPatchParts & ranges_in_patches, size_t num_buckets);
+
+    /// Pre-builds the cache by reading all patch data for Join-mode patches.
+    /// Parallelized by ranges across `num_threads`. Each bucket is filled lock-free.
+    void build(const ReaderFactory & reader_factory, size_t num_threads);
+
+    bool isBuilt() const { return built; }
+
+    /// Returns the global entries (all buckets).
+    const Entries & getEntries() const { return entries; }
+    size_t getNumBuckets() const { return num_buckets; }
+
+    const MarkRanges & getAllRanges(const String & patch_name) const
+    {
+        auto it = all_ranges_by_name.find(patch_name);
+        if (it == all_ranges_by_name.end())
+        {
+            static const MarkRanges empty;
+            return empty;
+        }
+        return it->second;
+    }
 
 private:
-    PatchStatsEntryPtr getOrCreatePatchStats(const String & patch_name);
+    size_t num_buckets = 1;
+    bool built = false;
 
-    mutable std::mutex mutex;
+    /// Global buckets, size = num_buckets. Immutable after build.
+    Entries entries;
 
-    absl::node_hash_map<String, EntryPtr> cache TSA_GUARDED_BY(mutex);
-    absl::node_hash_map<String, PatchStatsEntryPtr> stats_cache TSA_GUARDED_BY(mutex);
-    /// Ranges are filled on initialization and then are read-only and don't require a lock.
+    /// Ranges are filled on initialization and then are read-only.
     absl::node_hash_map<String, MarkRanges> all_ranges_by_name;
 };
 

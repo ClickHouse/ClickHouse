@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
+#include <Columns/ColumnSparse.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -314,7 +316,91 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-    patch_join_cache->init(ranges_in_patch_parts);
+    patch_join_cache->init(ranges_in_patch_parts, pool_settings.threads);
+
+    /// Collect info for pre-building join cache for each unique Join-mode patch part.
+    struct PatchReaderInfo
+    {
+        PatchPartInfoForReader patch_part;
+        NamesAndTypesList columns;
+        VirtualFields const_virtual_fields;
+        MergeTreeSettingsPtr storage_settings;
+    };
+
+    absl::node_hash_map<String, PatchReaderInfo> join_patches;
+
+    for (const auto & info : per_part_infos)
+    {
+        for (size_t i = 0; i < info->patch_parts.size(); ++i)
+        {
+            const auto & pp = info->patch_parts[i];
+            if (pp.mode != PatchMode::Join)
+                continue;
+
+            const auto & name = pp.part->getPartName();
+            if (join_patches.contains(name))
+                continue;
+
+            join_patches[name] = PatchReaderInfo{
+                .patch_part = pp,
+                .columns = info->task_columns.patch_columns[i],
+                .const_virtual_fields = info->const_virtual_fields,
+                .storage_settings = info->data_part->storage.getSettings(),
+            };
+        }
+    }
+
+    if (!join_patches.empty())
+    {
+        auto reader_factory = [&](const String & patch_name) -> PatchJoinCache::Reader
+        {
+            auto it = join_patches.find(patch_name);
+            if (it == join_patches.end())
+                return [](const MarkRanges &) { return Block{}; };
+
+            auto & patch_info = it->second;
+            auto reader = createMergeTreeReader(
+                patch_info.patch_part.part,
+                patch_info.columns,
+                storage_snapshot,
+                patch_info.storage_settings,
+                patch_join_cache->getAllRanges(patch_name),
+                patch_info.const_virtual_fields,
+                owned_uncompressed_cache.get(),
+                owned_mark_cache.get(),
+                /*deserialization_prefixes_cache=*/ nullptr,
+                reader_settings,
+                /*value_size_map=*/ {},
+                /*profile_callback=*/ {});
+
+            bool perform_alter_conversions = patch_info.patch_part.perform_alter_conversions;
+
+            /// Store reader as shared_ptr because std::function requires copyable callable.
+            auto shared_reader = std::shared_ptr<IMergeTreeReader>(std::move(reader));
+            auto range_reader = std::make_shared<MergeTreeRangeReader>(
+                shared_reader.get(), Block{}, nullptr,
+                std::make_shared<ReadStepPerformanceCounters>(), false, shared_reader->canReadIncompleteGranules());
+
+            return [shared_reader, range_reader, perform_alter_conversions]
+                   (const MarkRanges & ranges) mutable -> Block
+            {
+                MarkRanges mutable_ranges = ranges;
+                size_t max_rows = std::numeric_limits<UInt64>::max();
+                auto read_result = range_reader->startReadingChain(max_rows, mutable_ranges);
+
+                for (auto & column : read_result.columns)
+                    column = removeSpecialRepresentations(column);
+
+                if (perform_alter_conversions)
+                    range_reader->getReader()->performRequiredConversions(read_result.columns);
+
+                auto block = range_reader->getSampleBlock().cloneWithColumns(read_result.columns);
+                return block;
+            };
+        };
+
+        patch_join_cache->build(reader_factory, pool_settings.threads);
+    }
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const

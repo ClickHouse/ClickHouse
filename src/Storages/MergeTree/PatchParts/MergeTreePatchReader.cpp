@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -27,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int NOT_IMPLEMENTED;
 }
 
 /// When perform_alter_conversions is false, performRequiredConversions was skipped
@@ -163,9 +161,10 @@ bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, con
     return *main_result.max_part_offset > result.lastMaxPartOffset();
 }
 
-MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_)
+MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_, bool is_primary_)
     : MergeTreePatchReader(std::move(patch_part_), std::move(reader_))
     , patch_join_cache(patch_join_cache_)
+    , is_primary(is_primary_)
 {
     if (patch_part.mode != PatchMode::Join)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
@@ -174,117 +173,44 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
 PatchReadResultPtr MergeTreePatchReaderJoin::createResult() const
 {
     auto result = std::make_shared<PatchJoinReadResult>();
-    if (patch_join_cache)
-        result->entry = patch_join_cache->getEntry(patch_part.part->getPartName());
 
-    if (!result->entry)
-        result->entry = std::make_shared<PatchJoinCache::Entry>();
+    if (!patch_join_cache || !patch_join_cache->isBuilt())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinCache must be pre-built before reading");
+
+    if (is_primary)
+    {
+        result->entries = patch_join_cache->getEntries();
+        result->num_buckets = patch_join_cache->getNumBuckets();
+    }
 
     return result;
 }
 
-static MinMaxStat getResultBlockStat(const Block & result_block, const String & column_name)
-{
-    const auto & column = result_block.getByName(column_name).column;
-
-    Field min_value;
-    Field max_value;
-
-    column->getExtremes(min_value, max_value, 0, column->size());
-    return {min_value.safeGet<UInt64>(), max_value.safeGet<UInt64>()};
-}
-
-static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ranges)
-{
-    std::unordered_set<MarkRange, MarkRangeHash> read_ranges_set(read_ranges.begin(), read_ranges.end());
-
-    for (auto * it = all_ranges.begin(); it != all_ranges.end();)
-    {
-        if (read_ranges_set.contains(*it))
-            it = all_ranges.erase(it);
-        else
-            ++it;
-    }
-}
-
 void MergeTreePatchReaderJoin::readPatches(
     MarkRanges & ranges,
-    const ReadResult & main_result,
-    const Block & result_header,
-    PatchReadResult & result)
+    const ReadResult & /*main_result*/,
+    const Block & /*result_header*/,
+    PatchReadResult & /*result*/)
 {
-    auto & join_result = typeid_cast<PatchJoinReadResult &>(result);
-    const auto & sample_block = range_reader.getSampleBlock();
-
-    if (ranges.empty())
-        return;
-
-    MarkRanges ranges_to_read = ranges;
-    auto result_block = result_header.cloneWithColumns(main_result.columns);
-
-    if (!patch_join_cache)
-    {
-        ranges.clear();
-        auto read_result = readPatchRanges(ranges_to_read);
-        auto block = sample_block.cloneWithColumns(read_result.columns);
-        if (!patch_part.perform_alter_conversions)
-            fixPatchBlockTypes(block, *reader);
-        join_result.entry->addBlock(std::move(block));
-        return;
-    }
-
-    const auto * loaded_part_info = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
-    if (!loaded_part_info)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Applying patch parts is supported only for loaded data parts");
-
-    auto reader_settings = range_reader.getReader()->getMergeTreeReaderSettings();
-    auto stats_entry = patch_join_cache->getStatsEntry(loaded_part_info->getDataPart(), reader_settings);
-
-    if (!stats_entry->stats.empty())
-    {
-        PatchStats result_stats;
-        result_stats.block_number_stat = getResultBlockStat(result_block, BlockNumberColumn::name);
-        result_stats.block_offset_stat = getResultBlockStat(result_block, BlockOffsetColumn::name);
-        ranges_to_read = filterPatchRanges(ranges_to_read, stats_entry->stats, result_stats);
-    }
-
-    if (ranges_to_read.empty())
-        return;
-
-    filterReadRanges(ranges, ranges_to_read);
-
-    auto unread = join_result.entry->getUnreadRanges(ranges_to_read);
-    if (unread.empty())
-        return;
-
-    auto read_block = [this, &sample_block](const MarkRanges & task_ranges)
-    {
-        auto read_result = readPatchRanges(task_ranges);
-        auto block = sample_block.cloneWithColumns(read_result.columns);
-        if (!patch_part.perform_alter_conversions)
-            fixPatchBlockTypes(block, *reader);
-        return block;
-    };
-
-    auto block = read_block(unread);
-    join_result.entry->addBlock(std::move(block), unread);
+    ranges.clear();
 }
 
 std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & result_block, const PatchReadResult & patch_result) const
 {
     const auto & join_result = typeid_cast<const PatchJoinReadResult &>(patch_result);
-    if (!join_result.entry)
+    if (join_result.entries.empty())
         return {};
-    return {applyPatchJoin(result_block, *join_result.entry)};
+
+    return {applyPatchJoin(result_block, join_result.entries, join_result.num_buckets)};
 }
 
-MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)
+MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache, bool is_primary_join)
 {
     if (patch_part.mode == PatchMode::Merge)
         return std::make_unique<MergeTreePatchReaderMerge>(std::move(patch_part), std::move(reader));
 
     if (patch_part.mode == PatchMode::Join)
-        return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache);
+        return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache, is_primary_join);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected patch parts mode {}", patch_part.mode);
 }

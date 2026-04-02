@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Columns/ColumnSparse.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -142,7 +144,78 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
         patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
         patch_join_cache = std::make_shared<PatchJoinCache>();
-        patch_join_cache->init(ranges_in_patch_parts);
+        patch_join_cache->init(ranges_in_patch_parts, /*num_buckets=*/ 1);
+
+        /// Pre-build Join cache for Join-mode patches (single-threaded).
+        bool has_join_patches = false;
+        for (const auto & pp : read_task_info->patch_parts)
+        {
+            if (pp.mode == PatchMode::Join)
+            {
+                has_join_patches = true;
+                break;
+            }
+        }
+
+        if (has_join_patches)
+        {
+            auto reader_factory = [&](const String & patch_name) -> PatchJoinCache::Reader
+            {
+                /// Find the Join-mode patch part matching this name.
+                size_t patch_idx = 0;
+                for (; patch_idx < read_task_info->patch_parts.size(); ++patch_idx)
+                {
+                    if (read_task_info->patch_parts[patch_idx].mode == PatchMode::Join
+                        && read_task_info->patch_parts[patch_idx].part->getPartName() == patch_name)
+                        break;
+                }
+
+                if (patch_idx == read_task_info->patch_parts.size())
+                    return [](const MarkRanges &) { return Block{}; };
+
+                const auto & pp = read_task_info->patch_parts[patch_idx];
+                const auto & patch_columns = read_task_info->task_columns.patch_columns[patch_idx];
+                auto reader_settings_build = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings());
+
+                auto part_reader = createMergeTreeReader(
+                    pp.part,
+                    patch_columns,
+                    storage_snapshot,
+                    storage.getSettings(),
+                    patch_join_cache->getAllRanges(patch_name),
+                    read_task_info->const_virtual_fields,
+                    /*uncompressed_cache=*/ nullptr,
+                    mark_cache.get(),
+                    /*deserialization_prefixes_cache=*/ nullptr,
+                    reader_settings_build,
+                    /*value_size_map=*/ {},
+                    /*profile_callback=*/ {});
+
+                bool perform_alter = pp.perform_alter_conversions;
+                auto shared_reader = std::shared_ptr<IMergeTreeReader>(std::move(part_reader));
+                auto rr = std::make_shared<MergeTreeRangeReader>(
+                    shared_reader.get(), Block{}, nullptr,
+                    std::make_shared<ReadStepPerformanceCounters>(), false, shared_reader->canReadIncompleteGranules());
+
+                return [shared_reader, rr, perform_alter]
+                       (const MarkRanges & ranges) mutable -> Block
+                {
+                    MarkRanges mutable_ranges = ranges;
+                    size_t max_rows = std::numeric_limits<UInt64>::max();
+                    auto read_result = rr->startReadingChain(max_rows, mutable_ranges);
+
+                    for (auto & column : read_result.columns)
+                        column = removeSpecialRepresentations(column);
+
+                    if (perform_alter)
+                        rr->getReader()->performRequiredConversions(read_result.columns);
+
+                    return rr->getSampleBlock().cloneWithColumns(read_result.columns);
+                };
+            };
+
+            patch_join_cache->build(reader_factory, /*num_threads=*/ 1);
+        }
     }
 
     const auto & context = storage.getContext();

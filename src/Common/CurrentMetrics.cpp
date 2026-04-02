@@ -95,6 +95,9 @@
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
+    M(BuildPatchJoinCacheThreads, "Number of threads in the thread pool for building patch join cache.") \
+    M(BuildPatchJoinCacheThreadsActive, "Number of threads in the thread pool for building patch join cache running a task.") \
+    M(BuildPatchJoinCacheThreadsScheduled, "Number of queued or active jobs for building patch join cache.") \
     M(BackupsThreads, "Number of threads in the thread pool for BACKUP.") \
     M(BackupsThreadsActive, "Number of threads in thread pool for BACKUP running a task.") \
     M(BackupsThreadsScheduled, "Number of queued or active jobs for BACKUP.") \

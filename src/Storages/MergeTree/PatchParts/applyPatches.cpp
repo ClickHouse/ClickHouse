@@ -10,7 +10,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
-#include <shared_mutex>
 
 namespace ProfileEvents
 {
@@ -507,20 +506,29 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const ConstBlockPtr 
     return patch_to_apply;
 }
 
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry)
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, size_t num_buckets)
 {
-    std::shared_lock lock(join_entry.mutex);
-
     auto patch_to_apply = std::make_shared<PatchToApply>();
 
     size_t num_rows = result_block.rows();
-    if (num_rows == 0 || join_entry.hash_map.empty())
+    if (num_rows == 0 || entries.empty())
         return patch_to_apply;
 
-    /// Snapshot the block under shared lock. Column pointers are shared, no deep copy.
-    patch_to_apply->patch_blocks.push_back(std::make_shared<const Block>(join_entry.block));
-
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::BuildPatchesJoinMicroseconds);
+
+    /// Build mapping: bucket_index -> patch_block index in patch_to_apply->patch_blocks.
+    std::vector<size_t> bucket_to_block_idx(num_buckets, std::numeric_limits<size_t>::max());
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        if (b < entries.size() && entries[b] && entries[b]->block.rows() > 0)
+        {
+            bucket_to_block_idx[b] = patch_to_apply->patch_blocks.size();
+            patch_to_apply->patch_blocks.push_back(std::make_shared<const Block>(entries[b]->block));
+        }
+    }
+
+    if (patch_to_apply->patch_blocks.empty())
+        return patch_to_apply;
 
     auto block_number_column = result_block.getByName(BlockNumberColumn::name).column->convertToFullIfNeeded();
     auto block_offset_column = result_block.getByName(BlockOffsetColumn::name).column->convertToFullIfNeeded();
@@ -528,57 +536,65 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     const auto & result_block_number = assert_cast<const ColumnUInt64 &>(*block_number_column).getData();
     const auto & result_block_offset = assert_cast<const ColumnUInt64 &>(*block_offset_column).getData();
 
-    size_t size_to_reserve = std::min(num_rows, join_entry.hash_map.size());
-    patch_to_apply->result_row_indices.reserve(size_to_reserve);
-    patch_to_apply->patch_row_indices.reserve(size_to_reserve);
+    patch_to_apply->result_row_indices.reserve(num_rows);
+    patch_to_apply->patch_row_indices.reserve(num_rows);
+    patch_to_apply->patch_block_indices.reserve(num_rows);
 
     struct IteratorsPair
     {
         bool found = false;
+        size_t block_idx = 0;
         PatchOffsetsMap::const_iterator it;
         PatchOffsetsMap::const_iterator end;
     };
 
     UInt64 prev_block_number = std::numeric_limits<UInt64>::max();
-    /// Mapping from block number to iterator in offsets map.
     absl::flat_hash_map<UInt64, IteratorsPair, HashCRC32<UInt64>> offsets_iterators;
     IteratorsPair * current_offset_iterators = nullptr;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Check that offsets are sorted within each block number.
     absl::flat_hash_map<UInt64, UInt64> last_offset_by_block_number;
 #endif
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (result_block_number[row] < join_entry.min_block || result_block_number[row] > join_entry.max_block)
+        UInt64 block_number = result_block_number[row];
+        size_t bucket = block_number % num_buckets;
+
+        if (bucket_to_block_idx[bucket] == std::numeric_limits<size_t>::max())
+            continue;
+
+        const auto & entry = *entries[bucket];
+
+        if (block_number < entry.min_block || block_number > entry.max_block)
             continue;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         {
-            auto it = last_offset_by_block_number.find(result_block_number[row]);
+            auto it = last_offset_by_block_number.find(block_number);
             if (it != last_offset_by_block_number.end() && it->second >= result_block_offset[row])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block offsets ({}, {}) are not sorted within block number {}", it->second, result_block_offset[row], result_block_number[row]);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Block offsets ({}, {}) are not sorted within block number {}", it->second, result_block_offset[row], block_number);
 
-            last_offset_by_block_number[result_block_number[row]] = result_block_offset[row];
+            last_offset_by_block_number[block_number] = result_block_offset[row];
         }
 #endif
 
-        if (result_block_number[row] != prev_block_number)
+        if (block_number != prev_block_number)
         {
-            prev_block_number = result_block_number[row];
-            auto [block_number_it, inserted] = offsets_iterators.try_emplace(result_block_number[row]);
+            prev_block_number = block_number;
+            auto [block_number_it, inserted] = offsets_iterators.try_emplace(block_number);
 
             if (inserted)
             {
-                auto it = join_entry.hash_map.find(result_block_number[row]);
+                auto it = entry.hash_map.find(block_number);
 
-                if (it != join_entry.hash_map.end())
+                if (it != entry.hash_map.end())
                 {
                     const auto & offsets_map = it->second;
                     auto & iterators = block_number_it->second;
 
                     iterators.found = true;
+                    iterators.block_idx = bucket_to_block_idx[bucket];
                     iterators.it = offsets_map.lower_bound(result_block_offset[row]);
                     iterators.end = offsets_map.end();
                 }
@@ -593,9 +609,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
         if (iterators.found)
         {
             while (iterators.it != iterators.end && iterators.it->first < result_block_offset[row])
-            {
                 ++iterators.it;
-            }
 
             if (iterators.it != iterators.end && iterators.it->first == result_block_offset[row])
             {
@@ -603,6 +617,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 
                 patch_to_apply->result_row_indices.push_back(row);
                 patch_to_apply->patch_row_indices.push_back(patch_row_index);
+                patch_to_apply->patch_block_indices.push_back(iterators.block_idx);
             }
         }
     }
