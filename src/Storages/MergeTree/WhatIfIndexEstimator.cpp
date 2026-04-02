@@ -394,18 +394,26 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// Optimize the plan (applies filters to ReadFromMergeTree).
-    plan.optimize(QueryPlanOptimizationSettings(plan_context));
+    /// Build the pipeline to trigger filter pushdown, optimization, and index analysis.
+    /// This populates the AnalysisResult with baseline numbers.
+    auto builder = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings(plan_context),
+        BuildQueryPipelineSettings(plan_context));
 
-    /// Trigger PK + partition + skip index analysis to populate AnalysisResult.
-    auto analysis_ptr = read_step->selectRangesToRead();
+    auto analysis_ptr = read_step->getAnalyzedResult();
     if (!analysis_ptr)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
 
-    /// Save the filtered parts (after PK + partition + existing skip index pruning).
-    /// Must copy before buildQueryPipeline which moves them out.
-    auto saved_parts = analysis.parts_with_ranges;
+    /// buildQueryPipeline moved parts_with_ranges out of the analysis.
+    /// Reset the analyzed result so that selectRangesToRead re-uses prepared_parts
+    /// (the original unfiltered parts, still valid via shared_ptr),
+    /// then re-run the analysis to get a fresh copy of the filtered parts.
+    read_step->setAnalyzedResult(nullptr);
+    auto fresh_analysis = read_step->selectRangesToRead();
+    RangesInDataParts baseline_parts;
+    if (fresh_analysis)
+        baseline_parts = std::move(fresh_analysis->parts_with_ranges);
 
     Result result;
     result.database = data.getStorageID().getDatabaseName();
@@ -441,7 +449,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     /// Evaluate each hypothetical index independently against baseline.
     for (const auto & index_desc : hypo_indexes)
     {
-        auto index_result = evaluateIndex(index_desc, read_step, analysis, saved_parts, settings, context);
+        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, context);
         result.index_results.push_back(std::move(index_result));
     }
 

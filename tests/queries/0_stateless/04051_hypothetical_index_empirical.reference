@@ -20,5 +20,5 @@
   skip_ratio:   98.0%
   sampled_marks:    50 / 50
 --- proof: only baseline granules materialized ---
-  skip_ratio:   high (only baseline granules read)
+  skip_ratio:   100.0%
   source:           empirical

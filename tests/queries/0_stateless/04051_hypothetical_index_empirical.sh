@@ -109,31 +109,31 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_real"
 # =========================================================
 # Proof that empirical mode only materializes on baseline granules.
 #
-# Table: 100 granules, ORDER BY a.
-#   Granules 0-89  (a in [0,8999]):    b = 0
-#   Granules 90-99 (a in [9000,9999]): b = 1
+# Partitioned table (PARTITION BY p):
+#   Partition p=0: b = 0 everywhere (50 granules)
+#   Partition p=1: b = 1 everywhere (50 granules)
 #
-# Query: WHERE a >= 9000 AND b = 0
-#   PK prunes granules 0-89 → baseline ≈ 10 granules (all have b=1)
-#   Hypothetical minmax on b: b=0 not found in any baseline granule → ~100% skip
+# Query: WHERE p = 1 AND b = 0
+#   Partition pruning removes p=0 entirely → baseline = p=1 only (all b=1)
+#   Hypothetical minmax on b: b=0 not in any p=1 granule → 100% skip
 #
-# If we had wrongly materialized on the WHOLE table, we'd see ~10% skip
-# (90 granules with b=0 → not skipped, 10 with b=1 → skipped = 10/100).
-# So skip_ratio >> 50% proves only baseline granules were read.
-# We check > 90% to allow for PK boundary mark imprecision.
+# If whole table was read: p=0 has b=0 → NOT skipped, p=1 has b=1 → skipped.
+#   skip_ratio = 50%.
+# With only baseline: all granules have b=1, skip_ratio = 100%.
 # =========================================================
 echo "--- proof: only baseline granules materialized ---"
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_proof;
-    CREATE TABLE t_hypo_proof (a UInt64, b UInt64)
-    ENGINE = MergeTree ORDER BY a
+    CREATE TABLE t_hypo_proof (p UInt8, a UInt64, b UInt64)
+    ENGINE = MergeTree PARTITION BY p ORDER BY a
     SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
-    INSERT INTO t_hypo_proof SELECT number, if(number < 9000, 0, 1) FROM numbers(10000);
+    INSERT INTO t_hypo_proof SELECT 0, number, 0 FROM numbers(5000);
+    INSERT INTO t_hypo_proof SELECT 1, number, 1 FROM numbers(5000);
 
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_proof (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_proof WHERE a >= 9000 AND b = 0;
-" | awk '/skip_ratio/ { ratio = $2 + 0; if (ratio > 90) print "  skip_ratio:   high (only baseline granules read)"; else print "  skip_ratio:   low (ERROR: read whole table)" } /source/ { print }'
+    EXPLAIN WHATIF SELECT * FROM t_hypo_proof WHERE p = 1 AND b = 0;
+" | grep -E '^\s+skip_ratio:|^\s+source:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proof"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_emp"
