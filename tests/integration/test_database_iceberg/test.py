@@ -5,7 +5,7 @@ import os
 import random
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 
 import pyarrow as pa
 import pytest
@@ -24,9 +24,9 @@ from pyiceberg.types import (
     NestedField,
     StringType,
     StructType,
-    TimeType,
     TimestampType,
-    TimestamptzType
+    TimestamptzType,
+    TimeType,
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
