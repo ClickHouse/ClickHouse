@@ -299,7 +299,34 @@ public:
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
         using ScaledValueType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
-        Int64 scaled_value = Int64(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
+
+        /// Safely convert the value to Int64 scaled representation, checking for overflow.
+        /// This mirrors the overflow checks in addValue().
+        Int64 scaled_value;
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Value {} does not fit in Int64.", value);
+            scaled_value = static_cast<Int64>(value);
+        }
+        else if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            UInt64 scaling = 1ULL << fraction_bit_num;
+            constexpr Float64 lim = static_cast<Float64>(std::numeric_limits<Int64>::max());
+            if (std::fabs(value) > lim / static_cast<Float64>(scaling))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
+                    Float64(value),
+                    integer_bit_num,
+                    fraction_bit_num);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
+        }
+        else
+        {
+            scaled_value = static_cast<Int64>(value * static_cast<ScaledValueType>(1ULL << fraction_bit_num));
+        }
+
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -1295,44 +1322,58 @@ public:
         }
         checkValidValue(rhs);
 
-        res_bm = lhs.getAllNonZeroIndex();
+        /// Convert rhs to the same scaled bit representation used by addValue / initializeFromVectorAndValue.
+        /// The previous implementation split the value into floor(rhs) and fractional parts in separate loops.
+        /// That had undefined behavior: casting negative or out-of-range floats to UInt64 is UB (C++ standard
+        /// [conv.fpint]), and for signed integers std::floor() implicitly converts to double first, producing
+        /// a negative double that is also UB when cast to UInt64.
+        /// The unified approach computes a single Int64 scaled value and checks all bits in one loop,
+        /// correctly handling negative values via two's complement.
+        UInt64 scaling = 1ULL << lhs.fraction_bit_num;
 
-        UInt64 long_value = UInt64(std::floor(rhs));
-        /// if ValueType is floating point, use ValueType for calculation, otherwise use UInt64
-        using CalculationType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, UInt64>;
-        UInt64 decimal_value = static_cast<UInt64>((rhs - static_cast<CalculationType>(long_value)) * static_cast<CalculationType>(1ULL << lhs.fraction_bit_num));
-
-        size_t i = 0;
-        for (; i < lhs.fraction_bit_num; ++i)
+        Int64 scaled_value;
+        if constexpr (std::is_same_v<ValueType, UInt64>)
         {
-            if ((decimal_value & 1L) == 1)
-            {
-                res_bm->rb_and(*lhs.getDataArrayAt(i));
-            }
-            else
-            {
-                res_bm->rb_andnot(*lhs.getDataArrayAt(i));
-            }
-            decimal_value >>= 1;
+            /// addValue() rejects UInt64 values > Int64::max, so they can never be stored in the BSI.
+            if (rhs > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                return res_bm;
+            scaled_value = static_cast<Int64>(rhs);
         }
+        else if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            constexpr Float64 lim = static_cast<Float64>(std::numeric_limits<Int64>::max());
+            if (std::fabs(rhs) > lim / static_cast<Float64>(scaling))
+                return res_bm; /// Out of representable range, no match possible.
+            scaled_value = static_cast<Int64>(rhs * static_cast<ValueType>(scaling));
+        }
+        else
+        {
+            /// Signed integer types (Int8..Int64): fraction_bit_num is always 0.
+            scaled_value = static_cast<Int64>(rhs);
+        }
+
+        /// Check if the scaled value fits in total_bit_num bits (two's complement).
+        /// Values outside this range cannot be stored in the BSI, so no match is possible.
         const UInt32 total_bit_num = lhs.getTotalBitNum();
-        for (; i < total_bit_num; ++i)
+        if (total_bit_num < 64)
         {
-            if ((long_value & 1L) == 1)
-            {
+            Int64 min_representable = -(1LL << (total_bit_num - 1));
+            Int64 max_representable = (1LL << (total_bit_num - 1)) - 1;
+            if (scaled_value < min_representable || scaled_value > max_representable)
+                return res_bm;
+        }
+
+        res_bm = lhs.getAllNonZeroIndex();
+        UInt64 scaled_bits = static_cast<UInt64>(scaled_value);
+
+        for (size_t i = 0; i < total_bit_num; ++i)
+        {
+            if (scaled_bits & (1ULL << i))
                 res_bm->rb_and(*lhs.getDataArrayAt(i));
-            }
             else
-            {
                 res_bm->rb_andnot(*lhs.getDataArrayAt(i));
-            }
-            long_value >>= 1;
         }
-        if (long_value != 0)
-        {
-            Roaring for_clear;
-            res_bm->rb_and(for_clear);
-        }
+
         return res_bm;
     }
 
