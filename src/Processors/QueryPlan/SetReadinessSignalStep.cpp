@@ -1,12 +1,12 @@
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/LazyFinalKeyAnalysisStep.h>
-#include <Processors/Transforms/LazyFinalKeyAnalysisTransform.h>
+#include <Processors/QueryPlan/SetReadinessSignalStep.h>
+#include <Processors/Transforms/SetReadinessSignalTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
 
-LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(SharedHeader input_header_, FutureSetPtr future_set_)
+SetReadinessSignalStep::SetReadinessSignalStep(SharedHeader input_header_, FutureSetPtr future_set_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -18,11 +18,11 @@ LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(SharedHeader input_header_, F
 {
 }
 
-void LazyFinalKeyAnalysisStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void SetReadinessSignalStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform([&](const SharedHeader &)
     {
-        return std::make_shared<LazyFinalKeyAnalysisTransform>(future_set);
+        return std::make_shared<SetReadinessSignalTransform>(future_set);
     });
 }
 

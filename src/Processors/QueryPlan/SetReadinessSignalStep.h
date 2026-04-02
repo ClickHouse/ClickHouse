@@ -6,12 +6,12 @@
 namespace DB
 {
 
-class LazyFinalKeyAnalysisStep : public ITransformingStep
+class SetReadinessSignalStep : public ITransformingStep
 {
 public:
-    LazyFinalKeyAnalysisStep(SharedHeader input_header_, FutureSetPtr future_set_);
+    SetReadinessSignalStep(SharedHeader input_header_, FutureSetPtr future_set_);
 
-    String getName() const override { return "LazyFinalKeyAnalysis"; }
+    String getName() const override { return "SetReadinessSignal"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
 
 private:

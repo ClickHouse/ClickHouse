@@ -11,12 +11,12 @@ namespace DB
 /// then checks if the set was truncated. Pushes a chunk if the set is OK
 /// (signaling InputSelectorTransform to use the optimized path),
 /// or finishes without pushing (signaling fallback).
-class LazyFinalKeyAnalysisTransform : public IProcessor
+class SetReadinessSignalTransform : public IProcessor
 {
 public:
-    explicit LazyFinalKeyAnalysisTransform(FutureSetPtr future_set_);
+    explicit SetReadinessSignalTransform(FutureSetPtr future_set_);
 
-    String getName() const override { return "LazyFinalKeyAnalysisTransform"; }
+    String getName() const override { return "SetReadinessSignalTransform"; }
     Status prepare() override;
 
 private:

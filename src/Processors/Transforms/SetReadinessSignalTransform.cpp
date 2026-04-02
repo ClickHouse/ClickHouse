@@ -1,17 +1,17 @@
 #include <Interpreters/Set.h>
 #include <Processors/Port.h>
-#include <Processors/Transforms/LazyFinalKeyAnalysisTransform.h>
+#include <Processors/Transforms/SetReadinessSignalTransform.h>
 
 namespace DB
 {
 
-LazyFinalKeyAnalysisTransform::LazyFinalKeyAnalysisTransform(FutureSetPtr future_set_)
+SetReadinessSignalTransform::SetReadinessSignalTransform(FutureSetPtr future_set_)
     : IProcessor(InputPorts{InputPort(Block())}, OutputPorts{OutputPort(Block())})
     , future_set(std::move(future_set_))
 {
 }
 
-IProcessor::Status LazyFinalKeyAnalysisTransform::prepare()
+IProcessor::Status SetReadinessSignalTransform::prepare()
 {
     auto & input = inputs.front();
     auto & output = outputs.front();
