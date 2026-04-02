@@ -163,6 +163,19 @@ void TopNAggregatingTransformBase::initColumnIndices(const Block & input_header_
     }
 }
 
+void TopNAggregatingTransformBase::prepareKeyColumnPtrs(const Columns & columns)
+{
+    key_column_holders.clear();
+    key_column_ptrs.resize(key_column_indices.size());
+    for (size_t k = 0; k < key_column_indices.size(); ++k)
+    {
+        auto converted = columns[key_column_indices[k]]->convertToFullIfNeeded();
+        key_column_ptrs[k] = converted.get();
+        if (converted != columns[key_column_indices[k]])
+            key_column_holders.push_back(std::move(converted));
+    }
+}
+
 void TopNAggregatingTransformBase::prepareArgColumnPtrs(const Columns & columns)
 {
     agg_arg_column_holders.clear();
@@ -193,7 +206,18 @@ SerializedKeyHolder TopNAggregatingTransformBase::serializeGroupKey(const Column
 void TopNAggregatingTransformBase::createAggregateStates(AggregateDataPtr place) const
 {
     for (size_t i = 0; i < aggregates.size(); ++i)
-        aggregates[i].function->create(place + agg_state_offsets[i]);
+    {
+        try
+        {
+            aggregates[i].function->create(place + agg_state_offsets[i]);
+        }
+        catch (...)
+        {
+            for (size_t rollback = 0; rollback < i; ++rollback)
+                aggregates[rollback].function->destroy(place + agg_state_offsets[rollback]);
+            throw;
+        }
+    }
 }
 
 void TopNAggregatingTransformBase::destroyAggregateStates(AggregateDataPtr place) const
@@ -247,6 +271,7 @@ void TopNSortedAggregatingTransform::consume(Chunk chunk)
     if (result_columns.empty())
         result_columns = getOutputPort().getHeader().cloneEmptyColumns();
 
+    prepareKeyColumnPtrs(columns);
     prepareArgColumnPtrs(columns);
 
     for (size_t row = 0; row < num_rows; ++row)
@@ -263,13 +288,21 @@ void TopNSortedAggregatingTransform::consume(Chunk chunk)
         it->getMapped() = num_groups;
 
         for (size_t k = 0; k < key_names.size(); ++k)
-            result_columns[k]->insertFrom(*columns[key_column_indices[k]], row);
+            result_columns[k]->insertFrom(*key_column_ptrs[k], row);
 
         auto * buf = arena->alignedAlloc(total_state_size, state_align);
         AggregateDataPtr state = reinterpret_cast<AggregateDataPtr>(buf);
         createAggregateStates(state);
-        addRowToAggregateStates(state, row);
-        insertResultsFromStates(state, result_columns);
+        try
+        {
+            addRowToAggregateStates(state, row);
+            insertResultsFromStates(state, result_columns);
+        }
+        catch (...)
+        {
+            destroyAggregateStates(state);
+            throw;
+        }
         destroyAggregateStates(state);
 
         ++num_groups;
@@ -350,6 +383,7 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
                 stored_input_header.getByPosition(key_column_indices[k]).column->cloneEmpty());
     }
 
+    prepareKeyColumnPtrs(columns);
     prepareArgColumnPtrs(columns);
 
     ColumnPtr order_arg_col_holder;
@@ -394,15 +428,15 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
             it->getMapped() = num_groups;
 
             for (size_t k = 0; k < key_names.size(); ++k)
-                accumulated_keys[k]->insertFrom(*columns[key_column_indices[k]], row);
+                accumulated_keys[k]->insertFrom(*key_column_ptrs[k], row);
 
             auto * buf = arena->alignedAlloc(total_state_size, state_align);
             AggregateDataPtr state = reinterpret_cast<AggregateDataPtr>(buf);
             createAggregateStates(state);
             group_states.push_back({state});
+            ++num_groups;
 
             addRowToAggregateStates(state, row);
-            ++num_groups;
         }
         else
         {
@@ -679,18 +713,28 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
     const auto & columns = chunk.getColumns();
     size_t num_rows = chunk.getNumRows();
 
+    Columns key_cols_converted;
+    ColumnRawPtrs key_col_ptrs(key_column_indices.size());
+    for (size_t k = 0; k < key_column_indices.size(); ++k)
+    {
+        auto converted = columns[key_column_indices[k]]->convertToFullIfNeeded();
+        key_col_ptrs[k] = converted.get();
+        if (converted != columns[key_column_indices[k]])
+            key_cols_converted.push_back(std::move(converted));
+    }
+
     if (accumulated_keys.empty())
     {
         for (size_t k = 0; k < key_names.size(); ++k)
-            accumulated_keys.push_back(columns[key_column_indices[k]]->cloneEmpty());
+            accumulated_keys.push_back(key_col_ptrs[k]->cloneEmpty());
     }
 
     for (size_t row = 0; row < num_rows; ++row)
     {
         const char * begin = nullptr;
         std::string_view key;
-        for (size_t idx : key_column_indices)
-            key = columns[idx]->serializeValueIntoArena(row, *arena, begin, nullptr);
+        for (size_t k = 0; k < key_column_indices.size(); ++k)
+            key = key_col_ptrs[k]->serializeValueIntoArena(row, *arena, begin, nullptr);
         SerializedKeyHolder key_holder{std::string_view(begin, key.data() + key.size() - begin), *arena};
 
         decltype(group_indices)::LookupResult it;
@@ -704,7 +748,7 @@ void TopNAggregatingMergeTransform::consume(Chunk chunk)
             it->getMapped() = group_idx;
 
             for (size_t k = 0; k < key_names.size(); ++k)
-                accumulated_keys[k]->insertFrom(*columns[key_column_indices[k]], row);
+                accumulated_keys[k]->insertFrom(*key_col_ptrs[k], row);
 
             auto * buf = arena->alignedAlloc(total_state_size, state_align);
             AggregateDataPtr state = reinterpret_cast<AggregateDataPtr>(buf);
