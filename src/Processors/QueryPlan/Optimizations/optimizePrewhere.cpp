@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/Settings.h>
@@ -108,7 +109,15 @@ ActionsDAG splitAndFillPrewhereInfo(
     {
         prewhere_info->prewhere_column_name = conditions.front()->result_name;
         if (prewhere_info->remove_prewhere_column)
-            prewhere_info->prewhere_actions.getOutputs().push_back(conditions.front());
+        {
+            /// If the prewhere column is removed, then let's add it back. If it is already in the outputs,
+            /// that means the prewhere column is needed later, so let's keep it.
+            auto & outputs = prewhere_info->prewhere_actions.getOutputs();
+            if (std::find(outputs.begin(), outputs.end(), conditions.front()) == outputs.end())
+                outputs.push_back(conditions.front());
+            else
+                prewhere_info->remove_prewhere_column = false;
+        }
     }
     else
     {
