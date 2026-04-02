@@ -255,6 +255,8 @@
     M(PatchesAcquireLockTries, "Total number of tries to acquire lock for executing lightweight updates", ValueType::Number) \
     M(PatchesAcquireLockMicroseconds, "Total number of microseconds spent to acquire lock for executing lightweight updates", ValueType::Number) \
     \
+    M(DiskObjectStorageWaitBlobRemovalMicroseconds, "Time spent waiting for pending blob removal after committing metadata transaction", ValueType::Microseconds) \
+    \
     M(SchedulerIOReadRequests, "Resource requests passed through scheduler for IO reads.", ValueType::Number) \
     M(SchedulerIOReadBytes, "Bytes passed through scheduler for IO reads.", ValueType::Bytes) \
     M(SchedulerIOReadWaitMicroseconds, "Total time a query was waiting on resource requests for IO reads.", ValueType::Microseconds) \
@@ -414,6 +416,8 @@
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.", ValueType::Number) \
     M(MergedColumns, "Number of columns merged during the horizontal stage of merges.", ValueType::Number) \
     M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.", ValueType::Number) \
+    M(MergedProjections, "Number of projections merged (not rebuilt) during MergeTree merges.", ValueType::Number) \
+    M(RebuiltProjections, "Number of projections rebuilt from scratch during MergeTree merges.", ValueType::Number) \
     M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.", ValueType::Bytes) \
     M(MergeWrittenRows, "Number of rows written during the merge.", ValueType::Number) \
     M(MergeTotalMilliseconds, "Total time spent for background merges", ValueType::Milliseconds) \
@@ -970,7 +974,12 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations", ValueType::Number) \
     M(KeeperSnapshotApplys, "Number of snapshot applying", ValueType::Number) \
     M(KeeperSnapshotApplysFailed, "Number of failed snapshot applying", ValueType::Number) \
-    M(KeeperReadSnapshot, "Number of snapshot read(serialization)", ValueType::Number) \
+    M(KeeperReadSnapshot, "Number of completed snapshot reads", ValueType::Number) \
+    M(KeeperReadSnapshotObject, "Number of snapshot objects sent to followers", ValueType::Number) \
+    M(KeeperReadSnapshotFailed, "Number of failed snapshot reads", ValueType::Number) \
+    M(KeeperSnapshotRemoteLoaderErrors, "Number of remote read errors in RemoteSnapshotLoader while serving a snapshot to a follower", ValueType::Number) \
+    M(KeeperSaveSnapshotObject, "Number of snapshot objects received from leader", ValueType::Number) \
+    M(KeeperSaveSnapshotFailed, "Number of failed snapshot saves", ValueType::Number) \
     M(KeeperSaveSnapshot, "Number of snapshot save", ValueType::Number) \
     M(KeeperCreateRequest, "Number of create requests", ValueType::Number) \
     M(KeeperRemoveRequest, "Number of remove requests", ValueType::Number) \

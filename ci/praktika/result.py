@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import datetime
+import errno
 import io
 import json
 import os
@@ -229,9 +230,27 @@ class Result(MetaClasses.Serializable):
     def is_dropped(self):
         return self.status in (Result.Status.DROPPED,)
 
+    def _dump_if_persisted(self) -> "Result":
+        """Dump only if a result file already exists on disk.
+
+        Setters use this so that job-level results (already dumped by `complete_job`
+        or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
+        create their own files — avoiding `OSError: File name too long` when a result
+        name is derived from a long error message.
+        """
+        try:
+            exists = Path(self.file_name()).is_file()
+        except OSError as e:
+            if e.errno == errno.ENAMETOOLONG:
+                return self
+            raise
+        if exists:
+            self.dump()
+        return self
+
     def set_status(self, status) -> "Result":
         self.status = status
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_success(self) -> "Result":
@@ -245,7 +264,7 @@ class Result(MetaClasses.Serializable):
 
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_files(self, files, strict=True) -> "Result":
@@ -265,7 +284,7 @@ class Result(MetaClasses.Serializable):
                 )
                 files.remove(file)
         self.files += files
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_on_error_hook(self, hook: str) -> "Result":
@@ -296,12 +315,12 @@ class Result(MetaClasses.Serializable):
         if self.info:
             self.info += "\n"
         self.info += info
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def set_link(self, link) -> "Result":
         self.links.append(link)
-        self.dump()
+        self._dump_if_persisted()
         return self
 
     def _add_job_summary_to_info(self):
@@ -1186,12 +1205,20 @@ class _ResultS3:
                 print(
                     f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel"
                 )
-                print(asset_paths)
-                with ThreadPoolExecutor(max_workers=10) as executor:
-                    for asset in asset_paths:
-                        rel_path = asset.relative_to(common_root)
-                        s3_path = f"{base_s3_prefix}/{rel_path}"
-                        executor.submit(S3.upload_asset_streaming, asset, s3_path)
+                with ThreadPoolExecutor(max_workers=50) as executor:
+                    futures = {
+                        executor.submit(
+                            S3.upload_asset_streaming,
+                            asset,
+                            f"{base_s3_prefix}/{asset.relative_to(common_root)}",
+                        ): asset
+                        for asset in asset_paths
+                    }
+                for future, asset in futures.items():
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"ERROR: Failed to upload asset [{asset}]: {e}")
         result.assets = []
 
         if result.results:

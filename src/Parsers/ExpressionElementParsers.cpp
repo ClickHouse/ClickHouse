@@ -191,6 +191,33 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             result_node = buildSelectFromTableFunction(view_explain);
         }
     }
+    else if (ParserKeyword(Keyword::VALUES).ignore(pos, expected))
+    {
+        /// SQL standard VALUES clause: (VALUES (1, 'a'), (2, 'b'))
+        /// Rewrite as SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
+        auto args = make_intrusive<ASTExpressionList>();
+        ParserExpression expr_parser;
+
+        ASTPtr value_expr;
+        if (!expr_parser.parse(pos, value_expr, expected))
+            return false;
+        args->children.push_back(std::move(value_expr));
+
+        while (pos->type == TokenType::Comma)
+        {
+            ++pos;
+            if (!expr_parser.parse(pos, value_expr, expected))
+                return false;
+            args->children.push_back(std::move(value_expr));
+        }
+
+        auto values_func = make_intrusive<ASTFunction>();
+        values_func->name = "SQLStandardValues";
+        values_func->arguments = args;
+        values_func->children.push_back(values_func->arguments);
+
+        result_node = buildSelectFromTableFunction(values_func);
+    }
     else
     {
         return false;
@@ -368,6 +395,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
     delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
+    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::At}), SpecialDelimiter::JSON_PATH_COMBINED);
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -455,7 +483,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 {
     /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
     if (name.size() < 3
-        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX) && name[0] != char(SpecialDelimiter::JSON_PATH_COMBINED))
         || name[1] != '`' || name.back() != '`')
         return std::nullopt;
 
