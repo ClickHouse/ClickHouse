@@ -45,4 +45,4 @@ SELECT UNIQUE(SELECT x FROM t_lc_nullable);
 DROP TABLE t_lc_nullable;
 
 SELECT 'Correlated subquery: not supported';
-SELECT UNIQUE(SELECT number FROM numbers(n)) FROM (SELECT 1 AS n); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT UNIQUE(SELECT number FROM numbers(5) WHERE number = n) FROM (SELECT 1 AS n); -- { serverError NOT_IMPLEMENTED }
