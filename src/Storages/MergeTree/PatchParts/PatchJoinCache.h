@@ -53,13 +53,16 @@ using PatchHashMap = absl::node_hash_map<
 
 /**  A cache of maps and blocks for applying patch parts in Join mode.
   *  The cache is pre-built as a separate step before reading from MergeTree table.
-  *  Data from all Join-mode patch parts is distributed into `num_buckets` global entries
-  *  by `_block_number % num_buckets`, so that each entry can be built independently
-  *  without contention. After the cache is built, it is read-only and no locking is needed.
+  *  Data is distributed into `num_buckets` entries per patch part by `_block_number % num_buckets`,
+  *  so that each entry can be built independently without contention.
+  *  After the cache is built, it is read-only and no locking is needed.
   *
   *  Build is parallelized by mark ranges (not by patch parts), so even a single
   *  large patch part benefits from multiple threads. Each bucket is filled
   *  by exactly one thread, so no locking is required.
+  *
+  *  Entries are kept per patch part name because different patches may have
+  *  different column schemas (different UPDATE statements).
   */
 struct PatchJoinCache
 {
@@ -85,7 +88,7 @@ struct PatchJoinCache
     /// The returned Reader reads a set of mark ranges and returns a Block with patch data.
     using ReaderFactory = std::function<Reader(const String & patch_name)>;
 
-    /// Initializes the cache with `num_buckets` global entries.
+    /// Initializes the cache with `num_buckets` entries per patch part.
     void init(const RangesInPatchParts & ranges_in_patches, size_t num_buckets);
 
     /// Pre-builds the cache by reading all patch data for Join-mode patches.
@@ -94,8 +97,8 @@ struct PatchJoinCache
 
     bool isBuilt() const { return built; }
 
-    /// Returns the global entries (all buckets).
-    const Entries & getEntries() const { return entries; }
+    /// Returns the entries for a specific patch part (all buckets).
+    const Entries & getEntries(const String & patch_name) const;
     size_t getNumBuckets() const { return num_buckets; }
 
     const MarkRanges & getAllRanges(const String & patch_name) const
@@ -113,8 +116,8 @@ private:
     size_t num_buckets = 1;
     bool built = false;
 
-    /// Global buckets, size = num_buckets. Immutable after build.
-    Entries entries;
+    /// Per-patch-name buckets, each vector has size = num_buckets. Immutable after build.
+    absl::node_hash_map<String, Entries> cache;
 
     /// Ranges are filled on initialization and then are read-only.
     absl::node_hash_map<String, MarkRanges> all_ranges_by_name;

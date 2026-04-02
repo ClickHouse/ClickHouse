@@ -161,10 +161,9 @@ bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, con
     return *main_result.max_part_offset > result.lastMaxPartOffset();
 }
 
-MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_, bool is_primary_)
+MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_)
     : MergeTreePatchReader(std::move(patch_part_), std::move(reader_))
     , patch_join_cache(patch_join_cache_)
-    , is_primary(is_primary_)
 {
     if (patch_part.mode != PatchMode::Join)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch with mode Join, got {}", patch_part.mode);
@@ -177,11 +176,8 @@ PatchReadResultPtr MergeTreePatchReaderJoin::createResult() const
     if (!patch_join_cache || !patch_join_cache->isBuilt())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinCache must be pre-built before reading");
 
-    if (is_primary)
-    {
-        result->entries = patch_join_cache->getEntries();
-        result->num_buckets = patch_join_cache->getNumBuckets();
-    }
+    result->entries = patch_join_cache->getEntries(patch_part.part->getPartName());
+    result->num_buckets = patch_join_cache->getNumBuckets();
 
     return result;
 }
@@ -204,13 +200,13 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & 
     return {applyPatchJoin(result_block, join_result.entries, join_result.num_buckets)};
 }
 
-MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache, bool is_primary_join)
+MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)
 {
     if (patch_part.mode == PatchMode::Merge)
         return std::make_unique<MergeTreePatchReaderMerge>(std::move(patch_part), std::move(reader));
 
     if (patch_part.mode == PatchMode::Join)
-        return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache, is_primary_join);
+        return std::make_unique<MergeTreePatchReaderJoin>(std::move(patch_part), std::move(reader), read_join_cache);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected patch parts mode {}", patch_part.mode);
 }

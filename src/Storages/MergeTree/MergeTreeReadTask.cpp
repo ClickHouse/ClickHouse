@@ -214,18 +214,12 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             extras.profile_callback);
     };
 
-    bool first_join = true;
     for (size_t i = 0; i < read_info->patch_parts.size(); ++i)
     {
-        bool is_primary_join = first_join && read_info->patch_parts[i].mode == PatchMode::Join;
-        if (is_primary_join)
-            first_join = false;
-
         new_readers.patches.push_back(getPatchReader(
             read_info->patch_parts[i],
             create_patch_reader(i),
-            extras.patch_join_cache,
-            is_primary_join));
+            extras.patch_join_cache));
     }
 
     return new_readers;

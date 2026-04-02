@@ -73,7 +73,7 @@ private:
 class MergeTreePatchReaderJoin : public MergeTreePatchReader
 {
 public:
-    MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_, bool is_primary_);
+    MergeTreePatchReaderJoin(PatchPartInfoForReader patch_part_, MergeTreeReaderPtr reader_, PatchJoinCache * patch_join_cache_);
 
     PatchReadResultPtr createResult() const override;
 
@@ -87,14 +87,11 @@ public:
 
 private:
     PatchJoinCache * patch_join_cache;
-    /// When the cache is pre-built with global entries, only the primary reader applies patches
-    /// to avoid applying the same data multiple times from different Join-mode readers.
-    bool is_primary;
 };
 
 using MergeTreePatchReaderPtr = std::shared_ptr<MergeTreePatchReader>;
 using MergeTreePatchReaders = std::vector<MergeTreePatchReaderPtr>;
 
-MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache, bool is_primary_join = true);
+MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache);
 
 }
