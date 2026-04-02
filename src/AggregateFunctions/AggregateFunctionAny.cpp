@@ -55,6 +55,17 @@ public:
             this->data(place).set(*columns[0], row_num, arena);
     }
 
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (!this->data(place).has() && num_rows > 0)
+            this->data(place).set(*columns[0], row_indices[0], arena);
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -238,6 +249,17 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         this->data(place).set(*columns[0], row_num, arena);
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (num_rows > 0)
+            this->data(place).set(*columns[0], row_indices[num_rows - 1], arena);
     }
 
     void addBatchSinglePlace(
