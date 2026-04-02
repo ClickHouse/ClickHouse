@@ -7,6 +7,7 @@
 #include <Core/TypeId.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
+#include <Interpreters/RowDataStore.h>
 
 
 namespace DB
@@ -17,14 +18,31 @@ class ColumnReplicated;
 
 struct ColumnsInfo
 {
+    struct AccessIndex                                                                                                                                                                                                                                 
+    {                                                                                                                                                                                                                                               
+        enum Type : uint8_t { Columns, RowStore };
+        Type type;                                                                                                                                                                                                                                  
+        size_t index;                                                                                                                                                        
+    };
+
+    using AccessIndexes = std::vector<AccessIndex>;
+    
     explicit ColumnsInfo(Columns && columns_);
 
     Columns columns;
+    /// Row-major store for fixed size contugious columns.
+    std::optional<RowDataStore> row_store;
     /// Sometimes we need to insert rows into a regular column from a Replicated column.
     /// And to avoid virtual calls and casts per each row insertion we store pointer
     /// to the replicated column for each column in the list above.
     /// If columns is not Replicated, pointer will be nullptr.
     PODArray<const ColumnReplicated *> replicated_columns;
+    
+    bool hasRowStore() const { return row_store.has_value(); }
+    void transferColumnsToRowStore(const AccessIndexes & access_indexes);
+
+    size_t allocatedBytes() const;
+    size_t rows() const;
 };
 
 /// Reference to the row in block.

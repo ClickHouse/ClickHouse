@@ -21,6 +21,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <DataTypes/NullableUtils.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
@@ -209,6 +210,7 @@ HashJoin::HashJoin(
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
+    initRowStore();
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
 
@@ -276,17 +278,11 @@ HashJoin::HashJoin(
 
 size_t HashJoin::ScatteredColumns::allocatedBytes() const
 {
-    if (columns_info.columns.empty())
-        return 0;
-
-    size_t rows = columns_info.columns.front()->size();
+    size_t rows = columns_info.rows();
     if (rows == 0)
         return 0;
 
-    size_t res = 0;
-    for (const auto & column : columns_info.columns)
-        res += column->allocatedBytes();
-    return res * selector.size() / rows;
+    return columns_info.allocatedBytes() * selector.size() / rows;
 }
 
 size_t HashJoin::NullMapHolder::allocatedBytes() const
@@ -587,6 +583,41 @@ void HashJoin::initRightBlockStructure(Block & saved_block_sample)
     }
 }
 
+void HashJoin::initRowStore()
+{
+    /// Skip using row store when the right table rearange optimization could get triggered.
+    /// TODO: allow row store when right table could get rearranged and build the rearanged table
+    /// based on the row store instead.
+    if(kind == JoinKind::Cross || data->type != Type::EMPTY || rightTableCanBeReranged())
+        return;
+
+    /// Extract columns suitable for row store.
+    const auto & columns = data->sample_block.getColumns();
+    ColumnsInfo::AccessIndexes access_indexes;
+    access_indexes.reserve(columns.size());
+    size_t row_store_columns = 0;
+    size_t remaining_columns = 0;
+    for (const auto & column : columns)
+    {
+        if (isRowStorageUseful(column))
+            access_indexes.push_back({ColumnsInfo::AccessIndex::Type::RowStore, row_store_columns++});
+        else
+            access_indexes.push_back({ColumnsInfo::AccessIndex::Type::Columns, remaining_columns++});
+    }
+
+    /// TODO: make the minimum column count configurable.
+    if (row_store_columns >= 3)
+    {
+        /// Build row store from collected columns.
+        /// For now replicated columns are materialized to make sure call blocks have
+        /// the same split of columnar and row store columns.
+        /// TODO: allow columns to be in row store in some blocks and remain columnar
+        /// in others (in case of replicated columns).
+        data->column_access_indexes = std::move(access_indexes);
+        data->use_row_store = true;
+    }
+}
+
 void HashJoin::materializeColumnsFromLeftBlock(Block & block) const
 {
     /** If you use FULL or RIGHT JOIN, then the columns from the "left" table must be materialized.
@@ -735,8 +766,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             have_compressed = true;
         }
 
+        ColumnsInfo columns_info(block_to_save.getColumns());
+        if (data->use_row_store)
+            columns_info.transferColumnsToRowStore(data->column_access_indexes);
+
         doDebugAsserts();
-        data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns()), std::move(selector));
+        data->columns.emplace_back(std::move(columns_info), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
@@ -813,7 +848,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                             all_values_unique);
 
                         if (flag_per_row)
-                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->selector);
+                            used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(&stored_columns->columns_info.columns, stored_columns->columns_info.rows(), stored_columns->selector);
                     });
             }
 
@@ -1363,10 +1398,27 @@ void HashJoin::updateNonJoinedRowsStatus()
     has_non_joined_rows_checked = true;
 }
 
+static void insertRowFromColumnsInfo(const ColumnsInfo & info, size_t row_num, std::vector<IColumn *> & row_store_columns, std::vector<IColumn *> & columnar_columns)
+{
+    if (!row_store_columns.empty())
+    {
+        chassert(info.hasRowStore());
+        info.row_store->scatterRow(row_store_columns, row_num);
+    }
+
+    for (size_t j = 0; j < columnar_columns.size(); ++j)
+    {
+        if (const auto * replicated_column = info.replicated_columns[j])
+            columnar_columns[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row_num));
+        else
+            columnar_columns[j]->insertFrom(*info.columns[j], row_num);
+    }
+}
+
 template <typename Mapped>
 struct AdderNonJoined
 {
-    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
+    static void add(const Mapped & mapped, size_t & rows_added, std::vector<IColumn *> & row_store_columns, std::vector<IColumn *> & columnar_columns)
     {
         constexpr bool mapped_asof = std::is_same_v<Mapped, AsofRowRefs>;
         [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<Mapped, RowRef>;
@@ -1377,28 +1429,14 @@ struct AdderNonJoined
         }
         else if constexpr (mapped_one)
         {
-            for (size_t j = 0; j < columns_right.size(); ++j)
-            {
-                if (const auto * replicated_column = mapped.columns_info->replicated_columns[j])
-                    columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
-                else
-                    columns_right[j]->insertFrom(*mapped.columns_info->columns[j], mapped.row_num);
-            }
-
+            insertRowFromColumnsInfo(*mapped.columns_info, mapped.row_num, row_store_columns, columnar_columns);
             ++rows_added;
         }
         else
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                for (size_t j = 0; j < columns_right.size(); ++j)
-                {
-                    if (const auto * replicated_column = it->columns_info->replicated_columns[j])
-                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(it->row_num));
-                    else
-                        columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
-                }
-
+                insertRowFromColumnsInfo(*it->columns_info, it->row_num, row_store_columns, columnar_columns);
                 ++rows_added;
             }
         }
@@ -1437,14 +1475,26 @@ public:
 
     size_t fillColumns(MutableColumns & columns_right) override
     {
+        std::vector<IColumn *> row_store_columns;
+        std::vector<IColumn *> columnar_columns;
+        const auto & access_indexes = parent.data->column_access_indexes;
+        for (size_t i = 0; i < columns_right.size(); ++i)
+        {
+            if (access_indexes.empty() || access_indexes[i].type == ColumnsInfo::AccessIndex::Columns)
+                columnar_columns.push_back(columns_right[i].get());
+            else
+                row_store_columns.push_back(columns_right[i].get());
+        }
+
         size_t rows_added = 0;
         if (unlikely(parent.data->type == HashJoin::Type::EMPTY))
         {
+            chassert(!parent.data->use_row_store);
             rows_added = fillColumnsFromData(parent.data->columns, columns_right);
         }
         else
         {
-            auto fill_callback = [&](auto, auto, auto & map) { rows_added = fillColumnsFromMap(map, columns_right); };
+            auto fill_callback = [&](auto, auto, auto & map) { rows_added = fillColumnsFromMap(map, row_store_columns, columnar_columns); };
 
             const bool prefer_use_maps_all = parent.preferUseMapsAll();
             if (!joinDispatch(parent.kind, parent.strictness, parent.data->maps.front(), prefer_use_maps_all, fill_callback))
@@ -1454,7 +1504,7 @@ public:
 
         if (!flag_per_row)
         {
-            fillNullsFromBlocks(columns_right, rows_added);
+            fillNullsFromBlocks(row_store_columns, columnar_columns, rows_added);
         }
 
         return rows_added;
@@ -1524,13 +1574,13 @@ private:
     }
 
     template <typename Maps>
-    size_t fillColumnsFromMap(const Maps & maps, MutableColumns & columns_keys_and_right)
+    size_t fillColumnsFromMap(const Maps & maps, std::vector<IColumn *> & row_store_columns, std::vector<IColumn *> & columnar_columns)
     {
         switch (parent.data->type)
         {
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
-        return fillColumns(*maps.TYPE, columns_keys_and_right);
+        return fillColumns(*maps.TYPE, row_store_columns, columnar_columns);
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
             default:
@@ -1539,7 +1589,7 @@ private:
     }
 
     template <typename Map>
-    size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
+    size_t fillColumns(const Map & map, std::vector<IColumn *> & row_store_columns, std::vector<IColumn *> & columnar_columns)
     {
         size_t rows_added = 0;
 
@@ -1559,19 +1609,13 @@ private:
             for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
-                size_t rows = mapped_block.columns_info.columns.at(0)->size();
+                size_t rows = mapped_block.columns_info.rows();
 
                 for (size_t row = 0; row < rows; ++row)
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
-                        for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
-                        {
-                            if (const auto * replicated_column = mapped_block.columns_info.replicated_columns[column])
-                                columns_keys_and_right[column]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                            else
-                                columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
-                        }
+                        insertRowFromColumnsInfo(mapped_block.columns_info, row, row_store_columns, columnar_columns);
                         ++rows_added;
                     }
                 }
@@ -1616,7 +1660,7 @@ private:
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                        AdderNonJoined<Mapped>::add(mapped, rows_added, row_store_columns, columnar_columns);
                     }
 
                     ++it;
@@ -1636,7 +1680,7 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    AdderNonJoined<Mapped>::add(mapped, rows_added, columns_keys_and_right);
+                    AdderNonJoined<Mapped>::add(mapped, rows_added, row_store_columns, columnar_columns);
 
                     if (rows_added >= max_block_size)
                     {
@@ -1650,7 +1694,7 @@ private:
         return rows_added;
     }
 
-    void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
+    void fillNullsFromBlocks(std::vector<IColumn *> & row_store_columns, std::vector<IColumn *> & columnar_columns, size_t & rows_added)
     {
         /// for parallel iteration, only stream 0 handles nullmaps to avoid duplicates
         if (bucket_idx != 0)
@@ -1668,18 +1712,12 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            size_t rows = columns->columns_info.columns.at(0)->size();
+            size_t rows = columns->columns_info.rows();
             for (size_t row = 0; row < rows; ++row)
             {
                 if (nullmap && (*nullmap)[row])
                 {
-                    for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                    {
-                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
-                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
-                        else
-                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
-                    }
+                    insertRowFromColumnsInfo(columns->columns_info, row, row_store_columns, columnar_columns);
                     ++rows_added;
                 }
             }
@@ -1762,20 +1800,36 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
+    /// Reconstruct full column list from compact columns and row store
+    /// using the access indexes to place each column back at its original position.
+    auto reconstruct_columns = [&](const ColumnsInfo & info) -> Columns
     {
-        BlocksList result;
-        for (auto & columns : columns_list)
-            result.emplace_back(sample_block.cloneWithColumns(columns.columns_info.columns));
-        return result;
+        const auto & access_indexes = data->column_access_indexes;
+        if (access_indexes.empty())
+            return info.columns;
+
+        MutableColumns row_store_columns = info.row_store->buildColumns();
+        Columns all_columns(access_indexes.size());
+        for (size_t i = 0; i < access_indexes.size(); ++i)
+        {
+            auto [type, idx] = access_indexes[i];
+            if (type == ColumnsInfo::AccessIndex::RowStore)
+                all_columns[i] = std::move(row_store_columns[idx]);
+            else
+                all_columns[i] = info.columns[idx];
+        }
+        return all_columns;
     };
 
     ScatteredColumnsList right_columns = std::move(data->columns);
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
+        BlocksList result;
+        for (auto & stored : right_columns)
+            result.emplace_back(sample_block.cloneWithColumns(reconstruct_columns(stored.columns_info)));
         data.reset();
-        return extract_source_blocks(std::move(right_columns), sample_block);
+        return result;
     }
 
     data->maps.clear();
@@ -1798,11 +1852,12 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
     for (auto & saved_columns : right_columns)
     {
+        Columns all_columns = reconstruct_columns(saved_columns.columns_info);
         Block restored_block;
         for (size_t i = 0; i < positions.size(); ++i)
         {
             auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = saved_columns.columns_info.columns[positions[i]];
+            column.column = all_columns[positions[i]];
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }

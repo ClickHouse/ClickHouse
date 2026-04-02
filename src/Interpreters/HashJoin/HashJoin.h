@@ -400,6 +400,8 @@ public:
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
         ScatteredColumnsList columns; /// Columns of "right" table.
+        /// Track index of  "right" table columns in columns list or row store.
+        ColumnsInfo::AccessIndexes column_access_indexes;
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
@@ -413,6 +415,8 @@ public:
         size_t keys_to_join = 0;
         /// Whether the right table reranged by key
         bool sorted = false;
+        /// Whether the right table payload is in row store
+        bool use_row_store = false;
 
         size_t avgPerKeyRows() const
         {
@@ -554,6 +558,8 @@ private:
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
+
+    void initRowStore();
 
     JoinResultPtr joinBlockImplCross(Block block) const;
 

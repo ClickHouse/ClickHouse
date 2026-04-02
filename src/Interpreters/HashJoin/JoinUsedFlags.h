@@ -45,13 +45,13 @@ public:
     }
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(const Columns * columns, const ScatteredBlock::Selector & selector)
+    void reinit(const Columns * columns, size_t num_rows, const ScatteredBlock::Selector & selector)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
-            assert(per_row_flags[columns].size() <= columns->at(0)->size());
+            assert(per_row_flags[columns].size() <= num_rows);
             need_flags = true;
-            per_row_flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
+            per_row_flags[columns] = std::vector<std::atomic_bool>(num_rows);
 
             /// Mark all rows outside of selector as used.
             /// We should not emit them in RIGHT/FULL JOIN result,

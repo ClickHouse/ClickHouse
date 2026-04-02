@@ -29,6 +29,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -611,6 +612,37 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
         fillColumnFromRowRefs<false>(&self, type, source_column_index_in_block, row_refs_begin, row_refs_end);
 }
 
+template <typename ColumnType>
+static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+{
+    for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
+    {
+        if (*row_ref)
+        {
+            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref);
+            for (auto it = row_ref_list->begin(); it.ok(); ++it)
+            {
+                const char * row_data = it->columns_info->row_store->getRowAt(it->row_num);
+                col->insertData(row_data + source_field_offset, source_field_size);
+            }
+        }
+        else
+            type->insertDefaultInto(*col);
+    }
+}
+
+void IColumn::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+{
+    fillColumnFromRowRefsWithRowStore(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end);
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+{
+    auto & self = static_cast<Derived &>(*this);
+    fillColumnFromRowRefsWithRowStore(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end);
+}
+
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
@@ -649,6 +681,32 @@ void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypeP
 {
     auto & self = static_cast<Derived &>(*this);
     fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
+}
+
+/// Fills column from pre-resolved row data pointers. Devirtualized insertData.
+template <typename ColumnType>
+static void fillColumnFromRowStorePtrs(ColumnType * col, const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size)
+{
+    col->reserve(col->size() + row_store_ptrs.size());
+    for (const char * row_store_ptr : row_store_ptrs)
+    {
+        if (row_store_ptr)
+            col->insertData(row_store_ptr + field_offset, field_size);
+        else
+            type->insertDefaultInto(*col);
+    }
+}
+
+void IColumn::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size)
+{
+    fillColumnFromRowStorePtrs(this, type, row_store_ptrs, field_offset, field_size);
+}
+
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size)
+{
+    auto & self = static_cast<Derived &>(*this);
+    fillColumnFromRowStorePtrs(&self, type, row_store_ptrs, field_offset, field_size);
 }
 
 template <typename Derived, typename Parent>

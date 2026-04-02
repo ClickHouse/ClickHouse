@@ -1,3 +1,4 @@
+#include <Interpreters/RowDataStore.h>
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnDecimal.h>
@@ -13,6 +14,7 @@
 #include <Common/RadixSort.h>
 
 #include <mutex>
+#include <optional>
 
 
 namespace DB
@@ -221,11 +223,55 @@ private:
 
 }
 
-ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
+ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_)), row_store(std::nullopt)
 {
     replicated_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
+}
+
+void ColumnsInfo::transferColumnsToRowStore(const AccessIndexes & access_indexes)
+{
+    Columns row_store_columns;
+    Columns remaining_columns;
+    PODArray<const ColumnReplicated *> remaining_replicated_columns;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & [type, _] = access_indexes[i];
+        if (type == AccessIndex::Type::RowStore)
+            /// For now replicated columns are materialized to make sure call blocks have
+            /// the same split of columnar and row store columns.
+            /// TODO: try to allow columns to be in row store in some blocks and remain columnar
+            /// in others (in case of replicated columns).
+            row_store_columns.push_back(columns[i]->convertToFullColumnIfReplicated());
+        else
+        {
+            remaining_columns.push_back(columns[i]);
+            remaining_replicated_columns.push_back(replicated_columns[i]);
+        }
+    }
+
+    row_store = RowDataStore::create(row_store_columns);
+    columns = std::move(remaining_columns);
+    replicated_columns = std::move(remaining_replicated_columns);
+}
+
+size_t ColumnsInfo::allocatedBytes() const
+{
+    size_t allocated_bytes = 0;
+    if (hasRowStore())
+        allocated_bytes = row_store->allocatedBytes();
+
+    for (const auto & column : columns)
+        allocated_bytes += column->allocatedBytes();
+    return allocated_bytes;
+}
+
+size_t ColumnsInfo::rows() const
+{
+    if (hasRowStore())
+        return row_store->size();
+    return columns.empty() ? 0 : columns.at(0)->size();
 }
 
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
