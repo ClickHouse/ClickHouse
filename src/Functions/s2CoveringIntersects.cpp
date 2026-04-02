@@ -3,6 +3,7 @@
 #if USE_S2_GEOMETRY
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -10,6 +11,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Functions/s2_fwd.h>
+#include <s2/s2cell_union.h>
 
 namespace DB
 {
@@ -74,66 +76,151 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
+        auto dst = ColumnUInt8::create();
+        auto & dst_data = dst->getData();
+        dst_data.resize(input_rows_count);
 
-        const auto * col_cell_id = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (input_rows_count == 0)
+            return dst;
+
+        /// Unwrap cell_id (arg0) — must always be a non-const UInt64 column.
+        auto col_cell_id_holder = arguments[0].column->convertToFullColumnIfConst();
+        const auto * col_cell_id = checkAndGetColumn<ColumnUInt64>(col_cell_id_holder.get());
         if (!col_cell_id)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument 1 of function {}. Must be UInt64",
                 arguments[0].type->getName(), getName());
 
-        const auto * col_array = checkAndGetColumn<ColumnArray>(non_const_arguments[1].column.get());
-        if (!col_array)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument 2 of function {}. Must be Array(UInt64)",
-                arguments[1].type->getName(), getName());
-
-        const auto * col_array_data = checkAndGetColumn<ColumnUInt64>(&col_array->getData());
-        if (!col_array_data)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal nested type of argument 2 of function {}. Must be Array(UInt64)",
-                getName());
-
         const auto & cell_id_data = col_cell_id->getData();
-        const auto & array_data = col_array_data->getData();
-        const auto & offsets = col_array->getOffsets();
 
-        auto dst = ColumnUInt8::create();
-        auto & dst_data = dst->getData();
-        dst_data.resize(input_rows_count);
-
-        for (size_t row = 0; row < input_rows_count; ++row)
+        /// Fast path: when the covering array (arg1) is a constant, parse it
+        /// once into a sorted S2CellUnion and use binary search per row.
+        /// This avoids expanding the constant into N identical rows.
+        ///
+        /// Since cell_id is the projection's sorting key, input rows are ordered
+        /// by Hilbert curve. We cache the last matched covering cell: consecutive
+        /// rows often fall within the same covering cell's [range_min, range_max],
+        /// turning those lookups into O(1) instead of O(log N).
+        if (isColumnConst(*arguments[1].column))
         {
-            const UInt64 id = cell_id_data[row];
-            S2CellId cell(id);
-            if (!cell.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell (id {}) is not valid in function {}", id, getName());
+            auto covering = parseCoveringFromConst(arguments[1].column);
 
-            size_t arr_start = row == 0 ? 0 : offsets[row - 1];
-            size_t arr_end = offsets[row];
+            /// Cached iterator pointing to the last covering cell that matched.
+            /// Valid when cached_valid is true.
+            auto cached_it = covering.begin();
+            bool cached_valid = false;
 
-            UInt8 found = 0;
-            for (size_t i = arr_start; i < arr_end; ++i)
+            for (size_t row = 0; row < input_rows_count; ++row)
             {
-                S2CellId covering_cell(array_data[i]);
-                if (!covering_cell.is_valid())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Covering cell (id {}) is not valid in function {}", array_data[i], getName());
+                S2CellId cell(cell_id_data[row]);
+                if (!cell.is_valid())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Cell (id {}) is not valid in function {}", cell_id_data[row], getName());
 
-                if (cell.intersects(covering_cell))
+                /// Face cells (level 0) intersect every covering cell in the same
+                /// face. Their huge Hilbert range confuses the binary search, and
+                /// caching them would pollute subsequent rows. Handle them directly.
+                if (cell.level() == 0)
                 {
-                    found = 1;
-                    break;
+                    /// A face cell intersects the covering if any covering cell
+                    /// is on the same face.
+                    bool found = false;
+                    for (auto cit = covering.begin(); cit != covering.end(); ++cit)
+                    {
+                        if (cit->face() == cell.face())
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    dst_data[row] = found ? 1 : 0;
+                    cached_valid = false;
+                    continue;
+                }
+
+                /// Try cached covering cell first: if the current cell still
+                /// falls within its Hilbert range, skip the binary search.
+                if (cached_valid
+                    && cell.range_min() <= cached_it->range_max()
+                    && cell.range_max() >= cached_it->range_min())
+                {
+                    dst_data[row] = 1;
+                    continue;
+                }
+
+                auto it = coveringIntersectsCell(covering, cell);
+                if (it != covering.end())
+                {
+                    dst_data[row] = 1;
+                    cached_it = it;
+                    cached_valid = true;
+                }
+                else
+                {
+                    dst_data[row] = 0;
+                    cached_valid = false;
                 }
             }
-            dst_data[row] = found;
+            return dst;
         }
 
-        return dst;
+        /// This function is only emitted by ProjectionIndexS2 with a constant
+        /// covering array. A non-const second argument should never occur.
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Function {} expects a constant Array(UInt64) as argument 2", getName());
+    }
+
+private:
+    /// Parse a constant Array(UInt64) column into a normalized S2CellUnion.
+    /// The resulting covering is sorted by cell ID, enabling binary search.
+    static S2CellUnion parseCoveringFromConst(const ColumnPtr & column)
+    {
+        const auto & const_col = assert_cast<const ColumnConst &>(*column);
+        const auto & nested = const_col.getDataColumn();
+        const auto * col_array = checkAndGetColumn<ColumnArray>(&nested);
+        if (!col_array)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type of argument 2 of function {}. Must be Array(UInt64)", name);
+
+        const auto * col_data = checkAndGetColumn<ColumnUInt64>(&col_array->getData());
+        if (!col_data)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal nested type of argument 2 of function {}. Must be Array(UInt64)", name);
+
+        const auto & data = col_data->getData();
+        size_t arr_end = col_array->getOffsets()[0];
+
+        std::vector<S2CellId> cells;
+        cells.reserve(arr_end);
+        for (size_t i = 0; i < arr_end; ++i)
+        {
+            S2CellId cell(data[i]);
+            if (!cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Covering cell (id {}) is not valid in function {}", data[i], name);
+            cells.push_back(cell);
+        }
+
+        /// S2CellUnion normalizes: sorts and merges sibling cells.
+        S2CellUnion covering(std::move(cells));
+        return covering;
+    }
+
+    /// Binary-search the sorted covering for any cell whose Hilbert range
+    /// overlaps the query cell's range. Returns an iterator to the matching
+    /// covering cell, or covering.end() if no intersection is found.
+    /// Same algorithm as `coveringIntersectsRange` in `KeyConditionS2.cpp`.
+    static decltype(std::declval<const S2CellUnion &>().begin()) coveringIntersectsCell(const S2CellUnion & covering, S2CellId cell)
+    {
+        /// Find the first covering cell whose range_max >= cell.range_min.
+        auto it = std::lower_bound(
+            covering.begin(), covering.end(), cell,
+            [](S2CellId a, S2CellId b) { return a.range_max() < b.range_min(); });
+
+        if (it != covering.end() && it->range_min() <= cell.range_max())
+            return it;
+        return covering.end();
     }
 };
 

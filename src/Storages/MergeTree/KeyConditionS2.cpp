@@ -31,11 +31,24 @@ namespace DB
 /// Algorithm: binary-search for the first covering cell not entirely before
 /// cell_min, then verify that it starts before cell_max ends.
 /// Conservative: false positives are possible, false negatives are not.
+///
+/// Special case: face cells (level 0) have enormous Hilbert ranges that
+/// may span regions far from their cell_id sort position. If the granule
+/// contains a face cell, we conservatively return true to avoid false
+/// negatives. Face cells are only inserted by `insertFaceCellsForRow` for
+/// rows with undecodable geometry, so this affects very few granules.
 static bool coveringIntersectsRange(
     const S2CellUnion & covering,
     S2CellId cell_min,
     S2CellId cell_max)
 {
+    /// Face cells (level 0) have Hilbert ranges spanning an entire cube face.
+    /// Their cell_id sort position may be far from their range_min, causing the
+    /// binary search below to miss valid intersections. Conservatively return
+    /// true if any endpoint is a face cell.
+    if (cell_min.level() == 0 || cell_max.level() == 0)
+        return true;
+
     auto it = std::lower_bound(
         covering.begin(), covering.end(), cell_min,
         [](S2CellId a, S2CellId b) { return a.range_max() < b.range_min(); });
