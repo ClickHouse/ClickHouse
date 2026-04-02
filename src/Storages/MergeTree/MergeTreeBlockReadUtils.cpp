@@ -173,9 +173,18 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
+        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
+        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
+        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_snapshot, alter_conversions,
-            data_part_info_for_reader, options, columns, required_columns, injected_columns);
+            column_name,
+            storage_snapshot,
+            alter_conversions,
+            data_part_info_for_reader,
+            options,
+            columns,
+            required_columns,
+            injected_columns);
     }
 
     /** Add a column of the minimum size.

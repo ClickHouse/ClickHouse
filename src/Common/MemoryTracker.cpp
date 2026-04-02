@@ -241,17 +241,19 @@ void MemoryTracker::injectFault() const
 
 void incrementAllocationWithoutCheck(Int64 size)
 {
-    /// Note, it is always blocked for release build, so we do not write MemoryAllocatedWithoutCheck there
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
+    if (size < 0)
+        return;
+
+    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
+
+    /// In release builds, `isBlocked` is always true, so only profile events are collected;
+    /// the trace sending below is debug/sanitizer-only.
     if (MemoryTrackerDebugBlockerInThread::isBlocked())
         return;
 
     /// The choice is arbitrary (maybe we should decrease it)
     constexpr Int64 threshold = 16 * 1024 * 1024;
-
-    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheck);
-    if (size < 0)
-        return;
-    ProfileEvents::increment(ProfileEvents::MemoryAllocatedWithoutCheckBytes, size);
 
     if (size > threshold)
     {
