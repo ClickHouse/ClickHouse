@@ -255,7 +255,7 @@ public:
     /// Used by Sharded Aggregation
     /// Aggregate a subset of rows (identified by row_indices) using precomputed hashes.
     /// If size_hint is provided, uses it to preallocate the hash table on first call.
-    void executeOnSubsetRows(
+    void executeForRows(
         AggregatedDataVariants & result,
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
@@ -468,7 +468,7 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Row-indices variants for sharded aggregation (processes only specified rows).
-    void executeImplOnSubsetRows(
+    void executeImplForRows(
         AggregatedDataVariants & result,
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
@@ -476,7 +476,7 @@ private:
         const AggregateFunctionInstruction * aggregate_instructions) const;
 
     template <typename Method>
-    void executeImplOnSubsetRows(
+    void executeImplForRows(
         Method & method,
         Arena * aggregates_pool,
         const IColumn::Selector & row_indices,
@@ -485,7 +485,7 @@ private:
         const AggregateFunctionInstruction * aggregate_instructions) const;
 
     template <bool prefetch, typename Method, typename State>
-    void executeImplBatchOnSubsetRows(
+    void executeImplBatchForRows(
         Method & method,
         State & state,
         Arena * aggregates_pool,
@@ -494,7 +494,7 @@ private:
         const ColumnRawPtrs & key_columns,
         const AggregateFunctionInstruction * aggregate_instructions) const;
 
-    void executeAggregateInstructionsOnSubsetRows(
+    void executeAggregateInstructionsForRows(
         Arena * aggregates_pool,
         const UInt64 * row_indices,
         size_t num_rows,

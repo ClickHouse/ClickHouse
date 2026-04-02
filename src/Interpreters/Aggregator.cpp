@@ -2036,7 +2036,7 @@ void Aggregator::prepareInstructionsForSharding(
 }
 
 
-void Aggregator::executeOnSubsetRows(
+void Aggregator::executeForRows(
     AggregatedDataVariants & result,
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
@@ -2057,11 +2057,11 @@ void Aggregator::executeOnSubsetRows(
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
-    executeImplOnSubsetRows(result, row_indices, key_hashes, key_columns, aggregate_instructions);
+    executeImplForRows(result, row_indices, key_hashes, key_columns, aggregate_instructions);
 }
 
 
-void Aggregator::executeImplOnSubsetRows(
+void Aggregator::executeImplForRows(
     AggregatedDataVariants & result,
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
@@ -2070,7 +2070,7 @@ void Aggregator::executeImplOnSubsetRows(
 {
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImplOnSubsetRows(*result.NAME, result.aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+            executeImplForRows(*result.NAME, result.aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -2078,7 +2078,7 @@ void Aggregator::executeImplOnSubsetRows(
 }
 
 template <typename Method>
-void NO_INLINE Aggregator::executeImplOnSubsetRows(
+void NO_INLINE Aggregator::executeImplForRows(
     Method & method,
     Arena * aggregates_pool,
     const IColumn::Selector & row_indices,
@@ -2094,14 +2094,14 @@ void NO_INLINE Aggregator::executeImplOnSubsetRows(
         && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
     if (prefetch)
-        executeImplBatchOnSubsetRows<true>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+        executeImplBatchForRows<true>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
     else
-        executeImplBatchOnSubsetRows<false>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+        executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
 }
 
 
 template <bool prefetch, typename Method, typename State>
-void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
+void NO_INLINE Aggregator::executeImplBatchForRows(
     Method & method,
     State & state,
     Arena * aggregates_pool,
@@ -2203,12 +2203,12 @@ void NO_INLINE Aggregator::executeImplBatchOnSubsetRows(
     /// the row_indices are [0, 1, ..., N-1] — a contiguous range. In that case we can
     /// use the standard addBatch/addBatchSinglePlace which may have optimized (SIMD) implementations.
     const bool has_all_chunk_rows = (num_indices == chunk_num_rows);
-    executeAggregateInstructionsOnSubsetRows(
+    executeAggregateInstructionsForRows(
         aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get(),
         has_only_one_key, has_all_chunk_rows);
 }
 
-void Aggregator::executeAggregateInstructionsOnSubsetRows(
+void Aggregator::executeAggregateInstructionsForRows(
     Arena * aggregates_pool,
     const UInt64 * row_indices,
     size_t num_rows,

@@ -111,7 +111,7 @@ void ShardedAggregatingTransform::consume(Chunk chunk)
         size_hint = stats_collector->getSizeHintForShard(shard_index);
 
     /// Insert this shard's rows into the hash table using precomputed hashes.
-    aggregator.executeOnSubsetRows(
+    aggregator.executeForRows(
         variants, shard_info->row_indices, shard_info->key_hashes->data(), key_columns, aggregate_instructions.data(), size_hint);
 }
 
