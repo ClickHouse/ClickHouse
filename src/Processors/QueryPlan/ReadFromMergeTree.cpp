@@ -159,6 +159,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
@@ -1388,7 +1389,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 input_order_info->limit, /*split_id=*/i));
         }
     }
-    else if (is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan])
+    else if (
+        is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+        && context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         /// Non-initiator with local_plan=1: N splits, each with ALL parts.
         /// The coordinator uses the initiator's split structure for range partitioning.

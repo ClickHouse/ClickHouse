@@ -12,6 +12,7 @@ ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 128;
 INSERT INTO t_in_order_splits SELECT number, number FROM numbers_mt(1e6);
 OPTIMIZE TABLE t_in_order_splits FINAL;
 
+SET enable_analyzer = 1;
 SET optimize_read_in_order = 1;
 SET max_threads = 4;
 SET automatic_parallel_replicas_mode = 0;

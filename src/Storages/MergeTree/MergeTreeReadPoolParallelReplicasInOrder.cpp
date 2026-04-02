@@ -241,7 +241,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
             });
 
         if (it == buffered_tasks.end())
-            continue;
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Coordinator returned part {} that wasn't announced by this replica",
+                received_part.describe());
 
         if (mode == CoordinationMode::WithOrder)
             it->ranges.insert(it->ranges.end(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
