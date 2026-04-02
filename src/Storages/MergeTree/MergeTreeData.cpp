@@ -1785,12 +1785,51 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     if (!current_ptr)
         current_ptr = std::make_shared<Node>(MergeTreePartInfo{}, "", disk);
 
-    /// Check if a part directory has transaction version metadata on disk.
-    auto has_transaction_metadata = [&](const String & part_name, const DiskPtr & part_disk) -> bool
+    /// Possible rollback states for a part, determined solely from txn_version.txt on disk.
+    /// We intentionally do NOT consult TransactionLog::getCSN here. A return value of UnknownCSN from
+    /// that call is ambiguous in this context: it can mean the transaction was rolled back, is still in
+    /// progress, or was committed long enough ago that its log entry was cleaned up (tail_ptr advanced
+    /// past it). Acting on the ambiguous case to erase a tree-resident part or skip the incoming one
+    /// risks removing the wrong part. loadDataPart resolves the ambiguity after the tree is built — it
+    /// calls TransactionLog::getCSN and writes the resolved CSN back to disk, so on a subsequent load
+    /// the file will already contain Tx::RolledBackCSN and the intersection is resolved unambiguously.
+    enum class RollbackStatus
+    {
+        RolledBack,  /// creation_csn == Tx::RolledBackCSN on disk → definitively rolled back
+        Committed,   /// creation_csn is a known committed CSN on disk → definitively committed
+        NoMetadata,  /// txn_version.txt does not exist → prehistoric (non-transactional) part
+        UnknownCSN,  /// file exists but creation_csn == Tx::UnknownCSN → transaction in-flight
+        Unreadable,  /// file exists but could not be parsed → corruption or partial write in progress
+    };
+
+    auto read_txn_status = [&](const String & part_name, const DiskPtr & part_disk) -> RollbackStatus
     {
         if (relative_data_path.empty())
-            return false;
-        return part_disk->existsFile(fs::path(relative_data_path) / part_name / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+            return RollbackStatus::NoMetadata;
+
+        auto version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
+        if (!part_disk->existsFile(version_path))
+            return RollbackStatus::NoMetadata;
+
+        try
+        {
+            VersionInfo version_info;
+            auto buf = part_disk->readFile(version_path, ReadSettings{});
+            version_info.readFromBuffer(*buf, /*one_line=*/false);
+
+            const CSN csn = version_info.creation_csn;
+            if (csn == Tx::RolledBackCSN)
+                return RollbackStatus::RolledBack;
+            if (csn != Tx::UnknownCSN)
+                return RollbackStatus::Committed;
+
+            return RollbackStatus::UnknownCSN;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("MergeTreeData"), fmt::format("Failed to read version metadata for part {}", part_name));
+            return RollbackStatus::Unreadable;
+        }
     };
 
     auto * current = current_ptr.get();
@@ -1809,17 +1848,72 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             if (!prev_info.isDisjoint(info))
             {
-                if (has_transaction_metadata(name, disk) || has_transaction_metadata(prev->second->name, prev->second->disk))
-                {
-                    /// If one of the intersecting parts was involved in a transaction,
-                    /// it's likely a result of a rolled-back transaction that left a part on disk.
-                    /// Skip the part for now; the proper fix should handle transaction metadata
-                    /// before building the parts loading tree.
-                    LOG_WARNING(getLogger("MergeTreeData"), "Skipping part {} because it intersects part {}"
-                        " and one of them has transaction metadata (likely a rolled-back transaction)",
+                const auto incoming_status = read_txn_status(name, disk);
+                const auto existing_status = read_txn_status(prev->second->name, prev->second->disk);
+
+                if (incoming_status == RollbackStatus::Unreadable || existing_status == RollbackStatus::Unreadable)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Part {} intersects previous part {} and the transaction metadata of at least one"
+                        " of them could not be read. This indicates disk corruption or a partial write.",
                         name, prev->second->name);
+
+                if (incoming_status == RollbackStatus::RolledBack)
+                {
+                    /// The incoming part is from a rolled-back transaction; skip it regardless of the
+                    /// existing part's status (covers both the committed-existing and both-rolled-back cases).
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Skipping rolled-back part {} (intersects part {})",
+                        name,
+                        prev->second->name);
                     return;
                 }
+                if (existing_status == RollbackStatus::RolledBack)
+                {
+                    /// The part already in the loading tree is from a rolled-back transaction; the incoming
+                    /// part is committed. Collect all orphaned children of the rolled-back node and add them
+                    /// together with the incoming part, sorted by (level, mutation) descending so that
+                    /// higher-level parts are always inserted before any part they may contain. Without this
+                    /// ordering an orphan that belongs inside the incoming part would already be at sibling
+                    /// level when incoming is re-processed, causing a spurious intersection LOGICAL_ERROR.
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Removing rolled-back part {} from loading tree; committed part {} will be used instead",
+                        prev->second->name,
+                        name);
+                    std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
+                    std::function<void(const NodePtr &)> collect = [&](const NodePtr & node)
+                    {
+                        to_reinsert.emplace_back(node->info, node->name, node->disk);
+                        for (const auto & [ci, cn] : node->children)
+                            collect(cn);
+                    };
+                    for (const auto & [ci, cn] : prev->second->children)
+                        collect(cn);
+                    to_reinsert.emplace_back(info, name, disk);
+                    std::sort(to_reinsert.begin(), to_reinsert.end(), [](const auto & a, const auto & b)
+                    {
+                        return std::tie(std::get<0>(a).level, std::get<0>(a).mutation)
+                             > std::tie(std::get<0>(b).level, std::get<0>(b).mutation);
+                    });
+                    current->children.erase(prev);
+                    for (auto & [oi, on, od] : to_reinsert)
+                        add(oi, on, od);
+                    return; /// incoming is handled by the loop above
+                }
+                if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
+                {
+                    /// At least one part has an unresolved transaction (creation_csn not yet written to disk).
+                    /// loadDataPart will resolve the status after the tree is built. Conservatively skip the
+                    /// incoming part to preserve the tree-resident one.
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Skipping part {} (intersects part {}): transaction status not yet resolved",
+                        name,
+                        prev->second->name);
+                    return;
+                }
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug or a result of manual intervention",
                     name, prev->second->name);
@@ -1837,13 +1931,61 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             if (!next_info.isDisjoint(info))
             {
-                if (has_transaction_metadata(name, disk) || has_transaction_metadata(it->second->name, it->second->disk))
-                {
-                    LOG_WARNING(getLogger("MergeTreeData"), "Skipping part {} because it intersects part {}"
-                        " and one of them has transaction metadata (likely a rolled-back transaction)",
+                const auto incoming_status = read_txn_status(name, disk);
+                const auto existing_status = read_txn_status(it->second->name, it->second->disk);
+
+                if (incoming_status == RollbackStatus::Unreadable || existing_status == RollbackStatus::Unreadable)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Part {} intersects next part {} and the transaction metadata of at least one"
+                        " of them could not be read. This indicates disk corruption or a partial write.",
                         name, it->second->name);
+
+                if (incoming_status == RollbackStatus::RolledBack)
+                {
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Skipping rolled-back part {} (intersects part {})",
+                        name,
+                        it->second->name);
                     return;
                 }
+                if (existing_status == RollbackStatus::RolledBack)
+                {
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Removing rolled-back part {} from loading tree; committed part {} will be used instead",
+                        it->second->name,
+                        name);
+                    std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
+                    std::function<void(const NodePtr &)> collect = [&](const NodePtr & node)
+                    {
+                        to_reinsert.emplace_back(node->info, node->name, node->disk);
+                        for (const auto & [ci, cn] : node->children)
+                            collect(cn);
+                    };
+                    for (const auto & [ci, cn] : it->second->children)
+                        collect(cn);
+                    to_reinsert.emplace_back(info, name, disk);
+                    std::sort(to_reinsert.begin(), to_reinsert.end(), [](const auto & a, const auto & b)
+                    {
+                        return std::tie(std::get<0>(a).level, std::get<0>(a).mutation)
+                             > std::tie(std::get<0>(b).level, std::get<0>(b).mutation);
+                    });
+                    current->children.erase(it);
+                    for (auto & [oi, on, od] : to_reinsert)
+                        add(oi, on, od);
+                    return;
+                }
+                if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
+                {
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Skipping part {} (intersects part {}): transaction status not yet resolved",
+                        name,
+                        it->second->name);
+                    return;
+                }
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects next part {}. It is a bug or a result of manual intervention",
                     name, it->second->name);
@@ -1870,6 +2012,7 @@ void MergeTreeData::PartLoadingTree::traverse(bool recursive, Func && func)
         for (const auto & [_, node] : elem.second->children)
             traverse_impl(node);
 }
+
 
 MergeTreeData::PartLoadingTree
 MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, const String & relative_data_path_)
