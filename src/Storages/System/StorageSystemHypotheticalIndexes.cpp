@@ -43,8 +43,8 @@ void StorageSystemHypotheticalIndexes::fillData(
         if (entry.index.expression_list_ast)
         {
             WriteBufferFromString buf(expr_str);
-            IAST::FormatSettings fmt_settings(buf, /* one_line = */ true);
-            entry.index.expression_list_ast->format(buf, fmt_settings, {}, {});
+            IAST::FormatSettings fmt_settings(/* one_line = */ true);
+            entry.index.expression_list_ast->format(buf, fmt_settings);
         }
         res_columns[col++]->insert(expr_str);
 

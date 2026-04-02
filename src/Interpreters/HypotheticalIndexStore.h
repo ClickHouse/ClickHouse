@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IndicesDescription.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 #include <map>
 #include <mutex>

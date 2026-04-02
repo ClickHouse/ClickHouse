@@ -1,0 +1,44 @@
+--- CREATE / system table ---
+idx_b	t_hypo	set	1	session
+--- Duplicate errors ---
+BAD_ARGUMENTS
+--- IF NOT EXISTS is silent ---
+--- Multiple indexes ---
+idx_b	set	1
+idx_c	minmax	2
+--- Drop one ---
+idx_c
+--- Drop non-existent errors ---
+BAD_ARGUMENTS
+--- IF EXISTS is silent ---
+--- Drop all ---
+2
+0
+--- Non-MergeTree table errors ---
+NOT_IMPLEMENTED
+--- EXPLAIN WHATIF: no indexes ---
+(none):
+  status:       not_applicable
+  reason:       No hypothetical indexes defined for this table. Use CREATE HYPOTHETICAL INDEX to define one.
+--- EXPLAIN WHATIF: minmax applicable ---
+With idx_a_minmax (minmax, hypothetical):
+  status:       applicable
+Confidence: LOW
+  source:           statistical
+--- EXPLAIN WHATIF: not applicable ---
+With idx_c_minmax (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Index cannot filter this predicate (always unknown or true)
+--- EXPLAIN WHATIF: bloom_filter applicable ---
+With idx_b_bloom (bloom_filter, hypothetical):
+  status:       applicable
+Confidence: LOW
+  source:           statistical
+--- EXPLAIN WHATIF errors ---
+INCORRECT_QUERY
+NOT_IMPLEMENTED
+--- Session scope: real queries unaffected ---
+499
+--- Formatting ---
+DROP HYPOTHETICAL INDEX idx ON t
+DROP ALL HYPOTHETICAL INDEXES

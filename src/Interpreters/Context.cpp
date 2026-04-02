@@ -2466,16 +2466,12 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
-HypotheticalIndexStore & Context::getHypotheticalIndexStore()
+HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
 {
-    std::lock_guard lock(mutex);
-    if (!hypothetical_index_store)
-        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
-    return *hypothetical_index_store;
-}
+    /// Delegate to session context so the store persists across queries in a session.
+    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
+        return session_ctx->getHypotheticalIndexStore();
 
-const HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
-{
     std::lock_guard lock(mutex);
     if (!hypothetical_index_store)
         hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();

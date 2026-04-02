@@ -1,6 +1,6 @@
 #pragma once
 
-#include <IO/WriteBufferFromOwnString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 

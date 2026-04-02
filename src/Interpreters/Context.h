@@ -968,8 +968,7 @@ public:
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     /// Session-scoped hypothetical indexes for EXPLAIN WHATIF.
-    HypotheticalIndexStore & getHypotheticalIndexStore();
-    const HypotheticalIndexStore & getHypotheticalIndexStore() const;
+    HypotheticalIndexStore & getHypotheticalIndexStore() const;
 
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
