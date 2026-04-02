@@ -37,15 +37,11 @@ private:
     nuraft::ptr<KeeperStateManager> state_manager;
 
     struct KeeperRaftServer;
-    nuraft::ptr<KeeperRaftServer> raft_instance; // TSA_GUARDED_BY(server_write_mutex);
+    nuraft::ptr<KeeperRaftServer> raft_instance;
     nuraft::ptr<nuraft::asio_service> asio_service;
     std::vector<nuraft::ptr<nuraft::rpc_listener>> asio_listeners;
 
-    // because some actions can be applied
-    // when we are sure that there are no requests currently being
-    // processed (e.g. recovery) we do all write actions
-    // on raft_server under this mutex.
-    mutable std::mutex server_write_mutex;
+    mutable std::mutex force_recovery_mutex;
 
     std::mutex initialized_mutex;
     std::atomic<bool> initialized_flag = false;

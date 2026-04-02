@@ -349,6 +349,11 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(commit_lock_);
     }
 
+    std::unique_lock<std::recursive_mutex> lockClient()
+    {
+        return std::unique_lock(cli_lock_);
+    }
+
     bool isCommitInProgress() const
     {
         return sm_commit_exec_in_progress_;
@@ -477,9 +482,15 @@ void KeeperServer::enterRecoveryMode(nuraft::raft_params & params)
 
 void KeeperServer::forceRecovery()
 {
-    // notify threads containing the lock that we want to enter recovery mode
-    is_recovering = true;
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    {
+        /// (Locking cli_lock_ to reliably reject appends during recovery.
+        ///  NuRaft locks cli_lock_ for PreAppendLogLeader callback + append, so we can't have
+        ///  a race where an append thread sees is_recoverying == false, then recovery starts,
+        ///  then the append proceeds.)
+        auto lock = raft_instance->lockClient();
+        is_recovering = true;
+    }
+    ProfiledMutexLock lock(force_recovery_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
@@ -737,10 +748,6 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
-    if (is_recovering)
-        return nullptr;
-
     return raft_instance->append_entries(entries);
 }
 
@@ -822,10 +829,16 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 
                 break;
             }
-            case nuraft::cb_func::ProcessReq:
+            case nuraft::cb_func::PreAppendLogLeader:
+            {
                 // we don't accept requests from our peers or clients
                 // while in recovery mode
-                return nuraft::cb_func::ReturnCode::ReturnNull;
+                auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
+                /// (get_val_type() is probably always app_log in this callback, but let's check just in case.)
+                if (entry->get_val_type() == nuraft::app_log)
+                    return nuraft::cb_func::ReturnCode::ReturnNull;
+                break;
+            }
             default:
                 break;
         }
@@ -1139,7 +1152,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledMutexLock _(force_recovery_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1209,7 +1222,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
     if (!diff.empty())
     {
-        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+        ProfiledMutexLock lock(force_recovery_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1218,7 +1231,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    ProfiledMutexLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    ProfiledMutexLock server_write_lock(force_recovery_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
