@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Analyzer/TableExpressionModifiers.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -44,7 +45,8 @@ LazyReadReplacingFinalSource::LazyReadReplacingFinalSource(
     const MergeTreeData & data_,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
     RangesInDataPartsPtr ranges_,
-    ContextPtr query_context_)
+    ContextPtr query_context_,
+    FutureSetPtr future_set_)
     : IProcessor({}, {Block({ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "__global_row_index"}})})
     , metadata_snapshot(std::move(metadata_snapshot_))
     , mutations_snapshot(std::move(mutations_snapshot_))
@@ -54,6 +56,7 @@ LazyReadReplacingFinalSource::LazyReadReplacingFinalSource(
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , ranges(std::move(ranges_))
     , query_context(std::move(query_context_))
+    , future_set(std::move(future_set_))
 {
 }
 
@@ -166,6 +169,34 @@ void LazyReadReplacingFinalSource::work()
             getLogger("LazyReadReplacingFinalSource"),
             nullptr,
             false);
+
+        /// Apply IN filter from the set so that ReadFromMergeTree can use index analysis.
+        /// Build a filter DAG that computes sorting key from source columns, then applies IN.
+        if (future_set)
+        {
+            /// Start with the sorting key expression (source columns → key columns),
+            /// projected to just the sorting key result columns.
+            ActionsDAG filter_dag = sorting_key.expression->getActionsDAG().clone();
+            filter_dag.getOutputs() = filter_dag.findInOutputs(sorting_key.column_names);
+
+            ColumnWithTypeAndName column_set;
+            column_set.type = std::make_shared<DataTypeSet>();
+            column_set.column = ColumnSet::create(0, future_set);
+
+            const auto * key_node = filter_dag.getOutputs().at(0);
+            if (filter_dag.getOutputs().size() > 1)
+            {
+                auto function_tuple = FunctionFactory::instance().get("tuple", query_context);
+                key_node = &filter_dag.addFunction(function_tuple, filter_dag.getOutputs(), {});
+            }
+            const auto * set_node = &filter_dag.addColumn(std::move(column_set));
+            auto function_in = FunctionFactory::instance().get("in", query_context);
+            const auto * in_func = &filter_dag.addFunction(function_in, {key_node, set_node}, {});
+            filter_dag.getOutputs().push_back(in_func);
+
+            reading->addFilter(std::move(filter_dag), in_func->result_name);
+            reading->SourceStepWithFilterBase::applyFilters();
+        }
 
         ActionsDAG dag = sorting_key.expression->getActionsDAG().clone();
         calculateGlobalOffset(dag, *reading);

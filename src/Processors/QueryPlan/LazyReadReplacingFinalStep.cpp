@@ -16,7 +16,8 @@ LazyReadReplacingFinalStep::LazyReadReplacingFinalStep(
     const MergeTreeData & data_,
     PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
     RangesInDataPartsPtr ranges_,
-    ContextPtr query_context_)
+    ContextPtr query_context_,
+    FutureSetPtr future_set_)
     : ISourceStep(std::make_shared<const Block>(Block({ColumnWithTypeAndName{std::make_shared<DataTypeUInt64>(), "__global_row_index"}})))
     , metadata_snapshot(std::move(metadata_snapshot_))
     , mutations_snapshot(std::move(mutations_snapshot_))
@@ -26,6 +27,7 @@ LazyReadReplacingFinalStep::LazyReadReplacingFinalStep(
     , max_block_numbers_to_read(std::move(max_block_numbers_to_read_))
     , ranges(std::move(ranges_))
     , query_context(std::move(query_context_))
+    , future_set(std::move(future_set_))
 {
 }
 
@@ -39,7 +41,8 @@ void LazyReadReplacingFinalStep::initializePipeline(QueryPipelineBuilder & pipel
         data,
         max_block_numbers_to_read,
         ranges,
-        query_context);
+        query_context,
+        future_set);
 
     pipeline.init(Pipe(std::move(source)));
 }

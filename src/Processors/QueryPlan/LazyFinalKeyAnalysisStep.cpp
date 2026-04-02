@@ -6,12 +6,7 @@
 namespace DB
 {
 
-LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(
-    SharedHeader input_header_,
-    FutureSetPtr future_set_,
-    ContextPtr query_context_,
-    StorageMetadataPtr metadata_snapshot_,
-    MutableRangesInDataPartsPtr ranges_)
+LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(SharedHeader input_header_, FutureSetPtr future_set_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -20,9 +15,6 @@ LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(
             .transform_traits = {.preserves_number_of_rows = false},
         })
     , future_set(std::move(future_set_))
-    , query_context(std::move(query_context_))
-    , metadata_snapshot(std::move(metadata_snapshot_))
-    , ranges(std::move(ranges_))
 {
 }
 
@@ -30,11 +22,7 @@ void LazyFinalKeyAnalysisStep::transformPipeline(QueryPipelineBuilder & pipeline
 {
     pipeline.addSimpleTransform([&](const SharedHeader &)
     {
-        return std::make_shared<LazyFinalKeyAnalysisTransform>(
-            future_set,
-            query_context,
-            metadata_snapshot,
-            std::move(ranges));
+        return std::make_shared<LazyFinalKeyAnalysisTransform>(future_set);
     });
 }
 

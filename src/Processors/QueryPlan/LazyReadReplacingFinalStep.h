@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -21,7 +22,8 @@ public:
         const MergeTreeData & data_,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
         RangesInDataPartsPtr ranges_,
-        ContextPtr query_context_);
+        ContextPtr query_context_,
+        FutureSetPtr future_set_);
 
     String getName() const override { return "LazyReadReplacingFinal"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -35,6 +37,7 @@ private:
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
     RangesInDataPartsPtr ranges;
     ContextPtr query_context;
+    FutureSetPtr future_set;
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -23,7 +24,8 @@ public:
         const MergeTreeData & data_,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
         RangesInDataPartsPtr ranges_,
-        ContextPtr query_context_);
+        ContextPtr query_context_,
+        FutureSetPtr future_set_);
 
     String getName() const override { return "LazyReadReplacingFinalSource"; }
     Status prepare() override;
@@ -40,6 +42,7 @@ private:
     const PartitionIdToMaxBlockPtr max_block_numbers_to_read;
     const RangesInDataPartsPtr ranges;
     const ContextPtr query_context;
+    const FutureSetPtr future_set;
 
     Processors processors;
 };

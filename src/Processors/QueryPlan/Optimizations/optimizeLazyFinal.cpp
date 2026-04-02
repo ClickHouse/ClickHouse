@@ -88,6 +88,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
     auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ false);
     set->setHeader(sorting_key.sample_block.cloneWithColumns(sorting_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
+    set->fillSetElements();
     auto set_and_key = std::make_shared<SetAndKey>(SetAndKey{.key = "__lazy_final_set", .set = set, .external_table = nullptr});
 
     /// Use FutureSetFromStorage — the Set will be filled by CreatingSetStep before
@@ -232,15 +233,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         SizeLimits{},
         nullptr));
 
-    /// LazyFinalKeyAnalysisStep: uses the set for index analysis, outputs signal.
-    /// The ranges_ptr is shared with LazyReadReplacingFinalStep so filtered ranges are visible.
-    auto ranges_ptr = std::make_shared<RangesInDataParts>(reading_step->getParts());
+    /// LazyFinalKeyAnalysisStep: checks if the set was built successfully and signals.
     set_plan.addStep(std::make_unique<LazyFinalKeyAnalysisStep>(
         set_plan.getCurrentHeader(),
-        future_set,
-        context,
-        metadata_snapshot,
-        ranges_ptr));
+        future_set));
 
     /// True branch (signal = set OK): LazyReadReplacingFinalSource + JoinLazyColumnsStep.
     QueryPlan true_plan;
@@ -252,8 +248,9 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             data.getSettings(),
             data,
             max_block_numbers_to_read,
-            ranges_ptr,
-            context));
+            std::make_shared<RangesInDataParts>(reading_step->getParts()),
+            context,
+            future_set));
 
         auto lazy_materializing_rows = std::make_shared<LazyMaterializingRows>(reading_step->getParts());
 
