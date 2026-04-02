@@ -343,6 +343,43 @@ public:
         this->data(place).denominator += length;
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena *) const final
+    {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+        const auto * data_ptr = column.getData().data();
+
+        for (size_t j = 0; j < num_rows; ++j)
+        {
+            auto & fraction = this->data(places[j] + place_offset);
+            fraction.numerator += Numerator(data_ptr[row_indices[j]]);
+            ++fraction.denominator;
+        }
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *) const final
+    {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+        const auto * data_ptr = column.getData().data();
+
+        Numerator local_sum{};
+        for (size_t j = 0; j < num_rows; ++j)
+            local_sum += Numerator(data_ptr[row_indices[j]]);
+
+        increment(place, local_sum);
+        this->data(place).denominator += num_rows;
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
