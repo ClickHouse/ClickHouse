@@ -197,7 +197,7 @@ public:
         /// refreshed after its TTL expires. Historically this was not a problem because getOrSet
         /// was only used with LRU/SLRU policies (which have no TTL concept), while TTLCachePolicy
         /// was only accessed via getWithKey + application-level staleness checks.
-        if (is_stale_function(it->first))
+        if (is_stale_function(it->first, *it->second))
             return {};
         return it->second;
     }
@@ -213,7 +213,7 @@ public:
         if (it == cache.end())
             return std::nullopt;
         /// Same staleness check as in get() — keep semantics consistent.
-        if (is_stale_function(it->first))
+        if (is_stale_function(it->first, *it->second))
             return std::nullopt;
         return std::make_optional<KeyMapped>({it->first, it->second});
     }
@@ -246,7 +246,7 @@ public:
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
             {
-                if (is_stale_function(it->first))
+                if (is_stale_function(it->first, *it->second))
                 {
                     size_t sz = weight_function(*it->second);
                     if (it->first.user_id.has_value())

@@ -377,9 +377,16 @@ size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
     return res;
 }
 
-bool QueryResultCache::IsStale::operator()(const Key & key) const
+bool QueryResultCache::IsStale::operator()(const Key & key, const Entry & entry) const
 {
-    return (key.expires_at < std::chrono::system_clock::now());
+    /// Prefer the entry's own expires_at when it is set (non-default). This is the case for
+    /// entries computed via getOrSet, where timestamps are recorded after the query finishes
+    /// rather than before it starts. For entries written via the legacy QueryResultCacheWriter
+    /// path, entry.expires_at is default-constructed (epoch), so we fall back to key.expires_at.
+    auto expires = (entry.expires_at != std::chrono::system_clock::time_point{})
+        ? entry.expires_at
+        : key.expires_at;
+    return expires < std::chrono::system_clock::now();
 };
 
 QueryResultCacheWriter::QueryResultCacheWriter(
@@ -398,7 +405,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key, *entry->mapped))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -480,7 +487,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key, *entry->mapped))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -630,7 +637,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    if (QueryResultCache::IsStale()(entry_key))
+    if (QueryResultCache::IsStale()(entry_key, *entry_mapped))
     {
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;

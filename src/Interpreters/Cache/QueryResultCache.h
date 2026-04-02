@@ -125,6 +125,10 @@ public:
         Chunks chunks;
         std::optional<Chunk> totals = std::nullopt;
         std::optional<Chunk> extremes = std::nullopt;
+        /// Timestamps recorded after the query finishes, not when the query starts.
+        /// Used for staleness checks.
+        std::chrono::time_point<std::chrono::system_clock> created_at;
+        std::chrono::time_point<std::chrono::system_clock> expires_at;
     };
 
 private:
@@ -140,7 +144,7 @@ private:
 
     struct IsStale
     {
-        bool operator()(const Key & key) const;
+        bool operator()(const Key & key, const Entry & entry) const;
     };
 
 public:

@@ -1870,15 +1870,16 @@ static BlockIO executeQueryImpl(
                         // Execute the query.
                         setup_interpreter_and_execute();
 
-                        /// Synchronously drain the pipeline and collect all result blocks into
-                        /// the Entry. PullingPipelineExecutor drives the pipeline to completion
-                        /// in a blocking loop on this thread.
-                        ///
-                        /// The header is extracted from the pipeline after execute() because it
-                        /// was not available when the Key was constructed (see null header above).
-                        /// It is stored in Entry::header so that the reading pipeline built below
-                        /// (for both this thread and any waiter threads) knows the column types.
+                        /// Record timestamps now, after the query has finished, so that the
+                        /// TTL is counted from completion rather than from when the query started.
+                        /// This prevents entries from being immediately stale if the query took
+                        /// longer than the configured TTL to run.
                         auto entry = std::make_shared<QueryResultCache::Entry>();
+                        entry->created_at = std::chrono::system_clock::now();
+                        entry->expires_at = entry->created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                        /// Synchronously drain the pipeline and collect all result blocks.
+                        /// The header is extracted after execute() (was unavailable before).
                         entry->header = res.pipeline.getSharedHeader();
                         {
                             PullingPipelineExecutor pulling_executor(res.pipeline);
@@ -1911,8 +1912,8 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::enable_reads_from_query_cache])
                 {
-                    result_details.query_cache_entry_created_at = created_at;
-                    result_details.query_cache_entry_expires_at = expires_at;
+                    result_details.query_cache_entry_created_at = cached_entry->created_at;
+                    result_details.query_cache_entry_expires_at = cached_entry->expires_at;
                 }
             }
             /// Fallback: writes are disabled or cache is not configured. Execute the query.
