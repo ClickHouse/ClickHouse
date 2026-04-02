@@ -22,6 +22,10 @@
     <fill_query>insert into ips_v4 select * from ips_v4</fill_query>
     <fill_query>insert into ips_v4 select * from ips_v4</fill_query>
     <fill_query>insert into ips_v4 select * from ips_v4</fill_query>
+    <fill_query>insert into ips_v4 select * from ips_v4</fill_query>
+    <fill_query>insert into ips_v4 select * from ips_v4</fill_query>
+    <fill_query>insert into ips_v4 select * from ips_v4</fill_query>
+
 
 
     <query tag='IPv4StringToNum'>SELECT count() FROM ips_v4 WHERE NOT ignore(IPv4StringToNum(materialize(ip))) SETTINGS max_threads=1</query>

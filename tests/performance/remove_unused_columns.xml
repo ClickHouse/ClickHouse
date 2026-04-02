@@ -1,6 +1,6 @@
 <test>
     <query>
-        WITH 100000. AS cnt
+        WITH 50000. AS cnt
         SELECT count()
         FROM
         (

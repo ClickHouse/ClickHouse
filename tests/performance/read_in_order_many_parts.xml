@@ -12,14 +12,14 @@
         <substitution>
             <name>parts</name>
             <values>
-                <value>100</value>
+                <value>430</value>
                 <value>1000</value>
             </values>
         </substitution>
         <substitution>
             <name>uniqs</name>
             <values>
-                <value>100</value>
+                <value>430</value>
                 <value>10000</value>
             </values>
         </substitution>
@@ -31,8 +31,8 @@
     <fill_query>SYSTEM START MERGES mt_{parts}_parts_{uniqs}_uniqs</fill_query>
     <fill_query>OPTIMIZE TABLE mt_{parts}_parts_{uniqs}_uniqs FINAL</fill_query>
 
-    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 1000000 FORMAT Null</query>
-    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 10000000 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 17000000 FORMAT Null</query>
+    <query>SELECT val2 FROM mt_{parts}_parts_10000_uniqs ORDER BY val1 LIMIT 84000000 FORMAT Null</query>
     <query>SELECT sum(val2) FROM mt_{parts}_parts_{uniqs}_uniqs GROUP BY val1 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS mt_{parts}_parts_{uniqs}_uniqs</drop_query>

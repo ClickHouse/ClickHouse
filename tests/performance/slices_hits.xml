@@ -1,4 +1,4 @@
 <test>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(substring(URL, 10, 20))</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(substring(PageCharset, 1, 2))</query>
+    <query>SELECT count() FROM (SELECT URL FROM hits_100m_single LIMIT 30000000) WHERE NOT ignore(substring(URL, 10, 20))</query>
+    <query>SELECT count() FROM (SELECT PageCharset FROM hits_100m_single LIMIT 30000000) WHERE NOT ignore(substring(PageCharset, 1, 2))</query>
 </test>

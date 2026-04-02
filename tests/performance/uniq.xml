@@ -52,6 +52,6 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {key} AS k, {func}(UserID) FROM hits_100m_single GROUP BY k FORMAT Null</query>
-    <query>SELECT {key} AS k, uniqTheta(UserID) FROM hits_10m_single GROUP BY k FORMAT Null</query>
+    <query>SELECT {key} AS k, {func}(UserID) FROM (SELECT SearchEngineID, RegionID, SearchPhrase, ClientIP, UserID FROM hits_100m_single LIMIT 30000000) GROUP BY k FORMAT Null</query>
+    <query>SELECT {key} AS k, uniqTheta(UserID) FROM (SELECT SearchEngineID, RegionID, SearchPhrase, ClientIP, UserID FROM hits_100m_single LIMIT 30000000) GROUP BY k FORMAT Null</query>
 </test>

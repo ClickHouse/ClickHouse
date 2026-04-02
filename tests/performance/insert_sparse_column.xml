@@ -6,7 +6,7 @@
     <fill_query>
         INSERT INTO FUNCTION file('test_data_sparse.json', LineAsString)
         SELECT '{{"id": ' || number || ', "c' || number % 50 || '": "' || hex(rand()) || '"}}'
-        FROM numbers(100000) SETTINGS engine_file_truncate_on_insert = 1
+        FROM numbers(160000) SETTINGS engine_file_truncate_on_insert = 1
     </fill_query>
     <!-- Insert one batch to create statistics about serializations -->
     <fill_query>INSERT INTO t_insert_sparse SELECT * FROM file('test_data_sparse.json', JSONEachRow)</fill_query>

@@ -1,0 +1,14 @@
+<test>
+    <substitutions>
+       <substitution>
+           <name>buckets</name>
+           <values>
+               <value>2</value>
+               <value>500</value>
+               <value>32768</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT kostikConsistentHash(number, {buckets}) FROM numbers(60000000) FORMAT Null</query>
+</test>

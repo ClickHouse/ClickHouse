@@ -3,13 +3,13 @@
   <create_query>create table t_lz4_norm(a UInt64) engine=MergeTree order by tuple()</create_query>
   <create_query>create table t_lz4_uncomp(a UInt32) engine=MergeTree order by a</create_query>
 
-  <fill_query>insert into t_lz4 select number % 100 from numbers_mt(5e7) order by rand()</fill_query>
+  <fill_query>insert into t_lz4 select number % 100 from numbers_mt(590000000) order by rand()</fill_query>
   <fill_query>optimize table t_lz4 final</fill_query>
 
-  <fill_query>insert into t_lz4_norm select number from numbers_mt(5e7) order by rand()</fill_query>
+  <fill_query>insert into t_lz4_norm select number from numbers_mt(590000000) order by rand()</fill_query>
   <fill_query>optimize table t_lz4_norm final</fill_query>
 
-  <fill_query>insert into t_lz4_uncomp select number from numbers_mt(5e7)</fill_query>
+  <fill_query>insert into t_lz4_uncomp select number from numbers_mt(590000000)</fill_query>
   <fill_query>optimize table t_lz4_uncomp final</fill_query>
 
   <query>select a from t_lz4 format Null</query>

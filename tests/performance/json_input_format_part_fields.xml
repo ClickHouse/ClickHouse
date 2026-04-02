@@ -21,7 +21,7 @@
         1711036533457,
         'xxxxx',
         'sdsfsdfsddf'
-    from numbers_mt(1000000)
+    from numbers_mt(700000)
     </fill_query>
 
     <query>select count(f1) from t settings max_threads=2</query>

@@ -1,0 +1,26 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Individual execution times are adjusted for all test queries to be between 200 and 300 milliseconds -->
+    <!-- We have to use Memory table engine for very fast operations (to avoid the slow code that materializes the data),
+         so that the weight of their execution time keeps high and performance test results make sense
+    -->
+    <create_query>CREATE DATABASE IF NOT EXISTS test_logical_functions_large</create_query>
+
+    <create_query>CREATE TABLE test_logical_functions_large._2_0_UInt8 (x1 UInt8, x2 UInt8) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE test_logical_functions_large._2_1_UInt8 (x1 UInt8, x2 UInt8) ENGINE = Memory</create_query>
+
+    <fill_query>INSERT INTO test_logical_functions_large._2_0_UInt8 SELECT materialize(0) AS x1, materialize(0) AS x2 FROM zeros(810000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions_large._2_1_UInt8 SELECT materialize(1) AS x1, materialize(1) AS x2 FROM zeros(810000000)</fill_query>
+
+    <query>SELECT count() FROM test_logical_functions_large._2_0_UInt8 WHERE NOT ignore(and(x1,x2))</query>
+    <query>SELECT count() FROM test_logical_functions_large._2_0_UInt8 WHERE NOT ignore(or(x1,x2))</query>
+    <query>SELECT count() FROM test_logical_functions_large._2_1_UInt8 WHERE NOT ignore(or(x1,x2))</query>
+    <!-- Check with bigger types: UInt16, UInt32, UInt64, Float64 -->
+    <drop_query>DROP TABLE test_logical_functions_large._2_0_UInt8</drop_query>
+    <drop_query>DROP TABLE test_logical_functions_large._2_1_UInt8</drop_query>
+
+    <drop_query>DROP DATABASE test_logical_functions_large</drop_query>
+</test>
