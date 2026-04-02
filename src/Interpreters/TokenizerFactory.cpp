@@ -280,7 +280,7 @@ static void registerTokenizers(TokenizerFactory & factory)
         {
             auto array = castAs<Array>(args[0], "stop_words");
             for (const auto & value : array)
-                stop_words.emplace_back(castAs<String>(value, “stop_word”));
+                stop_words.emplace_back(castAs<String>(value, "stop_word"));
         }
 
         return std::make_unique<AsciiCJKTokenizer>(stop_words);
