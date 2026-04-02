@@ -458,6 +458,7 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     PostingListCodecPtr getPostingListCodec() const { return posting_list_codec.get(); }
+    static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenizer> tokenizer;

@@ -21,9 +21,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
+#include <Common/FailPoint.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
-#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -63,6 +63,11 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
+}
+
+namespace FailPoints
+{
+    extern const char truncate_database_tables_pause[];
 }
 
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
@@ -619,6 +624,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             for (const auto & table : tables_to_drop)
             {
+                if (auto query_status = getContext()->getProcessListElementSafe())
+                    query_status->throwIfKilled();
+
                 query_for_table.setTable(table.first.getTableName());
                 query_for_table.is_dictionary = table.second;
                 query_for_table.kind = original_kind;
@@ -657,6 +665,22 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             tables_to_truncate.push_back(storage_id);
         }
 
+        /// Pre-cancel merges for all matching tables simultaneously.
+        /// This ensures all merges start stopping at time 0, so that by the time
+        /// a thread-pool thread reaches stopMergesAndWait() for each table,
+        /// the merge is already stopping or done.
+        std::vector<ActionLock> pre_merge_blockers;
+        pre_merge_blockers.reserve(tables_to_truncate.size());
+        for (const auto & table_id : tables_to_truncate)
+        {
+            if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, table_context))
+            {
+                auto lock = table->getActionLock(ActionLocks::PartsMerge);
+                if (!lock.expired())
+                    pre_merge_blockers.push_back(std::move(lock));
+            }
+        }
+
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),
@@ -671,6 +695,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// uuids_to_wait: Outlives runner
             runner.enqueueAndKeepTrack([this, table_id, &query, &table_context, &mutex_for_uuids, &uuids_to_wait]()
             {
+                // Pause here (for testing) BEFORE the kill check, so `SYSTEM WAIT FAILPOINT ... PAUSE`
+                // synchronises the test: the kill flag is set while we are paused, then
+                // `SYSTEM DISABLE FAILPOINT` wakes us up and `throwIfKilled` fires deterministically.
+                FailPointInjection::pauseFailPoint(FailPoints::truncate_database_tables_pause);
+
+                if (auto query_status = getContext()->getProcessListElementSafe())
+                    query_status->throwIfKilled();
+
                 // Create a proper AST for a single-table TRUNCATE query.
                 auto sub_query_ptr = make_intrusive<ASTDropQuery>();
                 auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();

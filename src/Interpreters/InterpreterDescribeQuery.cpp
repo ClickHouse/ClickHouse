@@ -156,7 +156,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     auto current_context = getContext();
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
 
-    auto column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
+    auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
 
@@ -176,8 +176,8 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
                 }
             }
 
-            const auto & common_virtuals = IStorage::getCommonVirtuals();
-            for (const auto & column : common_virtuals)
+            auto common_virtuals = table->getCommonVirtuals(virtuals);
+            for (const auto & column : *common_virtuals)
             {
                 if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                     virtual_columns.push_back(column);
@@ -216,8 +216,8 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
             }
         }
 
-        const auto & common_virtuals = IStorage::getCommonVirtuals();
-        for (const auto & column : common_virtuals)
+        auto common_virtuals = table->getCommonVirtuals(virtuals);
+        for (const auto & column : *common_virtuals)
         {
             if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                 virtual_columns.push_back(column);

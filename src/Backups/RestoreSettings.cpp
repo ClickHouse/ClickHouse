@@ -162,6 +162,7 @@ namespace
     M(Bool, allow_non_empty_tables) \
     M(RestoreAccessCreationMode, create_access) \
     M(Bool, skip_unresolved_access_dependencies) \
+    M(Bool, restore_access_entities_with_current_grants) \
     M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_azure_native_copy) \

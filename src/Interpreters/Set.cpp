@@ -280,7 +280,7 @@ void Set::appendSetElements(SetKeyColumns & holder)
     {
         auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
         if (set_elements[i]->empty())
-            set_elements[i] = filtered_column;
+            set_elements[i] = IColumn::mutate(std::move(filtered_column));
         else
             set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         if (transform_null_in && holder.null_map_holder)
@@ -292,6 +292,16 @@ void Set::checkIsCreated() const
 {
     if (!is_created.load())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to use set before it has been built.");
+}
+
+Columns Set::getSetElements() const
+{
+    checkIsCreated();
+    Columns result;
+    result.reserve(set_elements.size());
+    for (const auto & col : set_elements)
+        result.push_back(col->getPtr());
+    return result;
 }
 
 ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)

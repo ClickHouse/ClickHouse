@@ -78,15 +78,15 @@ ParallelReadingExtension::ParallelReadingExtension(
         std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
 }
 
-void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const
+void ParallelReadingExtension::sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const
 {
-    all_callback(InitialAllRangesAnnouncement{mode, ranges.getDescriptions(), number_of_current_replica, mark_segment_size});
+    all_callback(InitialAllRangesAnnouncement{mode, std::move(description), number_of_current_replica, mark_segment_size, min_marks_per_request});
 }
 
 std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
-    CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const
+    CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const
 {
-    return callback(ParallelReadRequest{mode, number_of_current_replica, min_number_of_marks, description});
+    return callback(ParallelReadRequest{mode, number_of_current_replica, min_marks_per_request, description});
 }
 
 MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(

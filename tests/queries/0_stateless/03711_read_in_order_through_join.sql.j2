@@ -83,10 +83,7 @@ ON events.Id = payloads2.Id
 ORDER BY toUnixTimestamp(events.Time) DESC
 LIMIT 3
 SETTINGS
-{% if join_kind == 'LEFT' %}
--- TODO (vdimir@): for some reason INNER join in reverse order reads all rows in this tests
-log_comment = '03711_read_in_order_through_join',
-{% endif %}
+    log_comment = '03711_read_in_order_through_join',
     max_block_size = DEFAULT -- make assertion on read rows stable
 ;
 
@@ -116,7 +113,6 @@ GROUP BY t
 ORDER BY t
 LIMIT 3
 ;
-
 
 {% endfor -%}
 {% endfor -%}

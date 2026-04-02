@@ -466,7 +466,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
     //    the ConcurrencyControl class is used instead of resource scheduler
     if (concurrency_control)
     {
-        auto query_context = CurrentThread::getQueryContext();
+        auto query_context = CurrentThread::tryGetQueryContext();
         ResourceLink master_thread_link;
         ResourceLink worker_thread_link;
         bool workload_cpu_scheduling_is_enabled = false;

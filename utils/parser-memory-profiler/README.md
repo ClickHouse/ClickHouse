@@ -173,7 +173,7 @@ Shows side-by-side comparison:
 
 2. **run_profiler.sh**:
    - Iterates through queries in the input file
-   - Runs `parser_memory_profiler` with `JE_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0`
+   - Runs `parser_memory_profiler` with `MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0`
    - Uses `jeprof` to analyze heap profile diffs
    - Generates text reports, collapsed stacks, and SVGs
    - Collects everything into `results.json`
@@ -187,12 +187,11 @@ Shows side-by-side comparison:
 
 | Variable | Description |
 |----------|-------------|
-| `JE_MALLOC_CONF` | jemalloc configuration (macOS with `je_` prefix) |
-| `MALLOC_CONF` | jemalloc configuration (Linux) |
+| `MALLOC_CONF` | jemalloc configuration |
 
 Required settings for profiling:
 ```bash
-JE_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0
+MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:0
 ```
 
 - `prof:true` - Enable profiling support
