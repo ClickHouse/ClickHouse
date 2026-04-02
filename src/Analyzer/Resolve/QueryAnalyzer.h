@@ -26,6 +26,8 @@ class QueryExpressionsAliasVisitor ;
 class QueryNode;
 class JoinNode;
 class ColumnNode;
+class FunctionNode;
+using FunctionNodePtr = std::shared_ptr<FunctionNode>;
 
 using ProjectionName = String;
 using ProjectionNames = std::vector<ProjectionName>;
