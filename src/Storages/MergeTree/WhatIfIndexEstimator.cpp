@@ -219,8 +219,8 @@ bool tryEstimateEmpirical(
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// Feed blocks to the aggregator.
-        /// Accumulate `skip_index_granularity` data granules per index granule.
+        /// The sequential source produces one block per data granule (one mark).
+        /// Accumulate skip_index_granularity blocks per index granule.
         auto aggregator = index_helper->createIndexAggregator();
         size_t data_granules_in_current = 0;
 
@@ -232,8 +232,6 @@ bool tryEstimateEmpirical(
 
             size_t pos = 0;
             aggregator->update(block, &pos, block.rows());
-
-            /// Each block from the sequential source corresponds to one data granule.
             ++data_granules_in_current;
 
             if (data_granules_in_current >= skip_index_granularity)
@@ -267,7 +265,7 @@ bool tryEstimateEmpirical(
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
     result.sampled_parts = saved_parts.size();
-    result.sampled_marks = total_index_granules;
+    result.sampled_marks = analysis.selected_marks;
     result.elapsed_ms = watch.elapsedMilliseconds();
 
     return true;
