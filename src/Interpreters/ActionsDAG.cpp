@@ -2159,7 +2159,7 @@ void ActionsDAG::unite(ActionsDAG && second)
 ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping, bool avoid_duplicate_inputs) const
 {
     /// Split DAG into two parts.
-    /// (first_nodes, first_outputs) is a part which will have split_list in result.
+    /// (first_nodes, first_outputs) is a part which will have split_nodes in result.
     /// (second_nodes, second_outputs) is a part which will have same outputs as current actions.
     Nodes first_nodes;
     NodeRawConstPtrs first_outputs;
