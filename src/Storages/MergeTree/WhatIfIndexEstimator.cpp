@@ -394,18 +394,18 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// Save parts before building pipeline (pipeline build moves them out of the step).
-    auto saved_parts = read_step->getParts();
+    /// Optimize the plan (applies filters to ReadFromMergeTree).
+    plan.optimize(QueryPlanOptimizationSettings(plan_context));
 
-    /// Build the pipeline to trigger index analysis and populate AnalysisResult.
-    auto builder = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings(plan_context),
-        BuildQueryPipelineSettings(plan_context));
-
-    auto analysis_ptr = read_step->getAnalyzedResult();
+    /// Trigger PK + partition + skip index analysis to populate AnalysisResult.
+    auto analysis_ptr = read_step->selectRangesToRead();
     if (!analysis_ptr)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
+
+    /// Save the filtered parts (after PK + partition + existing skip index pruning).
+    /// Must copy before buildQueryPipeline which moves them out.
+    auto saved_parts = analysis.parts_with_ranges;
 
     Result result;
     result.database = data.getStorageID().getDatabaseName();

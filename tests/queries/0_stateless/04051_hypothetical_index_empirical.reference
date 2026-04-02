@@ -14,8 +14,11 @@
 --- index granularity 5 ---
   skip_ratio:   95.0%
 --- empirical respects PK pruning ---
-  skip_ratio:   99.0%
+  skip_ratio:   100.0%
   sampled_marks:    50 / 50
 --- empirical with existing real index ---
-  skip_ratio:   99.0%
+  skip_ratio:   98.0%
   sampled_marks:    50 / 50
+--- proof: only baseline granules materialized ---
+  skip_ratio:   high (only baseline granules read)
+  source:           empirical
