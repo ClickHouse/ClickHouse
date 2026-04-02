@@ -13,12 +13,10 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Common/Stopwatch.h>
 
 #include <Core/Settings.h>
 
 #include <fmt/format.h>
-#include <numeric>
 
 namespace DB
 {
@@ -341,11 +339,14 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         }
         writeCString("\n", out);
 
-        writeCString("Cost:\n", out);
-        writeString(fmt::format("  storage_estimate_bytes:   {}\n", idx.storage_estimate_bytes), out);
-        writeString(fmt::format("  cpu_check_cost_score:     {}\n", idx.cpu_check_cost_score), out);
-        writeString(fmt::format("  maintenance_cost_score:   {}\n", idx.maintenance_cost_score), out);
-        writeCString("\n", out);
+        if (idx.storage_estimate_bytes > 0 || !idx.cpu_check_cost_score.empty() || !idx.maintenance_cost_score.empty())
+        {
+            writeCString("Cost:\n", out);
+            writeString(fmt::format("  storage_estimate_bytes:   {}\n", idx.storage_estimate_bytes), out);
+            writeString(fmt::format("  cpu_check_cost_score:     {}\n", idx.cpu_check_cost_score), out);
+            writeString(fmt::format("  maintenance_cost_score:   {}\n", idx.maintenance_cost_score), out);
+            writeCString("\n", out);
+        }
 
         if (!idx.warnings.empty())
         {
