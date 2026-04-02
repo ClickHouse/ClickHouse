@@ -960,7 +960,7 @@ def test_defaults(started_cluster):
         node.query(
             "SELECT k_date, k_date32, k_datetime, k_datetime64, k_string, k_uuid, k_arr FROM defaults_table"
         )
-        == "1970-01-01\t1900-01-01\t1970-01-01 00:00:00\t1970-01-01 00:00:00.000\t\t00000000-0000-0000-0000-000000000000\t[]\n"
+        == "1970-01-01\t1970-01-01\t1970-01-01 00:00:00\t1970-01-01 00:00:00.000\t\t00000000-0000-0000-0000-000000000000\t[]\n"
     )
 
     node.query("DROP TABLE defaults_table")

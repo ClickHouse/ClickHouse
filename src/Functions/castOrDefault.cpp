@@ -724,7 +724,7 @@ Converts the argument to the [Date32](../data-types/date32.md) data type. If the
         {"expr", "Expression returning a number or a string representation of a number.", {"String", "(U)Int*", "Float*"}},
         {"default", "Optional. The default value to return if parsing is unsuccessful.", {"Date32"}}
     };
-    FunctionDocumentation::ReturnedValue toDate32OrDefault_returned_value = {"Value of type Date32 if successful, otherwise returns the default value if passed or 1900-01-01 if not.", {"Date32"}};
+    FunctionDocumentation::ReturnedValue toDate32OrDefault_returned_value = {"Value of type Date32 if successful, otherwise returns the default value if passed or 1970-01-01 if not.", {"Date32"}};
     FunctionDocumentation::Examples toDate32OrDefault_examples = {
         {"Successful conversion", "SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))", "1930-01-01"},
         {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"}

@@ -1479,16 +1479,7 @@ struct ConvertThroughParsing
                     parsed = false;
 
                 if (!parsed)
-                {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
-                    {
-                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
-                    }
-                    else
-                    {
-                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
-                    }
-                }
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
 
                 if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
                     (*vec_null_map_to)[i] = !parsed;
