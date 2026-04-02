@@ -2,6 +2,8 @@
 -- add_minmax_index_for_numeric_columns=0: Changes plan
 -- EXPLAIN output may differ
 
+SET query_plan_merge_expressions = 1;
+
 -- { echoOn }
 
 DROP TABLE IF EXISTS test_has_skip_minmax;
