@@ -4,8 +4,9 @@ SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
 
--- Disable table swaps during query planning
+-- Pin query plan settings that affect EXPLAIN output structure
 SET query_plan_join_swap_table = false;
+SET query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test(
