@@ -119,11 +119,37 @@ String similarToPatternToRegexp(std::string_view pattern)
         {
             /// Keep unescaped brackets. Remember in bracket or not.
             case '[':
-                in_bracket = true;
+                if (pos + 1 < end)
+                {
+                    switch (pos[1])
+                    {
+                        /// [:class:] class expression, not in bracket
+                        case ':':
+                            break;
+                        /// [] bracket notation
+                        default:
+                            in_bracket = true;
+                    }
+                }
+                else
+                    in_bracket = true;
                 res += *pos;
                 break;
             case ']':
-                in_bracket = false;
+                if (pos - 1 > pattern.data())
+                {
+                    switch (*(pos - 1))
+                    {
+                        /// [:class:] class expression, not in bracket
+                        case ':':
+                            break;
+                        /// [] bracket notation
+                        default:
+                            in_bracket = false;
+                    }
+                }
+                else
+                    in_bracket = false;
                 res += *pos;
                 break;
             /// Quote characters which have a special meaning in re2. Don't quote when in bracket.
