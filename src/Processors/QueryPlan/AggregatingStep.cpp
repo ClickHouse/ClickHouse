@@ -326,10 +326,12 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     if (use_sharded_aggregation)
     {
-        /// TODO: Consider the usefulness of two-level hash table. Even though there is no merge phase,
-        ///       Two-level can help keep each hash tables small and make hash table operations faster.
+        /// Even though there is no merge phase, Two-level can help keep each hash tables small
+        /// and make hash table operations faster. However, after some benchmarking, there have been
+        /// mostly slowdowns for most common queries. Therefore, disable two-level for sharded aggregation.
         params.group_by_two_level_threshold = 0;
         params.group_by_two_level_threshold_bytes = 0;
+
         /// Sharded aggregation does not implement temporary-file spill/merge yet.
         params.max_bytes_before_external_group_by = 0;
 
