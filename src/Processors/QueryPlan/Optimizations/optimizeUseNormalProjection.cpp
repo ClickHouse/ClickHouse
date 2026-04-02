@@ -303,6 +303,13 @@ std::optional<String> optimizeUseNormalProjections(
                 projection_pk_was_useful = !index_stat.used_keys.empty();
             }
         }
+
+        if (!projection_pk_was_useful)
+        {
+            LOG_DEBUG(logger, "Not using projection {} because condition was not useful : {}", candidate.projection->name, stat.condition);
+            continue;
+        }
+
         stat.selected_parts = candidate.selected_parts;
         stat.selected_marks = candidate.selected_marks;
         stat.selected_ranges = candidate.selected_ranges;
@@ -318,7 +325,7 @@ std::optional<String> optimizeUseNormalProjections(
         /// current parent mark count, refine the parent estimate by applying skip-index filtering
         /// now so the comparison reflects the marks that will actually be read from the parent.
         auto ratio =  static_cast<double>(context->getSettingsRef()[Setting::optimize_projection_skip_index_ratio]);
-        LOG_DEBUG(logger, "Projection marks {}, part marks {}, ratio {}, projection condition {} - {}", candidate.sum_marks, parent_reading_marks, ratio, stat.condition, projection_pk_was_useful);
+        LOG_DEBUG(logger, "Projection {} has marks {}, part marks {}, ratio {}, projection condition {}", candidate.projection->name, candidate.sum_marks, parent_reading_marks, ratio, stat.condition); 
         if (ratio < 0 || ratio > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
         if (!skip_index_filtering_done
@@ -336,7 +343,7 @@ std::optional<String> optimizeUseNormalProjections(
 
                 /// Copy the parent's Indexes and disable the data-read deferral so that
                 /// filterPartsByPrimaryKeyAndSkipIndexes applies the skip indexes immediately.
-                /// PK filtering has already beem done, hence pass use_primary_key = false.
+                /// PK filtering has already been done, hence pass use_primary_key = false.
                 ReadFromMergeTree::Indexes indexes_for_skip_pass = *parent_indexes;
                 indexes_for_skip_pass.use_skip_indexes_on_data_read = false;
 
