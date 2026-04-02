@@ -90,6 +90,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
+    extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -143,6 +144,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+    enable_join_transitive_predicates = from[Setting::enable_join_transitive_predicates];
 
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt
@@ -225,7 +227,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_threads = from[Setting::max_threads];
 
-    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 

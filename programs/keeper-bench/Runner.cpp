@@ -1040,7 +1040,7 @@ struct SetupNodeCollector
 
         std::cerr << "Generating snapshot with starting data" << std::endl;
         DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(initial_storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta);
+        DB::KeeperStorageSnapshot<Coordination::KeeperMemoryStorage> snapshot(initial_storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
         snapshot_manager->serializeSnapshotToDisk(snapshot);
 
         new_nodes = false;

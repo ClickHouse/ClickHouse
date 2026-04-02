@@ -42,14 +42,13 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_finished_sessions_cache_size, 100000, "Maximum number of finished sessions to track for stale request filtering. Entries are normally cleaned up when the corresponding Close commits; this limit is a safety cap.", 0) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", 0) \
     DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
-    DECLARE(UInt64, max_requests_quick_batch_size, 100, "Max size of batch of requests to try to get before proceeding with RAFT. Keeper will not wait for requests but take only requests that are already in queue" , 0) \
+    DECLARE(UInt64, max_requests_quick_batch_size, 100, "Obsolete setting, does nothing." , SettingsTierType::OBSOLETE) \
     DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     DECLARE(Bool, compress_logs, false, "Write compressed coordination logs in ZSTD format", 0) \
@@ -74,6 +73,9 @@ namespace ErrorCodes
     DECLARE(UInt64, log_slow_connection_operation_threshold_ms, 1000, "Log message if a certain operation took too long inside a single connection", 0) \
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
+    DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
@@ -192,8 +194,6 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
 
     /// coordination_settings
 
-    writeText("max_requests_batch_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_requests_batch_size]);
     writeText("min_session_timeout_ms=", buf);
     write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::min_session_timeout_ms]));
     writeText("session_timeout_ms=", buf);
@@ -221,8 +221,12 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings[CoordinationSetting::auto_forwarding]);
     writeText("shutdown_timeout=", buf);
     write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::shutdown_timeout]));
+    writeText("session_shutdown_timeout=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::session_shutdown_timeout]));
     writeText("startup_timeout=", buf);
     write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::startup_timeout]));
+    writeText("sleep_before_leader_change_ms=", buf);
+    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::sleep_before_leader_change_ms]));
 
     writeText("raft_logs_level=", buf);
     writeText(coordination_settings[CoordinationSetting::raft_logs_level].toString(), buf);
@@ -243,6 +247,10 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_int(coordination_settings[CoordinationSetting::max_requests_batch_bytes_size]);
     writeText("max_request_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_request_size]);
+    writeText("max_requests_append_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_requests_append_size]);
+    writeText("max_requests_append_bytes_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_requests_append_bytes_size]);
     writeText("max_flush_batch_size=", buf);
     write_int(coordination_settings[CoordinationSetting::max_flush_batch_size]);
     writeText("max_request_queue_size=", buf);
@@ -261,16 +269,34 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("configuration_change_tries_count=", buf);
     write_int(coordination_settings[CoordinationSetting::configuration_change_tries_count]);
 
+    writeText("max_log_file_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_log_file_size]);
+    writeText("log_file_overallocate_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::log_file_overallocate_size]);
+    writeText("min_request_size_for_cache=", buf);
+    write_int(coordination_settings[CoordinationSetting::min_request_size_for_cache]);
+
     writeText("raft_limits_reconnect_limit=", buf);
-    write_int(static_cast<uint64_t>(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit]));
+    write_int(coordination_settings[CoordinationSetting::raft_limits_reconnect_limit]);
+    writeText("raft_limits_response_limit=", buf);
+    write_int(coordination_settings[CoordinationSetting::raft_limits_response_limit]);
 
     writeText("async_replication=", buf);
     write_bool(coordination_settings[CoordinationSetting::async_replication]);
 
+    writeText("experimental_use_rocksdb=", buf);
+    write_bool(coordination_settings[CoordinationSetting::experimental_use_rocksdb]);
+    writeText("rocksdb_load_batch_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::rocksdb_load_batch_size]);
+
     writeText("latest_logs_cache_size_threshold=", buf);
     write_int(coordination_settings[CoordinationSetting::latest_logs_cache_size_threshold]);
+    writeText("latest_logs_cache_entry_count_threshold=", buf);
+    write_int(coordination_settings[CoordinationSetting::latest_logs_cache_entry_count_threshold]);
     writeText("commit_logs_cache_size_threshold=", buf);
     write_int(coordination_settings[CoordinationSetting::commit_logs_cache_size_threshold]);
+    writeText("commit_logs_cache_entry_count_threshold=", buf);
+    write_int(coordination_settings[CoordinationSetting::commit_logs_cache_entry_count_threshold]);
 
     writeText("disk_move_retries_wait_ms=", buf);
     write_int(coordination_settings[CoordinationSetting::disk_move_retries_wait_ms]);
@@ -289,8 +315,13 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     writeText("check_node_acl_on_remove=", buf);
     write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
 
-    writeText("max_finished_sessions_cache_size=", buf);
-    write_int(coordination_settings[CoordinationSetting::max_finished_sessions_cache_size]);
+    writeText("write_snapshot_version=", buf);
+    write_int(coordination_settings[CoordinationSetting::write_snapshot_version]);
+    writeText("nuraft_test_mode=", buf);
+    write_bool(coordination_settings[CoordinationSetting::nuraft_test_mode]);
+
+    writeText("snapshot_transfer_chunk_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::snapshot_transfer_chunk_size]);
 }
 
 KeeperConfigurationAndSettingsPtr

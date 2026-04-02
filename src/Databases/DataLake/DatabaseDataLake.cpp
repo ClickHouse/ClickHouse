@@ -803,8 +803,12 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
         if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
 
-        [[maybe_unused]] bool inserted = tables.emplace(table_name, futures[future_index].get()).second;
-        chassert(inserted);
+        auto table_ptr = futures[future_index].get();
+        if (table_ptr)
+        {
+            [[maybe_unused]] bool inserted = tables.emplace(table_name, table_ptr).second;
+            chassert(inserted);
+        }
         future_index++;
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
@@ -846,6 +850,17 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
     return create_query;
+}
+
+void DatabaseDataLake::checkDatabase() const
+{
+    auto catalog = getCatalog();
+    /// This function checks if we can access catalog and get tables list.
+    /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
+    std::ignore = catalog->empty();
+
+
+    LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
 }
 
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(

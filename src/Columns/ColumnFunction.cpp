@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/validateColumnType.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
@@ -243,18 +244,18 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         recursively_convert_result_to_full_column_if_low_cardinality);
 }
 
-std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
+VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
                                                       const IColumn::Selector & selector) const
 {
     if (elements_size != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
                         selector.size(), elements_size);
 
-    std::vector<size_t> counts;
+    VectorWithMemoryTracking<size_t> counts;
     if (captured_columns.empty())
         counts = countColumnsSizeInSelector(num_columns, selector);
 
-    std::vector<ColumnsWithTypeAndName> captures(num_columns, captured_columns);
+    VectorWithMemoryTracking<ColumnsWithTypeAndName> captures(num_columns, captured_columns);
 
     for (size_t capture = 0; capture < captured_columns.size(); ++capture)
     {
@@ -263,7 +264,7 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
             captures[part][capture].column = std::move(parts[part]);
     }
 
-    std::vector<MutableColumnPtr> columns;
+    VectorWithMemoryTracking<MutableColumnPtr> columns;
     columns.reserve(num_columns);
     for (size_t part = 0; part < num_columns; ++part)
     {
@@ -409,13 +410,13 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
-    if (res.column->getDataType() != res.type->getColumnType())
+    if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unexpected return type from {}. Expected {}. Got {}",
             function->getName(),
-            res.type->getColumnType(),
-            res.column->getDataType());
+            res.type->getName(),
+            res.column->getName());
     if (recursively_convert_result_to_full_column_if_low_cardinality)
     {
         res.column = recursiveRemoveLowCardinality(res.column);

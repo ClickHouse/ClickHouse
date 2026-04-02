@@ -130,6 +130,8 @@ namespace
         static unsigned long readFileFunc(void *, void * stream, void * buf, unsigned long size) // NOLINT(google-runtime-int)
         {
             auto & strm = get(stream);
+            if (strm.stored_exception)
+                return 0;
             try
             {
                 if (strm.at_end)
@@ -146,6 +148,8 @@ namespace
         static ZPOS64_T tellFunc(void *, void * stream)
         {
             auto & strm = get(stream);
+            if (strm.stored_exception)
+                return static_cast<ZPOS64_T>(-1);
             try
             {
                 if (strm.at_end)
@@ -162,6 +166,8 @@ namespace
         static long seekFunc(void *, void * stream, ZPOS64_T offset, int origin) // NOLINT(google-runtime-int)
         {
             auto & strm = get(stream);
+            if (strm.stored_exception)
+                return -1;
             try
             {
                 if (origin == SEEK_END)

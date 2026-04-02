@@ -1,0 +1,25 @@
+=== Per-table grant user sees the permitted table ===
+visible_table
+=== Per-table grant user sees columns of the permitted table ===
+id
+name
+=== Per-table grant user does NOT see the hidden table ===
+0
+=== Per-db grant user sees the permitted database ===
+default
+=== Per-db grant user does NOT see other databases ===
+0
+=== Per-db SHOW TABLES grant user sees all tables in the database ===
+hidden_table
+visible_table
+=== Per-db SHOW COLUMNS grant user sees columns of all tables ===
+id
+name
+=== SHOW TABLES only: table is visible ===
+visible_table
+=== SHOW TABLES only: columns are NOT visible ===
+0
+=== Per-column revoke: non-revoked column is visible ===
+name
+=== Temporary table appears in completions ===
+tmp_completions_04054

@@ -169,7 +169,8 @@ public:
         Block prev_reader_header_,
         const PrewhereExprStep * prewhere_info_,
         ReadStepPerformanceCountersPtr performance_counters_,
-        bool main_reader_);
+        bool main_reader_,
+        bool can_read_incomplete_granules_);
 
     MergeTreeRangeReader() = default;
 
@@ -330,7 +331,7 @@ public:
         /// Add current step filter to the result and then for each granule calculate the number of filtered rows at the end.
         /// Remove them and update filter.
         /// Apply the filter to the columns and update num_rows if required
-        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules, bool must_apply_filter);
+        void optimize(const FilterWithCachedCount & current_filter, bool can_read_incomplete_granules_, bool must_apply_filter);
 
         /// Remove all rows from granules.
         void clear();
@@ -386,6 +387,17 @@ public:
         size_t total_rows_per_granule = 0;
         /// The number of rows was read at first step. May be zero if no read columns present in part.
         size_t num_read_rows = 0;
+
+        /// Diagnostic counters for debugging adjustLastGranule assertions.
+        /// These track where addRows() increments came from in startReadingChain().
+        size_t debug_rows_from_read_in_loop = 0;       /// rows from stream.read() inside the loop
+        size_t debug_rows_from_finalize_in_loop = 0;    /// rows from stream.finalize() at range boundaries
+        size_t debug_rows_from_finalize_post_loop = 0;  /// rows from stream.finalize() after the loop
+        size_t debug_max_rows = 0;                      /// max_rows parameter passed to startReadingChain
+        size_t debug_num_ranges_processed = 0;          /// number of ranges processed
+        size_t debug_skipped_marks = 0;                 /// marks skipped via canSkipMark
+        bool debug_use_query_condition_cache = false;
+        bool debug_can_read_incomplete_granules = false;
         /// The number of rows was removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
@@ -410,7 +422,7 @@ public:
 
         /// Builds updated filter by cutting zeros in granules tails
         void collapseZeroTails(const IColumn::Filter & filter, const NumRows & rows_per_granule_previous, IColumn::Filter & new_filter) const;
-        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules) const;
+        size_t countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails, bool can_read_incomplete_granules_) const;
         static size_t numZerosInTail(const UInt8 * begin, const UInt8 * end);
 
         LoggerPtr log;
@@ -453,6 +465,7 @@ private:
 
     ReadStepPerformanceCountersPtr performance_counters;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
+    bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };
