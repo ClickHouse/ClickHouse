@@ -190,6 +190,15 @@ public:
         auto it = cache.find(key);
         if (it == cache.end())
             return {};
+        /// Treat stale entries as cache misses. This is necessary for CacheBase::getOrSet to work
+        /// correctly with TTL caches: getOrSet calls get() first and, if it returns a value, skips
+        /// calling the load function entirely. Without this check, an expired entry would be
+        /// returned as a hit and the load function would never run. The entry could never be
+        /// refreshed after its TTL expires. Historically this was not a problem because getOrSet
+        /// was only used with LRU/SLRU policies (which have no TTL concept), while TTLCachePolicy
+        /// was only accessed via getWithKey + application-level staleness checks.
+        if (is_stale_function(it->first))
+            return {};
         return it->second;
     }
 
@@ -202,6 +211,9 @@ public:
     {
         auto it = cache.find(key);
         if (it == cache.end())
+            return std::nullopt;
+        /// Same staleness check as in get() — keep semantics consistent.
+        if (is_stale_function(it->first))
             return std::nullopt;
         return std::make_optional<KeyMapped>({it->first, it->second});
     }

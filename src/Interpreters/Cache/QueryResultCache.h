@@ -119,6 +119,9 @@ public:
 
     struct Entry
     {
+        /// Header is stored alongside the chunks so that it is available when the entry is read back
+        /// from cache even if the Key's header field is null (e.g. when stored via getOrSet).
+        SharedHeader header;
         Chunks chunks;
         std::optional<Chunk> totals = std::nullopt;
         std::optional<Chunk> extremes = std::nullopt;
@@ -165,6 +168,27 @@ public:
 
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
+
+    /// Thin wrapper around CacheBase::getOrSet for thundering herd (cache stampede) prevention.
+    ///
+    /// CacheBase::getOrSet uses an InsertToken per key. The first thread to call getOrSet for a
+    /// given key acquires the token and runs load_func to compute the value; all other concurrent
+    /// threads for the same key block and wait for the token to be released. Once load_func
+    /// returns, the result is stored in the cache and all waiters receive the same shared_ptr
+    /// without ever calling load_func themselves.
+    ///
+    /// Returns {entry, was_inserted}:
+    ///   was_inserted == true  → load_func ran on this thread (executor); entry is freshly computed.
+    ///   was_inserted == false → another thread ran load_func first (waiter); entry comes from cache.
+    ///
+    /// Requirement: TTLCachePolicy::get() must skip stale entries (see fix there). If it returns
+    /// a stale entry, CacheBase::getOrSet treats it as a hit, skips load_func, and the cache can
+    /// never be refreshed after the first entry's TTL expires.
+    template <typename LoadFunc>
+    std::pair<std::shared_ptr<Entry>, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    {
+        return cache.getOrSet(key, std::forward<LoadFunc>(load_func));
+    }
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;

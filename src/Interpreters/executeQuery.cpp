@@ -77,6 +77,7 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -1712,8 +1713,209 @@ static BlockIO executeQueryImpl(
                 return false;
             };
 
-            if (!get_result_from_query_result_cache())
+            const bool query_result_cache_hit = get_result_from_query_result_cache();
+            /// Thundering herd prevention via QueryResultCache::getOrSet.
+            ///
+            /// Condition: writes must be enabled, and the read-only probe above must have found
+            /// no valid (non-stale) cache entry. If the probe found a hit, get_result_from_query_result_cache()
+            /// already set res.pipeline, so we skip both branches entirely.
+            ///
+            /// getOrSet serializes concurrent requests for the same key using an InsertToken:
+            ///   - Executor thread: wins the token and runs the lambda below, which executes the
+            ///     query synchronously and materializes all result blocks into a cache Entry.
+            ///   - Waiter threads: observe a pending token, block, and receive the same Entry
+            ///     once the executor finishes — without re-running the query themselves.
+            ///
+            /// Prerequisite: TTLCachePolicy::get() must treat stale entries as misses (see the
+            /// fix in TTLCachePolicy.h). Without that fix, getOrSet would see expired entries as
+            /// cache hits and never call the lambda — the cache would serve stale data forever
+            /// after the first entry's TTL expires, with no way to refresh it.
+            ///
+            /// Known limitation: the lambda must return a complete Entry, so the full query
+            /// result is materialized in memory via PullingPipelineExecutor before any data is
+            /// streamed to the client. There is no row-by-row streaming when this path is taken.
+            if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache]
+                && !query_result_cache_hit)
             {
+                auto created_at = std::chrono::system_clock::now();
+                auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                /// Build the key used to insert into the cache. The header field is passed as
+                /// null because the result header is only known after interpreter->execute()
+                /// runs inside the lambda below. The header is stored in Entry::header instead,
+                /// which is read back from the entry when building the reading pipeline.
+                /// Note: header is not part of Key::operator== or KeyHasher, so null is fine
+                /// for cache lookup/insert purposes.
+                QueryResultCache::Key write_key(
+                    out_ast, context->getCurrentDatabase(), *settings_copy,
+                    nullptr, /// header: unknown before execution; stored in Entry::header instead
+                    context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(),
+                    settings[Setting::query_cache_share_between_users],
+                    created_at, expires_at,
+                    settings[Setting::query_cache_compress_entries]);
+
+                /// getOrSet calls the lambda exactly once per key, even under concurrent load.
+                /// was_inserted == true  → this thread computed the result (executor).
+                /// was_inserted == false → another thread computed it first (waiter); cached_entry
+                ///                        is the entry produced by the executor thread.
+                auto [cached_entry, was_inserted] = query_result_cache->getOrSet(write_key,
+                    [&]() -> std::shared_ptr<QueryResultCache::Entry>
+                    {
+                        /// This lambda runs only on the executor thread. Waiter threads block
+                        /// inside getOrSet and never enter here. All query setup (transactions,
+                        /// interpreter construction, quota accounting, and pipeline execution)
+                        /// is performed inside the lambda so waiters skip all of it.
+
+                        if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
+                        {
+                            try
+                            {
+                                if (context->isGlobalContext())
+                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
+                                implicit_tcl_executor->begin(context);
+                            }
+                            catch (Exception & e)
+                            {
+                                e.addMessage("while starting a transaction with 'implicit_transaction'");
+                                throw;
+                            }
+                        }
+
+                        if (settings[Setting::enable_shared_storage_snapshot_in_query])
+                        {
+                            query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                            context->setQueryMetadataCache(query_metadata_cache);
+                        }
+
+                        if (out_ast)
+                            interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
+
+                        const auto & query_settings = context->getSettingsRef();
+                        if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
+                        {
+                            if (!interpreter->supportsTransactions())
+                                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
+
+                            if (query_settings[Setting::apply_mutations_on_fly])
+                                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
+                        }
+
+                        // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
+                        // We need to force to build it here to check if we need to ignore quota.
+                        if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                            interpreter_with_analyzer->getQueryPlan();
+
+                        if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
+                        {
+                            quota = context->getQuota();
+                            if (quota)
+                            {
+                                if (quota->isKeyedByNormalizedQueryHash())
+                                {
+                                    if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                        quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                                    else if (out_ast->as<ASTInsertQuery>())
+                                        quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                                }
+                                else
+                                {
+                                    if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                        quota->used(QuotaType::QUERY_SELECTS, 1);
+                                    else if (out_ast->as<ASTInsertQuery>())
+                                        quota->used(QuotaType::QUERY_INSERTS, 1);
+                                    quota->used(QuotaType::QUERIES, 1);
+                                    quota->checkExceeded(QuotaType::ERRORS);
+                                }
+
+                                quota->usedPerNormalizedHash(normalized_query_hash);
+                            }
+                        }
+
+                        if (http_continue_callback && !internal)
+                            http_continue_callback();
+
+                        if (interpreter)
+                        {
+                            if (!interpreter->ignoreLimits())
+                            {
+                                limits.mode = LimitsMode::LIMITS_CURRENT;
+                                limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
+                            }
+
+                            if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
+                            {
+                                create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                                create_interpreter->setInternal(internal);
+                            }
+
+                            std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                            if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                            {
+                                auto * raw_interpreter_ptr = interpreter.get();
+                                String class_name = raw_interpreter_ptr ? demangle(typeid(*raw_interpreter_ptr).name()) : "QueryPlan";
+                                span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
+                            }
+
+                            res = interpreter->execute();
+                        }
+
+                        /// Synchronously drain the pipeline and collect all result blocks into
+                        /// the Entry. PullingPipelineExecutor drives the pipeline to completion
+                        /// in a blocking loop on this thread.
+                        ///
+                        /// The header is extracted from the pipeline after execute() because it
+                        /// was not available when the Key was constructed (see null header above).
+                        /// It is stored in Entry::header so that the reading pipeline built below
+                        /// (for both this thread and any waiter threads) knows the column types.
+                        auto entry = std::make_shared<QueryResultCache::Entry>();
+                        entry->header = res.pipeline.getSharedHeader();
+                        {
+                            PullingPipelineExecutor pulling_executor(res.pipeline);
+                            Block block;
+                            while (pulling_executor.pull(block))
+                                entry->chunks.emplace_back(block.getColumns(), block.rows());
+                        }
+                        return entry;
+                        /// After the lambda returns, getOrSet stores the entry in the cache
+                        /// and releases the InsertToken, unblocking any waiter threads.
+                    });
+
+                /// Both the executor (was_inserted == true) and all waiters (was_inserted == false)
+                /// reach this point. They all build an independent reading pipeline over a clone of
+                /// the cached chunks so that each connection can consume data at its own pace without
+                /// interfering with the shared Entry stored in the cache.
+                Chunks cloned_chunks;
+                for (const auto & chunk : cached_entry->chunks)
+                    cloned_chunks.push_back(chunk.clone());
+                QueryPipeline reading_pipeline;
+                reading_pipeline.readFromQueryResultCache(
+                    std::make_unique<SourceFromChunks>(cached_entry->header, std::move(cloned_chunks)),
+                    nullptr, nullptr); /// totals/extremes not supported in the getOrSet path
+                res.pipeline = std::move(reading_pipeline);
+
+                /// Tag the query for observability: Write = this thread executed the query,
+                /// Read = result was served from the cache (computed by another thread or a
+                /// previous request).
+                query_result_cache_usage = was_inserted ? QueryResultCacheUsage::Write : QueryResultCacheUsage::Read;
+
+                if (settings[Setting::enable_reads_from_query_cache])
+                {
+                    result_details.query_cache_entry_created_at = created_at;
+                    result_details.query_cache_entry_expires_at = expires_at;
+                }
+            }
+            else if (!query_result_cache_hit)
+            {
+                /// Fallback path: either writes are disabled (enable_writes_to_query_cache = 0),
+                /// or the cache is not configured. No thundering herd prevention here.
+                /// Also covers the case where get_result_from_query_result_cache() inside the
+                /// getOrSet condition found a non-stale hit. However, in that case we skip both
+                /// branches entirely (the condition was false, so we never entered the getOrSet
+                /// block, and this else-if re-probes and returns true, so we skip this block too).
+
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
                 {
@@ -1877,6 +2079,8 @@ static BlockIO executeQueryImpl(
                                 result_details.query_cache_entry_expires_at = expires_at;
                         }
                     }
+                    /// No cache write here: we only reach this branch when enable_writes_to_query_cache
+                    /// is false (or can_use_query_result_cache is false), so there is nothing to store.
                 }
             }
         }
