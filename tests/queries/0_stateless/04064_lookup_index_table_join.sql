@@ -24,7 +24,7 @@ CREATE TABLE table_lookup_fact_join
 ENGINE = MergeTree
 ORDER BY (id, subid);
 
-INSERT INTO table_lookup_dim_join VALUES (1, 1, 'a'), (1, 2, 'b'), (3, 1, 'c'), (4, 1, 'd1'), (4, 1, 'd2');
+INSERT INTO table_lookup_dim_join VALUES (1, 1, 'a'), (1, 2, 'b'), (3, 1, 'c'), (4, 1, 'd1');
 INSERT INTO table_lookup_fact_join VALUES (1, 1, 'x'), (1, 2, 'y'), (2, 1, 'z'), (3, 1, 'w'), (4, 1, 'q');
 
 SELECT id, subid, if(value = '', '<empty>', value)
@@ -35,6 +35,8 @@ LEFT ANY JOIN table_lookup_dim_join
 ORDER BY id, subid;
 
 SELECT '--';
+
+INSERT INTO table_lookup_dim_join VALUES (4, 1, 'd2');
 
 SELECT id, subid, value
 FROM table_lookup_fact_join
