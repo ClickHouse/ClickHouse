@@ -78,7 +78,7 @@ SET(AWS_SDKUTILS_DIR "${ClickHouse_SOURCE_DIR}/contrib/aws-c-sdkutils")
 
 
 # aws-cpp-sdk-core
-file(GLOB AWS_SDK_CORE_SRC
+file(GLOB AWS_SDK_CORE_SRC CONFIGURE_DEPENDS
     "${AWS_SDK_CORE_DIR}/source/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/bearer-token-provider/*.cpp"
@@ -120,10 +120,10 @@ file(GLOB AWS_SDK_CORE_SRC
 )
 
 if(OS_LINUX OR OS_DARWIN)
-    file(GLOB AWS_SDK_CORE_NET_SRC "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp")
-    file(GLOB AWS_SDK_CORE_PLATFORM_SRC "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp")
+    file(GLOB AWS_SDK_CORE_NET_SRC CONFIGURE_DEPENDS "${AWS_SDK_CORE_DIR}/source/net/linux-shared/*.cpp")
+    file(GLOB AWS_SDK_CORE_PLATFORM_SRC CONFIGURE_DEPENDS "${AWS_SDK_CORE_DIR}/source/platform/linux-shared/*.cpp")
 else()
-    file(GLOB AWS_SDK_CORE_NET_SRC "${AWS_SDK_CORE_DIR}/source/net/*.cpp")
+    file(GLOB AWS_SDK_CORE_NET_SRC CONFIGURE_DEPENDS "${AWS_SDK_CORE_DIR}/source/net/*.cpp")
     set(AWS_SDK_CORE_PLATFORM_SRC)
 endif()
 
@@ -143,7 +143,7 @@ list(APPEND AWS_PUBLIC_INCLUDES
 )
 
 # aws-cpp-sdk-s3
-file(GLOB AWS_SDK_S3_SRC
+file(GLOB AWS_SDK_S3_SRC CONFIGURE_DEPENDS
     "${AWS_SDK_S3_DIR}/source/*.cpp"
     "${AWS_SDK_S3_DIR}/source/model/*.cpp"
 )
@@ -154,7 +154,7 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDK_S3_DIR}/include/")
 
 if(CLICKHOUSE_CLOUD)
     # aws-cpp-sdk-kms
-    file(GLOB AWS_SDK_KMS_SRC
+    file(GLOB AWS_SDK_KMS_SRC CONFIGURE_DEPENDS
         "${AWS_SDK_KMS_DIR}/source/*.cpp"
         "${AWS_SDK_KMS_DIR}/source/model/*.cpp"
     )
@@ -164,7 +164,7 @@ if(CLICKHOUSE_CLOUD)
 endif()
 
 # aws-c-auth
-file(GLOB AWS_AUTH_SRC
+file(GLOB AWS_AUTH_SRC CONFIGURE_DEPENDS
     "${AWS_AUTH_DIR}/source/*.c"
 )
 
@@ -173,18 +173,18 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_AUTH_DIR}/include/")
 
 
 # aws-c-cal
-file(GLOB AWS_CAL_SRC
+file(GLOB AWS_CAL_SRC CONFIGURE_DEPENDS
     "${AWS_CAL_DIR}/source/*.c"
     "${AWS_CAL_DIR}/source/shared/*.c"
 )
 
 if (ENABLE_OPENSSL_ENCRYPTION)
     if (OS_LINUX)
-        file(GLOB AWS_CAL_OS_SRC
+        file(GLOB AWS_CAL_OS_SRC CONFIGURE_DEPENDS
             "${AWS_CAL_DIR}/source/unix/*.c"
         )
     else (OS_DARWIN)
-        file(GLOB AWS_CAL_OS_SRC
+        file(GLOB AWS_CAL_OS_SRC CONFIGURE_DEPENDS
             "${AWS_CAL_DIR}/source/darwin/*.c"
         )
     endif()
@@ -196,7 +196,7 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_CAL_DIR}/include/")
 
 
 # aws-c-event-stream
-file(GLOB AWS_EVENT_STREAM_SRC
+file(GLOB AWS_EVENT_STREAM_SRC CONFIGURE_DEPENDS
     "${AWS_EVENT_STREAM_DIR}/source/*.c"
 )
 
@@ -205,7 +205,7 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_EVENT_STREAM_DIR}/include/")
 
 
 # aws-c-common
-file(GLOB AWS_COMMON_SRC
+file(GLOB AWS_COMMON_SRC CONFIGURE_DEPENDS
     "${AWS_COMMON_DIR}/source/*.c"
     "${AWS_COMMON_DIR}/source/external/*.c"
     "${AWS_COMMON_DIR}/source/posix/*.c"
@@ -215,22 +215,22 @@ file(GLOB AWS_COMMON_SRC
     "${AWS_COMMON_DIR}/source/external/libcbor/cbor/internal/*.c"
 )
 
-file(GLOB AWS_COMMON_ARCH_SRC
+file(GLOB AWS_COMMON_ARCH_SRC CONFIGURE_DEPENDS
     "${AWS_COMMON_DIR}/source/arch/generic/*.c"
 )
 
 if (AWS_ARCH_INTEL)
-    file(GLOB AWS_COMMON_ARCH_SRC
+    file(GLOB AWS_COMMON_ARCH_SRC CONFIGURE_DEPENDS
         "${AWS_COMMON_DIR}/source/arch/intel/cpuid.c"
         "${AWS_COMMON_DIR}/source/arch/intel/asm/*.c"
     )
 elseif (AWS_ARCH_ARM64 OR AWS_ARCH_ARM32)
     if (OS_LINUX)
-        file(GLOB AWS_COMMON_ARCH_SRC
+        file(GLOB AWS_COMMON_ARCH_SRC CONFIGURE_DEPENDS
             "${AWS_COMMON_DIR}/source/arch/arm/auxv/cpuid.c"
         )
     elseif(OS_DARWIN)
-        file(GLOB AWS_COMMON_ARCH_SRC
+        file(GLOB AWS_COMMON_ARCH_SRC CONFIGURE_DEPENDS
             "${AWS_COMMON_DIR}/source/arch/arm/darwin/cpuid.c"
         )
     endif()
@@ -260,25 +260,25 @@ list(APPEND AWS_PRIVATE_INCLUDES
 
 
 # aws-checksums
-file(GLOB AWS_CHECKSUMS_SRC
+file(GLOB AWS_CHECKSUMS_SRC CONFIGURE_DEPENDS
     "${AWS_CHECKSUMS_DIR}/source/*.c"
 )
 
 if(AWS_ARCH_INTEL AND AWS_HAVE_GCC_INLINE_ASM)
-    file(GLOB AWS_CHECKSUMS_ARCH_SRC
+    file(GLOB AWS_CHECKSUMS_ARCH_SRC CONFIGURE_DEPENDS
             "${AWS_CHECKSUMS_DIR}/source/intel/*.c"
             "${AWS_CHECKSUMS_DIR}/source/intel/asm/*.c"
     )
 endif()
 
 if (AWS_ARCH_ARM64)
-    file(GLOB AWS_CHECKSUMS_ARCH_SRC
+    file(GLOB AWS_CHECKSUMS_ARCH_SRC CONFIGURE_DEPENDS
         "${AWS_CHECKSUMS_DIR}/source/arm/*.c"
     )
     set_source_files_properties("${AWS_CHECKSUMS_DIR}/source/arm/crc32c_arm.c" PROPERTIES COMPILE_FLAGS -march=armv8-a+crc)
 elseif (AWS_ARCH_ARM32)
     if (AWS_ARM32_CRC)
-        file(GLOB AWS_CHECKSUMS_ARCH_SRC
+        file(GLOB AWS_CHECKSUMS_ARCH_SRC CONFIGURE_DEPENDS
             "${AWS_CHECKSUMS_DIR}/source/arm/*.c"
             "${AWS_CHECKSUMS_DIR}/source/arm/asm/*.c"
         )
@@ -291,17 +291,17 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_CHECKSUMS_DIR}/include/")
 
 
 # aws-c-io
-file(GLOB AWS_IO_SRC
+file(GLOB AWS_IO_SRC CONFIGURE_DEPENDS
     "${AWS_IO_DIR}/source/*.c"
 )
 
 if (OS_LINUX)
-    file(GLOB AWS_IO_OS_SRC
+    file(GLOB AWS_IO_OS_SRC CONFIGURE_DEPENDS
         "${AWS_IO_DIR}/source/linux/*.c"
         "${AWS_IO_DIR}/source/posix/*.c"
     )
 elseif (OS_DARWIN)
-    file(GLOB AWS_IO_OS_SRC
+    file(GLOB AWS_IO_OS_SRC CONFIGURE_DEPENDS
         "${AWS_IO_DIR}/source/bsd/*.c"
         "${AWS_IO_DIR}/source/posix/*.c"
     )
@@ -312,7 +312,7 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_IO_DIR}/include/")
 
 
 # aws-crt-cpp
-file(GLOB AWS_CRT_SRC
+file(GLOB AWS_CRT_SRC CONFIGURE_DEPENDS
     "${AWS_CRT_DIR}/source/*.cpp"
     "${AWS_CRT_DIR}/source/auth/*.cpp"
     "${AWS_CRT_DIR}/source/crypto/*.cpp"
@@ -333,7 +333,7 @@ list(APPEND AWS_PUBLIC_INCLUDES "${AWS_MQTT_DIR}/include/")
 
 
 # aws-c-http
-file(GLOB AWS_HTTP_SRC
+file(GLOB AWS_HTTP_SRC CONFIGURE_DEPENDS
     "${AWS_HTTP_DIR}/source/*.c"
 )
 
@@ -342,7 +342,7 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_HTTP_DIR}/include/")
 
 
 # aws-c-compression
-file(GLOB AWS_COMPRESSION_SRC
+file(GLOB AWS_COMPRESSION_SRC CONFIGURE_DEPENDS
     "${AWS_COMPRESSION_DIR}/source/*.c"
 )
 
@@ -351,7 +351,7 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_COMPRESSION_DIR}/include/")
 
 
 # aws-c-s3
-file(GLOB AWS_S3_SRC
+file(GLOB AWS_S3_SRC CONFIGURE_DEPENDS
     "${AWS_S3_DIR}/source/*.c"
 )
 
@@ -360,7 +360,7 @@ list(APPEND AWS_PRIVATE_INCLUDES "${AWS_S3_DIR}/include/")
 
 
 # aws-c-sdkutils
-file(GLOB AWS_SDKUTILS_SRC
+file(GLOB AWS_SDKUTILS_SRC CONFIGURE_DEPENDS
     "${AWS_SDKUTILS_DIR}/source/*.c"
 )
 
@@ -368,7 +368,7 @@ list(APPEND AWS_SOURCES ${AWS_SDKUTILS_SRC})
 list(APPEND AWS_PUBLIC_INCLUDES "${AWS_SDKUTILS_DIR}/include/")
 
 # aws glue
-file(GLOB AWS_SDK_GLUE_SRC
+file(GLOB AWS_SDK_GLUE_SRC CONFIGURE_DEPENDS
     "${AWS_SDK_GLUE_DIR}/source/*.cpp"
     "${AWS_SDK_GLUE_DIR}/source/model/*.cpp"
 )

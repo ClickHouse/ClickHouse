@@ -129,6 +129,8 @@ public:
         std::string object_namespace_,
         DB::NamesAndTypesList virtual_columns_)
         : kernel_snapshot_state(kernel_snapshot_state_)
+        , virtual_columns(std::move(virtual_columns_))
+        , object_namespace(std::move(object_namespace_))
         , helper(helper_)
         , read_schema(read_schema_)
         , expression_schema(table_schema_)
@@ -140,8 +142,6 @@ public:
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
         , enable_engine_predicate(enable_engine_predicate_)
-        , virtual_columns(std::move(virtual_columns_))
-        , object_namespace(std::move(object_namespace_))
         , update_stats_func(update_stats_func_)
     {
         if (filter_)
