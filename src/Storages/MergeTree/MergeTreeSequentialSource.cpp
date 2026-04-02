@@ -214,7 +214,46 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 };
             };
 
-            patch_join_cache->build(reader_factory, /*num_threads=*/ 1);
+            auto stats_factory = [&](const String & patch_name, const MarkRanges & ranges) -> PatchStatsMap
+            {
+                size_t patch_idx = 0;
+                for (; patch_idx < read_task_info->patch_parts.size(); ++patch_idx)
+                {
+                    if (read_task_info->patch_parts[patch_idx].mode == PatchMode::Join
+                        && read_task_info->patch_parts[patch_idx].part->getPartName() == patch_name)
+                        break;
+                }
+
+                if (patch_idx == read_task_info->patch_parts.size())
+                    return {};
+
+                const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(
+                    read_task_info->patch_parts[patch_idx].part.get());
+                if (!loaded_part)
+                    return {};
+
+                auto reader_settings_stats = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings());
+                PatchStatsMap stats;
+                auto block_number_stats = getPatchMinMaxStats(loaded_part->getDataPart(), ranges, BlockNumberColumn::name, reader_settings_stats);
+                auto block_offset_stats = getPatchMinMaxStats(loaded_part->getDataPart(), ranges, BlockOffsetColumn::name, reader_settings_stats);
+
+                if (block_number_stats && block_offset_stats)
+                {
+                    for (size_t i = 0; i < ranges.size(); ++i)
+                    {
+                        auto & range_stats = stats[ranges[i]];
+                        range_stats.block_number_stat = (*block_number_stats)[i];
+                        range_stats.block_offset_stat = (*block_offset_stats)[i];
+                    }
+                }
+                return stats;
+            };
+
+            MinMaxStat data_block_number_range{
+                .min = static_cast<UInt64>(data_part->info.min_block),
+                .max = static_cast<UInt64>(data_part->info.max_block)};
+
+            patch_join_cache->build(reader_factory, stats_factory, data_block_number_range, /*num_threads=*/ 1);
         }
     }
 

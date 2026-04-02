@@ -67,7 +67,11 @@ const PatchJoinCache::Entries & PatchJoinCache::getEntries(const String & patch_
     return it->second;
 }
 
-void PatchJoinCache::build(const ReaderFactory & reader_factory, size_t num_threads)
+void PatchJoinCache::build(
+    const ReaderFactory & reader_factory,
+    const StatsFactory & stats_factory,
+    MinMaxStat data_block_number_range,
+    size_t num_threads)
 {
     if (all_ranges_by_name.empty())
     {
@@ -76,6 +80,7 @@ void PatchJoinCache::build(const ReaderFactory & reader_factory, size_t num_thre
     }
 
     /// Flatten all ranges into work items: (patch_name, single_range).
+    /// Use minmax stats to skip patch ranges that cannot match the data being queried.
     struct ReadWorkItem
     {
         String patch_name;
@@ -84,8 +89,22 @@ void PatchJoinCache::build(const ReaderFactory & reader_factory, size_t num_thre
 
     std::vector<ReadWorkItem> work_items;
     for (const auto & [patch_name, ranges] : all_ranges_by_name)
+    {
+        PatchStatsMap stats = stats_factory(patch_name, ranges);
+
         for (const auto & range : ranges)
+        {
+            auto it = stats.find(range);
+            if (it != stats.end())
+            {
+                /// Skip ranges whose block_number range doesn't overlap with the data being queried.
+                if (!intersects(data_block_number_range, it->second.block_number_stat))
+                    continue;
+            }
+
             work_items.push_back({patch_name, range});
+        }
+    }
 
     if (work_items.empty())
     {

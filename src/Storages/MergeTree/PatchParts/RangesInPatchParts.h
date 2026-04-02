@@ -43,6 +43,7 @@ using MinMaxStats = std::vector<MinMaxStat>;
 using MaybeMinMaxStats = std::optional<MinMaxStats>;
 using PatchStatsMap = absl::node_hash_map<MarkRange, PatchStats, MarkRangeHash>;
 
+bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs);
 MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkRanges & ranges, const String & column_name, const MergeTreeReaderSettings & settings);
 MarkRanges filterPatchRanges(const MarkRanges & ranges, const PatchStatsMap & patch_stats, const PatchStats & result_stats);
 

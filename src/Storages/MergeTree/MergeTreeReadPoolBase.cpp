@@ -399,7 +399,47 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             };
         };
 
-        patch_join_cache->build(reader_factory, pool_settings.threads);
+        auto stats_factory = [&](const String & patch_name, const MarkRanges & ranges) -> PatchStatsMap
+        {
+            auto it = join_patches.find(patch_name);
+            if (it == join_patches.end())
+                return {};
+
+            const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(it->second.patch_part.part.get());
+            if (!loaded_part)
+                return {};
+
+            PatchStatsMap stats;
+            auto block_number_stats = getPatchMinMaxStats(loaded_part->getDataPart(), ranges, BlockNumberColumn::name, reader_settings);
+            auto block_offset_stats = getPatchMinMaxStats(loaded_part->getDataPart(), ranges, BlockOffsetColumn::name, reader_settings);
+
+            if (block_number_stats && block_offset_stats)
+            {
+                for (size_t i = 0; i < ranges.size(); ++i)
+                {
+                    auto & range_stats = stats[ranges[i]];
+                    range_stats.block_number_stat = (*block_number_stats)[i];
+                    range_stats.block_offset_stat = (*block_offset_stats)[i];
+                }
+            }
+
+            return stats;
+        };
+
+        /// Compute the overall _block_number range across all data parts being queried.
+        MinMaxStat data_block_number_range{
+            .min = std::numeric_limits<UInt64>::max(),
+            .max = 0};
+
+        for (const auto & part_with_ranges : parts_ranges)
+        {
+            auto min_block = static_cast<UInt64>(part_with_ranges.data_part->info.min_block);
+            auto max_block = static_cast<UInt64>(part_with_ranges.data_part->info.max_block);
+            data_block_number_range.min = std::min(data_block_number_range.min, min_block);
+            data_block_number_range.max = std::max(data_block_number_range.max, max_block);
+        }
+
+        patch_join_cache->build(reader_factory, stats_factory, data_block_number_range, pool_settings.threads);
     }
 }
 

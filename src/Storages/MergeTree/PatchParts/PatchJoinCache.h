@@ -88,12 +88,19 @@ struct PatchJoinCache
     /// The returned Reader reads a set of mark ranges and returns a Block with patch data.
     using ReaderFactory = std::function<Reader(const String & patch_name)>;
 
+    /// A callback that loads minmax stats for `_block_number` and `_block_offset` per mark range
+    /// for a given patch part. Returns a map from MarkRange to PatchStats.
+    using StatsFactory = std::function<PatchStatsMap(const String & patch_name, const MarkRanges & ranges)>;
+
     /// Initializes the cache with `num_buckets` entries per patch part.
     void init(const RangesInPatchParts & ranges_in_patches, size_t num_buckets);
 
     /// Pre-builds the cache by reading all patch data for Join-mode patches.
     /// Parallelized by ranges across `num_threads`. Each bucket is filled lock-free.
-    void build(const ReaderFactory & reader_factory, size_t num_threads);
+    /// `data_block_number_range` is the overall min/max `_block_number` of the data being queried,
+    /// used together with minmax stats to skip patch ranges that cannot match.
+    void build(const ReaderFactory & reader_factory, const StatsFactory & stats_factory,
+               MinMaxStat data_block_number_range, size_t num_threads);
 
     bool isBuilt() const { return built; }
 
