@@ -89,6 +89,7 @@ SELECT 'hello' NOT SIMILAR TO 'he+lo';        -- Returns: 1
 
 SELECT '-- Character class within bracket expression';
 SELECT '_' SIMILAR TO '[[:digit:]_]';         -- Returns: 1
+SELECT 'a' SIMILAR TO '[[:digit:]_]';         -- Returns: 0
 SELECT '%' SIMILAR TO '[[:digit:]%]';         -- Returns: 1
 SELECT '_' SIMILAR TO '[_[:digit:]]';         -- Returns: 1
 SELECT '%' SIMILAR TO '[%[:digit:]]';         -- Returns: 1
