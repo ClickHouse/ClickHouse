@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"max_wkb_points", 0, 10000000, "New setting to limit the maximum number of elements in WKB geometries to prevent allocation overflow from corrupted data."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

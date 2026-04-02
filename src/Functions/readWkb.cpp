@@ -7,7 +7,9 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/WKB.h>
 #include <Functions/geometryConverters.h>
@@ -20,6 +22,11 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 max_wkb_points;
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -30,10 +37,10 @@ namespace
 {
 
 template <class ReturnDataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKB : public IFunction
+class FunctionReadWKB : public IFunction, private WithContext
 {
 public:
-    explicit FunctionReadWKB() = default;
+    explicit FunctionReadWKB(ContextPtr context_) : WithContext(context_) {}
 
     static constexpr const char * name = NameHolder::name;
 
@@ -57,6 +64,8 @@ public:
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        UInt64 max_points = getContext()->getSettingsRef()[Setting::max_wkb_points];
+
         auto column = arguments[0].column;
         Serializer serializer;
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -64,7 +73,7 @@ public:
             auto str = column->getDataAt(i);
             ReadBufferFromString in_buffer(str);
 
-            auto object = parseWKBFormat(in_buffer);
+            auto object = parseWKBFormat(in_buffer, max_points);
             if (!std::holds_alternative<Geometry>(object))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {}: expected geometry type {}, got variant index {}",
@@ -77,9 +86,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>();
+        return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>(context_);
     }
 };
 
@@ -108,7 +117,7 @@ struct ReadWKBMultiPolygonNameHolder
     static constexpr const char * name = "readWKBMultiPolygon";
 };
 
-class FunctionReadWKBCommon : public IFunction
+class FunctionReadWKBCommon : public IFunction, private WithContext
 {
 public:
     enum class WKBTypes
@@ -120,7 +129,7 @@ public:
         Polygon,
     };
 
-    explicit FunctionReadWKBCommon() = default;
+    explicit FunctionReadWKBCommon(ContextPtr context_) : WithContext(context_) {}
 
     static constexpr const char * name = "readWKB";
 
@@ -148,6 +157,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        UInt64 max_points = getContext()->getSettingsRef()[Setting::max_wkb_points];
+
         auto column = arguments[0].column;
 
         PointSerializer<CartesianPoint> point_serializer;
@@ -164,7 +175,7 @@ public:
             auto str = column->getDataAt(i);
             ReadBufferFromString in_buffer(str);
 
-            auto object = parseWKBFormat(in_buffer);
+            auto object = parseWKBFormat(in_buffer, max_points);
             UInt8 converted_type = -1;
             if (std::holds_alternative<CartesianPoint>(object))
             {
@@ -213,9 +224,9 @@ public:
         return true;
     }
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context_)
     {
-        return std::make_shared<FunctionReadWKBCommon>();
+        return std::make_shared<FunctionReadWKBCommon>(context_);
     }
 };
 

@@ -6082,6 +6082,9 @@ Possible values:
     DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
 Maximum number of microseconds the function `sleep` is allowed to sleep for each block. If a user called it with a larger value, it throws an exception. It is a safety threshold.
 )", 0) \
+    DECLARE(UInt64, max_wkb_points, 10000000, R"(
+Maximum number of elements (points, rings, polygons) allowed in a single WKB geometry component parsed by `readWKB*` functions. Prevents huge memory allocations from corrupted element counts in untrusted WKB data. Set to 0 to use the built-in default (10 million).
+)", 0) \
     DECLARE(UInt64, function_visible_width_behavior, 1, R"(
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \

@@ -29,7 +29,10 @@ using GeometricObject = std::variant<
     MultiPolygon<CartesianPoint>>;
 
 /// Documentation about WKB format: https://libgeos.org/specifications/wkb/
-GeometricObject parseWKBFormat(ReadBuffer & in_buffer);
+/// max_points: upper bound on the number of elements (points, rings, etc.) in any single
+/// WKB component. 0 means use the built-in default (10M). This is controlled by the
+/// 'max_wkb_points' query setting when called from SQL functions.
+GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt64 max_points = 0);
 
 struct IWKBTransform
 {
