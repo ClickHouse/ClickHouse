@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <roaring/roaring.hh>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 
 namespace DB
 {
@@ -78,6 +79,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
+    bool enable_phrase_query_support = false;
     ASTPtr preprocessor;
 };
 
@@ -135,6 +137,7 @@ private:
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsBuilderMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
+using SortedTokensAndPositions = std::vector<std::pair<std::string_view, PositionListBuilder *>>;
 struct TokenPostingsInfo;
 
 struct PostingsSerialization
@@ -153,6 +156,8 @@ struct PostingsSerialization
         SingleBlock = 1ULL << 2,
         /// If set, the posting list is encoded using posting_list_codec.
         IsCompressed = 1ULL << 3,
+        /// If set, the token has positional data in the .pos file.
+        HasPositions = 1ULL << 4,
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
@@ -192,6 +197,11 @@ struct TokenPostingsInfo
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
+
+    /// Position data offset in the .pos file (only when HasPositions flag is set).
+    UInt64 position_offset = 0;
+    /// Number of Roaringish UInt128 entries in position data.
+    UInt32 position_entries = 0;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
@@ -351,7 +361,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         SortedTokensAndPostings && tokens_and_postings_,
         TokenToPostingsBuilderMap && tokens_map_,
         std::list<PostingList> && posting_lists_,
-        std::unique_ptr<Arena> && arena_);
+        std::unique_ptr<Arena> && arena_,
+        SortedTokensAndPositions && tokens_and_positions_,
+        std::unique_ptr<TokenToPositionListMap> && position_map_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -371,6 +383,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     TokenToPostingsBuilderMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
+    /// Position data for phrase query support. Parallel to tokens_and_postings.
+    SortedTokensAndPositions tokens_and_positions;
+    std::unique_ptr<TokenToPositionListMap> position_map;
     LoggerPtr logger;
 };
 
@@ -406,6 +421,9 @@ struct MergeTreeIndexTextGranuleBuilder
     std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
+    /// Position data for phrase query support.
+    /// Only allocated when params.enable_phrase_query_support is true.
+    std::unique_ptr<TokenToPositionListMap> position_map;
 };
 
 class MergeTreeIndexTextPreprocessor;

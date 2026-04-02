@@ -22,6 +22,7 @@ enum class TextSearchMode : uint8_t
 {
     Any,
     All,
+    Phrase,
 };
 
 enum class TextIndexDirectReadMode : uint8_t
@@ -43,6 +44,8 @@ struct TextSearchQuery
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
+    /// For phrase queries: tokens in their original order (not sorted).
+    std::vector<String> ordered_tokens;
 
     SipHash getHash() const;
 };
@@ -102,6 +105,7 @@ private:
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_MATCH_PHRASE,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators

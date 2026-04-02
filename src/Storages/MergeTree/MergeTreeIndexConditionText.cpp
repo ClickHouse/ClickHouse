@@ -137,6 +137,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         case RPNElement::FUNCTION_AND:
         case RPNElement::FUNCTION_EQUALS:
         case RPNElement::FUNCTION_HAS_ALL_TOKENS:
+        case RPNElement::FUNCTION_MATCH_PHRASE:
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
         case RPNElement::ALWAYS_FALSE:
@@ -166,7 +167,8 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
-        || function_name == "match";
+        || function_name == "match"
+        || function_name == "matchPhrase";
 }
 
 TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
@@ -206,6 +208,9 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     {
         return getHintOrNoneMode();
     }
+
+    if (function_name == "matchPhrase")
+        return TextIndexDirectReadMode::Exact;
 
     return TextIndexDirectReadMode::None;
 }
@@ -259,6 +264,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_MATCH_PHRASE,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_MATCH});
 }
@@ -287,6 +293,15 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS)
         {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_MATCH_PHRASE)
+        {
+            /// At the granule level, phrase matching degrades to "all tokens must exist".
+            /// Actual positional phrase checking is done at the row level via position data.
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
@@ -604,6 +619,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        return true;
+    }
+    if (function_name == "matchPhrase")
+    {
+        /// For phrase queries, we need tokens in their original order with duplicates preserved.
+        /// Do NOT use compactTokens which deduplicates — phrases like "the the" need both copies.
+        const String value = preprocessor->processConstant(value_field.safeGet<String>());
+        std::vector<String> ordered_tokens;
+        tokenizer->stringToTokens(value.data(), value.size(), ordered_tokens);
+        if (ordered_tokens.empty())
+            return false;
+
+        /// The sorted+deduplicated tokens are used for granule-level filtering (all tokens must exist).
+        auto sorted_tokens = tokenizer->compactTokens(ordered_tokens);
+        std::sort(sorted_tokens.begin(), sorted_tokens.end());
+
+        auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(sorted_tokens));
+        query->ordered_tokens = std::move(ordered_tokens);
+        out.function = RPNElement::FUNCTION_MATCH_PHRASE;
+        out.text_search_queries.emplace_back(std::move(query));
         return true;
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())

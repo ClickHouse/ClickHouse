@@ -14,6 +14,7 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 
 namespace DB
 {
@@ -335,8 +336,26 @@ void MergeTextIndexesTask::flushPostingList()
     if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
+    /// Serialize position data if phrase query support is enabled.
+    if (params.enable_phrase_query_support && !output_positions.empty())
+    {
+        auto it = output_streams.find(MergeTreeIndexSubstream::Type::TextIndexPositions);
+        if (it != output_streams.end() && it->second)
+        {
+            auto * positions_stream = it->second;
+            const auto & position_entries = output_positions.getEntries();
+
+            token_info.header |= PostingsSerialization::Flags::HasPositions;
+            token_info.position_offset = positions_stream->plain_hashing.count();
+            token_info.position_entries = static_cast<UInt32>(position_entries.size());
+
+            TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+        }
+    }
+
     output_infos.push_back(token_info);
     output_postings.clear();
+    output_positions = PositionListBuilder();
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
@@ -431,6 +450,58 @@ bool MergeTextIndexesTask::executeStep()
         {
             posting = adjustPartOffsets(current->order, posting);
             output_postings |= *posting;
+        }
+
+        /// Read and merge position data if phrase query support is enabled.
+        if (params.enable_phrase_query_support)
+        {
+            const auto & token_info = inputs[current->order].token_infos[current->getRow()];
+            if (token_info.header & PostingsSerialization::Flags::HasPositions)
+            {
+                auto * pos_stream = input_streams[current->order].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+                auto * pos_data_buffer = pos_stream->getDataBuffer();
+                pos_stream->seekToMark({token_info.position_offset, 0});
+
+                std::vector<RoaringishEntry> position_entries;
+                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+
+                /// Adjust doc_ids if merging parts with offset remapping.
+                if (merged_part_offsets)
+                {
+                    size_t part_index = segments[current->order].part_index;
+                    for (auto & entry : position_entries)
+                    {
+                        UInt32 old_doc_id = entry.docId();
+                        UInt32 new_doc_id = static_cast<UInt32>((*merged_part_offsets)[part_index, old_doc_id]);
+                        /// Reconstruct the entry with the new doc_id.
+                        UInt128 new_value = (static_cast<UInt128>(new_doc_id) << 96)
+                                          | (static_cast<UInt128>(entry.group()) << 64)
+                                          | static_cast<UInt128>(entry.bitmap());
+                        entry.value = new_value;
+                    }
+
+#if 0
+                    /// Offset remapping can break sort order (e.g. ReplacingMergeTree
+                    /// or CollapsingMergeTree may reorder/remove rows). Re-sort and
+                    /// merge same-bucket entries after remapping.
+                    std::sort(position_entries.begin(), position_entries.end());
+                    size_t out_idx = 0;
+                    for (size_t idx = 1; idx < position_entries.size(); ++idx)
+                    {
+                        if (position_entries[out_idx].sameBucket(position_entries[idx]))
+                            position_entries[out_idx].mergeBitmap(position_entries[idx]);
+                        else
+                            position_entries[++out_idx] = position_entries[idx];
+                    }
+                    if (!position_entries.empty())
+                        position_entries.resize(out_idx + 1);
+#endif
+                }
+
+                PositionListBuilder source;
+                source.getEntries() = std::move(position_entries);
+                output_positions.mergeFrom(source);
+            }
         }
 
         if (!current->isLast())

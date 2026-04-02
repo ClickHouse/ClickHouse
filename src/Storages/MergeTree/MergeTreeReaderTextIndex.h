@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <absl/container/flat_hash_set.h>
 #include <roaring/roaring.hh>
 
@@ -58,6 +59,8 @@ private:
     void analyzeTokensCardinality();
     void initializePostingStreams();
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
+    void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t column_offset, size_t row_offset, size_t num_rows);
+    void initializePositionsStream();
 
     size_t getNumRowsInGranule(size_t index_mark) const;
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
@@ -80,6 +83,12 @@ private:
     /// A separate stream is created for each token to read
     /// postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
+
+    /// Stream for position data (.pos file) used for phrase queries.
+    std::unique_ptr<MergeTreeReaderStream> positions_stream;
+    /// Cached phrase search results per virtual column, computed once per granule.
+    /// Maps virtual column name → sorted matching doc_ids.
+    absl::flat_hash_map<String, std::vector<UInt32>> cached_phrase_results;
 
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;

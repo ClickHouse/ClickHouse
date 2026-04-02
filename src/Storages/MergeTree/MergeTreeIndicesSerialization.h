@@ -22,6 +22,7 @@ struct MergeTreeIndexSubstream
         Regular,
         TextIndexDictionary,
         TextIndexPostings,
+        TextIndexPositions,
     };
 
     Type type;
@@ -34,7 +35,7 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings;
+        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
     }
 };
 
