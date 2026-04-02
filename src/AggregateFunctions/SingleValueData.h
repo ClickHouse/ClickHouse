@@ -52,6 +52,8 @@ struct SingleValueDataBase
     /// There are used to implement argMin / argMax
     virtual std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
     virtual std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    virtual std::optional<size_t> getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
+    virtual std::optional<size_t> getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
     virtual std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const;
     virtual std::optional<size_t> getGreatestIndexNotNullIf(
@@ -131,6 +133,8 @@ struct SingleValueDataFixed
 
     std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
     std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const;
+    std::optional<size_t> getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
+    std::optional<size_t> getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const;
     std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column, const UInt8 * __restrict null_map, const UInt8 * __restrict if_map, size_t row_begin, size_t row_end) const;
     std::optional<size_t> getGreatestIndexNotNullIf(
@@ -243,6 +247,8 @@ public:
 
     std::optional<size_t> getSmallestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
     std::optional<size_t> getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const override;
+    std::optional<size_t> getSmallestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const override;
+    std::optional<size_t> getGreatestIndexForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows) const override;
     std::optional<size_t> getSmallestIndexNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
