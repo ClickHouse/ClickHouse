@@ -104,7 +104,7 @@ SELECT ':' SIMILAR TO '[:a]';                 -- Returns: 1
 SELECT 'b' SIMILAR TO '[:a]_';                -- Returns: 0
 SELECT 'ab' SIMILAR TO '[:a]_';               -- Returns: 1
 
-SELECT '-- Bracket expression containing metacharacer';
+SELECT '-- Bracket expression containing metacharacter';
 SELECT '_' SIMILAR TO '[:_a]';                -- Returns: 1
 SELECT '_' SIMILAR TO '[_a:]';                -- Returns: 1
 SELECT '.' SIMILAR TO '[:_a]';                -- Returns: 0
@@ -116,3 +116,18 @@ SELECT 'f' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 1
 SELECT '1' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 1
 SELECT '_' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 0
 SELECT '^' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 0
+
+SELECT '-- Metacharacter before/after class in bracket expression';
+SELECT '_' SIMILAR TO '[_[:digit:]]';              -- Returns: 1
+SELECT '5' SIMILAR TO '[_[:digit:]]';              -- Returns: 1
+SELECT 'a' SIMILAR TO '[_[:digit:]]';              -- Returns: 0
+
+SELECT '%' SIMILAR TO '[[:digit:]%]';              -- Returns: 1
+SELECT '5' SIMILAR TO '[[:digit:]%]';              -- Returns: 1
+SELECT 'a' SIMILAR TO '[[:digit:]%]';              -- Returns: 0
+
+SELECT '-- Two classes with literal between';
+SELECT '_' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 1
+SELECT 'a' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 1
+SELECT '5' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 1
+SELECT '!' SIMILAR TO '[[:digit:]_[:alpha:]]';     -- Returns: 0

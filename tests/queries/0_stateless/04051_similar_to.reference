@@ -80,7 +80,7 @@
 1
 0
 1
--- Bracket expression containing metacharacer
+-- Bracket expression containing metacharacter
 1
 1
 0
@@ -90,4 +90,16 @@
 1
 1
 0
+0
+-- Metacharacter before/after class in bracket expression
+1
+1
+0
+1
+1
+0
+-- Two classes with literal between
+1
+1
+1
 0

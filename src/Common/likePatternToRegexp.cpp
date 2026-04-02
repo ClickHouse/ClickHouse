@@ -121,7 +121,7 @@ String similarToPatternToRegexp(std::string_view pattern)
             /// Keep unescaped brackets. Remember in bracket or not.
             /// We can avoid lookahead cost for class expression by this following rules:
             /// - [ (not [:) opens a bracket
-            /// - [: opens a mabye-class
+            /// - [: opens a maybe-class
             /// - :] closes a maybe-class if it's opened, else closes a bracket
             /// - ] closes a maybe-class if it's opened, else closes a bracket
             case '[':
