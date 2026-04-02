@@ -1333,7 +1333,7 @@ try
         PreformattedMessage::create("Server was built with {}. It will work slowly.", log_message));
 #endif
 
-#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+#if WITH_COVERAGE
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
