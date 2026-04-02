@@ -7,6 +7,7 @@
         "intersect_default_mode": "DISTINCT",
         "joined_subquery_requires_alias": 0,
         "join_use_nulls": 1,
+        "max_memory_usage": 0,
         "union_default_mode": "DISTINCT"
     }
 }
