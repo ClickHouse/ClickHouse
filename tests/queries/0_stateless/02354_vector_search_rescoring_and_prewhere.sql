@@ -4,6 +4,7 @@
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 DROP TABLE IF EXISTS tab;
 
