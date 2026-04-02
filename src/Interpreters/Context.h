@@ -277,6 +277,8 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
+class FilterSelectivityCache;
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -603,6 +605,11 @@ protected:
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
     /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
+
+    /// Per-query cache for filter selectivity estimates obtained by sampling granules.
+    /// Avoids redundant I/O when the plan contains multiple ReadFromMergeTree nodes
+    /// for the same table and filter (e.g., after correlated subquery decorrelation).
+    mutable std::shared_ptr<FilterSelectivityCache> filter_selectivity_cache;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
@@ -1743,6 +1750,8 @@ public:
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
     ReverseLookupCache & getReverseLookupCache() const;
+
+    FilterSelectivityCache & getFilterSelectivityCache() const;
 
     /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
     /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.

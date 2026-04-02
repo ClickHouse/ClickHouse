@@ -74,6 +74,7 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
+#include <Processors/QueryPlan/Optimizations/filterSampling.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
 #include <Core/ServerSettings.h>
@@ -7697,6 +7698,14 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
     return *query_context->reverse_lookup_cache;
+}
+
+FilterSelectivityCache & Context::getFilterSelectivityCache() const
+{
+    std::lock_guard<ContextSharedMutex> lock(mutex);
+    if (!filter_selectivity_cache)
+        filter_selectivity_cache = std::make_shared<FilterSelectivityCache>();
+    return *filter_selectivity_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

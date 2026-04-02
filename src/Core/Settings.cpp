@@ -2364,6 +2364,9 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
+    DECLARE(Bool, query_plan_estimate_filter_selectivity_by_sampling, true, R"(
+Estimate filter selectivity by sampling a few granules from `MergeTree` tables when column statistics and index analysis are not available. Used to improve join ordering decisions.
+)", 0) \
     \
     DECLARE(Bool, enable_join_transitive_predicates, false, R"(
 Infer transitive equi-join predicates from existing join conditions.
