@@ -1941,21 +1941,27 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
         key_columns[i] = payload_columns.back().get();
     }
 
+    /// Cache materialized columns by position so that multiple aggregate functions
+    /// sharing the same argument column (e.g., sum(x), avg(x), min(x)) only materialize once.
+    std::unordered_map<size_t, ColumnPtr> materialized_by_position;
+
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         /// TODO: Combinators (-If, -Array, -State) are not supported yet.
         chassert(aggregate_functions[i]->getNestedFunction() == nullptr);
 
-        /// TODO: If multiple aggregates share the same argument column, we materialize it
-        /// multiple times. Could deduplicate by caching materialized columns by position.
         for (auto pos : aggregates_positions[i])
         {
-            /// TODO: `addBatchForRows` reads columns by original row index and cannot
-            /// handle sparse encoding. Materializing here until we add sparse-aware execution.
-            auto argument_column = removeSpecialRepresentations(columns.at(pos)->convertToFullColumnIfConst());
-            argument_column = recursiveRemoveLowCardinality(argument_column);
-
-            payload_columns.push_back(std::move(argument_column));
+            auto it = materialized_by_position.find(pos);
+            if (it == materialized_by_position.end())
+            {
+                /// TODO: `addBatchForRows` reads columns by original row index and cannot
+                /// handle sparse encoding. Materializing here until we add sparse-aware execution.
+                auto argument_column = removeSpecialRepresentations(columns.at(pos)->convertToFullColumnIfConst());
+                argument_column = recursiveRemoveLowCardinality(argument_column);
+                it = materialized_by_position.emplace(pos, std::move(argument_column)).first;
+            }
+            payload_columns.push_back(it->second);
         }
     }
 
