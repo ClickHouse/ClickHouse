@@ -5,6 +5,7 @@
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 SET use_skip_indexes_for_top_k = 1;
+SET query_plan_merge_expressions = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_max_limit_for_top_k_optimization = 100000;
 SET use_top_k_dynamic_filtering = 0;

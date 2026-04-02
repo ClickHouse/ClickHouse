@@ -3,7 +3,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-export CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_merge_expressions 1 --query_plan_split_filter 1"
+export CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_merge_expressions 1 --query_plan_split_filter 1 --query_plan_merge_filters 0 --query_plan_lift_up_array_join 0 --query_plan_merge_filter_into_join_condition 0 --query_plan_lift_up_union 0 --query_plan_filter_push_down 1"
 
 $CLICKHOUSE_CLIENT -q "select x + 1 from (select y + 2 as x from (select dummy + 3 as y)) settings query_plan_max_optimizations_to_apply = 1" 2>&1 |
      grep -o "Too many optimizations applied to query plan"
@@ -211,7 +211,7 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
 $CLICKHOUSE_CLIENT -q "
     select * from (
         select y, sum(x) from (select number as x, number % 4 as y from numbers(10)) group by y with totals
-    ) where y != 2 settings query_plan_execute_functions_after_sorting=0"
+    ) where y != 2 settings query_plan_execute_functions_after_sorting=0, enable_optimize_predicate_expression=0"
 
 echo "> filter is pushed down before CreatingSets"
 $CLICKHOUSE_CLIENT -q "

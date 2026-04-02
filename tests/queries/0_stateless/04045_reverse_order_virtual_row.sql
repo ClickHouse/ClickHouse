@@ -34,7 +34,7 @@ SELECT x FROM t_04045_rvrow
 ORDER BY x DESC
 LIMIT 4
 SETTINGS read_in_order_use_virtual_row = 1, read_in_order_two_level_merge_threshold = 0,
-         optimize_read_in_order = 1, max_block_size = 8192,
+         optimize_read_in_order = 1, query_plan_read_in_order = 1, max_block_size = 8192,
          log_comment = 'desc_prelim_merge';
 
 -- DESC without preliminary merge (threshold above part count)
@@ -42,7 +42,7 @@ SELECT x FROM t_04045_rvrow
 ORDER BY x DESC
 LIMIT 4
 SETTINGS read_in_order_use_virtual_row = 1, read_in_order_two_level_merge_threshold = 5,
-         optimize_read_in_order = 1, max_block_size = 8192,
+         optimize_read_in_order = 1, query_plan_read_in_order = 1, max_block_size = 8192,
          log_comment = 'desc_no_prelim_merge';
 
 -- DESC with filter: PK prunes part 2 entirely (all rows >= 409600 fail x < 16384)
@@ -51,7 +51,7 @@ WHERE x < 8192 * 2
 ORDER BY x DESC
 LIMIT 4
 SETTINGS read_in_order_use_virtual_row = 1, read_in_order_two_level_merge_threshold = 0,
-         optimize_read_in_order = 1, max_block_size = 8192,
+         optimize_read_in_order = 1, query_plan_read_in_order = 1, max_block_size = 8192,
          log_comment = 'desc_filter';
 
 -- DESC multi-column key: ORDER BY (x DESC, y DESC) matches table key reversed
@@ -59,7 +59,7 @@ SELECT x, y FROM t_04045_rvrow
 ORDER BY x DESC, y DESC
 LIMIT 4
 SETTINGS read_in_order_use_virtual_row = 1, read_in_order_two_level_merge_threshold = 0,
-         optimize_read_in_order = 1, max_block_size = 8192,
+         optimize_read_in_order = 1, query_plan_read_in_order = 1, max_block_size = 8192,
          log_comment = 'desc_multicol';
 
 SYSTEM FLUSH LOGS query_log;

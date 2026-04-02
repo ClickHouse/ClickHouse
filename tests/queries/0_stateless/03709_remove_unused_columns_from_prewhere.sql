@@ -22,7 +22,7 @@ SELECT
     country AS country
 FROM test
 WHERE (day >= '2025-07-01') AND (day <= '2025-07-31') AND (source_type IN ('1')) AND (account_id < 900000000)
-SETTINGS query_plan_remove_unused_columns = 0;
+SETTINGS query_plan_remove_unused_columns = 0, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0, query_plan_optimize_lazy_materialization = 0;
 
 SELECT '-----';
 
@@ -32,4 +32,4 @@ SELECT
     country AS country
 FROM test
 WHERE (day >= '2025-07-01') AND (day <= '2025-07-31') AND (source_type IN ('1')) AND (account_id < 900000000)
-SETTINGS query_plan_remove_unused_columns = 1;
+SETTINGS query_plan_remove_unused_columns = 1, query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0, query_plan_optimize_lazy_materialization = 0;

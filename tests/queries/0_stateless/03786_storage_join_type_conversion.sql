@@ -8,7 +8,8 @@ SELECT
   *
 FROM
   t1__fuzz_0 RIGHT JOIN right_join__fuzz_0 USING (x)
-QUALIFY x = 1;
+QUALIFY x = 1
+SETTINGS query_plan_merge_expressions = 1, query_plan_execute_functions_after_sorting = 0, query_plan_optimize_lazy_materialization = 0, query_plan_merge_filter_into_join_condition = 0;
 
 SELECT
   *

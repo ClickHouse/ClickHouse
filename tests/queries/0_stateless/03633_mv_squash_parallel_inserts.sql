@@ -3,6 +3,7 @@
 SET max_threads=2;
 SET max_insert_threads=2;
 SET parallel_view_processing=1;
+SET query_plan_execute_functions_after_sorting=0;
 
 -- { echo }
 

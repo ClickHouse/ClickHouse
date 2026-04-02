@@ -42,7 +42,8 @@ SELECT trimLeft(explain) AS explain FROM (
              use_skip_indexes_on_data_read = 1,
              query_plan_max_limit_for_top_k_optimization = 100000,
              use_top_k_dynamic_filtering = 0,
-             query_plan_push_down_limit = 1
+             query_plan_push_down_limit = 1,
+             query_plan_merge_expressions = 1
 )
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules:%';
 
@@ -65,7 +66,8 @@ SELECT trimLeft(explain) AS explain FROM (
              use_skip_indexes_on_data_read = 1,
              query_plan_max_limit_for_top_k_optimization = 100000,
              use_top_k_dynamic_filtering = 0,
-             query_plan_push_down_limit = 1
+             query_plan_push_down_limit = 1,
+             query_plan_merge_expressions = 1
 )
 WHERE explain LIKE '%vector_similarity%' OR explain LIKE '%Granules:%';
 
