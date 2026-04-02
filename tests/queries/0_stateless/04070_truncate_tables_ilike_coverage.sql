@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-replicated-database, no-random-settings
+-- Tags: no-replicated-database
 
 DROP TABLE IF EXISTS ilike_trunc_FOO;
 DROP TABLE IF EXISTS ilike_trunc_foo;
