@@ -245,7 +245,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         if (range.highlight == Highlight::string_like)
             metacharacters = "%_";
         if (range.highlight == Highlight::string_similar_to)
-            metacharacters = "%_|()[]?*+{:-";
+            metacharacters = "%_|()[]?*+{}:-"; /// excluding regex's ^, $, and .
         if (range.highlight == Highlight::string_regexp)
             metacharacters = "|()^$.[]?*+{:-";
 
