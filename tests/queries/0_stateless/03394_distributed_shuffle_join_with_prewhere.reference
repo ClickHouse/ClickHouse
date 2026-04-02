@@ -3,7 +3,7 @@
     GatherExchange
       Aggregating (partial)
           JoinLogical
-          Join: en[5] ⋈ de[10]
+          Join: en[N] ⋈ de[N]
             ShuffleExchange (by hash([__table1.path]))
                 ReadFromMergeTree (default.test)
                   Prewhere filter column: and(equals(__table1.lang, \'en\'_String), __applyFilter(_runtime_filter_UNIQ_ID_0, __table1.path)) (removed)
