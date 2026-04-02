@@ -189,6 +189,11 @@ namespace fs = std::filesystem;
 namespace
 {
 
+bool hasNonEmptyLookupIndices(const ASTColumns * columns)
+{
+    return columns && columns->lookup_indices && !columns->lookup_indices->children.empty();
+}
+
 void checkExperimentalLookupIndexIsEnabled(ContextPtr context)
 {
     if (!context->getSettingsRef()[Setting::allow_experimental_lookup_index])
@@ -782,7 +787,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     if (create.columns_list)
     {
-        if (create.as_table_function && (create.columns_list->lookup_indices || create.columns_list->indices || create.columns_list->constraints))
+        if (create.as_table_function && (hasNonEmptyLookupIndices(create.columns_list) || create.columns_list->indices || create.columns_list->constraints))
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Indexes, lookup indices and constraints are not supported for table functions");
 
         /// Dictionaries have dictionary_attributes_list instead of columns_list
@@ -793,7 +798,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
         }
 
-        if (create.columns_list->lookup_indices)
+        if (hasNonEmptyLookupIndices(create.columns_list))
         {
             if (mode <= LoadingStrictnessLevel::CREATE)
                 checkExperimentalLookupIndexIsEnabled(getContext());
@@ -1042,13 +1047,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     ASTPtr new_columns = formatColumns(properties.columns);
-    ASTPtr new_lookup_indices = formatLookupIndices(properties.lookup_indices);
+    ASTPtr new_lookup_indices;
+    if (!properties.lookup_indices.empty())
+        new_lookup_indices = formatLookupIndices(properties.lookup_indices);
     ASTPtr new_indices = formatIndices(properties.indices);
     ASTPtr new_constraints = formatConstraints(properties.constraints);
     ASTPtr new_projections = formatProjections(properties.projections);
 
     create.columns_list->setOrReplace(create.columns_list->columns, new_columns);
-    create.columns_list->setOrReplace(create.columns_list->lookup_indices, new_lookup_indices);
+    if (new_lookup_indices)
+        create.columns_list->setOrReplace(create.columns_list->lookup_indices, new_lookup_indices);
+    else
+        create.columns_list->reset(create.columns_list->lookup_indices);
     create.columns_list->setOrReplace(create.columns_list->indices, new_indices);
     create.columns_list->setOrReplace(create.columns_list->constraints, new_constraints);
     create.columns_list->setOrReplace(create.columns_list->projections, new_projections);
