@@ -68,6 +68,40 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 
+# ========== Test BFloat16 and Float64 RowBinary ==========
+$CLICKHOUSE_LOCAL --query "SELECT '==========BFloat16===========';"
+
+$CLICKHOUSE_LOCAL --query "
+    SELECT 'RowBinary';
+    SET engine_file_truncate_on_insert = 1;
+    DROP TABLE IF EXISTS qbit;
+    CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 4)) ENGINE=Memory;
+    INSERT INTO qbit VALUES (1, [1.5, 2.5, 3.5, 4.5]);
+    INSERT INTO qbit VALUES (2, [5, 6, 7, 8]);
+    INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_4.clickhouse', 'RowBinary') SELECT * FROM qbit;
+    SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}_4.clickhouse', 'RowBinary', 'id UInt32, vec QBit(BFloat16, 4)') ORDER BY id;
+    SELECT * FROM qbit ORDER BY id;
+    DROP TABLE qbit;
+"
+
+$CLICKHOUSE_LOCAL --query "SELECT '==========Float64===========';"
+
+$CLICKHOUSE_LOCAL --query "
+    SELECT 'RowBinary';
+    SET engine_file_truncate_on_insert = 1;
+    DROP TABLE IF EXISTS qbit;
+    CREATE TABLE qbit (id UInt32, vec QBit(Float64, 3)) ENGINE=Memory;
+    INSERT INTO qbit VALUES (1, [1.1, 2.2, 3.3]);
+    INSERT INTO qbit VALUES (2, [4.4, 5.5, 6.6]);
+    INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_5.clickhouse', 'RowBinary') SELECT * FROM qbit;
+    SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}_5.clickhouse', 'RowBinary', 'id UInt32, vec QBit(Float64, 3)') ORDER BY id;
+    SELECT * FROM qbit ORDER BY id;
+    DROP TABLE qbit;
+"
+
+
 rm -f ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_1.clickhouse
 rm -f ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_2.clickhouse
 rm -f ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_3.clickhouse
+rm -f ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_4.clickhouse
+rm -f ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}_5.clickhouse

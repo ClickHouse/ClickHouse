@@ -226,7 +226,6 @@ ORDER BY day DESC
         """
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": query,
         }
 
         if log_level:
@@ -237,6 +236,7 @@ ORDER BY day DESC
                 response = requests.post(
                     url=self.url,
                     params=params,
+                    data=query.encode(),
                     headers=self.auth,
                     timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
                 )
