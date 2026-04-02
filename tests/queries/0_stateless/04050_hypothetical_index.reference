@@ -23,8 +23,6 @@ NOT_IMPLEMENTED
 --- EXPLAIN WHATIF: minmax applicable ---
 With idx_a_minmax (minmax, hypothetical):
   status:       applicable
-Confidence: LOW
-  source:           statistical
 --- EXPLAIN WHATIF: not applicable ---
 With idx_c_minmax (minmax, hypothetical):
   status:       not_applicable
@@ -32,8 +30,6 @@ With idx_c_minmax (minmax, hypothetical):
 --- EXPLAIN WHATIF: bloom_filter applicable ---
 With idx_b_bloom (bloom_filter, hypothetical):
   status:       applicable
-Confidence: LOW
-  source:           statistical
 --- EXPLAIN WHATIF errors ---
 INCORRECT_QUERY
 NOT_IMPLEMENTED

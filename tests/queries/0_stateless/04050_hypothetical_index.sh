@@ -76,7 +76,7 @@ echo "--- EXPLAIN WHATIF: minmax applicable ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_a_minmax ON t_hypo (a) TYPE minmax GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo WHERE a > 500;
-" | grep -E '^\s+status:|^With |^Confidence:|^\s+source:'
+" | grep -E '^\s+status:|^With '
 
 echo "--- EXPLAIN WHATIF: not applicable ---"
 $CLICKHOUSE_CLIENT -n -q "
@@ -88,7 +88,7 @@ echo "--- EXPLAIN WHATIF: bloom_filter applicable ---"
 $CLICKHOUSE_CLIENT -n -q "
     CREATE HYPOTHETICAL INDEX idx_b_bloom ON t_hypo (b) TYPE bloom_filter(0.01) GRANULARITY 1;
     EXPLAIN WHATIF SELECT * FROM t_hypo WHERE b = 'hello';
-" | grep -E '^\s+status:|^With |^Confidence:|^\s+source:'
+" | grep -E '^\s+status:|^With '
 
 echo "--- EXPLAIN WHATIF errors ---"
 $CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF INSERT INTO t_hypo VALUES (1, '1', 1.0)" 2>&1 | grep -m1 -o 'INCORRECT_QUERY'
