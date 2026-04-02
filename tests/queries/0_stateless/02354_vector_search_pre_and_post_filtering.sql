@@ -5,6 +5,7 @@
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 SET use_skip_indexes_on_data_read = 1;
+SET secondary_indices_enable_bulk_filtering = 1;
 SET enable_parallel_replicas = 0; -- parallel replicas bypass the vector similarity index for non-replicated MergeTree
 
 DROP TABLE IF EXISTS tab;

@@ -1423,7 +1423,6 @@ class SettingsRandomizer:
         "query_plan_lift_up_array_join": lambda: random.random() > 0.05,
         "query_plan_push_down_limit": lambda: random.random() > 0.05,
         "query_plan_split_filter": lambda: random.random() > 0.05,
-        "query_plan_merge_expressions": lambda: random.random() > 0.05,
         "query_plan_execute_functions_after_sorting": lambda: random.random() > 0.05,
         "query_plan_lift_up_union": lambda: random.random() > 0.05,
         "query_plan_read_in_order": lambda: random.random() > 0.05,

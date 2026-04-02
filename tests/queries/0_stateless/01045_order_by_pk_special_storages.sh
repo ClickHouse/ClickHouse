@@ -36,7 +36,7 @@ fi
 $CLICKHOUSE_CLIENT -q "SELECT '---StorageBuffer---'"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE buf (a UInt32, s String) engine = Buffer('$CLICKHOUSE_DATABASE', s2, 16, 10, 100, 10000, 1000000, 10000000, 100000000)"
 $CLICKHOUSE_CLIENT -q "SELECT a, s FROM buf ORDER BY a, s LIMIT 10"
-rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM buf ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 --query_plan_read_in_order=1  --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 --use_top_k_dynamic_filtering=0 --use_skip_indexes_for_top_k=0 --optimize_sorting_by_input_stream_properties=1 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0 | grep "rows_read" | sed 's/[^0-9]*//g')
+rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a FROM buf ORDER BY a LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 --query_plan_read_in_order=1  --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 --use_top_k_dynamic_filtering=0 --use_skip_indexes_for_top_k=0 --optimize_sorting_by_input_stream_properties=1 --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0 --enable_parallel_replicas=0 | grep "rows_read" | sed 's/[^0-9]*//g')
 
 # Expected number of read rows with a bit margin
 if [[ $rows_read -lt 500 ]]

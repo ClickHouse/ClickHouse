@@ -155,7 +155,8 @@ SELECT explain FROM (
     SELECT count() FROM t_u32, t_u64, t_i32
     WHERE t_u32.x = t_u64.x AND t_u64.x = t_i32.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
-             query_plan_join_swap_table = 'false'
+             query_plan_join_swap_table = 'false',
+             query_plan_merge_expressions = 1
 ) WHERE explain LIKE '%Clauses%';
 
 -- 13b: same-type Strings — transitivity works, each step has a clause
@@ -183,7 +184,8 @@ SELECT explain FROM (
     WHERE t_str.x = t_str2.x AND t_str2.x = t_str3.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize',
              query_plan_join_swap_table = 'false',
-             use_statistics = 1
+             use_statistics = 1,
+             query_plan_merge_expressions = 1
 ) WHERE explain LIKE '%Clauses%';
 
 DROP TABLE t_u32;
@@ -231,7 +233,8 @@ SELECT explain FROM (
     SELECT count() FROM n1, n2, n3 WHERE n1.x = n2.x AND n2.x = n3.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize',
              query_plan_join_swap_table = 'false',
-             use_statistics = 1
+             use_statistics = 1,
+             query_plan_merge_expressions = 1
 ) WHERE explain LIKE '%Clauses%';
 
 DROP TABLE n1; DROP TABLE n2; DROP TABLE n3;
@@ -257,7 +260,8 @@ SELECT explain FROM (
     EXPLAIN actions = 1
     SELECT count() FROM nlc1, nu2, nlc3 WHERE nlc1.x = nu2.x AND nu2.x = nlc3.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
-             query_plan_join_swap_table = 'false'
+             query_plan_join_swap_table = 'false',
+             query_plan_merge_expressions = 1
 ) WHERE explain LIKE '%Clauses%';
 
 DROP TABLE nlc1; DROP TABLE nu2; DROP TABLE nlc3;
@@ -286,7 +290,8 @@ SELECT explain FROM (
     SELECT count() FROM lc1, lc2, lc3 WHERE lc1.x = lc2.x AND lc2.x = lc3.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize',
              query_plan_join_swap_table = 'false',
-             use_statistics = 1
+             use_statistics = 1,
+             query_plan_merge_expressions = 1
 ) WHERE explain LIKE '%Clauses%';
 
 DROP TABLE lc1; DROP TABLE lc2; DROP TABLE lc3;
