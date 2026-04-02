@@ -59,7 +59,8 @@ public:
         FileProgressCallback /* callback */,
         size_t /* list_batch_size */,
         StorageMetadataPtr storage_metadata,
-        ContextPtr context) const
+        ContextPtr context,
+        const NamesAndTypesList & /* virtual_columns */) const
         = 0;
 
     /// Table schema from data lake metadata.

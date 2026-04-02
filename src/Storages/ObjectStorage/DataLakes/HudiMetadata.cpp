@@ -105,7 +105,8 @@ ObjectIterator HudiMetadata::iterate(
     FileProgressCallback callback,
     size_t /* list_batch_size */,
     StorageMetadataPtr /* storage_metadata_snapshot*/,
-    ContextPtr /* context  */) const
+    ContextPtr /* context */,
+    const NamesAndTypesList & /*virtual_columns*/) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }

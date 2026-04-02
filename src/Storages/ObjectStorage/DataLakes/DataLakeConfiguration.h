@@ -270,10 +270,11 @@ public:
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
         StorageMetadataPtr storage_metadata,
-        ContextPtr context) override
+        ContextPtr context,
+        const NamesAndTypesList & virtual_columns) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context, virtual_columns);
     }
 
 #if USE_PARQUET

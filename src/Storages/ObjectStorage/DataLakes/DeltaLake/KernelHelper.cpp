@@ -48,6 +48,8 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
+    std::string getNamespace() const override { return url.bucket; }
+
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
@@ -131,6 +133,8 @@ public:
     const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return path; }
+
+    std::string getNamespace() const override { return {}; }
 
     ffi::EngineBuilder * createBuilder() const override
     {

@@ -310,7 +310,8 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     FileProgressCallback callback,
     size_t list_batch_size,
     StorageMetadataPtr storage_metadata_snapshot,
-    ContextPtr context) const
+    ContextPtr context,
+    const NamesAndTypesList & virtual_columns) const
 {
     logMetadataFiles(context);
 
@@ -330,7 +331,7 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No version found in table state snapshot");
     }
 
-    return getTableSnapshot(snapshot_version)->iterate(filter_dag, callback, list_batch_size, context);
+    return getTableSnapshot(snapshot_version)->iterate(filter_dag, callback, list_batch_size, context, kernel_helper->getNamespace(), virtual_columns);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const

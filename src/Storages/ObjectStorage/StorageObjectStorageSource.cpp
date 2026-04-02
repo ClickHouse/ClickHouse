@@ -257,7 +257,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     else if (configuration->supportsFileIterator())
     {
         auto iter = configuration->iterate(
-            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context);
+            filter_actions_dag, file_progress_callback, query_settings.list_object_keys_size, storage_metadata, local_context, virtual_columns);
 
         if (filter_actions_dag)
         {

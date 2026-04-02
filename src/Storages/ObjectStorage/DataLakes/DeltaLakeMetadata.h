@@ -81,7 +81,8 @@ protected:
         FileProgressCallback callback,
         size_t list_batch_size,
         StorageMetadataPtr storage_metadata_snapshot,
-        ContextPtr context) const override;
+        ContextPtr context,
+        const NamesAndTypesList & virtual_columns) const override;
 
 private:
     mutable Strings data_files;

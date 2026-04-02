@@ -71,7 +71,8 @@ public:
         FileProgressCallback callback,
         size_t /* list_batch_size */,
         StorageMetadataPtr /* storage_metadata */,
-        ContextPtr /* context */)
+        ContextPtr /* context */,
+        const NamesAndTypesList & /* virtual_columns */)
         const override;
     const char * getName() const override { return name; }
 private:

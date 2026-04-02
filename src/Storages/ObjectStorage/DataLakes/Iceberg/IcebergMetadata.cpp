@@ -1029,7 +1029,8 @@ ObjectIterator IcebergMetadata::iterate(
     FileProgressCallback callback,
     size_t /* list_batch_size */,
     StorageMetadataPtr storage_metadata,
-    ContextPtr local_context) const
+    ContextPtr local_context,
+    const NamesAndTypesList & /*virtual_columns*/) const
 {
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata);
     if (iceberg_table_state == nullptr)

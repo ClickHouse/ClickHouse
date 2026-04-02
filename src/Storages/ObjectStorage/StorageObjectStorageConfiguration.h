@@ -201,7 +201,8 @@ public:
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
         StorageMetadataPtr /*storage_metadata*/,
-        ContextPtr /*context*/)
+        ContextPtr /*context*/,
+        const NamesAndTypesList & /*virtual_columns*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }

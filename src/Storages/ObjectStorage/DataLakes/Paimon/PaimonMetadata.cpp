@@ -178,7 +178,8 @@ ObjectIterator PaimonMetadata::iterate(
     FileProgressCallback callback_,
     size_t /* list_batch_size */,
     StorageMetadataPtr /*storage_metadata*/,
-    ContextPtr context_) const
+    ContextPtr context_,
+    const NamesAndTypesList & /*virtual_columns*/) const
 {
     SharedLockGuard shared_lock(mutex);
     Strings data_files;

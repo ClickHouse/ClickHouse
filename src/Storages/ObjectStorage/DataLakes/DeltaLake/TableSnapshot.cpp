@@ -25,6 +25,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/PartitionPruner.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -123,7 +125,9 @@ public:
         bool throw_on_engine_predicate_error_,
         bool enable_engine_predicate_,
         UpdateStatsFunc update_stats_func_,
-        LoggerPtr log_)
+        LoggerPtr log_,
+        std::string object_namespace_,
+        DB::NamesAndTypesList virtual_columns_)
         : kernel_snapshot_state(kernel_snapshot_state_)
         , helper(helper_)
         , read_schema(read_schema_)
@@ -136,6 +140,8 @@ public:
         , enable_expression_visitor_logging(enable_expression_visitor_logging_)
         , throw_on_engine_predicate_error(throw_on_engine_predicate_error_)
         , enable_engine_predicate(enable_engine_predicate_)
+        , virtual_columns(std::move(virtual_columns_))
+        , object_namespace(std::move(object_namespace_))
         , update_stats_func(update_stats_func_)
     {
         if (filter_)
@@ -147,6 +153,16 @@ public:
                 partition_columns_,
                 physical_names_map_,
                 DB::Context::getGlobalContextInstance());
+
+            auto virtual_column_filter_dag = DB::VirtualColumnUtils::createPathAndFileFilterDAG(
+                filter_->getOutputs().at(0),
+                virtual_columns,
+                DB::Context::getGlobalContextInstance());
+            if (virtual_column_filter_dag)
+            {
+                DB::VirtualColumnUtils::buildSetsForDAG(*virtual_column_filter_dag, DB::Context::getGlobalContextInstance());
+                virtual_column_filter = std::make_shared<DB::ExpressionActions>(std::move(*virtual_column_filter_dag));
+            }
 
             LOG_TEST(log, "Using filter expression");
         }
@@ -342,6 +358,27 @@ public:
             schedule_next_batch_cv.notify_one();
 
             auto object = std::move(scan_item->object);
+
+            if (virtual_column_filter)
+            {
+                const auto & key = object->getPath();
+                auto path = key;
+                if (path.starts_with("/"))
+                    path = path.substr(1);
+                if (!object_namespace.empty())
+                    path = (fs::path(object_namespace) / path).string();
+                std::vector<std::string> keys({key});
+                DB::VirtualColumnUtils::filterByPathOrFile(
+                    keys, std::vector<std::string>{path}, virtual_column_filter,
+                    virtual_columns, /*hive_columns=*/{},
+                    DB::Context::getGlobalContextInstance());
+                if (keys.empty())
+                {
+                    ProfileEvents::increment(ProfileEvents::DeltaLakePartitionPrunedFiles);
+                    LOG_TEST(log, "Skipping file {} according to virtual column filter", object->getPath());
+                    continue;
+                }
+            }
 
             /// Needed for partition values.
             parseTransformHandle(*scan_item, object);
@@ -545,6 +582,9 @@ private:
     KernelScanDataIterator scan_data_iterator;
     std::optional<PartitionPruner> pruner;
     std::optional<DB::ActionsDAG> filter;
+    DB::ExpressionActionsPtr virtual_column_filter;
+    DB::NamesAndTypesList virtual_columns;
+    std::string object_namespace;
 
     KernelHelperPtr helper;
     DB::NamesAndTypesList read_schema;
@@ -778,7 +818,9 @@ DB::ObjectIterator TableSnapshot::iterate(
     const DB::ActionsDAG * filter_dag,
     DB::IDataLakeMetadata::FileProgressCallback callback,
     size_t list_batch_size,
-    DB::ContextPtr context)
+    DB::ContextPtr context,
+    std::string object_namespace,
+    const DB::NamesAndTypesList & virtual_columns)
 {
     const auto & settings = context->getSettingsRef();
     std::lock_guard lock(mutex);
@@ -814,7 +856,9 @@ DB::ObjectIterator TableSnapshot::iterate(
         settings[DB::Setting::delta_lake_throw_on_engine_predicate_error],
         settings[DB::Setting::delta_lake_enable_engine_predicate],
         std::move(update_stats_func),
-        log);
+        log,
+        std::move(object_namespace),
+        virtual_columns);
 }
 
 void TableSnapshot::initOrUpdateSchemaIfChanged() const

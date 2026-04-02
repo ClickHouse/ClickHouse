@@ -30,6 +30,9 @@ public:
     /// (while full location would be "s3://bucket/path/to/table/data")
     virtual const std::string & getDataPath() const = 0;
 
+    /// Returns object storage namespace (e.g. S3 bucket name), or empty string if not applicable.
+    virtual std::string getNamespace() const = 0;
+
     /// Create "EngineBuilder" which allows to work with
     /// delta-kernel-rs ffi api and performs all interactions
     /// with object storage layer.

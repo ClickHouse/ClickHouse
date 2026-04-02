@@ -142,7 +142,8 @@ public:
         FileProgressCallback callback,
         size_t list_batch_size,
         StorageMetadataPtr storage_metadata,
-        ContextPtr local_context) const override;
+        ContextPtr local_context,
+        const NamesAndTypesList & virtual_columns) const override;
 
     void drop(ContextPtr context) override;
 

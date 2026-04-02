@@ -44,7 +44,9 @@ public:
         const DB::ActionsDAG * filter_dag,
         DB::IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        std::string object_namespace,
+        const DB::NamesAndTypesList & virtual_columns);
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema() const;
