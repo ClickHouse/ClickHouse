@@ -13,6 +13,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <Core/Settings.h>
 
@@ -89,15 +90,84 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
+/// Try to estimate skip ratio using column statistics.
+/// Returns true and fills result fields if statistics are available.
+bool tryEstimateWithStatistics(
+    WhatIfIndexEstimator::IndexResult & result,
+    ReadFromMergeTree * read_step,
+    const ReadFromMergeTree::AnalysisResult & analysis,
+    const RangesInDataParts & parts,
+    const ActionsDAG::Node * filter_node,
+    ContextPtr context)
+{
+    auto metadata = read_step->getStorageMetadata();
+
+    if (!metadata->hasStatistics())
+        return false;
+
+    if (parts.empty())
+        return false;
+
+    ConditionSelectivityEstimatorBuilder builder(context);
+    bool has_any_stats = false;
+
+    for (const auto & part : parts)
+    {
+        try
+        {
+            /// Load statistics for all columns (not just index columns),
+            /// because the filter predicate may reference columns beyond the index definition.
+            auto stats = part.data_part->loadStatistics();
+            if (!stats.empty())
+            {
+                builder.markDataPart(part.data_part);
+                for (const auto & [column_name, stat] : stats)
+                    builder.addStatistics(column_name, stat);
+                has_any_stats = true;
+            }
+        }
+        catch (...)
+        {
+            /// Skip parts where statistics cannot be loaded.
+        }
+    }
+
+    if (!has_any_stats)
+        return false;
+
+    auto estimator = builder.getEstimator();
+    if (!estimator)
+        return false;
+
+    auto profile = estimator->estimateRelationProfile(metadata, filter_node);
+
+    auto unfiltered = estimator->estimateRelationProfile();
+    if (unfiltered.rows == 0)
+        return false;
+
+    /// selectivity = fraction of rows that pass the filter.
+    /// skip_ratio = fraction of granules the index could skip ≈ 1 - selectivity.
+    /// This is an approximation: skip indexes work at granule level, not row level,
+    /// so the actual skip ratio depends on data distribution within granules.
+    /// Column statistics give us row-level selectivity which is a reasonable upper bound
+    /// for the skip ratio.
+    double selectivity = std::min(1.0, static_cast<double>(profile.rows) / static_cast<double>(unfiltered.rows));
+    result.skip_ratio = 1.0 - selectivity;
+    result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
+    result.estimated_parts = analysis.selected_parts;
+    result.estimate_source = "statistical";
+    result.confidence = "MEDIUM";
+    return true;
+}
+
 /// Evaluate a single hypothetical index against the baseline.
-/// Checks applicability via createIndexCondition + alwaysUnknownOrTrue.
-/// Full empirical evaluation (reading part column data, building in-memory granules)
-/// is planned for Phase 2; this version reports the condition's filtering capability
-/// and provides a stat-based estimate.
+/// Checks applicability via createIndexCondition + alwaysUnknownOrTrue,
+/// then tries to estimate skip ratio using column statistics.
 WhatIfIndexEstimator::IndexResult evaluateIndex(
     const IndexDescription & index_desc,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
+    const RangesInDataParts & saved_parts,
     const WhatIfSettings & /* settings */,
     ContextPtr context)
 {
@@ -150,25 +220,23 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
 
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
-
-    /// For the MVP, report that the index is applicable with the condition description.
-    /// Full empirical evaluation (Mode B) with actual column data reading is Phase 2.
-    /// For now, provide a stat-based placeholder noting that empirical mode is not yet implemented.
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
-    result.estimate_source = "statistical";
-    result.confidence = "LOW";
 
-    /// Conservative stat-based estimate.
-    /// Without column statistics, we can only report applicability.
-    /// The index condition was successfully built, meaning the predicate IS filterable.
+    /// Try to estimate skip ratio using column statistics (if available).
+    if (tryEstimateWithStatistics(result, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
+        return result;
+
+    /// No column statistics available — can only report applicability.
+    result.estimate_source = "applicability_only";
+    result.confidence = "LOW";
     result.estimated_marks = analysis.selected_marks;
     result.estimated_parts = analysis.selected_parts;
     result.skip_ratio = 0.0;
 
     result.warnings.push_back(
-        "Empirical estimation (Mode B) requires reading part column data and is not yet implemented. "
-        "The index IS applicable to this predicate. Use ADD STATISTICS + MATERIALIZE STATISTICS "
-        "for column-level stats, or wait for Phase 2 with full empirical support.");
+        "No column statistics available for estimation. "
+        "Use ALTER TABLE ... ADD STATISTICS <column> TYPE tdigest, uniq, countmin "
+        "and MATERIALIZE STATISTICS to enable skip ratio estimation.");
 
     return result;
 }
@@ -200,12 +268,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         interpreter.buildQueryPlan(plan);
     }
 
-    /// Build the pipeline to trigger index analysis and populate AnalysisResult.
-    auto builder = plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings(plan_context),
-        BuildQueryPipelineSettings(plan_context));
-
-    /// Find ReadFromMergeTree steps.
+    /// Find ReadFromMergeTree steps before building pipeline.
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
 
@@ -219,11 +282,20 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             read_steps.size());
 
     auto * read_step = read_steps[0];
+    const auto & data = read_step->getMergeTreeData();
+
+    /// Save parts before building pipeline (pipeline build moves them out of the step).
+    auto saved_parts = read_step->getParts();
+
+    /// Build the pipeline to trigger index analysis and populate AnalysisResult.
+    auto builder = plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings(plan_context),
+        BuildQueryPipelineSettings(plan_context));
+
     auto analysis_ptr = read_step->getAnalyzedResult();
     if (!analysis_ptr)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
-    const auto & data = read_step->getMergeTreeData();
 
     Result result;
     result.database = data.getStorageID().getDatabaseName();
@@ -259,7 +331,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     /// Evaluate each hypothetical index independently against baseline.
     for (const auto & index_desc : hypo_indexes)
     {
-        auto index_result = evaluateIndex(index_desc, read_step, analysis, settings, context);
+        auto index_result = evaluateIndex(index_desc, read_step, analysis, saved_parts, settings, context);
         result.index_results.push_back(std::move(index_result));
     }
 
