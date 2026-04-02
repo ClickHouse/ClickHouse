@@ -316,12 +316,14 @@ def get_optimal_test_batch(
     The function optimizes tail latency of batch with num_workers parallel workers.
     The function works in a deterministic way, so that batch calculated on the other machine with the same input generates the same result.
     """
-    # parallel_skip_prefixes sanity check
-    for test_config in TEST_CONFIGS:
-        assert any(
-            test_file.removeprefix("./").startswith(test_config.prefix)
-            for test_file in tests
-        ), f"No test files found for prefix [{test_config.prefix}] in [{tests}]"
+    # parallel_skip_prefixes sanity check — skip for arm-incompatible jobs which
+    # intentionally pass a small filtered list that won't cover all TEST_CONFIGS prefixes
+    if "arm-incompatible" not in (job_options or ""):
+        for test_config in TEST_CONFIGS:
+            assert any(
+                test_file.removeprefix("./").startswith(test_config.prefix)
+                for test_file in tests
+            ), f"No test files found for prefix [{test_config.prefix}] in [{tests}]"
 
     sequential_test_modules = [
         test_file
