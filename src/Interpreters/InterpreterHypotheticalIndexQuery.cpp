@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterHypotheticalIndexQuery.h>
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterFactory.h>

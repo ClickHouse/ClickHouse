@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Stopwatch.h>
@@ -220,7 +221,10 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             read_steps.size());
 
     auto * read_step = read_steps[0];
-    const auto & analysis = read_step->getAnalysisResult();
+    auto analysis_ptr = read_step->getAnalyzedResult();
+    if (!analysis_ptr)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
+    const auto & analysis = *analysis_ptr;
     const auto & data = read_step->getMergeTreeData();
 
     Result result;
@@ -236,7 +240,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         auto total_rows = data.getTotalActiveSizeInRows();
         if (total_rows > 0)
             result.baseline_est_bytes = static_cast<UInt64>(
-                static_cast<double>(total_bytes) / total_rows * analysis.selected_rows);
+                static_cast<double>(total_bytes) / static_cast<double>(total_rows) * static_cast<double>(analysis.selected_rows));
     }
 
     /// Get hypothetical indexes for this table.
@@ -302,7 +306,7 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         if (baseline_marks > 0 && baseline_est_bytes > 0)
         {
             UInt64 hypo_bytes = static_cast<UInt64>(
-                static_cast<double>(baseline_est_bytes) * idx.estimated_marks / baseline_marks);
+                static_cast<double>(baseline_est_bytes) * static_cast<double>(idx.estimated_marks) / static_cast<double>(baseline_marks));
             double gb = static_cast<double>(hypo_bytes) / (1024.0 * 1024.0 * 1024.0);
             if (gb >= 0.01)
                 writeString(fmt::format("  est_bytes:    {:.2f} GB\n", gb), out);
