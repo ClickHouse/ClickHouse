@@ -82,3 +82,19 @@ Original:          EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_thre
 format(original):  EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT `Null`
 format(formatted): EXPLAIN AST (SELECT 1) UNION ALL (SELECT 2) SETTINGS max_threads = 1 INTO OUTFILE '/dev/null' FORMAT `Null`
 
+Original:          CREATE ROW POLICY OR REPLACE p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))
+format(original):  CREATE ROW POLICY OR REPLACE p0 ON t0 FOR SELECT USING 1 AND (2 AND (4 AS a)) AND (3 AS b)
+format(formatted): CREATE ROW POLICY OR REPLACE p0 ON t0 FOR SELECT USING 1 AND (2 AND (4 AS a)) AND (3 AS b)
+
+Original:          ALTER ROW POLICY p0 ON t0 USING (1 AND (2 AND (4 AS a)) AND (3 as b))
+format(original):  ALTER ROW POLICY p0 ON t0 FOR SELECT USING 1 AND (2 AND (4 AS a)) AND (3 AS b)
+format(formatted): ALTER ROW POLICY p0 ON t0 FOR SELECT USING 1 AND (2 AND (4 AS a)) AND (3 AS b)
+
+Original:          CREATE ROW POLICY OR REPLACE p0 ON t0 WITH CHECK (2 AND (3 AS b))
+format(original):  CREATE ROW POLICY OR REPLACE p0 ON t0
+format(formatted): CREATE ROW POLICY OR REPLACE p0 ON t0
+
+Original:          ALTER ROW POLICY p0 ON t0 WITH CHECK (2 AND (3 AS b))
+format(original):  ALTER ROW POLICY p0 ON t0
+format(formatted): ALTER ROW POLICY p0 ON t0
+

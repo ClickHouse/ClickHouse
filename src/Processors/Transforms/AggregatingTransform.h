@@ -41,27 +41,30 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    Block header;
 
-    AggregatingTransformParams(SharedHeader header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(SharedHeader header_, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header_, params))
         , final(final_)
+        , header(*header_)
     {
     }
 
     AggregatingTransformParams(
-        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        const Block & header_, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header_, params))
         , final(final_)
+        , header(header_)
     {
     }
 
-    Block getHeader() const { return aggregator.getHeader(final); }
+    Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
+    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData

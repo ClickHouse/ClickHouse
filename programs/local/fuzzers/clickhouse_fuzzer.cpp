@@ -11,9 +11,6 @@
 
 #include <boost/algorithm/string/split.hpp>
 
-#if defined(SANITIZE_COVERAGE)
-#    include <Common/Coverage.h>
-#endif
 
 #include <unistd.h>
 
@@ -72,15 +69,15 @@ using MainFunc = int (*)(int, char**);
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
+extern "C" void (*je_malloc_message)(void *, const char * s);
 __attribute__((constructor(0))) void init_je_malloc_message()
 {
-    malloc_message = [](void *, const char * str)
+    je_malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -139,10 +136,6 @@ int clickhouseMain(int argc_, char ** argv_)
     std::set_new_handler(nullptr);
 
     int exit_code = mainEntryClickHouseLocal(argc_, argv_);
-
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
 
     return exit_code;
 }

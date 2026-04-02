@@ -309,7 +309,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `MinMax`, `Partition`, `PrimaryKey` or `Skip`) and optional keys:
+With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
 
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
@@ -325,7 +325,7 @@ Example:
 "Node Type": "ReadFromMergeTree",
 "Indexes": [
   {
-    "Type": "MinMax",
+    "Type": "Partition Min-Max",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
     "Parts": 4/5,
@@ -524,7 +524,33 @@ Expression ((Project names + Projection))
 
 In both examples, the query plan shows the complete execution flow including local and remote steps.
 
-With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation:
+With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation,
+and additional information is shown for key steps:
+
+- **Query output columns** are printed at the top of the plan.
+- **Source steps** (such as `ReadFromMergeTree`) display their output columns.
+- **Join steps** display the join relation using mathematical notation, estimated result row count,
+  and which output columns come from the left vs. right side. The following symbols are used to
+  represent different join types:
+
+| Symbol | Join Type |
+|--------|-----------|
+| `⋈` | Inner Join |
+| `⟕` | Left Join |
+| `⟖` | Right Join |
+| `⟗` | Full Join |
+| `⋉` | Left Semi Join |
+| `⋊` | Right Semi Join |
+| `⋉` with strikethrough | Left Anti Join |
+| `⋊` with strikethrough | Right Anti Join |
+| `×` | Cross Join |
+
+For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
+The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
+when table statistics are available.
+
+The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and
+detailed action info, making the plan easier to read.
 
 ```sql
 EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
@@ -535,6 +561,39 @@ Expression ((Project names + Projection))
 └──Aggregating
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       └──ReadFromSystemNumbers
+```
+
+A more detailed example with joins:
+
+```sql
+CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
+INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
+
+EXPLAIN actions = 1, compact = 1, pretty = 1
+SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
+```
+
+```text
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: [(__table1.id) = (__table2.id)]
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
 ```
 
 ### EXPLAIN PIPELINE {#explain-pipeline}
