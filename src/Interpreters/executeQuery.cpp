@@ -1713,6 +1713,109 @@ static BlockIO executeQueryImpl(
                 return false;
             };
 
+            /// Common query setup: starts implicit transaction, creates interpreter, checks
+            /// quotas, fires the HTTP continue callback, and calls interpreter->execute().
+            /// Extracted to avoid duplicating this logic between the getOrSet executor path
+            /// (where it runs only on the winning thread) and the writes-disabled fallback path.
+            auto setup_interpreter_and_execute = [&]()
+            {
+                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
+                {
+                    try
+                    {
+                        if (context->isGlobalContext())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
+
+                        implicit_tcl_executor->begin(context);
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage("while starting a transaction with 'implicit_transaction'");
+                        throw;
+                    }
+                }
+
+                if (settings[Setting::enable_shared_storage_snapshot_in_query])
+                {
+                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                    context->setQueryMetadataCache(query_metadata_cache);
+                }
+
+                if (out_ast)
+                    interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
+
+                const auto & query_settings = context->getSettingsRef();
+                if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
+                {
+                    if (!interpreter->supportsTransactions())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
+
+                    if (query_settings[Setting::apply_mutations_on_fly])
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
+                }
+
+                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
+                // We need to force to build it here to check if we need to ignore quota.
+                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                    interpreter_with_analyzer->getQueryPlan();
+
+                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
+                {
+                    quota = context->getQuota();
+                    if (quota)
+                    {
+                        if (quota->isKeyedByNormalizedQueryHash())
+                        {
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+                        }
+                        else
+                        {
+                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                                quota->used(QuotaType::QUERY_SELECTS, 1);
+                            else if (out_ast->as<ASTInsertQuery>())
+                                quota->used(QuotaType::QUERY_INSERTS, 1);
+                            quota->used(QuotaType::QUERIES, 1);
+                            quota->checkExceeded(QuotaType::ERRORS);
+                        }
+
+                        quota->usedPerNormalizedHash(normalized_query_hash);
+                    }
+                }
+
+                if (http_continue_callback && !internal)
+                    http_continue_callback();
+
+                if (interpreter)
+                {
+                    if (!interpreter->ignoreLimits())
+                    {
+                        limits.mode = LimitsMode::LIMITS_CURRENT;
+                        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
+                    }
+
+                    if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
+                    {
+                        create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                        create_interpreter->setInternal(internal);
+                    }
+
+                    std::unique_ptr<OpenTelemetry::SpanHolder> span;
+                    if (OpenTelemetry::CurrentContext().isTraceEnabled())
+                    {
+                        auto * raw_interpreter_ptr = interpreter.get();
+                        String class_name = raw_interpreter_ptr ? demangle(typeid(*raw_interpreter_ptr).name()) : "QueryPlan";
+                        span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
+                    }
+
+                    res = interpreter->execute();
+                }
+            };
+
             const bool query_result_cache_hit = get_result_from_query_result_cache();
             /// Thundering herd prevention via QueryResultCache::getOrSet.
             ///
@@ -1762,105 +1865,8 @@ static BlockIO executeQueryImpl(
                     [&]() -> std::shared_ptr<QueryResultCache::Entry>
                     {
                         /// This lambda runs only on the executor thread. Waiter threads block
-                        /// inside getOrSet and never enter here. All query setup (transactions,
-                        /// interpreter construction, quota accounting, and pipeline execution)
-                        /// is performed inside the lambda so waiters skip all of it.
-
-                        if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
-                        {
-                            try
-                            {
-                                if (context->isGlobalContext())
-                                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
-
-                                implicit_tcl_executor->begin(context);
-                            }
-                            catch (Exception & e)
-                            {
-                                e.addMessage("while starting a transaction with 'implicit_transaction'");
-                                throw;
-                            }
-                        }
-
-                        if (settings[Setting::enable_shared_storage_snapshot_in_query])
-                        {
-                            query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                            context->setQueryMetadataCache(query_metadata_cache);
-                        }
-
-                        if (out_ast)
-                            interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
-
-                        const auto & query_settings = context->getSettingsRef();
-                        if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
-                        {
-                            if (!interpreter->supportsTransactions())
-                                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
-
-                            if (query_settings[Setting::apply_mutations_on_fly])
-                                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
-                        }
-
-                        // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
-                        // We need to force to build it here to check if we need to ignore quota.
-                        if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
-                            interpreter_with_analyzer->getQueryPlan();
-
-                        if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
-                        {
-                            quota = context->getQuota();
-                            if (quota)
-                            {
-                                if (quota->isKeyedByNormalizedQueryHash())
-                                {
-                                    if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                        quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
-                                    else if (out_ast->as<ASTInsertQuery>())
-                                        quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                                    quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-                                }
-                                else
-                                {
-                                    if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                        quota->used(QuotaType::QUERY_SELECTS, 1);
-                                    else if (out_ast->as<ASTInsertQuery>())
-                                        quota->used(QuotaType::QUERY_INSERTS, 1);
-                                    quota->used(QuotaType::QUERIES, 1);
-                                    quota->checkExceeded(QuotaType::ERRORS);
-                                }
-
-                                quota->usedPerNormalizedHash(normalized_query_hash);
-                            }
-                        }
-
-                        if (http_continue_callback && !internal)
-                            http_continue_callback();
-
-                        if (interpreter)
-                        {
-                            if (!interpreter->ignoreLimits())
-                            {
-                                limits.mode = LimitsMode::LIMITS_CURRENT;
-                                limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                            }
-
-                            if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
-                            {
-                                create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                                create_interpreter->setInternal(internal);
-                            }
-
-                            std::unique_ptr<OpenTelemetry::SpanHolder> span;
-                            if (OpenTelemetry::CurrentContext().isTraceEnabled())
-                            {
-                                auto * raw_interpreter_ptr = interpreter.get();
-                                String class_name = raw_interpreter_ptr ? demangle(typeid(*raw_interpreter_ptr).name()) : "QueryPlan";
-                                span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
-                            }
-
-                            res = interpreter->execute();
-                        }
+                        /// inside getOrSet and never enter here.
+                        setup_interpreter_and_execute();
 
                         /// Synchronously drain the pipeline and collect all result blocks into
                         /// the Entry. PullingPipelineExecutor drives the pipeline to completion
@@ -1907,117 +1913,10 @@ static BlockIO executeQueryImpl(
                     result_details.query_cache_entry_expires_at = expires_at;
                 }
             }
+            // If no cache hit, and (implicitly) writing to the cache is disabled, or the cache is not configured, then execute the query.
             else if (!query_result_cache_hit)
             {
-                /// Fallback path: either writes are disabled (enable_writes_to_query_cache = 0),
-                /// or the cache is not configured. No thundering herd prevention here.
-                /// Also covers the case where get_result_from_query_result_cache() inside the
-                /// getOrSet condition found a non-stale hit. However, in that case we skip both
-                /// branches entirely (the condition was false, so we never entered the getOrSet
-                /// block, and this else-if re-probes and returns true, so we skip this block too).
-
-                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
-                {
-                    try
-                    {
-                        if (context->isGlobalContext())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot create transactions");
-
-                        implicit_tcl_executor->begin(context);
-                    }
-                    catch (Exception & e)
-                    {
-                        e.addMessage("while starting a transaction with 'implicit_transaction'");
-                        throw;
-                    }
-                }
-
-                if (settings[Setting::enable_shared_storage_snapshot_in_query])
-                {
-                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                    context->setQueryMetadataCache(query_metadata_cache);
-                }
-
-                if (out_ast)
-                    interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
-
-                const auto & query_settings = context->getSettingsRef();
-                if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
-                {
-                    if (!interpreter->supportsTransactions())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
-
-                    if (query_settings[Setting::apply_mutations_on_fly])
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
-                }
-
-                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
-                // We need to force to build it here to check if we need to ignore quota.
-                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
-                    interpreter_with_analyzer->getQueryPlan();
-
-                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
-                {
-                    quota = context->getQuota();
-                    if (quota)
-                    {
-                        if (quota->isKeyedByNormalizedQueryHash())
-                        {
-                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
-                            /// against per-hash intervals instead of shared session intervals.
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
-                            else if (out_ast->as<ASTInsertQuery>())
-                                quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                            quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-                        }
-                        else
-                        {
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
-                                quota->used(QuotaType::QUERY_SELECTS, 1);
-                            else if (out_ast->as<ASTInsertQuery>())
-                                quota->used(QuotaType::QUERY_INSERTS, 1);
-                            quota->used(QuotaType::QUERIES, 1);
-                            quota->checkExceeded(QuotaType::ERRORS);
-                        }
-
-                        /// Track per-normalized-query-hash quota limits (works for all key types).
-                        quota->usedPerNormalizedHash(normalized_query_hash);
-                    }
-                }
-
-                /// Invoke HTTP 100-Continue callback after quota checks are completed
-                if (http_continue_callback && !internal)
-                    http_continue_callback();
-
-                if (interpreter)
-                {
-                    if (!interpreter->ignoreLimits())
-                    {
-                        limits.mode = LimitsMode::LIMITS_CURRENT;
-                        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                    }
-
-                    if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
-                    {
-                        create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
-                        create_interpreter->setInternal(internal);
-                    }
-
-                    std::unique_ptr<OpenTelemetry::SpanHolder> span;
-                    if (OpenTelemetry::CurrentContext().isTraceEnabled())
-                    {
-                        auto * raw_interpreter_ptr = interpreter.get();
-                        String class_name = raw_interpreter_ptr ? demangle(typeid(*raw_interpreter_ptr).name()) : "QueryPlan";
-                        span = std::make_unique<OpenTelemetry::SpanHolder>(class_name + "::execute()");
-                    }
-
-                    res = interpreter->execute();
-                    /// No cache write here: we only reach this branch when enable_writes_to_query_cache
-                    /// is false (or can_use_query_result_cache is false), so there is nothing to store.
-                }
+                setup_interpreter_and_execute();
             }
         }
 
