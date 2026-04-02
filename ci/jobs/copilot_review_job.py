@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import traceback
 
 from ci.praktika import Secret
 from ci.praktika.info import Info
@@ -33,15 +34,7 @@ def _reauth_gh():
     """
     from ci.praktika.gh_auth import GHAuth
 
-    app_id = Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
-        type=Secret.Type.AWS_SSM_SECRET,
-    ).get_value()
-    pem = Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
-        type=Secret.Type.AWS_SSM_SECRET,
-    ).get_value()
-    GHAuth.auth(app_id=app_id, app_key=pem)
+    GHAuth.auth_from_settings()
 
 
 def _post_review():
@@ -57,28 +50,24 @@ def _post_review():
 
 def _run(prompt):
     with tempfile.TemporaryDirectory() as gh_config_dir:
-        try:
-            token = Secret.Config(
-                name="/ci/robot-ch-test-poll-copilot", type=Secret.Type.AWS_SSM_PARAMETER
-            ).get_value()
-            subprocess.run(
-                ["gh", "auth", "login", "--with-token"],
-                input=token, text=True, check=True,
-                env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
-            )
-            token = None
-            Result.from_commands_run(
-                name="copilot review",
-                # --allow-all-tools: run non-interactively
-                # --add-dir .: restrict file access to repo root (default,
-                #   but explicit; do NOT add --allow-all-paths)
-                command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-                        f"copilot -p {shlex.quote(prompt)} --allow-all-tools --add-dir . --model gpt-5.3-codex",
-                with_info=True,
-            )
-        except Exception as e:
-            print(f"WARNING: copilot review skipped: {e}")
-            return
+        token = Secret.Config(
+            name="/ci/robot-ch-test-poll-copilot", type=Secret.Type.AWS_SSM_PARAMETER
+        ).get_value()
+        subprocess.run(
+            ["gh", "auth", "login", "--with-token"],
+            input=token, text=True, check=True,
+            env={**os.environ, "GH_CONFIG_DIR": gh_config_dir},
+        )
+        token = None
+        Result.from_commands_run(
+            name="copilot review",
+            # --allow-all-tools: run non-interactively
+            # --add-dir .: restrict file access to repo root (default,
+            #   but explicit; do NOT add --allow-all-paths)
+            command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
+                    f"copilot -p {shlex.quote(prompt)} --allow-all-tools --add-dir . --model gpt-5.3-codex",
+            with_info=True,
+        )
 
     # Post the summary from the job script so the job fails loudly if anything is broken.
     if not os.path.exists(REVIEW_FILE):
@@ -138,20 +127,25 @@ def post():
 
 if __name__ == "__main__":
     status = Result.Status.SUCCESS
+    info = ""
     if "--pre" in sys.argv:
         try:
             pre()
         except Exception as e:
-            print(f"ERROR: {e}")
+            info = f"ERROR: {e}"
+            print(info)
+            traceback.print_exc()
             status = Result.Status.FAILED
     elif "--post" in sys.argv:
         try:
             post()
         except Exception as e:
-            print(f"ERROR: {e}")
+            info = f"ERROR: {e}"
+            print(info)
+            traceback.print_exc()
             status = Result.Status.FAILED
     else:
         print("Usage: copilot_review_job.py --pre | --post")
         sys.exit(1)
 
-    Result.create_from(status=status).complete_job()
+    Result.create_from(status=status, info=info).complete_job()
