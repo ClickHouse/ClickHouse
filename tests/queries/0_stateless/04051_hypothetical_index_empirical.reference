@@ -1,0 +1,21 @@
+--- minmax on sorted column ---
+  status:       applicable
+  skip_ratio:   99.0%
+  source:           empirical
+--- bloom_filter on uniform column ---
+  status:       applicable
+  skip_ratio:   0.0%
+  source:           empirical
+--- minmax range query ---
+  skip_ratio:   90.0%
+--- set index on sorted column ---
+  skip_ratio:   99.0%
+  source:           empirical
+--- index granularity 5 ---
+  skip_ratio:   95.0%
+--- empirical respects PK pruning ---
+  skip_ratio:   99.0%
+  sampled_marks:    50 / 50
+--- empirical with existing real index ---
+  skip_ratio:   99.0%
+  sampled_marks:    50 / 50
