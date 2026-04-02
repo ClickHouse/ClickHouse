@@ -1553,6 +1553,23 @@ String AccessRights::toString() const
 }
 
 
+AccessRights AccessRights::getGrantableRights() const
+{
+    AccessRights result;
+    for (auto & element : getElements())
+    {
+        if (!element.grant_option && !element.is_partial_revoke)
+            continue;
+
+        if (element.is_partial_revoke)
+            result.revoke(element);
+        else
+            result.grant(element);
+    }
+    return result;
+}
+
+
 template <bool grant_option, bool wildcard, typename... Args>
 bool AccessRights::isGrantedImpl(const AccessFlags & flags, const Args &... args) const
 {

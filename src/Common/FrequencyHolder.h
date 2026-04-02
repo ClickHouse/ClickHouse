@@ -28,17 +28,10 @@ namespace DB
 /// 1. detectLanguageUnknown
 /// 2. detectCharset
 /// 3. detectTonality
-/// 4. detectProgrammingLanguage
 
 class FrequencyHolder
 {
 public:
-    struct Language
-    {
-        String name;
-        HashMap<std::string_view, Float64> map;
-    };
-
     struct Encoding
     {
         String name;
@@ -47,7 +40,6 @@ public:
     };
 
     using Map = HashMap<std::string_view, Float64>;
-    using Container = std::vector<Language>;
 
     using EncodingMap = HashMap<UInt16, Float64>;
     using EncodingContainer = std::vector<Encoding>;
@@ -64,22 +56,15 @@ public:
         return encodings_freq;
     }
 
-    const Container & getProgrammingFrequency() const
-    {
-        return programming_freq;
-    }
-
 private:
     FrequencyHolder();
 
     void loadEncodingsFrequency();
     void loadEmotionalDict();
-    void loadProgrammingFrequency();
 
     Arena string_pool;
 
     Map emotional_dict;
-    Container programming_freq;
     EncodingContainer encodings_freq;
 };
 }

@@ -191,6 +191,16 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 }
 
 
+std::vector<String> CompressionCodecFactory::getAllRegisteredNames() const
+{
+    std::vector<String> result;
+    result.reserve(family_name_with_codec.size());
+    for (const auto & pair : family_name_with_codec)
+        result.push_back(pair.first);
+    return result;
+}
+
+
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
@@ -206,6 +216,7 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+void registerCodecALP(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -221,6 +232,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
     registerCodecGCD(*this);
+    registerCodecALP(*this);
 
     default_codec = get("LZ4", {});
 }

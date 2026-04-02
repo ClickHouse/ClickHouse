@@ -18,6 +18,10 @@ SELECT * FROM s3Cluster('test_cluster_two_shards_localhost', s3_conn, filename='
 
 -- Empty "directory" files created implicitly by S3 console:
 -- https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-folders.html
+-- Reset s3_skip_empty_files to default: the wikistat dataset contains 0-byte
+-- directory markers that cause format detection to fail when not skipped.
+SET s3_skip_empty_files = 1;
+
 SELECT *
 FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/wikistat/original/*', NOSIGN)
 LIMIT 1

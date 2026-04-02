@@ -7,7 +7,7 @@
 #include <functional>
 #include <limits>
 #include <string>
-
+#include <span>
 
 namespace DB
 {
@@ -18,6 +18,7 @@ struct StoredObject
     String remote_path; /// abs path
     String local_path; /// or equivalent "metadata_path"
 
+    /// NOTE: the type must stay uint64_t — MetadataStorageFromDisk removal log serializes it as UInt64 LE.
     uint64_t bytes_size = std::numeric_limits<uint64_t>::max();
 
     explicit StoredObject(
@@ -34,6 +35,7 @@ struct StoredObject
 
 using StoredObjects = std::vector<StoredObject>;
 using StoredObjectSet = std::unordered_set<StoredObject>;
+using StoredObjectsSpan = std::span<const StoredObject>;
 
 size_t getTotalSize(const StoredObjects & objects);
 Strings collectRemotePaths(const StoredObjects & objects);

@@ -89,7 +89,7 @@ void deserializeACLMap(Storage & storage, ReadBuffer & in)
             acls.push_back(acl);
             acls_len--;
         }
-        storage.acl_map.addMapping(map_index, acls);
+        storage.acl_map.addMapping(static_cast<ACLId>(map_index), acls);
 
         count--;
     }
@@ -108,7 +108,14 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
         String data;
         Coordination::read(data, in);
         node.setData(data);
-        Coordination::read(node.acl_id, in);
+        {
+            int64_t acl_id_64;
+            Coordination::read(acl_id_64, in);
+            /// Some strange ACL ID during deserialization from ZooKeeper
+            if (acl_id_64 == -1)
+                acl_id_64 = 0;
+            node.acl_id = static_cast<ACLId>(acl_id_64);
+        }
 
         /// Deserialize stat
         Coordination::read(node.stats.czxid, in);
@@ -160,7 +167,7 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
                 [my_path = itr.key](typename Storage::Node & value)
                 {
                     value.addChild(Coordination::getBaseNodeName(my_path));
-                    value.stats.increaseNumChildren();
+                    value.increaseNumChildren();
                 });
         }
     }
