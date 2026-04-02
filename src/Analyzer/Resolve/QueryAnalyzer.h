@@ -247,6 +247,8 @@ private:
 
     ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope, bool allow_niladic_functions = true);
 
+    ProjectionNames resolveUniquePredicate(QueryTreeNodePtr & node, const FunctionNodePtr & function_node_ptr, IdentifierResolveScope & scope, bool allow_niladic_functions);
+
     ProjectionNames resolveExpressionNode(
         QueryTreeNodePtr & node,
         IdentifierResolveScope & scope,
