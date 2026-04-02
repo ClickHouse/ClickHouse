@@ -78,8 +78,7 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
     }
 
     bool allowed_inner = isInner(table_join->kind()) && (table_join->strictness() == JoinStrictness::All ||
-                                                         table_join->strictness() == JoinStrictness::Any ||
-                                                         table_join->strictness() != JoinStrictness::RightAny);
+                                                         table_join->strictness() == JoinStrictness::Any);
 
     bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
                                                        table_join->strictness() == JoinStrictness::All ||
