@@ -171,13 +171,15 @@ void LazyReadReplacingFinalSource::work()
             false);
 
         /// Apply IN filter from the set so that ReadFromMergeTree can use index analysis.
-        /// Build a filter DAG that computes sorting key from source columns, then applies IN.
+        /// Build a filter DAG that computes primary key from source columns, then applies IN.
         if (future_set)
         {
-            /// Start with the sorting key expression (source columns → key columns),
-            /// projected to just the sorting key result columns.
-            ActionsDAG filter_dag = sorting_key.expression->getActionsDAG().clone();
-            filter_dag.getOutputs() = filter_dag.findInOutputs(sorting_key.column_names);
+            const auto & primary_key = metadata_snapshot->getPrimaryKey();
+
+            /// Start with the primary key expression (source columns → PK columns),
+            /// projected to just the PK result columns.
+            ActionsDAG filter_dag = primary_key.expression->getActionsDAG().clone();
+            filter_dag.getOutputs() = filter_dag.findInOutputs(primary_key.column_names);
 
             ColumnWithTypeAndName column_set;
             column_set.type = std::make_shared<DataTypeSet>();

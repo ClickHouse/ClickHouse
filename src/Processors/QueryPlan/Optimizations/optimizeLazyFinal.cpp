@@ -78,16 +78,17 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         return;
 
     const auto & metadata_snapshot = reading_step->getStorageMetadata();
-    const auto & sorting_key = metadata_snapshot->getSortingKey();
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const auto & context = reading_step->getContext();
     const auto & storage_snapshot = reading_step->getStorageSnapshot();
     auto mutations_snapshot = reading_step->getMutationsSnapshot();
     auto max_block_numbers_to_read = getMaxAddedBlocks(reading_step);
 
-    /// Create a Set with BREAK overflow mode so we can detect truncation.
+    /// Build the set for primary key columns only (PK is a prefix of sorting key;
+    /// the remaining sorting key columns are useless for index analysis).
     SizeLimits set_size_limits(optimization_settings.max_rows_for_lazy_final, optimization_settings.max_bytes_for_lazy_final, OverflowMode::BREAK);
     auto set = std::make_shared<Set>(set_size_limits, /*max_elements_to_fill=*/ 0, /*transform_null_in=*/ false);
-    set->setHeader(sorting_key.sample_block.cloneWithColumns(sorting_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
+    set->setHeader(primary_key.sample_block.cloneWithColumns(primary_key.sample_block.cloneEmptyColumns()).getColumnsWithTypeAndName());
     set->fillSetElements();
     auto set_and_key = std::make_shared<SetAndKey>(SetAndKey{.key = "__lazy_final_set", .set = set, .external_table = nullptr});
 
@@ -96,12 +97,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     auto future_set = std::make_shared<FutureSetFromStorage>(FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt);
 
     /// Build the set-building sub-plan: read columns needed for predicates
-    /// (prewhere, row policy, filter) and sorting key, then project to key columns.
+    /// (prewhere, row policy, filter) and primary key, then project to PK columns.
 
-    const auto & sorting_key_dag = sorting_key.expression->getActionsDAG();
+    const auto & primary_key_dag = primary_key.expression->getActionsDAG();
 
     /// Start with the original column set (covers prewhere, row policy, etc.),
-    /// then append sorting key source columns, filter input columns,
+    /// then append primary key source columns, filter input columns,
     /// and prewhere/row_policy input columns that might be missing.
     Names set_columns = reading_step->getAllColumnNames();
     {
@@ -114,7 +115,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                     set_columns.push_back(input->result_name);
         };
 
-        add_columns(sorting_key_dag);
+        add_columns(primary_key_dag);
         if (filter_step)
             add_columns(filter_step->getExpression());
         if (const auto & prewhere = reading_step->getQueryInfo().prewhere_info)
@@ -201,11 +202,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             /*remove_filter_column=*/ true));
     }
 
-    /// Compute sorting key expression and project to key columns only.
+    /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
     /// and can be dropped by tryRemoveUnusedColumns.
     {
-        auto dag = sorting_key_dag.clone();
+        auto dag = primary_key_dag.clone();
         NameSet dag_inputs;
         for (const auto * input : dag.getInputs())
             dag_inputs.insert(input->result_name);
@@ -214,7 +215,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                 dag.addInput(col.name, col.type);
 
         NamesWithAliases projection;
-        for (const auto & col : sorting_key.column_names)
+        for (const auto & col : primary_key.column_names)
             projection.emplace_back(col, "");
         dag.project(projection);
         set_plan.addStep(std::make_unique<ExpressionStep>(set_plan.getCurrentHeader(), std::move(dag)));
