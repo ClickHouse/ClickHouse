@@ -2058,7 +2058,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
 #if USE_ROCKSDB
             else if (rocksdb_index)
             {
-                std::cerr << "Insert to rocksdb key: " << key.toString() << ", offset: " << offset << ", size: " << size << ", segment_type: " << static_cast<int>(origin_info.segment_type) << std::endl;
                 rocksdb_index->put(key, offset, static_cast<Int64>(size), origin_info.segment_type);
             }
 #endif
