@@ -19,6 +19,12 @@
 #include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/Cache/SplitFileCachePriority.h>
+#include "config.h"
+
+#if USE_ROCKSDB
+#include <Interpreters/Cache/FileCacheRocksDBIndex.h>
+#endif
+
 #include <filesystem>
 #include <random>
 #include <pcg_random.hpp>
@@ -245,6 +251,10 @@ public:
 
     const String & getName() const { return name; }
 
+#if USE_ROCKSDB
+    FileCacheRocksDBIndexPtr getRocksDBIndex() const { return rocksdb_index; }
+#endif
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -287,6 +297,10 @@ private:
 
     CacheMetadata metadata;
 
+#if USE_ROCKSDB
+    FileCacheRocksDBIndexPtr rocksdb_index;
+#endif
+
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
     mutable CachePriorityGuard queue_guard;
@@ -323,6 +337,19 @@ private:
     void loadMetadata();
     void loadMetadataImpl();
     void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
+
+    /// Insert a single file segment into cache during metadata loading.
+    /// Returns true if the segment was inserted, false if it didn't fit.
+    bool loadFileSegment(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const KeyMetadataPtr & key_metadata,
+        const OriginInfo & origin);
+
+#if USE_ROCKSDB
+    void loadMetadataFromIndex(std::vector<FileCacheRocksDBIndex::Entry> entries);
+#endif
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit

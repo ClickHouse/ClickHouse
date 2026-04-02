@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Interpreters/Cache/Metadata.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileSegment.h>
@@ -1161,6 +1163,15 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     try
     {
         const auto path = key_metadata->getFileSegmentPath(*file_segment);
+
+#if USE_ROCKSDB
+        if (!file_segment->getCache())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FileSegment has no associated cache, cannot update RocksDB index");
+
+        if (auto index = file_segment->getCache()->getRocksDBIndex())
+            index->remove(getKey(), file_segment->offset());
+#endif
+
         if (file_segment->downloaded_size == 0)
         {
             chassert(!fs::exists(path));
