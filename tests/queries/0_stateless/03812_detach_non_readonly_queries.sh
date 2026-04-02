@@ -72,12 +72,19 @@ if [ "$COUNT_HTTP" -lt 3 ]; then
     exit 1
 fi
 
-# 5. INSERT with body data (query in URL, data in body) is intentionally NOT detached (payload-driven inserts run sync).
-echo "=== HTTP: INSERT with body data runs synchronously (not detached) ==="
-INSERT_BODY_HTTP_CODE=$(${CLICKHOUSE_CURL} -sS -o /dev/null -w "%{http_code}" "${CLICKHOUSE_URL}&allow_experimental_detach_non_readonly_queries=1&async_insert=0&query_id=${QUERY_ID_PREFIX}h2&query=INSERT+INTO+$TABLE+FORMAT+TabSeparated" -X POST -d "4" 2>/dev/null || echo "000")
+# 5. INSERT with body data (query in URL, data in body) is also detached — the body is captured and passed to the background thread.
+echo "=== HTTP: INSERT with body data is detached (query in URL, data in POST body) ==="
+INSERT_BODY_RESP=$(${CLICKHOUSE_CURL} -sS -w "\n%{http_code}" "${CLICKHOUSE_URL}&allow_experimental_detach_non_readonly_queries=1&async_insert=0&query_id=${QUERY_ID_PREFIX}h2&query=INSERT+INTO+$TABLE+FORMAT+TabSeparated" -X POST -d "4" 2>/dev/null || echo "000")
+INSERT_BODY_HTTP_CODE=$(echo "$INSERT_BODY_RESP" | tail -n1)
+INSERT_BODY_BODY=$(echo "$INSERT_BODY_RESP" | sed '$d')
 echo "INSERT with body HTTP code: $INSERT_BODY_HTTP_CODE"
+echo "INSERT with body response has query_id: $([ -n "$INSERT_BODY_BODY" ] && echo yes || echo no)"
 if [ "$INSERT_BODY_HTTP_CODE" != "200" ]; then
-    echo "FAIL: Expected HTTP 200 for INSERT with body (sync), got $INSERT_BODY_HTTP_CODE"
+    echo "FAIL: Expected HTTP 200 for detached INSERT with body, got $INSERT_BODY_HTTP_CODE"
+    exit 1
+fi
+if [ -z "$INSERT_BODY_BODY" ]; then
+    echo "FAIL: Expected query_id in response body for detached INSERT with body data, got empty"
     exit 1
 fi
 

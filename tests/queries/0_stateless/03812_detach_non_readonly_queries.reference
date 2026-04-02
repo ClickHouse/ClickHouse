@@ -6,8 +6,9 @@ Detach non-readonly response body (query_id): <query_id>
 === HTTP: SELECT remains synchronous even with allow_experimental_detach_non_readonly_queries=1 ===
 SELECT result: 3
 Rows in table after HTTP detached inserts: 3
-=== HTTP: INSERT with body data runs synchronously (not detached) ===
+=== HTTP: INSERT with body data is detached (query in URL, data in POST body) ===
 INSERT with body HTTP code: 200
+INSERT with body response has query_id: yes
 === HTTP: Detach non-readonly with query in POST body only (no query= param) ===
 Detach non-readonly POST body-only response (query_id): <query_id>
 HTTP final row count: 5

@@ -17,22 +17,20 @@ export CLICKHOUSE_BINARY="${CLICKHOUSE_BINARY:-${CURDIR}/../../../build/programs
 
 # Skip if `script` is not available.
 if ! command -v script &>/dev/null; then
-    echo "=== Local: Detach non-readonly mode: INSERT-SELECT returns query_id ==="
-    echo "Detach returned query_id: yes"
-    echo "Inserted data visible after detach: yes"
-    echo "=== Local: ExceptionBeforeStart — error returned when query fails before start ==="
-    echo "Error returned to client: yes"
-    echo "=== Local: SELECT remains synchronous with allow_experimental_detach_non_readonly_queries=1 ==="
-    echo "SELECT result returned: yes"
-    echo "OK"
+    echo "@@SKIP@@: script utility not available (needed for PTY)"
     exit 0
 fi
 
 # Run queries in clickhouse-local through a PTY (so is_interactive=true).
 # `script -q -c CMD /dev/null` discards the typescript but gives CMD a real TTY as stdin/stdout.
 # Strip ANSI escape sequences and carriage returns so output is stable.
+# A trailing "\q" ensures clickhouse-local exits cleanly even after errors
+# (ExceptionBeforeStart leaves the interactive prompt waiting for more input
+# while the PTY from `script` stays open).  A short sleep separates it from
+# the queries so the interactive parser does not consume it as part of a
+# multi-line statement.
 run_local_interactive() {
-    printf '%s\n' "$@" \
+    { printf '%s\n' "$@"; sleep 1; echo '\q'; } \
         | script -q -c "${CLICKHOUSE_LOCAL}" /dev/null 2>/dev/null \
         | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\r//g'
 }
