@@ -8,8 +8,8 @@ if [ -z ${ENABLE_ANALYZER+x} ]; then
     ENABLE_ANALYZER=0
 fi
 
-DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0"
-ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0"
+DISABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_enable_optimizations=1;SET query_plan_remove_redundant_sorting=0;SET optimize_duplicate_order_by_and_distinct=0;SET query_plan_merge_expressions=1;SET query_plan_merge_filters=1;SET query_plan_lift_up_union=1"
+ENABLE_OPTIMIZATION="SET enable_analyzer=$ENABLE_ANALYZER;SET query_plan_enable_optimizations=1;SET query_plan_remove_redundant_sorting=1;SET optimize_duplicate_order_by_and_distinct=0;SET query_plan_merge_expressions=1;SET query_plan_merge_filters=1;SET query_plan_lift_up_union=1"
 
 echo "-- Disabled query_plan_remove_redundant_sorting"
 echo "-- ORDER BY clauses in subqueries are untouched"
@@ -324,7 +324,7 @@ FROM (
 run_query "$query"
 
 echo "-- disable common optimization to avoid functions to be lifted up (liftUpFunctions optimization), needed for testing with stateful function"
-ENABLE_OPTIMIZATION="SET query_plan_enable_optimizations=0;$ENABLE_OPTIMIZATION"
+ENABLE_OPTIMIZATION="$ENABLE_OPTIMIZATION;SET query_plan_enable_optimizations=0"
 echo "-- neighbor() as stateful function prevents removing inner ORDER BY since its result depends on order"
 query="SELECT
     number,
