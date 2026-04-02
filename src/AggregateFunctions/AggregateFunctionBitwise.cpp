@@ -125,6 +125,35 @@ public:
         this->data(place).update(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena *) const override
+    {
+        const auto * data_ptr = assert_cast<const ColumnVector<T> &>(*columns[0]).getData().data();
+        for (size_t j = 0; j < num_rows; ++j)
+            this->data(places[j] + place_offset).update(data_ptr[row_indices[j]]);
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena *) const override
+    {
+        const auto * data_ptr = assert_cast<const ColumnVector<T> &>(*columns[0]).getData().data();
+        /// Accumulate into a local Data object, then merge once.
+        Data local;
+        local.value = this->data(place).value;
+        for (size_t j = 0; j < num_rows; ++j)
+            local.update(data_ptr[row_indices[j]]);
+        this->data(place).value = local.value;
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).update(this->data(rhs).value);
