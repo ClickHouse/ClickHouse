@@ -426,8 +426,33 @@ def get_parallel_sequential_tests_to_run(
             f"no-llvm-coverage: running only {len(test_files)} test files "
             f"(from LLVM_COVERAGE_SKIP_PREFIXES or containing is_built_with_llvm_coverage)"
         )
+    elif "arm-incompatible" in (job_options or ""):
+        # Keep only tests that are skipped on ARM due to missing Docker images.
+        # Detected dynamically: test files that call is_arm() directly or import
+        # a helper (e.g. common_direct) that gates itself on is_arm() at module level.
+        def _is_arm_incompatible(path: Path) -> bool:
+            text = path.read_text(errors="replace")
+            if "is_arm()" in text:
+                return True
+            # Helpers like helpers/kafka/common_direct.py call is_arm() at import time;
+            # any test that imports them will be skipped entirely on ARM.
+            for line in text.splitlines():
+                if "import" in line and "common_direct" in line:
+                    return True
+            return False
 
-    if "no-llvm-coverage" not in (job_options or ""):
+        arm_incompatible_files = {
+            str(p.relative_to("./tests/integration/"))
+            for p in Path("./tests/integration/").glob("test_*/test*.py")
+            if _is_arm_incompatible(p)
+        }
+        test_files = [f for f in test_files if f in arm_incompatible_files]
+        print(
+            f"arm-incompatible: running only {len(test_files)} test files "
+            f"(using is_arm() or importing helpers that gate on is_arm())"
+        )
+
+    if "no-llvm-coverage" not in (job_options or "") and "arm-incompatible" not in (job_options or ""):
         assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
@@ -612,6 +637,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 is_llvm_coverage = True
         elif to == "no-llvm-coverage":
             pass  # handled in get_parallel_sequential_tests_to_run via job_options
+        elif to == "arm-incompatible":
+            is_llvm_coverage = True  # collect profdata, same as llvm_coverage mode
         elif to == "old analyzer":
             use_old_analyzer = True
         elif to == "distributed plan":

@@ -46,6 +46,7 @@ workflow = Workflow.Config(
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
         *JobConfigs.integration_test_llvm_coverage_jobs,
+        *JobConfigs.integration_test_arm_incompatible_job,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,

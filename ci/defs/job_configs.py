@@ -316,7 +316,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.LLVM_COVERAGE_BUILD,
             provides=[
-                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+                ArtifactNames.CH_LLVM_COVERAGE_BUILD,
             ],
             runs_on=RunnerLabels.AMD_LARGE,
         ),
@@ -909,6 +909,13 @@ class JobConfigs:
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_LLVM_COVERAGE_BUILD,
+            provides=[
+                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
     )
 
     unittest_llvm_coverage_job = common_unit_test_job_config.parametrize(
@@ -946,6 +953,17 @@ class JobConfigs:
                 for batch in range(1, total_batches + 1)
             ],
         )
+    )
+
+    # Single IT job on AMD that runs only the tests skipped on ARM (missing Docker images).
+    # Its profdata lets us measure exactly how much coverage those tests add.
+    integration_test_arm_incompatible_job = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_llvm_coverage, arm-incompatible, 1/1",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_it_arm_incompatible"],
+        ),
     )
 
     integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(

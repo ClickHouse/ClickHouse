@@ -311,6 +311,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_MSAN = "arm_msan"
     ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
+    AMD_LLVM_COVERAGE_BUILD = "amd_llvm_coverage_build"
     PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
@@ -382,6 +383,9 @@ class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_LLVM_COVERAGE_BUILD = (
         "CH_LLVM_COVERAGE_BUILD"  # arm build with LLVM coverage enabled
+    )
+    CH_AMD_LLVM_COVERAGE_BUILD = (
+        "CH_AMD_LLVM_COVERAGE_BUILD"  # amd build with LLVM coverage enabled, for arm-incompatible IT tests
     )
     CH_AMD_PER_TEST_COVERAGE_BUILD = (
         "CH_AMD_PER_TEST_COVERAGE_BUILD"  # build with LLVM coverage + per-test depth instrumentation
@@ -473,7 +477,10 @@ LLVM_IT_ARTIFACTS_LIST = [
 ]
 
 LLVM_ARTIFACTS_LIST = (
-    LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
+    LLVM_FT_ARTIFACTS_LIST
+    + LLVM_IT_ARTIFACTS_LIST
+    + [ArtifactNames.LLVM_COVERAGE_FILE + "_it_arm_incompatible"]
+    + [ArtifactNames.LLVM_COVERAGE_FILE]
 )
 
 BINARIES_WITH_LONG_RETENTION = [
@@ -501,6 +508,7 @@ class ArtifactConfigs:
         names=[
             ArtifactNames.CH_AMD_DEBUG,
             ArtifactNames.CH_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN_UBSAN,
