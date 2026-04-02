@@ -1,19 +1,7 @@
 physical_column_plan
 LazilyReadFromMergeTree
-alias_plan_structure
-Expression (Project names)
-Limit
-Sorting
-Expression (Before ORDER BY)
-ReadFromMergeTree
-alias_with_where_plan
-Expression (Project names)
-Limit
-Sorting
-Expression (Before ORDER BY)
-Filter (WHERE)
-Expression (Change column names to column identifiers)
-ReadFromMergeTree
+alias_column_plan
+LazilyReadFromMergeTree
 alias_result
 short
 short

@@ -28,22 +28,11 @@ SELECT trimLeft(explain) AS s
 FROM (EXPLAIN SELECT body FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
 WHERE s LIKE 'LazilyRead%';
 
--- 2. Diagnostic: show the plan structure for the ALIAS column query.
---    This helps understand why lazy materialization may not be applied.
-SELECT 'alias_plan_structure';
+-- 2. Same optimization must also apply when selecting an ALIAS column.
+SELECT 'alias_column_plan';
 SELECT trimLeft(explain) AS s
 FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
-WHERE s LIKE 'ReadFrom%' OR s LIKE 'Sorting%' OR s LIKE 'Limit%'
-   OR s LIKE 'LazilyRead%' OR s LIKE 'Expression%' OR s LIKE 'Filter%'
-   OR s LIKE 'Join%';
-
--- 3. Same check with WHERE clause
-SELECT 'alias_with_where_plan';
-SELECT trimLeft(explain) AS s
-FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias WHERE severity = 'medium' ORDER BY time DESC LIMIT 10)
-WHERE s LIKE 'ReadFrom%' OR s LIKE 'Sorting%' OR s LIKE 'Limit%'
-   OR s LIKE 'LazilyRead%' OR s LIKE 'Expression%' OR s LIKE 'Filter%'
-   OR s LIKE 'Join%';
+WHERE s LIKE 'LazilyRead%';
 
 -- 4. Verify correctness: ALIAS column result must match the expression on source column.
 SELECT 'alias_result';
