@@ -39,20 +39,33 @@ void wrapWithSelectOrderBy(QueryTreeNodePtr & query_root, ContextPtr context)
 {
     auto * query_node = query_root->as<QueryNode>();
 
-    /// Re-resolve query_node columns setting the unique alias
-    String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+    /// Generate unique aliases for all projection columns
     auto subquery_projection_columns = query_node->getProjectionColumns();
+    Names unique_column_names;
+    unique_column_names.reserve(subquery_projection_columns.size());
+    String uuid_suffix = toString(UUIDHelpers::generateV4());
+    for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
+        unique_column_names.push_back("__subquery_column_" + std::to_string(i) + "_" + uuid_suffix);
+
+    /// Re-resolve query_node columns setting the unique aliases
     query_node->clearProjectionColumns();
-    query_node->setProjectionAliasesToOverride({unique_column_name});
+    query_node->setProjectionAliasesToOverride(unique_column_names);
     query_node->resolveProjectionColumns(subquery_projection_columns);
     query_node->setIsSubquery(true);
 
-    /// SELECT unique_column_name FROM query_node order by rand()
+    /// SELECT all columns FROM query_node ORDER BY rand()
     auto new_root = std::make_shared<QueryNode>(Context::createCopy(context));
     new_root->getJoinTree() = query_root;
-    NameAndTypePair column{unique_column_name, subquery_projection_columns[0].type};
-    new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));
-    new_root->resolveProjectionColumns({column});
+
+    NamesAndTypes outer_columns;
+    outer_columns.reserve(subquery_projection_columns.size());
+    for (size_t i = 0; i < subquery_projection_columns.size(); ++i)
+    {
+        NameAndTypePair column{unique_column_names[i], subquery_projection_columns[i].type};
+        new_root->getProjection().getNodes().push_back(std::make_shared<ColumnNode>(column, query_root));
+        outer_columns.push_back(column);
+    }
+    new_root->resolveProjectionColumns(std::move(outer_columns));
     addRandomOrderBy(new_root->getOrderBy(), context);
 
     /// Replace old root with new wrapping query node
