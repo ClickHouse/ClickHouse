@@ -40,7 +40,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Parse EXPLAIN WHATIF settings from the AST.
 struct WhatIfSettings
 {
     bool empirical = true;
@@ -82,7 +81,6 @@ struct WhatIfSettings
     }
 };
 
-/// Find all ReadFromMergeTree steps in the query plan.
 void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps)
 {
     if (!node)
@@ -95,8 +93,7 @@ void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTre
         collectReadSteps(child, steps);
 }
 
-/// Try to estimate skip ratio using column statistics.
-/// Returns true and fills result fields if statistics are available.
+/// Estimate skip ratio from column statistics (row-level selectivity as upper bound)
 bool tryEstimateWithStatistics(
     WhatIfIndexEstimator::IndexResult & result,
     ReadFromMergeTree * read_step,
@@ -120,8 +117,6 @@ bool tryEstimateWithStatistics(
     {
         try
         {
-            /// Load statistics for all columns (not just index columns),
-            /// because the filter predicate may reference columns beyond the index definition.
             auto stats = part.data_part->loadStatistics();
             if (!stats.empty())
             {
@@ -133,7 +128,6 @@ bool tryEstimateWithStatistics(
         }
         catch (...)
         {
-            /// Skip parts where statistics cannot be loaded.
         }
     }
 
@@ -145,17 +139,11 @@ bool tryEstimateWithStatistics(
         return false;
 
     auto profile = estimator->estimateRelationProfile(metadata, filter_node);
-
     auto unfiltered = estimator->estimateRelationProfile();
     if (unfiltered.rows == 0)
         return false;
 
-    /// selectivity = fraction of rows that pass the filter.
-    /// skip_ratio = fraction of granules the index could skip ≈ 1 - selectivity.
-    /// This is an approximation: skip indexes work at granule level, not row level,
-    /// so the actual skip ratio depends on data distribution within granules.
-    /// Column statistics give us row-level selectivity which is a reasonable upper bound
-    /// for the skip ratio.
+    /// Row-level selectivity as upper bound for granule-level skip ratio
     double selectivity = std::min(1.0, static_cast<double>(profile.rows) / static_cast<double>(unfiltered.rows));
     result.skip_ratio = 1.0 - selectivity;
     result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
@@ -164,9 +152,7 @@ bool tryEstimateWithStatistics(
     return true;
 }
 
-/// Empirical estimation: temporarily materialize the index in memory
-/// for the baseline mark ranges only, then check each granule.
-/// This gives 100% accurate skip ratio.
+/// Build the index in memory for baseline marks only and check each granule — 100% accurate
 bool tryEstimateEmpirical(
     WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
@@ -179,7 +165,6 @@ bool tryEstimateEmpirical(
     const auto & data = read_step->getMergeTreeData();
     auto storage_snapshot = read_step->getStorageSnapshot();
 
-    /// Collect column names the index needs.
     Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
     if (index_columns.empty())
         return false;
@@ -188,7 +173,6 @@ bool tryEstimateEmpirical(
     UInt64 skipped_index_granules = 0;
     Stopwatch watch;
 
-    /// The skip index granularity: number of data granules per one index granule.
     const size_t skip_index_granularity = index_helper->index.granularity;
 
     for (const auto & part_with_ranges : saved_parts)
@@ -199,7 +183,6 @@ bool tryEstimateEmpirical(
         if (mark_ranges.empty())
             continue;
 
-        /// Create a sequential source that reads only the baseline mark ranges.
         RangesInDataPart part_for_read(part, nullptr, 0, 0, mark_ranges);
 
         Pipe pipe = createMergeTreeSequentialSource(
@@ -208,19 +191,19 @@ bool tryEstimateEmpirical(
             storage_snapshot,
             std::move(part_for_read),
             std::make_shared<AlterConversions>(),
-            nullptr,    /// merged_part_offsets
+            nullptr,
             index_columns,
             mark_ranges,
             std::make_shared<std::atomic<size_t>>(0),
-            false,      /// apply_deleted_mask
-            false,      /// read_with_direct_io
-            false);     /// prefetch
+            false,
+            false,
+            false);
 
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// The sequential source produces one block per data granule (one mark).
-        /// Accumulate skip_index_granularity blocks per index granule.
+        /// Sequential source produces one block per data granule;
+        /// accumulate skip_index_granularity blocks per index granule
         auto aggregator = index_helper->createIndexAggregator();
         size_t data_granules_in_current = 0;
 
@@ -246,7 +229,6 @@ bool tryEstimateEmpirical(
             }
         }
 
-        /// Flush the last partial index granule.
         if (!aggregator->empty())
         {
             auto granule = aggregator->getGranuleAndReset();
@@ -271,9 +253,7 @@ bool tryEstimateEmpirical(
     return true;
 }
 
-/// Evaluate a single hypothetical index against the baseline.
-/// Checks applicability via createIndexCondition + alwaysUnknownOrTrue,
-/// then tries to estimate skip ratio using column statistics.
+/// Check applicability, then try empirical → statistical → applicability_only
 WhatIfIndexEstimator::IndexResult evaluateIndex(
     const IndexDescription & index_desc,
     ReadFromMergeTree * read_step,
@@ -288,7 +268,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.total_parts = analysis.selected_parts;
     result.total_marks = analysis.selected_marks;
 
-    /// Create the index helper from the factory.
     MergeTreeIndexPtr index_helper;
     try
     {
@@ -301,7 +280,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// Get the filter DAG from the read step.
     const auto & filter_dag = read_step->getFilterActionsDAG();
     if (!filter_dag)
     {
@@ -310,7 +288,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
         return result;
     }
 
-    /// Build the index condition from the filter predicate.
     MergeTreeIndexConditionPtr condition;
     try
     {
@@ -332,17 +309,16 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
 
-    /// Try empirical estimation first: materialize the index in memory
-    /// for baseline marks only, check each granule. This is 100% accurate.
+    /// Empirical first — build index in memory, check each granule
     if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, context))
         return result;
 
-    /// Empirical failed (e.g. no parts). Try column statistics.
+    /// Fall back to column statistics
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     if (tryEstimateWithStatistics(result, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
         return result;
 
-    /// No estimation available — can only report applicability.
+    /// No estimation available
     result.estimate_source = "applicability_only";
     result.estimated_marks = analysis.selected_marks;
     result.estimated_parts = analysis.selected_parts;
@@ -359,7 +335,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 {
     auto settings = WhatIfSettings::fromAST(explain_settings);
 
-    /// Build the query plan to get the baseline.
     SelectQueryOptions query_options;
     query_options.setExplain();
     QueryPlan plan;
@@ -378,7 +353,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         interpreter.buildQueryPlan(plan);
     }
 
-    /// Find ReadFromMergeTree steps before building pipeline.
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
 
@@ -394,8 +368,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// Build the pipeline to trigger filter pushdown, optimization, and index analysis.
-    /// This populates the AnalysisResult with baseline numbers.
+    /// Build pipeline to trigger filter pushdown and index analysis
     auto builder = plan.buildQueryPipeline(
         QueryPlanOptimizationSettings(plan_context),
         BuildQueryPipelineSettings(plan_context));
@@ -405,10 +378,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXPLAIN WHATIF: query analysis result is not available");
     const auto & analysis = *analysis_ptr;
 
-    /// buildQueryPipeline moved parts_with_ranges out of the analysis.
-    /// Reset the analyzed result so that selectRangesToRead re-uses prepared_parts
-    /// (the original unfiltered parts, still valid via shared_ptr),
-    /// then re-run the analysis to get a fresh copy of the filtered parts.
+    /// Pipeline build moved parts_with_ranges out of the analysis;
+    /// re-run selectRangesToRead to get a fresh copy of the filtered parts
     read_step->setAnalyzedResult(nullptr);
     auto fresh_analysis = read_step->selectRangesToRead();
     RangesInDataParts baseline_parts;
@@ -421,7 +392,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
 
-    /// Estimate baseline bytes.
     if (analysis.selected_rows > 0)
     {
         auto total_bytes = data.getTotalActiveSizeInBytes();
@@ -431,7 +401,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
                 static_cast<double>(total_bytes) / static_cast<double>(total_rows) * static_cast<double>(analysis.selected_rows));
     }
 
-    /// Get hypothetical indexes for this table.
     const auto & store = context->getHypotheticalIndexStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
@@ -446,7 +415,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
-    /// Evaluate each hypothetical index independently against baseline.
     for (const auto & index_desc : hypo_indexes)
     {
         auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, context);

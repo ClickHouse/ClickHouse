@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// system.hypothetical_indexes -- shows session-scoped hypothetical indexes.
+/// system.hypothetical_indexes — session-scoped hypothetical indexes
 class StorageSystemHypotheticalIndexes final : public IStorageSystemOneBlock
 {
 protected:

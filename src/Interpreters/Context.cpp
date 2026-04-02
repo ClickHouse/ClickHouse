@@ -2505,7 +2505,7 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
 
 HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
 {
-    /// Delegate to session context so the store persists across queries in a session.
+    /// Delegate to session context so the store persists across queries
     if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
         return session_ctx->getHypotheticalIndexStore();
 

@@ -10,9 +10,7 @@
 namespace DB
 {
 
-/// Session-scoped store for hypothetical (what-if) indexes.
-/// These indexes exist only in memory and are never materialized to disk.
-/// Used by EXPLAIN WHATIF to estimate the effect of adding a skip index.
+/// Session-scoped in-memory store for hypothetical indexes, used by EXPLAIN WHATIF
 class HypotheticalIndexStore
 {
 public:
@@ -20,10 +18,10 @@ public:
     void remove(const StorageID & table_id, const String & index_name);
     void clear();
 
-    /// Returns hypothetical indexes for a given table, or empty vector if none.
+    /// Returns hypothetical indexes for a given table, or empty vector if none
     std::vector<IndexDescription> getForTable(const StorageID & table_id) const;
 
-    /// Returns all hypothetical indexes across all tables.
+    /// All hypothetical indexes across all tables
     struct Entry
     {
         StorageID table_id;
@@ -34,7 +32,7 @@ public:
     bool empty() const;
 
 private:
-    /// Key is (database, table) pair.
+    /// Key is (database, table) pair
     using Key = std::pair<String, String>;
     static Key makeKey(const StorageID & table_id);
 

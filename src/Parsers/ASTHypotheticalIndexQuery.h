@@ -22,11 +22,8 @@ public:
 
     Kind kind = Create;
 
-    /// For Create: stores ASTIndexDeclaration
-    ASTPtr index_decl;
-
-    /// For Create and Drop: index name
-    ASTPtr index_name;
+    ASTPtr index_decl;  /// ASTIndexDeclaration for Create
+    ASTPtr index_name;  /// Index name for Create and Drop
 
     bool if_not_exists{false};
     bool if_exists{false};

@@ -13,13 +13,13 @@ ColumnsDescription StorageSystemHypotheticalIndexes::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"name", std::make_shared<DataTypeString>(), "Index name."},
-        {"database", std::make_shared<DataTypeString>(), "Database name."},
-        {"table", std::make_shared<DataTypeString>(), "Table name."},
-        {"type", std::make_shared<DataTypeString>(), "Index type (minmax, set, bloom_filter, etc.)."},
-        {"expression", std::make_shared<DataTypeString>(), "Index expression."},
-        {"granularity", std::make_shared<DataTypeUInt64>(), "Index granularity."},
-        {"scope", std::make_shared<DataTypeString>(), "Scope (always 'session')."},
+        {"name", std::make_shared<DataTypeString>(), "Index name"},
+        {"database", std::make_shared<DataTypeString>(), "Database name"},
+        {"table", std::make_shared<DataTypeString>(), "Table name"},
+        {"type", std::make_shared<DataTypeString>(), "Index type (minmax, set, bloom_filter, etc)"},
+        {"expression", std::make_shared<DataTypeString>(), "Index expression"},
+        {"granularity", std::make_shared<DataTypeUInt64>(), "Index granularity"},
+        {"scope", std::make_shared<DataTypeString>(), "Scope (always 'session')"},
     };
 }
 
@@ -37,7 +37,6 @@ void StorageSystemHypotheticalIndexes::fillData(
         res_columns[col++]->insert(entry.table_id.getTableName());
         res_columns[col++]->insert(entry.index.type);
 
-        /// Format expression from AST.
         String expr_str;
         if (entry.index.expression_list_ast)
         {
