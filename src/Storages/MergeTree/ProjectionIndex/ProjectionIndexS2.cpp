@@ -1457,7 +1457,8 @@ Block ProjectionIndexS2::calculate(
             if (params.strict_decode)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to build S2 covering for row {}", row);
             /// Cannot build covering (e.g., degenerate geometry) — emit face cells.
-            insertFaceCellsForRow(*cell_id_column, *parent_offset_column, parent_offset);
+            if (geometry->kind != DecodedGeometry::Kind::Point)
+                insertFaceCellsForRow(*cell_id_column, *parent_offset_column, parent_offset);
             continue;
         }
 
