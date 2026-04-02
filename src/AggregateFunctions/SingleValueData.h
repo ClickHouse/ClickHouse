@@ -42,6 +42,8 @@ struct SingleValueDataBase
     /// Used to implement batch min/max
     virtual void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
     virtual void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena);
+    virtual void setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena);
+    virtual void setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena);
     virtual void setSmallestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
     virtual void setGreatestNotNullIf(const IColumn &, const UInt8 * __restrict, const UInt8 * __restrict, size_t, size_t, Arena *);
 
@@ -110,6 +112,8 @@ struct SingleValueDataFixed
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena);
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
     void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena *);
+    void setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena *);
+    void setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena *);
     void setSmallestNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,
@@ -220,6 +224,8 @@ public:
     bool setIfGreater(const IColumn & column, size_t row_num, Arena * arena) override;
     void setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
     void setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena) override;
+    void setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena) override;
+    void setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena) override;
     void setSmallestNotNullIf(
         const IColumn & column,
         const UInt8 * __restrict null_map,

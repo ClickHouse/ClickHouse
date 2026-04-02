@@ -137,6 +137,18 @@ void SingleValueDataBase::setGreatest(const IColumn & column, size_t row_begin, 
         setIfGreater(column, *index, arena);
 }
 
+void SingleValueDataBase::setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    for (size_t j = 0; j < num_rows; ++j)
+        setIfSmaller(column, row_indices[j], arena);
+}
+
+void SingleValueDataBase::setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    for (size_t j = 0; j < num_rows; ++j)
+        setIfGreater(column, row_indices[j], arena);
+}
+
 void SingleValueDataBase::setSmallestNotNullIf(
     const IColumn & column,
     const UInt8 * __restrict null_map,
@@ -321,6 +333,46 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
     {
         for (size_t i = row_begin; i < row_end; i++)
             setIfGreater(column, i, arena);
+    }
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    if (num_rows == 0)
+        return;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt = findExtremeMinForRows(vec.getData().data(), row_indices, num_rows);
+        if (opt.has_value())
+            setIfSmaller(*opt);
+    }
+    else
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            setIfSmaller(column, row_indices[j], arena);
+    }
+}
+
+template <typename T>
+void SingleValueDataFixed<T>::setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    if (num_rows == 0)
+        return;
+
+    const auto & vec = assert_cast<const ColVecType &>(column);
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    {
+        std::optional<T> opt = findExtremeMaxForRows(vec.getData().data(), row_indices, num_rows);
+        if (opt.has_value())
+            setIfGreater(*opt);
+    }
+    else
+    {
+        for (size_t j = 0; j < num_rows; ++j)
+            setIfGreater(column, row_indices[j], arena);
     }
 }
 
@@ -1023,6 +1075,18 @@ template <typename T>
 void SingleValueDataNumeric<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
     return memory.get().setGreatest(column, row_begin, row_end, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setSmallestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    return memory.get().setSmallestForRows(column, row_indices, num_rows, arena);
+}
+
+template <typename T>
+void SingleValueDataNumeric<T>::setGreatestForRows(const IColumn & column, const UInt64 * row_indices, size_t num_rows, Arena * arena)
+{
+    return memory.get().setGreatestForRows(column, row_indices, num_rows, arena);
 }
 
 template <typename T>

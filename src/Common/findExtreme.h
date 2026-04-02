@@ -47,6 +47,15 @@ template <typename T>
 requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
 std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end);
 
+/// Variants that operate on scattered row indices instead of a contiguous range.
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+std::optional<T> findExtremeMinForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows);
+
+template <typename T>
+requires(has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+std::optional<T> findExtremeMaxForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows);
+
 #define EXTERN_INSTANTIATION(T) \
     extern template std::optional<T> findExtremeMin(const T * __restrict ptr, size_t start, size_t end); \
     extern template std::optional<T> findExtremeMinNotNull( \
@@ -59,7 +68,9 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
     extern template std::optional<T> findExtremeMaxIf( \
         const T * __restrict ptr, const UInt8 * __restrict condition_map, size_t start, size_t end); \
     extern template std::optional<size_t> findExtremeMinIndex(const T * __restrict ptr, size_t start, size_t end); \
-    extern template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end);
+    extern template std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start, size_t end); \
+    extern template std::optional<T> findExtremeMinForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows); \
+    extern template std::optional<T> findExtremeMaxForRows(const T * __restrict ptr, const UInt64 * row_indices, size_t num_rows);
 
 FOR_BASIC_NUMERIC_TYPES(EXTERN_INSTANTIATION)
 
