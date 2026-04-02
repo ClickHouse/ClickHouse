@@ -83,7 +83,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
     node1.query(
         f"INSERT INTO {target_table} SELECT * FROM {source_table}",
         settings={
-            "parallel_distributed_insert_select": 2,
+            "parallel_replicas_parallel_distributed_insert_select": 1,
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
@@ -144,7 +144,7 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
         node1.query(
             f"INSERT INTO {target_table} SELECT * FROM {source_table}",
             settings={
-                "parallel_distributed_insert_select": 2,
+                "parallel_replicas_parallel_distributed_insert_select": 1,
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
@@ -174,7 +174,7 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
         node1.query(
             f"INSERT INTO {target_table} SELECT * FROM {source_table}",
             settings={
-                "parallel_distributed_insert_select": 2,
+                "parallel_replicas_parallel_distributed_insert_select": 1,
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
@@ -213,7 +213,7 @@ def test_insert_select_limit(start_cluster, max_parallel_replicas, parallel_repl
     node1.query(
         f"INSERT INTO {target_table} SELECT * FROM {source_table} LIMIT {limit}",
         settings={
-            "parallel_distributed_insert_select": 2,
+            "parallel_replicas_parallel_distributed_insert_select": 1,
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
@@ -258,7 +258,7 @@ def test_insert_select_with_constant(start_cluster, max_parallel_replicas, paral
     node1.query(
         f"INSERT INTO {target_table} WITH 1 + 1 as two SELECT key + (select sum(number) from numbers(10) where number < two), value FROM {source_table}",
         settings={
-            "parallel_distributed_insert_select": 2,
+            "parallel_replicas_parallel_distributed_insert_select": 1,
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
@@ -304,7 +304,7 @@ def test_insert_select_where(start_cluster, max_parallel_replicas, parallel_repl
     node1.query(
         f"INSERT INTO {target_table} SELECT * FROM {source_table} WHERE key % 10 = 0",
         settings={
-            "parallel_distributed_insert_select": 2,
+            "parallel_replicas_parallel_distributed_insert_select": 1,
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
