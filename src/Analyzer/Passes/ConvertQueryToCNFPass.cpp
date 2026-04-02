@@ -418,6 +418,14 @@ public:
         : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
     {}
 
+    bool needChildVisit(const VisitQueryTreeNodeType & /*parent*/, const VisitQueryTreeNodeType & child)
+    {
+        /// Do not descend into subqueries: their column references belong to a different scope
+        /// and must not be collected into the outer query's constraint component map.
+        const auto node_type = child->getNodeType();
+        return node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION;
+    }
+
     void visitImpl(const QueryTreeNodePtr & node)
     {
         if (auto id = graph.getComponentId(node))
@@ -443,8 +451,12 @@ public:
         : column_names(column_names_), query_node_to_component(query_node_to_component_)
     {}
 
-    bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType &)
+    bool needChildVisit(const VisitQueryTreeNodeType & parent, const VisitQueryTreeNodeType & child)
     {
+        /// Do not descend into subqueries: their columns belong to a different scope.
+        const auto node_type = child->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            return false;
         return !query_node_to_component || !query_node_to_component->contains(parent);
     }
 
@@ -471,6 +483,17 @@ public:
         ContextPtr context_)
         : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
     {}
+
+    bool needChildVisit(QueryTreeNodePtr & /*parent*/, QueryTreeNodePtr & child)
+    {
+        /// Do not descend into subqueries: their column references belong to a different scope
+        /// and must not be substituted by the outer query's constraint optimizer.
+        /// In particular, the correlated_columns list of a subquery (child index 16 of QueryNode)
+        /// must remain ColumnNode objects — replacing them with FunctionNode (e.g. a CAST expression)
+        /// causes a logical exception in the Planner when it iterates correlated columns.
+        const auto node_type = child->getNodeType();
+        return node_type != QueryTreeNodeType::QUERY && node_type != QueryTreeNodeType::UNION;
+    }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
