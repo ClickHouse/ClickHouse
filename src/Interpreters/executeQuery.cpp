@@ -2070,6 +2070,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
+            fuzzer->oracle_mode = context->getSettingsRef()[Setting::ast_fuzzer_oracle];
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
             fuzzed_query_params = fuzzer->getLastQueryParameters();

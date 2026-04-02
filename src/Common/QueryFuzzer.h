@@ -55,6 +55,11 @@ public:
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
 
+    /// When true, reduce probability of structure-destroying mutations
+    /// (removing GROUP BY, WHERE, converting to EXPLAIN) to preserve
+    /// query structure for oracle correctness testing.
+    bool oracle_mode = false;
+
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
 

@@ -2461,7 +2461,9 @@ void QueryFuzzer::fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children)
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
 {
-    if (fuzz_rand() % 50 == 0)
+    /// In oracle mode, never remove WHERE — it's needed for all TLP oracles.
+    /// HAVING removal is also suppressed to keep TLP HAVING testable.
+    if (fuzz_rand() % 50 == 0 && !(oracle_mode && (expr == ASTSelectQuery::Expression::WHERE || expr == ASTSelectQuery::Expression::HAVING)))
     {
         /// Remove the predicate
         sel->setExpression(expr, {});
@@ -3158,8 +3160,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         fuzz(with_union->list_of_selects);
         /// Fuzzing SELECT query to EXPLAIN query randomly.
-        /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
-        if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
+        /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery.
+        /// In oracle mode, never convert to EXPLAIN — it makes the query untestable.
+        if (!oracle_mode && fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
         {
             auto explain = make_intrusive<ASTExplainQuery>(fuzzExplainKind());
 
@@ -3418,7 +3421,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (select->groupBy().get())
         {
-            if (fuzz_rand() % 50 == 0)
+            /// In oracle mode, never remove GROUP BY — it destroys testability
+            /// for TLP GROUP BY, TLP HAVING, and TLP Aggregate oracles.
+            if (!oracle_mode && fuzz_rand() % 50 == 0)
             {
                 select->groupBy()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
@@ -3462,8 +3467,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if (!oracle_mode && fuzz_rand() % 50 == 0)
         {
+            /// In oracle mode, don't add random GROUP BY — it breaks SELECT list consistency.
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList(select->select()->children.size()));
         }
 
@@ -3479,7 +3485,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {
                     select->setExpression(ASTSelectQuery::Expression::PREWHERE, select->where()->clone());
 
-                    if (fuzz_rand() % 2 == 0)
+                    /// In oracle mode, never remove WHERE when converting to PREWHERE —
+                    /// keep both so the oracle can still partition on WHERE.
+                    if (!oracle_mode && fuzz_rand() % 2 == 0)
                     {
                         select->where()->children.clear();
                         select->setExpression(ASTSelectQuery::Expression::WHERE, {});
@@ -3571,9 +3579,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if (fuzz_rand() % (oracle_mode ? 200 : 50) == 0)
         {
-            /// Add a LIMIT clause
+            /// Add a LIMIT clause. In oracle mode, reduce probability (LIMIT blocks most oracles).
             select->setExpression(
                 ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt64>(fuzz_rand() % 1001)));
         }

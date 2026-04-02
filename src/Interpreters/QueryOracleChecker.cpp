@@ -81,6 +81,14 @@ const std::unordered_set<String> non_deterministic_functions = {
     "avg", "avgWeighted",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
+    /// Order-dependent aggregate functions.
+    "groupArray", "groupUniqArray", "groupArrayInsertAt",
+    "groupArrayMovingSum", "groupArrayMovingAvg",
+    "groupArraySorted", "groupArrayLast",
+    /// Approximate/formatting-dependent aggregates.
+    "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
+    "simpleLinearRegression", "sparkBar", "histogram",
+    "retentionState",
 };
 
 /// Maximum formatted query length for oracle sub-queries.
@@ -850,6 +858,14 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         {{"optimize_move_to_prewhere", Field(false)}},
         {{"query_plan_remove_redundant_sorting", Field(false)}},
         {{"optimize_rewrite_sum_if_to_count_if", Field(false)}},
+        {{"enable_optimize_predicate_expression", Field(false)}},
+        {{"optimize_if_chain_to_multiif", Field(false)}},
+        {{"optimize_if_transform_strings_to_enum", Field(false)}},
+        {{"optimize_functions_to_subcolumns", Field(false)}},
+        {{"optimize_normalize_count_variants", Field(false)}},
+        {{"optimize_injective_functions_inside_uniq", Field(false)}},
+        {{"optimize_substitute_columns", Field(false)}},
+        {{"query_plan_enable_optimizations", Field(false)}},
     };
 
     /// Pick one random settings variant.
