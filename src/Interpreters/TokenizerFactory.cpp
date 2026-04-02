@@ -274,11 +274,11 @@ static void registerTokenizers(TokenizerFactory & factory)
         if (args.empty())
         {
             /// Default stop words: common CJK punctuation marks
-            stop_words = {“，”, “。”, “！”, “？”, “；”, “：”, “、”, “’”, “’”, “””, “””};
+            stop_words = {"，", "。", "！", "？", "；", "：", "、", "‘", "’", "“", "”"};
         }
         else
         {
-            auto array = castAs<Array>(args[0], “stop_words”);
+            auto array = castAs<Array>(args[0], "stop_words");
             for (const auto & value : array)
                 stop_words.emplace_back(castAs<String>(value, “stop_word”));
         }
