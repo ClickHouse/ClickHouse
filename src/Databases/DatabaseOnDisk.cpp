@@ -29,8 +29,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ErrnoException.h>
 #include <Common/assert_cast.h>
 #include <Common/computeMaxTableNameLength.h>
 #include <Common/escapeForFileName.h>
@@ -436,6 +436,7 @@ void DatabaseOnDisk::renameTable(
     if (exchange)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Tables can be exchanged only in Atomic databases");
 
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::renameTable");
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
     if (typeid(*this) != typeid(to_database))

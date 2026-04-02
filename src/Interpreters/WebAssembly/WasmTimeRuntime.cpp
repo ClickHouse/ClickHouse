@@ -133,6 +133,7 @@ struct WasmTimeRuntime::Impl
         config.consume_fuel(true);
         config.epoch_interruption(true);
         config.signals_based_traps(false);
+        config.wasm_exceptions(true);
         return config;
     }
 
@@ -180,7 +181,7 @@ public:
     std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override
     {
         auto memory_span = getMemory().data(store);
-        if (ptr + size >= memory_span.size())
+        if (size > memory_span.size() || ptr > memory_span.size() - size)
         {
             throw Exception(
                 ErrorCodes::WASM_ERROR,
@@ -335,7 +336,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view function_name, wasmtime::FuncType::Ref function_info)
+WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -353,15 +354,16 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view function_name,
         argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
     }
 
-    return WasmFunctionDeclaration(function_name, std::move(argument_types), return_type);
+    return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);
 }
 
 class WasmTimeModule : public WasmModule
 {
 public:
-    explicit WasmTimeModule(wasmtime::Engine engine_, wasmtime::Module && module_)
+    explicit WasmTimeModule(std::string_view module_name_, wasmtime::Engine engine_, wasmtime::Module && module_)
         : engine(std::move(engine_))
         , module(std::move(module_))
+        , module_name(module_name_)
     {
         all_exports_list = module.exports();
         if (all_exports_list.size() >= 512)
@@ -380,14 +382,6 @@ public:
         if (all_imports_list.size() >= 512)
             throw Exception(ErrorCodes::WASM_ERROR, "Module has too many imports");
 
-        for (auto import_type : all_imports_list)
-        {
-            auto import_info = wasmtime::ExternType::from_import(import_type);
-            if (auto * import_func = std::get_if<wasmtime::FuncType::Ref>(&import_info))
-            {
-                function_imports_map.insert({std::string(import_type.name()), *import_func});
-            }
-        }
     }
 
     std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
@@ -441,11 +435,14 @@ public:
     std::vector<WasmFunctionDeclaration> getImports() const override
     {
         std::vector<WasmFunctionDeclaration> result;
-        result.reserve(function_imports_map.size());
 
-        for (const auto & [function_name, function_info] : function_imports_map)
+        for (auto import_type : all_imports_list)
         {
-            result.emplace_back(buildFunctionDeclaration(function_name, function_info));
+            auto import_info = wasmtime::ExternType::from_import(import_type);
+            if (auto * import_func = std::get_if<wasmtime::FuncType::Ref>(&import_info))
+            {
+                result.emplace_back(buildFunctionDeclaration(import_type.module(), import_type.name(), *import_func));
+            }
         }
 
         return result;
@@ -461,7 +458,7 @@ public:
         auto export_it = function_exports_map.find(function_name);
         if (export_it == function_exports_map.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' is not found in module exports", function_name);
-        return buildFunctionDeclaration(function_name, export_it->second);
+        return buildFunctionDeclaration(module_name, function_name, export_it->second);
     }
 
 private:
@@ -472,14 +469,15 @@ private:
     std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_exports_map;
 
     wasmtime::ImportType::List all_imports_list;
-    std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_imports_map;
+
+    std::string module_name;
 
     std::vector<WasmHostFunction> host_functions;
 
     LoggerPtr log = getLogger("WasmTimeModule");
 };
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
     auto compilation_result = wasmtime::Module::compile(impl->engine, bytes);
@@ -489,7 +487,7 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view wasm
     }
     auto module = compilation_result.ok();
 
-    return std::make_unique<WasmTimeModule>(impl->engine, std::move(module));
+    return std::make_unique<WasmTimeModule>(module_name, impl->engine, std::move(module));
 };
 
 WasmTimeRuntime::~WasmTimeRuntime() = default;
@@ -513,7 +511,7 @@ struct WasmTimeRuntime::Impl
 
 WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
 }

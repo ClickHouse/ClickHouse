@@ -35,7 +35,7 @@ namespace Jemalloc
 void purgeArenas()
 {
     Stopwatch watch;
-    mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
+    je_mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge", nullptr, nullptr, nullptr, 0);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
     ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, watch.elapsedMicroseconds());
 }
@@ -44,7 +44,7 @@ void checkProfilingEnabled()
 {
     bool active = true;
     size_t active_size = sizeof(active);
-    mallctl("opt.prof", &active, &active_size, nullptr, 0);
+    je_mallctl("opt.prof", &active, &active_size, nullptr, 0);
 
     if (!active)
         throw Exception(
@@ -58,10 +58,10 @@ std::string_view flushProfile(const char * file_prefix)
     checkProfilingEnabled();
     char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
-    int n = mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
+    int n = je_mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")
     {
-        mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
+        je_mallctl("prof.dump", nullptr, nullptr, nullptr, 0);
         return getLastFlushProfileForThread();
     }
 
@@ -69,7 +69,7 @@ std::string_view flushProfile(const char * file_prefix)
     std::string profile_dump_path = fmt::format("{}.{}.{}.heap", file_prefix, getpid(), profile_counter.fetch_add(1));
     const auto * profile_dump_path_str = profile_dump_path.c_str();
 
-    mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
+    je_mallctl("prof.dump", nullptr, nullptr, &profile_dump_path_str, sizeof(profile_dump_path_str)); // NOLINT
     return getLastFlushProfileForThread();
 }
 
@@ -89,7 +89,7 @@ void setProfileSamplingRate(size_t lg_prof_sample)
     if (current == lg_prof_sample)
         return;
 
-    mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
+    je_mallctl("prof.reset", nullptr, nullptr, &lg_prof_sample, sizeof(lg_prof_sample));
 }
 
 
