@@ -2908,7 +2908,13 @@ class TestCase:
                     safe_case = self.case.replace("'", "\\'")
                     clickhouse_execute(args, f"SYSTEM SET COVERAGE TEST '{safe_case}'")
                 except Exception as e:
-                    print("Cannot set coverage test: ", str(e))
+                    return TestResult(
+                        self.name,
+                        TestStatus.FAIL,
+                        None,
+                        0.0,
+                        f"\nCannot arm per-test coverage: {e}\n",
+                    )
 
             if not is_valid_utf_8(self.case_file) or (
                 self.reference_file and not is_valid_utf_8(self.reference_file)

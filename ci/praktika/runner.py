@@ -29,7 +29,7 @@ from .utils import Shell, TeePopen, Utils
 _GH_authenticated = False
 
 
-def _GH_Auth(workflow):
+def _GH_Auth():
     global _GH_authenticated
     if _GH_authenticated:
         return
@@ -38,9 +38,7 @@ def _GH_Auth(workflow):
     from .gh_auth import GHAuth
 
     if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+        GHAuth.auth_from_settings()
     _GH_authenticated = True
 
 
@@ -294,7 +292,7 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            _GH_Auth(workflow=workflow)
+            _GH_Auth()
 
         print("INFO: disk status before running a job:")
         Shell.run("df -h")
@@ -510,13 +508,10 @@ class Runner:
 
         return exit_code
 
-    def _post_run(
-        self, workflow, job, setup_env_exit_code, prerun_exit_code, run_exit_code
-    ):
-        info_errors = []
-        env = _Environment.get()
+    def _get_result_object(
+        self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
+    ) -> Result:
         result_exist = Result.exist(job.name)
-        is_ok = True
 
         if setup_env_exit_code != 0:
             info = f"ERROR: {ResultInfo.SETUP_ENV_JOB_FAILED}"
@@ -572,7 +567,16 @@ class Runner:
             Shell.check(result.get_on_error_hook(), verbose=True)
 
         result.update_duration()
-        result.set_files([Settings.RUN_LOG])
+        result.set_files([Settings.RUN_LOG], strict=False)
+        return result
+
+    def _post_run(
+        self, result, workflow, job, run_exit_code,
+    ) -> bool:
+        info_errors = []
+        env = _Environment.get()
+        is_ok = True
+
 
         is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
         is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
@@ -639,19 +643,6 @@ class Runner:
                         s3_path=s3_path, local_path=artifact_report_file
                     )
                     result.set_link(link)
-
-        if job.post_hooks:
-            sw_ = Utils.Stopwatch()
-            results_ = []
-            for check in job.post_hooks:
-                if callable(check):
-                    name = check.__name__
-                else:
-                    name = str(check)
-                results_.append(Result.from_commands_run(name=name, command=check))
-            result.results.append(
-                Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
-            )
 
         # run after post hooks as they might modify workflow kv data
         job_outputs = env.JOB_KV_DATA
@@ -754,7 +745,7 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                _GH_Auth(workflow)
+                _GH_Auth()
                 GH.post_commit_status(
                     name=workflow.name,
                     status=GH.convert_to_gh_status(status_updated),
@@ -788,7 +779,7 @@ class Runner:
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
-            _GH_Auth(workflow)
+            _GH_Auth()
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -806,7 +797,7 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            _GH_Auth(workflow)
+            _GH_Auth()
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
@@ -826,7 +817,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                _GH_Auth(workflow)
+                _GH_Auth()
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
@@ -910,6 +901,7 @@ class Runner:
         job,
         docker="",
         local_run=False,
+        run_hooks=True,
         no_docker=False,
         param=None,
         test="",
@@ -965,6 +957,19 @@ class Runner:
                 Info().store_traceback()
             print(f"=== Pre run finished ===\n\n")
 
+        prehook_result = None
+        if res and run_hooks and job.pre_hooks:
+            print(f"=== Pre-hooks [{job.name}], workflow [{workflow.name}] ===")
+            sw_ = Utils.Stopwatch()
+            results_ = []
+            for check in job.pre_hooks:
+                if callable(check):
+                    name = check.__name__
+                else:
+                    name = str(check)
+                results_.append(Result.from_commands_run(name=name, command=check))
+            prehook_result = Result.create_from(name="Pre Hooks", results=results_, stopwatch=sw_)
+
         if res:
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
             run_code = None
@@ -1000,13 +1005,37 @@ class Runner:
 
             print(f"=== Run script finished ===\n\n")
 
-        if not local_run:
-            print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            post_res = self._post_run(
-                workflow, job, setup_env_code, prerun_code, run_code
+        if run_hooks:
+            result = self._get_result_object(
+                job, setup_env_code, prerun_code, run_code
             )
-            res = res and post_res
-            print(f"=== Post run script finished ===")
+
+            if prehook_result:
+                result.results.append(prehook_result)
+            if job.post_hooks:
+                print(f"=== Post hooks [{job.name}], workflow [{workflow.name}] ===")
+                sw_ = Utils.Stopwatch()
+                results_ = []
+                for check in job.post_hooks:
+                    if callable(check):
+                        name = check.__name__
+                    else:
+                        name = str(check)
+                    results_.append(Result.from_commands_run(name=name, command=check))
+                result.results.append(
+                    Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+                )
+                print(f"=== Post hooks finished ===")
+
+            if not local_run:
+                print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
+                post_res = self._post_run(
+                    result, workflow, job, run_code
+                )
+                res = res and post_res
+                print(f"=== Post run script finished ===")
+
+            result.dump()
 
         if not res:
             sys.exit(1)
