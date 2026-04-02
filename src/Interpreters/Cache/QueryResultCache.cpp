@@ -379,14 +379,12 @@ size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
 
 bool QueryResultCache::IsStale::operator()(const Key & key, const Entry & entry) const
 {
-    /// Prefer the entry's own expires_at when it is set (non-default). This is the case for
-    /// entries computed via getOrSet, where timestamps are recorded after the query finishes
-    /// rather than before it starts. For entries written via the legacy QueryResultCacheWriter
-    /// path, entry.expires_at is default-constructed (epoch), so we fall back to key.expires_at.
-    auto expires = (entry.expires_at != std::chrono::system_clock::time_point{})
+    /// Use entry's timestamp if it exists because it was recorded after the query finished.
+    /// Otherwise, fallback to the key's timestamp. TODO: unused right now i think.
+    auto expires_at = (entry.expires_at != std::chrono::system_clock::time_point{})
         ? entry.expires_at
         : key.expires_at;
-    return expires < std::chrono::system_clock::now();
+    return expires_at < std::chrono::system_clock::now();
 };
 
 QueryResultCacheWriter::QueryResultCacheWriter(

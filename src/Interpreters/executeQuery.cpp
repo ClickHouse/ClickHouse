@@ -1719,6 +1719,7 @@ static BlockIO executeQueryImpl(
             /// (where it runs only on the winning thread) and the writes-disabled fallback path.
             auto setup_interpreter_and_execute = [&]()
             {
+                /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
                 {
                     try
@@ -1766,6 +1767,8 @@ static BlockIO executeQueryImpl(
                     {
                         if (quota->isKeyedByNormalizedQueryHash())
                         {
+                            /// For NORMALIZED_QUERY_HASH keyed quotas, track all resources
+                            /// against per-hash intervals instead of shared session intervals.
                             if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
                                 quota->usedForNormalizedQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
                             else if (out_ast->as<ASTInsertQuery>())
@@ -1783,10 +1786,12 @@ static BlockIO executeQueryImpl(
                             quota->checkExceeded(QuotaType::ERRORS);
                         }
 
+                        /// Track per-normalized-query-hash quota limits (works for all key types).
                         quota->usedPerNormalizedHash(normalized_query_hash);
                     }
                 }
 
+                /// Invoke HTTP 100-Continue callback after quota checks are completed
                 if (http_continue_callback && !internal)
                     http_continue_callback();
 
@@ -1816,13 +1821,7 @@ static BlockIO executeQueryImpl(
                 }
             };
 
-            /// Thundering herd prevention via QueryResultCache::getOrSet.
-            ///
-            /// When writes are enabled, getOrSet is called directly — it serves as the unified
-            /// read+write mechanism. No separate cache read probe is needed because getOrSet
-            /// already calls cache_policy->get() internally before running the lambda: if a
-            /// valid entry exists it is returned immediately (was_inserted == false) without
-            /// running the lambda at all.
+            /// When writes are enabled, getOrSet is called directly to prevent thundering herds.
             ///
             /// getOrSet serializes concurrent requests for the same key using an InsertToken:
             ///   - Executor thread: wins the token and runs the lambda below, which executes the
@@ -1830,10 +1829,8 @@ static BlockIO executeQueryImpl(
             ///   - Waiter threads: observe a pending token, block, and receive the same Entry
             ///     once the executor finishes — without re-running the query themselves.
             ///
-            /// Prerequisite: TTLCachePolicy::get() must treat stale entries as misses (see the
-            /// fix in TTLCachePolicy.h). Without that fix, getOrSet would see expired entries as
-            /// cache hits and never call the lambda — the cache would serve stale data forever
-            /// after the first entry's TTL expires, with no way to refresh it.
+            /// Prerequisite: TTLCachePolicy::get() must treat stale entries as misses. Otherwise,
+            /// getOrSet serve stale data forever after the first entry's TTL expires.
             ///
             /// Known limitation: the lambda must return a complete Entry, so the full query
             /// result is materialized in memory via PullingPipelineExecutor before any data is
@@ -1843,12 +1840,12 @@ static BlockIO executeQueryImpl(
                 auto created_at = std::chrono::system_clock::now();
                 auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
-                /// Build the key used to insert into the cache. The header field is passed as
-                /// null because the result header is only known after interpreter->execute()
-                /// runs inside the lambda below. The header is stored in Entry::header instead,
-                /// which is read back from the entry when building the reading pipeline.
-                /// Note: header is not part of Key::operator== or KeyHasher, so null is fine
-                /// for cache lookup/insert purposes.
+                /// Build the key used to insert into the cache.
+                /// Note:The header field is passed as null because the result header is only known
+                /// after interpreter->execute() runs inside the lambda below. This is okay because header
+                /// is not part of Key::operator== or KeyHasher, so null is fine for cache lookup/insert purposes.
+                ///
+                /// After we execute the query, we save the header in the entry when building the reading pipeline.
                 QueryResultCache::Key write_key(
                     out_ast, context->getCurrentDatabase(), *settings_copy,
                     nullptr, /// header: unknown before execution; stored in Entry::header instead
@@ -1905,9 +1902,6 @@ static BlockIO executeQueryImpl(
                     nullptr, nullptr); /// totals/extremes not supported in the getOrSet path
                 res.pipeline = std::move(reading_pipeline);
 
-                /// Tag the query for observability: Write = this thread executed the query,
-                /// Read = result was served from the cache (computed by another thread or a
-                /// previous request).
                 query_result_cache_usage = was_inserted ? QueryResultCacheUsage::Write : QueryResultCacheUsage::Read;
 
                 if (settings[Setting::enable_reads_from_query_cache])
@@ -1916,7 +1910,7 @@ static BlockIO executeQueryImpl(
                     result_details.query_cache_entry_expires_at = cached_entry->expires_at;
                 }
             }
-            /// Fallback: writes are disabled or cache is not configured. Execute the query.
+            /// If cache is not configured or (cache miss and writing to the cache is disabled), just execute the query.
             else if (!get_result_from_query_result_cache())
             {
                 setup_interpreter_and_execute();
