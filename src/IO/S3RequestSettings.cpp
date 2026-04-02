@@ -301,7 +301,6 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             : default_max_get_burst;
 
         request_throttler.get_throttler = std::make_shared<Throttler>(
-            "s3_get_rps",
             max_get_rps,
             max_get_burst,
             ProfileEvents::S3GetRequestThrottlerCount,
@@ -322,7 +321,6 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             : default_max_put_burst;
 
         request_throttler.put_throttler = std::make_shared<Throttler>(
-            "s3_put_rps",
             max_put_rps,
             max_put_burst,
             ProfileEvents::S3PutRequestThrottlerCount,
