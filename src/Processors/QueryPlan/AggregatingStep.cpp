@@ -64,7 +64,6 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
 }
 
@@ -938,20 +937,9 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
 void AggregatingStep::serialize(Serialization & ctx) const
 {
-    if (!sort_description_for_merging.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep optimized for in-order is not supported.");
-
-    if (explicit_sorting_required_for_aggregation_in_order)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of AggregatingStep explicit_sorting_required_for_aggregation_in_order is not supported.");
-
-    /// If you wonder why something is serialized using settings, and other is serialized using flags, considerations are following:
-    /// * flags are something that may change data format returning from the step
-    /// * settings are something which already was in settings[QueryPlanSerializationSetting::h] and, usually, is passed to Aggregator unchanged
-    /// Flags `final` and `group_by_use_nulls` change types, and `overflow_row` appends additional block to results.
-    /// Settings like `max_rows_to_group_by` or `empty_result_for_aggregation_by_empty_set` affect the result,
-    /// but does not change data format.
-    /// Overall, the rule is not strict.
-
+    /// Flags encode boolean properties that affect the data format or plan structure.
+    /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
+    ///             16=stats_key, 32=in_order_aggregation.
     UInt8 flags = 0;
     if (final && !ctx.skip_final_flag)
         flags |= 1;
@@ -961,15 +949,18 @@ void AggregatingStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (!grouping_sets_params.empty())
         flags |= 8;
-    /// Ideally, key should be calculated from QueryPlan on the follower.
-    /// So, let's have a flag to disable sending/reading pre-calculated value.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
         flags |= 16;
+    if (!sort_description_for_merging.empty())
+        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
 
-    if (explicit_sorting_required_for_aggregation_in_order)
+    if (!sort_description_for_merging.empty())
+    {
+        serializeSortDescription(sort_description_for_merging, ctx.out);
         serializeSortDescription(group_by_sort_description, ctx.out);
+    }
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
@@ -1006,6 +997,15 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     bool group_by_use_nulls = bool(flags & 4);
     bool has_grouping_sets = bool(flags & 8);
     bool has_stats_key = bool(flags & 16);
+    bool has_in_order = bool(flags & 32);
+
+    SortDescription sort_description_for_merging;
+    SortDescription group_by_sort_description;
+    if (has_in_order)
+    {
+        deserializeSortDescription(sort_description_for_merging, ctx.in);
+        deserializeSortDescription(group_by_sort_description, ctx.in);
+    }
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -1075,8 +1075,6 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]};
 
-    SortDescription sort_description_for_merging;
-
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
         std::move(params),
@@ -1089,7 +1087,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         false, // storage_has_evenly_distributed_read, TODO: later
         group_by_use_nulls,
         std::move(sort_description_for_merging),
-        SortDescription{},
+        std::move(group_by_sort_description),
         ctx.settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number],
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
         false,
