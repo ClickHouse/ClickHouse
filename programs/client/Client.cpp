@@ -694,6 +694,11 @@ void Client::connect()
 
     prompt = appendSmileyIfNeeded(prompt);
 
+    // Sync the true current database from the server after handshake.
+    // This handles the case where default_database is set server-side
+    // without a client --database flag. Called once at connect time;
+    // server config reloads (SYSTEM RELOAD CONFIG) cannot change the
+    // current database for an already-established session.
     syncDefaultDatabase();
 }
 
