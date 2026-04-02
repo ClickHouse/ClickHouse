@@ -1223,6 +1223,8 @@ ToString
 ToUnicode
 Toolset
 TopK
+TopN
+topn
 TotalBytesOfMergeTreeTables
 TotalPartsOfMergeTreeTables
 TotalPrimaryKeyBytesInMemory

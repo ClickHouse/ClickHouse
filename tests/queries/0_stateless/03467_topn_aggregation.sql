@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-fasttest, no-parallel-replicas
 
 DROP TABLE IF EXISTS t_topn;
 
