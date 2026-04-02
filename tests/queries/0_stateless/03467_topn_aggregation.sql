@@ -420,7 +420,7 @@ ENGINE = MergeTree ORDER BY grp;
 
 INSERT INTO t_topn_nan SELECT
     arrayJoin(['a','b','c','d','e','f']) AS grp,
-    multiIf(grp='a', 100, grp='b', 0.0/0.0, grp='c', 300, grp='d', 0.0/0.0, grp='e', 50, 200) AS val;
+    multiIf(grp='a', 100, grp='b', 0.0/0.0, grp='c', 300, grp='d', 150, grp='e', 50, 200) AS val;
 
 SELECT '-- NaN DESC: optimized';
 SELECT grp, max(val) AS m

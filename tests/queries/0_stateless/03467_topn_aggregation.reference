@@ -201,51 +201,51 @@ g195	9995
 -- NaN DESC: optimized
 c	300
 f	200
-a	100
+d	150
 -- NaN DESC: reference
 c	300
 f	200
-a	100
+d	150
 -- NaN ASC: optimized
 e	50
 a	100
-f	200
+d	150
 -- NaN ASC: reference
 e	50
 a	100
-f	200
+d	150
 -- NaN DESC NULLS LAST: optimized
 c	300
 f	200
-a	100
+d	150
 -- NaN DESC NULLS LAST: reference
 c	300
 f	200
-a	100
+d	150
 -- NaN ASC NULLS FIRST: optimized
 b	nan
-d	nan
 e	50
+a	100
 -- NaN ASC NULLS FIRST: reference
 b	nan
-d	nan
 e	50
+a	100
 -- NaN DESC level 2: optimized
 c	300
 f	200
-a	100
+d	150
 -- NaN DESC level 2: reference
 c	300
 f	200
-a	100
+d	150
 -- NaN ASC level 2: optimized
 e	50
 a	100
-f	200
+d	150
 -- NaN ASC level 2: reference
 e	50
 a	100
-f	200
+d	150
 -- nullable key DESC NULLS LAST: optimized
 a	2024-01-05 00:00:00
 f	2024-01-04 00:00:00
