@@ -5,7 +5,11 @@
 TPCH_SETTINGS_JSON="$CURDIR/../../benchmarks/tpc-h/settings.json"
 
 # --max_rows_to_read 0 because of https://github.com/ClickHouse/ClickHouse/issues/99937. Can be removed after the issue is closed.
-SETTINGS=(-m --max_rows_to_read 0)
+# --max_memory_usage 0: The default `parallel_hash` join algorithm causes the greedy join
+# order optimizer to choose a high-memory join order for multi-table TPC queries (4-5 GiB
+# vs ~850 MiB with `hash`). This exceeds the CI profile's 5G limit on coverage builds.
+# These tests verify correctness, not memory usage — disable the per-query memory limit.
+SETTINGS=(-m --max_rows_to_read 0 --max_memory_usage 0)
 _tpch_output=$(jq -e -r '
     (.settings | to_entries[] | "--\(.key)", (.value | tostring))
 ' "$TPCH_SETTINGS_JSON")
