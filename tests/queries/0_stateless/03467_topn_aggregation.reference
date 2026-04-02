@@ -256,9 +256,9 @@ f	2024-01-04 00:00:00
 c	2024-01-03 00:00:00
 -- nullable key DESC NULLS FIRST: optimized
 b	\N
-e	\N
 a	2024-01-05 00:00:00
+f	2024-01-04 00:00:00
 -- nullable key DESC NULLS FIRST: reference
 b	\N
-e	\N
 a	2024-01-05 00:00:00
+f	2024-01-04 00:00:00

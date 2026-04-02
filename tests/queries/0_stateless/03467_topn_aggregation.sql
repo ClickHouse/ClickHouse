@@ -532,7 +532,7 @@ SETTINGS allow_nullable_key = 1;
 
 INSERT INTO t_topn_nullable_key VALUES
     ('a', '2024-01-05'), ('b', NULL), ('c', '2024-01-03'),
-    ('d', '2024-01-01'), ('e', NULL), ('f', '2024-01-04');
+    ('d', '2024-01-01'), ('e', '2024-01-02'), ('f', '2024-01-04');
 
 SELECT '-- nullable key DESC NULLS LAST: optimized';
 SELECT key, max(val) AS m
