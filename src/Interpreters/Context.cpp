@@ -3682,6 +3682,7 @@ std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() c
         shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
     });
 
+    SharedLockGuard lock(shared->mutex);
     return shared->workload_entity_storage;
 }
 
