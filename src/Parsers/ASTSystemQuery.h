@@ -43,6 +43,7 @@ public:
         CLEAR_QUERY_CACHE,
         CLEAR_COMPILED_EXPRESSION_CACHE,
         CLEAR_ICEBERG_METADATA_CACHE,
+        CLEAR_PARQUET_METADATA_CACHE,
         CLEAR_FILESYSTEM_CACHE,
         CLEAR_DISTRIBUTED_CACHE,
         CLEAR_DISK_METADATA_CACHE,
@@ -116,6 +117,7 @@ public:
         STOP_CLEANUP,
         START_CLEANUP,
         RESET_COVERAGE,
+        SET_COVERAGE_TEST,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,
@@ -134,6 +136,7 @@ public:
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
         RECONNECT_ZOOKEEPER,
+        WAIT_BLOBS_CLEANUP,
         INSTRUMENT_ADD,
         INSTRUMENT_REMOVE,
         RESET_DDL_WORKER,
@@ -197,6 +200,8 @@ public:
     FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
 
     String delta_kernel_tracing_level;
+
+    String coverage_test_name;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 

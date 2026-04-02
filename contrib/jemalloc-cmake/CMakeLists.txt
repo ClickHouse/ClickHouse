@@ -184,7 +184,10 @@ configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_de
 target_include_directories(_jemalloc SYSTEM PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal")
 
+# This is only about private functions, and we cannot use private namespace since we do not provide private_namespace.h
 target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
+# Do not rename je_malloc to malloc (and friends)
+target_compile_definitions(_jemalloc INTERFACE -DJEMALLOC_NO_RENAME)
 
 # Because our coverage callbacks call malloc, and recursive call of malloc could not work.
 target_compile_options(_jemalloc PRIVATE ${WITHOUT_COVERAGE_FLAGS_LIST})

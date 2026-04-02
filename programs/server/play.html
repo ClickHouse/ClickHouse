@@ -585,6 +585,34 @@
             position: relative;
         }
 
+        #query-params
+        {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem 0.5rem;
+            margin-top: 0.25rem;
+            align-items: center;
+        }
+
+        .query-param
+        {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .query-param label
+        {
+            color: var(--misc-text-color);
+            white-space: nowrap;
+        }
+
+        .query-param input
+        {
+            width: 10em;
+            max-width: 20em;
+        }
+
         a, a:visited
         {
             color: var(--link-color);
@@ -671,6 +699,7 @@
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
             <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
+            <div id="query-params"></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
@@ -1815,6 +1844,12 @@ class QueryResultElement extends HTMLElement
     {
         await this._loadUplot();
 
+        if (this._uplot)
+        {
+            this._uplot.destroy();
+            this._uplot = null;
+        }
+
         let chart = this._chart;
         chart.style.display = 'block';
 
@@ -2264,6 +2299,14 @@ async function postImpl(posted_request_num, query)
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
 
+    /// Add query parameter values. Capture the snapshot before fetch so that
+    /// edits made while the request is in flight do not affect history/download.
+    const paramValuesSnapshot = getParamValues();
+    for (const [name, value] of Object.entries(paramValuesSnapshot))
+    {
+        url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+    }
+
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
 
@@ -2398,6 +2441,7 @@ async function postImpl(posted_request_num, query)
     document.getElementById('download-div').style.display = 'block';
     document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
     last_query_for_download = query;
+    last_params_for_download = paramValuesSnapshot;
 
     if (is_raw) {
         resultEl.elapsedNs = 1e6 * (performance.now() - last_query_start);
@@ -2421,6 +2465,7 @@ async function postImpl(posted_request_num, query)
             ok: response.ok,
             data: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
             elapsed_ns: elapsed_ns,
+            params: paramValuesSnapshot,
         };
         const title = "ClickHouse Query: " + query;
 
@@ -2431,6 +2476,10 @@ async function postImpl(posted_request_num, query)
         if (server_address != location.origin) {
             /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
+        }
+        for (const [name, value] of Object.entries(paramValuesSnapshot))
+        {
+            history_url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
         }
         history_url += '#' + toBase64(query);
 
@@ -2448,6 +2497,13 @@ async function restoreFromHistory(state) {
     clear();
     query_area.value = state.query;
     resultEl.queryText = state.query;
+
+    /// Restore query parameter inputs and their values.
+    await updateQueryParams();
+    if (state.params)
+    {
+        setParamValues(state.params);
+    }
 
     if (!state.data) return;
 
@@ -2851,6 +2907,148 @@ async function getQueryUnderCursor() {
     return all_queries;
 }
 
+/// Query parameters support: detect {name:Type} placeholders and show input fields.
+
+let queryParamsContainer = document.getElementById('query-params');
+let currentQueryParams = [];
+let updateQueryParamsGeneration = 0;
+
+function extractQueryParams(tokens)
+{
+    const params = [];
+    const seen = new Set();
+    const significant = tokens.filter(t => t.significant);
+
+    for (let i = 0; i < significant.length - 3; i++)
+    {
+        if (significant[i].token === '{' && significant[i + 2].token === ':')
+        {
+            const name = significant[i + 1].token;
+            if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name) && !seen.has(name))
+            {
+                for (let j = i + 3; j < significant.length; j++)
+                {
+                    if (significant[j].token === '}')
+                    {
+                        const type = significant.slice(i + 3, j).map(t => t.token).join('');
+                        params.push({name: name, type: type});
+                        seen.add(name);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return params;
+}
+
+function getParamValues()
+{
+    const values = {};
+    for (const param of currentQueryParams)
+    {
+        const input = document.getElementById('param-' + param.name);
+        if (input)
+        {
+            values[param.name] = input.value;
+        }
+    }
+    return values;
+}
+
+function setParamValues(values)
+{
+    if (!values) return;
+    for (const [name, value] of Object.entries(values))
+    {
+        const input = document.getElementById('param-' + name);
+        if (input)
+        {
+            input.value = value;
+            input.dispatchEvent(new Event('input'));
+        }
+    }
+}
+
+async function updateQueryParams()
+{
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
+    {
+        return;
+    }
+
+    const query = query_area.value;
+    if (!query)
+    {
+        queryParamsContainer.innerHTML = '';
+        currentQueryParams = [];
+        return;
+    }
+
+    const generation = ++updateQueryParamsGeneration;
+    const tokens = await tokenize(query);
+    if (generation !== updateQueryParamsGeneration) { return; }
+    const params = extractQueryParams(tokens);
+
+    if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
+    {
+        return;
+    }
+
+    const oldValues = getParamValues();
+    currentQueryParams = params;
+    queryParamsContainer.innerHTML = '';
+
+    for (const param of params)
+    {
+        const wrapper = document.createElement('span');
+        wrapper.className = 'query-param';
+
+        const label = document.createElement('label');
+        label.textContent = param.name + ':';
+        label.setAttribute('for', 'param-' + param.name);
+        wrapper.appendChild(label);
+
+        let placeholder = param.type;
+        if (/^Date$/.test(param.type)) placeholder = 'YYYY-MM-DD';
+        else if (/^DateTime/.test(param.type)) placeholder = 'YYYY-MM-DD hh:mm:ss';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'param-' + param.name;
+        input.className = 'monospace shadow';
+        input.spellcheck = false;
+        input.placeholder = placeholder;
+        if (oldValues[param.name] !== undefined)
+        {
+            input.value = oldValues[param.name];
+        }
+        input.addEventListener('input', function()
+        {
+            /// Resize to fit the value, clamped between 10em and 20em.
+            this.style.width = '10em';
+            if (this.scrollWidth > this.clientWidth)
+            {
+                this.style.width = Math.min(this.scrollWidth, this.clientWidth * 2) + 'px';
+            }
+        });
+        wrapper.appendChild(input);
+
+        queryParamsContainer.appendChild(wrapper);
+
+        /// Trigger resize after the element is in the DOM so scrollWidth is valid.
+        input.dispatchEvent(new Event('input'));
+    }
+}
+
+let paramDebounceTimer = null;
+query_area.addEventListener('input', () =>
+{
+    clearTimeout(paramDebounceTimer);
+    paramDebounceTimer = setTimeout(updateQueryParams, 100);
+});
+
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;
     if (update_preference) {
@@ -2882,7 +3080,30 @@ if (theme) {
     });
 }
 
-if (run_immediately) {
+/// Detect query parameters on page load and restore their values from the URL.
+/// If run_immediately is set, run the query after params are ready.
+if (query_area.value)
+{
+    updateQueryParams().then(() =>
+    {
+        const urlParamValues = {};
+        for (const param of currentQueryParams)
+        {
+            const value = current_url.searchParams.get('param_' + param.name);
+            if (value !== null)
+            {
+                urlParamValues[param.name] = value;
+            }
+        }
+        setParamValues(urlParamValues);
+        if (run_immediately)
+        {
+            post();
+        }
+    });
+}
+else if (run_immediately)
+{
     post();
 }
 
@@ -2919,6 +3140,7 @@ document.getElementById('copy-div').addEventListener('click', function() {
 
 // Download functionality
 let last_query_for_download = '';
+let last_params_for_download = {};
 
 // Toggle download dropdown
 document.getElementById('download-div').addEventListener('click', function(e) {
@@ -2998,6 +3220,11 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
+
+    for (const [name, value] of Object.entries(last_params_for_download))
+    {
+        url += '&param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value);
+    }
 
     let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
 
