@@ -1816,12 +1816,13 @@ static BlockIO executeQueryImpl(
                 }
             };
 
-            const bool query_result_cache_hit = get_result_from_query_result_cache();
             /// Thundering herd prevention via QueryResultCache::getOrSet.
             ///
-            /// Condition: writes must be enabled, and the read-only probe above must have found
-            /// no valid (non-stale) cache entry. If the probe found a hit, get_result_from_query_result_cache()
-            /// already set res.pipeline, so we skip both branches entirely.
+            /// When writes are enabled, getOrSet is called directly — it serves as the unified
+            /// read+write mechanism. No separate cache read probe is needed because getOrSet
+            /// already calls cache_policy->get() internally before running the lambda: if a
+            /// valid entry exists it is returned immediately (was_inserted == false) without
+            /// running the lambda at all.
             ///
             /// getOrSet serializes concurrent requests for the same key using an InsertToken:
             ///   - Executor thread: wins the token and runs the lambda below, which executes the
@@ -1837,8 +1838,7 @@ static BlockIO executeQueryImpl(
             /// Known limitation: the lambda must return a complete Entry, so the full query
             /// result is materialized in memory via PullingPipelineExecutor before any data is
             /// streamed to the client. There is no row-by-row streaming when this path is taken.
-            if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache]
-                && !query_result_cache_hit)
+            if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
             {
                 auto created_at = std::chrono::system_clock::now();
                 auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
@@ -1866,6 +1866,8 @@ static BlockIO executeQueryImpl(
                     {
                         /// This lambda runs only on the executor thread. Waiter threads block
                         /// inside getOrSet and never enter here.
+
+                        // Execute the query.
                         setup_interpreter_and_execute();
 
                         /// Synchronously drain the pipeline and collect all result blocks into
@@ -1913,8 +1915,8 @@ static BlockIO executeQueryImpl(
                     result_details.query_cache_entry_expires_at = expires_at;
                 }
             }
-            // If no cache hit, and (implicitly) writing to the cache is disabled, or the cache is not configured, then execute the query.
-            else if (!query_result_cache_hit)
+            /// Fallback: writes are disabled or cache is not configured. Execute the query.
+            else if (!get_result_from_query_result_cache())
             {
                 setup_interpreter_and_execute();
             }
