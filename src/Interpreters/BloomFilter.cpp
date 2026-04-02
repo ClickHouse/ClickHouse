@@ -111,7 +111,7 @@ ALWAYS_INLINE bool findHashPairK3(
     return true;
 }
 
-[[maybe_unused]] static void addHashPairsK3Impl(
+[[maybe_unused]] void addHashPairsK3Impl(
     BloomFilter::Container & filter,
     const BloomFilterHashPair * pairs,
     size_t count,
@@ -122,7 +122,7 @@ ALWAYS_INLINE bool findHashPairK3(
         addHashPairK3(filter, pairs[i], modulus, divider);
 }
 
-[[maybe_unused]] static size_t findHashPairsK3Impl(
+[[maybe_unused]] size_t findHashPairsK3Impl(
     const BloomFilter::Container & filter,
     const BloomFilterHashPair * pairs,
     size_t count,
