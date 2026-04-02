@@ -74,6 +74,7 @@ def test_kafka_sasl(kafka_cluster):
     producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()
+    producer.close()
 
     assert_eq_with_retry(
         instance,

@@ -26,15 +26,13 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(workflow, force=False):
+def _GH_Auth(force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
     if force or not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -304,7 +302,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         env.dump()
 
     try:
-        _GH_Auth(workflow, force=True)
+        _GH_Auth(force=True)
     except Exception as e:
         print(f"WARNING: Failed to auth with GH: [{e}]")
 
@@ -334,7 +332,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         report_url_current_sha = info.get_report_url(latest=False)
         body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
         res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={"report": body, "summary": ""},
+            comment_tags_and_bodies={
+                "report": body,
+                "param_1": "",
+                "summary": "",
+                "review": "",
+            },
         )
         res1 = GH.post_commit_status(
             name=workflow.name,
@@ -494,11 +497,18 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                     if job.provides:
                         # for cases when artifact report is used instead of real artifacts
                         affected_artifacts.append(job.name)
-                    # Only add artifact names to all_required_artifacts
-                    # Job names in requirements indicate ordering-only dependencies
+                    # Only add artifact names to all_required_artifacts.
+                    # Job names in requirements are ordering-only dependencies unless
+                    # needs_jobs_from_requires is set, in which case the required job
+                    # must run (cannot be skipped as unaffected).
                     for req in job.requires:
                         if req not in job_names:
                             # Not a job name, must be an artifact name
+                            all_required_artifacts.add(req)
+                        elif job.needs_jobs_from_requires:
+                            print(
+                                f"NOTE: [{job.name}] requires [{req}] (job name) - treating as hard dependency"
+                            )
                             all_required_artifacts.add(req)
                         else:
                             print(
@@ -721,7 +731,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth(workflow)
+        _GH_Auth()
 
     update_final_report = False
     results = []
@@ -844,9 +854,13 @@ def _finish_workflow(workflow, job_name):
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
     if results:
-        return Result.create_from(results=results, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, results=results, stopwatch=stop_watch
+        )
     else:
-        return Result.create_from(status=Result.Status.SUCCESS, stopwatch=stop_watch)
+        return Result.create_from(
+            name=job_name, status=Result.Status.SUCCESS, stopwatch=stop_watch
+        )
 
 
 if __name__ == "__main__":

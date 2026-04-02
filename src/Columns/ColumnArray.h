@@ -74,7 +74,7 @@ public:
     size_t size() const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     std::string_view getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
@@ -122,7 +122,7 @@ public:
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -131,7 +131,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     ColumnPtr convertToFullColumnIfConst() const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool hasEqualOffsets(const ColumnArray & other) const;
 
@@ -213,8 +213,8 @@ public:
     size_t getNumberOfDimensions() const;
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { data->fixDynamicStructure(); }
 
     bool dynamicStructureEquals(const IColumn & rhs) const override
@@ -223,6 +223,9 @@ public:
             return data->dynamicStructureEquals(*rhs_concrete->data);
         return false;
     }
+
+    bool hasStatistics() const override { return data->hasStatistics(); }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
 private:
     WrappedPtr data;

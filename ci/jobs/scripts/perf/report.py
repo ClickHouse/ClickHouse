@@ -32,7 +32,7 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {"clickbench", "tpch"}  # already fast enough, here for consistency
+benchmarks = {"clickbench", "tpch", "tpcds"}
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 8 seconds
@@ -238,7 +238,7 @@ def tableStart(title):
     return f"""
         <h2 id="{anchor}">
             <a class="cancela" href="#{anchor}">{title}</a>
-            <a class="cancela" href="https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#{help_anchor}"><sup style="color: #888">?</sup></a>
+            <a class="cancela" href="https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#{help_anchor}"><sup style="color: #888">?</sup></a>
         </h2>
         <table class="{cls}">
     """

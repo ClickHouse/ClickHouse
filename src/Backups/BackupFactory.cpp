@@ -1,4 +1,5 @@
 #include <Backups/BackupFactory.h>
+#include <Common/Exception.h>
 
 
 namespace DB

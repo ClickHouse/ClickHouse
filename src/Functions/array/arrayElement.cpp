@@ -1637,7 +1637,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
                 }
                 else if constexpr (std::is_signed_v<IndexType>)
                 {
-                    if (idx < 0 && static_cast<UInt64>(-idx) <= array_size)
+                    if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
                     {
                         /// Negative index from the end: arr[-1] is last element
                         zero_based = static_cast<UInt64>(array_size + idx);
@@ -1712,7 +1712,7 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
                     zero_based = static_cast<UInt64>(idx) - 1;
                     in_range = true;
                 }
-                else if (idx < 0 && static_cast<UInt64>(-idx) <= array_size)
+                else if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
                 {
                     zero_based = static_cast<UInt64>(array_size + idx); /// idx < 0
                     in_range = true;

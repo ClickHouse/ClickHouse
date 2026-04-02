@@ -1,8 +1,12 @@
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/StorageSharedMergeTree.h>
+#endif
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
@@ -43,6 +47,7 @@ template <typename TStorage>
 void AsyncBlockIDsCache<TStorage>::update()
 try
 {
+    auto component_guard = Coordination::setCurrentComponent("AsyncBlockIDsCache");
     auto zookeeper = storage.getZooKeeper();
     std::vector<String> paths = zookeeper->getChildren(path);
     std::unordered_set<String> set;
@@ -145,5 +150,8 @@ std::vector<DeduplicationHash> AsyncBlockIDsCache<TStorage>::detectConflicts(con
 }
 
 template class AsyncBlockIDsCache<StorageReplicatedMergeTree>;
+#if CLICKHOUSE_CLOUD
+template class AsyncBlockIDsCache<StorageSharedMergeTree>;
+#endif
 
 }

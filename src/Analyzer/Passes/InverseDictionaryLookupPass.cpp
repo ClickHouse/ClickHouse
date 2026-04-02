@@ -15,6 +15,8 @@
 
 #include <Functions/FunctionsExternalDictionaries.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessType.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
@@ -293,6 +295,12 @@ public:
 
 void InverseDictionaryLookupPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
+    /// This rewrite turns `dictGet(...)` predicates into `IN (SELECT ... FROM dictionary(...))`.
+    /// The `dictionary()` table function requires `CREATE TEMPORARY TABLE`; if that grant is missing,
+    /// skip the optimization to avoid `ACCESS_DENIED`.
+    if (!context->getAccess()->isGranted(AccessType::CREATE_TEMPORARY_TABLE))
+        return;
+
     InverseDictionaryLookupVisitor visitor(std::move(context));
     visitor.visit(query_tree_node);
 }

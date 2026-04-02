@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySubquery.h>
 
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
@@ -21,7 +22,7 @@ namespace
             throw Exception(
                 ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                 "Expression {} has type {} and can't be used in a subquery",
-                getPromQLQuery(expression, context),
+                getPromQLText(expression, context),
                 expression.type);
         }
     }

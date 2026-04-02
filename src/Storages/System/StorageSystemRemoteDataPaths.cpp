@@ -53,6 +53,7 @@ public:
                 disks.push_back(disk);
         }
 
+        auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::SystemRemoteDataPathsSource");
         /// Position at the first disk
         nextDisk();
     }
@@ -319,6 +320,7 @@ bool SystemRemoteDataPathsSource::nextFile()
 
 Chunk SystemRemoteDataPathsSource::generate()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::generate");
     /// Finish if all disks are processed
     if (current_disk >= static_cast<ssize_t>(disks.size()))
         return {};

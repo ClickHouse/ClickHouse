@@ -65,6 +65,8 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
+        LOG_TRACE(log, "Removing {} objects", objects.size());
+
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
         try

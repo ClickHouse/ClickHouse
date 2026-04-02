@@ -507,10 +507,25 @@ def do_test_backup(to_table):
         node1.query(f"SYSTEM WAIT VIEW re.{target}")
         node2.query(f"SYSTEM WAIT VIEW re.{target}")
     else:
-        node1.query(f"SYSTEM SYNC REPLICA re.{target}")
-        node2.query(f"SYSTEM SYNC REPLICA re.{target}")
+        # After restore, target table data is not included in backup
+        # (backup_data_from_refreshable_materialized_view_targets is off by default).
+        # A refresh must complete to populate it. Wait for the first refresh to
+        # finish *before* stopping the view — otherwise STOP VIEW can cancel the
+        # only in-flight refresh, leaving the target empty.
+        node1.query("SYSTEM WAIT VIEW re.rmv")
+        for node in nodes:
+            node.query("SYSTEM STOP VIEW re.rmv")
+        # Ensure the EXCHANGE DDL has propagated, then sync replica data.
+        for node in nodes:
+            node.query("SYSTEM SYNC DATABASE REPLICA re")
+        node1.query_with_retry(f"SYSTEM SYNC REPLICA re.{target}")
+        node2.query_with_retry(f"SYSTEM SYNC REPLICA re.{target}")
     assert node1.query(f"SELECT * FROM re.{target}") == "1\n"
     assert node2.query(f"SELECT * FROM re.{target}") == "1\n"
+
+    if to_table:
+        for node in nodes:
+            node.query("SYSTEM START VIEW re.rmv")
 
     node1.query("insert into re.src values (2)")
     assert_eq_with_retry(

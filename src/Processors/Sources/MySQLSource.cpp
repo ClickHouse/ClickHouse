@@ -398,7 +398,7 @@ namespace
 
 Chunk MySQLSource::generate()
 {
-    LOG_TEST(log, "Generate a chuck");
+    LOG_TEST(log, "Generate a chunk");
     auto row = connection->result.fetch();
     if (!row)
     {
@@ -415,7 +415,7 @@ Chunk MySQLSource::generate()
     size_t num_rows = 0;
     size_t read_bytes_size = 0;
 
-    while (row)
+    while (row && !isCancelled())
     {
         for (size_t index = 0; index < position_mapping.size(); ++index)
         {

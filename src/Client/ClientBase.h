@@ -120,7 +120,6 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
-    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -264,6 +263,7 @@ private:
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
+    virtual bool supportsLocalMetaCommands() const { return false; }
 
 protected:
 
@@ -469,7 +469,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
-    ClientInfo::QueryKind query_kind;
+    ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort
     {

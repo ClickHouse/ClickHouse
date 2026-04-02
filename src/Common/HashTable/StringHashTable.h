@@ -275,7 +275,14 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs) noexcept { *this = std::move(rhs); }
+    StringHashTable(StringHashTable && rhs) noexcept
+        : m0(std::move(rhs.m0))
+        , m1(std::move(rhs.m1))
+        , m2(std::move(rhs.m2))
+        , m3(std::move(rhs.m3))
+        , ms(std::move(rhs.ms))
+    {
+    }
 
     StringHashTable & operator=(StringHashTable && rhs) noexcept
     {

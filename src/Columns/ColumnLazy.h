@@ -33,7 +33,7 @@ class ColumnLazy final : public COWHelper<IColumn, ColumnLazy>
 private:
     friend class COWHelper<IColumn, ColumnLazy>;
 
-    using CapturedColumns = std::vector<WrappedPtr>;
+    using CapturedColumns = VectorWithMemoryTracking<WrappedPtr>;
     CapturedColumns captured_columns;
     size_t s = 0;
 
@@ -69,7 +69,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
+    void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
 
     bool isDefaultAt(size_t n) const override;
     std::string_view getDataAt(size_t n) const override;
@@ -109,7 +109,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -123,7 +123,7 @@ public:
                        int direction, int nan_direction_hint) const override;
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override;
     bool hasEqualValues() const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,

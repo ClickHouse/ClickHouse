@@ -83,17 +83,13 @@ def get_disks_state(node, table_name, partition=None):
 def get_disk_names(node, table_name, partition=None):
     return set(get_disks_state(node, table_name, partition).keys())
 
-def wait_if_moving_then_assert_disks(node, table_name, partition=None, retries=10, sleep_sec=1, target_state=None):
+def wait_if_moving_then_assert_disks(node, table_name, partition=None, retries=30, sleep_sec=1, target_state=None):
 
     for _ in range(retries):
         moves = int(node.query(f"SELECT count() FROM system.moves WHERE table = '{table_name}'").strip())
 
-        if moves > 0:
-            # just waiting until the moves are actually finished
-            continue
-
-        elif get_disks_state(node, table_name, partition) == target_state:
-            # if there's no active move happenning, and we're in the target state - this is success
+        if moves == 0 and get_disks_state(node, table_name, partition) == target_state:
+            # if there's no active move happening, and we're in the target state - this is success
             return
 
         time.sleep(sleep_sec)
@@ -414,7 +410,7 @@ def test_inserts_and_moves(started_cluster, engine, ttl_rule, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             {ttl_rule}
-            SETTINGS storage_policy='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external', max_replicated_merges_in_queue=0
         """)
         node1.query(f"SYSTEM STOP MERGES {table_name}")
         node1.query(f"SYSTEM STOP MOVES {table_name}")
@@ -467,7 +463,7 @@ def test_inserts_and_moves(started_cluster, engine, ttl_rule, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             {ttl_rule}
-            SETTINGS storage_policy='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external', max_replicated_merges_in_queue=0
         """)
         # Disabling MOVES and MERGES to get full control over the course of the scenario
         node1.query(f"SYSTEM STOP MERGES {table_name}")
@@ -588,7 +584,7 @@ def test_delete(started_cluster, engine, ttl_rule, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             {ttl_rule}
-            SETTINGS storage_policy='only_jbod1'
+            SETTINGS storage_policy='only_jbod1', max_replicated_merges_in_queue=0
         """)
         node1.query(f"SYSTEM STOP MERGES {table_name}")
         node1.query(f"SYSTEM STOP MOVES {table_name}")
@@ -612,6 +608,7 @@ def test_delete(started_cluster, engine, ttl_rule, request):
         time.sleep(SOON_SECONDS*2)    # wait for expiration and a bit more for MOVE to kick in (it won't)
         assert node1.query(f"SELECT count() FROM {table_name}").strip() == "60"
         # Check 3. MERGES actually deletes data
+        node1.query(f"ALTER TABLE {table_name} MODIFY SETTING max_replicated_merges_in_queue=1000")
         node1.query(f"SYSTEM START MERGES {table_name}")
         node1.query(f"OPTIMIZE TABLE {table_name} FINAL",
                     settings={'mutations_sync': 1})
@@ -1129,7 +1126,7 @@ def test_merges_to_disk(started_cluster, engine, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             TTL d1 TO DISK 'external'
-            SETTINGS storage_policy='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external', max_replicated_merges_in_queue=0
         """)
 
         node1.query(f"SYSTEM STOP MERGES {table_name}")
@@ -1158,6 +1155,7 @@ def test_merges_to_disk(started_cluster, engine, request):
         # 2. Wait for expiration and re-enable & trigger MERGES to see that it applied TTL policy and the data has moved
         # NOTE: Merge operation will merge all outstanding parts to the disk with the highest id, which is 'external' in this case
         time.sleep(SOON_SECONDS)
+        node1.query(f"ALTER TABLE {table_name} MODIFY SETTING max_replicated_merges_in_queue=1000")
         node1.query(f"SYSTEM START MERGES {table_name}")
         node1.query(f"OPTIMIZE TABLE {table_name}",
                     settings={'mutations_sync': 1})

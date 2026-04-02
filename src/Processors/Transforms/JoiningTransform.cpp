@@ -158,6 +158,7 @@ void JoiningTransform::work()
 
             non_joined_blocks = join->getNonJoinedBlocks(
                 inputs.front().getHeader(), outputs.front().getHeader(), max_block_size);
+
             if (!non_joined_blocks)
             {
                 process_non_joined = false;
@@ -571,6 +572,42 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
     }
 
     return Status::Ready;
+}
+
+NonJoinedBlocksTransform::NonJoinedBlocksTransform(
+    SharedHeader output_header,
+    JoinPtr join_,
+    Block left_sample_block_,
+    UInt64 max_block_size_,
+    size_t stream_index_,
+    size_t num_streams_)
+    : ISource(output_header)
+    , join(std::move(join_))
+    , left_sample_block(std::move(left_sample_block_))
+    , result_sample_block(*output_header)
+    , max_block_size(max_block_size_)
+    , stream_index(stream_index_)
+    , num_streams(num_streams_)
+{
+}
+
+Chunk NonJoinedBlocksTransform::generate()
+{
+    if (!non_joined_blocks)
+    {
+        non_joined_blocks = join->getNonJoinedBlocks(
+            left_sample_block, result_sample_block, max_block_size, stream_index, num_streams);
+
+        if (!non_joined_blocks)
+            return {};
+    }
+
+    Block block = non_joined_blocks->next();
+    if (block.empty())
+        return {};
+
+    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
+    return Chunk(block.getColumns(), block.rows());
 }
 
 }

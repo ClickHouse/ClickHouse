@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -16,8 +17,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
 #include <Common/assert_cast.h>
-#include <memory>
 
+#include <memory>
 
 namespace DB
 {
@@ -25,7 +26,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -106,7 +108,7 @@ public:
             {
                 DataTypePtr element_type = tuple->getElements()[index.value()];
 
-                if (is_input_type_nullable && element_type->canBeInsideNullable())
+                if (is_input_type_nullable && canExtractedSubcolumnsBeInsideNullable(element_type))
                     element_type = std::make_shared<DataTypeNullable>(element_type);
 
                 return wrapInArrays(std::move(element_type), count_arrays);
@@ -151,7 +153,9 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of {} with {} first argument must be a constant String", getName(), input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            return wrapInArrays(object->getSubcolumnType(subcolumn_name), count_arrays);
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + subcolumn_name + "`";
+            return wrapInArrays(object->getSubcolumnType(combined_name), count_arrays);
         }
 
         throw Exception(
@@ -217,7 +221,7 @@ public:
                     ColumnPtr merged_null_map = mergeNullMaps(null_map_column, res_nullable->getNullMapColumnPtr());
                     res = ColumnNullable::create(res_nullable->getNestedColumnPtr(), merged_null_map);
                 }
-                else if (element_type->canBeInsideNullable())
+                else if (canExtractedSubcolumnsBeInsideNullable(element_type))
                 {
                     res = ColumnNullable::create(res, null_map_column);
                 }
@@ -281,7 +285,7 @@ public:
                     input_type->getName());
 
             auto subcolumn_name = subcolumn_name_col->getValue<String>();
-            res = input_type_as_object->getSubcolumn(subcolumn_name, input_col->getPtr());
+            res = getObjectElement(*input_type_as_object, input_col->getPtr(), subcolumn_name);
         }
         else
         {
@@ -314,7 +318,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -331,7 +335,7 @@ private:
                 return {index + size};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
 
@@ -344,7 +348,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant Int, UInt or String", getName());
@@ -361,7 +365,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }
@@ -374,6 +378,15 @@ private:
             nested_type = std::make_shared<DataTypeArray>(nested_type);
 
         return nested_type;
+    }
+
+    ColumnPtr getObjectElement(const DataTypeObject & object_type, const ColumnPtr & object_column, const String & element_name) const
+    {
+        /// Use combined `@` subcolumn that merges literal value and sub-object.
+        /// For rows with a literal at requested path we return the literal, for rows with a nested object
+        /// we return the nested object as JSON column, so nested `tupleElement` calls can be applied to it.
+        auto combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + element_name + "`";
+        return object_type.getSubcolumn(combined_name, object_column);
     }
 };
 

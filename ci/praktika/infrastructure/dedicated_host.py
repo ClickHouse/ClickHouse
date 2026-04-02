@@ -15,9 +15,6 @@ class DedicatedHost:
         praktika_resource_tag: str = (
             ""  # Praktika resource tag (e.g., "mac") - tagged as "praktika"
         )
-        runner_type: str = (
-            ""  # GitHub runner type (e.g., "arm_macos_small") - tagged as "github:runner-type"
-        )
 
         # If set, allocate hosts in all availability zones in the region.
         all_availability_zones: bool = False
@@ -51,6 +48,18 @@ class DedicatedHost:
         # Extra fetched/derived properties
         ext: Dict[str, Any] = field(default_factory=dict)
 
+        def _resolved_region(self) -> str:
+            """Return the region, auto-derived from availability_zones if not set explicitly."""
+            if self.region:
+                return self.region
+            if self.availability_zones:
+                # AZ name is region name + one letter suffix, e.g. "us-east-1a" -> "us-east-1"
+                return self.availability_zones[0][:-1]
+            raise ValueError(
+                f"Cannot determine region for DedicatedHost '{self.name}': "
+                f"neither 'region' nor 'availability_zones' is set"
+            )
+
         def _resolved_availability_zones(self) -> List[str]:
             if self.availability_zones:
                 return self.availability_zones
@@ -61,9 +70,10 @@ class DedicatedHost:
 
             import boto3
 
-            ec2 = boto3.client("ec2", region_name=self.region)
+            region = self._resolved_region()
+            ec2 = boto3.client("ec2", region_name=region)
             resp = ec2.describe_availability_zones(
-                Filters=[{"Name": "region-name", "Values": [self.region]}]
+                Filters=[{"Name": "region-name", "Values": [region]}]
             )
             zones = [
                 z["ZoneName"]
@@ -71,7 +81,7 @@ class DedicatedHost:
                 if z.get("State") == "available" and z.get("ZoneName")
             ]
             if not zones:
-                raise Exception(f"No available AZs found for region '{self.region}'")
+                raise Exception(f"No available AZs found for region '{region}'")
             return zones
 
         def _host_filters(self, az: str) -> List[Dict[str, Any]]:
@@ -89,8 +99,6 @@ class DedicatedHost:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged_tags["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged_tags.update(self.tags or {})
 
@@ -102,7 +110,7 @@ class DedicatedHost:
         def fetch(self):
             import boto3
 
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = boto3.client("ec2", region_name=self._resolved_region())
 
             # self._ensure_host_resource_group()
 
@@ -146,8 +154,6 @@ class DedicatedHost:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged_tags["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged_tags.update(self.tags or {})
 
@@ -162,7 +168,7 @@ class DedicatedHost:
                 "Query": json.dumps(query_obj),
             }
 
-            rg = boto3.client("resource-groups", region_name=self.region)
+            rg = boto3.client("resource-groups", region_name=self._resolved_region())
 
             exists = False
             try:
@@ -221,7 +227,7 @@ class DedicatedHost:
                     f"placed on these dedicated hosts. Currently set to: '{self.auto_placement}'"
                 )
 
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = boto3.client("ec2", region_name=self._resolved_region())
 
             azs = self._resolved_availability_zones()
 
@@ -235,8 +241,6 @@ class DedicatedHost:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_type:
-                merged_tags["github:runner-type"] = self.runner_type
             # Add user-defined tags
             merged_tags.update(self.tags or {})
 
@@ -312,6 +316,40 @@ class DedicatedHost:
                             f"Try again later or contact AWS support."
                         )
                         allocated_by_az[az] = []
+                    elif error_code == "HostLimitExceeded":
+                        # Likely caused by existing hosts that are not tagged with
+                        # the expected praktika tags and therefore not found by fetch().
+                        # List all hosts of this instance type in the AZ to help diagnose.
+                        try:
+                            all_resp = ec2.describe_hosts(
+                                Filters=[
+                                    {"Name": "availability-zone", "Values": [az]},
+                                    {"Name": "instance-type", "Values": [self.instance_type]},
+                                    {"Name": "state", "Values": ["available", "under-assessment"]},
+                                ]
+                            )
+                            all_host_ids = [
+                                h.get("HostId")
+                                for h in all_resp.get("Hosts", [])
+                                if h.get("HostId")
+                            ]
+                            untagged = [h for h in all_host_ids if h not in existing]
+                        except Exception:
+                            all_host_ids = []
+                            untagged = []
+                        hint = ""
+                        if untagged:
+                            hint = (
+                                f" Found {len(untagged)} existing host(s) in {az} not matched by tags"
+                                f" (missing 'praktika_rn={self.name}' or"
+                                f" 'praktika_resource_tag={self.praktika_resource_tag}'): {untagged}."
+                                f" Tag them or increase quantity_per_az to account for them."
+                            )
+                        print(
+                            f"Warning: Host limit exceeded when trying to allocate {missing} host(s)"
+                            f" in {az} for pool '{self.name}'.{hint}"
+                        )
+                        allocated_by_az[az] = []
                     elif error_code == "UnsupportedHostConfiguration":
                         print(
                             f"Warning: Instance type '{self.instance_type}' is not supported in {az} - skipping this AZ. "
@@ -336,7 +374,7 @@ class DedicatedHost:
 
             _ = force  # Unused, kept for API consistency
 
-            ec2 = boto3.client("ec2", region_name=self.region)
+            ec2 = boto3.client("ec2", region_name=self._resolved_region())
 
             # Fetch existing hosts
             self.fetch()

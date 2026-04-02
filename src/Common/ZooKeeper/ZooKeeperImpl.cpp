@@ -1,5 +1,10 @@
+#include <atomic>
 #include <chrono>
 #include <ranges>
+
+#include <Common/OpenTelemetryTracingContext.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
@@ -19,7 +24,6 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -38,6 +42,7 @@
 
 #include <Coordination/KeeperConstants.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
+#include <Common/ZooKeeper/KeeperSpans.h>
 #include "config.h"
 
 #if USE_SSL
@@ -77,9 +82,19 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
-namespace DB::ServerSetting
+namespace DB
+{
+
+namespace ServerSetting
 {
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+}
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 }
 
 namespace HistogramMetrics
@@ -88,8 +103,6 @@ namespace HistogramMetrics
     extern Metric & KeeperResponseTimeReadonly;
     extern Metric & KeeperResponseTimeWrite;
     extern Metric & KeeperResponseTimeMulti;
-    extern Metric & KeeperClientQueueDuration;
-    extern MetricFamily & KeeperClientRoundtripDuration;
 }
 
 namespace
@@ -438,6 +451,8 @@ ZooKeeper::ZooKeeper(
             use_xid_64 = true;
             close_xid = CLOSE_XID_64;
         }
+        pass_opentelemetry_tracing_context = args.pass_opentelemetry_tracing_context;
+        enforce_component_tracking = args.enforce_component_tracking;
         connect(nodes, static_cast<Poco::Timespan::TimeDiff>(args.connection_timeout_ms) * 1000);
     }
     catch (...)
@@ -649,7 +664,13 @@ void ZooKeeper::sendHandshake()
     bool read_only = true;
 
     write(handshake_length);
-    if (use_xid_64)
+    if (pass_opentelemetry_tracing_context)
+    {
+        write(ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING);
+        write(use_xid_64);
+        write(use_compression);
+    }
+    else if (use_xid_64)
     {
         write(ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64);
         write(use_compression);
@@ -692,7 +713,12 @@ void ZooKeeper::receiveHandshake()
                                      "Keeper server rejected the connection during the handshake. "
                                      "Possibly it's overloaded, doesn't see leader or stale");
 
-    if (use_xid_64)
+    if (pass_opentelemetry_tracing_context)
+    {
+        if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
+            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with opentelemetry tracing: {}", protocol_version_read);
+    }
+    else if (use_xid_64)
     {
         if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
             throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with 64bit XID: {}", protocol_version_read);
@@ -723,7 +749,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.scheme = scheme;
     request.data = data;
     request.xid = AUTH_XID;
-    request.write(getWriteBuffer(), use_xid_64);
+    request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
     flushWriteBuffer();
 
     int32_t length;
@@ -801,34 +827,38 @@ void ZooKeeper::sendThread()
                     /// After we popped element from the queue, we must register callbacks (even in the case when expired == true right now),
                     ///  because they must not be lost (callbacks must be called because the user will wait for them).
 
-                    auto dequeue_ts = clock::now();
-
-                    chassert(info.request->enqueue_ts != std::chrono::steady_clock::time_point{});
-                    HistogramMetrics::observe(
-                        HistogramMetrics::KeeperClientQueueDuration,
-                        std::chrono::duration_cast<std::chrono::milliseconds>(dequeue_ts - info.request->enqueue_ts).count());
-
-                    if (info.request->xid != close_xid)
-                    {
-                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
-                        info.request->send_ts = clock::now();
-                        std::lock_guard lock(operations_mutex);
-                        operations[info.request->xid] = info;
-                    }
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        info.request->spans.client_requests_queue,
+                        [&]
+                        {
+                            return std::vector<OpenTelemetry::SpanAttribute>{
+                                {"zookeeper_client.requests_queue.size", requests_queue.size()},
+                            };
+                        });
 
                     if (info.watch)
                         info.request->has_watch = true;
 
-                    if (requests_queue.isFinished())
+                    if (info.request->add_root_path)
+                        info.request->addRootPath(args.chroot);
+
+                    /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
+                    /// to avoid a data race: receiveThread reads from operations concurrently,
+                    /// and the request object is shared via shared_ptr.
+                    if (info.request->xid != close_xid)
+                    {
+                        CurrentMetrics::add(CurrentMetrics::ZooKeeperRequest);
+                        std::lock_guard lock(operations_mutex);
+                        operations[info.request->xid] = info;
+                    }
+
+                    if (requests_queue.isFinished() && info.request->xid != close_xid)
                     {
                         break;
                     }
 
-                    if (info.request->add_root_path)
-                        info.request->addRootPath(args.chroot);
-
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer(), use_xid_64);
+                    info.request->write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
@@ -845,7 +875,7 @@ void ZooKeeper::sendThread()
 
                 ZooKeeperHeartbeatRequest request;
                 request.xid = PING_XID;
-                request.write(getWriteBuffer(), use_xid_64);
+                request.write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
                 flushWriteBuffer();
             }
 
@@ -975,6 +1005,7 @@ void ZooKeeper::receiveEvent()
     {
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
+        request_info.component = "Watch";
 
         request_info.callback = [this](const Response & response_)
         {
@@ -1031,12 +1062,6 @@ void ZooKeeper::receiveEvent()
         chassert(request_info.request->create_ts != std::chrono::steady_clock::time_point{});
         elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(receive_ts - request_info.request->create_ts).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
-
-        chassert(request_info.request->send_ts != std::chrono::steady_clock::time_point{});
-        HistogramMetrics::observe(
-            HistogramMetrics::KeeperClientRoundtripDuration,
-            {toOperationTypeMetricLabel(request_info.request->getOpNum())},
-            std::chrono::duration_cast<std::chrono::milliseconds>(receive_ts - request_info.request->send_ts).count());
     }
 
     try
@@ -1190,8 +1215,8 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         return;
     }
 
-    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
-             session_id, already_started, requests_queue.isFinished(), reason);
+    LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}' {}",
+             session_id, already_started, requests_queue.isFinished(), reason, StackTrace().toString());
 
     auto expire_session_if_not_expired = [&]
     {
@@ -1217,17 +1242,27 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             catch (...)
             {
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
-                /// Just mark session expired in case of error on close request, otherwise sendThread may not stop.
-                expire_session_if_not_expired();
                 tryLogCurrentException(log);
             }
-
-            /// Send thread will exit after sending close request or on expired flag
-            send_thread.join();
         }
 
-        /// Set expired flag after we sent close event
+        /// Mark session expired before joining send thread.
+        /// This is critical: isExpired() (which checks requests_queue.isFinished()) must return true
+        /// as soon as possible so that other threads calling getZooKeeper() can establish a new session
+        /// immediately, rather than waiting for the send thread to exit. The send thread may be blocked
+        /// in a socket write for minutes (e.g. if the Keeper server closed the connection but
+        /// SO_SNDTIMEO is ineffective due to signal interruptions resetting the timer — see #96601).
+        /// Without this, all Keeper-dependent operations hang until the send thread happens to unblock.
         expire_session_if_not_expired();
+
+        if (!error_send)
+        {
+            /// Send thread will exit because:
+            /// 1. requests_queue is now finished (checked in sendThread's while loop), or
+            /// 2. The close request was sent and close_xid breaks the loop, or
+            /// 3. The socket write fails with an error
+            send_thread.join();
+        }
 
         cancelWriteBuffer();
 
@@ -1371,7 +1406,18 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         /// Capture component name from thread-local storage if not already set
         if (info.component.empty())
-            info.component = Coordination::getCurrentComponent();
+        {
+            auto current_component = Coordination::getCurrentComponent();
+            if (current_component.empty())
+            {
+                if (enforce_component_tracking)
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Current component is empty, please set it for your scope using Coordination::setCurrentComponent");
+            }
+            else
+            {
+                info.component = current_component;
+            }
+        }
 
         auto maybe_zk_log = getZooKeeperLog();
         if (maybe_zk_log)
@@ -1400,7 +1446,15 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         maybeInjectSendFault();
 
-        info.request->enqueue_ts = clock::now();
+        if (
+            const auto & current_trace_context = OpenTelemetry::CurrentContext();
+            current_trace_context.isTraceEnabled() && current_trace_context.trace_flags & DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS
+        )
+        {
+            info.request->tracing_context = current_trace_context;
+        }
+
+        ZooKeeperOpentelemetrySpans::maybeInitialize(info.request->spans.client_requests_queue, info.request->tracing_context);
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {
@@ -1838,7 +1892,7 @@ void ZooKeeper::close()
     RequestInfo request_info;
     request_info.request = std::make_shared<ZooKeeperCloseRequest>(std::move(request));
 
-    request_info.request->enqueue_ts = clock::now();
+    ZooKeeperOpentelemetrySpans::maybeInitialize(request_info.request->spans.client_requests_queue, request_info.request->tracing_context);
 
     if (!requests_queue.tryPush(std::move(request_info), args.operation_timeout_ms))
         throw Exception(Error::ZOPERATIONTIMEOUT, "Cannot push close request to queue within operation timeout of {} ms", args.operation_timeout_ms);
@@ -1964,7 +2018,7 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr &, const ZooKeepe
 {}
 #endif
 
-void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component)
+void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component, bool is_subrequest)
 {
     chassert(response);
 
@@ -1977,7 +2031,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Respons
         if (const auto * watch_response = dynamic_cast<const ZooKeeperWatchResponse *>(response))
         {
             current_aggregated_zookeeper_log->observe(
-                session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error, component);
+                session_id, watch_response->tryGetOpNum(), watch_response->path, elapsed_microseconds, watch_response->error, component, is_subrequest);
         }
         else
         {
@@ -1986,7 +2040,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Respons
         return;
     }
 
-    current_aggregated_zookeeper_log->observe(session_id, request->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error, component);
+    current_aggregated_zookeeper_log->observe(session_id, request->tryGetOpNum(), request->getPath(), elapsed_microseconds, response->error, component, is_subrequest);
 
     const auto * multi_response = dynamic_cast<const ZooKeeperMultiResponse *>(response);
 
@@ -2000,7 +2054,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const Respons
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request.requests, multi_response->responses))
     {
-        observeOperation(subrequest.get(), subresponse.get(), elapsed_microseconds, component);
+        observeOperation(subrequest.get(), subresponse.get(), /*elapsed_microseconds=*/0, component, /*is_subrequest=*/true);
     }
 }
 

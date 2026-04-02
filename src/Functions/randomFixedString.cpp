@@ -41,7 +41,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isUInt(arguments[0].type))
+        if (!isNativeUInt(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
 
         if (!arguments[0].column || !isColumnConst(*arguments[0].column))
@@ -85,8 +85,8 @@ public:
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomFixedStringImpl<TargetSpecific::AVX2::RandImpl>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomFixedStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
     #endif
     }
 

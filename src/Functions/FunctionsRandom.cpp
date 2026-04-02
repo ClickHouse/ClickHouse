@@ -94,7 +94,7 @@ void RandImpl::execute(char * output, size_t size)
 
 ) // DECLARE_DEFAULT_CODE
 
-DECLARE_AVX2_SPECIFIC_CODE(
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 
 using namespace VectorExtension;
 
@@ -176,6 +176,6 @@ void RandImpl::execute(char * output, size_t size)
     }
 }
 
-) // DECLARE_AVX2_SPECIFIC_CODE
+) // DECLARE_X86_64_V3_SPECIFIC_CODE
 
 }

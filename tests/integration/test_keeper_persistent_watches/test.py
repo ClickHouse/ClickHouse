@@ -303,7 +303,6 @@ def test_persistent_recursive_watch_event_fields(started_cluster):
     if client.exists(OTHER_PATH):
         client.delete(OTHER_PATH)
 
-@pytest.mark.skip(reason="https://github.com/ClickHouse/ClickHouse/issues/92480")
 def test_persistent_watches_cleanup_on_close(started_cluster):
     node1.restart_clickhouse()
     keeper_utils.wait_until_connected(cluster, node1)

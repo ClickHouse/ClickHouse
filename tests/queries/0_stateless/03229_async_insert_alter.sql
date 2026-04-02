@@ -39,6 +39,6 @@ SYSTEM FLUSH ASYNC INSERT QUEUE t_async_insert_alter;
 SYSTEM FLUSH LOGS asynchronous_insert_log;
 
 SELECT * FROM t_async_insert_alter ORDER BY id;
-SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;
+SELECT query, data_kind, status FROM system.asynchronous_insert_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_async_insert_alter' ORDER BY event_time_microseconds;
 
 DROP TABLE t_async_insert_alter;

@@ -328,6 +328,8 @@ public:
     void enqueueActivation(ISchedulerNode * node)
     {
         std::unique_lock lock{mutex};
+        if (node->is_linked()) // already scheduled
+            return;
         bool was_empty = events.empty() && activations.empty();
         node->activation_event_id = ++last_event_id;
         activations.push_back(*node);
@@ -335,13 +337,20 @@ public:
             pending.notify_one();
     }
 
-    /// Removes an activation from queue
+    /// Removes an activation from queue and waits for any in-progress activation to complete
     void cancelActivation(ISchedulerNode * node)
     {
         std::unique_lock lock{mutex};
         if (node->is_linked())
             activations.erase(activations.iterator_to(*node));
         node->activation_event_id = 0;
+
+        // Make sure that activation processing is done before we return if we are not in the scheduler thread
+        if (current_thread_queue != this)
+        {
+            lock.unlock();
+            std::unique_lock activation_lock{activation_mutex};
+        }
     }
 
     /// Process single event if it exists
@@ -349,6 +358,7 @@ public:
     /// Returns `true` iff event has been processed
     bool forceProcess()
     {
+        chassert(current_thread_queue == this);
         std::unique_lock lock{mutex};
         if (!events.empty() || !activations.empty())
         {
@@ -367,6 +377,7 @@ public:
     /// Returns `true` iff event has been processed
     bool tryProcess()
     {
+        chassert(current_thread_queue == this);
         std::unique_lock lock{mutex};
         if (!events.empty() || !activations.empty())
         {
@@ -387,6 +398,7 @@ public:
     /// Wait for single event (if not available) and process it
     void process()
     {
+        chassert(current_thread_queue == this);
         std::unique_lock lock{mutex};
         while (true)
         {
@@ -473,6 +485,7 @@ private:
         ISchedulerNode * node = &activations.front();
         activations.pop_front();
         node->activation_event_id = 0;
+        std::unique_lock activation_lock{activation_mutex}; // for serialization of cancelActivation() with activation processing
         lock.unlock(); // do not hold queue mutex while processing events
         if (node->parent)
             node->parent->activateChild(node);
@@ -496,6 +509,7 @@ private:
     }
 
     std::mutex mutex;
+    std::mutex activation_mutex; // Serializes activation processing with cancelActivation()
     std::condition_variable pending;
 
     // `events` and `activations` logically represent one ordered queue. To preserve the common order we use `EventId`
@@ -507,6 +521,32 @@ private:
     EventId last_event_id = 0;
 
     std::atomic<TimePoint> manual_time{TimePoint()}; // for tests only
+
+    /// Thread-local pointer to the EventQueue attached to the current scheduler thread.
+    static inline thread_local EventQueue * current_thread_queue = nullptr;
+
+public:
+    /// RAII struct to attach the current thread to this EventQueue.
+    /// Must be created at the start of the scheduler thread.
+    struct SchedulerThread
+    {
+        explicit SchedulerThread(EventQueue * queue_) : queue(queue_)
+        {
+            chassert(current_thread_queue == nullptr);
+            current_thread_queue = queue;
+        }
+
+        ~SchedulerThread()
+        {
+            current_thread_queue = nullptr;
+        }
+
+        SchedulerThread(const SchedulerThread &) = delete;
+        SchedulerThread & operator=(const SchedulerThread &) = delete;
+
+    private:
+        EventQueue * queue;
+    };
 };
 
 inline ISchedulerNode::~ISchedulerNode()

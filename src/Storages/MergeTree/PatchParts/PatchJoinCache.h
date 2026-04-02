@@ -53,7 +53,6 @@ using PatchHashMap = absl::node_hash_map<
     std::equal_to<>,
     AllocatorWithMemoryTracking<std::pair<const UInt64, PatchOffsetsMap>>>;
 
-
 /**  A cache of maps and blocks for applying patch parts in Join mode.
   *  It avoids re-reading the same ranges of patch parts and rebuilding maps multiple times.
   *  The cache (and patch map) is optimized for the case when patch parts are almost sorted by _block_number,
@@ -78,6 +77,7 @@ struct PatchJoinCache
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
+        std::exception_ptr error;
         mutable SharedMutex mutex;
 
         void addBlock(Block read_block, const MarkRanges & new_ranges = {});

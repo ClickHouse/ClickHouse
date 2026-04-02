@@ -495,7 +495,7 @@ Returns the sum of elements in the source array.
 
 If a lambda function `func` is specified, returns the sum of elements of the lambda results.
     )";
-    FunctionDocumentation::Syntax syntax_sum = "arrayMax([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
+    FunctionDocumentation::Syntax syntax_sum = "arraySum([func(x[, y1, ..., yN])], source_arr[, cond1_arr, ... , condN_arr])";
     FunctionDocumentation::Arguments arguments_sum = {
         {"func(x[, y1, ..., yN])", "Optional. A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
         {"source_arr", "The source array to process.", {"Array(T)"}},

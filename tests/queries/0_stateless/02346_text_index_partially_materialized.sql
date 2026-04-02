@@ -1,10 +1,12 @@
 -- Tags: no-parallel-replicas
 
-SET enable_full_text_index = 1;
+--- Verifies that direct read on partially materialized text indexes
+
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+-- add_minmax_index_for_numeric_columns=0: Changes conditions for materialized index bytes
 
 SELECT 'Fully materialized';
 
@@ -14,10 +16,11 @@ CREATE TABLE tab_fully (
     text String
 )
 Engine = MergeTree()
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns=0;
 
-ALTER TABLE tab_fully drop index if exists idx;
-ALTER TABLE tab_fully add index idx(text) TYPE text(tokenizer = ngrams(3));
+ALTER TABLE tab_fully DROP INDEX IF exists idx;
+ALTER TABLE tab_fully ADD INDEX idx(text) TYPE text(tokenizer = ngrams(3));
 
 SYSTEM STOP MERGES tab_fully;
 
@@ -30,8 +33,8 @@ SELECT count() FROM tab_fully WHERE hasAllToken(text, 'o50') SETTINGS log_commen
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '-- use text index reader for all parts';
-SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAnyToken';
-SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAllToken';
+SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAnyToken';
+SELECT ProfileEvents['TextIndexReadPostings'] = ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_fully_hasAllToken';
 
 SELECT '-- verify all parts have a materialized index';
 SELECT count() = 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_fully' AND active AND secondary_indices_marks_bytes = 0;
@@ -44,7 +47,8 @@ CREATE TABLE tab_partially (
     text String
 )
 Engine = MergeTree()
-ORDER BY id;
+ORDER BY id
+SETTINGS add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO tab_partially SELECT number, concat('hello', number % 100, ' ', 'world', number % 100) from numbers(10000);
 
@@ -61,8 +65,8 @@ SELECT count() FROM tab_partially WHERE hasAllToken(text, 'o50') SETTINGS log_co
 SYSTEM FLUSH LOGS query_log;
 
 SELECT '-- use text index reader for parts have a materialized index';
-SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAnyToken';
-SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAllToken';
+SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAnyToken';
+SELECT ProfileEvents['TextIndexReadPostings'] < ProfileEvents['SelectedPartsTotal'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'tab_partially_hasAllToken';
 
 SELECT '-- verify some parts do not have a materialized index';
 SELECT count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partially' AND secondary_indices_marks_bytes = 0;

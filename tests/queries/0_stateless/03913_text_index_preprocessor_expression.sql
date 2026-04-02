@@ -1,7 +1,7 @@
+-- Tests text index with preprocessor on top of an index built with an expression.
+
 SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
-
--- Tests text index with preprocessor on top of an index built with an expression.
 
 DROP TABLE IF EXISTS tab;
 
@@ -56,6 +56,8 @@ SELECT count() FROM tab WHERE hasAnyTokens(concat(s1, s2), 'Hello');
 SELECT count() FROM tab WHERE hasAnyTokens(concat(s1, s2), 'hello');
 SELECT count() FROM tab WHERE hasAnyTokens(concat(s1, s2), 'xyz');
 
+--
+
 SELECT '-- hasToken on toValidUTF8(s3)';
 SELECT count() FROM tab WHERE hasToken(toValidUTF8(s3), 'Hello');
 SELECT count() FROM tab WHERE hasToken(toValidUTF8(s3), 'hello');
@@ -64,7 +66,6 @@ SELECT count() FROM tab WHERE hasToken(toValidUTF8(s3), 'foo');
 SELECT count() FROM tab WHERE hasToken(toValidUTF8(s3), 'test');
 SELECT count() FROM tab WHERE hasToken(toValidUTF8(s3), 'TEST');
 SELECT count() FROM tab WHERE hasToken(toValidUTF8(s3), 'xyz');
-
 
 SELECT '-- hasAllTokens on toValidUTF8(s3)';
 SELECT count() FROM tab WHERE hasAllTokens(toValidUTF8(s3), 'Hello');
@@ -84,6 +85,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(toValidUTF8(s3), 'test');
 SELECT count() FROM tab WHERE hasAnyTokens(toValidUTF8(s3), 'TEST');
 SELECT count() FROM tab WHERE hasAnyTokens(toValidUTF8(s3), 'xyz');
 
+--
 
 SELECT '-- hasAllTokens on mapKeys(m)';
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(m), 'Alpha');

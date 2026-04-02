@@ -81,6 +81,11 @@ const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
     return avg_value_size_hints;
 }
 
+bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
+{
+    return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage());
+}
+
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
 {
     chassert(columns.size() == getColumns().size());

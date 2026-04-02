@@ -190,7 +190,7 @@ namespace
             String database_or_schema;
             String table;
 
-            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext()))
+            if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
             {
                 if (Poco::toLower(name) == "jdbc")
                 {

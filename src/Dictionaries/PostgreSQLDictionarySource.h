@@ -42,8 +42,8 @@ public:
 
     BlockIO loadAll() override;
     BlockIO loadUpdatedAll() override;
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override;
     bool supportsSelectiveLoad() const override;

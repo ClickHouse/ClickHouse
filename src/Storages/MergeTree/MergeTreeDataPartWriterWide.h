@@ -33,7 +33,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
@@ -117,9 +116,7 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
-    void initColumnsSubstreamsIfNeeded(const Block & block);
-
-    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
         const WrittenOffsetSubstreams & offset_substreams) const;

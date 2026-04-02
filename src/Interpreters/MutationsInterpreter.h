@@ -23,6 +23,8 @@ struct IsStorageTouched
     bool all_rows_affected = false;
 };
 
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
 /// Return false if the data isn't going to be changed by mutations.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,

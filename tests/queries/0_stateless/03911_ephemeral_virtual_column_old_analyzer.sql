@@ -5,6 +5,6 @@
 SELECT _table SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT _table FROM system.one SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
--- With the new analyzer, _table should work fine.
+-- With the analyzer, _table should work fine.
 SELECT _table SETTINGS enable_analyzer = 1;
 SELECT _table FROM system.one SETTINGS enable_analyzer = 1;

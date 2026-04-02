@@ -3,6 +3,7 @@
 
 #include <Common/EventFD.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <sys/eventfd.h>
 #include <unistd.h>

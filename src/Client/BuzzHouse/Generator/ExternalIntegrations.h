@@ -24,6 +24,7 @@
 #    include <mongocxx/collection.hpp>
 #    include <mongocxx/database.hpp>
 #    include <mongocxx/exception/exception.hpp>
+#    include <mongocxx/instance.hpp>
 #endif
 
 #if USE_LIBPQXX
@@ -79,7 +80,9 @@ public:
 
     virtual int performQuery(const String &) { return 1; }
 
-    virtual String getTableName(std::shared_ptr<SQLDatabase>, uint32_t) { return String(); }
+    virtual String getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String &) { return String(); }
+
+    virtual String quoteIdentifier(const String & name) const;
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
@@ -126,7 +129,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-    String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
+    String getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, const String &) override;
 
     String truncateStatement() override;
 
@@ -170,7 +173,9 @@ public:
 
     void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-    String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
+    String getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String &) override;
+
+    String quoteIdentifier(const String & name) const override;
 
     String truncateStatement() override;
 
@@ -212,7 +217,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
-    String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
+    String getSQLQuotedTableName(std::shared_ptr<SQLDatabase>, const String &) override;
 
     String truncateStatement() override;
 
@@ -303,7 +308,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    void setBackupDetails(const String &, BackupRestore *);
+    void setBackupDetails(const String &, BackupOut *);
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
@@ -320,7 +325,7 @@ public:
 
     void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    void setBackupDetails(const String &, BackupRestore *);
+    void setBackupDetails(const String &, BackupOut *);
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
@@ -472,7 +477,7 @@ public:
 
     void replicateSettings(PeerTableDatabase pt);
 
-    void setBackupDetails(IntegrationCall dc, const String & filename, BackupRestore * br);
+    void setBackupDetails(IntegrationCall dc, const String & filename, BackupOut * bout);
 };
 
 }

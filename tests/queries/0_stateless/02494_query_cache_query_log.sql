@@ -15,7 +15,7 @@ SYSTEM FLUSH LOGS query_log;
 -- Field 'query_cache_usage' should be 'None'
 SELECT type, query, query_cache_usage
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query = 'SELECT 124437993;'
     AND type = 'QueryFinish'
 ORDER BY type, query_cache_usage;
@@ -30,7 +30,7 @@ SYSTEM FLUSH LOGS query_log;
 -- Field 'query_cache_usage' should be 'Write'
 SELECT type, query, query_cache_usage
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query = 'SELECT 124437994 SETTINGS use_query_cache = 1;'
     AND type = 'QueryFinish'
 ORDER BY type, query_cache_usage;
@@ -45,7 +45,7 @@ SYSTEM FLUSH LOGS query_log;
 -- Field 'query_cache_usage' should be 'Read'
 SELECT type, query, query_cache_usage
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query = 'SELECT 124437994 SETTINGS use_query_cache = 1;'
     AND type = 'QueryFinish'
 ORDER BY type, query_cache_usage;
@@ -60,7 +60,7 @@ SYSTEM FLUSH LOGS query_log;
 -- Field 'query_cache_usage' should be 'None'
 SELECT query, query_cache_usage
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query = 'SELECT 124437995, throwIf(1) SETTINGS use_query_cache = 1;'
     AND type = 'ExceptionWhileProcessing';
 

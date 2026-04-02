@@ -45,9 +45,17 @@ ZooKeeperLock::~ZooKeeperLock()
     }
 }
 
-bool ZooKeeperLock::isLocked() const
+bool ZooKeeperLock::isLocked(bool check_node) const
 {
-    return locked && !zookeeper->expired();
+    if (!was_locked || zookeeper->expired())
+        return false;
+
+    if (!check_node)
+        return true;
+
+    Coordination::Stat stat;
+    const bool is_lock_exists = zookeeper->exists(lock_path, &stat);
+    return is_lock_exists && stat.ephemeralOwner == zookeeper->getClientID();
 }
 
 const std::string & ZooKeeperLock::getLockPath() const
@@ -57,13 +65,13 @@ const std::string & ZooKeeperLock::getLockPath() const
 
 void ZooKeeperLock::unlock()
 {
-    if (!locked)
+    if (!was_locked)
     {
-        LOG_TRACE(log, "Lock on path {} for session {} is not locked, exiting", lock_path, zookeeper->getClientID());
+        LOG_TRACE(log, "Lock on path {} for session {} was not locked, exiting", lock_path, zookeeper->getClientID());
         return;
     }
 
-    locked = false;
+    was_locked = false;
 
     if (zookeeper->expired())
     {
@@ -97,14 +105,14 @@ bool ZooKeeperLock::tryLock()
 
     if (code == Coordination::Error::ZOK)
     {
-        locked = true;
+        was_locked = true;
     }
     else if (code != Coordination::Error::ZNODEEXISTS)
     {
         throw Coordination::Exception(code);
     }
 
-    return locked;
+    return was_locked;
 }
 
 std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(

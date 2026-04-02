@@ -308,7 +308,7 @@ SELECT groupBitmap(UserID) AS num FROM t;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupBitmap", {createAggregateFunctionBitmap<AggregateFunctionGroupBitmapData>, {}, documentation});
+    factory.registerFunction("groupBitmap", {createAggregateFunctionBitmap<AggregateFunctionGroupBitmapData>, documentation});
 
     FunctionDocumentation::Description description_and = R"(
 Calculates the AND of a bitmap column and returns it's cardinality.
@@ -363,7 +363,7 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
     FunctionDocumentation::Category category_and = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_and = {description_and, syntax_and, arguments_and, parameters_and, returned_value_and, examples_and, introduced_in_and, category_and};
 
-    factory.registerFunction("groupBitmapAnd", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2And>, {}, documentation_and});
+    factory.registerFunction("groupBitmapAnd", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2And>, documentation_and});
 
     FunctionDocumentation::Description description_or = R"(
 Calculates the OR of a bitmap column and returns it's cardinality.
@@ -419,7 +419,7 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
     FunctionDocumentation::Category category_or = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_or = {description_or, syntax_or, arguments_or, parameters_or, returned_value_or, examples_or, introduced_in_or, category_or};
 
-    factory.registerFunction("groupBitmapOr", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Or>, {}, documentation_or});
+    factory.registerFunction("groupBitmapOr", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Or>, documentation_or});
 
     FunctionDocumentation::Description description_xor = R"(
 Calculates the XOR of a bitmap column and returns it's cardinality.
@@ -474,7 +474,7 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
     FunctionDocumentation::Category category_xor = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_xor = {description_xor, syntax_xor, arguments_xor, parameters_xor, returned_value_xor, examples_xor, introduced_in_xor, category_xor};
 
-    factory.registerFunction("groupBitmapXor", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Xor>, {}, documentation_xor});
+    factory.registerFunction("groupBitmapXor", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Xor>, documentation_xor});
 }
 
 }

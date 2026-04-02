@@ -96,6 +96,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool use_strict_insert_block_limits;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
@@ -131,7 +134,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
-    extern const int DEPENDENCIES_NOT_FOUND;
 }
 
 
@@ -235,7 +237,7 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         patch.addMessage("while pushing to view {}", storage.getNameForLogs());
         return std::make_exception_ptr(std::move(patch));
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return ptr;
     }
@@ -462,7 +464,7 @@ private:
         {
             return {true, wrapped.origin_exception};
         }
-        catch (...)
+        catch (...) // Ok: exception is not wrapped, return as-is
         {
             return {false, e};
         }
@@ -518,7 +520,8 @@ public:
         StorageID source_id_, StoragePtr source_storage_, StorageMetadataPtr source_metadata_,
         StorageID view_id_, StoragePtr view_storage_, StorageMetadataPtr view_metadata_,
         StorageID inner_id_, StoragePtr inner_storage_, StorageMetadataPtr inner_metadata_,
-        ContextPtr context_)
+        ContextPtr context_,
+        bool async_insert_)
         : ExceptionKeepingTransform(input_header, output_header)
         , select_query(select_query_)
         , source_id(source_id_)
@@ -531,6 +534,7 @@ public:
         , inner_metadata(inner_metadata_)
         , inner_storage(inner_storage_)
         , context(context_)
+        , async_insert(async_insert_)
     {
     }
 
@@ -575,6 +579,7 @@ private:
     StorageMetadataPtr inner_metadata;
     StoragePtr inner_storage;
     ContextPtr context;
+    bool async_insert = false;
 
     struct State
     {
@@ -605,7 +610,8 @@ private:
 
         if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(select_query, local_context,local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
             pipeline = interpreter.buildQueryPipeline();
         }
         else
@@ -682,17 +688,21 @@ private:
 
         inner_metadata->check(pipeline.getHeader());
 
+        const auto & settings = context->getSettingsRef();
+        bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
         /// and two-level aggregation is triggered).
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
-            context->getSettingsRef()[Setting::min_insert_block_size_rows],
-            context->getSettingsRef()[Setting::min_insert_block_size_bytes]));
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes],
+            settings[Setting::max_insert_block_size],
+            settings[Setting::max_insert_block_size_bytes],
+            squash_with_strict_limits)
+        );
 
         pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
-
-        pipeline.addTransform(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(pipeline.getSharedHeader()));
 
         pipeline.addTransform(std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(view_id, pipeline.getSharedHeader()));
 
@@ -723,6 +733,7 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
 
     deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
+    LOG_DEBUG(logger, "deduplicate_blocks : {}", deduplicate_blocks);
     deduplicate_blocks_in_dependent_materialized_views = deduplicate_blocks && settings[Setting::deduplicate_blocks_in_dependent_materialized_views];
     materialized_views_ignore_errors = settings[Setting::materialized_views_ignore_errors];
     /// Squashing from multiple streams breaks deduplication for now so the optimization will be disabled
@@ -827,11 +838,15 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                         std::make_shared<ResizeProcessor>(output_header, squashing_context.num_squashing_transforms, 1));
                 }
 
+                bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
                 auto & plan_squashing_transform = squashing_processors_list.emplace_back(
                     std::make_shared<PlanSquashingTransform>(
                         output_header,
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
+                        table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                        settings[Setting::max_insert_block_size],
+                        settings[Setting::max_insert_block_size_bytes],
+                        squash_with_strict_limits));
 
                 if (squashing_context.num_squashing_transforms > 1)
                 {
@@ -883,6 +898,20 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
 }
 
 
+Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTransformChain() const
+{
+    const auto & dependent_views_ids = dependent_views.at(root_view);
+    if (dependent_views_ids.empty())
+        return {};
+
+    auto output_header = output_headers.at(root_view);
+
+    Chain chain;
+    chain.addSink(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(output_header));
+    return chain;
+}
+
+
 Chain InsertDependenciesBuilder::createChainWithDependencies() const
 {
     Chain result;
@@ -897,12 +926,18 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     // When data is inserted to the *Log storages, then it is not supposed to be inserted to the dependent views
     // When *Log storages push data to the dependent views, then `skip_destination_table` is true, data is pushed to the views only, not to the destination table
     if (!init_storage->noPushingToViewsOnInserts() || skip_destination_table)
+    {
+        result = Chain::concat(std::move(result), createRedefineDeduplicationInfoWithDataHashTransformChain());
         result = Chain::concat(std::move(result), createPostSink(root_view));
+    }
 
     if (skip_destination_table && result.empty())
-        throw Exception(ErrorCodes::DEPENDENCIES_NOT_FOUND,
-            "Table '{}' doesn't have any dependencies.",
-            init_table_id);
+    {
+        /// This can happen when a Kafka/FileLog/etc. engine table has no materialized views attached.
+        /// Instead of throwing, just discard the data, matching the old behavior.
+        LOG_WARNING(logger, "Table '{}' doesn't have any dependencies, data will be discarded", init_table_id);
+        result.addSink(std::make_shared<NullSinkToStorage>(output_headers.at(root_view)));
+    }
 
     result.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
     result.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
@@ -1291,7 +1326,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
-            select_context);
+            select_context,
+            async_insert);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1305,7 +1341,8 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
             source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
             view_id, storages.at(view_id), metadata_snapshots.at(view_id),
             inner_table_id, inner_storage, metadata_snapshots.at(inner_table_id),
-            select_context);
+            select_context,
+            async_insert);
 
         executing_inner_query->setRuntimeData(thread_groups.at(view_id));
 
@@ -1624,8 +1661,11 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
         chassert(isView(view_id));
 
         result = Chain::concat(std::move(result), createPreSink(view_id));
+
         ++it;
     }
+    else if (it == path.begin())
+        ++it;
 
     for (; it != path.end(); ++it)
     {
