@@ -291,11 +291,35 @@ if __name__ == "__main__":
 
             _diff_url = f"{_s3_base}/llvm_coverage/generate_llvm_coverage_diff_report/index_diff.html"
             _pr_changed_lines_info = print_res.ext.get("comment", "")
+            _changed_lines_total = print_res.ext.get("changed_lines_total", 0)
+            _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
+            _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
-            if _diff_ran:
-                # Write coverage data for the post-hook to pick up and post as a GitHub comment
-                # and insert into CIDB. The hook runs on the host (outside Docker) where the
-                # GH token and CIDB credentials are available.
+            _lbc_lines = print_res.ext.get("lbc_lines", 0)
+            _lbc_fns = print_res.ext.get("lbc_fns", 0)
+
+            # Only write coverage_comment.json (and thus post a GitHub comment) when
+            # there is something coverage-related to report: either the diff HTML report
+            # was generated (C++ source files changed) or LBC was detected (tests removed).
+            # Pure non-C++ PRs (scripts, Docker, configs) produce neither and should not
+            # generate a comment.
+            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
+            if not _has_coverage_data:
+                print("No C/C++ source files changed and no lost baseline coverage — skipping coverage comment.")
+            else:
+                # When _diff_ran is False but LBC was found (test-only removal), fetch
+                # the global percentages from the .info files that were downloaded during
+                # the diff script run for LBC comparison.
+                _base_info = f"{TEMP_DIR}/base_llvm_coverage.info"
+                _curr_info = f"{TEMP_DIR}/llvm_coverage.info"
+                if not _diff_ran and Path(_base_info).exists() and Path(_curr_info).exists():
+                    try:
+                        b_line_cov, b_function_cov, b_branch_cov = get_lcov_summary_percentages(_base_info)
+                        c_line_cov, c_function_cov, c_branch_cov = get_lcov_summary_percentages(_curr_info)
+                        delta = c_line_cov - b_line_cov
+                    except Exception as e:
+                        print(f"Warning: could not compute global coverage percentages: {e}")
+
                 _comment_data = {
                     # GitHub comment fields
                     "b_line_cov": b_line_cov,
@@ -305,7 +329,10 @@ if __name__ == "__main__":
                     "b_branch_cov": b_branch_cov,
                     "c_branch_cov": c_branch_cov,
                     "pr_changed_lines_info": _pr_changed_lines_info,
-                    "diff_url": _diff_url,
+                    "changed_lines_total": _changed_lines_total,
+                    "changed_lines_covered": _changed_lines_covered,
+                    "changed_lines_cov": _changed_lines_cov,
+                    "diff_url": _diff_url if _diff_ran else "",
                     "uncovered_code_url": uncovered_code_url,
                     # CIDB fields
                     "check_start_time": datetime.now(timezone.utc).strftime(
@@ -319,16 +346,47 @@ if __name__ == "__main__":
                     "status": diff_res.status,
                     "delta_line_cov": delta,
                     "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
-                    "diff_coverage_report_url": _diff_url,
+                    "diff_coverage_report_url": _diff_url if _diff_ran else "",
                 }
                 with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
                     json.dump(_comment_data, f)
-            else:
-                print("No diff report generated — skipping coverage comment and CIDB insert.")
         else:
             print("Local run, skipping CI DB update with coverage results")
     else:
         print("On master branch, skipping diff coverage generation")
+        if not is_local_run:
+            try:
+                m_line_cov, m_function_cov, m_branch_cov = get_lcov_summary_percentages(
+                    f"{TEMP_DIR}/llvm_coverage.info"
+                )
+                print(f"Master coverage: lines={m_line_cov:.2f}% functions={m_function_cov:.2f}% branches={m_branch_cov:.2f}%")
+                _s3_prefix = f"REFs/{branch}/{current_commit_sha}"
+                _s3_base = f"https://{S3_REPORT_BUCKET_HTTP_ENDPOINT}/{_s3_prefix}"
+                _master_data = {
+                    "check_start_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                    "pull_request_number": 0,
+                    "commit_sha": current_commit_sha,
+                    "base_commit_sha": "",
+                    "branch": branch,
+                    "base_branch": base_branch,
+                    "status": gen_report_res.status,
+                    "b_line_cov": 0.0,
+                    "c_line_cov": m_line_cov,
+                    "b_function_cov": 0.0,
+                    "c_function_cov": m_function_cov,
+                    "b_branch_cov": 0.0,
+                    "c_branch_cov": m_branch_cov,
+                    "delta_line_cov": 0.0,
+                    "coverage_report_url": f"{_s3_base}/llvm_coverage/generate_llvm_coverage_report/index.html",
+                    "diff_coverage_report_url": "",
+                    "uncovered_code_url": "",
+                    "pr_changed_lines_info": "",
+                    "diff_url": "",
+                }
+                with open(f"{TEMP_DIR}/coverage_comment.json", "w") as f:
+                    json.dump(_master_data, f)
+            except Exception as e:
+                print(f"Warning: failed to compute master coverage stats: {e}")
 
     # Add direct S3 links to both HTML reports in the main job result.
     # HTML files are uploaded within the corresponding generate sub-result;

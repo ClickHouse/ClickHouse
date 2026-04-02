@@ -1,6 +1,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -40,7 +41,7 @@ Field deserializeFieldFromSharedData(ColumnString * values, size_t n)
     auto data = values->getDataAt(n);
     ReadBufferFromMemory buf(data);
     Field res;
-    std::make_shared<SerializationDynamic>()->deserializeBinary(res, buf, FormatSettings());
+    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(res, buf, FormatSettings());
     return res;
 }
 
