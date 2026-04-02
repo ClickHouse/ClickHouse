@@ -980,32 +980,95 @@ public:
     }
 
 private:
+    /// Estimate the RowBinary-serialized byte size of one row across all argument columns.
+    /// Used for dynamic block splitting when webassembly_udf_max_input_block_size = 0.
+    /// Only handles String and fixed-width types; other types fall back to a 256-byte estimate.
+    size_t estimateRowSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_idx) const
+    {
+        size_t total = 0;
+        for (const auto & arg : arguments)
+        {
+            const IColumn * col = arg.column.get();
+            if (const auto * c = typeid_cast<const ColumnConst *>(col))
+                col = &c->getDataColumn();
+
+            if (const auto * s = typeid_cast<const ColumnString *>(col))
+            {
+                size_t len = s->getDataAt(std::min(row_idx, s->size() - 1)).size();
+                total += len + getLengthOfVarUInt(len);
+            }
+            else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            {
+                total += arg.type->getSizeOfValueInMemory();
+            }
+            else
+            {
+                total += 256; // conservative fallback for unknown variable-length types
+            }
+        }
+        return total;
+    }
+
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
-        size_t block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
-        if (block_size == 0)
-            block_size = input_rows_count;
 
-        for (size_t start_idx = 0; start_idx < input_rows_count; start_idx += block_size)
+        const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
+
+        // When no explicit block size is given, split input dynamically: accumulate rows
+        // and flush to WASM when the estimated serialized size would exceed 50% of the
+        // WASM module's actual linear memory. Using actual memory (not the CH-side limit)
+        // prevents OOM when a constant large geometry is materialized N times in the buffer.
+        const size_t wasm_linear_memory = compartment->getLinearMemorySize();
+        const size_t input_budget = (fixed_block_size == 0 && wasm_linear_memory > 0)
+            ? wasm_linear_memory / 2  // 50% for input, leave room for GEOS heap
+            : 0;
+
+        size_t batch_start = 0;
+        size_t batch_bytes = 0;
+
+        auto flush_batch = [&](size_t end_idx)
         {
-            size_t current_block_size = std::min(block_size, input_rows_count - start_idx);
-            auto current_input_block = getArgumentsBlock(arguments, start_idx, current_block_size);
+            if (end_idx <= batch_start)
+                return;
+            size_t batch_size = end_idx - batch_start;
+            auto block = getArgumentsBlock(arguments, batch_start, batch_size);
             auto stop_token = interrupt_source.get_token();
-            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size, stop_token);
+            auto col = user_defined_function->executeOnBlock(compartment, block, context, batch_size, stop_token);
 
-            if (!result_column->structureEquals(*current_column))
+            if (!result_column->structureEquals(*col))
                 throw Exception(
                     ErrorCodes::WASM_ERROR,
                     "Different column types in result blocks: {} and {}",
                     result_column->dumpStructure(),
-                    current_column->dumpStructure());
+                    col->dumpStructure());
 
             if (result_column->empty())
-                result_column = std::move(current_column);
+                result_column = col->assumeMutable();
             else
-                result_column->insertRangeFrom(*current_column, 0, current_column->size());
+                result_column->insertRangeFrom(*col, 0, col->size());
+
+            batch_start = end_idx;
+            batch_bytes = 0;
+        };
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            // Fixed block size: flush when the batch is full
+            if (fixed_block_size > 0 && row > batch_start && (row - batch_start) >= fixed_block_size)
+                flush_batch(row);
+
+            // Dynamic budget: flush before adding this row if it would exceed the budget
+            if (input_budget > 0)
+            {
+                size_t row_bytes = estimateRowSerializedSize(arguments, row);
+                if (batch_bytes > 0 && batch_bytes + row_bytes > input_budget)
+                    flush_batch(row);
+                batch_bytes += row_bytes;
+            }
         }
+
+        flush_batch(input_rows_count);
         return result_column;
     }
 

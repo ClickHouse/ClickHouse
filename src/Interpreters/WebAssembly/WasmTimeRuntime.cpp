@@ -245,6 +245,12 @@ public:
         return memory_span.subspan(ptr, size);
     }
 
+    size_t getLinearMemorySize() const override
+    {
+        return const_cast<WasmTimeCompartment *>(this)->getMemory().data(
+            const_cast<wasmtime::Store &>(store)).size();
+    }
+
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
     {
         setStoreFuel(store.context(), cfg, "function call");
