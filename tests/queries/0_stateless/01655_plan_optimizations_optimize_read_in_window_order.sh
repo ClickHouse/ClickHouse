@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Pin query_plan_merge_expressions to avoid Expression step changes in EXPLAIN output
+# when CI randomizes this setting (especially after PR #100874).
+export CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_plan_merge_expressions=1"
+
 name=test_01655_plan_optimizations_optimize_read_in_window_order
 
 $CLICKHOUSE_CLIENT -q "drop table if exists ${name}"
