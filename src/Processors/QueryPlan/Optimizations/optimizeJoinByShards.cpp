@@ -289,20 +289,26 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     for (size_t i = 0; i < splits.size(); ++i)
         analysis_results[i]->split_parts = std::move(splits[i]);
 
-    /// Apply sharding to joins with the minimum prefix.
-    for (auto & join_and_sharding : data.joins)
+    /// Only mark joins as sharded when the split actually produced multiple independent layers.
+    /// With a single layer there is no interleaving of streams, so global PK ordering is preserved
+    /// and read-in-order optimizations must not be suppressed for this join.
+    if (all_split.layers.size() > 1)
     {
-        join_and_sharding.sharding.resize(data.common_prefix);
-        join_and_sharding.join->enableJoinByLayers(std::move(join_and_sharding.sharding));
+        /// Apply sharding to joins with the minimum prefix.
+        for (auto & join_and_sharding : data.joins)
+        {
+            join_and_sharding.sharding.resize(data.common_prefix);
+            join_and_sharding.join->enableJoinByLayers(std::move(join_and_sharding.sharding));
+        }
+
+        /// Apply sharding for JOIN sorting steps.
+        for (const auto & sorting_step : data.sorting_steps)
+            sorting_step->convertToPartitionedFinishSorting();
+
+        /// Do not break shards after full_sorting_merge JOIN. For hash join it is automatically true.
+        for (const auto & join_step : data.joins_to_keep_in_order)
+            join_step->keepLeftPipelineInOrder();
     }
-
-    /// Apply sharding for JOIN sorting steps.
-    for (const auto & sorting_step : data.sorting_steps)
-        sorting_step->convertToPartitionedFinishSorting();
-
-    /// Do not break shards after full_sorting_merge JOIN. For hash join it is automatically true.
-    for (const auto & join_step : data.joins_to_keep_in_order)
-        join_step->keepLeftPipelineInOrder();
 }
 
 /// Join can be executed by independent shards if the same sharding can apply for the keft and right part,

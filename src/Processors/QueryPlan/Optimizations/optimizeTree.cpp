@@ -284,6 +284,13 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Split JOIN reads into PK-range shard layers before read-in-order optimizations,
+    /// so that buildInputOrderInfo can check whether sharding was actually applied (via
+    /// JoinStep::isJoinByLayersEnabled) and avoid incorrectly eliding an ORDER BY that is
+    /// needed to merge outputs from multiple shard layers.
+    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
+        optimizeJoinByShards(root);
+
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -494,9 +501,6 @@ void optimizeTreeSecondPass(
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
-
-    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByShards(root);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }

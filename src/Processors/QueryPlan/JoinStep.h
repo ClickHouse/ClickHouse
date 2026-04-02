@@ -65,6 +65,7 @@ public:
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
+    bool isJoinByLayersEnabled() const { return !primary_key_sharding.empty(); }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }

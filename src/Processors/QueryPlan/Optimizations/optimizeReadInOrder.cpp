@@ -1088,6 +1088,19 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return nullptr;
 
+        /// If optimizeJoinByShards (which now runs before applyOrder) actually applied sharding
+        /// to one of the traversed JOINs, the MergeTree read has been split into PK-range layers
+        /// with overlapping borders.  Each shard emits rows in storage order independently and
+        /// outputs are concatenated without a cross-shard merge.  Converting
+        /// FullSortingStep → FinishSortingStep under those conditions produces wrong results
+        /// (e.g. [4,3,2,1,0,9,8,7,6,5] instead of [0..9]).
+        /// When no JOIN in the path has been sharded, the ordering guarantee holds.
+        for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+        {
+            if (join_step->isJoinByLayersEnabled())
+                return nullptr;
+        }
+
         auto order_info = buildInputOrderFromSortDescription(
             reading,
             fixed_columns,
@@ -1203,6 +1216,14 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         /// to avoid coordination mode mismatch.
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
+
+        /// Same as SortingStep: if optimizeJoinByShards applied sharding to any traversed JOIN
+        /// the per-shard ordering assumption no longer holds.  Skip defensively.
+        for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+        {
+            if (join_step->isJoinByLayersEnabled())
+                return {};
+        }
 
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
@@ -1324,6 +1345,14 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         /// to avoid coordination mode mismatch.
         if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
             return {};
+
+        /// Same as SortingStep: if optimizeJoinByShards applied sharding to any traversed JOIN
+        /// the per-shard ordering assumption no longer holds.  Skip defensively.
+        for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+        {
+            if (join_step->isJoinByLayersEnabled())
+                return {};
+        }
 
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
