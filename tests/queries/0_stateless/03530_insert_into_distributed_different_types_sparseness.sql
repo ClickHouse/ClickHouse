@@ -1,3 +1,4 @@
+-- Tags: no-random-merge-tree-settings
 -- Ensure that sparse columns does not leads to any errors/warnings while pushing via Distributed
 
 drop table if exists sparse;

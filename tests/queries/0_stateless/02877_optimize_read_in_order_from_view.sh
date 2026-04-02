@@ -18,7 +18,7 @@ query="SELECT * FROM (SELECT * FROM view1) ORDER BY number DESC LIMIT 20 SETTING
 
 query_id=${CLICKHOUSE_DATABASE}_optimize_read_in_order_from_view_$RANDOM$RANDOM
 
-$CLICKHOUSE_CLIENT -q "$query" --query_id="$query_id" --log_queries=1 --optimize_read_in_order=1
+$CLICKHOUSE_CLIENT -q "$query" --query_id="$query_id" --log_queries=1 --optimize_read_in_order=1 --query_plan_read_in_order=1
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
@@ -32,7 +32,7 @@ else
     echo "read_rows:ok"
 fi
 
-query_plan=$($CLICKHOUSE_CLIENT -q "EXPLAIN actions=1 $query" --optimize_read_in_order=1)
+query_plan=$($CLICKHOUSE_CLIENT -q "EXPLAIN actions=1 $query" --optimize_read_in_order=1 --query_plan_read_in_order=1)
 
 echo "$query_plan" | grep -A 1 "ReadFromMergeTree" | sed 's/^[ \t]*//'
 

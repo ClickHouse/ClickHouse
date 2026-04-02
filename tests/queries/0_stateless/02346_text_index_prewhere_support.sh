@@ -167,7 +167,7 @@ function run()
     $MY_CLICKHOUSE_CLIENT --query "
         SELECT trim(explain) FROM
         (
-            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
+            EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1, query_plan_remove_unused_columns = 1
         )
         WHERE explain LIKE '%INPUT%\_\_text_index%' OR explain ILIKE '%name: inv_idx%'
     "

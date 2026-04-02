@@ -18,7 +18,8 @@ WHERE NOT match(url, '^https?://clickhouse[.]com/');
 EXPLAIN indexes = 1
 SELECT count(*)
 FROM 03772_table_match
-WHERE NOT match(url, '^https?://clickhouse[.]com/');
+WHERE NOT match(url, '^https?://clickhouse[.]com/')
+SETTINGS query_plan_merge_expressions = 1;
 
 SELECT count(*)
 FROM 03772_table_match
@@ -27,7 +28,8 @@ WHERE NOT match(url, '^abcd');
 EXPLAIN indexes = 1
 SELECT count(*)
 FROM 03772_table_match
-WHERE NOT match(url, '^abcd');
+WHERE NOT match(url, '^abcd')
+SETTINGS query_plan_merge_expressions = 1;
 
 SELECT count(*)
 FROM 03772_table_match
@@ -36,7 +38,8 @@ WHERE match(url, '^abcd');
 EXPLAIN indexes = 1
 SELECT count(*)
 FROM 03772_table_match
-WHERE match(url, '^abcd');
+WHERE match(url, '^abcd')
+SETTINGS query_plan_merge_expressions = 1;
 
 SELECT count(*)
 FROM 03772_table_match
@@ -45,4 +48,5 @@ WHERE match(url, '^https?://clickhouse[.]com/') = false;
 EXPLAIN indexes = 1
 SELECT count(*)
 FROM 03772_table_match
-WHERE match(url, '^https?://clickhouse[.]com/') = false;
+WHERE match(url, '^https?://clickhouse[.]com/') = false
+SETTINGS query_plan_merge_expressions = 1;

@@ -89,7 +89,7 @@ ExpressionTransform × 16
 1000000
 1000000
 -- { echoOn }
-explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1;
+explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, query_plan_read_in_order = 1;
 (Expression)
 ExpressionTransform × 4
   (Aggregating)
@@ -113,7 +113,7 @@ ExpressionTransform × 4
                                 MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 1000000
 -- { echoOn }
-explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1;
+explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, query_plan_read_in_order = 1;
 (Expression)
 ExpressionTransform × 8
   (Aggregating)
@@ -149,7 +149,7 @@ ExpressionTransform × 8
                                                         MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 1000000
 -- { echoOn }
-explain pipeline select a from t6 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1;
+explain pipeline select a from t6 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, query_plan_read_in_order = 1;
 (Expression)
 ExpressionTransform × 16
   (Aggregating)

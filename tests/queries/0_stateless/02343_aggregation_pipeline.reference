@@ -1,6 +1,6 @@
 -- { echoOn }
 
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 16
   (Aggregating)
@@ -15,7 +15,7 @@ ExpressionTransform × 16
             ExpressionTransform
               (ReadFromSystemNumbers)
               NumbersRange 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 16
   (Aggregating)
@@ -30,7 +30,7 @@ ExpressionTransform × 16
             ExpressionTransform × 16
               (ReadFromSystemNumbers)
               NumbersRange × 16 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform
   (Sorting)
@@ -47,7 +47,7 @@ ExpressionTransform
                 ExpressionTransform × 16
                   (ReadFromSystemNumbers)
                   NumbersRange × 16 0 → 1
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 36
   (Aggregating)
@@ -62,7 +62,7 @@ ExpressionTransform × 36
             ExpressionTransform
               (ReadFromSystemNumbers)
               NumbersRange 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 36, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 36
   (Aggregating)
@@ -77,7 +77,7 @@ ExpressionTransform × 36
             ExpressionTransform × 36
               (ReadFromSystemNumbers)
               NumbersRange × 36 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 36;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 36, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform
   (Sorting)
@@ -94,7 +94,7 @@ ExpressionTransform
                 ExpressionTransform × 36
                   (ReadFromSystemNumbers)
                   NumbersRange × 36 0 → 1
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 48
   (Aggregating)
@@ -110,7 +110,7 @@ ExpressionTransform × 48
               ExpressionTransform
                 (ReadFromSystemNumbers)
                 NumbersRange 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 48, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 48
   (Aggregating)
@@ -126,7 +126,7 @@ ExpressionTransform × 48
               ExpressionTransform × 48
                 (ReadFromSystemNumbers)
                 NumbersRange × 48 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 48;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 48, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform
   (Sorting)
@@ -143,7 +143,7 @@ ExpressionTransform
                 ExpressionTransform × 48
                   (ReadFromSystemNumbers)
                   NumbersRange × 48 0 → 1
-explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
+explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 49
   (Aggregating)
@@ -159,7 +159,7 @@ ExpressionTransform × 49
               ExpressionTransform
                 (ReadFromSystemNumbers)
                 NumbersRange 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) group by number settings max_rows_to_read = 0, max_threads = 49, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 49
   (Aggregating)
@@ -175,7 +175,7 @@ ExpressionTransform × 49
               ExpressionTransform × 49
                 (ReadFromSystemNumbers)
                 NumbersRange × 49 0 → 1
-explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 49;
+explain pipeline select * from (select * from numbers_mt(1e8) group by number) order by number settings max_rows_to_read = 0, max_threads = 49, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform
   (Sorting)
@@ -192,7 +192,7 @@ ExpressionTransform
                 ExpressionTransform × 49
                   (ReadFromSystemNumbers)
                   NumbersRange × 49 0 → 1
-explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1;
+explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 1, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 16
   (MergingAggregated)
@@ -209,7 +209,7 @@ ExpressionTransform × 16
                   (ReadFromSystemNumbers)
                   Numbers × 16 0 → 1
             (ReadFromRemote)
-explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 0;
+explain pipeline select number from remote('127.0.0.{1,2,3}', system, numbers_mt) group by number settings distributed_aggregation_memory_efficient = 0, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 16
   (MergingAggregated)
@@ -227,7 +227,7 @@ ExpressionTransform × 16
           (ReadFromRemote)
 -- { echoOn }
 
-explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 0;
+explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 0, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 16
   (MergingAggregated)
@@ -242,7 +242,7 @@ ExpressionTransform × 16
               (ReadFromMergeTree)
               MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
           (ReadFromRemote)
-explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 1;
+explain pipeline SELECT k1, k3, sum(value) v FROM remote('127.0.0.{1,2}', currentDatabase(), proj_agg_02343) GROUP BY k1, k3 SETTINGS distributed_aggregation_memory_efficient = 1, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 16
   (MergingAggregated)
@@ -260,7 +260,7 @@ ExpressionTransform × 16
             (ReadFromRemote)
 -- { echoOn }
 
-explain pipeline select a from remote('127.0.0.{1,2}', currentDatabase(), dist_t) group by a settings max_threads = 2, distributed_aggregation_memory_efficient = 1;
+explain pipeline select a from remote('127.0.0.{1,2}', currentDatabase(), dist_t) group by a settings max_threads = 2, distributed_aggregation_memory_efficient = 1, query_plan_merge_expressions = 1;
 (Expression)
 ExpressionTransform × 2
   (MergingAggregated)

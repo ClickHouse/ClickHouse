@@ -19,8 +19,8 @@ select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x
 14	14	14	14	0	0
 15	15	0	0	0	0
 explain description=0 select x, y, r.y, z, rr.z, a from (select l.x, l.y, r.y, r.z as z from (select x, y from tab1 where x != 2) l any left join (select y, z from tab2 where y != 4) r on l.y = r.y) ll any left join (select z, a from tab3 where z != 8) rr on ll.z = rr.z SETTINGS query_plan_merge_expressions = 1;
-Union
-  Expression
+Expression
+  Union
     Expression
       Join
         Expression
@@ -37,7 +37,6 @@ Union
         Expression
           Expression
             ReadFromMemoryStorage
-  Expression
     ReadFromRemoteParallelReplicas
 --
 -- The same query with cte;
@@ -71,8 +70,8 @@ sub5 as (select x, y, r.y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z
 select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
-    Union
-      Expression
+    Expression
+      Union
         Sorting
           Expression
             Expression
@@ -91,7 +90,6 @@ Expression
                 Expression
                   Expression
                     ReadFromMemoryStorage
-      Expression
         ReadFromRemoteParallelReplicas
 --
 -- GROUP BY should work up to WithMergableStage
@@ -114,8 +112,8 @@ Expression
   Sorting
     Expression
       MergingAggregated
-        Union
-          Expression
+        Expression
+          Union
             Aggregating
               Expression
                 Expression
@@ -134,7 +132,6 @@ Expression
                     Expression
                       Expression
                         ReadFromMemoryStorage
-          Expression
             ReadFromRemoteParallelReplicas
 --
 -- ORDER BY in sub3 : sub1 is fully pushed, sub3 -> WithMergableStage
@@ -233,26 +230,26 @@ Expression
               Expression
                 Join
                   Expression
-                    Union
-                      Expression
+                    Expression
+                      Union
+                        Expression
+                          Expression
+                            Expression
+                              ReadFromMergeTree
+                        ReadFromRemoteParallelReplicas
+                  Expression
+                    Expression
+                      Union
                         Expression
                           Expression
                             ReadFromMergeTree
-                      Expression
-                        ReadFromRemoteParallelReplicas
-                  Expression
-                    Union
-                      Expression
-                        Expression
-                          ReadFromMergeTree
-                      Expression
                         ReadFromRemoteParallelReplicas
           Expression
-            Union
-              Expression
+            Expression
+              Union
                 Expression
-                  ReadFromMergeTree
-              Expression
+                  Expression
+                    ReadFromMergeTree
                 ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub3: sub3 -> WithMergableStage
@@ -284,8 +281,8 @@ sub3 as (select l.x, l.y, r.y, r.z as z from sub2 r any right join sub1 l on l.y
 sub4 as (select z, a from tab3 where z != 8),
 sub5 as (select x, l.y, y, z, rr.z, a from sub3 ll any left join sub4 rr on ll.z = rr.z)
 select * from sub5 SETTINGS query_plan_merge_expressions = 1;
-Union
-  Expression
+Expression
+  Union
     Expression
       Join
         Expression
@@ -302,7 +299,6 @@ Union
         Expression
           Expression
             ReadFromMemoryStorage
-  Expression
     ReadFromRemoteParallelReplicas
 --
 -- RIGHT JOIN in sub5: sub5 -> WithMergableStage
@@ -336,8 +332,8 @@ sub5 as (select z, a, x, y, r.y, ll.z from sub4 rr any right join sub3 ll on ll.
 select * from sub5 order by x SETTINGS query_plan_merge_expressions = 1;
 Expression
   Sorting
-    Union
-      Expression
+    Expression
+      Union
         Sorting
           Expression
             Expression
@@ -357,7 +353,6 @@ Expression
                           Expression
                             Expression
                               ReadFromMergeTree
-      Expression
         ReadFromRemoteParallelReplicas
 --
 -- Subqueries for IN allowed
@@ -662,8 +657,8 @@ Expression
       Expression
         Join
           Expression
-            Union
-              Expression
+            Expression
+              Union
                 Expression
                   Expression
                     Join
@@ -675,14 +670,12 @@ Expression
                         Expression
                           Expression
                             ReadFromMergeTree
-              Expression
                 ReadFromRemoteParallelReplicas
           Expression
-            Union
-              Expression
+            Expression
+              Union
                 Expression
                   ReadFromMergeTree
-              Expression
                 ReadFromRemoteParallelReplicas
 --
 -- ORDER BY in sub1 : sub1 -> WithMergableStage

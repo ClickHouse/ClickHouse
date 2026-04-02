@@ -26,7 +26,8 @@ FROM numbers(100000);
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_has_skip_minmax
-WHERE has([5432, 7432, 9999], key_col);
+WHERE has([5432, 7432, 9999], key_col)
+SETTINGS query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS test_has_skip_set;
 CREATE TABLE test_has_skip_set (
@@ -45,9 +46,10 @@ SELECT
 FROM numbers(100000);
 
 EXPLAIN indexes = 1
-SELECT count() 
-FROM test_has_skip_set 
-WHERE has([10, 20, 30], user_id);
+SELECT count()
+FROM test_has_skip_set
+WHERE has([10, 20, 30], user_id)
+SETTINGS query_plan_merge_expressions = 1;
 
 DROP TABLE IF EXISTS test_has_skip_bloom;
 
@@ -71,4 +73,5 @@ FROM numbers(100000);
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_has_skip_bloom
-WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str);
+WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str)
+SETTINGS query_plan_merge_expressions = 1;
