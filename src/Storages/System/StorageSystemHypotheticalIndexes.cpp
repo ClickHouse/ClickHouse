@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalIndexStore.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB

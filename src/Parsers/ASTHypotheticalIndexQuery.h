@@ -20,7 +20,7 @@ public:
         DropAll,
     };
 
-    Kind kind;
+    Kind kind = Create;
 
     /// For Create: stores ASTIndexDeclaration
     ASTPtr index_decl;

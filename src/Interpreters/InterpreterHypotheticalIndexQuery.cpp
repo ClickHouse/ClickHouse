@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterHypotheticalIndexQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalIndexStore.h>
@@ -34,6 +35,9 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
 
+    /// Require at least SELECT access on the table.
+    context->checkAccess(AccessType::SELECT, table_id);
+
     /// Only MergeTree family tables support skip indexes.
     if (!dynamic_cast<const MergeTreeData *>(table.get()))
         throw Exception(
@@ -52,8 +56,10 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             {
                 store.remove(table_id, index_name);
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                    throw;
                 /// IF EXISTS: silently ignore if not found
             }
         }
