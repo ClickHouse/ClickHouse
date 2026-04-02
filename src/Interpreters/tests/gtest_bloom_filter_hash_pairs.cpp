@@ -11,7 +11,7 @@ namespace
 {
 std::vector<BloomFilterHashPair> makeRandomPairs(size_t size)
 {
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<UInt64> dist;
 
     std::vector<BloomFilterHashPair> pairs(size);
