@@ -107,6 +107,7 @@ String similarToPatternToRegexp(std::string_view pattern)
         res = "^";
 
     bool in_bracket = false;
+    bool maybe_in_class = false;
     while (pos < end)
     {
         /// SIMILAR TO's metacharacters consist of LIKE's and a subset of re2's:
@@ -118,15 +119,21 @@ String similarToPatternToRegexp(std::string_view pattern)
         switch (*pos)
         {
             /// Keep unescaped brackets. Remember in bracket or not.
+            /// We can avoid lookahead cost for class expression by this following rules:
+            /// - [ (not [:) opens a bracket
+            /// - [: opens a mabye-class
+            /// - :] closes a maybe-class if it's opened, else closes a bracket
+            /// - ] closes a maybe-class if it's opened, else closes a bracket
             case '[':
                 if (pos + 1 < end)
                 {
                     switch (pos[1])
                     {
-                        /// [:class:] class expression, not in bracket
+                        /// [: maybe class open
                         case ':':
+                            maybe_in_class = true;
                             break;
-                        /// [] bracket notation
+                        /// [ bracket open
                         default:
                             in_bracket = true;
                     }
@@ -136,15 +143,17 @@ String similarToPatternToRegexp(std::string_view pattern)
                 res += *pos;
                 break;
             case ']':
-                if (pos - 1 > pattern.data())
+                if (maybe_in_class && pos - 1 > pattern.data())
                 {
                     switch (*(pos - 1))
                     {
-                        /// [:class:] class expression, not in bracket
+                        /// :] maybe class close
                         case ':':
+                            maybe_in_class = false;
                             break;
-                        /// [] bracket notation
+                        /// ] bracket close
                         default:
+                            maybe_in_class = false;
                             in_bracket = false;
                     }
                 }
@@ -156,13 +165,13 @@ String similarToPatternToRegexp(std::string_view pattern)
             case '^':
             case '$':
             case '.':
-                if (!in_bracket)
+                if (!in_bracket && !maybe_in_class)
                     res += '\\';
                 res += *pos;
                 break;
             /// Convert LIKE's metacharacters to re2's. Don't convert when in bracket.
             case '%':
-                if (!in_bracket)
+                if (!in_bracket && !maybe_in_class)
                 {
                     if (pos + 1 != end)
                         res += ".*";
@@ -173,7 +182,7 @@ String similarToPatternToRegexp(std::string_view pattern)
                     res += *pos;
                 break;
             case '_':
-                if (!in_bracket)
+                if (!in_bracket && !maybe_in_class)
                     res += ".";
                 else
                     res += *pos;

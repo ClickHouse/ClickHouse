@@ -69,3 +69,25 @@
 -- Character class within bracket expression
 1
 1
+1
+1
+-- Bracket expression ending with colon
+1
+1
+0
+1
+-- Bracket expression starting with colon
+1
+0
+1
+-- Bracket expression containing metacharacer
+1
+1
+0
+0
+1
+-- Multiple classes
+1
+1
+0
+0

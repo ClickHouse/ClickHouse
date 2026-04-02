@@ -88,5 +88,31 @@ SELECT 'hello' NOT SIMILAR TO 'hel+o';        -- Returns: 0
 SELECT 'hello' NOT SIMILAR TO 'he+lo';        -- Returns: 1
 
 SELECT '-- Character class within bracket expression';
-SELECT 'a' SIMILAR TO '[[:alpha:]_]';         -- Returns: 1
-SELECT 'a' SIMILAR TO '[%[:alpha:]]';         -- Returns: 1
+SELECT '_' SIMILAR TO '[[:digit:]_]';         -- Returns: 1
+SELECT '%' SIMILAR TO '[[:digit:]%]';         -- Returns: 1
+SELECT '_' SIMILAR TO '[_[:digit:]]';         -- Returns: 1
+SELECT '%' SIMILAR TO '[%[:digit:]]';         -- Returns: 1
+
+SELECT '-- Bracket expression ending with colon';
+SELECT 'a' SIMILAR TO '[a:]';                 -- Returns: 1
+SELECT ':' SIMILAR TO '[a:]';                 -- Returns: 1
+SELECT 'a' SIMILAR TO '[a:]_';                -- Returns: 0
+SELECT 'ab' SIMILAR TO '[a:]_';               -- Returns: 1
+
+SELECT '-- Bracket expression starting with colon';
+SELECT ':' SIMILAR TO '[:a]';                 -- Returns: 1
+SELECT 'b' SIMILAR TO '[:a]_';                -- Returns: 0
+SELECT 'ab' SIMILAR TO '[:a]_';               -- Returns: 1
+
+SELECT '-- Bracket expression containing metacharacer';
+SELECT '_' SIMILAR TO '[:_a]';                -- Returns: 1
+SELECT '_' SIMILAR TO '[_a:]';                -- Returns: 1
+SELECT '.' SIMILAR TO '[:_a]';                -- Returns: 0
+SELECT '.' SIMILAR TO '[_a:]';                -- Returns: 0
+SELECT '.' SIMILAR TO '[:.a]';                -- Returns: 1
+
+SELECT '-- Multiple classes';
+SELECT 'f' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 1
+SELECT '1' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 1
+SELECT '_' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 0
+SELECT '^' SIMILAR TO '[[:alpha:][:digit:]]'; -- Returns: 0
