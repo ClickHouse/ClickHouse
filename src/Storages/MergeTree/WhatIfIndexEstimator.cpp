@@ -156,7 +156,6 @@ bool tryEstimateWithStatistics(
     result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
     result.estimated_parts = analysis.selected_parts;
     result.estimate_source = "statistical";
-    result.confidence = "MEDIUM";
     return true;
 }
 
@@ -228,7 +227,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     /// No column statistics available — can only report applicability.
     result.estimate_source = "applicability_only";
-    result.confidence = "LOW";
     result.estimated_marks = analysis.selected_marks;
     result.estimated_parts = analysis.selected_parts;
     result.skip_ratio = 0.0;
@@ -385,9 +383,6 @@ void WhatIfIndexEstimator::Result::format(WriteBuffer & out) const
         }
 
         writeString(fmt::format("  skip_ratio:   {:.1f}%\n", idx.skip_ratio * 100.0), out);
-        writeCString("\n", out);
-
-        writeString(fmt::format("Confidence: {}\n", idx.confidence), out);
         writeCString("\n", out);
 
         writeCString("Estimation:\n", out);

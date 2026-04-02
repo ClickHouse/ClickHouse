@@ -45,9 +45,6 @@ public:
         UInt64 elapsed_ms = 0;
         UInt64 budget_ms = 0;
 
-        /// Confidence: HIGH, MEDIUM, LOW.
-        String confidence;
-
         /// Cost scores.
         UInt64 storage_estimate_bytes = 0;
         String cpu_check_cost_score;       /// LOW, MEDIUM, HIGH
