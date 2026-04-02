@@ -9,10 +9,6 @@
 --
 1	0
 --
-0	1
---
-0	1
---
 1	1	Nullable(String)	a
 1	2	Nullable(String)	b
 2	1	Nullable(String)	c

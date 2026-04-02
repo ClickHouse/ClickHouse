@@ -1425,6 +1425,14 @@ void MergeTreeData::setProperties(
     setVirtuals(createVirtuals(new_metadata));
     projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createProjectionVirtuals(new_metadata)));
 
+    /// Lookup-index caches are derived from table metadata and data parts, so
+    /// metadata changes must drop stale in-memory snapshots eagerly.
+    {
+        std::lock_guard lock(table_lookup_indices_mutex);
+        lookup_sets_cache.clear();
+        lookup_joins_cache.clear();
+    }
+
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();
 }

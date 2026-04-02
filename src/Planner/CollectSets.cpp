@@ -86,6 +86,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     auto * query_node = table_expression->as<QueryNode>();
     if (!query_node
         || query_node->isDistinct()
+        || query_node->hasSettingsChanges()
         || query_node->hasPrewhere()
         || query_node->hasWhere()
         || query_node->hasGroupBy()
