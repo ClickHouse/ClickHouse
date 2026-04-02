@@ -75,10 +75,11 @@ public:
     bool isFinished() const { return is_finished; }
     TryResult getResult() const
     {
-        /// The result is populated inside a fiber whose stack is allocated via aligned_alloc.
-        /// MSan treats such memory as uninitialized and cannot track writes through
-        /// boost::context's uninstrumented assembly for fiber switches.
-        /// Unpoison the result at this fiber boundary to suppress false positives.
+        /// TryResult has struct padding bytes that are never explicitly initialized
+        /// (neither by the defaulted constructor nor by ConnectionEstablisher::run()).
+        /// When vector operations in getMany() move TryResult objects, MSan can flag
+        /// reads of these uninitialized padding bytes. Unpoison the entire struct
+        /// (including padding) to suppress this false positive.
         __msan_unpoison(&result, sizeof(result));
         return result;
     }
