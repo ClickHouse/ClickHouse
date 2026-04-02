@@ -492,9 +492,11 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
+                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(),
+                    !in->isCanceled() && in->eof());
                 return;
             }
         }
@@ -1275,9 +1277,8 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
 
-        auto result_chunk = Squashing::squash(
-            squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true),
-            squashing.getHeader());
+        squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
 
         {
             std::lock_guard lock(*callback_mutex);
@@ -1372,13 +1373,24 @@ void TCPHandler::processInsertQuery(QueryState & state)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
-                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", timeout_ms);
 
-                result.future.get();
+                auto progress_result = result.future.get();
+
+                /// Report the written rows/bytes as progress so that the client
+                /// and query_log reflect the actual insert stats.
+                if (auto process_list_elem = state.query_context->getProcessListElement())
+                {
+                    process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
+                    process_list_elem->updateProgressIn(Progress(ReadProgress(progress_result.rows, progress_result.bytes)));
+                }
             }
 
-            std::lock_guard lock(*callback_mutex);
-            sendInsertProfileEvents(state);
+            {
+                std::lock_guard lock(*callback_mutex);
+                sendProgress(state);
+                sendInsertProfileEvents(state);
+            }
             return;
         }
         if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
@@ -1400,6 +1412,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
+    sendProgress(state);
     sendInsertProfileEvents(state);
 }
 

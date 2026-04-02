@@ -106,7 +106,11 @@ namespace
 
             UInt64 res = 0;
             if (validator.validateCell(data_hindex[row]))
-                res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            {
+                H3Index child = 0;
+                if (!cellToCenterChild(data_hindex[row], data_resolution[row], &child))
+                    res = child;
+            }
 
             dst_data[row] = res;
         }
