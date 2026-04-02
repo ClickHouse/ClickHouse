@@ -273,6 +273,8 @@ void HTTPHandler::processQuery(
     http_conn_info.user = http_client_info.current_user;
     http_conn_info.status = "active";
     http_conn_info.query_id = context->getCurrentQueryId();
+    http_conn_info.client_name = request.get("User-Agent", "");
+    http_conn_info.last_query_time = std::time(nullptr);
     auto http_connection_handle = ConnectionRegistry::instance().add(std::move(http_conn_info));
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");

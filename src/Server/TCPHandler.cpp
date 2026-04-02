@@ -484,6 +484,7 @@ void TCPHandler::runImpl()
         info.client_version_major = client_version_major;
         info.client_version_minor = client_version_minor;
         info.client_version_patch = client_version_patch;
+        info.connected_time = std::time(nullptr);
         connection_handle = ConnectionRegistry::instance().add(std::move(info));
     }
 

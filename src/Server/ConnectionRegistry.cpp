@@ -26,8 +26,6 @@ ConnectionRegistry::Handle ConnectionRegistry::add(ConnectionInfo info)
 
     UInt64 id = next_id.fetch_add(1, std::memory_order_relaxed);
     info.connection_id = id;
-    if (info.connected_time == 0)
-        info.connected_time = std::time(nullptr);
 
     std::unique_lock lock(mutex);
     connections.emplace(id, std::move(info));

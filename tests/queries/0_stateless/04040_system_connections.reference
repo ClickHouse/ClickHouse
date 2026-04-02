@@ -11,7 +11,7 @@ client_name	String
 client_version_major	UInt64
 client_version_minor	UInt64
 client_version_patch	UInt64
-connected_time	DateTime
+connected_time	Nullable(DateTime)
 last_query_time	Nullable(DateTime)
 TCP	active
 0
