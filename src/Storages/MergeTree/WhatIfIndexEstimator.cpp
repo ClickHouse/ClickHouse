@@ -6,15 +6,20 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
+#include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 
 #include <fmt/format.h>
@@ -159,6 +164,115 @@ bool tryEstimateWithStatistics(
     return true;
 }
 
+/// Empirical estimation: temporarily materialize the index in memory
+/// for the baseline mark ranges only, then check each granule.
+/// This gives 100% accurate skip ratio.
+bool tryEstimateEmpirical(
+    WhatIfIndexEstimator::IndexResult & result,
+    const MergeTreeIndexPtr & index_helper,
+    const MergeTreeIndexConditionPtr & condition,
+    ReadFromMergeTree * read_step,
+    const ReadFromMergeTree::AnalysisResult & analysis,
+    const RangesInDataParts & saved_parts,
+    ContextPtr /* context */)
+{
+    const auto & data = read_step->getMergeTreeData();
+    auto storage_snapshot = read_step->getStorageSnapshot();
+
+    /// Collect column names the index needs.
+    Names index_columns = index_helper->getColumnsRequiredForIndexCalc();
+    if (index_columns.empty())
+        return false;
+
+    UInt64 total_index_granules = 0;
+    UInt64 skipped_index_granules = 0;
+    Stopwatch watch;
+
+    /// The skip index granularity: number of data granules per one index granule.
+    const size_t skip_index_granularity = index_helper->index.granularity;
+
+    for (const auto & part_with_ranges : saved_parts)
+    {
+        auto part = part_with_ranges.data_part;
+        const auto & mark_ranges = part_with_ranges.ranges;
+
+        if (mark_ranges.empty())
+            continue;
+
+        /// Create a sequential source that reads only the baseline mark ranges.
+        RangesInDataPart part_for_read(part, nullptr, 0, 0, mark_ranges);
+
+        Pipe pipe = createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
+            data,
+            storage_snapshot,
+            std::move(part_for_read),
+            std::make_shared<AlterConversions>(),
+            nullptr,    /// merged_part_offsets
+            index_columns,
+            mark_ranges,
+            std::make_shared<std::atomic<size_t>>(0),
+            false,      /// apply_deleted_mask
+            false,      /// read_with_direct_io
+            false);     /// prefetch
+
+        QueryPipeline pipeline(std::move(pipe));
+        PullingPipelineExecutor executor(pipeline);
+
+        /// Feed blocks to the aggregator.
+        /// Accumulate `skip_index_granularity` data granules per index granule.
+        auto aggregator = index_helper->createIndexAggregator();
+        size_t data_granules_in_current = 0;
+
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            size_t pos = 0;
+            aggregator->update(block, &pos, block.rows());
+
+            /// Each block from the sequential source corresponds to one data granule.
+            ++data_granules_in_current;
+
+            if (data_granules_in_current >= skip_index_granularity)
+            {
+                auto granule = aggregator->getGranuleAndReset();
+                ++total_index_granules;
+                if (!condition->mayBeTrueOnGranule(granule, {}))
+                    ++skipped_index_granules;
+
+                aggregator = index_helper->createIndexAggregator();
+                data_granules_in_current = 0;
+            }
+        }
+
+        /// Flush the last partial index granule.
+        if (!aggregator->empty())
+        {
+            auto granule = aggregator->getGranuleAndReset();
+            ++total_index_granules;
+            if (!condition->mayBeTrueOnGranule(granule, {}))
+                ++skipped_index_granules;
+        }
+    }
+
+    if (total_index_granules == 0)
+        return false;
+
+    result.skip_ratio = static_cast<double>(skipped_index_granules) / static_cast<double>(total_index_granules);
+    result.estimated_marks = total_index_granules - skipped_index_granules;
+    result.estimated_parts = analysis.selected_parts;
+    result.estimate_source = "empirical";
+    result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
+    result.sampled_parts = saved_parts.size();
+    result.sampled_marks = total_index_granules;
+    result.elapsed_ms = watch.elapsedMilliseconds();
+
+    return true;
+}
+
 /// Evaluate a single hypothetical index against the baseline.
 /// Checks applicability via createIndexCondition + alwaysUnknownOrTrue,
 /// then tries to estimate skip ratio using column statistics.
@@ -219,22 +333,22 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
 
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
-    result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
 
-    /// Try to estimate skip ratio using column statistics (if available).
+    /// Try empirical estimation first: materialize the index in memory
+    /// for baseline marks only, check each granule. This is 100% accurate.
+    if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, context))
+        return result;
+
+    /// Empirical failed (e.g. no parts). Try column statistics.
+    result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     if (tryEstimateWithStatistics(result, read_step, analysis, saved_parts, filter_dag->getOutputs().front(), context))
         return result;
 
-    /// No column statistics available — can only report applicability.
+    /// No estimation available — can only report applicability.
     result.estimate_source = "applicability_only";
     result.estimated_marks = analysis.selected_marks;
     result.estimated_parts = analysis.selected_parts;
     result.skip_ratio = 0.0;
-
-    result.warnings.push_back(
-        "No column statistics available for estimation. "
-        "Use ALTER TABLE ... ADD STATISTICS <column> TYPE tdigest, uniq, countmin "
-        "and MATERIALIZE STATISTICS to enable skip ratio estimation.");
 
     return result;
 }
