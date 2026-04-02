@@ -173,7 +173,7 @@ void TopNAggregatingTransformBase::prepareArgColumnPtrs(const Columns & columns)
         agg_arg_column_ptrs[i].resize(arg_indices.size());
         for (size_t j = 0; j < arg_indices.size(); ++j)
         {
-            auto converted = columns[arg_indices[j]]->convertToFullColumnIfLowCardinality();
+            auto converted = columns[arg_indices[j]]->convertToFullIfNeeded();
             agg_arg_column_ptrs[i][j] = converted.get();
             if (converted != columns[arg_indices[j]])
                 agg_arg_column_holders.push_back(std::move(converted));
@@ -356,7 +356,7 @@ void TopNDirectAggregatingTransform::consume(Chunk chunk)
     const IColumn * order_arg_col = nullptr;
     if (enable_threshold_pruning)
     {
-        order_arg_col_holder = columns[order_agg_arg_col_idx]->convertToFullColumnIfLowCardinality();
+        order_arg_col_holder = columns[order_agg_arg_col_idx]->convertToFullIfNeeded();
         order_arg_col = order_arg_col_holder.get();
     }
     ColumnPtr threshold_keep_mask;
