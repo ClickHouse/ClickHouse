@@ -16,7 +16,7 @@ SELECT * FROM (SELECT number, number, number + 1 as e, e FROM numbers(5)) AS lef
 INNER JOIN (SELECT number, number + 1 as k, k FROM numbers(2, 5)) AS right
 USING (number) ORDER BY ALL;
 
-SET query_plan_remove_unused_columns=1; -- And also run with it enabled to verify that the two optimization works together
+SET query_plan_remove_unused_columns=1; -- And also run with it enabled to verify that the two optimizations work together
 
 SELECT explain FROM
 (
