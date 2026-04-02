@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 -- Test for issue #77978
 

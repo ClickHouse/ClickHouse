@@ -7,6 +7,7 @@
 -- Also has good number of calls to reinterpret() to test conversion of native floats to Array(Float32)
 
 SET enable_analyzer = 1;
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 DROP TABLE IF EXISTS dbpedia;
 

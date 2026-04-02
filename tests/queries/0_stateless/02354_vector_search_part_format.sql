@@ -4,6 +4,7 @@
 -- Basic tests for vector similarity index stored in compact vs. wide format, respectively full vs. packed parts
 
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 DROP TABLE IF EXISTS tab_compact_full;
 DROP TABLE IF EXISTS tab_wide_full;

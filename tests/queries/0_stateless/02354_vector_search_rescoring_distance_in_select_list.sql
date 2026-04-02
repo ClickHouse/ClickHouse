@@ -11,6 +11,7 @@
 
 SET enable_analyzer = 1;
 SET vector_search_with_rescoring = 0;
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 SELECT 'Create tables with Array(Float32) and Array(BFloat16) column';
 

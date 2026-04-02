@@ -3,6 +3,7 @@
 -- Tests vector search over vectors with a huge dimension (32k)
 
 SET parallel_replicas_local_plan = 1;
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 DROP TABLE IF EXISTS tab;
 

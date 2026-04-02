@@ -4,6 +4,7 @@
 -- Tests the vector index cache.
 
 SET parallel_replicas_local_plan = 1;
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 SYSTEM CLEAR VECTOR SIMILARITY INDEX CACHE;
 SELECT metric, value FROM system.metrics WHERE metric = 'VectorSimilarityIndexCacheBytes';

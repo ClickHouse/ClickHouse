@@ -4,6 +4,7 @@ SET enable_analyzer = 1; -- analyzer vs. non-analyzer produce slightly different
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_merge_expressions = 1; -- vector search optimizer requires merged expression steps to recognize the plan pattern
 
 -- Reference vector for vector search is computed by a subquery (issue #69085)
 
