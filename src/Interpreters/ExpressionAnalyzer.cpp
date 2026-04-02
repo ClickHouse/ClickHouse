@@ -1141,7 +1141,8 @@ std::shared_ptr<DirectKeyValueJoin> tryKeyValueJoin(std::shared_ptr<TableJoin> a
     if (!storage)
         return nullptr;
 
-    bool allowed_inner = isInner(analyzed_join->kind()) && analyzed_join->strictness() == JoinStrictness::All;
+    bool allowed_inner = isInner(analyzed_join->kind()) && (analyzed_join->strictness() == JoinStrictness::All
+        || analyzed_join->strictness() == JoinStrictness::Any);
     bool allowed_left = isLeft(analyzed_join->kind()) && (analyzed_join->strictness() == JoinStrictness::Any ||
                                                           analyzed_join->strictness() == JoinStrictness::All ||
                                                           analyzed_join->strictness() == JoinStrictness::Semi ||

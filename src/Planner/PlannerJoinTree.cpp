@@ -2529,7 +2529,8 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
 
 std::optional<Names> tryExtractLookupJoinRightKeys(const JoinOperator & join_operator)
 {
-    bool allowed_inner = isInner(join_operator.kind) && join_operator.strictness == JoinStrictness::All;
+    bool allowed_inner = isInner(join_operator.kind) && (join_operator.strictness == JoinStrictness::All
+        || join_operator.strictness == JoinStrictness::Any);
     bool allowed_left = isLeft(join_operator.kind) && (join_operator.strictness == JoinStrictness::Any
         || join_operator.strictness == JoinStrictness::All
         || join_operator.strictness == JoinStrictness::Semi
