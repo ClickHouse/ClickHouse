@@ -1791,10 +1791,27 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode)
     }
 }
 
-void validateVirtualColumns(IStorage & storage)
+void validateVirtualColumns(IStorage & storage, LoadingStrictnessLevel mode)
 {
+    /// For non-strict modes (e.g. SECONDARY_CREATE during SharedCatalog state application),
+    /// use tryGetInMemoryMetadataPtr which returns nullopt when the target table of a
+    /// StorageAlias doesn't exist yet. The target may appear later or may have been dropped;
+    /// the validation will happen at query time instead.
+    StorageMetadataPtr metadata;
+    if (mode > LoadingStrictnessLevel::CREATE)
+    {
+        auto maybe_metadata = storage.tryGetInMemoryMetadataPtr();
+        if (!maybe_metadata)
+            return;
+        metadata = *maybe_metadata;
+    }
+    else
+    {
+        metadata = storage.getInMemoryMetadataPtr();
+    }
+
     auto virtual_columns = storage.getVirtualsPtr();
-    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
+    for (const auto & storage_column : metadata->getColumns())
     {
         if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
         {
@@ -1821,7 +1838,7 @@ void validateVirtualColumns(IStorage & storage)
 void validateStorage(IStorage & storage, LoadingStrictnessLevel mode)
 try
 {
-    validateVirtualColumns(storage);
+    validateVirtualColumns(storage, mode);
     checkForUnsupportedColumns(storage, mode);
 }
 catch (...)
