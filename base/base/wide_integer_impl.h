@@ -57,6 +57,12 @@ constexpr long double round_to_64bit_mantissa(long double value) noexcept
     // mantissa is now in range [0.5, 1.0) or (-1.0, -0.5]
     // Scale to extract exactly 64 bits of precision
     constexpr long double scale = static_cast<long double>(1ULL << 63) * 2.0L; // 2^64
+
+    // N.B. std::round (ties away from zero) is used intentionally, NOT std::rint (ties to even).
+    // On ARM, division by max_int can produce results with an exact .5 fractional part
+    // (e.g., 9223372036854775808.5) because the 113-bit mantissa preserves it. On x86,
+    // the 64-bit mantissa truncates the same division to 9223372036854775809.0 directly.
+    // std::round matches x86's truncation direction for these tie cases; std::rint does not.
     long double scaled = std::round(mantissa * scale);
 
     // Convert back to normalized mantissa with 64-bit precision

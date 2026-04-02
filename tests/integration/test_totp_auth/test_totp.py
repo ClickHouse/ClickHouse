@@ -77,6 +77,13 @@ def create_config(totp_secret):
                 <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
             </time_based_one_time_password>
         </totuser_no_password>
+
+        <totuser_empty_password>
+            <password></password>
+            <time_based_one_time_password>
+                <secret>GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ</secret>
+            </time_based_one_time_password>
+        </totuser_empty_password>
     </users>
 </clickhouse>
 """.lstrip()
@@ -255,4 +262,30 @@ def test_one_time_only_no_password(started_cluster):
     with client(command=f"{client_command} --one-time-password {get_otp()}") as c:
         c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
         c.expect("totuser_no_password42")
+        c.expect(prompt)
+
+
+def test_empty_password_with_otp_cli_option(started_cluster):
+    """Test that --one-time-password works for a user with empty plaintext password and TOTP."""
+    secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+    get_otp = lambda: get_one_time_password(secret=secret)
+
+    query_text = "SELECT currentUser() || toString(42)"
+
+    assert "totuser_empty_password42\n" == node.query(
+        query_text, user="totuser_empty_password", password=f"+{get_otp()}"
+    )
+
+    client_command = f"{started_cluster.get_client_cmd()} --highlight=0 --host {node.ip_address} -u totuser_empty_password"
+
+    with client(command=f"{client_command} --one-time-password {get_otp()}") as c:
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_empty_password42")
+        c.expect(prompt)
+
+    with client(
+        command=f'{client_command} --password "" --one-time-password {get_otp()}'
+    ) as c:
+        c.send("SELECT currentUser() || '42' FORMAT TSVRaw;")
+        c.expect("totuser_empty_password42")
         c.expect(prompt)

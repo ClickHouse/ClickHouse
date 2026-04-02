@@ -1,8 +1,10 @@
 #include <Core/Protocol.h>
 #if defined(OS_LINUX)
 
+#include <cmath>
 #include <Client/HedgedConnections.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
@@ -24,6 +26,7 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
@@ -215,6 +218,19 @@ void HedgedConnections::sendQuery(
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
+
+        /// Scale interactive_delay by sqrt(fanout) with jitter, same as in MultiplexedConnections.
+        {
+            size_t total_fanout = distributed_fanout * offset_states.size();
+            if (total_fanout > 1)
+            {
+                UInt64 delay = modified_settings[Setting::interactive_delay];
+                double scale = std::sqrt(static_cast<double>(total_fanout));
+                double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
+                delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
+                modified_settings[Setting::interactive_delay] = delay;
+            }
+        }
 
         if (disable_two_level_aggregation)
         {

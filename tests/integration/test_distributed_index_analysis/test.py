@@ -5,9 +5,9 @@ from helpers.cluster import ClickHouseCluster
 
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", main_configs=["configs/overrides.xml"], with_zookeeper=True, macros={"replica": "node1", "shard": "default"})
-node2 = cluster.add_instance("node2", main_configs=["configs/overrides.xml"], with_zookeeper=True, macros={"replica": "node2", "shard": "default"})
-node3 = cluster.add_instance("node3", main_configs=["configs/overrides.xml"], with_zookeeper=True, macros={"replica": "node3", "shard": "default"})
+node1 = cluster.add_instance("node1", main_configs=["configs/overrides.xml"], with_zookeeper=True, macros={"replica": "node1", "shard": "default"}, stay_alive=True)
+node2 = cluster.add_instance("node2", main_configs=["configs/overrides.xml"], with_zookeeper=True, macros={"replica": "node2", "shard": "default"}, stay_alive=True)
+node3 = cluster.add_instance("node3", main_configs=["configs/overrides.xml"], with_zookeeper=True, macros={"replica": "node3", "shard": "default"}, stay_alive=True)
 
 primary_key_size = 0
 
@@ -103,3 +103,44 @@ def test_primary_key():
     assert loaded_pk_df["size"].mean() < primary_key_size/3*1.2 and loaded_pk_df["size"].mean() > primary_key_size/3*0.8, loaded_pk_df
     # CV
     assert loaded_pk_df["size"].std()/loaded_pk_df["size"].mean() < 0.2, loaded_pk_df
+
+
+def _get_profile_event(node, query_id, event):
+    """Return the value of a profile event for a given query_id from query_log."""
+    node.query("system flush logs query_log")
+    return int(node.query(f"""
+        select ProfileEvents['{event}']
+        from system.query_log
+        where query_id = '{query_id}' and type = 'QueryFinish'
+    """).strip())
+
+
+def test_connection_reuse():
+    """First DIA query must establish new connections; second must reuse them."""
+    master = cluster.instances["node1"]
+    master.restart_clickhouse()
+
+    dia_settings = {
+        "distributed_index_analysis": 1,
+        "distributed_index_analysis_for_non_shared_merge_tree": 1,
+        "use_query_condition_cache": 0,
+        "cluster_for_parallel_replicas": "default",
+    }
+
+    qid1 = "dia_connect_" + str(uuid.uuid4())
+    master.query(
+        "select * from test.pk_test where k2 = repeat('a', 100)",
+        query_id=qid1,
+        settings=dia_settings,
+    )
+    connects1 = _get_profile_event(master, qid1, "DistributedConnectionConnectCount")
+    assert connects1 == 2, f"First query should establish connections, got Connects={connects1}"
+
+    qid2 = "dia_connect_" + str(uuid.uuid4())
+    master.query(
+        "select * from test.pk_test where k2 = repeat('a', 100)",
+        query_id=qid2,
+        settings=dia_settings,
+    )
+    connects2 = _get_profile_event(master, qid2, "DistributedConnectionConnectCount")
+    assert connects2 == 0, f"Second query should reuse connections, got Connects={connects2}"

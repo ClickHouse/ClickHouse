@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/ObjectFilterStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -22,23 +23,45 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     if (storage_prewhere_info)
         source_step_with_filter->addFilter(storage_prewhere_info->prewhere_actions.clone(), storage_prewhere_info->prewhere_column_name);
 
+    /// Collect ExpressionStep DAGs encountered while walking up the plan.
+    /// When a filter references columns produced by expressions (e.g., ALIAS
+    /// columns computed in "Compute alias columns" step, or renamed in
+    /// "Change column names to column identifiers" step), we compose the
+    /// filter through these expression DAGs so that column references are
+    /// resolved to physical columns. This is essential for correct index
+    /// analysis when plan optimizations like mergeExpressions have not
+    /// merged these steps into the filter.
+    std::vector<const ActionsDAG *> expression_dags;
+
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            source_step_with_filter->addFilter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
+            auto filter_dag = filter_step->getExpression().clone();
+            auto filter_column_name = filter_step->getFilterColumnName();
+
+            /// Compose filter through accumulated expression DAGs
+            /// (in bottom-to-top order). This resolves column identifiers
+            /// to their underlying expressions, enabling correct index
+            /// matching for ALIAS columns and renamed columns.
+            for (auto it = expression_dags.rbegin(); it != expression_dags.rend(); ++it)
+                filter_dag = ActionsDAG::merge((*it)->clone(), std::move(filter_dag));
+
+            source_step_with_filter->addFilter(std::move(filter_dag), filter_column_name);
         }
         else if (auto * limit_step = typeid_cast<LimitStep *>(iter->node->step.get()))
         {
             source_step_with_filter->setLimit(limit_step->getLimitForSorting());
             break;
         }
-        else if (typeid_cast<ExpressionStep *>(iter->node->step.get()))
+        else if (auto * expression_step = typeid_cast<ExpressionStep *>(iter->node->step.get()))
         {
-            /// Note: actually, plan optimizations merge Filter and Expression steps.
-            /// Ideally, chain should look like (Expression -> ...) -> (Filter -> ...) -> ReadFromStorage,
-            /// So this is likely not needed.
+            expression_dags.push_back(&expression_step->getExpression());
             continue;
+        }
+        else if (auto * object_filter_step = typeid_cast<ObjectFilterStep *>(iter->node->step.get()))
+        {
+            source_step_with_filter->addFilter(object_filter_step->getExpression().clone(), object_filter_step->getFilterColumnName());
         }
         else
         {

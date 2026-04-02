@@ -34,6 +34,7 @@ def started_cluster():
 
 def test_bc_compatibility(started_cluster):
     node1 = cluster.instances["node1"]
+    node1.query("DROP TABLE IF EXISTS test_ttl_table")
     node1.query(
         """
         CREATE TABLE test_ttl_table (
@@ -103,3 +104,4 @@ def test_bc_compatibility(started_cluster):
             break
         time.sleep(1)
     assert "s3" in disks
+    node1.query("DROP TABLE IF EXISTS test_ttl_table")

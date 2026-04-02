@@ -138,16 +138,6 @@ public:
                             right_col ? "NOT NULL" : "NULL");
         }
 
-        // for self null-safe cmp
-        if (type_and_name_left_col.name == type_and_name_right_col.name
-            && type_and_name_left_col.type->equals(*type_and_name_right_col.type)
-            && !isTuple(type_and_name_left_col.type)
-            && left_col.get() == right_col.get())
-        {
-            return is_equal_mode ? result_type->createColumnConst(input_rows_count, UInt8(1)) :
-                                    result_type->createColumnConst(input_rows_count, UInt8(0));
-        }
-
         // To address:
         //   1. Map vs null or
         //   2. Array vs null
