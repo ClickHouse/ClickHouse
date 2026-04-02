@@ -202,6 +202,9 @@ void linkHostFunctions(WasmModule & module)
 {
     for (const auto & declaration : module.getImports())
     {
+        if (declaration.getModuleName() != "env")
+            continue;
+
         auto host_func = WebAssembly::getHostFunction(declaration.getName());
         checkFunctionDeclarationMatches(declaration, host_func.getFunctionDeclaration());
         module.linkFunction(std::move(host_func));
@@ -241,7 +244,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
     UniqueLock write_lock(modules_mutex);
 
     auto wasm_code = loadModuleImpl(module_name);
-    std::shared_ptr<WasmModule> module = engine->compileModule(wasm_code);
+    std::shared_ptr<WasmModule> module = engine->compileModule(module_name, wasm_code);
     UInt256 module_hash = calculateHash(wasm_code);
 
     modules[std::string(module_name)] = {module, module_hash};

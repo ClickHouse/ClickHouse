@@ -69,3 +69,5 @@ select count()>0 from system.zookeeper_log where event_date >= yesterday() AND e
 system flush logs aggregated_zookeeper_log;
 select 'aggregated_zookeeper_log';
 select sum(errors[0]) > 0, sum(average_latency) > 0 from system.aggregated_zookeeper_log where parent_path = '/test/01158/' || currentDatabase() || '/rmt' and operation = 'Create';
+
+select is_subrequest, count() > 0, sum(average_latency) > 0 from system.aggregated_zookeeper_log where parent_path like '/test/01158/' || currentDatabase() || '/rmt%' and operation = 'Create' group by is_subrequest order by is_subrequest;

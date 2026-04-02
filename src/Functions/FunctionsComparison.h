@@ -1461,8 +1461,8 @@ public:
         }
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            /// Comparing different date/time types requires implicit conversion to a common type
+            if (date_and_time_datetime)
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
