@@ -21,7 +21,7 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16, query_plan_execute_functions_after_sorting=0;
+SETTINGS max_threads=16, query_plan_execute_functions_after_sorting=0, query_plan_merge_expressions=1;
 
 -- Test that join_algorithm = default does a hash join
 
@@ -41,7 +41,7 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16, query_plan_execute_functions_after_sorting=0;
+SETTINGS max_threads=16, query_plan_execute_functions_after_sorting=0, query_plan_merge_expressions=1;
 
 SET join_algorithm=DEFAULT; -- reset
 
@@ -61,4 +61,4 @@ FROM
         SELECT * FROM system.numbers LIMIT 100000
     ) t2
 USING number
-SETTINGS max_threads=16, query_plan_use_new_logical_join_step = 0, query_plan_execute_functions_after_sorting=0;
+SETTINGS max_threads=16, query_plan_use_new_logical_join_step = 0, query_plan_execute_functions_after_sorting=0, query_plan_merge_expressions=1;

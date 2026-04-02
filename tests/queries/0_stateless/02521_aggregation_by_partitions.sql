@@ -76,7 +76,7 @@ insert into t4 select number from numbers_mt(1e6);
 insert into t4 select number from numbers_mt(1e6);
 
 -- { echoOn }
-explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1;
+explain pipeline select a from t4 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, query_plan_read_in_order = 1;
 -- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t4 group by a);
@@ -91,7 +91,7 @@ insert into t5 select number from numbers_mt(1e6);
 insert into t5 select number from numbers_mt(1e6);
 
 -- { echoOn }
-explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1;
+explain pipeline select a from t5 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, query_plan_read_in_order = 1;
 -- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t5 group by a);
@@ -106,7 +106,7 @@ insert into t6 select number from numbers_mt(1e6);
 insert into t6 select number from numbers_mt(1e6);
 
 -- { echoOn }
-explain pipeline select a from t6 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1;
+explain pipeline select a from t6 group by a settings read_in_order_two_level_merge_threshold = 1e12, optimize_aggregation_in_order = 1, query_plan_aggregation_in_order = 1, query_plan_read_in_order = 1;
 -- { echoOff }
 
 select count() from (select throwIf(count() != 2) from t6 group by a);

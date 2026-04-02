@@ -214,7 +214,7 @@ CREATE ROW POLICY pol_todate ON tab_todate_policy USING toDate(time) = '2024-01-
 SET apply_row_policy_after_final = 1;
 -- rp is over sorting key toDate(time), so only row policy itself should be deferred, not prewhere
 SELECT '--- toDate(time) row policy: only row filter deferred, not prewhere';
-SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time SETTINGS query_plan_merge_expressions = 1) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
 
 DROP ROW POLICY pol_todate ON tab_todate_policy;
 SET apply_row_policy_after_final = 0;
@@ -239,7 +239,7 @@ SELECT '--- FINAL: x>1 atom should still participate in primary key analysis';
 SELECT * FROM tab_compound FINAL ORDER BY x;
 
 SELECT '--- EXPLAIN indexes: x > 1 should appear in PrimaryKey condition';
-EXPLAIN indexes = 1 SELECT * FROM tab_compound FINAL ORDER BY x FORMAT TabSeparated;
+EXPLAIN indexes = 1 SELECT * FROM tab_compound FINAL ORDER BY x SETTINGS query_plan_merge_expressions = 1 FORMAT TabSeparated;
 
 DROP ROW POLICY pol_compound ON tab_compound;
 SET apply_row_policy_after_final = 0;
@@ -263,10 +263,10 @@ SELECT '--- FINAL PREWHERE y != ddd AND x > 1: x>1 atom should still participate
 SELECT * FROM tab_compound_pw FINAL PREWHERE y != 'ddd' AND x > 1 ORDER BY x;
 
 SELECT '--- EXPLAIN indexes: x > 1 should appear in PrimaryKey condition';
-EXPLAIN indexes = 1 SELECT * FROM tab_compound_pw FINAL PREWHERE y != 'ddd' AND x > 1 ORDER BY x FORMAT TabSeparated;
+EXPLAIN indexes = 1 SELECT * FROM tab_compound_pw FINAL PREWHERE y != 'ddd' AND x > 1 ORDER BY x SETTINGS query_plan_merge_expressions = 1 FORMAT TabSeparated;
 
 SELECT '--- EXPLAIN actions: prewhere should be deferred';
-SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_compound_pw FINAL PREWHERE y != 'ddd' AND x > 1 ORDER BY x) WHERE explain LIKE '%Deferred%';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_compound_pw FINAL PREWHERE y != 'ddd' AND x > 1 ORDER BY x SETTINGS query_plan_merge_expressions = 1) WHERE explain LIKE '%Deferred%';
 
 SET apply_prewhere_after_final = 0;
 DROP TABLE tab_compound_pw;
@@ -292,7 +292,7 @@ SELECT '--- FINAL with nested AND row policy';
 SELECT * FROM tab_nested_and FINAL ORDER BY x;
 
 SELECT '--- EXPLAIN indexes: both x > 1 and x < 5 should appear in PrimaryKey condition';
-EXPLAIN indexes = 1 SELECT * FROM tab_nested_and FINAL ORDER BY x FORMAT TabSeparated;
+EXPLAIN indexes = 1 SELECT * FROM tab_nested_and FINAL ORDER BY x SETTINGS query_plan_merge_expressions = 1 FORMAT TabSeparated;
 
 DROP ROW POLICY pol_nested ON tab_nested_and;
 SET apply_row_policy_after_final = 0;
@@ -314,10 +314,10 @@ SELECT '--- FINAL PREWHERE (y != eee AND x > 1) AND x < 5';
 SELECT * FROM tab_nested_and_pw FINAL PREWHERE (y != 'eee' AND x > 1) AND x < 5 ORDER BY x;
 
 SELECT '--- EXPLAIN indexes: both x > 1 and x < 5 should appear in PrimaryKey condition';
-EXPLAIN indexes = 1 SELECT * FROM tab_nested_and_pw FINAL PREWHERE (y != 'eee' AND x > 1) AND x < 5 ORDER BY x FORMAT TabSeparated;
+EXPLAIN indexes = 1 SELECT * FROM tab_nested_and_pw FINAL PREWHERE (y != 'eee' AND x > 1) AND x < 5 ORDER BY x SETTINGS query_plan_merge_expressions = 1 FORMAT TabSeparated;
 
 SELECT '--- EXPLAIN actions: prewhere should be deferred';
-SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_nested_and_pw FINAL PREWHERE (y != 'eee' AND x > 1) AND x < 5 ORDER BY x) WHERE explain LIKE '%Deferred%';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_nested_and_pw FINAL PREWHERE (y != 'eee' AND x > 1) AND x < 5 ORDER BY x SETTINGS query_plan_merge_expressions = 1) WHERE explain LIKE '%Deferred%';
 
 SET apply_prewhere_after_final = 0;
 DROP TABLE tab_nested_and_pw;
