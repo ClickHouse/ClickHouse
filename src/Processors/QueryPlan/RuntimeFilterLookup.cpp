@@ -82,7 +82,7 @@ void IRuntimeFilter::finishInsert()
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
 
     const size_t rows_in_block = values.column->size();
     if (shouldSkip(rows_in_block))
