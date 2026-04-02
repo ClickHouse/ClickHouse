@@ -1,4 +1,5 @@
 #include <base/getFQDNOrHostName.h>
+#include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/logger_useful.h>

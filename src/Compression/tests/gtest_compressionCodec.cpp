@@ -1440,6 +1440,96 @@ TEST(T64Test, TranscodeRawInput)
     }
 }
 
+TEST(T64Test, DecompressMalformedInputBytesToSkip)
+{
+    /// Reproducer for heap-buffer-overflow when `bytes_to_skip > bytes_size`
+    /// in `decompressData`. Cookie 0x84 -> UInt64; bytes_to_skip = 26757 % 8 = 5,
+    /// but only 1 payload byte remains after the cookie.
+    constexpr unsigned char block[] = {
+        0x93,                   /// T64 method byte
+        0x0B, 0x00, 0x00, 0x00, /// compressed_size = 11 (9-byte header + 2-byte payload)
+        0x85, 0x68, 0x00, 0x00, /// decompressed_size = 26757
+        0x84, 0x2C,             /// cookie 0x84 = UInt64/Bit; bytes_to_skip=5 > bytes_size=1
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(26757);
+
+    auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(T64Test, DecompressMalformedInputShortHeader)
+{
+    /// Reproducer for heap-buffer-overflow when payload has no bytes_to_skip
+    /// but is shorter than the 16-byte min/max header required by T64.
+    /// decompressed_size=8 → bytes_to_skip = 8 % 8 = 0; bytes_size=8 < header_size=16.
+    constexpr unsigned char block[] = {
+        0x93,                   /// T64 method byte
+        0x11, 0x00, 0x00, 0x00, /// compressed_size = 17 (9-byte header + 8-byte payload)
+        0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8 (bytes_to_skip = 8 % 8 = 0)
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, /// 8-byte payload; bytes_size=8 < header_size=16
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(8);
+
+    auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
+{
+    /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:
+    /// PODArray constructed from reversed pointer range → ~2^64-byte allocation.
+    /// source[0] = 0x9a = 154 codecs claimed in a 1-byte payload.
+    constexpr unsigned char block[] = {
+        0x91,                   /// Multiple method byte
+        0x0A, 0x00, 0x00, 0x00, /// compressed_size = 10 (9-byte header + 1-byte payload)
+        0x00, 0x00, 0x00, 0x00, /// decompressed_size = 0
+        0x9A,                   /// claims 154 codecs in a 1-byte payload
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(64);
+
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
+{
+    /// Reproducer for OOB read when the compressed payload after the methods list
+    /// is shorter than COMPRESSED_BLOCK_HEADER_SIZE (9 bytes).
+    /// 1 codec declared; 4 bytes of compressed data follow — too short for a block header.
+    constexpr unsigned char block[] = {
+        0x91,                   /// Multiple method byte
+        0x0F, 0x00, 0x00, 0x00, /// compressed_size = 15 (9-byte header + 6-byte payload)
+        0x00, 0x00, 0x00, 0x00, /// decompressed_size = 0
+        0x01,                   /// compression_methods_size = 1
+        0x82,                   /// LZ4 method byte
+        0x00, 0x01, 0x02, 0x03, /// 4-byte compressed data; source_size=4 < COMPRESSED_BLOCK_HEADER_SIZE=9
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(64);
+
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
 auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
 {
     std::default_random_engine random_engine(17); /// NOLINT

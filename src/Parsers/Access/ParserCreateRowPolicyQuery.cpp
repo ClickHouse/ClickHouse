@@ -17,6 +17,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
+
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_short_name)
@@ -65,6 +71,11 @@ namespace
             ASTPtr x;
             if (!parser.parse(pos, x, expected))
                 return false;
+
+            /// This only checks for top-level aliases, nested aliases are always parenthesized so they
+            /// do not cause a formatting inconsistency.
+            if (!x->tryGetAlias().empty())
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Top-level aliases are not allowed in row policy filter expressions.");
 
             expr = x;
             return true;

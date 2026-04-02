@@ -46,7 +46,10 @@ def run_s3_mocks(started_cluster, args=[]):
 CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
-BASE_URL_LOCAL_HOST = "http://localhost:3000"
+
+
+def get_glue_local_url(cluster):
+    return f"http://localhost:{cluster.glue_catalog_port}"
 
 def generate_decimal(precision=9, scale=2):
     max_value = 10**(precision - scale) - 1
@@ -98,9 +101,9 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_databases():
+def list_databases(started_cluster):
     client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
     )
     databases = client.get_databases()
     return databases
@@ -111,7 +114,7 @@ def load_catalog_impl(started_cluster):
         CATALOG_NAME,  # name is not important
         **{
             "type": "glue",
-            "glue.endpoint": BASE_URL_LOCAL_HOST,
+            "glue.endpoint": get_glue_local_url(started_cluster),
             "glue.region": "us-east-1",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
@@ -237,6 +240,9 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
+
+    show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
+    assert minio_secret_key not in show_result
 
 def drop_clickhouse_glue_table(
     node, database_name, table_name
@@ -739,7 +745,7 @@ def test_table_without_metadata_location(started_cluster):
     table.append(df)
 
     glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
     )
 
     table_response = glue_client.get_table(
@@ -784,6 +790,67 @@ def test_table_without_metadata_location(started_cluster):
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
+
+def test_check_database(started_cluster):
+    """Test that CHECK DATABASE works with Glue catalog database."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_check_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # Create namespaces
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    # Create ClickHouse Glue database once
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # Create tables in each namespace
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
+
+    # Verify database exists
+    assert CATALOG_NAME in node.query("SHOW DATABASES")
+
+    # Run CHECK DATABASE and verify it completes without error
+    node.query(f"CHECK DATABASE {CATALOG_NAME}")
+
+    try:
+        node.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+    
+        assert "fault when checking database" in node.query_and_get_error(
+            f"CHECK DATABASE {CATALOG_NAME}"
+        )
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
 
 def test_sts_smoke(started_cluster):
     """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""

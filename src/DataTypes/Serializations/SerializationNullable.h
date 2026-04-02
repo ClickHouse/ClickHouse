@@ -14,12 +14,17 @@ private:
     /// Used in Sparse columns where the null map is implicitly derived from sparse offsets.
     bool use_default_null_map;
 
-public:
     explicit SerializationNullable(const SerializationPtr & nested_, bool use_default_null_map_ = false)
         : nested(nested_)
         , use_default_null_map(use_default_null_map_)
     {
     }
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_, bool use_default_null_map_);
+    static SerializationPtr create(const SerializationPtr & nested_, bool use_default_null_map_ = false);
+
+    bool supportsPooling() const override { return nested->supportsPooling(); }
 
     const SerializationPtr & getNested() const { return nested; }
 
@@ -111,7 +116,6 @@ public:
     static bool tryDeserializeNullAsDefaultOrNestedTextCSV(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
     static bool tryDeserializeNullAsDefaultOrNestedTextJSON(IColumn & nested_column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested_serialization);
     static bool tryDeserializeNullAsDefaultOrNestedTextRaw(IColumn & nested_column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested_serialization);
-
 
     static void serializeNullEscaped(WriteBuffer & ostr, const FormatSettings & settings);
     static bool tryDeserializeNullEscaped(ReadBuffer & istr, const FormatSettings & settings);
