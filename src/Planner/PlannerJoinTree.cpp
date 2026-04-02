@@ -133,7 +133,6 @@ namespace Setting
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
-    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
 }
@@ -2461,8 +2460,7 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (query_context->canUseParallelReplicasOnInitiator()
-        || settings[Setting::serialize_query_plan])
+    if (query_context->canUseParallelReplicasOnInitiator())
         return;
 
     /// In chooseJoinAlgorithm, direct has the highest priority (automatically used with dictionary or storage join).
@@ -2593,7 +2591,10 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     bool allow_lookup_join = !query_context->canUseParallelReplicasOnInitiator();
     PreparedJoinStorage prepared_join;
-    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
+    /// `JoinStepLogicalLookup` is not serializable, so it cannot be used when the
+    /// query is planned for execution with parallel replicas on the initiator.
+    bool allow_storage_join = allow_lookup_join
+        && right_join_tree_query_plan.used_row_policies.empty()
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)

@@ -60,7 +60,6 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsBool join_use_nulls;
-    extern const SettingsBool serialize_query_plan;
     extern const SettingsUInt64 max_size_to_preallocate_for_joins;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
@@ -1047,8 +1046,7 @@ PreparedJoinStorage tryGetLookupJoinStorage(
 {
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    if (!settings[Setting::allow_experimental_lookup_index]
-        || settings[Setting::serialize_query_plan])
+    if (!settings[Setting::allow_experimental_lookup_index])
         return {};
 
     auto * table_node = table_expression->as<TableNode>();
