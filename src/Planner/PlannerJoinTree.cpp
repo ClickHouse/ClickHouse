@@ -133,6 +133,7 @@ namespace Setting
     extern const SettingsUInt64 min_joined_block_size_bytes;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
 }
@@ -2460,7 +2461,8 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (query_context->canUseParallelReplicasOnInitiator())
+    if (query_context->canUseParallelReplicasOnInitiator()
+        || settings[Setting::serialize_query_plan])
         return;
 
     /// In chooseJoinAlgorithm, direct has the highest priority (automatically used with dictionary or storage join).
