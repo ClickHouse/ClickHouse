@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
-#include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Interpreters/Context.h>
@@ -197,9 +196,6 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
-        if (const auto access_object = getSourceAccessObject())
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
-
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 

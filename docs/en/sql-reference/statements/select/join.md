@@ -3,7 +3,7 @@ description: 'Documentation for JOIN Clause'
 sidebar_label: 'JOIN'
 slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
-keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN']
+keywords: ['INNER JOIN', 'LEFT JOIN', 'LEFT OUTER JOIN', 'RIGHT JOIN', 'RIGHT OUTER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'LEFT SEMI JOIN', 'RIGHT SEMI JOIN', 'LEFT ANTI JOIN', 'RIGHT ANTI JOIN', 'LEFT ANY JOIN', 'RIGHT ANY JOIN', 'INNER ANY JOIN', 'ASOF JOIN', 'LEFT ASOF JOIN', 'PASTE JOIN', 'NATURAL JOIN']
 doc_type: 'reference'
 ---
 
@@ -33,10 +33,12 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 | `RIGHT OUTER JOIN`| non-matching rows from right table are returned in addition to matching rows. |
 | `FULL OUTER JOIN` | non-matching rows from both tables are returned in addition to matching rows. |
 | `CROSS JOIN`      | produces cartesian product of whole tables, "join keys" are **not** specified.|
+| `NATURAL JOIN`    | automatically joins on all columns with the same name in both tables; each common column appears once in the result. Supports `INNER` (default), `LEFT`, `RIGHT`, and `FULL` variants. Equivalent to `JOIN ... USING (col1, col2, ...)` where the column list is derived automatically. |
 
 - `JOIN` without a type specified implies `INNER`.
 - The keyword `OUTER` can be safely omitted.
 - An alternative syntax for `CROSS JOIN` is specifying multiple tables in the [`FROM` clause](../../../sql-reference/statements/select/from.md) separated by commas.
+- If there are no matching columns for a `NATURAL JOIN`, it functions like a `CROSS JOIN`.
 
 Additional join types available in ClickHouse are:
 

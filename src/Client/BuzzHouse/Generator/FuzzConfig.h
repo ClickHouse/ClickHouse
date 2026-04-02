@@ -256,12 +256,26 @@ public:
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
 
-    void setName(ExprSchemaTable * est) const
-    {
-        est->mutable_database()->set_database(schema_name);
-        est->mutable_table()->set_table(table_name);
-    }
+    void setName(ExprSchemaTable * est) const;
 };
+
+struct DiskInfo
+{
+    String name;
+    String type; /// DataSourceType enum name: "Local", "ObjectStorage", "RAM"
+    String path;
+    String object_storage_type; /// ObjectStorageType enum name: "S3", "Azure", "Local", "None", ...
+    String metadata_type; /// MetadataStorageType enum name: "Local", "Plain", "Keeper", ...
+    bool is_encrypted = false;
+    bool is_cached = false; /// true when cache_path != '' in system.disks
+};
+
+/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
+String escapeSQLString(const String & s, char escape_char = '\'');
+
+/// Percent-encode a string for use as a URL query parameter value.
+/// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
+String urlEncodeQueryParam(const String & s);
 
 class FuzzConfig
 {
@@ -269,13 +283,16 @@ private:
     DB::ClientBase * cb = nullptr;
 
 public:
+    static const constexpr String oracleUser = "buzzhouse_oracle_user";
+    static const constexpr String oracleRole = "buzzhouse_oracle_role";
+
     LoggerPtr log;
     std::ofstream outf;
     DB::Strings collations;
     DB::Strings storage_policies;
     DB::Strings timezones;
-    DB::Strings disks;
     DB::Strings keeper_disks;
+    std::vector<DiskInfo> disks;
     DB::Strings clusters;
     DB::Strings caches;
     DB::Strings failpoints;
@@ -331,8 +348,10 @@ public:
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
     bool enable_memory_settings = false;
+    bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
     uint64_t min_insert_rows = 1;
@@ -350,6 +369,7 @@ public:
     uint32_t max_tables = 10;
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
+    uint32_t max_policies = 8;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
@@ -382,8 +402,18 @@ public:
     bool processServerQuery(bool outlog, const String & query);
 
 private:
+    template <typename T, typename ParseFunc>
+    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query, ParseFunc parse);
+
     template <typename T>
-    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query);
+    void loadServerSettings(std::vector<T> & out, const String & desc, const String & query)
+    {
+        loadServerSettings(out, desc, query, [](const String & s) -> T { return s; });
+    }
+
+    uint32_t tableCountSystemRows(const String & system_table, const String & database, const String & table);
+
+    String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
 
 public:
     void loadServerConfigurations();
@@ -405,6 +435,14 @@ public:
     bool tableHasPartitions(bool detached, const String & database, const String & table);
 
     String tableGetRandomPartitionOrPart(uint64_t rand_val, bool detached, bool partition, const String & database, const String & table);
+
+    uint32_t tableCountIndexes(const String & database, const String & table);
+
+    String tableGetRandomIndex(uint64_t rand_val, const String & database, const String & table);
+
+    uint32_t tableCountProjections(const String & database, const String & table);
+
+    String tableGetRandomProjection(uint64_t rand_val, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 

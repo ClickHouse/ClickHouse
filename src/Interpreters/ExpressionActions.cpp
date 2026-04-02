@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/validateColumnType.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -698,7 +699,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     thread_status->function_call_stats.increment(
                         action.node->function->getName(), num_rows, result_bytes);
                 }
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
+                if (!columnMatchesType(*res_column.column, *res_column.type))
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,

@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -166,6 +167,7 @@ VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode h
 {
     VirtualColumnsDescription desc;
     desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
@@ -601,25 +603,7 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return false;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
 void StorageNATS::streamingToViewsFunc()
