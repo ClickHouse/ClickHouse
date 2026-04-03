@@ -1,0 +1,16 @@
+nullable_count	3
+nullable_data	1	42
+nullable_data	2	\N
+nullable_data	3	100
+array_count	3
+array_data	1	[1,2,3]
+array_data	2	[4,5]
+array_data	3	[]
+tuple_count	2
+tuple_data	1	(10,'abc')
+tuple_data	2	(20,'def')
+map_count	2
+map_data	1	{'a':1,'b':2}
+map_data	2	{'c':3}
+mixed_count	2
+mixed_total_after_different	3
