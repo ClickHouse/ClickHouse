@@ -12,6 +12,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -230,11 +231,11 @@ struct DeltaLakeMetadataImpl
      * "
      */
 
-    /// Read metadata file and fill `file_schema`, `file_parition_columns`, `result`.
+    /// Read metadata file and fill `file_schema`, `file_partition_columns`, `result`.
     /// `result` is a list of data files.
     /// `file_schema` is a common schema for all files.
-    /// Schema evolution is not supported, so we check that all files have the same schema.
-    /// `file_partiion_columns` is information about partition columns of data files.
+    /// Schema evolution is supported: when a new schema is encountered, it replaces the previous one.
+    /// `file_partition_columns` is information about partition columns of data files.
     void processMetadataFile(
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
@@ -748,6 +749,13 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
+}
+
+void DeltaLakeMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
+{
+    /// There can be missing columns because of ALTER ADD/DROP COLUMN.
+    /// So to support reading from such tables it is enough to turn on this setting.
+    format_settings.parquet.allow_missing_columns = true;
 }
 
 ObjectIterator DeltaLakeMetadata::iterate(
