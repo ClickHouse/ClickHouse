@@ -325,7 +325,7 @@ std::optional<String> optimizeUseNormalProjections(
         /// current parent mark count, refine the parent estimate by applying skip-index filtering
         /// now so the comparison reflects the marks that will actually be read from the parent.
         auto ratio =  static_cast<double>(context->getSettingsRef()[Setting::optimize_projection_skip_index_ratio]);
-        LOG_DEBUG(logger, "Projection {} has marks {}, part marks {}, ratio {}, projection condition {}", candidate.projection->name, candidate.sum_marks, parent_reading_marks, ratio, stat.condition); 
+        LOG_DEBUG(logger, "Projection {} has marks {}, part marks {}, ratio {}, projection condition {}", candidate.projection->name, candidate.sum_marks, parent_reading_marks, ratio, stat.condition);
         if (ratio < 0 || ratio > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
         if (!skip_index_filtering_done
