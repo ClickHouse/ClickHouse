@@ -1399,6 +1399,7 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
         # Default-true optimize/enable settings: disable with 0.05 probability
@@ -1429,6 +1430,8 @@ class SettingsRandomizer:
         "use_statistics_cache": "use_statistics",
     }
 
+    stress_test_only_settings = {"query_plan_optimize_join_order_randomize"}
+
     @staticmethod
     def adjust_settings_for_autopr(args, tags, random_settings):
         # no_parallel_replicas is set for runs with enabled parallel replicas. In this case we should not reset `cluster_for_parallel_replicas`
@@ -1450,6 +1453,8 @@ class SettingsRandomizer:
         random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
+            if setting in SettingsRandomizer.stress_test_only_settings and not args.stress_tests:
+                continue
             if (
                 is_debug
                 and setting == "allow_prefetched_read_pool_for_remote_filesystem"

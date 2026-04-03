@@ -15,6 +15,10 @@ ci/local.env
 /build
 /build_*
 /build-*
+
+# e2e test credentials (copy from .env.example and fill in)
+.env
+/tests/integration/.env
 /ci/tmp
 /tests/venv
 /obj-x86_64-linux-gnu/
