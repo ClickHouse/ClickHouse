@@ -107,7 +107,7 @@ public:
     {
         if (num_arguments == 0)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function {} require at least one argument", getName());
+                "Aggregate function {} requires at least one argument", getName());
 
         filter_is_nullable = arguments[num_arguments - 1]->isNullable();
         filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
@@ -755,10 +755,9 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
     /// Some aggregates preserve `NULL` payload values themselves, so `If` should only
     /// filter rows for them instead of merging payload nullability into `final_null_flags`.
-    if (has_nullable_payload)
+    if (has_nullable_payload && nested_func->preservesNullablePayloadForIf())
     {
-        if (auto nested_null_adapter = nested_func->getOwnNullAdapter(nested_func, nested_arguments, params, properties);
-            nested_null_adapter && nested_null_adapter.get() == nested_func.get())
+        if (auto nested_null_adapter = nested_func->getOwnNullAdapter(nested_func, nested_arguments, params, properties))
         {
             return std::make_shared<AggregateFunctionIfRespectNulls>(nested_function->getName(), nested_null_adapter, arguments, params);
         }

@@ -344,6 +344,14 @@ public:
         return nullptr;
     }
 
+    /// Some aggregate functions preserve `NULL` payload values instead of skipping
+    /// them. `If` combinator should only filter rows for such functions and must not
+    /// merge payload nullability into the skip mask it passes downstream.
+    virtual bool preservesNullablePayloadForIf() const
+    {
+        return false;
+    }
+
     /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
     /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
     /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.

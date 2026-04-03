@@ -221,12 +221,17 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & original_function,
-        const DataTypes &,
-        const Array &,
+        const AggregateFunctionPtr & /*nested_function*/,
+        const DataTypes & arguments,
+        const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        return original_function;
+        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
+    }
+
+    bool preservesNullablePayloadForIf() const override
+    {
+        return true;
     }
 
 private:
