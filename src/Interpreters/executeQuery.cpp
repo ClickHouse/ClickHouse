@@ -1944,8 +1944,9 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::enable_reads_from_query_cache])
                 {
-                    result_details.query_cache_entry_created_at = cached_entry->created_at;
                     result_details.query_cache_entry_expires_at = cached_entry->expires_at;
+                    if (!was_inserted)
+                        result_details.query_cache_entry_created_at = cached_entry->created_at;
                 }
             }
             /// If cache is not configured or (cache miss and writing to the cache is disabled), just execute the query.
