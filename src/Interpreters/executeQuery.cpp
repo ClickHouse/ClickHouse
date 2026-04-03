@@ -1875,14 +1875,19 @@ static BlockIO executeQueryImpl(
                         entry->created_at = std::chrono::system_clock::now();
                         entry->expires_at = entry->created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
-                        /// Synchronously drain the pipeline and collect all result blocks.
-                        /// The header is extracted after execute() (was unavailable before).
+                        /// Synchronously drain the pipeline and collect main result blocks,
+                        /// then collect totals and extremes. The header is the same for all three.
                         entry->header = res.pipeline.getSharedHeader();
                         {
                             PullingPipelineExecutor pulling_executor(res.pipeline);
                             Block block;
                             while (pulling_executor.pull(block))
                                 entry->chunks.emplace_back(block.getColumns(), block.rows());
+
+                            if (Chunk totals = pulling_executor.getTotals(); totals.hasColumns())
+                                entry->totals = std::move(totals);
+                            if (Chunk extremes = pulling_executor.getExtremes(); extremes.hasColumns())
+                                entry->extremes = std::move(extremes);
                         }
                         return entry;
                         /// After the lambda returns, getOrSet stores the entry in the cache
@@ -1890,16 +1895,34 @@ static BlockIO executeQueryImpl(
                     });
 
                 /// Both the executor (was_inserted == true) and all waiters (was_inserted == false)
-                /// reach this point. They all build an independent reading pipeline over a clone of
-                /// the cached chunks so that each connection can consume data at its own pace without
-                /// interfering with the shared Entry stored in the cache.
+                /// reach this point. Each builds an independent reading pipeline over clones of
+                /// the cached data so every connection consumes at its own pace without interfering
+                /// with the shared Entry in the cache.
                 Chunks cloned_chunks;
                 for (const auto & chunk : cached_entry->chunks)
                     cloned_chunks.push_back(chunk.clone());
+
+                std::unique_ptr<SourceFromChunks> source_totals;
+                if (cached_entry->totals.has_value())
+                {
+                    Chunks totals_chunks;
+                    totals_chunks.emplace_back(cached_entry->totals->clone());
+                    source_totals = std::make_unique<SourceFromChunks>(cached_entry->header, std::move(totals_chunks));
+                }
+
+                std::unique_ptr<SourceFromChunks> source_extremes;
+                if (cached_entry->extremes.has_value())
+                {
+                    Chunks extremes_chunks;
+                    extremes_chunks.emplace_back(cached_entry->extremes->clone());
+                    source_extremes = std::make_unique<SourceFromChunks>(cached_entry->header, std::move(extremes_chunks));
+                }
+
                 QueryPipeline reading_pipeline;
                 reading_pipeline.readFromQueryResultCache(
                     std::make_unique<SourceFromChunks>(cached_entry->header, std::move(cloned_chunks)),
-                    nullptr, nullptr); /// totals/extremes not supported in the getOrSet path
+                    std::move(source_totals),
+                    std::move(source_extremes));
                 res.pipeline = std::move(reading_pipeline);
 
                 query_result_cache_usage = was_inserted ? QueryResultCacheUsage::Write : QueryResultCacheUsage::Read;

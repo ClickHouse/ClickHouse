@@ -56,3 +56,62 @@ WHERE event_date >= yesterday()
 "
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+
+# Test: WITH TOTALS results are preserved correctly for both the executor thread and waiters.
+# All 5 concurrent runs of the same WITH TOTALS query should produce identical output that
+# matches a fresh (non-cached) execution, including the totals row.
+
+TOTALS_QUERY="SELECT number % 2 AS k, count() FROM numbers(6) GROUP BY k WITH TOTALS ORDER BY k \
+    SETTINGS use_query_cache=1, query_cache_min_query_runs=0, query_cache_min_query_duration=0"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+
+expected_totals=$(${CLICKHOUSE_CLIENT} --query \
+    "SELECT number % 2 AS k, count() FROM numbers(6) GROUP BY k WITH TOTALS ORDER BY k")
+
+tmpdir_totals=$(mktemp -d)
+for i in $(seq 1 5); do
+    ${CLICKHOUSE_CLIENT} --query "${TOTALS_QUERY}" > "${tmpdir_totals}/result_${i}" &
+done
+wait
+
+all_match=1
+for i in $(seq 1 5); do
+    if [ "$(cat "${tmpdir_totals}/result_${i}")" != "${expected_totals}" ]; then
+        all_match=0
+        break
+    fi
+done
+echo "${all_match}"
+
+rm -rf "${tmpdir_totals}"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+
+# Test: extremes are preserved correctly for both the executor thread and waiters.
+# All 5 concurrent runs should produce identical output that matches a fresh execution,
+# including the extremes rows (min/max).
+
+EXTREMES_QUERY="SELECT number FROM numbers(5) \
+    SETTINGS extremes=1, use_query_cache=1, query_cache_min_query_runs=0, query_cache_min_query_duration=0"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+
+expected_extremes=$(${CLICKHOUSE_CLIENT} --query "SELECT number FROM numbers(5) SETTINGS extremes=1")
+
+tmpdir_extremes=$(mktemp -d)
+for i in $(seq 1 5); do
+    ${CLICKHOUSE_CLIENT} --query "${EXTREMES_QUERY}" > "${tmpdir_extremes}/result_${i}" &
+done
+wait
+
+all_match=1
+for i in $(seq 1 5); do
+    if [ "$(cat "${tmpdir_extremes}/result_${i}")" != "${expected_extremes}" ]; then
+        all_match=0
+        break
+    fi
+done
+echo "${all_match}"
+
+rm -rf "${tmpdir_extremes}"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
