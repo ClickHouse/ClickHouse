@@ -23,6 +23,7 @@ for _ in $(seq 1 60); do
         FROM system.query_log
         WHERE event_date >= yesterday()
           AND event_time >= now() - 600
+          AND current_database = currentDatabase()
           AND query_id LIKE 'qrc_thundering_herd_${CLICKHOUSE_DATABASE}_%'
           AND type = 'QueryFinish'
     ")
@@ -36,6 +37,7 @@ SELECT count()
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= now() - 600
+  AND current_database = currentDatabase()
   AND query_id LIKE 'qrc_thundering_herd_${CLICKHOUSE_DATABASE}_%'
   AND type = 'QueryFinish'
   AND query_cache_usage = 'Write'
@@ -47,6 +49,7 @@ SELECT count()
 FROM system.query_log
 WHERE event_date >= yesterday()
   AND event_time >= now() - 600
+  AND current_database = currentDatabase()
   AND query_id LIKE 'qrc_thundering_herd_${CLICKHOUSE_DATABASE}_%'
   AND type = 'QueryFinish'
   AND query_cache_usage = 'Read'
