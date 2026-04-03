@@ -382,7 +382,7 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
             elif is_flaky_check:
@@ -682,7 +682,7 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
-    if is_bugfix_validation and test_result and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
         for r in test_result.results:
             r.set_label("xfail")
