@@ -1644,12 +1644,19 @@ private:
             {
                 const auto & field = constant->getValue();
                 auto ft = field.getType();
-                if (isInt64OrUInt64FieldType(ft) || ft == Field::Types::Float64)
+                if (ft == Field::Types::Float64)
                 {
-                    bool nonzero = ft == Field::Types::Float64
-                        ? field.safeGet<Float64>() != 0
-                        : field.safeGet<UInt64>() != 0;
-                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(nonzero), function_type);
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(field.safeGet<Float64>() != 0), function_type);
+                    return;
+                }
+                if (ft == Field::Types::Int64)
+                {
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(field.safeGet<Int64>() != 0), function_type);
+                    return;
+                }
+                if (ft == Field::Types::UInt64)
+                {
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(field.safeGet<UInt64>() != 0), function_type);
                     return;
                 }
             }
