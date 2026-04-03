@@ -1581,6 +1581,7 @@ blockchains
 blockinfo
 blockreader
 blocksize
+bloomFilterContains
 bool
 boolean
 bools
@@ -2126,6 +2127,8 @@ groupBitmap
 groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
+groupBloomFilter
+groupBloomFilterState
 groupConcat
 groupNumericIndexedVector
 groupUniqArray
