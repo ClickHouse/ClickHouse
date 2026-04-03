@@ -140,6 +140,39 @@ public:
         nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
     }
 
+    void addBatchForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (only_null_condition)
+            return;
+
+        const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+        for (size_t j = 0; j < num_rows; ++j)
+            if (flags[row_indices[j]])
+                nested_func->add(places[j] + place_offset, columns, row_indices[j], arena);
+    }
+
+    void addBatchSinglePlaceForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        if (only_null_condition)
+            return;
+
+        const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData();
+        for (size_t j = 0; j < num_rows; ++j)
+            if (flags[row_indices[j]])
+                nested_func->add(place, columns, row_indices[j], arena);
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
