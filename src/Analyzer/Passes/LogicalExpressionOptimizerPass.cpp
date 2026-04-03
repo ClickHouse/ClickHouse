@@ -1636,6 +1636,24 @@ private:
             auto operand_type = and_operands[0]->getResultType();
             auto function_type = function_node.getResultType();
             chassert(!function_type->isNullable());
+
+            /// The sole remaining operand may be a bare numeric constant (e.g. `256`).
+            /// A plain cast to UInt8 would silently truncate (e.g. 256 → 0),
+            /// so evaluate it as a boolean by checking for non-zero instead.
+            if (const auto * constant = and_operands[0]->as<ConstantNode>())
+            {
+                const auto & field = constant->getValue();
+                auto ft = field.getType();
+                if (isInt64OrUInt64FieldType(ft) || ft == Field::Types::Float64)
+                {
+                    bool nonzero = ft == Field::Types::Float64
+                        ? field.safeGet<Float64>() != 0
+                        : field.safeGet<UInt64>() != 0;
+                    node = std::make_shared<ConstantNode>(static_cast<UInt8>(nonzero), function_type);
+                    return;
+                }
+            }
+
             if (!function_type->equals(*operand_type))
             {
                 /// Result of equality operator can be low cardinality, while AND always returns UInt8.
