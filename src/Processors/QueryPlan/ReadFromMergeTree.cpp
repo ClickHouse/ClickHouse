@@ -1972,16 +1972,17 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        /// pass empty filter when skipping partition pruning so the objects exist but useless
-        ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
-        const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
-        indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
+        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
+        indexes->minmax_idx_condition.emplace(
+            filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
+            /* single_point_ = */ false,
+            /* skip_analysis_ = */ skip_partition_analysis);
         indexes->partition_pruner.emplace(
             metadata_snapshot,
-            effective_filter,
+            filter_dag,
             query_context,
             false /* strict */,
-            !settings[Setting::use_partition_pruning] /* skip_analysis */);
+            skip_partition_analysis);
     }
 
     indexes->part_values
@@ -3228,6 +3229,16 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
+    /// Vector similarity indexes are "statically" analyzed; top-k filtering with a threshold tracker needs a reader.
+    const bool will_have_skip_index_reader =
+        indexes->skip_indexes.skip_index_for_top_k_filtering
+        || std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+        {
+            return !idx.index->isVectorSimilarityIndex();
+        });
+    if (!will_have_skip_index_reader)
+        return false;
+
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
@@ -3356,9 +3367,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);
-    ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
-    ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
     ProfileEvents::increment(ProfileEvents::SelectedMarksTotal, result.total_marks_pk);
+    if (!supportsSkipIndexesOnDataRead())
+    {
+        ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
+        ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
+    }
 
     auto query_id_holder = result.checkLimits(*context, data, *data_settings);
 

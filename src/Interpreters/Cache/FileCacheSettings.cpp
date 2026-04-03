@@ -251,6 +251,14 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
 
+    if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`boundary_alignment` ({}) must not exceed `max_file_segment_size` ({}): "
+            "each file segment must be large enough to cover the alignment window",
+            settings[FileCacheSetting::boundary_alignment].value,
+            settings[FileCacheSetting::max_file_segment_size].value);
+
     if (settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
     {
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
