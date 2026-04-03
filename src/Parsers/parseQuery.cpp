@@ -304,7 +304,12 @@ ASTPtr tryParseQuery(
         {
             if (lookahead->isError())
             {
-                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
+                /// Find the end of the current query (up to semicolon or end of stream) to avoid printing all subsequent queries.
+                IParser::Pos lookahead_query_end = lookahead;
+                while (!lookahead_query_end->isEnd() && lookahead_query_end->type != TokenType::Semicolon)
+                    ++lookahead_query_end;
+
+                out_error_message = getLexicalErrorMessage(query_begin, lookahead_query_end->end, *lookahead, hilite, query_description);
                 // Advance the position for further processing of possible test hint.
                 _out_query_end = token_iterator.max().end;
                 return nullptr;
@@ -333,10 +338,17 @@ ASTPtr tryParseQuery(
         return res;
 
     // More granular checks for queries other than INSERT w/inline data.
+
+    /// Find the end of the current query (up to semicolon or end of stream) to avoid printing all subsequent queries in error messages.
+    IParser::Pos this_query_end_pos = token_iterator;
+    while (!this_query_end_pos->isEnd() && !this_query_end_pos->isError()
+        && this_query_end_pos->type != TokenType::Semicolon)
+        ++this_query_end_pos;
+
     /// Lexical error
     if (last_token.isError())
     {
-        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end,
+        out_error_message = getLexicalErrorMessage(query_begin, this_query_end_pos->end,
             last_token, hilite, query_description);
         return nullptr;
     }
@@ -346,14 +358,9 @@ ASTPtr tryParseQuery(
     if (!unmatched_parens.empty())
     {
         out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
-            all_queries_end, unmatched_parens, hilite, query_description);
+            this_query_end_pos->end, unmatched_parens, hilite, query_description);
         return nullptr;
     }
-
-    IParser::Pos this_query_end_pos = token_iterator;
-    while (!this_query_end_pos->isEnd() && !this_query_end_pos->isError()
-        && this_query_end_pos->type != TokenType::Semicolon)
-        ++this_query_end_pos;
 
     if (!parse_res)
     {
