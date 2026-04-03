@@ -35,3 +35,24 @@ FROM t FINAL
 WHERE (42 >= id)
   AND ('2019-01-01 00:00:00' <= update_ts)
   AND equals(and(8, 8), 1);
+
+-- Exact queries from fuzzer
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t__fuzz_15;
+CREATE TABLE t__fuzz_15
+(
+    id LowCardinality(UInt64),
+    update_ts DateTime,
+    value UInt32
+)
+ENGINE = ReplacingMergeTree(update_ts)
+PARTITION BY 0 / id
+ORDER BY tuple(update_ts);
+
+INSERT INTO t__fuzz_15 SELECT number, toDateTime('2020-01-01 00:00:00'), 1 FROM numbers(100);
+
+SELECT count()
+FROM t__fuzz_15 FINAL
+WHERE (42 >= id)
+      AND (update_ts <= '2019-01-01 00:00:00')
+      AND equals(and(8, 1024), materialize(2147483648));

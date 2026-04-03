@@ -138,20 +138,20 @@ public:
         /// (e.g., a dummy column in JoinStepLogical) and have no original output position.
         static constexpr size_t NEWLY_ADDED_COLUMN_POSITION = std::numeric_limits<size_t>::max();
 
+        /// Whether the step was actually modified.
+        /// Needed to distinguish "removed all outputs" from "nothing changed",
+        /// since both can have empty required_input_positions and kept_output_positions.
+        bool changed = false;
+
         /// Required input positions per child (outer index = child_id).
         /// Empty means no inputs were changed.
         std::vector<std::vector<size_t>> required_input_positions;
 
         /// Which original output positions survived, in order.
+        /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
         /// Maps new output position to the original output position.
         /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
-        /// Empty means the output was not changed.
         std::vector<size_t> kept_output_positions;
-
-        /// Whether the step was actually modified.
-        /// Needed to distinguish "removed all outputs" from "nothing changed",
-        /// since both can have empty required_input_positions and kept_output_positions.
-        bool changed = false;
     };
 
     /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.

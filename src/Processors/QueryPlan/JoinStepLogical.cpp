@@ -539,11 +539,11 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
 
         updateInputHeaders({std::move(new_left_header), std::move(new_right_header)});
 
-        return {{std::move(left_positions), std::move(right_positions)}, std::move(kept_output_positions), true};
+        return {true, {std::move(left_positions), std::move(right_positions)}, std::move(kept_output_positions)};
     }
 
     updateOutputHeader();
-    return {{}, std::move(kept_output_positions), true};
+    return {true, {}, std::move(kept_output_positions)};
 }
 
 bool JoinStepLogical::canRemoveColumnsFromOutput() const

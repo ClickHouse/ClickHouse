@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <numeric>
 #include <Core/Names.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -100,6 +101,16 @@ bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
+std::vector<size_t> effectiveKeptOutputPositions(bool changed, std::vector<size_t> && kept_output_positions, size_t num_output_columns)
+{
+    if (changed)
+        return std::move(kept_output_positions);
+
+    std::vector<size_t> all_positions(num_output_columns);
+    std::iota(all_positions.begin(), all_positions.end(), 0);
+    return all_positions;
+}
+
 bool absorbExtraChildColumns(
     QueryPlan::Node & node,
     size_t child_id,
@@ -178,6 +189,11 @@ RemoveChildrenOutputResult removeChildrenOutputs(
         if (child_updated)
             updated_any_child = true;
 
+        const auto effective_kept_positions = effectiveKeptOutputPositions(
+            child_result.changed,
+            std::move(child_result.kept_output_positions),
+            node.children[child_id]->step->getOutputHeader()->columns());
+
         /// If the child's output doesn't match the parent's input (extra columns the child
         /// couldn't remove, e.g. ReadFromMergeTree with FINAL keeping sort key columns,
         /// or JoinStepLogical keeping a dummy column), reconcile the headers.
@@ -188,9 +204,9 @@ RemoveChildrenOutputResult removeChildrenOutputs(
             const auto & child_output = node.children[child_id]->step->getOutputHeader();
             if (!blocksHaveEqualStructure(*current_parent_input, *child_output))
             {
-                if (!absorbExtraChildColumns(node, child_id, required_positions, child_result.kept_output_positions))
+                if (!absorbExtraChildColumns(node, child_id, required_positions, effective_kept_positions))
                 {
-                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, child_result.kept_output_positions))
+                    if (addDiscardingExpressionStepIfNeeded(nodes, node, child_id, required_positions, effective_kept_positions))
                     {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
                         const auto & discarding_step = *node.children[child_id]->step;

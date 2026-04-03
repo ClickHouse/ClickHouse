@@ -225,13 +225,13 @@ ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(co
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
 
-        return {{std::move(result_positions)}, required_output_positions, true};
+        return {true, {std::move(result_positions)}, required_output_positions};
     }
 
     updateOutputHeader();
 
     /// Outputs changed but inputs didn't.
-    return {{}, required_output_positions, true};
+    return {true, {}, required_output_positions};
 }
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const

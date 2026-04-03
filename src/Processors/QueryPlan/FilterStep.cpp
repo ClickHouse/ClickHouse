@@ -443,12 +443,12 @@ FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std:
 
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
-        return {{std::move(required_input_positions)}, required_output_positions, true};
+        return {true, {std::move(required_input_positions)}, required_output_positions};
     }
 
     updateOutputHeader();
 
-    return {{}, required_output_positions, true};
+    return {true, {}, required_output_positions};
 }
 
 bool FilterStep::canRemoveColumnsFromOutput() const

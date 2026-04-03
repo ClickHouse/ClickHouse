@@ -24,4 +24,14 @@ bool absorbExtraChildColumns(
     const std::vector<size_t> & required_positions,
     const std::vector<size_t> & kept_output_positions);
 
+/// Resolves the `kept_output_positions` field of `RemoveUnusedColumnsResult` into an
+/// explicit position list. When a step is unchanged (`changed` is false), the result's
+/// `kept_output_positions` is empty by convention (meaning all original positions are
+/// kept). This helper moves the vector through when it is already populated, or builds
+/// the identity list [0, 1, ..., N-1] otherwise.
+std::vector<size_t> effectiveKeptOutputPositions(
+    bool changed,
+    std::vector<size_t> && kept_output_positions,
+    size_t num_output_columns);
+
 }
