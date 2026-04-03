@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3591
+personal_ws-1.1 en 3603
 AArch
 ABIs
 ACLs
@@ -300,6 +300,7 @@ DockerHub
 DoubleDelta
 Doxygen
 Dresseler
+DuckDB
 Durre
 ECMA
 ETag
@@ -786,6 +787,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1527,6 +1529,7 @@ bcrypt's
 bech
 benchmarked
 benchmarking
+beeterty
 bfloat
 bigrams
 binlog
@@ -1832,6 +1835,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+defragmentation
 delim
 deltaLake
 deltaLakeCluster
@@ -2235,6 +2239,7 @@ initialQueryStartTime
 initializeAggregation
 injective
 inlined
+inlines
 innogames
 inodes
 insertio
@@ -3128,6 +3133,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+strikethrough
 stringBytesEntropy
 stringBytesUniq
 stringCompare

@@ -72,6 +72,9 @@ struct QueryPlanOptimizationSettings
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
 
+    /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
+    bool enable_join_transitive_predicates = false;
+
     /// --- Second-pass optimizations
     bool optimize_prewhere;
     bool read_in_order;
@@ -85,6 +88,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
+    bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;

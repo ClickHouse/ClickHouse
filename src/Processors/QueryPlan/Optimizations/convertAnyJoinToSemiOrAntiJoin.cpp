@@ -22,12 +22,16 @@ FilterResult filterResultForMatchedRows(ActionsDAG pre_actions_dag, const Action
     auto combined_dag = ActionsDAG::merge(std::move(pre_actions_dag), filter_dag.clone());
     ActionsDAG::IntermediateExecutionResult combined_dag_input;
 
+    const auto * filter_node = combined_dag.tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return FilterResult::UNKNOWN;
+
     ColumnsWithTypeAndName filter_output;
     try
     {
         filter_output = ActionsDAG::evaluatePartialResult(
             combined_dag_input,
-            { combined_dag.tryFindInOutputs(filter_column_name) },
+            { filter_node },
             /*input_rows_count=*/1,
             { .skip_materialize = true });
     }

@@ -1,0 +1,48 @@
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: [(__table1.id) = (__table2.id)]
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
+Output: t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100] ⋈ t3[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Join conditions: [(__table2.id) = (__table3.id)]
+│  Output:
+│    Left:  id, id, value, value
+│    Right: id, value
+├──Join (JOIN FillRightFirst)
+│  │  t1[100] ⋈ t2[100]
+│  │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  │  Result rows: 100
+│  │  Join conditions: [(__table1.id) = (__table2.id)]
+│  │  Output:
+│  │    Left:  id, value
+│  │    Right: id, value
+│  ├──ReadFromMergeTree (default.t1)
+│  │     Read type: Default
+│  │     Parts: 1 | Granules: 1
+│  │     Output: id, value
+│  └──ReadFromMergeTree (default.t2)
+│        Read type: Default
+│        Parts: 1 | Granules: 1
+│        Output: id, value
+└──ReadFromMergeTree (default.t3)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value

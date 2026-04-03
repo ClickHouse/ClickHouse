@@ -10,7 +10,10 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -498,6 +501,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
     }
 
+    /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
+    if (!has_index_column && !has_map_keys_column && !has_map_values_column)
+    {
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
+        {
+            auto & [map_column_name, _] = *parsed;
+            if (header.has(fmt::format("mapValues({})", map_column_name))
+                && value_field.getType() == Field::Types::String
+                && !value_field.safeGet<String>().empty())
+            {
+                has_index_column = true;
+                direct_read_mode = getHintOrNoneMode();
+            }
+        }
+    }
+
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
@@ -587,14 +606,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
-    if (function_name == "startsWith")
+    if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
-    if (function_name == "endsWith")
+    if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -648,8 +667,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
+    /// Also handles map subcolumn references like `func(m.key_<serialized_key>, ...)`.
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
-    /// It is true because `arrayElement` return default value if key doesn't exist in the map,
+    /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
 
     const auto * dag_node = function_node.getDAGNode();
@@ -666,47 +686,81 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     auto required_column = required_columns.front();
     auto output_column_name = outputs.front()->result_name;
 
-    if (!isMap(required_column.type) || !header.has(fmt::format("mapKeys({})", required_column.name)))
-        return false;
-
     std::optional<String> key_const_value;
-    std::vector<const ActionsDAG::Node *> stack;
-    stack.push_back(outputs.front());
 
-    /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
-    while (!stack.empty())
+    if (isMap(required_column.type) && header.has(fmt::format("mapKeys({})", required_column.name)))
     {
-        const auto * node = stack.back();
-        stack.pop_back();
+        /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
+        std::vector<const ActionsDAG::Node *> stack;
+        stack.push_back(outputs.front());
 
-        if (node->type == ActionsDAG::ActionType::FUNCTION
-            && node->children.size() == 2
-            && node->function_base
-            && node->function_base->getName() == "arrayElement")
+        while (!stack.empty())
         {
-            if (key_const_value.has_value())
-                return false;
+            const auto * node = stack.back();
+            stack.pop_back();
 
-            const auto & map_argument = node->children[0];
-            const auto & const_key_argument = node->children[1];
+            if (node->type == ActionsDAG::ActionType::FUNCTION
+                && node->children.size() == 2
+                && node->function_base
+                && node->function_base->getName() == "arrayElement")
+            {
+                if (key_const_value.has_value())
+                    return false;
 
-            if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
-                return false;
+                const auto & map_argument = node->children[0];
+                const auto & const_key_argument = node->children[1];
 
-            if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
-                return false;
+                if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
+                    return false;
 
-            key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                    return false;
+
+                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+            }
+            else
+            {
+                for (const auto & child : node->children)
+                    stack.push_back(child);
+            }
         }
-        else
-        {
-            for (const auto & child : node->children)
-                stack.push_back(child);
-        }
+    }
+    else
+    {
+        /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
+        auto parsed = tryParseMapSubcolumnName(required_column.name);
+        if (!parsed)
+            return false;
+
+        auto & [map_column_name, serialized_key] = *parsed;
+        if (!header.has(fmt::format("mapKeys({})", map_column_name)))
+            return false;
+
+        key_const_value = std::move(serialized_key);
     }
 
     if (!key_const_value.has_value())
         return false;
+
+    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
+    /// The Set may not be ready yet because it is built later during query execution.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+    }
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
@@ -726,15 +780,24 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
-    if (!node.isFunction())
+    /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
+        {
+            const auto column_name = function.getArgumentAt(0).getColumnName();
+            return header.has(fmt::format("mapValues({})", column_name));
+        }
         return false;
+    }
 
-    const auto function = node.toFunctionNode();
-    if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+    /// Handle `map.key_<serialized_key>` subcolumn form.
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    if (!parsed)
         return false;
-
-    const auto column_name = function.getArgumentAt(0).getColumnName();
-    return header.has(fmt::format("mapValues({})", column_name));
+    auto & [map_column_name, serialized_key] = *parsed;
+    return header.has(fmt::format("mapValues({})", map_column_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
@@ -793,8 +856,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     Columns columns = prepared_set->getSetElements();
-    const auto & set_column = *columns[*set_key_position];
+    /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
 
+    if (*set_key_position >= columns.size())
+        return false;
+
+    const auto & set_column = *columns[*set_key_position];
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 
