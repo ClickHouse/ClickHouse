@@ -304,7 +304,7 @@ std::optional<String> optimizeUseNormalProjections(
             }
         }
 
-        if (!projection_pk_was_useful)
+        if (!projection_pk_was_useful && !force_optimize_projection)
         {
             LOG_DEBUG(logger, "Not using projection {} because condition was not useful : {}", candidate.projection->name, stat.condition);
             continue;
@@ -328,6 +328,7 @@ std::optional<String> optimizeUseNormalProjections(
         LOG_DEBUG(logger, "Projection {} has marks {}, part marks {}, ratio {}, projection condition {}", candidate.projection->name, candidate.sum_marks, parent_reading_marks, ratio, stat.condition);
         if (ratio < 0 || ratio > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting optimize_projection_skip_index_ratio should be >= 0 and <= 1 ({})", ratio);
+
         if (!skip_index_filtering_done
             && projection_pk_was_useful
             && context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
