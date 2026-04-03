@@ -1,0 +1,1 @@
+Add gtest: ASSERT_TRUE(InstrumentationManager::shouldPatchFunction("QueryMetricLog::startQuery", "DB::Wrapper<DB::QueryMetricLog::startQuery(int)>::helper::QueryMetricLog::startQuery(float)")); — this will fail, showing the false negative.
