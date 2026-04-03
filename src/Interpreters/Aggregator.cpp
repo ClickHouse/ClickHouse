@@ -2017,11 +2017,21 @@ void Aggregator::prepareInstructionsForSharding(
             const auto * batch_that = aggregate_functions[i];
             while (const auto * func = typeid_cast<const AggregateFunctionState *>(batch_that))
                 batch_that = func->getNestedFunction().get();
-            instruction.batch_that = batch_that;
 
-            /// TODO: Add batch-optimized -Array support (addBatchArrayForRows).
-            /// For now, -Array works correctly via per-row add fallback.
+            /// Unnest -Array combinator: extract the inner function for batch calls.
+            /// The actual column unwrapping (nested data + offsets) happens per-chunk below.
+            if (const auto * func = typeid_cast<const AggregateFunctionArray *>(batch_that))
+            {
+                batch_that = func->getNestedFunction().get();
+                /// Unnest -State inside -Array (e.g., sumStateArrayState -> State(Array(State(sum))))
+                while (const auto * state_func = typeid_cast<const AggregateFunctionState *>(batch_that))
+                    batch_that = state_func->getNestedFunction().get();
+                instruction.has_array_combinator = true;
+            }
+
             instruction.offsets = nullptr;
+
+            instruction.batch_that = batch_that;
 
             /// TODO: We currently materialize sparse argument columns and do not support sparse-aware execution
             instruction.has_sparse_arguments = false;
@@ -2040,7 +2050,20 @@ void Aggregator::prepareInstructionsForSharding(
             aggregate_columns_holder[i][j] = payload_columns[offset + j].get();
 
         instructions[i].arguments = aggregate_columns_holder[i].data();
+
+        if (instructions[i].has_array_combinator)
+        {
+            /// -Array combinator: unwrap array columns to get nested data + offsets.
+            auto [nested_columns, array_offsets] = checkAndGetNestedArrayOffset(
+                aggregate_columns_holder[i].data(), instructions[i].batch_that->getArgumentTypes().size());
+            /// Store unwrapped nested columns back into the holder so pointers remain valid.
+            for (size_t j = 0; j < nested_columns.size(); ++j)
+                aggregate_columns_holder[i][j] = nested_columns[j];
+            instructions[i].offsets = array_offsets;
+        }
+
         instructions[i].batch_arguments = aggregate_columns_holder[i].data();
+
         offset += arg_count;
     }
 }
@@ -2231,7 +2254,27 @@ void Aggregator::executeAggregateInstructionsForRows(
     {
         const AggregateFunctionInstruction * instruction = aggregate_instructions + i;
 
-        if (has_only_one_key && instruction->can_optimize_equal_keys_ranges)
+        if (instruction->offsets)
+        {
+            /// -Array combinator: use array-aware batch methods with pre-unwrapped columns.
+            if (has_all_chunk_rows)
+            {
+                instruction->batch_that->addBatchArray(
+                    0, num_rows, places, instruction->state_offset, instruction->batch_arguments, instruction->offsets, aggregates_pool);
+            }
+            else
+            {
+                instruction->batch_that->addBatchArrayForRows(
+                    row_indices,
+                    num_rows,
+                    places,
+                    instruction->state_offset,
+                    instruction->batch_arguments,
+                    instruction->offsets,
+                    aggregates_pool);
+            }
+        }
+        else if (has_only_one_key && instruction->can_optimize_equal_keys_ranges)
         {
             if (has_all_chunk_rows)
             {

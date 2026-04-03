@@ -319,6 +319,20 @@ public:
         const UInt64 * offsets,
         Arena * arena) const = 0;
 
+    /** Like addBatchArray, but processes only rows at positions given by row_indices[0..num_rows-1].
+      * places is a dense array: places[j] is the aggregate state for row_indices[j].
+      * columns are the pre-unwrapped inner data columns from the array.
+      * offsets are the array offset boundaries.
+      */
+    virtual void addBatchArrayForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const UInt64 * offsets,
+        Arena * arena) const = 0;
+
     /** The case when the aggregation key is UInt8
       * and pointers to aggregation states are stored in AggregateDataPtr[256] lookup table.
       */
@@ -670,6 +684,26 @@ public:
                 if (places[i])
                     static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
+        }
+    }
+
+    void addBatchArrayForRows(
+        const UInt64 * row_indices,
+        size_t num_rows,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        const UInt64 * offsets,
+        Arena * arena)
+        const override
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            size_t row = row_indices[i];
+            size_t current_offset = offsets[static_cast<ssize_t>(row) - 1];
+            size_t next_offset = offsets[row];
+            for (size_t j = current_offset; j < next_offset; ++j)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
         }
     }
 

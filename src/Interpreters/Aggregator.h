@@ -226,6 +226,7 @@ public:
         const UInt64 * offsets{};
         bool has_sparse_arguments = false;
         bool can_optimize_equal_keys_ranges = true;
+        bool has_array_combinator = false;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
