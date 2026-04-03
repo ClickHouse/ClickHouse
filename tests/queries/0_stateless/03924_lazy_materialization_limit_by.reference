@@ -1,0 +1,50 @@
+=== Test 1: LIMIT BY EXPLAIN ===
+1	1
+=== Test 2: DISTINCT ON EXPLAIN ===
+1	1
+=== Test 3: LIMIT BY correctness ===
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+=== Test 4: DISTINCT ON correctness ===
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+=== Test 5: LIMIT BY with WHERE ===
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+=== Test 6: DISTINCT ON multi-column EXPLAIN ===
+1	1
+=== Test 7: DISTINCT ON multi-column correctness ===
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
+0	0	0	0
+1	1	1	2
+2	2	2	4
+3	3	3	6
+4	4	4	8
