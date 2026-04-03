@@ -6,6 +6,11 @@
 #include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -358,6 +363,409 @@ public:
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COLUMNAR_V1 ABI
+//
+// Wire format (all offsets are byte offsets from the buffer start):
+//
+//   BufHeader (8 bytes): num_rows:u32, num_cols:u32
+//   ColDescriptor[num_cols] (20 bytes each):
+//     type:u32, null_offset:u32, offsets_offset:u32, data_offset:u32, data_size:u32
+//   Data blocks at the described offsets.
+//
+//   type bits: ColType (0-7) | IS_CONST (0x80) if ColumnConst
+//
+//   COL_BYTES     (0): start-based u32 offsets[rows+1] + chars data (with null terms)
+//   COL_NULL_BYTES(1): null_map[rows] + same as COL_BYTES
+//   COL_FIXED8    (2): u8[rows]
+//   COL_NULL_FIXED8(3): null_map[rows] + u8[rows]
+//   COL_FIXED64   (6): u64/f64[rows]
+//   COL_NULL_FIXED64(7): null_map[rows] + u64/f64[rows]
+//
+// The WASM export is <function_name>_col(i32 buf_handle, i32 num_rows) -> i32.
+// The caller (CH) allocates the input buffer with clickhouse_create_buffer,
+// fills it, then invokes the function.  The function returns a handle to an
+// output buffer (same layout, 1 column) which CH reads and frees.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+
+constexpr uint32_t COL_BYTES        = 0;
+constexpr uint32_t COL_NULL_BYTES   = 1;
+constexpr uint32_t COL_FIXED8       = 2;
+constexpr uint32_t COL_NULL_FIXED8  = 3;
+constexpr uint32_t COL_FIXED32      = 4;
+constexpr uint32_t COL_NULL_FIXED32 = 5;
+constexpr uint32_t COL_FIXED64      = 6;
+constexpr uint32_t COL_NULL_FIXED64 = 7;
+constexpr uint32_t COL_IS_CONST     = 0x80u;
+
+constexpr uint32_t COLUMNAR_HEADER_BYTES  = 8;
+constexpr uint32_t COLUMNAR_DESC_BYTES    = 20;
+
+struct ColDescriptor
+{
+    uint32_t type;
+    uint32_t null_offset;
+    uint32_t offsets_offset;
+    uint32_t data_offset;
+    uint32_t data_size;
+};
+static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
+
+// Compute the byte offset where column i's data blocks start and fill in desc.
+// Returns the offset after all data for this column (= start of next column's data).
+uint32_t buildColDescriptor(
+    const IColumn * col,       // already stripped of ColumnConst
+    bool is_const,
+    bool is_nullable,
+    uint32_t num_rows,         // logical row count (1 if const)
+    uint32_t write_cursor,     // current byte offset in output buffer
+    ColDescriptor & desc)
+{
+    const ColumnString * str_col = typeid_cast<const ColumnString *>(col);
+    const ColumnNullable * null_col = typeid_cast<const ColumnNullable *>(col);
+
+    if (null_col)
+        str_col = typeid_cast<const ColumnString *>(&null_col->getNestedColumn());
+
+    if (str_col)
+    {
+        uint32_t base_type = is_nullable ? COL_NULL_BYTES : COL_BYTES;
+        desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
+
+        // null_map
+        if (is_nullable)
+        {
+            desc.null_offset = write_cursor;
+            write_cursor += num_rows;
+        }
+        else
+        {
+            desc.null_offset = 0;
+        }
+
+        // offsets: align to 4
+        write_cursor = (write_cursor + 3u) & ~3u;
+        desc.offsets_offset = write_cursor;
+        write_cursor += (num_rows + 1u) * sizeof(uint32_t);
+
+        // data — ColumnString in CH 26.4+ has no null terminators; we add one per string
+        // in the wire format so WASM can use the get_bytes(-1) formula unchanged.
+        desc.data_offset = write_cursor;
+        uint32_t total_chars = static_cast<uint32_t>(str_col->getChars().size()) + num_rows;
+        desc.data_size = total_chars;
+        write_cursor += total_chars;
+        return write_cursor;
+    }
+
+    // Fixed-width column: use element size
+    uint32_t elem_size = static_cast<uint32_t>(col->sizeOfValueIfFixed());
+    uint32_t base_type;
+    if      (elem_size == 1) base_type = is_nullable ? COL_NULL_FIXED8  : COL_FIXED8;
+    else if (elem_size == 4) base_type = is_nullable ? COL_NULL_FIXED32 : COL_FIXED32;
+    else                     base_type = is_nullable ? COL_NULL_FIXED64 : COL_FIXED64;
+    desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
+    desc.null_offset = 0; // TODO: nullable fixed columns if needed
+    desc.offsets_offset = 0;
+    desc.data_offset = write_cursor;
+    desc.data_size = num_rows * elem_size;
+    write_cursor += num_rows * elem_size;
+    return write_cursor;
+}
+
+// Write column data into the WASM buffer span.
+void writeColData(
+    const IColumn * col,
+    bool is_nullable,
+    uint32_t num_rows,
+    const ColDescriptor & desc,
+    std::span<uint8_t> buf)
+{
+    const ColumnNullable * null_col = typeid_cast<const ColumnNullable *>(col);
+    if (null_col)
+        col = &null_col->getNestedColumn();
+
+    // null_map
+    if (is_nullable && null_col && desc.null_offset)
+    {
+        const auto & nm = null_col->getNullMapData();
+        std::memcpy(buf.data() + desc.null_offset, nm.data(), num_rows);
+    }
+
+    const ColumnString * str_col = typeid_cast<const ColumnString *>(col);
+    if (str_col)
+    {
+        // CH 26.4+ ColumnString has NO null terminators; offsets[i] = cumulative byte count.
+        // Wire format requires null terminators so WASM get_bytes() formula (end-start-1) works.
+        // Write each string followed by an explicit '\0', build cumulative wire offsets.
+        const auto & ch_offsets = str_col->getOffsets();
+        const auto & chars = str_col->getChars();
+        uint32_t * wire_offsets = reinterpret_cast<uint32_t *>(buf.data() + desc.offsets_offset);
+        uint8_t * data_dst = buf.data() + desc.data_offset;
+        wire_offsets[0] = 0;
+        uint32_t wire_pos = 0;
+        uint32_t ch_pos = 0;
+        for (uint32_t i = 0; i < num_rows; ++i)
+        {
+            uint32_t str_end = static_cast<uint32_t>(ch_offsets[i]);
+            uint32_t str_len = str_end - ch_pos;
+            std::memcpy(data_dst + wire_pos, chars.data() + ch_pos, str_len);
+            wire_pos += str_len;
+            data_dst[wire_pos++] = '\0';
+            wire_offsets[i + 1] = wire_pos;
+            ch_pos = str_end;
+        }
+        return;
+    }
+
+    // Fixed-width: raw byte copy.
+    const auto * raw = col->getRawData().data();
+    std::memcpy(buf.data() + desc.data_offset, raw, desc.data_size);
+}
+
+// Read a single-column columnar output buffer back into a MutableColumnPtr.
+MutableColumnPtr readColumnarOutput(std::span<const uint8_t> buf, const DataTypePtr & result_type, size_t expected_rows)
+{
+    if (buf.size() < COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES)
+        throw Exception(ErrorCodes::WASM_ERROR, "COLUMNAR_V1 output buffer too small: {} bytes", buf.size());
+
+    uint32_t num_rows, num_cols;
+    std::memcpy(&num_rows, buf.data(),     4);
+    std::memcpy(&num_cols, buf.data() + 4, 4);
+
+    if (num_rows != expected_rows)
+        throw Exception(ErrorCodes::WASM_ERROR,
+            "COLUMNAR_V1 output row count mismatch: expected {}, got {}", expected_rows, num_rows);
+    if (num_cols != 1)
+        throw Exception(ErrorCodes::WASM_ERROR,
+            "COLUMNAR_V1 output must have exactly 1 column, got {}", num_cols);
+
+    ColDescriptor desc;
+    std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, sizeof(desc));
+
+    uint32_t raw_type = desc.type & ~COL_IS_CONST;
+
+    // Bytes column → ColumnString
+    if (raw_type == COL_BYTES || raw_type == COL_NULL_BYTES)
+    {
+        const uint32_t * wire_offsets = reinterpret_cast<const uint32_t *>(buf.data() + desc.offsets_offset);
+        const uint8_t * data = buf.data() + desc.data_offset;
+
+        auto col_str = ColumnString::create();
+        auto & chars = col_str->getChars();
+        auto & offsets = col_str->getOffsets();
+
+        // WASM output has null terminators in wire format (ColBytesWriter adds '\0').
+        // CH 26.4+ ColumnString has NO null terminators; offsets are cumulative without nulls.
+        // Strip the null terminators when building the output column.
+        offsets.resize(num_rows);
+        uint32_t ch_pos = 0;
+        for (uint32_t i = 0; i < num_rows; ++i)
+        {
+            uint32_t wire_end = wire_offsets[i + 1];           // includes '\0'
+            uint32_t wire_start = wire_offsets[i];
+            uint32_t str_len = wire_end - wire_start;
+            if (str_len > 0) str_len--;                        // strip null terminator
+            chars.resize(ch_pos + str_len);
+            std::memcpy(chars.data() + ch_pos, data + wire_start, str_len);
+            ch_pos += str_len;
+            offsets[i] = ch_pos;
+        }
+
+        if (raw_type == COL_NULL_BYTES && desc.null_offset)
+        {
+            auto null_col = ColumnUInt8::create(num_rows);
+            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
+            return ColumnNullable::create(std::move(col_str), std::move(null_col));
+        }
+        return col_str;
+    }
+
+    // Fixed8 → ColumnUInt8
+    if (raw_type == COL_FIXED8 || raw_type == COL_NULL_FIXED8)
+    {
+        auto col_u8 = ColumnUInt8::create(num_rows);
+        std::memcpy(col_u8->getData().data(), buf.data() + desc.data_offset, num_rows);
+        if (raw_type == COL_NULL_FIXED8 && desc.null_offset)
+        {
+            auto null_col = ColumnUInt8::create(num_rows);
+            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
+            return ColumnNullable::create(std::move(col_u8), std::move(null_col));
+        }
+        return col_u8;
+    }
+
+    // Fixed64 — create column matching the declared return type (Float64, UInt64, Int64, etc.)
+    if (raw_type == COL_FIXED64 || raw_type == COL_NULL_FIXED64)
+    {
+        const DataTypePtr & base_type = (raw_type == COL_NULL_FIXED64)
+            ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
+            : result_type;
+        auto col64 = base_type->createColumn();
+        col64->insertManyDefaults(num_rows);
+        // ColumnVector<T> stores data as a contiguous POD array starting at offset 0.
+        // getRawData() returns std::string_view; the column is freshly created (not const),
+        // so const_cast on the underlying pointer is safe.
+        std::memcpy(const_cast<char *>(col64->getRawData().data()),
+                    buf.data() + desc.data_offset, num_rows * 8);
+        if (raw_type == COL_NULL_FIXED64 && desc.null_offset)
+        {
+            auto null_col = ColumnUInt8::create(num_rows);
+            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, num_rows);
+            return ColumnNullable::create(std::move(col64), std::move(null_col));
+        }
+        return col64;
+    }
+
+    throw Exception(ErrorCodes::WASM_ERROR, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
+}
+
+} // anonymous namespace
+
+class UserDefinedWebAssemblyFunctionColumnarV1 : public UserDefinedWebAssemblyFunction
+{
+public:
+    template <typename... Args>
+    explicit UserDefinedWebAssemblyFunctionColumnarV1(Args &&... args)
+        : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
+    {
+        // WASM export name matches the registered function name directly
+        col_function_name = function_name;
+        checkSignature();
+    }
+
+    // Direct columnar execution — bypasses RowBinary batching.
+    // Called from FunctionUserDefinedWasm::executeImpl() for ColumnarV1 functions.
+    MutableColumnPtr executeColumnar(
+        WebAssembly::WasmCompartment * compartment,
+        const ColumnsWithTypeAndName & cols,
+        size_t input_rows_count,
+        ContextPtr,
+        StopToken stop_token) const
+    {
+        ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmTotalExecuteMicroseconds);
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        // ── Build the columnar input buffer ──────────────────────────────────
+        const uint32_t num_cols = static_cast<uint32_t>(cols.size());
+        uint32_t cursor = COLUMNAR_HEADER_BYTES + num_cols * COLUMNAR_DESC_BYTES;
+
+        std::vector<ColDescriptor> descs(num_cols);
+        std::vector<const IColumn *> inner_cols(num_cols);
+        std::vector<bool> is_const_flags(num_cols);
+        std::vector<bool> is_nullable_flags(num_cols);
+        std::vector<uint32_t> row_counts(num_cols);
+
+        for (uint32_t ci = 0; ci < num_cols; ++ci)
+        {
+            const IColumn * col = cols[ci].column.get();
+            bool is_const = false;
+
+            if (const auto * cc = typeid_cast<const ColumnConst *>(col))
+            {
+                col = &cc->getDataColumn();
+                is_const = true;
+            }
+
+            bool is_nullable = typeid_cast<const ColumnNullable *>(col) != nullptr;
+            uint32_t nrows = is_const ? 1u : static_cast<uint32_t>(input_rows_count);
+
+            is_const_flags[ci] = is_const;
+            is_nullable_flags[ci] = is_nullable;
+            inner_cols[ci] = col;
+            row_counts[ci] = nrows;
+
+            cursor = buildColDescriptor(col, is_const, is_nullable, nrows, cursor, descs[ci]);
+        }
+
+        uint32_t total_buf_size = cursor;
+
+        // ── Allocate buffer in WASM memory ───────────────────────────────────
+        {
+            ProfileEventTimeIncrement<Microseconds> timer_ser(ProfileEvents::WasmSerializationMicroseconds);
+
+            auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
+            WasmMemoryGuard wasm_input = allocateInWasmMemory(wmm.get(), total_buf_size);
+            auto wasm_mem = wasm_input.getMemoryView();
+
+            // Write header
+            uint32_t n_rows32 = static_cast<uint32_t>(input_rows_count);
+            std::memcpy(wasm_mem.data(),     &n_rows32,  4);
+            std::memcpy(wasm_mem.data() + 4, &num_cols,  4);
+
+            // Write descriptors
+            for (uint32_t ci = 0; ci < num_cols; ++ci)
+                std::memcpy(wasm_mem.data() + COLUMNAR_HEADER_BYTES + ci * COLUMNAR_DESC_BYTES,
+                            &descs[ci], COLUMNAR_DESC_BYTES);
+
+            // Write column data
+            for (uint32_t ci = 0; ci < num_cols; ++ci)
+                writeColData(inner_cols[ci], is_nullable_flags[ci], row_counts[ci],
+                             descs[ci], wasm_mem);
+
+            // ── Invoke WASM ──────────────────────────────────────────────────
+            auto result_ptr = compartment->invoke<WasmPtr>(
+                col_function_name,
+                {wasm_input.getHandle(), static_cast<WasmSizeT>(input_rows_count)},
+                stop_token);
+
+            if (result_ptr == 0)
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "COLUMNAR_V1 function '{}' returned nullptr", col_function_name);
+
+            WasmMemoryGuard result_guard(wmm.get(), result_ptr);
+
+            // ── Read output ──────────────────────────────────────────────────
+            {
+                ProfileEventTimeIncrement<Microseconds> timer_de(ProfileEvents::WasmDeserializationMicroseconds);
+                auto out_view = result_guard.getMemoryView();
+                return readColumnarOutput(
+                    {out_view.data(), out_view.size()},
+                    result_type,
+                    input_rows_count);
+            }
+        }
+    }
+
+    // executeOnBlock is required by the base class but unused for ColumnarV1
+    // (FunctionUserDefinedWasm calls executeColumnar directly).
+    MutableColumnPtr executeOnBlock(
+        WebAssembly::WasmCompartment * compartment,
+        const Block & block,
+        ContextPtr context,
+        size_t num_rows,
+        StopToken stop_token) const override
+    {
+        ColumnsWithTypeAndName args;
+        args.reserve(block.columns());
+        for (size_t i = 0; i < block.columns(); ++i)
+            args.push_back(block.getByPosition(i));
+        return executeColumnar(compartment, args, num_rows, context, stop_token);
+    }
+
+private:
+    void checkSignature() const
+    {
+        auto decl = wasm_module->getExport(col_function_name);
+        WasmFunctionDeclaration expected("", col_function_name,
+            {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32);
+        checkFunctionDeclarationMatches(decl, expected);
+        // Also require clickhouse_create_buffer / clickhouse_destroy_buffer
+        checkFunctionDeclarationMatches(
+            wasm_module->getExport(WasmMemoryManagerV01::allocate_function_name),
+            WasmMemoryManagerV01::allocateFunctionDeclaration());
+        checkFunctionDeclarationMatches(
+            wasm_module->getExport(WasmMemoryManagerV01::deallocate_function_name),
+            WasmMemoryManagerV01::deallocateFunctionDeclaration());
+    }
+
+    String col_function_name;
+};
+
 std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::create(
     std::shared_ptr<WebAssembly::WasmModule> wasm_module_,
     const String & function_name_,
@@ -379,6 +787,9 @@ std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::
         case WasmAbiVersion::AssemblyScript:
             return createUserDefinedWebAssemblyFunctionAssemblyScript(
                 wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
+        case WasmAbiVersion::ColumnarV1:
+            return std::make_unique<UserDefinedWebAssemblyFunctionColumnarV1>(
+                wasm_module_, function_name_, argument_names_, arguments_, result_type_, std::move(function_settings), is_deterministic_);
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -394,6 +805,8 @@ String toString(WasmAbiVersion abi_type)
             return "BUFFERED_V1";
         case WasmAbiVersion::AssemblyScript:
             return "ASSEMBLYSCRIPT";
+        case WasmAbiVersion::ColumnarV1:
+            return "COLUMNAR_V1";
     }
     throw Exception(
         ErrorCodes::LOGICAL_ERROR, "Unknown WebAssembly ABI version: {}", std::to_underlying(abi_type));
@@ -401,7 +814,7 @@ String toString(WasmAbiVersion abi_type)
 
 WasmAbiVersion getWasmAbiFromString(const String & str)
 {
-    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript})
+    for (auto abi_type : {WasmAbiVersion::RowDirect, WasmAbiVersion::BufferedV1, WasmAbiVersion::AssemblyScript, WasmAbiVersion::ColumnarV1})
         if (Poco::toUpper(str) == toString(abi_type))
             return abi_type;
 
@@ -531,6 +944,13 @@ public:
         auto * compartment_ptr = &(*compartment_entry);
         try
         {
+            // COLUMNAR_V1: bypass RowBinary batching, pass columns directly (ColumnConst stays const).
+            if (const auto * cv1 = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()))
+            {
+                auto stop_token = interrupt_source.get_token();
+                return cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
+            }
+
             return execute(compartment_ptr, arguments, input_rows_count);
         }
         catch (...)
