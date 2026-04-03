@@ -188,7 +188,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                     mark_cache.get(),
                     /*deserialization_prefixes_cache=*/ nullptr,
                     reader_settings_build,
-                    /*value_size_map=*/ {},
+                    /*avg_value_size_hints=*/ {},
                     /*profile_callback=*/ {});
 
                 bool perform_alter = pp.perform_alter_conversions;
@@ -249,11 +249,39 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 return stats;
             };
 
-            MinMaxStat data_block_number_range{
-                .min = static_cast<UInt64>(data_part->info.min_block),
-                .max = static_cast<UInt64>(data_part->info.max_block)};
+            /// Read per-mark min/max _block_number and _block_offset from the data part's minmax indexes.
+            std::vector<UInt64> data_block_numbers;
+            MinMaxStat data_block_offset_range{std::numeric_limits<UInt64>::max(), 0};
+            {
+                auto reader_settings_stats = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings());
+                auto block_number_stats = getPatchMinMaxStats(
+                    data_part, mark_ranges, BlockNumberColumn::name, reader_settings_stats);
 
-            patch_join_cache->build(reader_factory, stats_factory, data_block_number_range, /*num_threads=*/ 1);
+                if (block_number_stats)
+                {
+                    std::set<UInt64> boundaries;
+                    for (const auto & stat : *block_number_stats)
+                    {
+                        boundaries.insert(stat.min);
+                        boundaries.insert(stat.max);
+                    }
+                    data_block_numbers.assign(boundaries.begin(), boundaries.end());
+                }
+
+                auto block_offset_stats = getPatchMinMaxStats(
+                    data_part, mark_ranges, BlockOffsetColumn::name, reader_settings_stats);
+
+                if (block_offset_stats)
+                {
+                    for (const auto & stat : *block_offset_stats)
+                    {
+                        data_block_offset_range.min = std::min(data_block_offset_range.min, stat.min);
+                        data_block_offset_range.max = std::max(data_block_offset_range.max, stat.max);
+                    }
+                }
+            }
+
+            patch_join_cache->build(reader_factory, stats_factory, data_block_numbers, data_block_offset_range, /*num_threads=*/ 1);
         }
     }
 

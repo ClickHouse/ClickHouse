@@ -97,10 +97,14 @@ struct PatchJoinCache
 
     /// Pre-builds the cache by reading all patch data for Join-mode patches.
     /// Parallelized by ranges across `num_threads`. Each bucket is filled lock-free.
-    /// `data_block_number_range` is the overall min/max `_block_number` of the data being queried,
-    /// used together with minmax stats to skip patch ranges that cannot match.
+    /// `data_block_numbers` is the sorted list of distinct `_block_number` values from the data being queried,
+    /// used together with minmax stats to skip patch ranges that cannot match any queried row.
+    /// `data_block_offset_range` is the [min, max] range of `_block_offset` in the data being queried;
+    /// when valid (min <= max), it is used to further prune patch ranges by block_offset.
     void build(const ReaderFactory & reader_factory, const StatsFactory & stats_factory,
-               MinMaxStat data_block_number_range, size_t num_threads);
+               const std::vector<UInt64> & data_block_numbers,
+               const MinMaxStat & data_block_offset_range,
+               size_t num_threads);
 
     bool isBuilt() const { return built; }
 

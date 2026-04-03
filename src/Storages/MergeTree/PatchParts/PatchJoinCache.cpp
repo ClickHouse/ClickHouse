@@ -70,7 +70,8 @@ const PatchJoinCache::Entries & PatchJoinCache::getEntries(const String & patch_
 void PatchJoinCache::build(
     const ReaderFactory & reader_factory,
     const StatsFactory & stats_factory,
-    MinMaxStat data_block_number_range,
+    const std::vector<UInt64> & data_block_numbers,
+    const MinMaxStat & data_block_offset_range,
     size_t num_threads)
 {
     if (all_ranges_by_name.empty())
@@ -80,7 +81,8 @@ void PatchJoinCache::build(
     }
 
     /// Flatten all ranges into work items: (patch_name, single_range).
-    /// Use minmax stats to skip patch ranges that cannot match the data being queried.
+    /// Use minmax stats to skip patch ranges whose block_number range
+    /// doesn't contain any of the actual block numbers from the data being queried.
     struct ReadWorkItem
     {
         String patch_name;
@@ -97,8 +99,19 @@ void PatchJoinCache::build(
             auto it = stats.find(range);
             if (it != stats.end())
             {
-                /// Skip ranges whose block_number range doesn't overlap with the data being queried.
-                if (!intersects(data_block_number_range, it->second.block_number_stat))
+                if (!data_block_numbers.empty())
+                {
+                    /// Check if any actual block number falls within this patch range's [min, max].
+                    /// data_block_numbers is sorted, so use lower_bound.
+                    const auto & bn_stat = it->second.block_number_stat;
+                    auto lb = std::lower_bound(data_block_numbers.begin(), data_block_numbers.end(), bn_stat.min);
+                    if (lb == data_block_numbers.end() || *lb > bn_stat.max)
+                        continue;
+                }
+
+                /// Check if the data's block_offset range overlaps with this patch range's block_offset range.
+                if (data_block_offset_range.min <= data_block_offset_range.max
+                    && !intersects(data_block_offset_range, it->second.block_offset_stat))
                     continue;
             }
 

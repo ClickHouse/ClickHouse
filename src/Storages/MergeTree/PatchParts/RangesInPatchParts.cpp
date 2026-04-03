@@ -3,11 +3,13 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Interpreters/Context.h>
@@ -259,13 +261,28 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         [&](const auto & index)
         { return index.isImplicitlyCreated() && index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name; });
 
-    if (it == secondary_indices.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column", column_name);
-
-    if (it->type != "minmax")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
-
-    auto index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    /// `IndexDescription` must outlive `index_ptr` because `IMergeTreeIndex` stores a reference to it.
+    IndexDescription adhoc_index_desc;
+    MergeTreeIndexPtr index_ptr;
+    if (it != secondary_indices.end())
+    {
+        if (it->type != "minmax")
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected minmax index for {} column, got: {}", column_name, it->type);
+        index_ptr = MergeTreeIndexFactory::instance().get(*it);
+    }
+    else
+    {
+        /// Index may not be in the table metadata (e.g. implicitly added during merge).
+        /// Create the description in the outer scope so it outlives `index_ptr`.
+        adhoc_index_desc.name = IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name;
+        adhoc_index_desc.type = "minmax";
+        adhoc_index_desc.column_names = {column_name};
+        adhoc_index_desc.data_types = {std::make_shared<DataTypeUInt64>()};
+        adhoc_index_desc.sample_block.insert({adhoc_index_desc.data_types[0]->createColumn(), adhoc_index_desc.data_types[0], column_name});
+        adhoc_index_desc.granularity = 1;
+        adhoc_index_desc.escape_filenames = metadata_snapshot->escape_index_filenames;
+        index_ptr = std::make_shared<MergeTreeIndexMinMax>(adhoc_index_desc);
+    }
     /// Check that index exists in data part. It may be absent for parts created in earlier versions.
     if (!index_ptr->getDeserializedFormat(patch_part->checksums, index_ptr->getFileName()))
         return {};

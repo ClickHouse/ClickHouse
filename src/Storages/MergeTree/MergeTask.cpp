@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -883,6 +884,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         global_ctx->merging_skip_indexes.clear();
         global_ctx->skip_indexes_by_column.clear();
+    }
+
+    /// Add implicit minmax indexes for `_block_number` and `_block_offset` if persisted.
+    /// These indexes are used to filter patch ranges during pre-build of PatchJoinCache.
+    /// For horizontal merge, indexes go to merging_skip_indexes.
+    /// For vertical merge, indexes go to skip_indexes_by_column (looked up per gathering column).
+    for (const auto * col_name : {&BlockNumberColumn::name, &BlockOffsetColumn::name})
+    {
+        if (global_ctx->storage_columns.contains(*col_name))
+        {
+            ColumnsDescription columns(global_ctx->storage_columns);
+            auto index = createImplicitMinMaxIndexDescription(
+                *col_name, columns,
+                global_ctx->metadata_snapshot->escape_index_filenames,
+                global_ctx->context);
+
+            if (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Horizontal)
+                global_ctx->merging_skip_indexes.push_back(index);
+            else
+                global_ctx->skip_indexes_by_column[*col_name].push_back(index);
+        }
     }
 
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
@@ -2555,7 +2577,10 @@ private:
 
 void MergeTask::addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx)
 {
-    auto indices_expression = indices_description.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+    /// Use storage_columns which includes virtual columns like _block_number/_block_offset
+    /// that may have implicit minmax indexes added during merge.
+    ColumnsDescription all_columns(global_ctx->storage_columns);
+    auto indices_expression = indices_description.getSingleExpressionForIndices(all_columns, global_ctx->data->getContext());
     auto indices_expression_dag = indices_expression->getActionsDAG().clone();
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(*plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
     indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.

@@ -426,20 +426,57 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             return stats;
         };
 
-        /// Compute the overall _block_number range across all data parts being queried.
-        MinMaxStat data_block_number_range{
-            .min = std::numeric_limits<UInt64>::max(),
-            .max = 0};
+        /// Read per-mark min/max _block_number and _block_offset from the data parts' minmax indexes
+        /// to precisely filter patch ranges. This is cheap — reads only the index, not the column data.
+        std::set<UInt64> block_number_boundaries;
+        MinMaxStat data_block_offset_range{std::numeric_limits<UInt64>::max(), 0};
 
-        for (const auto & part_with_ranges : parts_ranges)
+        for (size_t part_idx = 0; part_idx < parts_ranges.size(); ++part_idx)
         {
-            auto min_block = static_cast<UInt64>(part_with_ranges.data_part->info.min_block);
-            auto max_block = static_cast<UInt64>(part_with_ranges.data_part->info.max_block);
-            data_block_number_range.min = std::min(data_block_number_range.min, min_block);
-            data_block_number_range.max = std::max(data_block_number_range.max, max_block);
+            const auto & part_with_ranges = parts_ranges[part_idx];
+            const auto & info = per_part_infos[part_idx];
+
+            bool has_join_patch = false;
+            for (const auto & pp : info->patch_parts)
+            {
+                if (pp.mode == PatchMode::Join)
+                {
+                    has_join_patch = true;
+                    break;
+                }
+            }
+
+            if (!has_join_patch)
+                continue;
+
+            auto block_number_stats = getPatchMinMaxStats(
+                part_with_ranges.data_part, part_with_ranges.ranges, BlockNumberColumn::name, reader_settings);
+
+            if (block_number_stats)
+            {
+                for (const auto & stat : *block_number_stats)
+                {
+                    block_number_boundaries.insert(stat.min);
+                    block_number_boundaries.insert(stat.max);
+                }
+            }
+
+            auto block_offset_stats = getPatchMinMaxStats(
+                part_with_ranges.data_part, part_with_ranges.ranges, BlockOffsetColumn::name, reader_settings);
+
+            if (block_offset_stats)
+            {
+                for (const auto & stat : *block_offset_stats)
+                {
+                    data_block_offset_range.min = std::min(data_block_offset_range.min, stat.min);
+                    data_block_offset_range.max = std::max(data_block_offset_range.max, stat.max);
+                }
+            }
         }
 
-        patch_join_cache->build(reader_factory, stats_factory, data_block_number_range, pool_settings.threads);
+        std::vector<UInt64> data_block_numbers(block_number_boundaries.begin(), block_number_boundaries.end());
+
+        patch_join_cache->build(reader_factory, stats_factory, data_block_numbers, data_block_offset_range, pool_settings.threads);
     }
 }
 
