@@ -376,8 +376,14 @@ std::optional<String> optimizeUseNormalProjections(
                     tmp_index_stats);
 
                 size_t total_marks_after_skip = 0;
+                size_t total_ranges_after_skip = 0;
+                size_t total_rows_after_skip = 0;
                 for (const auto & part : filtered_parts)
+                {
                     total_marks_after_skip += part.ranges.getNumberOfMarks();
+                    total_ranges_after_skip += part.ranges.size();
+                    total_rows_after_skip += part.getRowsCount();
+                }
 
                 if (total_marks_after_skip < parent_reading_marks)
                 {
@@ -385,8 +391,13 @@ std::optional<String> optimizeUseNormalProjections(
                         "Parent marks reduced from {} to {} after skip index filtering; "
                         "using refined count for projection candidate comparison",
                         parent_reading_marks, total_marks_after_skip);
+                    size_t filtered_parts_count = filtered_parts.size();
+                    /// The next line is the key - it updates "in-place" the parts + ranges after skip index filtering
                     parent_reading_select_result->parts_with_ranges = std::move(filtered_parts);
+                    parent_reading_select_result->selected_parts = filtered_parts_count;
+                    parent_reading_select_result->selected_ranges = total_ranges_after_skip;
                     parent_reading_select_result->selected_marks = total_marks_after_skip;
+                    parent_reading_select_result->selected_rows = total_rows_after_skip;
                     parent_reading_marks = total_marks_after_skip;
                 }
             }
