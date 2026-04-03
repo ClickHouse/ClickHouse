@@ -54,9 +54,31 @@ void DiskObjectStorageTransaction::waitBlobRemoval(const StoredObjects & blobs) 
 {
     try
     {
+        /// Maximum time to spend waiting for blob removal. Under normal conditions,
+        /// blob removal completes in milliseconds. Under sanitizer builds (TSAN/MSAN),
+        /// each BlobKillerThread round can take many seconds due to overhead. Without
+        /// a timeout, the loop below (up to 100 iterations × slow rounds) can block
+        /// MergeTreeCleanupThread for minutes, causing "Possible deadlock on shutdown"
+        /// failures when DatabaseCatalog::shutdown() tries to stop the cleanup thread.
+        /// Blobs not cleaned up here will be removed by the next scheduled blob killer run.
+        static constexpr UInt64 MAX_WAIT_MICROSECONDS = 30'000'000; /// 30 seconds
+
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::DiskObjectStorageWaitBlobRemovalMicroseconds);
         for (size_t i = 0; i < 100 && metadata_storage->hasPendingRemovalBlobs(blobs); ++i)
+        {
             blob_killer->triggerAndWait();
+
+            if (watch.elapsed() > MAX_WAIT_MICROSECONDS)
+            {
+                LOG_WARNING(
+                    getLogger("DiskObjectStorageTransaction"),
+                    "Waiting for blob removal timed out after {} ms ({} iterations). "
+                    "Remaining blobs will be cleaned up asynchronously by the blob killer.",
+                    watch.elapsed() / 1000,
+                    i + 1);
+                break;
+            }
+        }
 
         if (watch.elapsed() > 100'000)
             LOG_TRACE(getLogger("DiskObjectStorageTransaction"), "Waiting for blob removal took {} ms", watch.elapsed() / 1000);
