@@ -32,7 +32,9 @@ namespace JoinStuff
 {
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags;
+class UsedFlagsHolder;
 }
+
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
@@ -449,6 +451,8 @@ public:
 
     bool isUsed(size_t off) const;
     bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
+    std::unique_ptr<JoinStuff::UsedFlagsHolder> getUsedFlagsHolder(const Columns * columns) const;
+    std::unique_ptr<JoinStuff::UsedFlagsHolder> getUsedFlagsHolder() const;
 
     void debugKeys() const;
 

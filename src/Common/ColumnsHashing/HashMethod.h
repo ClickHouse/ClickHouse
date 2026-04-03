@@ -28,6 +28,29 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     return hash.get128();
 }
 
+static inline std::vector<SipHash> batchSipHash(size_t keys_size, const ColumnRawPtrs & key_columns)
+{
+    if (keys_size == 0)
+        return {};
+
+    const size_t rows = key_columns[0]->size();
+    std::vector<SipHash> hashes(rows);
+    for (size_t i = 0; i < keys_size; ++i)
+    {
+        const auto * denull_column = key_columns[i];
+        const UInt8 * nullmap = nullptr;
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(denull_column))
+        {
+            denull_column = nullable_column->getNestedColumnPtr().get();
+            nullmap = nullable_column->getNullMapData().data();
+        }
+
+        denull_column->batchUpdateHashWithValue(nullmap, hashes);
+    }
+
+    return hashes;
+}
+
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
 template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
@@ -419,13 +442,17 @@ struct HashMethodHashed
     static constexpr bool has_cheap_key_calculation = false;
 
     ColumnRawPtrs key_columns;
+    mutable std::vector<SipHash> hashes;
 
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_)) {}
+        : key_columns(std::move(key_columns_))
+        , hashes(batchSipHash(key_columns.size(), key_columns))
+    {
+    }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
-        return hash128(row, key_columns.size(), key_columns);
+        return hashes[row].get128();
     }
 };
 

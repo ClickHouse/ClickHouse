@@ -81,15 +81,11 @@ public:
     /// TODO Check that there is non zero number of inputs and outputs.
     StrictResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
         : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
-        , current_input(inputs.begin())
-        , current_output(outputs.begin())
     {
     }
 
     StrictResizeProcessor(InputPorts inputs_, OutputPorts outputs_)
         : IProcessor(inputs_, outputs_)
-        , current_input(inputs.begin())
-        , current_output(outputs.begin())
     {
     }
 
@@ -98,8 +94,6 @@ public:
     Status prepare(const PortNumbers &, const PortNumbers &) override;
 
 private:
-    InputPorts::iterator current_input;
-    OutputPorts::iterator current_output;
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
