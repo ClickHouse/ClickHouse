@@ -14,18 +14,12 @@ SET enable_extended_results_for_datetime_functions = 1;
 SET enable_parallel_replicas = 0;
 
 -- Test 1: toMonday with Date32 + ALTER COMMENT COLUMN
--- Uses a single INSERT with 2+ rows and validates via primary key filtering.
--- In release builds without the fix, the primary key index gets corrupted
--- (UInt16 values misread as Int32 via UB static_cast), causing mark selection
--- to skip the granule and return 0 rows for exact-match queries.
+-- Without fix, INSERT crashes in debug/sanitizer builds with:
+-- "Bad cast from ColumnVector<unsigned short> to ColumnVector<int>"
 DROP TABLE IF EXISTS t_pk_type_mismatch_1;
 CREATE TABLE t_pk_type_mismatch_1 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
 ALTER TABLE t_pk_type_mismatch_1 COMMENT COLUMN c0 'test comment';
 INSERT INTO t_pk_type_mismatch_1 (c0) VALUES ('2024-01-01'), ('2024-06-15');
--- Primary key integrity check: this query uses mark selection on the primary key.
--- Without fix (release): garbage index value (~1.3B) fails range check → 0 rows.
--- Without fix (debug): INSERT above crashes, so this never runs.
--- With fix: correct index → returns matching row.
 SELECT c0 FROM t_pk_type_mismatch_1 WHERE toMonday(c0) = '2024-01-01'::Date32 ORDER BY c0;
 SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_1 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_1;
