@@ -1,0 +1,39 @@
+-- { echo }
+-- Regression test for #101433: Nullable predicates in AND clauses caused wrong
+-- results when VirtualColumnUtils::splitFilterNodeForAllowedInputs reduced an
+-- AND to a single Nullable child.  DataTypeNullable::getDefault() returns NULL,
+-- so notEquals(x, NULL) always returned NULL (SQL three-valued logic), making
+-- the filter falsely discard all rows.  The fix uses removeNullable() to
+-- produce a real zero instead of NULL.
+
+-- system.tables calls filterBlockWithPredicate(allow_partial=true) with only
+-- {database} as allowed input.  "name = 'one'" is NOT in {database} so it gets
+-- dropped; the Nullable constant is the sole remaining AND child, triggering
+-- the bug path.  system.one always exists so we expect 1 row.
+-- NB: database = 'system' is intentionally omitted so that AND reduces to 1 child.
+
+SELECT count() FROM system.tables WHERE name = 'one' AND toNullable(toInt8(-1));
+1
+SELECT count() FROM system.tables WHERE name = 'one' AND nullIf(toInt16(1), toInt16(0));
+1
+SELECT count() FROM system.tables WHERE name = 'one' AND toNullable(toInt32(42));
+1
+-- NULL constant should still correctly return 0
+SELECT count() FROM system.tables WHERE name = 'one' AND nullIf(toInt16(1), toInt16(1));
+0
+-- Non-nullable baseline
+SELECT count() FROM system.tables WHERE name = 'one' AND toInt8(-1);
+1
+-- Also test with MergeTree
+DROP TABLE IF EXISTS t_nullable_pred_04076;
+CREATE TABLE t_nullable_pred_04076 (b Int8) ENGINE = MergeTree ORDER BY ();
+INSERT INTO t_nullable_pred_04076 VALUES (1), (0);
+SELECT count() FROM t_nullable_pred_04076 WHERE (256 > b) AND toNullable(toInt8(-1));
+2
+SELECT count() FROM t_nullable_pred_04076 WHERE (256 > b) AND nullIf(toInt16(1), toInt16(0));
+2
+SELECT count() FROM t_nullable_pred_04076 WHERE (256 > b) AND toNullable(toInt32(42));
+2
+SELECT count() FROM t_nullable_pred_04076 WHERE (256 > b) AND nullIf(toInt16(1), toInt16(1));
+0
+DROP TABLE t_nullable_pred_04076;
