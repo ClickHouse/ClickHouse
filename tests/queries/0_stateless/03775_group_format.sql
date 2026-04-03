@@ -23,5 +23,10 @@ order by key;
 
 select groupFormat('JSONEachRow')(number) from numbers(0);
 
+select groupFormatIf('JSONEachRow')(
+    if(number = 0, NULL, number),
+    if(number = 1, CAST(NULL, 'Nullable(UInt8)'), toUInt8(number != 2)))
+from numbers(4);
+
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

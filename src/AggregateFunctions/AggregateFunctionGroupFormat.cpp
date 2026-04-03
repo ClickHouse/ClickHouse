@@ -131,12 +131,10 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         const UInt8 *,
-        Arena *,
+        Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        /// For this aggregate we want to preserve NULL rows too, so just reuse the
-        /// regular batch path and ignore the null_map.
-        addBatchSinglePlace(row_begin, row_end, place, columns, nullptr, if_argument_pos);
+        addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -223,12 +221,12 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & /*nested_function*/,
-        const DataTypes & arguments,
-        const Array & params,
+        const AggregateFunctionPtr & original_function,
+        const DataTypes &,
+        const Array &,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
+        return original_function;
     }
 
 private:
@@ -258,7 +256,7 @@ AggregateFunctionPtr createAggregateFunctionGroupFormat(
 
     ContextPtr context;
     if (CurrentThread::isInitialized())
-        context = CurrentThread::get().getQueryContext();
+        context = CurrentThread::get().tryGetQueryContext();
     if (!context)
         context = Context::getGlobalContextInstance();
     if (!context)
@@ -313,7 +311,7 @@ FROM numbers(3)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("groupFormat", {createAggregateFunctionGroupFormat, properties, documentation});
+    factory.registerFunction("groupFormat", {createAggregateFunctionGroupFormat, documentation, properties});
 }
 
 }
