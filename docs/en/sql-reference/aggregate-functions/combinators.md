@@ -331,6 +331,75 @@ Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` a
 
 Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
+## -Sparkbar {#-sparkbar}
+
+The -Sparkbar suffix can be appended to the name of any aggregate function that returns a numeric type. This combinator divides the input data into buckets based on a key column, applies the aggregate function to each bucket, and renders the results as a [sparkbar](reference/sparkbar.md) visualization (a string of Unicode bar characters).
+
+**Syntax**
+
+```sql
+<aggFunction>Sparkbar(width, min, max)(bucket_key, [aggFunction_params...])
+```
+
+**Arguments**
+
+- `width` — Number of buckets (segments) in the sparkbar. Must be in range [2, 1024]. [UInt8/16/32/64](../../sql-reference/data-types/int-uint.md).
+- `min` — Minimum value of the bucket key range (inclusive). Type must match `bucket_key`.
+- `max` — Maximum value of the bucket key range (inclusive). Type must match `bucket_key`.
+- `bucket_key` — Column used for bucketing. Must be an integer type, [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
+- `aggFunction_params` — Parameters passed to the nested aggregate function.
+
+**Returned value**
+
+A sparkbar string visualizing the aggregated values across buckets. Values outside the `[min, max]` range are ignored.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+```sql
+SELECT sumSparkbar(10, 0, 9)(number, number + 1) FROM numbers(10);
+```
+
+```text
+┌─sumSparkbar(10, 0, 9)(number, plus(number, 1))─┐
+│ ▁▂▃▃▄▅▅▆▇█                                     │
+└────────────────────────────────────────────────┘
+```
+
+Count occurrences per bucket:
+
+```sql
+SELECT countSparkbar(5, toDate('2024-01-01'), toDate('2024-01-05'))(date)
+FROM (SELECT toDate('2024-01-01') + number % 5 AS date FROM numbers(20));
+```
+
+```text
+┌─countSparkbar(5, toDate('2024-01-01'), toDate('2024-01-05'))(date)─┐
+│ █████                                                              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+With GROUP BY:
+
+```sql
+SELECT
+    category,
+    sumSparkbar(12, toDate('2024-01-01'), toDate('2024-12-01'))(month, revenue)
+FROM sales
+GROUP BY category;
+```
+
+The `-Sparkbar` combinator can be combined with `-State` and `-Merge` for use with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md):
+
+```sql
+-- Store intermediate state
+SELECT sumSparkbarState(10, 0, 9)(number, 1) AS state FROM numbers(10);
+
+-- Merge states and get final result
+SELECT sumSparkbarMerge(10, 0, 9)(state) FROM aggregated_table;
+```
+
 ## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
