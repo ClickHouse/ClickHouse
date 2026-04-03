@@ -63,3 +63,47 @@ ALTER TABLE t_pk_type_mismatch_5 COMMENT COLUMN c1 'some comment';
 INSERT INTO t_pk_type_mismatch_5 (c0) VALUES ('2024-06-15');
 SELECT c0, c1 FROM t_pk_type_mismatch_5 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_5;
+
+-- Test 6: Skip index with settings-dependent expression (independent of sorting key)
+-- The cast normalization must also cover skip-index expression outputs.
+-- Here the ORDER BY key (c0) is not settings-dependent, but the skip index
+-- expression (toMonday(c1)) changes return type based on
+-- enable_extended_results_for_datetime_functions. Without the skip-index CAST fix,
+-- INSERT after ALTER would crash during index serialization.
+DROP TABLE IF EXISTS t_pk_type_mismatch_6;
+CREATE TABLE t_pk_type_mismatch_6 (
+    c0 UInt64,
+    c1 Date32,
+    INDEX idx_monday toMonday(c1) TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY c0;
+ALTER TABLE t_pk_type_mismatch_6 COMMENT COLUMN c0 'with skip index';
+INSERT INTO t_pk_type_mismatch_6 VALUES (1, '2024-01-01'), (2, '2024-06-15');
+SELECT c0, c1 FROM t_pk_type_mismatch_6 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_6;
+
+-- Test 7: Skip index with DETACH/ATTACH (settings-dependent skip index expression)
+-- Same mechanism as Test 6 but using DETACH/ATTACH instead of ALTER.
+DROP TABLE IF EXISTS t_pk_type_mismatch_7;
+CREATE TABLE t_pk_type_mismatch_7 (
+    c0 UInt64,
+    c1 Date32,
+    INDEX idx_month toStartOfMonth(c1) TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY c0;
+DETACH TABLE t_pk_type_mismatch_7;
+ATTACH TABLE t_pk_type_mismatch_7;
+INSERT INTO t_pk_type_mismatch_7 VALUES (1, '2024-01-15'), (2, '2024-06-20');
+SELECT c0, c1 FROM t_pk_type_mismatch_7 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_7;
+
+-- Test 8: Both sorting key AND skip index with settings-dependent expressions
+-- Verify that CAST normalization works for both simultaneously.
+DROP TABLE IF EXISTS t_pk_type_mismatch_8;
+CREATE TABLE t_pk_type_mismatch_8 (
+    c0 Date32,
+    c1 Date32,
+    INDEX idx_monday toMonday(c1) TYPE minmax GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY toStartOfMonth(c0);
+ALTER TABLE t_pk_type_mismatch_8 COMMENT COLUMN c0 'date col';
+INSERT INTO t_pk_type_mismatch_8 VALUES ('2024-01-15', '2024-02-01'), ('2024-06-20', '2024-07-10');
+SELECT c0, c1 FROM t_pk_type_mismatch_8 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_8;

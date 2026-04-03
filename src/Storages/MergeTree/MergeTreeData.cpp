@@ -1257,6 +1257,30 @@ ExpressionActionsPtr getCombinedIndicesExpression(
         }
     }
 
+    /// Apply the same normalization to skip-index expression outputs. Settings-dependent
+    /// functions in skip-index expressions (e.g. INDEX idx toMonday(col) TYPE minmax) can
+    /// also drift in type after ALTER/ATTACH, causing the same class of crash during index
+    /// serialization. Each index description stores the expected column_names/data_types
+    /// from when the index was originally created.
+    for (const auto & index_ptr : indices)
+    {
+        const auto & idx = index_ptr->index;
+        const auto & idx_names = idx.column_names;
+        const auto & idx_types = idx.data_types;
+
+        for (size_t i = 0; i < idx_names.size() && i < idx_types.size(); ++i)
+        {
+            for (auto & output : dag_outputs)
+            {
+                if (output->result_name == idx_names[i] && !output->result_type->equals(*idx_types[i]))
+                {
+                    output = &dag.addCast(*output, idx_types[i], idx_names[i], context);
+                    break;
+                }
+            }
+        }
+    }
+
     return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
