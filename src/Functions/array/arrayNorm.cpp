@@ -158,20 +158,18 @@ MULTITARGET_FUNCTION_HEADER(
         const auto off = offsets[row];
         const size_t count = off - prev;
 
-        ResultType partial[unroll_count] = {};
         size_t i = 0;
         const size_t unrolled_end = count / unroll_count * unroll_count;
-
-        for (; i < unrolled_end; i += unroll_count)
-            for (size_t s = 0; s < unroll_count; ++s)
-                partial[s] = Kernel::template accumulate<ResultType>(
-                    partial[s], static_cast<ResultType>(data[prev + i + s]), params);
-
         ResultType state = 0;
-        /// Skip the combine loop for short arrays where no unrolled block was processed,
-        /// avoiding redundant reduction over zero-initialized accumulators.
+
         if (unrolled_end > 0)
         {
+            ResultType partial[unroll_count] = {};
+            for (; i < unrolled_end; i += unroll_count)
+                for (size_t s = 0; s < unroll_count; ++s)
+                    partial[s] = Kernel::template accumulate<ResultType>(
+                        partial[s], static_cast<ResultType>(data[prev + i + s]), params);
+
             for (size_t s = 0; s < unroll_count; ++s)
                 state = Kernel::template combine<ResultType>(state, partial[s], params);
         }
