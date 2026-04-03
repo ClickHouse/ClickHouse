@@ -558,7 +558,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     ActionsDAG tmp_dag;
                     /// Use removeNullable to get the nested type's default (zero, not NULL).
                     /// DataTypeNullable::getDefault() returns Null(), but notEquals(x, NULL)
-                    /// always returns NULL (SQL three-valued logic), which is falsy and would
+                    /// always returns NULL (SQL three-valued logic), which is treated as false and would
                     /// incorrectly filter out all rows/parts.  See #101433.
                     /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
                     /// Nothing has no getDefault(), so fall back to the Nullable default
