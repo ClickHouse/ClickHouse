@@ -173,6 +173,11 @@ size_t MergeTreeReaderWide::readRows(
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
+        /// Remember column sizes before reading so we can detect and fix over-reads.
+        std::vector<size_t> column_sizes_before(num_columns);
+        for (size_t pos = 0; pos < num_columns; ++pos)
+            column_sizes_before[pos] = res_columns[pos] ? res_columns[pos]->size() : 0;
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
@@ -193,6 +198,10 @@ size_t MergeTreeReaderWide::readRows(
             try
             {
                 size_t column_size_before_reading = column->size();
+                /// Update saved size for newly created columns.
+                if (!append)
+                    column_sizes_before[pos] = column_size_before_reading;
+
                 auto & cache = caches[column_to_read.getNameInStorage()];
                 auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
 
@@ -222,6 +231,42 @@ size_t MergeTreeReaderWide::readRows(
 
             if (column->empty() && max_rows_to_read > 0)
                 res_columns[pos] = nullptr;
+        }
+
+        /// Enforce: the return value must not exceed max_rows_to_read.
+        ///
+        /// All other IMergeTreeReader implementations (Compact, Index, TextIndex)
+        /// guarantee this invariant either via an upfront clamp or a bounded loop.
+        /// MergeTreeReaderWide takes the max column growth across all columns, which
+        /// can exceed max_rows_to_read if deserialization (e.g., SubstreamsCache
+        /// interactions, Nested column handling) adds more rows than requested to
+        /// some column.
+        ///
+        /// Violating this invariant causes MergeTreeRangeReader::adjustLastGranule()
+        /// to hit an integer underflow (num_read_rows > total_rows_per_granule),
+        /// resulting in LOGICAL_ERROR "Can't adjust last granule".
+        ///
+        /// When over-read is detected, we truncate excess rows from all columns
+        /// to keep column data consistent with the reported row count. The underlying
+        /// merge_tree_reader streams will be ahead of the tracked position, but
+        /// DelayedStream detects this mismatch on the next read and repositions
+        /// by seeking to the correct mark.
+        if (read_rows > max_rows_to_read && max_rows_to_read > 0)
+        {
+            for (size_t pos = 0; pos < num_columns; ++pos)
+            {
+                if (!res_columns[pos])
+                    continue;
+
+                size_t expected_size = column_sizes_before[pos] + max_rows_to_read;
+                if (res_columns[pos]->size() > expected_size)
+                {
+                    auto mutable_column = IColumn::mutate(std::move(res_columns[pos]));
+                    mutable_column->popBack(mutable_column->size() - expected_size);
+                    res_columns[pos] = std::move(mutable_column);
+                }
+            }
+            read_rows = max_rows_to_read;
         }
 
         prefetched_streams.clear();
