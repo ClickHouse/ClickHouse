@@ -39,36 +39,7 @@ namespace DB
  * WHERE a = 1 OR b = 'test';
  * -------------------------------
  *
- * 3. Replaces AND chains with a single constant.
- * The replacement is done if:
- *  - one of the operands of the equality function is a constant
- *  - constants are different for same expression
- * -------------------------------
- * SELECT *
- * FROM table
- * WHERE a = 1 AND b = 'test' AND a = 2;
- *
- * will be transformed into
- *
- * SELECT *
- * FROM TABLE
- * WHERE 0;
- * -------------------------------
- *
- * 4. Removes duplicate AND checks
- * -------------------------------
- * SELECT *
- * FROM table
- * WHERE a = 1 AND b = 'test' AND a = 1;
- *
- * will be transformed into
- *
- * SELECT *
- * FROM TABLE
- * WHERE a = 1 AND b = 'test';
- * -------------------------------
- *
- * 5. Replaces chains of inequality functions inside an AND with a single NOT IN operator.
+ * 3. Replaces chains of inequality functions inside an AND with a single NOT IN operator.
  * The replacement is done if:
  *  - one of the operands of the inequality function is a constant
  *  - length of chain is at least 'optimize_min_inequality_conjunction_chain_length' long OR the expression has type of LowCardinality
@@ -86,7 +57,7 @@ namespace DB
  * WHERE a NOT IN (1, 2);
  * -------------------------------
  *
- * 6. Remove unnecessary IS NULL checks in JOIN ON clause
+ * 4. Remove unnecessary IS NULL checks in JOIN ON clause
  *   - equality check with explicit IS NULL check replaced with <=> operator
  * -------------------------------
  * SELECT * FROM t1 JOIN t2 ON a = b OR (a IS NULL AND b IS NULL)
@@ -97,7 +68,7 @@ namespace DB
  * SELECT * FROM t1 JOIN t2 ON a <=> b
  * -------------------------------
  *
- * 7. Remove redundant equality checks on boolean functions.
+ * 5. Remove redundant equality checks on boolean functions.
  *  - these redundant checks cause the primary index to not be used when if the query involves any primary key columns
  * -------------------------------
  * SELECT * FROM t1 WHERE a IN (n) = 1
@@ -109,7 +80,7 @@ namespace DB
  * SELECT * FROM t1 WHERE NOT a IN (n)
  * -------------------------------
  *
- * 8. Extract common subexpressions from AND expressions of a single OR expression only in WHERE and ON expressions.
+ * 6. Extract common subexpressions from AND expressions of a single OR expression only in WHERE and ON expressions.
  * If possible, AND and OR expressions will be flattened during performing this.
  * This might break some lazily evaluated expressions, but this optimization can be turned off by optimize_extract_common_expressions = 0.
  * -------------------------------
@@ -126,13 +97,49 @@ namespace DB
  * SELECT * FROM t1 WHERE a AND b
  * -------------------------------
  *
- * 9. Populate constant comparison in AND chains. Support operators <, <=, >, >=, = and mix of them.
+ * 7. Populate constant comparison in AND chains. Support operators <, <=, >, >=, = and mix of them.
  * -------------------------------
  * SELECT * FROM table WHERE a < b AND b < c AND c < 5;
  *
  * will be transformed into
  *
  * SELECT * FROM table WHERE a < b AND b < c AND c < 5 AND b < 5 AND a < 5;
+ * -------------------------------
+ *
+ * 8. Prune redundant and detect conflicting comparison conditions on the same expression
+ *     within AND chains.  Controlled by setting `optimize_and_compare_chain_pruning`.
+ *     Handles all six comparison operators (=, !=, <, <=, >, >=) and their combinations:
+ *     duplicate removal, contradiction detection, and range tightening.
+ * -------------------------------
+ * SELECT * FROM table WHERE a = 1 AND a = 1;
+ * -- duplicate: same condition twice
+ * will be transformed into
+ * SELECT * FROM table WHERE a = 1;
+ *
+ * SELECT * FROM table WHERE a = 1 AND a = 2;
+ * -- conflict: equals with different constants
+ * will be transformed into
+ * SELECT * FROM table WHERE false;
+ *
+ * SELECT * FROM table WHERE a = 3 AND a < 5;
+ * -- redundant: a < 5 is implied by a = 3
+ * will be transformed into
+ * SELECT * FROM table WHERE a = 3;
+ *
+ * SELECT * FROM table WHERE a = 3 AND a > 5;
+ * -- conflict: no value satisfies both
+ * will be transformed into
+ * SELECT * FROM table WHERE false;
+ *
+ * SELECT * FROM table WHERE a < 5 AND a < 3;
+ * -- tighter bound wins
+ * will be transformed into
+ * SELECT * FROM table WHERE a < 3;
+ *
+ * SELECT * FROM table WHERE u > 255 AND i > 0;  -- u is UInt8
+ * -- out of range: UInt8 cannot exceed 255
+ * will be transformed into
+ * SELECT * FROM table WHERE false;
  * -------------------------------
  */
 

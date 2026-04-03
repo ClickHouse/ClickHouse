@@ -237,9 +237,7 @@ std::shared_ptr<FunctionNode> getFlattenedLogicalExpression(const FunctionNode &
     return flattened;
 }
 
-/// Comparison filter deduplication and conflict detection for AND chains.
-/// Maintains a map from expression → list of (constant, comparison_type).
-/// For each new condition, compares against existing conditions for the same expression.
+/// Helper types and functions for comparison chain pruning in `tryOptimizeAndCompareNotEqualsChain`.
 
 enum class ComparisonFunction : uint8_t
 {
@@ -292,28 +290,31 @@ static ComparisonFunction flipComparisonFunction(ComparisonFunction f)
     UNREACHABLE();
 }
 
+/// Result of comparing two filters on the same expression.
 enum class ValueComparisonResult
 {
-    PRUNE_LEFT,
-    PRUNE_RIGHT,
-    CONFLICT,
-    NONE
+    PRUNE_LEFT,   /// The left (existing) filter is weaker and can be removed.
+    PRUNE_RIGHT,  /// The right (new) filter is weaker and can be discarded.
+    CONFLICT,     /// The two filters are contradictory — the AND is always false.
+    NONE          /// Filters are independent, both must be kept.
 };
 
+/// Result of inserting a new filter into the per-expression filter list.
 enum class AddComparisonFilterResult
 {
-    CONFLICT,
-    REDUNDANT,
-    ADDED
+    CONFLICT,     /// Contradiction detected — the whole AND is false.
+    REDUNDANT,    /// The new filter is always true for this column type (boundary folding).
+    ADDED         /// The filter was added (possibly after pruning weaker existing filters).
 };
 
+/// Per-condition state kept in `ComparisonFilterMap` for one `expr op constant` operand.
 struct ComparisonFilterInfo
 {
     const ConstantNode * constant_node;
     ComparisonFunction function;
-    QueryTreeNodePtr original_node;
-    std::optional<Field> converted_value;
-    size_t original_index = 0;
+    QueryTreeNodePtr original_node;          /// Original query tree node of this comparison.
+    std::optional<Field> converted_value;    /// Constant converted to the column type.
+    size_t original_index = 0;               /// Position in the original AND argument list (for stable ordering).
 };
 
 using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<std::vector<ComparisonFilterInfo>>;
@@ -558,6 +559,9 @@ static std::optional<AddComparisonFilterResult> tryFoldBoundaryOrRewriteFloatFor
     return fold_boundary(*filter.converted_value);
 }
 
+/// Determine the relationship between two comparison conditions on the same expression.
+/// Returns PRUNE_LEFT/PRUNE_RIGHT when one condition subsumes the other,
+/// CONFLICT when they are contradictory, or NONE when both must be kept.
 static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo & left, const ComparisonFilterInfo & right)
 {
     if (!left.converted_value || !right.converted_value)
@@ -570,6 +574,8 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
 
     try
     {
+        /// equals vs anything: check whether the equals value satisfies the other condition.
+        /// If yes → PRUNE_RIGHT (e.g. `a = 3 AND a < 5`), if no → CONFLICT (e.g. `a = 3 AND a > 5`).
         if (lf == ComparisonFunction::EQUALS)
         {
             bool prune_right = false;
@@ -597,9 +603,14 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
             return prune_right ? ValueComparisonResult::PRUNE_RIGHT : ValueComparisonResult::CONFLICT;
         }
 
+        /// Right is equals — swap arguments and invert the result.
         if (rf == ComparisonFunction::EQUALS)
             return invertComparisonResult(compareComparisonFilters(right, left));
 
+        /// notEquals vs range: if the range already excludes the notEquals value,
+        /// the notEquals is redundant (e.g. `a != 3 AND a < 3` → PRUNE_LEFT).
+        /// Otherwise both are independent (e.g. `a != 3 AND a < 5` → NONE).
+        /// notEquals vs notEquals: duplicate → PRUNE_RIGHT, otherwise NONE.
         if (lf == ComparisonFunction::NOT_EQUALS)
         {
             bool prune_left = false;
@@ -627,31 +638,40 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
             return prune_left ? ValueComparisonResult::PRUNE_LEFT : ValueComparisonResult::NONE;
         }
 
+        /// Right is notEquals — swap arguments and invert the result.
         if (rf == ComparisonFunction::NOT_EQUALS)
             return invertComparisonResult(compareComparisonFilters(right, left));
 
+        /// Same-direction ranges (both > or both <): the tighter bound wins.
+        /// E.g. `a > 1 AND a > 3` → PRUNE_LEFT.  When values are equal, < beats <=, > beats >=.
         if (isGreaterThanCompare(lf) && isGreaterThanCompare(rf))
         {
             if (accurateLess(rc, lc))
                 return ValueComparisonResult::PRUNE_RIGHT;
             if (accurateLess(lc, rc))
                 return ValueComparisonResult::PRUNE_LEFT;
+            /// Equal values: > is stricter than >=.
             if (lf == ComparisonFunction::GREATER_OR_EQUALS)
                 return ValueComparisonResult::PRUNE_LEFT;
             return ValueComparisonResult::PRUNE_RIGHT;
         }
 
+        /// Same logic for both-less: tighter (smaller) bound wins.
         if (isLessThanCompare(lf) && isLessThanCompare(rf))
         {
             if (accurateLess(lc, rc))
                 return ValueComparisonResult::PRUNE_RIGHT;
             if (accurateLess(rc, lc))
                 return ValueComparisonResult::PRUNE_LEFT;
+            /// Equal values: < is stricter than <=.
             if (lf == ComparisonFunction::LESS_OR_EQUALS)
                 return ValueComparisonResult::PRUNE_LEFT;
             return ValueComparisonResult::PRUNE_RIGHT;
         }
 
+        /// Opposite-direction ranges (< vs >): check whether the interval is non-empty.
+        /// E.g. `a < 5 AND a > 1` → NONE, `a < 1 AND a > 5` → CONFLICT.
+        /// Both inclusive (<= and >=) allows a single-point interval: `a <= 3 AND a >= 3` → NONE.
         if (isLessThanCompare(lf))
         {
             chassert(isGreaterThanCompare(rf));
@@ -661,6 +681,7 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
             return accurateLess(rc, lc) ? ValueComparisonResult::NONE : ValueComparisonResult::CONFLICT;
         }
 
+        /// Greater vs less — swap to reuse the less-vs-greater branch above.
         chassert(isGreaterThanCompare(lf) && isLessThanCompare(rf));
         return invertComparisonResult(compareComparisonFilters(right, left));
     }
@@ -670,27 +691,36 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
     }
 }
 
+/// Insert a new comparison filter for `expression` into `filter_map`.
+/// When `enable_pruning` is true, performs type conversion, boundary folding, and
+/// pairwise comparison against existing filters for the same expression.
+/// Returns CONFLICT if a contradiction is found, REDUNDANT if the condition is
+/// always true, or ADDED otherwise.
 static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const QueryTreeNodePtr & expression,
     ComparisonFilterInfo new_filter,
     bool enable_pruning)
 {
+    /// Pruning disabled — just store the filter without analysis.
     if (!enable_pruning)
     {
         filter_map[expression].push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
     }
 
+    /// Step 1: convert the constant to the column's type for uniform comparison.
     const auto & raw_type = expression->getResultType();
     chassert(!raw_type->isNullable());
     auto expr_type = removeLowCardinality(raw_type);
 
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
+    /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
     if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
         return *result;
 
+    /// First filter for this expression — nothing to compare against.
     auto it = filter_map.find(expression);
     if (it == filter_map.end())
     {
@@ -698,6 +728,7 @@ static AddComparisonFilterResult addComparisonFilter(
         return AddComparisonFilterResult::ADDED;
     }
 
+    /// Step 3: compare pairwise against existing filters for the same expression.
     auto & info_list = it->second;
     for (size_t i = 0; i < info_list.size(); ++i)
     {
@@ -1450,6 +1481,31 @@ public:
     }
 
 private:
+    /** Optimize AND chains by analyzing comparison conditions on the same expression.
+      * This method performs two things in a single pass:
+      *
+      * (a) Comparison chain pruning (when `optimize_and_compare_chain_pruning` is enabled):
+      *     Given an AND expression where the same column appears in multiple comparisons
+      *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
+      *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
+      *     For each new condition added via `addComparisonFilter`, we:
+      *       1. Convert the constant to the column's type via `convertFieldToTypeStrict`.
+      *       2. For native integer columns, apply boundary folding and float-literal rewriting
+      *          (`tryFoldBoundaryOrRewriteFloatForIntColumn`).
+      *       3. Compare the new condition pairwise against every existing condition for the
+      *          same expression (`compareComparisonFilters`), yielding one of:
+      *            - PRUNE_LEFT:  the existing condition is redundant, remove it.
+      *            - PRUNE_RIGHT: the new condition is redundant, discard it.
+      *            - CONFLICT:    the conditions are contradictory, the whole AND is false.
+      *            - NONE:        both conditions are independent, keep both.
+      *
+      * (b) notEquals → NOT IN conversion (always active):
+      *     Chains of `expr != c1 AND expr != c2 AND ...` are merged into `expr NOT IN (c1, c2, ...)`
+      *     when the chain is long enough (controlled by `optimize_min_inequality_conjunction_chain_length`).
+      *
+      * After processing all operands, surviving filters are reassembled into the AND.
+      * Non-comparison operands are kept as-is.
+      */
     void tryOptimizeAndCompareNotEqualsChain(QueryTreeNodePtr & node)
     {
         auto & function_node = node->as<FunctionNode &>();
@@ -1464,6 +1520,7 @@ private:
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;
         QueryTreeNodePtrWithHashMap<IndexedNodes> node_to_not_equals_functions;
 
+        /// Pass 1: iterate over AND operands, classify each as comparison-with-constant or other.
         IndexedNodes all_operands;
         size_t argument_index = 0;
         for (const auto & argument : function_node.getArguments())
@@ -1473,6 +1530,7 @@ private:
                 ? toComparisonFunction(argument_function->getFunctionName())
                 : std::nullopt;
 
+            /// Not a comparison — keep as-is.
             if (!comparison_func)
             {
                 all_operands.emplace_back(argument_index, argument);
@@ -1480,6 +1538,7 @@ private:
                 continue;
             }
 
+            /// Identify which side is constant and which is the expression.
             const auto & function_arguments = argument_function->getArguments().getNodes();
             const auto & lhs = function_arguments[0];
             const auto & rhs = function_arguments[1];
@@ -1502,6 +1561,7 @@ private:
                 expression = lhs;
             }
 
+            /// Both sides are non-constant — keep as-is.
             if (!constant)
             {
                 all_operands.emplace_back(argument_index, argument);
@@ -1509,10 +1569,12 @@ private:
                 continue;
             }
 
+            /// Normalize so that expression is always on the left (e.g. `3 < a` → `a > 3`).
             auto normalized = constant_on_left ? flipComparisonFunction(*comparison_func) : *comparison_func;
             ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
             auto result = addComparisonFilter(filter_map, expression, std::move(new_filter), enable_pruning);
 
+            /// Contradiction detected — the entire AND is false.
             if (result == AddComparisonFilterResult::CONFLICT)
             {
                 auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
@@ -1523,7 +1585,7 @@ private:
             ++argument_index;
         }
 
-        /// Collect surviving filters from the filter map, separating notEquals for NOT IN conversion.
+        /// Pass 2: collect surviving filters, separating notEquals for NOT IN conversion.
         for (auto & [expression, filters] : filter_map)
         {
             for (auto & filter : filters)
@@ -1544,8 +1606,10 @@ private:
             }
         }
 
+        /// Merge notEquals chains into NOT IN where possible.
         convertNotEqualsChainToNotIn(node_to_not_equals_functions, all_operands, getContext());
 
+        /// Reassemble: sort by original index to preserve the original operand order.
         std::sort(all_operands.begin(), all_operands.end(),
             [](const auto & a, const auto & b) { return a.first < b.first; });
 
@@ -1557,6 +1621,7 @@ private:
         if (and_operands.size() == function_node.getArguments().getNodes().size())
             return;
 
+        /// All conditions were redundant — replace with true.
         if (and_operands.empty())
         {
             node = std::make_shared<ConstantNode>(1u, function_node.getResultType());
