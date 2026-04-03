@@ -10,6 +10,10 @@
 
 #include <cmath>
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -77,6 +81,79 @@ struct L2Distance
         state.sum += other_state.sum;
     }
 
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
+        __m512 sums;
+        if constexpr (is_float32)
+            sums = _mm512_setzero_ps();
+        else
+            sums = _mm512_setzero_pd();
+
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            if constexpr (is_float32)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i_x);
+                __m512 y = _mm512_loadu_ps(data_y + i_y);
+                __m512 differences = _mm512_sub_ps(x, y);
+                sums = _mm512_fmadd_ps(differences, differences, sums);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i_x);
+                __m512 y = _mm512_loadu_pd(data_y + i_y);
+                __m512 differences = _mm512_sub_pd(x, y);
+                sums = _mm512_fmadd_pd(differences, differences, sums);
+            }
+        }
+
+        if constexpr (is_float32)
+            state.sum = _mm512_reduce_add_ps(sums);
+        else
+            state.sum = _mm512_reduce_add_pd(sums);
+    }
+
+    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+        const BFloat16 * __restrict data_x,
+        const BFloat16 * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<Float32> & state)
+    {
+        __m512 sums = _mm512_setzero_ps();
+
+        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
+            __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
+            __m512 y1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
+            __m512 y2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
+
+            __m512 differences1 = _mm512_sub_ps(x1, y1);
+            __m512 differences2 = _mm512_sub_ps(x2, y2);
+            sums = _mm512_fmadd_ps(differences1, differences1, sums);
+            sums = _mm512_fmadd_ps(differences2, differences2, sums);
+        }
+
+        state.sum = _mm512_reduce_add_ps(sums);
+    }
+#endif
+
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
@@ -114,6 +191,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
+        /// Note: std::pow with a runtime exponent prevents auto-vectorization of this kernel.
         state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
     }
 
@@ -191,6 +269,100 @@ struct CosineDistance
         state.y_squared += other_state.y_squared;
     }
 
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
+
+        __m512 dot_products;
+        __m512 x_squareds;
+        __m512 y_squareds;
+
+        if constexpr (is_float32)
+        {
+            dot_products = _mm512_setzero_ps();
+            x_squareds = _mm512_setzero_ps();
+            y_squareds = _mm512_setzero_ps();
+        }
+        else
+        {
+            dot_products = _mm512_setzero_pd();
+            x_squareds = _mm512_setzero_pd();
+            y_squareds = _mm512_setzero_pd();
+        }
+
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            if constexpr (is_float32)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i_x);
+                __m512 y = _mm512_loadu_ps(data_y + i_y);
+                dot_products = _mm512_fmadd_ps(x, y, dot_products);
+                x_squareds = _mm512_fmadd_ps(x, x, x_squareds);
+                y_squareds = _mm512_fmadd_ps(y, y, y_squareds);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i_x);
+                __m512 y = _mm512_loadu_pd(data_y + i_y);
+                dot_products = _mm512_fmadd_pd(x, y, dot_products);
+                x_squareds = _mm512_fmadd_pd(x, x, x_squareds);
+                y_squareds = _mm512_fmadd_pd(y, y, y_squareds);
+            }
+        }
+
+        if constexpr (is_float32)
+        {
+            state.dot_prod = _mm512_reduce_add_ps(dot_products);
+            state.x_squared = _mm512_reduce_add_ps(x_squareds);
+            state.y_squared = _mm512_reduce_add_ps(y_squareds);
+        }
+        else
+        {
+            state.dot_prod = _mm512_reduce_add_pd(dot_products);
+            state.x_squared = _mm512_reduce_add_pd(x_squareds);
+            state.y_squared = _mm512_reduce_add_pd(y_squareds);
+        }
+    }
+
+    X86_64_SAPPHIRE_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+        const BFloat16 * __restrict data_x,
+        const BFloat16 * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<Float32> & state)
+    {
+        __m512 dot_products = _mm512_setzero_ps();
+        __m512 x_squareds = _mm512_setzero_ps();
+        __m512 y_squareds = _mm512_setzero_ps();
+
+        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            __m512 x = _mm512_loadu_ps(data_x + i_x);
+            __m512 y = _mm512_loadu_ps(data_y + i_y);
+            dot_products = _mm512_dpbf16_ps(dot_products, x, y);
+            x_squareds = _mm512_dpbf16_ps(x_squareds, x, x);
+            y_squareds = _mm512_dpbf16_ps(y_squareds, y, y);
+        }
+
+        state.dot_prod = _mm512_reduce_add_ps(dot_products);
+        state.x_squared = _mm512_reduce_add_ps(x_squareds);
+        state.y_squared = _mm512_reduce_add_ps(y_squareds);
+    }
+#endif
+
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
@@ -237,8 +409,6 @@ MULTITARGET_FUNCTION_HEADER(
     size_t row_count,
     const typename Kernel::ConstParams & params)
 {
-    /// Multiple independent accumulators to break the data dependency chain and let
-    /// the CPU execute SIMD additions in parallel across registers.
     constexpr size_t unroll_count = 128 / sizeof(ResultType);
 
     ColumnArray::Offset prev = 0;
@@ -260,10 +430,8 @@ MULTITARGET_FUNCTION_HEADER(
                     params);
 
         typename Kernel::template State<ResultType> state;
-        /// Skip the combine loop for short arrays where no unrolled block was processed.
-        if (unrolled_end > 0)
-            for (size_t s = 0; s < unroll_count; ++s)
-                Kernel::template combine<ResultType>(state, partial[s], params);
+        for (size_t s = 0; s < unroll_count; ++s)
+            Kernel::template combine<ResultType>(state, partial[s], params);
 
         for (; i < count; ++i)
             Kernel::template accumulate<ResultType>(
@@ -318,8 +486,7 @@ MULTITARGET_FUNCTION_HEADER(
     {
         const auto off = offsets[row];
         const size_t count = off - prev;
-        /// count == array_size is guaranteed by the caller.
-        (void)count;
+        chassert(count == array_size);
 
         typename Kernel::template State<ResultType> partial[unroll_count];
         size_t i = 0;
@@ -334,9 +501,8 @@ MULTITARGET_FUNCTION_HEADER(
                     params);
 
         typename Kernel::template State<ResultType> state;
-        if (unrolled_end > 0)
-            for (size_t s = 0; s < unroll_count; ++s)
-                Kernel::template combine<ResultType>(state, partial[s], params);
+        for (size_t s = 0; s < unroll_count; ++s)
+            Kernel::template combine<ResultType>(state, partial[s], params);
 
         for (; i < array_size; ++i)
             Kernel::template accumulate<ResultType>(
@@ -569,6 +735,58 @@ private:
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
 
+        /// Hand-written AVX-512 intrinsics for L2/Cosine with Float32/Float64/BFloat16.
+        /// These outperform compiler auto-vectorization for these specific kernels.
+#if USE_MULTITARGET_CODE
+        if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
+        {
+            if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
+                       || (std::is_same_v<ResultType, Float64> && std::is_same_v<LeftType, Float64> && std::is_same_v<RightType, Float64>))
+            {
+                if (isArchSupported(TargetArch::x86_64_v4))
+                {
+                    size_t prev = 0;
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                    {
+                        const auto off = offsets_y[row];
+                        size_t i = 0;
+                        size_t j = prev;
+                        typename Kernel::template State<ResultType> state;
+                        Kernel::template accumulateCombineF32F64<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, j, state);
+                        for (; j < off; ++i, ++j)
+                            Kernel::template accumulate<ResultType>(
+                                state, data_x[i], data_y[j], kernel_params);
+                        result_data[row] = Kernel::finalize(state, kernel_params);
+                        prev = off;
+                    }
+                    return result;
+                }
+            }
+            else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
+            {
+                if (isArchSupported(TargetArch::x86_64_sapphirerapids))
+                {
+                    size_t prev = 0;
+                    for (size_t row = 0; row < input_rows_count; ++row)
+                    {
+                        const auto off = offsets_y[row];
+                        size_t i = 0;
+                        size_t j = prev;
+                        typename Kernel::template State<Float32> state;
+                        Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, j, state);
+                        for (; j < off; ++i, ++j)
+                            Kernel::template accumulate<Float32>(
+                                state, static_cast<Float32>(data_x[i]), static_cast<Float32>(data_y[j]), kernel_params);
+                        result_data[row] = Kernel::finalize(state, kernel_params);
+                        prev = off;
+                    }
+                    return result;
+                }
+            }
+        }
+#endif
+
+        /// Generic fallback: pre-convert to ResultType then use MULTITARGET auto-vectorized kernel.
         const auto [ptr_x, buf_x] = castData<ResultType>(data_x);
         const auto [ptr_y, buf_y] = castData<ResultType>(data_y);
 
