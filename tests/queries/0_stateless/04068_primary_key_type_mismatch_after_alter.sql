@@ -37,11 +37,29 @@ INSERT INTO t_pk_type_mismatch_3 VALUES ('2024-01-01', 100), ('2024-03-15', 200)
 SELECT c0, val FROM t_pk_type_mismatch_3 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_3;
 
--- Test 4: Verify that other ALTER types also work
+-- Test 4: DETACH/ATTACH with toTime and use_legacy_to_time
+-- From: https://github.com/ClickHouse/ClickHouse/issues/98135#issuecomment-3983898898
+-- The bug: toTime() resolves to different functions based on use_legacy_to_time.
+-- Creating a table with default settings (legacy=true) stores DateTime key type.
+-- DETACH + ATTACH with use_legacy_to_time=false re-evaluates toTime() as the
+-- new Time function, changing the key type. Subsequent INSERT with legacy=true
+-- would crash due to type mismatch between index serialization and evaluated key.
 DROP TABLE IF EXISTS t_pk_type_mismatch_4;
-CREATE TABLE t_pk_type_mismatch_4 (c0 Date32, c1 String DEFAULT 'x') ENGINE = MergeTree() ORDER BY (toMonday(c0));
-INSERT INTO t_pk_type_mismatch_4 (c0) VALUES ('2024-01-01');
-ALTER TABLE t_pk_type_mismatch_4 COMMENT COLUMN c1 'some comment';
-INSERT INTO t_pk_type_mismatch_4 (c0) VALUES ('2024-06-15');
-SELECT c0, c1 FROM t_pk_type_mismatch_4 ORDER BY c0;
+CREATE TABLE t_pk_type_mismatch_4 (c0 DateTime) ENGINE = MergeTree() ORDER BY (toTime(c0));
+SET use_legacy_to_time = 0;
+DETACH TABLE t_pk_type_mismatch_4;
+ATTACH TABLE t_pk_type_mismatch_4;
+SET use_legacy_to_time = 1;
+INSERT INTO TABLE t_pk_type_mismatch_4 (c0) VALUES ('2024-01-01 12:30:00');
+INSERT INTO TABLE t_pk_type_mismatch_4 (c0) VALUES ('2024-06-15 08:45:00');
+SELECT c0 FROM t_pk_type_mismatch_4 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_4;
+
+-- Test 5: Verify that other ALTER types also work
+DROP TABLE IF EXISTS t_pk_type_mismatch_5;
+CREATE TABLE t_pk_type_mismatch_5 (c0 Date32, c1 String DEFAULT 'x') ENGINE = MergeTree() ORDER BY (toMonday(c0));
+INSERT INTO t_pk_type_mismatch_5 (c0) VALUES ('2024-01-01');
+ALTER TABLE t_pk_type_mismatch_5 COMMENT COLUMN c1 'some comment';
+INSERT INTO t_pk_type_mismatch_5 (c0) VALUES ('2024-06-15');
+SELECT c0, c1 FROM t_pk_type_mismatch_5 ORDER BY c0;
+DROP TABLE t_pk_type_mismatch_5;
