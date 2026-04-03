@@ -265,9 +265,9 @@ static void registerTokenizers(TokenizerFactory & factory)
     factory.registerTokenizer(SparseGramsTokenizer::getName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
     factory.registerTokenizer(SparseGramsTokenizer::getBloomFilterIndexName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
 
-    auto unicode_word_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    auto ascii_cjk_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {
-        const auto * tokenizer_name = UnicodeWordTokenizer::getExternalName();
+        const auto * tokenizer_name = AsciiCJKTokenizer::getExternalName();
         assertParamsCount(args.size(), 1, tokenizer_name);
 
         std::vector<String> stop_words;
@@ -283,10 +283,11 @@ static void registerTokenizers(TokenizerFactory & factory)
                 stop_words.emplace_back(castAs<String>(value, "stop_word"));
         }
 
-        return std::make_unique<UnicodeWordTokenizer>(stop_words);
+        return std::make_unique<AsciiCJKTokenizer>(stop_words);
     };
 
-    factory.registerTokenizer(UnicodeWordTokenizer::getName(), ITokenizer::Type::UnicodeWord, unicode_word_creator);
+    factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
 }
 
 }
