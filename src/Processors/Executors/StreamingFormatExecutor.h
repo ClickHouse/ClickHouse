@@ -27,7 +27,7 @@ public:
         ErrorCallback on_error_ = [](const MutableColumns &, const ColumnCheckpoints, Exception & e) -> size_t { throw std::move(e); },
         size_t total_bytes_ = 0,
         size_t total_chunks_ = 0,
-        SimpleTransformPtr adding_defaults_transform_ = nullptr);
+        SimpleTransformPtr transformer_ = nullptr);
 
     /// Returns numbers of new read rows.
     size_t execute(size_t num_bytes = 0);
@@ -50,7 +50,7 @@ private:
     const Block header;
     const InputFormatPtr format;
     const ErrorCallback on_error;
-    const SimpleTransformPtr adding_defaults_transform;
+    const SimpleTransformPtr transformer;
 
     InputPort port;
     MutableColumns result_columns;

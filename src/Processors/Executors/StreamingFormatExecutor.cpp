@@ -19,11 +19,11 @@ StreamingFormatExecutor::StreamingFormatExecutor(
     ErrorCallback on_error_,
     size_t total_bytes_,
     size_t total_chunks_,
-    SimpleTransformPtr adding_defaults_transform_)
+    SimpleTransformPtr transformer_)
     : header(header_)
     , format(std::move(format_))
     , on_error(std::move(on_error_))
-    , adding_defaults_transform(std::move(adding_defaults_transform_))
+    , transformer(std::move(transformer_))
     , port(format->getPort().getHeader(), format.get())
     , result_columns(header.cloneEmptyColumns())
     , checkpoints(result_columns.size())
@@ -142,8 +142,8 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
 size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
 {
     size_t chunk_rows = chunk.getNumRows();
-    if (adding_defaults_transform)
-        adding_defaults_transform->transform(chunk);
+    if (transformer)
+        transformer->transform(chunk);
 
     preallocateResultColumns(num_bytes, chunk);
 

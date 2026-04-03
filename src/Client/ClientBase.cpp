@@ -9,6 +9,7 @@
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
+#include <Processors/Transforms/MaterializingAliasesTransform.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #if USE_CLIENT_AI
@@ -144,6 +145,7 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
+    extern const SettingsBool insert_allow_alias_columns;
     extern const SettingsBool ignore_format_null_for_explain;
 }
 
@@ -2118,6 +2120,14 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
         });
+
+        if (client_context->getSettingsRef()[Setting::insert_allow_alias_columns])
+        {
+            pipe.addSimpleTransform([&, columns_defaults = columns_description.getDefaults()](const SharedHeader & header)
+            {
+                return std::make_shared<MaterializingAliasesTransform>(header, columns_defaults, *source);
+            });
+        }
     }
 
     sendDataFromPipe(std::move(pipe), parsed_query, have_more_data);

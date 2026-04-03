@@ -1,0 +1,1 @@
+Column 'login' is an ALIAS for 'user_name'. Cannot provide values for both columns

@@ -7,6 +7,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
+#include <Processors/Transforms/MaterializingAliasesTransform.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/IStorage.h>
@@ -21,6 +23,7 @@ namespace Setting
 {
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsBool insert_allow_alias_columns;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
@@ -81,17 +84,30 @@ Pipe getSourceFromInputFormat(
     Pipe pipe(format);
 
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
-    if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && ast_insert_query->table_id && !input_function)
+
+    if (ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         const auto & columns = metadata_snapshot->getColumns();
+
         if (columns.hasDefaults())
         {
-            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
+            if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
-                return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
-            });
+                pipe.addSimpleTransform([&](const SharedHeader & cur_header)
+                {
+                    return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *format, context);
+                });
+            }
+
+            if (context->getSettingsRef()[Setting::insert_allow_alias_columns])
+            {
+                pipe.addSimpleTransform([&, columns_defaults = columns.getDefaults()](const SharedHeader & cur_header)
+                {
+                    return std::make_shared<MaterializingAliasesTransform>(cur_header, columns_defaults, *format);
+                });
+            }
         }
     }
 

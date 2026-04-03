@@ -1,0 +1,15 @@
+DUPLICATE_COLUMN
+NO_SUCH_COLUMN_IN_TABLE
+NO_SUCH_COLUMN_IN_TABLE
+DUPLICATE_COLUMN
+0	root	0
+1	zeno	10
+2	alice	20
+3	bob	30
+4	charlie	40
+5	john	50
+6	mike	60
+10	zeno	100
+20	alice	200
+50	john	500
+60	mike	600
