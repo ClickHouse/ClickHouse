@@ -270,7 +270,7 @@ class Runner:
         env = _Environment.get()
         env.JOB_NAME = job.name
         env.dump()
-        preserve_stdio = sys.stdout.isatty() and sys.stdin.isatty()
+        preserve_stdio = sys.stdin.isatty()
         if preserve_stdio:
             print("WARNING: Preserving stdio")
 
@@ -895,6 +895,7 @@ class Runner:
         path="",
         path_1="",
         workers=None,
+        workflow_input=None,
     ):
         self._load_local_env()
 
@@ -924,6 +925,23 @@ class Runner:
             self.generate_local_run_environment(
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
+
+        if workflow_input:
+            from .settings import _Settings
+
+            inputs = {}
+            for pair in workflow_input.split(","):
+                if "=" in pair:
+                    name, _, value = pair.partition("=")
+                    inputs[name.strip()] = value.strip()
+                else:
+                    print(
+                        f"WARNING: Skipping malformed --workflow-input entry [{pair}] (expected name=value)"
+                    )
+            os.makedirs(_Settings.TEMP_DIR, exist_ok=True)
+            with open(_Settings.WORKFLOW_INPUTS_FILE, "w", encoding="utf8") as f:
+                json.dump(inputs, f)
+            print(f"Workflow inputs written to [{_Settings.WORKFLOW_INPUTS_FILE}]: {inputs}")
 
         if res and (not local_run or ((pr or branch) and sha)):
             res = False

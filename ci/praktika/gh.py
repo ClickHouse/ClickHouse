@@ -620,6 +620,36 @@ class GH:
                 os.unlink(temp_file_path)
         return None
 
+    @staticmethod
+    def get_pr_url_by_branch(branch, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state open"
+        url = Shell.get_output(get_url_cmd)
+        if not url:
+            print(f"WARNING: No open PR found for branch [{branch}] - searching merged")
+            get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state merged"
+            url = Shell.get_output(get_url_cmd)
+        if not url:
+            print(f"ERROR: PR not found for branch [{branch}]")
+        return url
+
+    @staticmethod
+    def is_latest_release_branch(branch, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        latest = Shell.get_output(
+            f'gh pr list --label release --repo {repo} --search "sort:created" -L1 --json headRefName'
+        )
+        if latest:
+            latest_branch = json.loads(latest)[0]["headRefName"]
+        else:
+            latest_branch = ""
+        print(
+            f"Latest release branch [{latest_branch}], checking [{branch}]: is_latest={latest_branch == branch}"
+        )
+        return latest_branch == branch
+
     @classmethod
     def convert_to_gh_status(cls, status):
         if status in (
