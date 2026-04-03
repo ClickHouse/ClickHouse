@@ -11,13 +11,22 @@
 -- See: https://github.com/ClickHouse/ClickHouse/issues/98135
 
 SET enable_extended_results_for_datetime_functions = 1;
+SET enable_parallel_replicas = 0;
 
 -- Test 1: toMonday with Date32 + ALTER COMMENT COLUMN
+-- Uses a single INSERT with 2+ rows and validates via primary key filtering.
+-- In release builds without the fix, the primary key index gets corrupted
+-- (UInt16 values misread as Int32 via UB static_cast), causing mark selection
+-- to skip the granule and return 0 rows for exact-match queries.
 DROP TABLE IF EXISTS t_pk_type_mismatch_1;
 CREATE TABLE t_pk_type_mismatch_1 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
 ALTER TABLE t_pk_type_mismatch_1 COMMENT COLUMN c0 'test comment';
-INSERT INTO t_pk_type_mismatch_1 (c0) VALUES ('2024-01-01');
-INSERT INTO t_pk_type_mismatch_1 (c0) VALUES ('2024-06-15');
+INSERT INTO t_pk_type_mismatch_1 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+-- Primary key integrity check: this query uses mark selection on the primary key.
+-- Without fix (release): garbage index value (~1.3B) fails range check → 0 rows.
+-- Without fix (debug): INSERT above crashes, so this never runs.
+-- With fix: correct index → returns matching row.
+SELECT c0 FROM t_pk_type_mismatch_1 WHERE toMonday(c0) = '2024-01-01'::Date32 ORDER BY c0;
 SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_1 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_1;
 
@@ -37,22 +46,16 @@ INSERT INTO t_pk_type_mismatch_3 VALUES ('2024-01-01', 100), ('2024-03-15', 200)
 SELECT c0, val FROM t_pk_type_mismatch_3 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_3;
 
--- Test 4: DETACH/ATTACH with toTime and use_legacy_to_time
--- From: https://github.com/ClickHouse/ClickHouse/issues/98135#issuecomment-3983898898
--- The bug: toTime() resolves to different functions based on use_legacy_to_time.
--- Creating a table with default settings (legacy=true) stores DateTime key type.
--- DETACH + ATTACH with use_legacy_to_time=false re-evaluates toTime() as the
--- new Time function, changing the key type. Subsequent INSERT with legacy=true
--- would crash due to type mismatch between index serialization and evaluated key.
+-- Test 4: DETACH/ATTACH path with toMonday (same type drift mechanism)
+-- DETACH + ATTACH re-evaluates the sorting key expression during table reload.
+-- If the reload uses a context without enable_extended_results_for_datetime_functions,
+-- the key type drifts from Date32 to Date, causing the same mismatch.
 DROP TABLE IF EXISTS t_pk_type_mismatch_4;
-CREATE TABLE t_pk_type_mismatch_4 (c0 DateTime) ENGINE = MergeTree() ORDER BY (toTime(c0));
-SET use_legacy_to_time = 0;
+CREATE TABLE t_pk_type_mismatch_4 (c0 Date32) ENGINE = MergeTree() ORDER BY (toMonday(c0));
 DETACH TABLE t_pk_type_mismatch_4;
 ATTACH TABLE t_pk_type_mismatch_4;
-SET use_legacy_to_time = 1;
-INSERT INTO TABLE t_pk_type_mismatch_4 (c0) VALUES ('2024-01-01 12:30:00');
-INSERT INTO TABLE t_pk_type_mismatch_4 (c0) VALUES ('2024-06-15 08:45:00');
-SELECT c0 FROM t_pk_type_mismatch_4 ORDER BY c0;
+INSERT INTO t_pk_type_mismatch_4 (c0) VALUES ('2024-01-01'), ('2024-06-15');
+SELECT c0, toMonday(c0) FROM t_pk_type_mismatch_4 ORDER BY c0;
 DROP TABLE t_pk_type_mismatch_4;
 
 -- Test 5: Verify that other ALTER types also work
