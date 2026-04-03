@@ -24,8 +24,8 @@
 -- Test very large and very small numbers
 10000000000
 0.0000000001
-123456789012344995840
-0
+123456789012345000000
+1.23456789012345e-20
 -- Test large-magnitude numbers fall back to shortest representation (no exception)
 1e61
 -1e62
@@ -59,3 +59,8 @@ nan
 1.09375
 -- Regression: negative zero with precision does not pad unnecessary decimal zeros
 -0
+-- Regression: default repr already satisfies precision, no ToFixed artefacts
+toFloat32(0.1) with precision=10 should give 0.1, not 0.1000000015
+0.1
+toFloat32(1.23e20) with precision=1 should give the round-trip integer, not the exact float bits
+123000000000000000000

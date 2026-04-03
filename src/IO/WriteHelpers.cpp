@@ -391,18 +391,59 @@ void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
 
     using Converter = double_conversion::DoubleToStringConverter;
     const int max_fixed_digits = Converter::kMaxFixedDigitsAfterPoint;
-    if (settings.float_precision > max_fixed_digits)
+    if (settings.float_precision > static_cast<UInt64>(max_fixed_digits))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Too high precision requested for Float, must not be more than {}, got {}",
-            max_fixed_digits, static_cast<int>(settings.float_precision));
+            max_fixed_digits, settings.float_precision);
 
-    /// ToFixed returns false for values with magnitude >= 10^kMaxFixedDigitsBeforePoint.
-    /// Fall back to the default shortest round-trip representation for such values.
+    /// First compute the default shortest round-trip representation.
+    /// If it already has fewer or equal decimal places than requested, use it directly
+    /// to avoid introducing floating-point artefacts from ToFixed.
+    ///
+    /// For example, toFloat32(0.1) has a default of "0.1" (1 decimal place).
+    /// With precision=10, using ToFixed on the exact double value would give
+    /// "0.1000000015", which is worse than the faithful "0.1".
+    ///
+    /// Similarly, toFloat32(1.23e20) has a default of "123000000000000000000" (0 decimal
+    /// places). With precision=1, ToFixed on the exact value gives "122999999650278146048",
+    /// whereas the default already satisfies the precision constraint.
+    char default_buf[64];
+    const size_t default_len = writeFloatTextFastPath(x, default_buf);
+
+    /// Count decimal places in the default representation.
+    /// Values in scientific notation (containing 'e'/'E') are always used as-is.
+    int default_decimals = 0;
+    bool has_dot = false;
+    bool has_exp = false;
+    for (size_t i = 0; i < default_len; ++i)
+    {
+        const char c = default_buf[i];
+        if (c == '.')
+            has_dot = true;
+        else if (c == 'e' || c == 'E')
+        {
+            has_exp = true;
+            break;
+        }
+        else if (has_dot)
+            ++default_decimals;
+    }
+
+    if (has_exp || default_decimals <= static_cast<int>(settings.float_precision))
+    {
+        buf.write(default_buf, default_len);
+        return;
+    }
+
+    /// The default representation has more decimal places than requested.
+    /// Use ToFixed to truncate, but only for values whose magnitude fits in fixed notation.
+    /// ToFixed returns false for values with magnitude >= 10^kMaxFixedDigitsBeforePoint,
+    /// so fall back to the default representation for such values.
     static const double max_fixed_magnitude = std::pow(10.0, Converter::kMaxFixedDigitsBeforePoint);
     const double x_double = static_cast<double>(x);
     if (std::abs(x_double) >= max_fixed_magnitude)
     {
-        writeFloatText(x, buf);
+        buf.write(default_buf, default_len);
         return;
     }
 

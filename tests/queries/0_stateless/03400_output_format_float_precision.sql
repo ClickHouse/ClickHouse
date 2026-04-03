@@ -91,3 +91,11 @@ SELECT (1.1::BFloat16);
 SELECT '-- Regression: negative zero with precision does not pad unnecessary decimal zeros';
 SET output_format_float_precision = 1;
 SELECT (-0.0::BFloat16);
+
+SELECT '-- Regression: default repr already satisfies precision, no ToFixed artefacts';
+SELECT 'toFloat32(0.1) with precision=10 should give 0.1, not 0.1000000015';
+SET output_format_float_precision = 10;
+SELECT toFloat32(0.1);
+SELECT 'toFloat32(1.23e20) with precision=1 should give the round-trip integer, not the exact float bits';
+SET output_format_float_precision = 1;
+SELECT toFloat32(1.23e20);
