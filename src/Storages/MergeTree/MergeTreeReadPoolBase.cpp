@@ -17,6 +17,7 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
+    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
@@ -316,7 +317,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-    patch_join_cache->init(ranges_in_patch_parts, pool_settings.threads);
+    patch_join_cache->init(ranges_in_patch_parts, settings[Setting::apply_patch_parts_join_cache_buckets]);
 
     /// Collect info for pre-building join cache for each unique Join-mode patch part.
     struct PatchReaderInfo
@@ -427,8 +428,8 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
         };
 
         /// Read per-mark min/max _block_number and _block_offset from the data parts' minmax indexes
-        /// to precisely filter patch ranges. This is cheap — reads only the index, not the column data.
-        std::set<UInt64> block_number_boundaries;
+        /// to filter patch ranges by overlap. This is cheap — reads only the index, not the column data.
+        std::vector<MinMaxStat> data_block_number_ranges;
         MinMaxStat data_block_offset_range{std::numeric_limits<UInt64>::max(), 0};
 
         for (size_t part_idx = 0; part_idx < parts_ranges.size(); ++part_idx)
@@ -455,10 +456,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             if (block_number_stats)
             {
                 for (const auto & stat : *block_number_stats)
-                {
-                    block_number_boundaries.insert(stat.min);
-                    block_number_boundaries.insert(stat.max);
-                }
+                    data_block_number_ranges.push_back(stat);
             }
 
             auto block_offset_stats = getPatchMinMaxStats(
@@ -474,9 +472,11 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             }
         }
 
-        std::vector<UInt64> data_block_numbers(block_number_boundaries.begin(), block_number_boundaries.end());
+        /// Sort intervals by min so we can binary-search for overlap.
+        std::sort(data_block_number_ranges.begin(), data_block_number_ranges.end(),
+            [](const MinMaxStat & a, const MinMaxStat & b) { return a.min < b.min; });
 
-        patch_join_cache->build(reader_factory, stats_factory, data_block_numbers, data_block_offset_range, pool_settings.threads);
+        patch_join_cache->build(reader_factory, stats_factory, data_block_number_ranges, data_block_offset_range, pool_settings.threads);
     }
 }
 

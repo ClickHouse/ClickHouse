@@ -70,7 +70,7 @@ const PatchJoinCache::Entries & PatchJoinCache::getEntries(const String & patch_
 void PatchJoinCache::build(
     const ReaderFactory & reader_factory,
     const StatsFactory & stats_factory,
-    const std::vector<UInt64> & data_block_numbers,
+    const std::vector<MinMaxStat> & data_block_number_ranges,
     const MinMaxStat & data_block_offset_range,
     size_t num_threads)
 {
@@ -81,8 +81,8 @@ void PatchJoinCache::build(
     }
 
     /// Flatten all ranges into work items: (patch_name, single_range).
-    /// Use minmax stats to skip patch ranges whose block_number range
-    /// doesn't contain any of the actual block numbers from the data being queried.
+    /// Use minmax stats to skip patch ranges whose block_number/block_offset range
+    /// doesn't overlap with any of the data ranges being queried.
     struct ReadWorkItem
     {
         String patch_name;
@@ -99,13 +99,28 @@ void PatchJoinCache::build(
             auto it = stats.find(range);
             if (it != stats.end())
             {
-                if (!data_block_numbers.empty())
+                if (!data_block_number_ranges.empty())
                 {
-                    /// Check if any actual block number falls within this patch range's [min, max].
-                    /// data_block_numbers is sorted, so use lower_bound.
+                    /// Check if any data interval overlaps with this patch range's [min, max].
+                    /// data_block_number_ranges is sorted by min, so we find the first interval
+                    /// whose min > patch_max. All intervals before that could potentially overlap
+                    /// (those with max >= patch_min).
                     const auto & bn_stat = it->second.block_number_stat;
-                    auto lb = std::lower_bound(data_block_numbers.begin(), data_block_numbers.end(), bn_stat.min);
-                    if (lb == data_block_numbers.end() || *lb > bn_stat.max)
+                    auto ub = std::upper_bound(
+                        data_block_number_ranges.begin(), data_block_number_ranges.end(), bn_stat.max,
+                        [](UInt64 val, const MinMaxStat & s) { return val < s.min; });
+
+                    bool has_overlap = false;
+                    for (auto range_it = data_block_number_ranges.begin(); range_it != ub; ++range_it)
+                    {
+                        if (intersects(bn_stat, *range_it))
+                        {
+                            has_overlap = true;
+                            break;
+                        }
+                    }
+
+                    if (!has_overlap)
                         continue;
                 }
 
@@ -237,19 +252,20 @@ void PatchJoinCache::build(
     {
         String patch_name;
         size_t bucket;
+        Entry * entry;  /// Stable pointer precomputed before parallel phase.
     };
 
     std::vector<FillWorkItem> fill_items;
     for (const auto & [patch_name, entries] : cache)
         for (size_t b = 0; b < num_buckets; ++b)
-            fill_items.push_back({patch_name, b});
+            fill_items.push_back({patch_name, b, entries[b].get()});
 
     auto fill_task = [&](size_t begin, size_t end)
     {
         for (size_t fi = begin; fi < end; ++fi)
         {
             const auto & item = fill_items[fi];
-            auto & entry = *cache[item.patch_name][item.bucket];
+            auto & entry = *item.entry;
 
             for (size_t t = 0; t < actual_threads; ++t)
             {

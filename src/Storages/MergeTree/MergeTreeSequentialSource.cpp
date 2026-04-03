@@ -250,7 +250,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             };
 
             /// Read per-mark min/max _block_number and _block_offset from the data part's minmax indexes.
-            std::vector<UInt64> data_block_numbers;
+            std::vector<MinMaxStat> data_block_number_ranges;
             MinMaxStat data_block_offset_range{std::numeric_limits<UInt64>::max(), 0};
             {
                 auto reader_settings_stats = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings());
@@ -259,14 +259,13 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
                 if (block_number_stats)
                 {
-                    std::set<UInt64> boundaries;
                     for (const auto & stat : *block_number_stats)
-                    {
-                        boundaries.insert(stat.min);
-                        boundaries.insert(stat.max);
-                    }
-                    data_block_numbers.assign(boundaries.begin(), boundaries.end());
+                        data_block_number_ranges.push_back(stat);
                 }
+
+                /// Sort by min for binary-search-based overlap check in build.
+                std::sort(data_block_number_ranges.begin(), data_block_number_ranges.end(),
+                    [](const MinMaxStat & a, const MinMaxStat & b) { return a.min < b.min; });
 
                 auto block_offset_stats = getPatchMinMaxStats(
                     data_part, mark_ranges, BlockOffsetColumn::name, reader_settings_stats);
@@ -281,7 +280,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 }
             }
 
-            patch_join_cache->build(reader_factory, stats_factory, data_block_numbers, data_block_offset_range, /*num_threads=*/ 1);
+            patch_join_cache->build(reader_factory, stats_factory, data_block_number_ranges, data_block_offset_range, /*num_threads=*/ 1);
         }
     }
 
