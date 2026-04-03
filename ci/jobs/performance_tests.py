@@ -494,6 +494,7 @@ def main():
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
+                "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
@@ -549,6 +550,8 @@ def main():
             f"cp -al {db_path} {perf_right}/db ||:",
             f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
             f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
+            # Symlink user_files from the repository into both servers' user_files directories
+            f'for f in ./tests/performance/user_files/*; do [ -e "$f" ] || continue; ln -sf "$(readlink -f "$f")" {perf_left}/db/user_files/; ln -sf "$(readlink -f "$f")" {perf_right}/db/user_files/; done',
         ]
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
@@ -611,7 +614,7 @@ def main():
 
         def run_tests():
             # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml"}
+            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
                 max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(

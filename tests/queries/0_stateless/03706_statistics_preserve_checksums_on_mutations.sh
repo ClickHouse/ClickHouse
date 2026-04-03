@@ -14,6 +14,8 @@ create table mt (key Int, value String) engine=MergeTree() order by key settings
   min_bytes_for_wide_part=0,
   -- otherwise sparse info will be different, since for INSERTs the sparse ratio is calculated for the whole block, while for mutations for each granula (FIXME?)
   ratio_of_defaults_for_sparse_serialization=1,
+  map_serialization_version='basic',
+  map_serialization_version_for_zero_level_parts='basic',
   -- This uncovers the bug
   auto_statistics_types='uniq,minmax,countmin,tdigest'
 ;

@@ -8,10 +8,15 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnSet.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -128,8 +133,6 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
     {
         case RPNElement::FUNCTION_OR:
         case RPNElement::FUNCTION_NOT:
-        case RPNElement::FUNCTION_NOT_IN:
-        case RPNElement::FUNCTION_NOT_EQUALS:
         case RPNElement::FUNCTION_HAS_ANY_TOKENS:
         {
             return true;
@@ -157,14 +160,12 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "equals"
-        || function_name == "notEquals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
         || function_name == "mapContainsValue"
         || function_name == "mapContainsValueLike"
         || function_name == "has"
         || function_name == "like"
-        || function_name == "notLike"
         || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
@@ -259,11 +260,9 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
-         RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
          RPNElement::FUNCTION_IN,
-         RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MATCH});
 }
 
@@ -296,19 +295,15 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             bool exists_in_granule = granule->hasAllQueryTokens(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
         }
-        else if (element.function == RPNElement::FUNCTION_EQUALS || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+        else if (element.function == RPNElement::FUNCTION_EQUALS)
         {
             chassert(element.text_search_queries.size() == 1);
             const auto & text_search_query = element.text_search_queries.front();
             bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
             rpn_stack.emplace_back(exists_in_granule, true);
 
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
-                rpn_stack.back() = !rpn_stack.back();
         }
-        else if (element.function == RPNElement::FUNCTION_MATCH
-            || element.function == RPNElement::FUNCTION_IN
-            || element.function == RPNElement::FUNCTION_NOT_IN)
+        else if (element.function == RPNElement::FUNCTION_MATCH || element.function == RPNElement::FUNCTION_IN)
         {
             bool exists_in_granule = false;
 
@@ -322,8 +317,6 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             }
 
             rpn_stack.emplace_back(exists_in_granule, true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN)
-                rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
@@ -430,27 +423,20 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseMapElementKeyNode(function, out))
             return true;
 
+        if (traverseJSONSubcolumnKeyNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
-        if (functionIsInOrGlobalInOperator(function_name))
+        if ((function_name == "in" || function_name == "globalIn")
+            && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
-            if (tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
-            {
-                if (function_name == "notIn")
-                {
-                    out.function = RPNElement::FUNCTION_NOT_IN;
-                    return true;
-                }
-                else if (function_name == "in")
-                {
-                    out.function = RPNElement::FUNCTION_IN;
-                    return true;
-                }
-            }
+            out.function = RPNElement::FUNCTION_IN;
+            return true;
         }
         else if (isSupportedFunction(function_name))
         {
@@ -462,7 +448,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                 if (traverseFunctionNode(function, lhs_argument, const_type, const_value, out))
                     return true;
             }
-            else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+            else if (lhs_argument.tryGetConstant(const_value, const_type) && function_name == "equals")
             {
                 if (traverseFunctionNode(function, rhs_argument, const_type, const_value, out))
                     return true;
@@ -521,6 +507,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
     }
 
+    /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
+    if (!has_index_column && !has_map_keys_column && !has_map_values_column)
+    {
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
+        {
+            auto & [map_column_name, _] = *parsed;
+            if (header.has(fmt::format("mapValues({})", map_column_name))
+                && value_field.getType() == Field::Types::String
+                && !value_field.safeGet<String>().empty())
+            {
+                has_index_column = true;
+                direct_read_mode = getHintOrNoneMode();
+            }
+        }
+    }
+
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
@@ -559,13 +561,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         }
 
         return false;
-    }
-    if (function_name == "notEquals")
-    {
-        auto tokens = stringToTokens(value_field);
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-        return true;
     }
     if (function_name == "equals")
     {
@@ -617,14 +612,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
-    if (function_name == "startsWith")
+    if (function_name == "startsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
-    if (function_name == "endsWith")
+    if (function_name == "endsWith" && tokenizer->supportsStringLike())
     {
         auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_EQUALS;
@@ -637,14 +632,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         std::vector<String> tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
-        return true;
-    }
-    if (function_name == "notLike" && tokenizer->supportsStringLike())
-    {
-        std::vector<String> tokens = stringLikeToTokens(value_field);
-
-        out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
@@ -686,8 +673,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
+    /// Also handles map subcolumn references like `func(m.key_<serialized_key>, ...)`.
     /// It can be an arbitrary function that returns 0 for the default value of the map value type.
-    /// It is true because `arrayElement` return default value if key doesn't exist in the map,
+    /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
 
     const auto * dag_node = function_node.getDAGNode();
@@ -704,47 +692,81 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     auto required_column = required_columns.front();
     auto output_column_name = outputs.front()->result_name;
 
-    if (!isMap(required_column.type) || !header.has(fmt::format("mapKeys({})", required_column.name)))
-        return false;
-
     std::optional<String> key_const_value;
-    std::vector<const ActionsDAG::Node *> stack;
-    stack.push_back(outputs.front());
 
-    /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
-    while (!stack.empty())
+    if (isMap(required_column.type) && header.has(fmt::format("mapKeys({})", required_column.name)))
     {
-        const auto * node = stack.back();
-        stack.pop_back();
+        /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
+        std::vector<const ActionsDAG::Node *> stack;
+        stack.push_back(outputs.front());
 
-        if (node->type == ActionsDAG::ActionType::FUNCTION
-            && node->children.size() == 2
-            && node->function_base
-            && node->function_base->getName() == "arrayElement")
+        while (!stack.empty())
         {
-            if (key_const_value.has_value())
-                return false;
+            const auto * node = stack.back();
+            stack.pop_back();
 
-            const auto & map_argument = node->children[0];
-            const auto & const_key_argument = node->children[1];
+            if (node->type == ActionsDAG::ActionType::FUNCTION
+                && node->children.size() == 2
+                && node->function_base
+                && node->function_base->getName() == "arrayElement")
+            {
+                if (key_const_value.has_value())
+                    return false;
 
-            if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
-                return false;
+                const auto & map_argument = node->children[0];
+                const auto & const_key_argument = node->children[1];
 
-            if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
-                return false;
+                if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
+                    return false;
 
-            key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                    return false;
+
+                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+            }
+            else
+            {
+                for (const auto & child : node->children)
+                    stack.push_back(child);
+            }
         }
-        else
-        {
-            for (const auto & child : node->children)
-                stack.push_back(child);
-        }
+    }
+    else
+    {
+        /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
+        auto parsed = tryParseMapSubcolumnName(required_column.name);
+        if (!parsed)
+            return false;
+
+        auto & [map_column_name, serialized_key] = *parsed;
+        if (!header.has(fmt::format("mapKeys({})", map_column_name)))
+            return false;
+
+        key_const_value = std::move(serialized_key);
     }
 
     if (!key_const_value.has_value())
         return false;
+
+    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
+    /// The Set may not be ready yet because it is built later during query execution.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+    }
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
@@ -764,15 +786,24 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
-    if (!node.isFunction())
+    /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
+        {
+            const auto column_name = function.getArgumentAt(0).getColumnName();
+            return header.has(fmt::format("mapValues({})", column_name));
+        }
         return false;
+    }
 
-    const auto function = node.toFunctionNode();
-    if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+    /// Handle `map.key_<serialized_key>` subcolumn form.
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    if (!parsed)
         return false;
-
-    const auto column_name = function.getArgumentAt(0).getColumnName();
-    return header.has(fmt::format("mapValues({})", column_name));
+    auto & [map_column_name, serialized_key] = *parsed;
+    return header.has(fmt::format("mapValues({})", map_column_name));
 }
 
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
@@ -785,6 +816,72 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
+}
+
+bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    /// Handle functions like `func(json.some.path, ...)` where `json.some.path`
+    /// is a plain INPUT node referencing a JSON subcolumn.
+    /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
+
+    const auto * dag_node = function_node.getDAGNode();
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
+        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+        return false;
+
+    auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
+    auto required_columns = subdag.getRequiredColumns();
+    const auto & outputs = subdag.getOutputs();
+
+    if (required_columns.size() != 1 || outputs.size() != 1)
+        return false;
+
+    auto required_column = required_columns.front();
+    auto output_column_name = outputs.front()->result_name;
+
+    /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header);
+    if (!json_info)
+        return false;
+
+    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
+    /// The Set may not be ready yet because it is built later during query execution.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+    }
+
+    /// Evaluate the function on a default column value.
+    /// If the function returns true for the default value (what we'd get when the path is missing),
+    /// we cannot safely skip the granule.
+    Block block{{required_column.type->createColumnConstWithDefaultValue(1),
+                 required_column.type, required_column.name}};
+    ExpressionActions actions(std::move(subdag));
+    actions.execute(block);
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    if (result_column->getBool(0))
+        return false;
+
+    auto tokens = stringToTokens(Field(json_info->path));
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        "JSONPathExists", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
 }
 
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
@@ -831,8 +928,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     Columns columns = prepared_set->getSetElements();
-    const auto & set_column = *columns[*set_key_position];
+    /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
 
+    if (*set_key_position >= columns.size())
+        return false;
+
+    const auto & set_column = *columns[*set_key_position];
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 

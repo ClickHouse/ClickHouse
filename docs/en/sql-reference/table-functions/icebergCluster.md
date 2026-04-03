@@ -17,7 +17,7 @@ Allows processing files from Apache [Iceberg](https://iceberg.apache.org/) in pa
 ## Syntax {#syntax}
 
 ```sql
-icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
 icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
 
 icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -31,6 +31,7 @@ icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - Description of all other arguments coincides with description of arguments in equivalent [iceberg](/sql-reference/table-functions/iceberg.md) table function.
+- An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 **Returned value**
 
