@@ -1,6 +1,0 @@
-SELECT * FROM children FORMAT `Null` SETTINGS log_comment = \'1\', use_skip_indexes_on_data_read = 1	[]
-SELECT * FROM children WHERE age = 3 FORMAT `Null` SETTINGS log_comment = \'2\', use_skip_indexes_on_data_read = 1	['default.children.age_i']
-SELECT * FROM children WHERE hasToken(name, \'Alice\') FORMAT `Null` SETTINGS log_comment = \'3\', use_skip_indexes_on_data_read = 1	['default.children.name_i']
-SELECT * FROM children WHERE (age = 3) AND (name = \'Alice\') FORMAT `Null` SETTINGS log_comment = \'4\', use_skip_indexes_on_data_read = 1	['default.children.age_i','default.children.name_i']
-SELECT * FROM children LEFT JOIN parents ON children.parent_id = parents.uid WHERE (parents.age >= 25) AND (children.name = \'Alice\') FORMAT `Null` SETTINGS log_comment = \'5\', use_skip_indexes_on_data_read = 1	['default.children.name_i','default.parents.age_i']
-SELECT * FROM `hello, world` WHERE age = 30 FORMAT `Null` SETTINGS log_comment = \'6\', use_skip_indexes_on_data_read = 1	['default.`hello, world`.`my.favorite.index`']

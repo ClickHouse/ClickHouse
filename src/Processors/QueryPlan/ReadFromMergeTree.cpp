@@ -1972,16 +1972,17 @@ void ReadFromMergeTree::buildIndexes(
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
         auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(query_context));
 
-        /// pass empty filter when skipping partition pruning so the objects exist but useless
-        ActionsDAGWithInversionPushDown empty_filter(nullptr, query_context);
-        const auto & effective_filter = skip_partition_pruning_ ? empty_filter : filter_dag;
-        indexes->minmax_idx_condition.emplace(effective_filter, query_context, minmax_columns_names, minmax_expression_actions);
+        bool skip_partition_analysis = skip_partition_pruning_ || !settings[Setting::use_partition_pruning];
+        indexes->minmax_idx_condition.emplace(
+            filter_dag, query_context, minmax_columns_names, minmax_expression_actions,
+            /* single_point_ = */ false,
+            /* skip_analysis_ = */ skip_partition_analysis);
         indexes->partition_pruner.emplace(
             metadata_snapshot,
-            effective_filter,
+            filter_dag,
             query_context,
             false /* strict */,
-            !settings[Setting::use_partition_pruning] /* skip_analysis */);
+            skip_partition_analysis);
     }
 
     indexes->part_values
@@ -2479,7 +2480,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .indexes = *indexes,
         .top_k_filter_info = top_k_filter_info,
         .reader_settings = reader_settings,
-        .storage_id = data.getStorageID(),
         .log = log,
         .num_streams = num_streams,
         .find_exact_ranges = find_exact_ranges,
