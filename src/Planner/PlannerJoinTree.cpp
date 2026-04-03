@@ -2593,8 +2593,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     PreparedJoinStorage prepared_join;
     /// `JoinStepLogicalLookup` is not serializable, so it cannot be used when the
     /// query is planned for execution with parallel replicas on the initiator.
-    bool allow_storage_join = allow_lookup_join
-        && right_join_tree_query_plan.used_row_policies.empty()
+    bool allow_storage_join = right_join_tree_query_plan.used_row_policies.empty()
         && right_join_tree_query_plan.stage == QueryProcessingStage::FetchColumns
         && right_join_tree_query_plan.useful_sets.empty();
     if (allow_storage_join)
