@@ -318,11 +318,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// (UInt8/Int8 have at most 256 distinct values) and LowCardinality.
         && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isUInt8()
         && !WhichDataType(removeNullable(pipeline.getHeader().getByName(params.keys[0]).type)).isInt8()
-        && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality()
-        /// TODO: Aggregate function combinators (-If, -Array, -State, etc.) not supported yet.
-        && std::none_of(params.aggregates.begin(),
-                        params.aggregates.end(),
-                        [](const auto & agg) { return agg.function->getNestedFunction() != nullptr; });
+        && !pipeline.getHeader().getByName(params.keys[0]).type->lowCardinality();
 
     if (use_sharded_aggregation)
     {

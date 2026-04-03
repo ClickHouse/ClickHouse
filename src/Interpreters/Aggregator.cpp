@@ -1947,9 +1947,6 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        /// TODO: Combinators (-If, -Array, -State) are not supported yet.
-        chassert(aggregate_functions[i]->getNestedFunction() == nullptr);
-
         for (auto pos : aggregates_positions[i])
         {
             auto it = materialized_by_position.find(pos);
@@ -2013,10 +2010,17 @@ void Aggregator::prepareInstructionsForSharding(
 
             auto & instruction = instructions[i];
             instruction.that = aggregate_functions[i];
-            instruction.batch_that = aggregate_functions[i];
             instruction.state_offset = offsets_of_aggregate_states[i];
 
-            /// TODO: We do not support -Array combinator for sharded aggregation yet
+            /// Unnest consecutive trailing -State combinators so batch calls
+            /// go directly to the inner function.
+            const auto * batch_that = aggregate_functions[i];
+            while (const auto * func = typeid_cast<const AggregateFunctionState *>(batch_that))
+                batch_that = func->getNestedFunction().get();
+            instruction.batch_that = batch_that;
+
+            /// TODO: Add batch-optimized -Array support (addBatchArrayForRows).
+            /// For now, -Array works correctly via per-row add fallback.
             instruction.offsets = nullptr;
 
             /// TODO: We currently materialize sparse argument columns and do not support sparse-aware execution
