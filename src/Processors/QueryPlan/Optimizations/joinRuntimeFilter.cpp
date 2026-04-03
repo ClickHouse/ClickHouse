@@ -245,13 +245,13 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
 
     add_lookup_name(key_column_name);
 
-    size_t first_dot_pos = key_column_name.find('.');
-    if (first_dot_pos != String::npos)
-        add_lookup_name(key_column_name.substr(first_dot_pos + 1));
+    size_t key_name_first_dot_pos = key_column_name.find('.');
+    if (key_name_first_dot_pos != String::npos)
+        add_lookup_name(key_column_name.substr(key_name_first_dot_pos + 1));
 
-    size_t last_dot_pos = key_column_name.find_last_of('.');
-    if (last_dot_pos != String::npos)
-        add_lookup_name(key_column_name.substr(last_dot_pos + 1));
+    size_t key_name_last_dot_pos = key_column_name.find_last_of('.');
+    if (key_name_last_dot_pos != String::npos)
+        add_lookup_name(key_column_name.substr(key_name_last_dot_pos + 1));
 
     auto apply_limit = [limit_value](UInt64 value)
     {
@@ -305,10 +305,10 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
                 return true;
         }
 
-        size_t first_dot_pos = candidate_name.find('.');
-        if (first_dot_pos != String::npos)
+        size_t candidate_first_dot_pos = candidate_name.find('.');
+        if (candidate_first_dot_pos != String::npos)
         {
-            String unqualified_name = candidate_name.substr(first_dot_pos + 1);
+            String unqualified_name = candidate_name.substr(candidate_first_dot_pos + 1);
             for (const auto & lookup_name : lookup_names)
             {
                 if (lookup_name == unqualified_name)
@@ -316,10 +316,10 @@ static std::optional<JoinKeyStats> getJoinKeyStats(
             }
         }
 
-        size_t last_dot_pos = candidate_name.find_last_of('.');
-        if (last_dot_pos != String::npos)
+        size_t candidate_last_dot_pos = candidate_name.find_last_of('.');
+        if (candidate_last_dot_pos != String::npos)
         {
-            String last_component_name = candidate_name.substr(last_dot_pos + 1);
+            String last_component_name = candidate_name.substr(candidate_last_dot_pos + 1);
             for (const auto & lookup_name : lookup_names)
             {
                 if (lookup_name == last_component_name)
