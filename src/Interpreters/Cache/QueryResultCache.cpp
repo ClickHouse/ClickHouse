@@ -675,7 +675,15 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
+    /// Result metadata: The `getOrSet` path stores a null header on the key and keeps the real header on `Entry` only
+    /// Fallback to the key's header if the entry's header is not set (e.g. streaming path)
+    const SharedHeader result_header = entry_mapped->header ? entry_mapped->header : entry_key.header;
+
+    const auto created_at_for_metrics = entry_mapped->created_at != std::chrono::system_clock::time_point{}
+        ? entry_mapped->created_at
+        : entry_key.created_at;
+
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - created_at_for_metrics).count();
     ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
 
     if (!entry_key.is_compressed)
@@ -690,7 +698,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
+        buildSourceFromChunks(result_header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
@@ -709,11 +717,13 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
+        buildSourceFromChunks(result_header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
-    created_at = entry_key.created_at;
-    expires_at = entry_key.expires_at;
+    created_at = created_at_for_metrics;
+    expires_at = entry_mapped->expires_at != std::chrono::system_clock::time_point{}
+        ? entry_mapped->expires_at
+        : entry_key.expires_at;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
