@@ -460,7 +460,7 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach)
                 column.type->getName(), column.name);
         }
 
-        if (isDynamic(column.type) || isVariant(column.type))
+        if (isDynamic(column.type) || isVariant(column.type) || isObject(column.type))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "{} data type of column {} is not allowed in minmax index because the column of that type can contain values with different data "
