@@ -387,6 +387,40 @@ bool QueryResultCache::IsStale::operator()(const Key & key, const Entry & entry)
     return expires_at < std::chrono::system_clock::now();
 };
 
+void QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(const Chunk & chunk)
+{
+    if (chunk.empty())
+        return;
+
+    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenRows, chunk.getNumRows());
+    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenBytes, chunk.bytes());
+}
+
+void QueryResultCache::incrementProfileEventsForReadFromCacheEntry(const Entry & entry)
+{
+    size_t total_rows = 0;
+    size_t total_bytes = 0;
+    for (const auto & chunk : entry.chunks)
+    {
+        total_rows += chunk.getNumRows();
+        total_bytes += chunk.bytes();
+    }
+    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
+    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
+
+    const auto age = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now() - entry.created_at).count();
+    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
+}
+
+void QueryResultCache::incrementProfileEventsForCacheLookup(bool was_inserted)
+{
+    if (was_inserted)
+        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
+    else
+        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+}
+
 QueryResultCacheWriter::QueryResultCacheWriter(
     Cache & cache_,
     const QueryResultCache::Key & key_,

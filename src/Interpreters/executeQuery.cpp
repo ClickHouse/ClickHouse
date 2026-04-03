@@ -1882,17 +1882,32 @@ static BlockIO executeQueryImpl(
                             PullingPipelineExecutor pulling_executor(res.pipeline);
                             Block block;
                             while (pulling_executor.pull(block))
-                                entry->chunks.emplace_back(block.getColumns(), block.rows());
+                            {
+                                Chunk chunk(block.getColumns(), block.rows());
+                                QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(chunk);
+                                entry->chunks.emplace_back(std::move(chunk));
+                            }
 
                             if (Chunk totals = pulling_executor.getTotals(); totals.hasColumns())
+                            {
+                                QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(totals);
                                 entry->totals = std::move(totals);
+                            }
                             if (Chunk extremes = pulling_executor.getExtremes(); extremes.hasColumns())
+                            {
+                                QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(extremes);
                                 entry->extremes = std::move(extremes);
+                            }
                         }
                         return entry;
                         /// After the lambda returns, getOrSet stores the entry in the cache
                         /// and releases the InsertToken, unblocking any waiter threads.
                     });
+
+                /// Profile events (hits/misses, read bytes/rows, age).
+                QueryResultCache::incrementProfileEventsForCacheLookup(was_inserted);
+                if (!was_inserted)
+                    QueryResultCache::incrementProfileEventsForReadFromCacheEntry(*cached_entry);
 
                 /// Both the executor (was_inserted == true) and all waiters (was_inserted == false)
                 /// reach this point. Each builds an independent reading pipeline over clones of

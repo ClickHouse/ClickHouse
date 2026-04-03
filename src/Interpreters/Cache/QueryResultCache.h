@@ -194,6 +194,14 @@ public:
         return cache.getOrSet(key, std::forward<LoadFunc>(load_func));
     }
 
+    /// Profile events for the getOrSet path. The streaming path records events from
+    /// `QueryResultCacheWriter` / `QueryResultCacheReader`; these helpers mirror that behavior
+    /// when the result is materialized into memory and then read from `SourceFromChunks`.
+    static void incrementProfileEventsForWriteMaterializedChunk(const Chunk & chunk);
+    static void incrementProfileEventsForReadFromCacheEntry(const Entry & entry);
+    /// `was_inserted == true` → this thread ran `load_func` (cache miss). `false` → waiter (cache hit).
+    static void incrementProfileEventsForCacheLookup(bool was_inserted);
+
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
 
