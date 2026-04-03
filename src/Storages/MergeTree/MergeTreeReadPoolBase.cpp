@@ -370,7 +370,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 owned_mark_cache.get(),
                 /*deserialization_prefixes_cache=*/ nullptr,
                 reader_settings,
-                /*value_size_map=*/ {},
+                /*avg_value_size_hints=*/ {},
                 /*profile_callback=*/ {});
 
             bool perform_alter_conversions = patch_info.patch_part.perform_alter_conversions;
