@@ -485,7 +485,7 @@ void KeeperServer::forceRecovery()
     {
         /// (Locking cli_lock_ to reliably reject appends during recovery.
         ///  NuRaft locks cli_lock_ for PreAppendLogLeader callback + append, so we can't have
-        ///  a race where an append thread sees is_recoverying == false, then recovery starts,
+        ///  a race where an append thread sees is_recovering == false, then recovery starts,
         ///  then the append proceeds.)
         auto lock = raft_instance->lockClient();
         is_recovering = true;
