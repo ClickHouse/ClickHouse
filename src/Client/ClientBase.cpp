@@ -3778,6 +3778,7 @@ void ClientBase::runInteractive()
 
                 if (!is_special_command)
                 {
+                    String first_line = input;
                     while (queryNeedsContinuation(input))
                     {
                         String continuation = lr->readOneSingleLine(":-] ");
@@ -3785,6 +3786,12 @@ void ClientBase::runInteractive()
                             break;
                         input += "\n" + continuation;
                     }
+
+                    /// If continuation lines were added, put the full
+                    /// multi-line query into history so the user can
+                    /// recall it with the up-arrow key.
+                    if (input != first_line)
+                        lr->addStringToHistory(input);
                 }
             }
         }

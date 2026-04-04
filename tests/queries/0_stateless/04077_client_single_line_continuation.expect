@@ -1,0 +1,74 @@
+#!/usr/bin/expect -f
+
+# Tags: no-fasttest
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# Test 1: Incomplete SELECT (missing column list) triggers continuation,
+# completing it produces the correct result.
+send -- "SELECT\r"
+expect ":-] "
+send -- "42\r"
+expect "42"
+expect ":) "
+
+# Test 2: Incomplete WHERE clause triggers continuation.
+send -- "SELECT 1 WHERE\r"
+expect ":-] "
+send -- "1\r"
+expect "│ 1 │"
+expect ":) "
+
+# Test 3: Unmatched parenthesis triggers continuation.
+send -- "SELECT (1\r"
+expect ":-] "
+send -- "+ 2)\r"
+expect "│ 3 │"
+expect ":) "
+
+# Test 4: Empty continuation line submits query as-is (may produce error,
+# but should not hang).
+send -- "SELECT\r"
+expect ":-] "
+send -- "\r"
+# The incomplete query is submitted; we just need to get back to the prompt.
+expect ":) "
+
+# Test 5: History should contain the full multi-line query.
+# Press up-arrow twice to skip the empty-continuation query (test 4) and
+# reach the parenthesized query from test 3.
+# Up-arrow in terminal sends escape sequence \x1b\[A.
+send -- "\x1b\[A"
+expect "SELECT"
+# Confirm we get the multi-line query back (the incomplete "SELECT" from test 4).
+# Press up again to get the parenthesized query from test 3.
+send -- "\x1b\[A"
+expect "SELECT (1"
+# Abort the recalled line with Ctrl-C and exit.
+send -- "\x03"
+expect ":) "
+
+send -- ""
+expect eof

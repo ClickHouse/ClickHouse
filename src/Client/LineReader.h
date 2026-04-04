@@ -75,6 +75,11 @@ public:
     /// handle extenders/delimiters/multiline. Used for continuation prompts.
     String readOneSingleLine(const String & prompt);
 
+    /// Add a line to history from outside the normal `readLine` flow.
+    /// Used to record the full multi-line query after continuation lines
+    /// have been collected, replacing the partial first-line entry.
+    void addStringToHistory(const String & line);
+
     bool hasInputData() const;
 
 protected:

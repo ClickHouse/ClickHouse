@@ -231,6 +231,15 @@ String LineReader::readOneSingleLine(const String & prompt)
     return input;
 }
 
+void LineReader::addStringToHistory(const String & line)
+{
+    if (!line.empty() && line != prev_line && !line.starts_with(" "))
+    {
+        addToHistory(line);
+        prev_line = line;
+    }
+}
+
 LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();
