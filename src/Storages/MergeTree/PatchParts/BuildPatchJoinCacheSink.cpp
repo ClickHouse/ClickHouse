@@ -16,7 +16,7 @@ void BuildPatchJoinCacheSink::consume(Chunk chunk)
     auto columns = chunk.detachColumns();
     for (auto & col : columns)
         col = removeSpecialRepresentations(col);
-    Block block = getPort().getHeader().cloneWithColumns(std::move(columns));
+    Block block = getPort().getHeader().cloneWithColumns(columns);
     entry->addBlock(std::move(block));
 }
 

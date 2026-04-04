@@ -25,7 +25,6 @@
 #include <Storages/MergeTree/PatchParts/PatchJoinReadPool.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -153,7 +152,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         /// For sequential source (merges/mutations): single bucket, single thread.
         /// Compute min/max block from data part for range-based bucket assignment.
         MergeTreeReaderSettings merge_reader_settings = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings());
-        UInt64 min_block = 0, max_block = 0;
+        UInt64 min_block = 0;
+        UInt64 max_block = 0;
         auto bn_stats = getPatchMinMaxStats(data_part, mark_ranges, BlockNumberColumn::name, merge_reader_settings);
         if (bn_stats)
         {

@@ -284,7 +284,7 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
             processors->push_back(std::move(source));
         }
 
-        auto & entries = patch_join_cache->getEntries(patch_name);
+        const auto & entries = patch_join_cache->getEntries(patch_name);
 
         if (num_buckets <= 1)
         {
