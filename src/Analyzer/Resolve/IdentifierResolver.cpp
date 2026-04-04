@@ -1486,6 +1486,33 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
         if (compound_expr)
             return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+        /// If subcolumn was not found in the array-joined column itself, try to resolve
+        /// the dotted identifier from the underlying table. This handles ALIAS columns
+        /// whose names share a prefix with the array-joined column.
+        /// Example: column `a` is Map, ALIAS column `a.k` is defined in the table,
+        /// query is `SELECT aa.k FROM t ARRAY JOIN a AS aa` -- `a.k` should resolve from the table.
+        auto & array_join_column_inner_expression = array_join_column_expression_typed.getExpressionOrThrow();
+        if (auto * inner_column = array_join_column_inner_expression->as<ColumnNode>())
+        {
+            const auto & original_column_name = inner_column->getColumnName();
+            std::vector<std::string> new_parts;
+            new_parts.push_back(original_column_name);
+            for (size_t i = 0; i < identifier_view.getPartsSize(); ++i)
+                new_parts.push_back(std::string(identifier_view.at(i)));
+
+            IdentifierLookup new_lookup{Identifier(std::move(new_parts)), identifier_lookup.lookup_context};
+            auto table_resolve_result = tryResolveIdentifierFromJoinTreeNode(new_lookup, from_array_join_node.getTableExpression(), scope);
+            if (table_resolve_result.resolved_identifier)
+            {
+                auto array_join_resolved_expression = tryResolveExpressionFromArrayJoinExpressions(
+                    table_resolve_result.resolved_identifier, table_expression_node, scope);
+                if (array_join_resolved_expression)
+                    return { .resolved_identifier = std::move(array_join_resolved_expression), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+
+                return { .resolved_identifier = std::move(table_resolve_result.resolved_identifier), .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+            }
+        }
     }
 
     if (!resolve_result.resolved_identifier)
