@@ -3,6 +3,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -170,7 +171,12 @@ public:
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
         if (multi_if_args.size() == 1)
-            return multi_if_args.front().column;
+        {
+            const auto & src = multi_if_args.front();
+            if (!src.type->equals(*result_type))
+                return castColumn(src, result_type);
+            return src.column;
+        }
 
         /// If there was only two arguments (3 arguments passed to multiIf)
         /// use function "if" instead, because it's implemented more efficient.
