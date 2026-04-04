@@ -10,6 +10,7 @@
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInfo.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -120,6 +121,12 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(blob_path))
         {
+            if (hasSupportedZipExtension(blob_path))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Zip archive format is not supported for AzureBlobStorage backups because zip requires seeking "
+                    "which object storage does not support efficiently. "
+                    "Use tar.gz or other tar-based formats instead");
+
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
