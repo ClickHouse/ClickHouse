@@ -1,5 +1,6 @@
 #include <Parsers/parseQuery.h>
 
+#include <algorithm>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -346,10 +347,14 @@ ASTPtr tryParseQuery(
         && this_query_end_pos->type != TokenType::Semicolon)
         ++this_query_end_pos;
 
+    /// Ensure the end pointer is at least past the last token the parser looked at,
+    /// because the parser may have backtracked past the semicolon during lookahead.
+    const char * current_query_end = std::max(this_query_end_pos->end, last_token.end);
+
     /// Lexical error
     if (last_token.isError())
     {
-        out_error_message = getLexicalErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getLexicalErrorMessage(query_begin, current_query_end,
             last_token, hilite, query_description);
         return nullptr;
     }
@@ -360,7 +365,6 @@ ASTPtr tryParseQuery(
     {
         /// Filter to only include parentheses within the current query range,
         /// to avoid assertion failures and excessive output when there are multiple queries.
-        const char * current_query_end = this_query_end_pos->end;
         UnmatchedParentheses filtered_parens;
         for (const auto & paren : unmatched_parens)
             if (paren.begin >= query_begin && paren.begin < current_query_end)
@@ -377,7 +381,7 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Generic parse error.
-        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getSyntaxErrorMessage(query_begin, current_query_end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -387,7 +391,7 @@ ASTPtr tryParseQuery(
         && token_iterator->type != TokenType::Semicolon)
     {
         expected.add(last_token.begin, "end of query");
-        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
+        out_error_message = getSyntaxErrorMessage(query_begin, current_query_end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
