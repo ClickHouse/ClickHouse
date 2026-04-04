@@ -85,6 +85,8 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -755,9 +757,22 @@ StorageSnapshotPtr StorageDistributed::getStorageSnapshot(const StorageMetadataP
 namespace
 {
 
+/** Replaces ALIAS column nodes with their underlying expressions so that the
+  * query sent to remote shards contains explicit computations rather than
+  * column references that may not exist on the shard table.
+  *
+  * When two ALIAS columns share the same expression (e.g.
+  * `d Float64 ALIAS b + c, e Float64 ALIAS b + c`), naive replacement
+  * produces identical expression trees whose aggregate action names
+  * coincide, causing the Planner to deduplicate them into a single
+  * aggregate column. To prevent this, the second and subsequent
+  * occurrences of an already-seen expression tree are wrapped in an
+  * `identity` function call, which is a no-op at runtime but produces a
+  * distinct action name. See #85895.
+  */
 class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasColumnsVisitor>
 {
-    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
     {
         const auto * column_node = node->as<ColumnNode>();
         if (!column_node || !column_node->hasExpression())
@@ -770,16 +785,53 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
             return nullptr;
 
         auto column_expression = column_node->getExpression();
+
+        /// Compute the tree hash BEFORE setting the alias so that two
+        /// expressions that differ only in alias are recognized as duplicates.
+        auto expression_hash = column_expression->getTreeHash(
+            {.compare_aliases = false, .compare_types = true, .ignore_cte = false});
+
         column_expression->setAlias(column_node->getColumnName());
+
+        /// If we already emitted an expression tree with the same structure,
+        /// wrap this one in `identity` so that the Planner treats it as
+        /// a separate expression and does not deduplicate the aggregate.
+        if (!seen_expression_hashes.emplace(expression_hash).second)
+        {
+            auto identity_function_node = std::make_shared<FunctionNode>("identity");
+            identity_function_node->getArguments().getNodes().push_back(column_expression);
+            auto identity_function = FunctionFactory::instance().get("identity", context);
+            identity_function_node->resolveAsFunction(identity_function->build(identity_function_node->getArgumentColumns()));
+            identity_function_node->setAlias(column_node->getColumnName());
+            return identity_function_node;
+        }
+
         return column_expression;
     }
 
 public:
+    explicit ReplaseAliasColumnsVisitor(ContextPtr context_)
+        : context(std::move(context_))
+    {}
+
     void visitImpl(QueryTreeNodePtr & node)
     {
         if (auto column_expression = getColumnNodeAliasExpression(node))
             node = column_expression;
     }
+
+private:
+    ContextPtr context;
+
+    struct TreeHashHash
+    {
+        size_t operator()(const IQueryTreeNode::Hash & h) const
+        {
+            return CityHash_v1_0_2::Hash128to64(h);
+        }
+    };
+
+    std::unordered_set<IQueryTreeNode::Hash, TreeHashHash> seen_expression_hashes;
 };
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
@@ -931,7 +983,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     replacement_table_expression->setAlias(query_info.table_expression->getAlias());
 
     auto query_tree_to_modify = query_info.query_tree->cloneAndReplace(query_info.table_expression, std::move(replacement_table_expression));
-    ReplaseAliasColumnsVisitor replace_alias_columns_visitor;
+    ReplaseAliasColumnsVisitor replace_alias_columns_visitor(query_context);
     replace_alias_columns_visitor.visit(query_tree_to_modify);
 
     const auto & settings = query_context->getSettingsRef();
