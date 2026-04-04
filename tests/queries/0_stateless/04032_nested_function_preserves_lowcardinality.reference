@@ -3,5 +3,5 @@ Array(Tuple(\n    name LowCardinality(String)))
 nested with Array(LowCardinality(String))
 Array(Tuple(\n    name Array(LowCardinality(String))))
 ARRAY JOIN preserves LowCardinality
-Array(LowCardinality(String))
-Array(LowCardinality(String))
+Array(String)
+Array(String)
