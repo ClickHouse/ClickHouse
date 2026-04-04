@@ -175,11 +175,9 @@ PatchReadResultPtr MergeTreePatchReaderJoin::createResult() const
     if (!patch_join_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinCache must be set before reading");
 
-    patch_join_cache->ensureBuilt();
-
     auto result = std::make_shared<PatchJoinReadResult>();
     result->entries = patch_join_cache->getEntries(patch_part.part->getPartName());
-    result->num_buckets = patch_join_cache->getNumBuckets();
+    result->cache = patch_join_cache;
 
     return result;
 }
@@ -199,7 +197,7 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderJoin::applyPatch(const Block & 
     if (join_result.entries.empty())
         return {};
 
-    return {applyPatchJoin(result_block, join_result.entries, join_result.num_buckets)};
+    return {applyPatchJoin(result_block, join_result.entries, *join_result.cache)};
 }
 
 MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeTreeReaderPtr reader, PatchJoinCache * read_join_cache)

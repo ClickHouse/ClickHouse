@@ -17,7 +17,14 @@
 #include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/PatchParts/BuildPatchJoinCacheSink.h>
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
+#include <Storages/MergeTree/PatchParts/PatchJoinReadPool.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -143,22 +150,99 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
         patch_join_cache = std::make_shared<PatchJoinCache>();
 
+        /// For sequential source (merges/mutations): single bucket, single thread.
+        /// Compute min/max block from data part for range-based bucket assignment.
+        MergeTreeReaderSettings merge_reader_settings = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings());
+        UInt64 min_block = 0, max_block = 0;
+        auto bn_stats = getPatchMinMaxStats(data_part, mark_ranges, BlockNumberColumn::name, merge_reader_settings);
+        if (bn_stats)
+        {
+            min_block = std::numeric_limits<UInt64>::max();
+            for (const auto & stat : *bn_stats)
+            {
+                min_block = std::min(min_block, stat.min);
+                max_block = std::max(max_block, stat.max);
+            }
+        }
+
+        patch_join_cache->init(ranges_in_patch_parts, /*num_buckets=*/ 1, min_block, max_block);
+
+        /// Build a minimal pipeline: source → sink, to fill the single-bucket cache.
         MergeTreeReadTask::Extras build_extras =
         {
             .mark_cache = mark_cache.get(),
-            .reader_settings = MergeTreeReaderSettings::createForMergeMutation(storage.getContext()->getReadSettings()),
+            .reader_settings = merge_reader_settings,
             .storage_snapshot = storage_snapshot,
         };
 
-        patch_join_cache->init(
-            ranges_in_patch_parts,
-            /*num_buckets=*/ 1,
-            read_task_info,
-            data_part,
-            mark_ranges,
-            build_extras,
-            storage.getSettings(),
-            /*num_threads=*/ 1);
+        /// Collect Join-mode patch info and build pipeline for each patch.
+        auto processors = std::make_shared<Processors>();
+        for (size_t patch_idx = 0; patch_idx < read_task_info->patch_parts.size(); ++patch_idx)
+        {
+            const auto & patch_part = read_task_info->patch_parts[patch_idx];
+            if (patch_part.mode != PatchMode::Join)
+                continue;
+
+            const auto & patch_name = patch_part.part->getPartName();
+            const auto & entries = patch_join_cache->getEntries(patch_name);
+            if (entries.empty())
+                continue;
+
+            const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_part.part.get());
+            if (!loaded_part)
+                continue;
+
+            auto task_info_for_patch = std::make_shared<MergeTreeReadTaskInfo>();
+            task_info_for_patch->data_part = loaded_part->getDataPart();
+            task_info_for_patch->alter_conversions = std::make_shared<AlterConversions>();
+
+            /// Use column types from the patch part itself to avoid type conversion failures.
+            const auto & part_columns = loaded_part->getColumns();
+            NamesAndTypesList resolved_columns;
+            for (const auto & col : read_task_info->task_columns.patch_columns[patch_idx])
+            {
+                auto part_col = part_columns.tryGetByName(col.name);
+                resolved_columns.push_back(part_col ? *part_col : col);
+            }
+            task_info_for_patch->task_columns.columns = resolved_columns;
+            task_info_for_patch->const_virtual_fields = read_task_info->const_virtual_fields;
+
+            Block patch_header;
+            for (const auto & col : resolved_columns)
+                patch_header.insert(ColumnWithTypeAndName(col.type->createColumn(), col.type, col.name));
+
+            auto shared_header = std::make_shared<Block>(patch_header);
+            const auto & all_ranges = patch_join_cache->getAllRanges(patch_name);
+            std::vector<MarkRange> work_ranges(all_ranges.begin(), all_ranges.end());
+
+            auto pool = std::make_shared<PatchJoinReadPool>(
+                patch_header, task_info_for_patch, build_extras,
+                std::move(work_ranges), MergeTreeReadTask::BlockSizeParams{
+                    .max_block_size_rows = std::numeric_limits<UInt64>::max(),
+                    .preferred_block_size_bytes = 0});
+
+            auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(0);
+            auto select_processor = std::make_unique<MergeTreeSelectProcessor>(
+                pool, std::move(algorithm),
+                /*row_level_filter=*/ nullptr,
+                /*prewhere_info=*/ nullptr,
+                /*index_read_tasks=*/ IndexReadTasks{},
+                ExpressionActionsSettings{},
+                merge_reader_settings);
+            auto source = std::make_shared<MergeTreeSource>(std::move(select_processor), "PatchJoinCacheBuild");
+
+            auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entries[0]);
+            connect(source->getOutputs().front(), sink->getPort());
+
+            processors->push_back(std::move(source));
+            processors->push_back(std::move(sink));
+        }
+
+        if (!processors->empty())
+        {
+            PipelineExecutor executor(processors, /*elem=*/ nullptr);
+            executor.execute(/*num_threads=*/ 1, /*concurrency_control=*/ false);
+        }
     }
 
     const auto & context = storage.getContext();

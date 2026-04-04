@@ -17,6 +17,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
@@ -494,6 +495,15 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
+    if (auto * pool_base = dynamic_cast<MergeTreeReadPoolBase *>(pool.get()))
+    {
+        if (auto patch_pipeline = pool_base->buildPatchJoinCachePipeline(pool_settings.threads))
+        {
+            PipelineExecutor patch_executor(patch_pipeline, /*elem=*/ nullptr);
+            patch_executor.execute(pool_settings.threads, /*concurrency_control=*/ false);
+        }
+    }
+
     Pipes pipes;
 
     for (size_t i = 0; i < pool_settings.threads; ++i)
@@ -602,6 +612,15 @@ Pipe ReadFromMergeTree::readFromPool(
             dataflow_cache_updater);
     }
 
+    if (auto * pool_base = dynamic_cast<MergeTreeReadPoolBase *>(pool.get()))
+    {
+        if (auto patch_pipeline = pool_base->buildPatchJoinCachePipeline(pool_settings.threads))
+        {
+            PipelineExecutor patch_executor(patch_pipeline, /*elem=*/ nullptr);
+            patch_executor.execute(pool_settings.threads, /*concurrency_control=*/ false);
+        }
+    }
+
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
 
     Pipes pipes;
@@ -696,6 +715,15 @@ Pipe ReadFromMergeTree::readInOrder(
             block_size,
             context,
             dataflow_cache_updater);
+    }
+
+    if (auto * pool_base = dynamic_cast<MergeTreeReadPoolBase *>(pool.get()))
+    {
+        if (auto patch_pipeline = pool_base->buildPatchJoinCachePipeline(pool_settings.threads))
+        {
+            PipelineExecutor patch_executor(patch_pipeline, /*elem=*/ nullptr);
+            patch_executor.execute(pool_settings.threads, /*concurrency_control=*/ false);
+        }
     }
 
     /// If parallel replicas enabled, set total rows in progress here only on initiator with local plan
