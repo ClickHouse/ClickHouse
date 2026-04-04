@@ -1,13 +1,19 @@
-Positive half values:
+Scale 0 - positive half values:
 0.5	1
 1.5	2
 2.5	3
 3.5	4
-Negative half values:
+Scale 0 - negative half values:
 -0.5	-1
 -1.5	-2
 -2.5	-3
 -3.5	-4
-Non-half rounding:
+Scale 0 - non-half rounding:
 3	-3
 2	-2
+Scale 2 - exact half values:
+1.13	-1.13
+2.38	-2.38
+0.88	-0.88
+Float32 input:
+1	-1
