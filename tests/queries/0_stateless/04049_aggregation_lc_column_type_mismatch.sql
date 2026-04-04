@@ -9,7 +9,7 @@
 -- A subsequent SELECT GROUP BY the partition key would use the stale
 -- minmax_count_projection (only_merge path), producing columns with the old
 -- type while the aggregation hash method expected the new type — triggering
--- a "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn"
+-- an "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn"
 -- exception.
 
 SET allow_suspicious_low_cardinality_types = 1;
