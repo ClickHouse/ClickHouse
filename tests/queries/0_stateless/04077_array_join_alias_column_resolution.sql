@@ -1,4 +1,3 @@
--- Tags: no-random-settings
 -- https://github.com/ClickHouse/ClickHouse/issues/83434
 
 DROP TABLE IF EXISTS t_array_join_alias;
