@@ -1,6 +1,7 @@
 #include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -22,6 +23,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_http_get_redirects;
 }
 
 static const UInt64 max_block_size = 8192;
@@ -96,6 +102,7 @@ BlockIO HTTPDictionarySource::loadAll()
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
@@ -114,6 +121,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
                    .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
@@ -144,6 +152,7 @@ BlockIO HTTPDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & i
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
@@ -175,6 +184,7 @@ BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const Vector
                    .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
                    .withSettings(context->getReadSettings())
                    .withTimeouts(timeouts)
+                   .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
                    .withHeaders(configuration.header_entries)
                    .withOutCallback(std::move(out_stream_callback))
                    .withDelayInit(false)
