@@ -2994,11 +2994,21 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
     if (token_iterator->isEnd())
         return false;
 
-    /// Check for unmatched parentheses first -- unclosed parens clearly need continuation.
+    /// Check for unclosed opening parentheses -- these clearly need continuation.
+    /// Only trigger on unclosed opens, not excess closing brackets (which are syntax errors).
     {
         Tokens paren_tokens(begin, end, 0, true);
         UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(paren_tokens));
-        if (!unmatched.empty())
+        bool has_unclosed_open = false;
+        for (const auto & token : unmatched)
+        {
+            if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+            {
+                has_unclosed_open = true;
+                break;
+            }
+        }
+        if (has_unclosed_open)
             return true;
     }
 
