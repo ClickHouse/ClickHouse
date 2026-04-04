@@ -1,50 +1,51 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
+-- Tags: zookeeper, no-random-settings, no-random-merge-tree-settings
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/100175
--- After ALTER TABLE MODIFY COLUMN to/from LowCardinality, old data parts may
--- still have the pre-ALTER column type. The aggregation engine must handle the
--- type mismatch between the chosen hash method and the actual column.
+--
+-- When ALTER TABLE MODIFY COLUMN changes a partition key column to/from
+-- LowCardinality on ReplicatedMergeTree, the replica applies the change via
+-- ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata, which previously
+-- failed to rebuild minmax_count_projection with the new column types.
+-- A subsequent SELECT GROUP BY the partition key would use the stale
+-- minmax_count_projection (only_merge path), producing columns with the old
+-- type while the aggregation hash method expected the new type — triggering
+-- a "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn"
+-- exception.
 
-SET mutations_sync = 0; -- do not wait for mutations
 SET allow_suspicious_low_cardinality_types = 1;
 
--- Single-key test: plain -> LowCardinality -> plain
-DROP TABLE IF EXISTS t_lc_agg;
+-- Test 1: Int8 partition key → LowCardinality(Int8)
+DROP TABLE IF EXISTS t_lc_agg SYNC;
 
 CREATE TABLE t_lc_agg (key Int8, val UInt64)
-ENGINE = MergeTree ORDER BY key;
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lc_agg', 'r1')
+PARTITION BY key ORDER BY key;
 
-INSERT INTO t_lc_agg SELECT number % 10, number FROM numbers(1000);
+INSERT INTO t_lc_agg SELECT number % 5, number FROM numbers(10);
 
-ALTER TABLE t_lc_agg MODIFY COLUMN key LowCardinality(Int8);
-
-SELECT key, sum(val) FROM t_lc_agg GROUP BY key ORDER BY key;
-
-ALTER TABLE t_lc_agg MODIFY COLUMN key Int8;
+ALTER TABLE t_lc_agg MODIFY COLUMN key LowCardinality(Int8) SETTINGS alter_sync = 2;
 
 SELECT key, sum(val) FROM t_lc_agg GROUP BY key ORDER BY key;
 
-DROP TABLE t_lc_agg;
+-- Test 2: reverse direction, LowCardinality(Int8) → Int8
+ALTER TABLE t_lc_agg MODIFY COLUMN key Int8 SETTINGS alter_sync = 2;
 
--- Multi-key test: mixed LowCardinality and plain keys with both alter directions.
--- Covers low_cardinality_keys128/256 variants where not all keys are LC.
-DROP TABLE IF EXISTS t_lc_agg_multi;
+SELECT key, sum(val) FROM t_lc_agg GROUP BY key ORDER BY key;
 
-CREATE TABLE t_lc_agg_multi (k1 Int8, k2 LowCardinality(String), val UInt64)
-ENGINE = MergeTree ORDER BY (k1, k2);
+DROP TABLE t_lc_agg SYNC;
 
-INSERT INTO t_lc_agg_multi SELECT number % 5, toString(number % 3), number FROM numbers(1000);
+-- Test 3: multi-column partition key with Enum8 origin (original fuzzer scenario)
+DROP TABLE IF EXISTS t_lc_agg_enum SYNC;
 
--- Change plain key to LC and LC key to plain simultaneously.
-ALTER TABLE t_lc_agg_multi MODIFY COLUMN k1 LowCardinality(Int8);
-ALTER TABLE t_lc_agg_multi MODIFY COLUMN k2 String;
+CREATE TABLE t_lc_agg_enum (product Enum8('A' = 1, 'B' = 2), ts DateTime, val UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lc_agg_enum', 'r1')
+PARTITION BY (product, toYYYYMM(ts)) ORDER BY (product, ts);
 
-SELECT k1, k2, sum(val) FROM t_lc_agg_multi GROUP BY k1, k2 ORDER BY k1, k2;
+INSERT INTO t_lc_agg_enum VALUES ('A', '2024-01-15 10:00:00', 1), ('B', '2024-02-20 12:00:00', 2);
 
--- Change them back.
-ALTER TABLE t_lc_agg_multi MODIFY COLUMN k1 Int8;
-ALTER TABLE t_lc_agg_multi MODIFY COLUMN k2 LowCardinality(String);
+ALTER TABLE t_lc_agg_enum MODIFY COLUMN product Int8 SETTINGS alter_sync = 2;
+ALTER TABLE t_lc_agg_enum MODIFY COLUMN product LowCardinality(Int8) SETTINGS alter_sync = 2;
 
-SELECT k1, k2, sum(val) FROM t_lc_agg_multi GROUP BY k1, k2 ORDER BY k1, k2;
+SELECT product FROM t_lc_agg_enum GROUP BY product ORDER BY product ASC;
 
-DROP TABLE t_lc_agg_multi;
+DROP TABLE t_lc_agg_enum SYNC;
