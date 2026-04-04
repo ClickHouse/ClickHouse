@@ -52,6 +52,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SCHEDULER_NODE;
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
@@ -612,7 +613,18 @@ void CPULeaseAllocation::release(Lease & lease)
 
     // Report the last chunk of consumed resource
     std::unique_lock lock{mutex};
-    consume(lock, delta_ns);
+    try
+    {
+        consume(lock, delta_ns);
+    }
+    catch (const Exception & e)
+    {
+        // `consume` may call `schedule` which may call `enqueueRequest` on a scheduler queue
+        // that is being destructed (e.g. when a workload is dropped while queries are still running).
+        // Since `release` is called from Lease destructor, we must not throw.
+        if (e.code() != ErrorCodes::INVALID_SCHEDULER_NODE)
+            throw;
+    }
 
     // Release the slot
     downscale(lease.slot_id);
