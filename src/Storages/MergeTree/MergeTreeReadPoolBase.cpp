@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/PatchParts/BuildPatchJoinCachePipeline.h>
 
 namespace DB
 {
@@ -314,15 +315,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-
-    patch_join_cache->init(
-        ranges_in_patch_parts,
-        settings[Setting::apply_patch_parts_join_cache_buckets],
-        per_part_infos,
-        parts_ranges,
-        getExtras(),
-        parts_ranges.empty() ? nullptr : parts_ranges.front().data_part->storage.getSettings(),
-        pool_settings.threads);
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
@@ -433,6 +425,22 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
         .storage_snapshot = storage_snapshot,
         .profile_callback = profile_callback,
     };
+}
+
+std::shared_ptr<Processors> MergeTreeReadPoolBase::buildPatchJoinCachePipeline(size_t num_threads)
+{
+    const auto & settings = getContext()->getSettingsRef();
+    size_t num_buckets = settings[Setting::apply_patch_parts_join_cache_buckets];
+
+    return DB::buildPatchJoinCachePipeline(
+        patch_join_cache,
+        ranges_in_patch_parts,
+        per_part_infos,
+        parts_ranges,
+        getExtras(),
+        reader_settings,
+        num_buckets,
+        num_threads);
 }
 
 }

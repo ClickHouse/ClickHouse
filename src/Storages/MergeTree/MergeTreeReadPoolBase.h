@@ -61,6 +61,12 @@ public:
 
     Block getHeader() const override { return header; }
 
+    /// Build a pipeline to fill the PatchJoinCache.
+    /// Returns the pipeline processors to be executed by the caller.
+    /// Returns nullptr if there are no Join-mode patches to process.
+    /// Must be called after fillPerPartInfos (which sets up ranges_in_patch_parts).
+    std::shared_ptr<Processors> buildPatchJoinCachePipeline(size_t num_threads);
+
 protected:
     /// Initialized in constructor
     const StorageSnapshotPtr storage_snapshot;

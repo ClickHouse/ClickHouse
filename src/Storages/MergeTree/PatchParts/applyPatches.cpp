@@ -507,11 +507,12 @@ PatchToApplyPtr applyPatchMerge(const Block & result_block, const ConstBlockPtr 
     return patch_to_apply;
 }
 
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, size_t num_buckets)
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, const PatchJoinCache & cache)
 {
     auto patch_to_apply = std::make_shared<PatchToApply>();
 
     size_t num_rows = result_block.rows();
+    size_t num_buckets = cache.getNumBuckets();
     if (num_rows == 0 || entries.empty())
         return patch_to_apply;
 
@@ -560,7 +561,7 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
     for (size_t row = 0; row < num_rows; ++row)
     {
         UInt64 block_number = result_block_number[row];
-        size_t bucket = block_number % num_buckets;
+        size_t bucket = cache.getBucket(block_number);
 
         if (bucket_to_block_idx[bucket] == std::numeric_limits<size_t>::max())
             continue;
