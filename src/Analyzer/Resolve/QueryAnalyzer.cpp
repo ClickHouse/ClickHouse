@@ -2988,12 +2988,17 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                 auto hints = TypoCorrection::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
-                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
+                std::string from_clause_hint;
+                if (auto * query_node = scope.scope_node->as<QueryNode>(); query_node && !query_node->getJoinTree())
+                    from_clause_hint = ". Note: the query does not have the FROM clause. Did you forget to add it?";
+
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
                     scope.scope_node->formatASTForErrorMessage(),
-                    getHintsErrorMessageSuffix(hints));
+                    getHintsErrorMessageSuffix(hints),
+                    from_clause_hint);
             }
 
             node = std::move(resolved_identifier_node);
