@@ -15,6 +15,22 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename T>
+T getParam(const Field & field)
+{
+    if constexpr (std::is_signed_v<T>)
+    {
+        Int64 value;
+        if (field.tryGet<Int64>(value))
+            return static_cast<T>(value);
+        return static_cast<T>(field.safeGet<UInt64>());
+    }
+    else
+    {
+        return static_cast<T>(field.safeGet<UInt64>());
+    }
+}
+
 class AggregateFunctionCombinatorSparkbar final : public IAggregateFunctionCombinator
 {
 public:
@@ -67,61 +83,16 @@ public:
         WhichDataType which{arguments[0]};
 
         if (which.isNativeUInt() || which.isDate() || which.isDateTime())
-        {
-            UInt64 begin_x = params[1].safeGet<UInt64>();
-            UInt64 end_x = params[2].safeGet<UInt64>();
-
             return std::make_shared<AggregateFunctionSparkbar<UInt64>>(
-                nested_function,
-                static_cast<size_t>(width),
-                begin_x,
-                end_x,
-                arguments,
-                params);
-        }
+                nested_function, width, getParam<UInt64>(params[1]), getParam<UInt64>(params[2]), arguments, params);
 
         if (which.isNativeInt())
-        {
-            Int64 begin_x;
-            Int64 end_x;
-
-            if (!params[1].tryGet<Int64>(begin_x))
-                begin_x = static_cast<Int64>(params[1].safeGet<UInt64>());
-            if (!params[2].tryGet<Int64>(end_x))
-                end_x = static_cast<Int64>(params[2].safeGet<UInt64>());
-
             return std::make_shared<AggregateFunctionSparkbar<Int64>>(
-                nested_function,
-                static_cast<size_t>(width),
-                begin_x,
-                end_x,
-                arguments,
-                params);
-        }
+                nested_function, width, getParam<Int64>(params[1]), getParam<Int64>(params[2]), arguments, params);
 
         if (which.isDate32())
-        {
-            Int32 begin_x;
-            Int32 end_x;
-
-            Int64 tmp;
-            if (params[1].tryGet<Int64>(tmp))
-                begin_x = static_cast<Int32>(tmp);
-            else
-                begin_x = static_cast<Int32>(params[1].safeGet<UInt64>());
-            if (params[2].tryGet<Int64>(tmp))
-                end_x = static_cast<Int32>(tmp);
-            else
-                end_x = static_cast<Int32>(params[2].safeGet<UInt64>());
-
             return std::make_shared<AggregateFunctionSparkbar<Int32>>(
-                nested_function,
-                static_cast<size_t>(width),
-                begin_x,
-                end_x,
-                arguments,
-                params);
-        }
+                nested_function, width, getParam<Int32>(params[1]), getParam<Int32>(params[2]), arguments, params);
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of the first argument for aggregate function with {} suffix. "
