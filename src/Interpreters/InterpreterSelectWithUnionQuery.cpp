@@ -1,6 +1,7 @@
 #include <Access/AccessControl.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
@@ -224,29 +225,53 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const SharedHeaders & headers)
 {
     size_t num_selects = headers.size();
-    Block common_header = *headers.front();
-    size_t num_columns = common_header.columns();
+    size_t num_columns = headers.front()->columns();
 
     for (size_t query_num = 1; query_num < num_selects; ++query_num)
     {
         if (headers[query_num]->columns() != num_columns)
             throw Exception(ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH,
                             "Different number of columns in UNION ALL elements:\n{}\nand\n{}\n",
-                            common_header.dumpNames(), headers[query_num]->dumpNames());
+                            headers.front()->dumpNames(), headers[query_num]->dumpNames());
     }
 
+    /// First pass: compute per-position least supertype across all UNION branches.
     VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
+    ColumnsWithTypeAndName result_columns(num_columns);
 
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
             columns[i] = &headers[i]->getByPosition(column_num);
 
-        ColumnWithTypeAndName & result_elem = common_header.getByPosition(column_num);
-        result_elem = getLeastSuperColumn(columns);
+        result_columns[column_num] = getLeastSuperColumn(columns);
     }
 
-    return common_header;
+    /// Second pass: columns with the same name must have the same type in a Block.
+    /// When different positions share a name but got different types (e.g. SELECT NULL, NULL UNION ALL SELECT 'xxx', NULL),
+    /// promote all same-name columns to their common supertype.
+    std::unordered_map<std::string_view, DataTypePtr> name_to_type;
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        auto [it, inserted] = name_to_type.emplace(result_columns[i].name, result_columns[i].type);
+        if (!inserted && !it->second->equals(*result_columns[i].type))
+        {
+            DataTypes types_to_unify = {it->second, result_columns[i].type};
+            it->second = getLeastSupertype(types_to_unify);
+        }
+    }
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        auto it = name_to_type.find(result_columns[i].name);
+        if (!result_columns[i].type->equals(*it->second))
+        {
+            result_columns[i].type = it->second;
+            result_columns[i].column = result_columns[i].type->createColumn();
+        }
+    }
+
+    return Block(std::move(result_columns));
 }
 
 SharedHeader InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)

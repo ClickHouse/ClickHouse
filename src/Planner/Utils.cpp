@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/getLeastSuperColumn.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 
@@ -103,8 +104,7 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
 Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
 {
     size_t num_selects = queries_headers.size();
-    Block common_header = *queries_headers.front();
-    size_t columns_size = common_header.columns();
+    size_t columns_size = queries_headers.front()->columns();
 
     for (size_t query_number = 1; query_number < num_selects; ++query_number)
     {
@@ -121,22 +121,49 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
             throw Exception(error_code,
                             "Different number of columns in {} elements: {} and {}",
                             toString(union_mode),
-                            common_header.dumpNames(),
+                            queries_headers.front()->dumpNames(),
                             queries_headers[query_number]->dumpNames());
     }
 
+    /// First pass: compute per-position least supertype across all UNION branches.
     VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
+    ColumnsWithTypeAndName result_columns(columns_size);
 
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
         for (size_t i = 0; i < num_selects; ++i)
             columns[i] = &queries_headers[i]->getByPosition(column_number);
 
-        ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
-        result_element = getLeastSuperColumn(columns, use_variant_as_common_type);
+        result_columns[column_number] = getLeastSuperColumn(columns, use_variant_as_common_type);
     }
 
-    return common_header;
+    /// Second pass: columns with the same name must have the same type in a Block.
+    /// When different positions share a name but got different types (e.g. SELECT NULL, NULL UNION ALL SELECT 'xxx', NULL),
+    /// promote all same-name columns to their common supertype.
+    std::unordered_map<std::string_view, DataTypePtr> name_to_type;
+    for (size_t i = 0; i < columns_size; ++i)
+    {
+        auto [it, inserted] = name_to_type.emplace(result_columns[i].name, result_columns[i].type);
+        if (!inserted && !it->second->equals(*result_columns[i].type))
+        {
+            DataTypes types_to_unify = {it->second, result_columns[i].type};
+            it->second = use_variant_as_common_type
+                ? getLeastSupertypeOrVariant(types_to_unify)
+                : getLeastSupertype(types_to_unify);
+        }
+    }
+
+    for (size_t i = 0; i < columns_size; ++i)
+    {
+        auto it = name_to_type.find(result_columns[i].name);
+        if (!result_columns[i].type->equals(*it->second))
+        {
+            result_columns[i].type = it->second;
+            result_columns[i].column = result_columns[i].type->createColumn();
+        }
+    }
+
+    return Block(std::move(result_columns));
 }
 
 void addConvertingToCommonHeaderActionsIfNeeded(
