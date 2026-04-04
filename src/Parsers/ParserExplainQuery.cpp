@@ -1,6 +1,7 @@
 #include <Parsers/ParserExplainQuery.h>
 
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -130,6 +131,29 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         insert_p.parse(pos, query, expected) ||
         system_p.parse(pos, query, expected))
     {
+        /// When the inner query is INSERT ... SELECT ... FORMAT <fmt>, the INSERT parser
+        /// consumes the trailing FORMAT clause as part of itself. But for EXPLAIN, the
+        /// FORMAT should apply to the EXPLAIN output, not to the inner INSERT.
+        /// We only do this when there is no second FORMAT keyword following -- if there
+        /// is one, the user wrote the double-FORMAT form explicitly and the first FORMAT
+        /// genuinely belongs to the INSERT.
+        if (auto * insert_query = query->as<ASTInsertQuery>())
+        {
+            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values")
+            {
+                ParserKeyword s_format(Keyword::FORMAT);
+                if (!s_format.checkWithoutMoving(pos, expected))
+                {
+                    /// Rewind past the format name identifier and the FORMAT keyword.
+                    --pos;
+                    --pos;
+                    insert_query->format.clear();
+                    insert_query->data = nullptr;
+                    insert_query->end = nullptr;
+                }
+            }
+        }
+
         explain_query->setExplainedQuery(std::move(query));
     }
     else
