@@ -49,7 +49,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     /// the codec actually used for columns (see `getCodecDescOrDefault`).
     auto codec_setting = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
     if (!codec_setting.empty())
-        default_codec = CompressionCodecFactory::instance().get(codec_setting, {});
+        default_codec = CompressionCodecFactory::instance().get(codec_setting);
 
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     auto prewarm_caches = data_part->storage.getCachesToPrewarm(part_uncompressed_bytes);
