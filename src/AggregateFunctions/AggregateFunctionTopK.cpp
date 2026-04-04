@@ -548,8 +548,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     else
     {
         assertBinary(name, argument_types);
-        if (!isInteger(argument_types[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument for aggregate function 'topKWeighted' must have integer type");
+        if (!isInteger(argument_types[1]) && !isFloat(argument_types[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument for aggregate function 'topKWeighted' must have integer or float type");
     }
 
     UInt64 threshold = 10;  /// default values
@@ -697,7 +697,7 @@ topKWeighted(N, load_factor, 'counts')(column, weight)
     };
     FunctionDocumentation::Arguments arguments_topKWeighted = {
         {"column", "The name of the column for which to find the most frequent values.", {}},
-        {"weight", "The weight. Every value is accounted `weight` times for frequency calculation.", {"UInt64"}}
+        {"weight", "The weight. Every value is accounted `weight` times for frequency calculation. Accepts integer and floating-point types; non-integer values are truncated to UInt64.", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value_topKWeighted = {"Returns an array of the values with maximum approximate sum of weights.", {"Array"}};
     FunctionDocumentation::Examples examples_topKWeighted = {
@@ -793,7 +793,7 @@ approx_top_sum(N[, reserved])(column, weight)
     };
     FunctionDocumentation::Arguments arguments_approx_top_sum = {
         {"column", "The name of the column for which to find the most frequent values.", {"String"}},
-        {"weight", "The weight. Every value is accounted `weight` times for frequency calculation.", {"UInt64"}}
+        {"weight", "The weight. Every value is accounted `weight` times for frequency calculation. Accepts integer and floating-point types; non-integer values are truncated to UInt64.", {}}
     };
     FunctionDocumentation::ReturnedValue returned_value_approx_top_sum = {"Returns an array of the approximately most frequent values and their counts, sorted in descending order of approximate frequency.", {"Array"}};
     FunctionDocumentation::Examples examples_approx_top_sum = {
