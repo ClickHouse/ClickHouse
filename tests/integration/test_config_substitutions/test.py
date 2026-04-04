@@ -61,6 +61,18 @@ node8 = cluster.add_instance(
     user_configs=["configs/config_include_from_yml.xml"],
     main_configs=["configs/include_from_source.yml"],
 )
+# env var with XML special characters (should be auto-escaped)
+node9 = cluster.add_instance(
+    "node9",
+    user_configs=["configs/config_env_xml_chars.xml"],
+    env_variables={"LOG_COMMENT_VALUE": "a&b<c>d"},
+)
+# env var with a valid XML fragment (backward compat: should be parsed as XML, not escaped)
+node10 = cluster.add_instance(
+    "node10",
+    user_configs=["configs/config_env_xml_chars.xml"],
+    env_variables={"LOG_COMMENT_VALUE": "hello world"},
+)
 
 
 @pytest.fixture(scope="module")
@@ -359,3 +371,24 @@ def test_config_multiple_zk_substitutions(start_cluster):
             )
     finally:
         zk.delete(path="/background_pool_size")
+
+
+
+def test_config_env_xml_special_chars(start_cluster):
+    """Env var values with XML special characters (&, <, >) should be auto-escaped."""
+    assert (
+        node9.query(
+            "SELECT value FROM system.settings WHERE name = 'log_comment'"
+        )
+        == "a&b<c>d\n"
+    )
+
+
+def test_config_env_valid_xml_fragment(start_cluster):
+    """Env var values that are valid XML should be parsed as-is (backward compat)."""
+    assert (
+        node10.query(
+            "SELECT value FROM system.settings WHERE name = 'log_comment'"
+        )
+        == "hello world\n"
+    )

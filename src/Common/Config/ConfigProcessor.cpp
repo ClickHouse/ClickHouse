@@ -631,7 +631,17 @@ void ConfigProcessor::doIncludesRecursive(
             if (env_val == nullptr)
                 return nullptr;
 
-            env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
+            /// First try parsing as-is to support XML sub-elements in env vars.
+            /// If parsing fails (e.g. the value contains unescaped XML special characters),
+            /// escape the value and retry as plain text.
+            try
+            {
+                env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+            }
+            catch (Poco::Exception &)
+            {
+                env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
+            }
 
             return getRootNode(env_document.get());
         };
