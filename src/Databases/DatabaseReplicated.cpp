@@ -2188,17 +2188,6 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
         txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, -1));
     }
-    else if (txn && txn->isInitialQuery() && txn->isCreateOrReplaceQuery() && txn->isExecuted())
-    {
-        /// After CREATE OR REPLACE commits the exchange transaction, cleanup drops of old tables
-        /// happen outside the committed transaction. Remove their ZK metadata nodes directly,
-        /// since we can no longer add ops to the already-committed transaction. Tables that were
-        /// only ever created locally (temp tables) will simply have no node to remove.
-        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
-        auto code = txn->getZooKeeper()->tryRemove(metadata_zk_path);
-        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-            throw zkutil::KeeperException::fromPath(code, metadata_zk_path);
-    }
 
     auto table = tryGetTable(table_name, getContext());
     if (!table)
@@ -2214,14 +2203,6 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     new_digest -= getMetadataHash(table_name);
     if (txn && !txn->isCreateOrReplaceQuery() && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
-    else if (txn && txn->isCreateOrReplaceQuery() && txn->isExecuted() && !is_recovering)
-    {
-        /// Directly update the per-replica digest in ZK for the same reason as above.
-        auto digest_path = replica_path + "/digest";
-        auto code = txn->getZooKeeper()->trySet(digest_path, toString(new_digest));
-        if (code != Coordination::Error::ZOK)
-            throw zkutil::KeeperException::fromPath(code, digest_path);
-    }
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
 
@@ -2313,7 +2294,16 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
-    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
+
+    /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
+    /// from the transaction because renameTable will create it under the final name atomically.
+    /// However, inner tables (`.inner_id.*`) are NOT renamed during the exchange — they keep
+    /// their UUID-based name — so their metadata nodes must still be created here, as part of
+    /// the rename transaction that commits everything. Without this, an explicit DROP TABLE
+    /// after CREATE OR REPLACE would fail with a ZooKeeper "No node" error when trying to
+    /// remove the inner table's metadata node.
+    const bool is_inner_table = query.getTable().starts_with(".inner_id.");
+    if (txn && txn->isInitialQuery() && (!txn->isCreateOrReplaceQuery() || is_inner_table))
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         /// zk::multi(...) will throw if `metadata_zk_path` exists

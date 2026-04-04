@@ -44,16 +44,19 @@ SELECT * FROM target ORDER BY x;
 DROP TABLE IF EXISTS test_mv SYNC;
 REPLACE MATERIALIZED VIEW test_mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM src; -- { clientError SYNTAX_ERROR }
 
--- 8. POPULATE: data in src before CREATE OR REPLACE is read into the new inner table
+-- 8. Replacing an inner-table MV creates a fresh inner table; pre-existing src data is not captured
+-- (POPULATE is not supported in Replicated databases and is tested separately)
 DROP TABLE IF EXISTS test_mv SYNC;
 TRUNCATE TABLE src;
 INSERT INTO src VALUES (1000), (2000), (3000);
-CREATE OR REPLACE MATERIALIZED VIEW test_mv ENGINE = MergeTree ORDER BY x POPULATE AS SELECT x FROM src;
-SELECT x FROM test_mv ORDER BY x;
+CREATE OR REPLACE MATERIALIZED VIEW test_mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM src;
+-- Without POPULATE the inner table starts empty; pre-existing src rows are not captured
+SELECT count() FROM test_mv;
 
--- Replace again with POPULATE: old inner table is dropped, new one is populated from current src
+-- After replace, only future inserts are captured; old inner table is dropped
 INSERT INTO src VALUES (4000);
-CREATE OR REPLACE MATERIALIZED VIEW test_mv ENGINE = MergeTree ORDER BY x POPULATE AS SELECT x FROM src;
+CREATE OR REPLACE MATERIALIZED VIEW test_mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM src;
+INSERT INTO src VALUES (5000);
 SELECT x FROM test_mv ORDER BY x;
 
 -- 9. Idempotency: identical CREATE OR REPLACE twice; data inserted between the two is lost (inner table is replaced)
