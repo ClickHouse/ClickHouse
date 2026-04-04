@@ -1356,6 +1356,9 @@ Print a readable number tip on the right side of the table if the block consists
     DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
+    DECLARE(Bool, output_format_vertical_escape_special_characters, true, R"(
+If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the Vertical output format are rendered as C-style escape sequences such as \0, \t, \n, or \xNN instead of being printed as raw bytes.
+)", 0) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).

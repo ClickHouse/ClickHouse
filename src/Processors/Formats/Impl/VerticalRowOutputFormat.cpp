@@ -90,7 +90,8 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         }
 
         /// Escape non-printable characters so they are visible instead of being silently swallowed.
-        serialized_value = escapeNonPrintableCharacters(serialized_value, color);
+        if (format_settings.pretty.vertical_escape_special_characters)
+            serialized_value = escapeNonPrintableCharacters(serialized_value, color);
 
         /// Highlight groups of thousands.
         if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
