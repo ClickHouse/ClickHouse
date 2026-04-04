@@ -473,7 +473,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             if constexpr (has_nullmap)
             {
                 nullmap[i] = overflow;
-                to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(out);
+                to[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(std::round(out));
             }
             else
             {
@@ -488,7 +488,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
                             "{} convert overflow. Float is out of Decimal range",
                             ToDataType::family_name);
                 }
-                to[i] = static_cast<ToNativeType>(out);
+                to[i] = static_cast<ToNativeType>(std::round(out));
             }
         }
     }
