@@ -128,7 +128,7 @@ public:
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
     std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
 
-    /// Just allocate some objects, real initialization is done by `intialize method`
+    /// Just allocate some objects, real initialization is done by `initialize`
     KeeperDispatcher();
 
     /// Call shutdown
