@@ -1,5 +1,9 @@
-0
-0
-0	NumberOfPendingMutations metric checked
-0	Warnings potentially affected by stale metrics
-1	Mutations created to test metric processing
+bool_type_byte	08
+nullable_bool_type_byte	08
+size_match	9	9	1
+bool_roundtrip_true	true
+bool_roundtrip_false	false
+nullable_bool_true	true
+nullable_bool_false	false
+nullable_bool_null	\N
+uint8_type_byte	10

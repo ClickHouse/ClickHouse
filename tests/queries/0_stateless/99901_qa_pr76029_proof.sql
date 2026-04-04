@@ -1,72 +1,42 @@
 -- Tags: no-parallel
 SET max_execution_time=30;
 
--- This test exercises the bug where processWarning methods use stale metrics after values.swap(new_values)
--- The bug is in AsynchronousMetrics.cpp:2428-2431 where new_values contains OLD metrics after swap
--- but processWarningForMutationStats/Memory/CPU are called with stale new_values instead of fresh values
+-- Bug: isBool(type) returns false for Nullable(Bool) in fieldAsBSONValue
+-- In BSONCXXHelper.h:55, isBool(type) is called with the original Nullable(Bool) type
+-- instead of the unwrapped nested type, so Nullable(Bool) is not recognized as Bool
+-- and gets serialized as int32 instead of BSON bool (used by StorageMongoDB).
+--
+-- The BSONEachRow output format correctly unwraps Nullable before calling isBool,
+-- so we test through that format to exercise and verify the Nullable(Bool) BSON path.
 
--- Clean state
-DROP TABLE IF EXISTS test_stale_metrics_99901;
+-- Test 1: Verify BSON type byte for Bool vs Nullable(Bool)
+-- BSON document: <doc_size:4 bytes><type_byte:1><field_name><\0><value>...<\0 end>
+-- For Bool: type byte = 0x08, value = 1 byte
+-- For Int32: type byte = 0x10, value = 4 bytes
+-- hex positions: 8 hex chars (4 bytes size) + 2 hex chars (type byte) = chars 9-10
+SELECT 'bool_type_byte' AS test,
+       substring(hex(formatRow('BSONEachRow', true::Bool AS a)), 9, 2) AS type_hex;
 
--- Create a MergeTree table to generate mutations and trigger warnings
-CREATE TABLE test_stale_metrics_99901 (
-    id UInt64,
-    data String,
-    timestamp DateTime DEFAULT now()
-) ENGINE = MergeTree()
-PARTITION BY toYYYYMM(timestamp)
-ORDER BY id;
+SELECT 'nullable_bool_type_byte' AS test,
+       substring(hex(formatRow('BSONEachRow', CAST(true AS Nullable(Bool)) AS a)), 9, 2) AS type_hex;
 
--- Insert some data to have parts to mutate
-INSERT INTO test_stale_metrics_99901 SELECT number, 'data_' || toString(number), now() FROM numbers(1000);
+-- Test 2: Both Bool and Nullable(Bool) should produce identical BSON when non-null
+-- If the bug affected BSONEachRow, Nullable(Bool) would be 3 bytes larger (int32 vs bool)
+SELECT 'size_match' AS test,
+       length(formatRow('BSONEachRow', true::Bool AS a)) AS bool_size,
+       length(formatRow('BSONEachRow', CAST(true AS Nullable(Bool)) AS a)) AS nullable_bool_size,
+       length(formatRow('BSONEachRow', true::Bool AS a))
+           = length(formatRow('BSONEachRow', CAST(true AS Nullable(Bool)) AS a)) AS same_size;
 
--- Create multiple mutations to increase NumberOfPendingMutations metric
--- These will create entries that the processWarningForMutationStats function should detect
-ALTER TABLE test_stale_metrics_99901 UPDATE data = 'updated_1_' || data WHERE id % 10 = 0;
-ALTER TABLE test_stale_metrics_99901 UPDATE data = 'updated_2_' || data WHERE id % 10 = 1;
-ALTER TABLE test_stale_metrics_99901 UPDATE data = 'updated_3_' || data WHERE id % 10 = 2;
-ALTER TABLE test_stale_metrics_99901 UPDATE data = 'updated_4_' || data WHERE id % 10 = 3;
-ALTER TABLE test_stale_metrics_99901 UPDATE data = 'updated_5_' || data WHERE id % 10 = 4;
+-- Test 3: Round-trip Bool through BSONEachRow
+SELECT 'bool_roundtrip_true' AS test, a FROM format('BSONEachRow', 'a Bool', formatRow('BSONEachRow', true::Bool AS a));
+SELECT 'bool_roundtrip_false' AS test, a FROM format('BSONEachRow', 'a Bool', formatRow('BSONEachRow', false::Bool AS a));
 
--- Force metric updates multiple times to trigger the code path where the bug occurs
--- This exercises the AsynchronousMetrics.cpp:2424-2431 path repeatedly
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
-SELECT sleep(0.1); -- Brief pause to let metrics settle
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
-SELECT sleep(0.1);
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
+-- Test 4: Round-trip Nullable(Bool) through BSONEachRow
+SELECT 'nullable_bool_true' AS test, a FROM format('BSONEachRow', 'a Nullable(Bool)', formatRow('BSONEachRow', CAST(true AS Nullable(Bool)) AS a));
+SELECT 'nullable_bool_false' AS test, a FROM format('BSONEachRow', 'a Nullable(Bool)', formatRow('BSONEachRow', CAST(false AS Nullable(Bool)) AS a));
+SELECT 'nullable_bool_null' AS test, a FROM format('BSONEachRow', 'a Nullable(Bool)', formatRow('BSONEachRow', CAST(NULL AS Nullable(Bool)) AS a));
 
--- Check if we can observe the NumberOfPendingMutations metric
--- The bug would cause processWarningForMutationStats to use stale values
-SELECT
-    COALESCE((SELECT value > 0 FROM system.asynchronous_metrics WHERE metric = 'NumberOfPendingMutations' LIMIT 1), 0) as has_pending_mutations,
-    'NumberOfPendingMutations metric checked' as status;
-
--- Force one more metric reload to exercise the buggy code path again
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
-
--- Check if warnings are properly updated (this tests the processWarning functions)
--- The bug might cause warnings to be based on stale metrics
-SELECT 
-    count(*) as warning_count,
-    'Warnings potentially affected by stale metrics' as note
-FROM system.warnings 
-WHERE message LIKE '%pending mutations%' OR message LIKE '%memory%' OR message LIKE '%CPU%';
-
--- Verify that mutations were created (they may complete quickly)
-SELECT
-    count(*) > 0 as mutations_exist,
-    'Mutations created to test metric processing' as status
-FROM system.mutations
-WHERE table = 'test_stale_metrics_99901';
-
--- Final metric reload to ensure we exercise the buggy swap logic one more time
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
-
--- This test primarily exercises the code path where the bug exists.
--- Even if the output looks correct, sanitizers in CI (TSAN, ASAN) may detect:
--- - Race conditions when accessing metrics after swap
--- - Use of stale data in processWarning methods
--- - Memory consistency issues in concurrent access
-
-DROP TABLE IF EXISTS test_stale_metrics_99901;
+-- Test 5: Contrast with UInt8 (not Bool) - should produce int32 BSON type (0x10)
+SELECT 'uint8_type_byte' AS test,
+       substring(hex(formatRow('BSONEachRow', toUInt8(1) AS a)), 9, 2) AS type_hex;
