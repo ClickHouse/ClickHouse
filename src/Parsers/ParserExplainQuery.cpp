@@ -139,7 +139,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /// genuinely belongs to the INSERT.
         if (auto * insert_query = query->as<ASTInsertQuery>())
         {
-            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values")
+            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values" && !insert_query->settings_ast)
             {
                 ParserKeyword s_format(Keyword::FORMAT);
                 if (!s_format.checkWithoutMoving(pos, expected))
