@@ -207,6 +207,11 @@ protected:
                                 const std::vector<Arguments> & hosts_and_ports_arguments) = 0;
     virtual void processConfig() = 0;
 
+    /// Returns true if the query text fails to parse because the parser
+    /// reached the end of input (expecting more tokens). Used in single-line
+    /// interactive mode to prompt for continuation lines.
+    bool queryNeedsContinuation(const String & text) const;
+
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 

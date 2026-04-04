@@ -223,6 +223,14 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
     return line;
 }
 
+String LineReader::readOneSingleLine(const String & prompt)
+{
+    auto status = readOneLine(prompt);
+    if (status != INPUT_LINE)
+        return {};
+    return input;
+}
+
 LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 {
     input.clear();

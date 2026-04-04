@@ -2955,6 +2955,69 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 }
 
 
+bool ClientBase::queryNeedsContinuation(const String & text) const
+{
+    /// Check if the query text fails to parse specifically because the parser
+    /// reached the end of input and expected more tokens. This is used in
+    /// single-line interactive mode to automatically prompt for continuation
+    /// lines instead of showing a syntax error.
+
+    auto trimmed = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+    if (trimmed.empty())
+        return false;
+
+    const auto & settings = client_context->getSettingsRef();
+    const Dialect dialect = settings[Setting::dialect];
+
+    std::unique_ptr<IParserBase> parser;
+    const char * begin = text.data();
+    const char * end = begin + text.size();
+
+    if (dialect == Dialect::kusto)
+        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+    else if (dialect == Dialect::prql)
+        parser = std::make_unique<ParserPRQLQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    else if (dialect == Dialect::promql)
+        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+    else if (dialect == Dialect::polyglot)
+        parser = std::make_unique<ParserPolyglotQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+    else
+        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+    unsigned max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
+    unsigned max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
+
+    Tokens tokens(begin, end, 0, true);
+    IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+
+    /// If there are no significant tokens, no continuation needed.
+    if (token_iterator->isEnd())
+        return false;
+
+    /// Check for unmatched parentheses first -- unclosed parens clearly need continuation.
+    {
+        Tokens paren_tokens(begin, end, 0, true);
+        UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(paren_tokens));
+        if (!unmatched.empty())
+            return true;
+    }
+
+    ASTPtr ast;
+    Expected expected;
+    bool parse_res = parser->parse(token_iterator, ast, expected);
+
+    if (parse_res)
+    {
+        /// Parsed successfully. No continuation needed.
+        return false;
+    }
+
+    /// Parsing failed. Check if the failure is at the end of input.
+    const auto last_token = token_iterator.max();
+    return last_token.type == TokenType::EndOfStream;
+}
+
+
 bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
@@ -3699,6 +3762,31 @@ void ClientBase::runInteractive()
             }
 
             input = lr->readLine(getPrompt(), ":-] ");
+
+            /// In single-line mode (the default), if the parser fails at the end
+            /// of input (expecting more tokens), automatically prompt for
+            /// continuation lines instead of showing a syntax error. This is
+            /// similar to how JavaScript REPL works. The user can submit the
+            /// query simply by pressing Enter on a valid (or empty) line.
+            if (!multiline && !input.empty())
+            {
+                /// Do not ask for continuation if the input is an exit command
+                /// or a backslash command, because these are not SQL queries.
+                auto trimmed_for_check = trim(input, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
+                bool is_special_command = exit_strings.contains(trimmed_for_check)
+                    || trimmed_for_check.starts_with("\\");
+
+                if (!is_special_command)
+                {
+                    while (queryNeedsContinuation(input))
+                    {
+                        String continuation = lr->readOneSingleLine(":-] ");
+                        if (continuation.empty())
+                            break;
+                        input += "\n" + continuation;
+                    }
+                }
+            }
         }
 
         if (input.empty())
