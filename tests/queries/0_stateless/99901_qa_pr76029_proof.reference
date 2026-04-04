@@ -1,0 +1,5 @@
+0
+0
+0	NumberOfPendingMutations metric checked
+0	Warnings potentially affected by stale metrics
+1	Mutations created to test metric processing
