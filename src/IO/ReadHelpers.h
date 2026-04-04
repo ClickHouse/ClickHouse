@@ -862,12 +862,21 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     {
         if (s[4] < '0' || s[4] > '9')
         {
+            /// Validate date digit positions to avoid reading garbage from unrelated data in the buffer.
+            /// This is important because the optimistic path peeks ahead in the buffer which may contain
+            /// data beyond the current value (e.g. subsequent column values in a VALUES clause).
+            /// See https://github.com/ClickHouse/ClickHouse/issues/30383
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
+                else
+                    return ReturnType(false);
+            }
+
             if constexpr (!throw_exception)
             {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                    || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                    return ReturnType(false);
-
                 if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
                     return ReturnType(false);
             }
@@ -880,16 +889,17 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             UInt8 minute = 0;
             UInt8 second = 0;
 
-            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario
-            bool dt_long = (s[10] == ' ' || s[10] == 'T');
+            /// Simply determine whether it is YYYY-MM-DD hh:mm:ss or YYYY-MM-DD by the content of the tenth character in an optimistic scenario.
+            /// Additionally validate that the time part has digits at expected positions to avoid misinterpreting
+            /// unrelated data (e.g. a closing quote followed by a space) as a datetime with time component.
+            bool dt_long = (s[10] == ' ' || s[10] == 'T')
+                && isNumericASCII(s[11]) && isNumericASCII(s[12])
+                && isNumericASCII(s[14]) && isNumericASCII(s[15])
+                && isNumericASCII(s[17]) && isNumericASCII(s[18]);
             if (dt_long)
             {
                 if constexpr (!throw_exception)
                 {
-                    if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
-                        || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
-                        return ReturnType(false);
-
                     if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
                         return ReturnType(false);
                 }
