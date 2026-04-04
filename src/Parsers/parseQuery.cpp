@@ -304,7 +304,8 @@ ASTPtr tryParseQuery(
         {
             if (lookahead->isError())
             {
-                /// Find the end of the current query (up to semicolon or end of stream) to avoid printing all subsequent queries.
+                /// Find the end of the current query (up to semicolon or end of stream)
+                /// to avoid printing all subsequent queries in the error message.
                 IParser::Pos lookahead_query_end = lookahead;
                 while (!lookahead_query_end->isEnd() && lookahead_query_end->type != TokenType::Semicolon)
                     ++lookahead_query_end;
