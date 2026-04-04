@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -20,6 +21,7 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsString default_compression_codec;
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -41,6 +43,14 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
+    /// If the MergeTree setting `default_compression_codec` is explicitly set,
+    /// it takes priority over the codec chosen by the server-wide compression config.
+    /// This ensures that `default_compression_codec.txt` written to disk matches
+    /// the codec actually used for columns (see `getCodecDescOrDefault`).
+    auto codec_setting = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
+    if (!codec_setting.empty())
+        default_codec = CompressionCodecFactory::instance().get(codec_setting, {});
+
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
     auto prewarm_caches = data_part->storage.getCachesToPrewarm(part_uncompressed_bytes);
     bool save_marks_in_cache = prewarm_caches.mark_cache != nullptr || prewarm_caches.index_mark_cache != nullptr;
