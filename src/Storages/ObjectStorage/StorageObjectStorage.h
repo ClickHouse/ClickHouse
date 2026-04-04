@@ -158,6 +158,8 @@ public:
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
+
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
@@ -190,6 +192,12 @@ protected:
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
+
+    /// Sample file path used for hive partition column detection.
+    /// Stored so that `getStorageSnapshot` can dynamically expose hive
+    /// virtual columns when `use_hive_partitioning` is enabled at
+    /// query time, even if it was disabled at CREATE TABLE time.
+    String hive_sample_path;
 
     LoggerPtr log;
 

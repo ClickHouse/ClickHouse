@@ -214,7 +214,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
         if (!partition_strategy.has_value())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition strategy to be specified");
 
-        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
+        /// If partition_strategy == none, we add hive columns, if present, to virtual columns.
         if (context->getSettingsRef()[Setting::use_hive_partitioning]
             && partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
         {

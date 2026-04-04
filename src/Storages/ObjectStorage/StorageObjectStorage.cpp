@@ -142,8 +142,11 @@ StorageObjectStorage::StorageObjectStorage(
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
-    const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
-        && !configuration->partition_strategy
+    /// Always resolve sample path so that hive partition columns can be exposed
+    /// as virtual columns regardless of the `use_hive_partitioning` setting at
+    /// CREATE TABLE time.  The setting is still respected at read time and when
+    /// enriching the inferred physical schema.
+    const bool need_resolve_sample_path = !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
@@ -242,6 +245,8 @@ StorageObjectStorage::StorageObjectStorage(
         format_settings,
         context);
 
+    hive_sample_path = sample_path;
+
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
     {
@@ -317,6 +322,50 @@ StorageObjectStorage::StorageObjectStorage(
         sample_path));
 
     setInMemoryMetadata(metadata);
+}
+
+StorageSnapshotPtr StorageObjectStorage::getStorageSnapshot(
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr query_context) const
+{
+    /// When `use_hive_partitioning` is enabled in the *query* context but was
+    /// not enabled at CREATE TABLE time, the base virtual columns list won't
+    /// contain the hive partition columns.  Dynamically add them here so that
+    /// the query analyzer can resolve column references like `SELECT date ...`.
+    if (!hive_sample_path.empty()
+        && query_context->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->partition_strategy)
+    {
+        auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(
+            metadata_snapshot->getColumns(), hive_sample_path, format_settings, query_context);
+
+        if (!hive_columns.empty())
+        {
+            const auto & base_virtuals = getVirtualsPtr();
+            bool need_extra_virtuals = false;
+            for (const auto & col : hive_columns)
+            {
+                if (!base_virtuals->has(col.name) && !metadata_snapshot->getColumns().has(col.name))
+                {
+                    need_extra_virtuals = true;
+                    break;
+                }
+            }
+
+            if (need_extra_virtuals)
+            {
+                auto extended_virtuals = std::make_shared<VirtualColumnsDescription>(*base_virtuals);
+                for (const auto & col : hive_columns)
+                {
+                    if (!extended_virtuals->has(col.name) && !metadata_snapshot->getColumns().has(col.name))
+                        extended_virtuals->addEphemeral(col.name, col.type, "");
+                }
+                return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(extended_virtuals));
+            }
+        }
+    }
+
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
 }
 
 String StorageObjectStorage::getName() const
