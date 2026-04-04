@@ -528,6 +528,11 @@ struct DeltaLakeMetadataImpl
         auto partition_values_column_raw = res_block.getByName("add.partitionValues").column;
         const auto & partition_values_column = assert_cast<const ColumnMap &>(*partition_values_column_raw);
 
+        /// Process schema and add entries in a single pass so that each row's
+        /// partition values are decoded against the schema active at that row's position.
+        /// A checkpoint can contain metaData entries from multiple schema versions
+        /// interleaved with add entries; using a two-pass approach would decode all
+        /// partition values against the final schema, which can fail after schema evolution.
         for (size_t i = 0; i < path_column.size(); ++i)
         {
             const auto metadata = String(schema_column.getDataAt(i));
@@ -549,10 +554,7 @@ struct DeltaLakeMetadataImpl
                     file_schema = current_schema;
                 }
             }
-        }
 
-        for (size_t i = 0; i < path_column.size(); ++i)
-        {
             const auto path = String(path_column.getDataAt(i));
             if (path.empty())
                 continue;
