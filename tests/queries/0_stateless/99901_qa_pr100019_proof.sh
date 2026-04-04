@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT -q "
-SET max_execution_time=30;
-
 DROP TABLE IF EXISTS test_metadata_removal_race_1;
 DROP TABLE IF EXISTS test_metadata_removal_race_2;
 DROP TABLE IF EXISTS test_metadata_removal_race_3;
