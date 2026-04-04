@@ -1,15 +1,19 @@
-#include <utility>
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnSparse.h>
 
 namespace CurrentMetrics
 {
@@ -33,12 +37,34 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
 }
 
+/// Information about a single Join-mode patch part, needed to create a reader during build.
+struct JoinPatchInfo
+{
+    PatchPartInfoForReader patch_part;
+    NamesAndTypesList columns;
+    VirtualFields const_virtual_fields;
+    MergeTreeSettingsPtr storage_settings;
+};
+
+/// State stored by `init`, consumed exactly once by `ensureBuilt`.
+struct PatchJoinCache::BuildState
+{
+    absl::node_hash_map<String, JoinPatchInfo> join_patches;
+    std::vector<std::pair<DataPartPtr, MarkRanges>> data_parts_with_ranges;
+    MergeTreeReadTask::Extras extras;
+    MergeTreeSettingsPtr storage_settings;
+    size_t num_threads = 1;
+};
+
+PatchJoinCache::PatchJoinCache() = default;
+PatchJoinCache::~PatchJoinCache() = default;
+
 static const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name)
 {
     return assert_cast<const ColumnUInt64 &>(*block.getByName(column_name).column).getData();
 }
 
-void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches, size_t num_buckets_)
+void PatchJoinCache::initStructure(const RangesInPatchParts & ranges_in_patches, size_t num_buckets_)
 {
     num_buckets = num_buckets_;
 
@@ -55,6 +81,223 @@ void PatchJoinCache::init(const RangesInPatchParts & ranges_in_patches, size_t n
 
         all_ranges_by_name[patch_name] = ranges;
     }
+}
+
+/// Collects unique Join-mode patches from the given task info.
+static void collectJoinPatches(
+    const MergeTreeReadTaskInfo & info,
+    const MergeTreeSettingsPtr & storage_settings,
+    absl::node_hash_map<String, JoinPatchInfo> & join_patches)
+{
+    for (size_t i = 0; i < info.patch_parts.size(); ++i)
+    {
+        const auto & pp = info.patch_parts[i];
+        if (pp.mode != PatchMode::Join)
+            continue;
+
+        const auto & name = pp.part->getPartName();
+        if (!join_patches.contains(name))
+        {
+            join_patches[name] = JoinPatchInfo{
+                .patch_part = pp,
+                .columns = info.task_columns.patch_columns[i],
+                .const_virtual_fields = info.const_virtual_fields,
+                .storage_settings = storage_settings,
+            };
+        }
+    }
+}
+
+/// Returns true if any of the patch parts uses Join mode.
+static bool hasJoinPatch(const PatchPartsForReader & patch_parts)
+{
+    for (const auto & pp : patch_parts)
+        if (pp.mode == PatchMode::Join)
+            return true;
+    return false;
+}
+
+void PatchJoinCache::init(
+    const RangesInPatchParts & ranges_in_patches,
+    size_t num_buckets_,
+    const std::vector<MergeTreeReadTaskInfoPtr> & per_part_infos,
+    const RangesInDataParts & parts_ranges,
+    const MergeTreeReadTask::Extras & extras,
+    const MergeTreeSettingsPtr & storage_settings,
+    size_t num_threads)
+{
+    initStructure(ranges_in_patches, num_buckets_);
+
+    absl::node_hash_map<String, JoinPatchInfo> join_patches;
+    std::vector<std::pair<DataPartPtr, MarkRanges>> data_parts_with_ranges;
+
+    for (size_t part_idx = 0; part_idx < per_part_infos.size(); ++part_idx)
+    {
+        const auto & info = *per_part_infos[part_idx];
+        if (info.patch_parts.empty())
+            continue;
+
+        collectJoinPatches(info, storage_settings, join_patches);
+
+        if (hasJoinPatch(info.patch_parts))
+            data_parts_with_ranges.emplace_back(parts_ranges[part_idx].data_part, parts_ranges[part_idx].ranges);
+    }
+
+    if (join_patches.empty())
+        return;
+
+    build_state = std::unique_ptr<BuildState>(new BuildState{
+        .join_patches = std::move(join_patches),
+        .data_parts_with_ranges = std::move(data_parts_with_ranges),
+        .extras = extras,
+        .storage_settings = storage_settings,
+        .num_threads = num_threads,
+    });
+}
+
+void PatchJoinCache::init(
+    const RangesInPatchParts & ranges_in_patches,
+    size_t num_buckets_,
+    const MergeTreeReadTaskInfoPtr & read_task_info,
+    const DataPartPtr & data_part,
+    const MarkRanges & mark_ranges,
+    const MergeTreeReadTask::Extras & extras,
+    const MergeTreeSettingsPtr & storage_settings,
+    size_t num_threads)
+{
+    initStructure(ranges_in_patches, num_buckets_);
+
+    absl::node_hash_map<String, JoinPatchInfo> join_patches;
+    collectJoinPatches(*read_task_info, storage_settings, join_patches);
+
+    if (join_patches.empty())
+        return;
+
+    build_state = std::unique_ptr<BuildState>(new BuildState{
+        .join_patches = std::move(join_patches),
+        .data_parts_with_ranges = {{data_part, mark_ranges}},
+        .extras = extras,
+        .storage_settings = storage_settings,
+        .num_threads = num_threads,
+    });
+}
+
+void PatchJoinCache::ensureBuilt()
+{
+    std::call_once(build_once, [this]
+    {
+        if (!build_state)
+            return;
+
+        auto state = std::move(build_state);
+
+        auto reader_factory = [&](const String & patch_name) -> PatchJoinCache::Reader
+        {
+            auto it = state->join_patches.find(patch_name);
+            if (it == state->join_patches.end())
+                return [](const MarkRanges &) { return Block{}; };
+
+            auto & patch_info = it->second;
+            auto reader = createMergeTreeReader(
+                patch_info.patch_part.part,
+                patch_info.columns,
+                state->extras.storage_snapshot,
+                patch_info.storage_settings,
+                getAllRanges(patch_name),
+                patch_info.const_virtual_fields,
+                state->extras.uncompressed_cache,
+                state->extras.mark_cache,
+                /*deserialization_prefixes_cache=*/ nullptr,
+                state->extras.reader_settings,
+                /*avg_value_size_hints=*/ {},
+                /*profile_callback=*/ {});
+
+            bool perform_alter_conversions = patch_info.patch_part.perform_alter_conversions;
+
+            /// Store reader as shared_ptr because std::function requires copyable callable.
+            auto shared_reader = std::shared_ptr<IMergeTreeReader>(std::move(reader));
+            auto range_reader = std::make_shared<MergeTreeRangeReader>(
+                shared_reader.get(), Block{}, nullptr,
+                std::make_shared<ReadStepPerformanceCounters>(), false, shared_reader->canReadIncompleteGranules());
+
+            return [shared_reader, range_reader, perform_alter_conversions]
+                   (const MarkRanges & ranges) mutable -> Block
+            {
+                MarkRanges mutable_ranges = ranges;
+                size_t max_rows = std::numeric_limits<UInt64>::max();
+                auto read_result = range_reader->startReadingChain(max_rows, mutable_ranges);
+
+                for (auto & column : read_result.columns)
+                    column = removeSpecialRepresentations(column);
+
+                if (perform_alter_conversions)
+                    range_reader->getReader()->performRequiredConversions(read_result.columns);
+
+                return range_reader->getSampleBlock().cloneWithColumns(read_result.columns);
+            };
+        };
+
+        auto stats_factory = [&](const String & patch_name, const MarkRanges & ranges) -> PatchStatsMap
+        {
+            auto it = state->join_patches.find(patch_name);
+            if (it == state->join_patches.end())
+                return {};
+
+            const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(
+                it->second.patch_part.part.get());
+            if (!loaded_part)
+                return {};
+
+            PatchStatsMap stats;
+            auto block_number_stats = getPatchMinMaxStats(
+                loaded_part->getDataPart(), ranges, BlockNumberColumn::name, state->extras.reader_settings);
+            auto block_offset_stats = getPatchMinMaxStats(
+                loaded_part->getDataPart(), ranges, BlockOffsetColumn::name, state->extras.reader_settings);
+
+            if (block_number_stats && block_offset_stats)
+            {
+                for (size_t i = 0; i < ranges.size(); ++i)
+                {
+                    auto & range_stats = stats[ranges[i]];
+                    range_stats.block_number_stat = (*block_number_stats)[i];
+                    range_stats.block_offset_stat = (*block_offset_stats)[i];
+                }
+            }
+
+            return stats;
+        };
+
+        /// Collect per-mark minmax stats from data parts for filtering patch ranges.
+        std::vector<MinMaxStat> data_block_number_ranges;
+        MinMaxStat data_block_offset_range{std::numeric_limits<UInt64>::max(), 0};
+
+        for (const auto & [data_part, data_ranges] : state->data_parts_with_ranges)
+        {
+            auto block_number_stats = getPatchMinMaxStats(
+                data_part, data_ranges, BlockNumberColumn::name, state->extras.reader_settings);
+
+            if (block_number_stats)
+                for (const auto & stat : *block_number_stats)
+                    data_block_number_ranges.push_back(stat);
+
+            auto block_offset_stats = getPatchMinMaxStats(
+                data_part, data_ranges, BlockOffsetColumn::name, state->extras.reader_settings);
+
+            if (block_offset_stats)
+            {
+                for (const auto & stat : *block_offset_stats)
+                {
+                    data_block_offset_range.min = std::min(data_block_offset_range.min, stat.min);
+                    data_block_offset_range.max = std::max(data_block_offset_range.max, stat.max);
+                }
+            }
+        }
+
+        std::sort(data_block_number_ranges.begin(), data_block_number_ranges.end(),
+            [](const MinMaxStat & a, const MinMaxStat & b) { return a.min < b.min; });
+
+        build(reader_factory, stats_factory, data_block_number_ranges, data_block_offset_range, state->num_threads);
+    });
 }
 
 static const PatchJoinCache::Entries empty_entries;
@@ -75,10 +318,7 @@ void PatchJoinCache::build(
     size_t num_threads)
 {
     if (all_ranges_by_name.empty())
-    {
-        built = true;
         return;
-    }
 
     /// Flatten all ranges into work items: (patch_name, single_range).
     /// Use minmax stats to skip patch ranges whose block_number/block_offset range
@@ -135,10 +375,7 @@ void PatchJoinCache::build(
     }
 
     if (work_items.empty())
-    {
-        built = true;
         return;
-    }
 
     /// Sort work items by patch_name so consecutive items for the same patch are together.
     /// This allows each thread to reuse readers for consecutive ranges of the same patch.
@@ -309,8 +546,6 @@ void PatchJoinCache::build(
 
         pool.wait();
     }
-
-    built = true;
 }
 
 void PatchJoinCache::Entry::addBlock(Block read_block)

@@ -17,6 +17,7 @@ namespace DB
 
 class UncompressedCache;
 class MarkCache;
+struct PatchJoinCache;
 
 struct MergeTreeBlockSizePredictor;
 using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;

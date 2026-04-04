@@ -4,12 +4,9 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
-#include <Columns/ColumnSparse.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
 namespace DB
 {
@@ -317,167 +314,15 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
     }
 
     ranges_in_patch_parts.optimize();
-    patch_join_cache->init(ranges_in_patch_parts, settings[Setting::apply_patch_parts_join_cache_buckets]);
 
-    /// Collect info for pre-building join cache for each unique Join-mode patch part.
-    struct PatchReaderInfo
-    {
-        PatchPartInfoForReader patch_part;
-        NamesAndTypesList columns;
-        VirtualFields const_virtual_fields;
-        MergeTreeSettingsPtr storage_settings;
-    };
-
-    absl::node_hash_map<String, PatchReaderInfo> join_patches;
-
-    for (const auto & info : per_part_infos)
-    {
-        for (size_t i = 0; i < info->patch_parts.size(); ++i)
-        {
-            const auto & pp = info->patch_parts[i];
-            if (pp.mode != PatchMode::Join)
-                continue;
-
-            const auto & name = pp.part->getPartName();
-            if (join_patches.contains(name))
-                continue;
-
-            join_patches[name] = PatchReaderInfo{
-                .patch_part = pp,
-                .columns = info->task_columns.patch_columns[i],
-                .const_virtual_fields = info->const_virtual_fields,
-                .storage_settings = info->data_part->storage.getSettings(),
-            };
-        }
-    }
-
-    if (!join_patches.empty())
-    {
-        auto reader_factory = [&](const String & patch_name) -> PatchJoinCache::Reader
-        {
-            auto it = join_patches.find(patch_name);
-            if (it == join_patches.end())
-                return [](const MarkRanges &) { return Block{}; };
-
-            auto & patch_info = it->second;
-            auto reader = createMergeTreeReader(
-                patch_info.patch_part.part,
-                patch_info.columns,
-                storage_snapshot,
-                patch_info.storage_settings,
-                patch_join_cache->getAllRanges(patch_name),
-                patch_info.const_virtual_fields,
-                owned_uncompressed_cache.get(),
-                owned_mark_cache.get(),
-                /*deserialization_prefixes_cache=*/ nullptr,
-                reader_settings,
-                /*avg_value_size_hints=*/ {},
-                /*profile_callback=*/ {});
-
-            bool perform_alter_conversions = patch_info.patch_part.perform_alter_conversions;
-
-            /// Store reader as shared_ptr because std::function requires copyable callable.
-            auto shared_reader = std::shared_ptr<IMergeTreeReader>(std::move(reader));
-            auto range_reader = std::make_shared<MergeTreeRangeReader>(
-                shared_reader.get(), Block{}, nullptr,
-                std::make_shared<ReadStepPerformanceCounters>(), false, shared_reader->canReadIncompleteGranules());
-
-            return [shared_reader, range_reader, perform_alter_conversions]
-                   (const MarkRanges & ranges) mutable -> Block
-            {
-                MarkRanges mutable_ranges = ranges;
-                size_t max_rows = std::numeric_limits<UInt64>::max();
-                auto read_result = range_reader->startReadingChain(max_rows, mutable_ranges);
-
-                for (auto & column : read_result.columns)
-                    column = removeSpecialRepresentations(column);
-
-                if (perform_alter_conversions)
-                    range_reader->getReader()->performRequiredConversions(read_result.columns);
-
-                auto block = range_reader->getSampleBlock().cloneWithColumns(read_result.columns);
-                return block;
-            };
-        };
-
-        auto stats_factory = [&](const String & patch_name, const MarkRanges & ranges) -> PatchStatsMap
-        {
-            auto it = join_patches.find(patch_name);
-            if (it == join_patches.end())
-                return {};
-
-            const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(it->second.patch_part.part.get());
-            if (!loaded_part)
-                return {};
-
-            PatchStatsMap stats;
-            auto block_number_stats = getPatchMinMaxStats(loaded_part->getDataPart(), ranges, BlockNumberColumn::name, reader_settings);
-            auto block_offset_stats = getPatchMinMaxStats(loaded_part->getDataPart(), ranges, BlockOffsetColumn::name, reader_settings);
-
-            if (block_number_stats && block_offset_stats)
-            {
-                for (size_t i = 0; i < ranges.size(); ++i)
-                {
-                    auto & range_stats = stats[ranges[i]];
-                    range_stats.block_number_stat = (*block_number_stats)[i];
-                    range_stats.block_offset_stat = (*block_offset_stats)[i];
-                }
-            }
-
-            return stats;
-        };
-
-        /// Read per-mark min/max _block_number and _block_offset from the data parts' minmax indexes
-        /// to filter patch ranges by overlap. This is cheap — reads only the index, not the column data.
-        std::vector<MinMaxStat> data_block_number_ranges;
-        MinMaxStat data_block_offset_range{std::numeric_limits<UInt64>::max(), 0};
-
-        for (size_t part_idx = 0; part_idx < parts_ranges.size(); ++part_idx)
-        {
-            const auto & part_with_ranges = parts_ranges[part_idx];
-            const auto & info = per_part_infos[part_idx];
-
-            bool has_join_patch = false;
-            for (const auto & pp : info->patch_parts)
-            {
-                if (pp.mode == PatchMode::Join)
-                {
-                    has_join_patch = true;
-                    break;
-                }
-            }
-
-            if (!has_join_patch)
-                continue;
-
-            auto block_number_stats = getPatchMinMaxStats(
-                part_with_ranges.data_part, part_with_ranges.ranges, BlockNumberColumn::name, reader_settings);
-
-            if (block_number_stats)
-            {
-                for (const auto & stat : *block_number_stats)
-                    data_block_number_ranges.push_back(stat);
-            }
-
-            auto block_offset_stats = getPatchMinMaxStats(
-                part_with_ranges.data_part, part_with_ranges.ranges, BlockOffsetColumn::name, reader_settings);
-
-            if (block_offset_stats)
-            {
-                for (const auto & stat : *block_offset_stats)
-                {
-                    data_block_offset_range.min = std::min(data_block_offset_range.min, stat.min);
-                    data_block_offset_range.max = std::max(data_block_offset_range.max, stat.max);
-                }
-            }
-        }
-
-        /// Sort intervals by min so we can binary-search for overlap.
-        std::sort(data_block_number_ranges.begin(), data_block_number_ranges.end(),
-            [](const MinMaxStat & a, const MinMaxStat & b) { return a.min < b.min; });
-
-        patch_join_cache->build(reader_factory, stats_factory, data_block_number_ranges, data_block_offset_range, pool_settings.threads);
-    }
+    patch_join_cache->init(
+        ranges_in_patch_parts,
+        settings[Setting::apply_patch_parts_join_cache_buckets],
+        per_part_infos,
+        parts_ranges,
+        getExtras(),
+        parts_ranges.empty() ? nullptr : parts_ranges.front().data_part->storage.getSettings(),
+        pool_settings.threads);
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const

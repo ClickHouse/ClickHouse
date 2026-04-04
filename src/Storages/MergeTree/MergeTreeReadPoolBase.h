@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
+#include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 

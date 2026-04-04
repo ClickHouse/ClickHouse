@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
+#include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/ColumnsNumber.h>

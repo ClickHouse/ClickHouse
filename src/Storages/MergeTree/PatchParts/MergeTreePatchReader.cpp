@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -171,11 +172,12 @@ MergeTreePatchReaderJoin::MergeTreePatchReaderJoin(PatchPartInfoForReader patch_
 
 PatchReadResultPtr MergeTreePatchReaderJoin::createResult() const
 {
+    if (!patch_join_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinCache must be set before reading");
+
+    patch_join_cache->ensureBuilt();
+
     auto result = std::make_shared<PatchJoinReadResult>();
-
-    if (!patch_join_cache || !patch_join_cache->isBuilt())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PatchJoinCache must be pre-built before reading");
-
     result->entries = patch_join_cache->getEntries(patch_part.part->getPartName());
     result->num_buckets = patch_join_cache->getNumBuckets();
 

@@ -9,6 +9,7 @@
 namespace DB
 {
 
+struct PatchJoinCache;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
 class MergeTreePatchReader : private boost::noncopyable

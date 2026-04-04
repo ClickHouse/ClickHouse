@@ -5,15 +5,18 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
+#include <mutex>
+
 namespace DB
 {
-
-struct RangesInPatchParts;
 
 /**  We use two-level map (_block_number -> (_block_offset -> row_idx)).
   *  Block numbers are usually the same for large ranges of consecutive rows.
@@ -52,7 +55,7 @@ using PatchHashMap = absl::node_hash_map<
     AllocatorWithMemoryTracking<std::pair<const UInt64, PatchOffsetsMap>>>;
 
 /**  A cache of maps and blocks for applying patch parts in Join mode.
-  *  The cache is pre-built as a separate step before reading from MergeTree table.
+  *  The cache is lazily built on first access via `ensureBuilt`.
   *  Data is distributed into `num_buckets` entries per patch part by `_block_number % num_buckets`,
   *  so that each entry can be built independently without contention.
   *  After the cache is built, it is read-only and no locking is needed.
@@ -67,7 +70,8 @@ using PatchHashMap = absl::node_hash_map<
 struct PatchJoinCache
 {
     using Reader = std::function<Block(const MarkRanges &)>;
-    PatchJoinCache() = default;
+    PatchJoinCache();
+    ~PatchJoinCache();
 
     struct Entry
     {
@@ -77,37 +81,37 @@ struct PatchJoinCache
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
 
-        /// Lock-free: used during pre-build when each bucket has a single writer.
+        /// Lock-free: used during build when each bucket has a single writer.
         void addBlock(Block read_block);
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
     using Entries = std::vector<EntryPtr>;
 
-    /// A callback that creates a reader function for a given patch part name.
-    /// The returned Reader reads a set of mark ranges and returns a Block with patch data.
-    using ReaderFactory = std::function<Reader(const String & patch_name)>;
+    /// Initializes the cache structure, collects Join-mode patches from the given
+    /// per-part infos, and stores parameters for deferred building (no I/O).
+    void init(
+        const RangesInPatchParts & ranges_in_patches,
+        size_t num_buckets,
+        const std::vector<MergeTreeReadTaskInfoPtr> & per_part_infos,
+        const RangesInDataParts & parts_ranges,
+        const MergeTreeReadTask::Extras & extras,
+        const MergeTreeSettingsPtr & storage_settings,
+        size_t num_threads);
 
-    /// A callback that loads minmax stats for `_block_number` and `_block_offset` per mark range
-    /// for a given patch part. Returns a map from MarkRange to PatchStats.
-    using StatsFactory = std::function<PatchStatsMap(const String & patch_name, const MarkRanges & ranges)>;
+    /// Single-part overload for `MergeTreeSequentialSource` (merges/mutations).
+    void init(
+        const RangesInPatchParts & ranges_in_patches,
+        size_t num_buckets,
+        const MergeTreeReadTaskInfoPtr & read_task_info,
+        const DataPartPtr & data_part,
+        const MarkRanges & mark_ranges,
+        const MergeTreeReadTask::Extras & extras,
+        const MergeTreeSettingsPtr & storage_settings,
+        size_t num_threads);
 
-    /// Initializes the cache with `num_buckets` entries per patch part.
-    void init(const RangesInPatchParts & ranges_in_patches, size_t num_buckets);
-
-    /// Pre-builds the cache by reading all patch data for Join-mode patches.
-    /// Parallelized by ranges across `num_threads`. Each bucket is filled lock-free.
-    /// `data_block_number_ranges` is a sorted (by min) list of [min, max] intervals of `_block_number`
-    /// from the data being queried, used together with minmax stats to skip patch ranges
-    /// whose block_number range doesn't overlap any queried interval.
-    /// `data_block_offset_range` is the [min, max] range of `_block_offset` in the data being queried;
-    /// when valid (min <= max), it is used to further prune patch ranges by block_offset.
-    void build(const ReaderFactory & reader_factory, const StatsFactory & stats_factory,
-               const std::vector<MinMaxStat> & data_block_number_ranges,
-               const MinMaxStat & data_block_offset_range,
-               size_t num_threads);
-
-    bool isBuilt() const { return built; }
+    /// Thread-safe lazy build. Reads all patch data on first call.
+    void ensureBuilt();
 
     /// Returns the entries for a specific patch part (all buckets).
     const Entries & getEntries(const String & patch_name) const;
@@ -125,16 +129,43 @@ struct PatchJoinCache
     }
 
 private:
+    using ReaderFactory = std::function<Reader(const String & patch_name)>;
+    using StatsFactory = std::function<PatchStatsMap(const String & patch_name, const MarkRanges & ranges)>;
+
+    void initStructure(const RangesInPatchParts & ranges_in_patches, size_t num_buckets);
+
+    /// Performs the actual build. Called exactly once by `ensureBuilt`.
+    void build(
+        const ReaderFactory & reader_factory,
+        const StatsFactory & stats_factory,
+        const std::vector<MinMaxStat> & data_block_number_ranges,
+        const MinMaxStat & data_block_offset_range,
+        size_t num_threads);
+
     size_t num_buckets = 1;
-    bool built = false;
 
     /// Per-patch-name buckets, each vector has size = num_buckets. Immutable after build.
     absl::node_hash_map<String, Entries> cache;
 
     /// Ranges are filled on initialization and then are read-only.
     absl::node_hash_map<String, MarkRanges> all_ranges_by_name;
+
+    /// Deferred build state, consumed by `ensureBuilt`.
+    struct BuildState;
+    std::unique_ptr<BuildState> build_state;
+    std::once_flag build_once;
 };
 
 using PatchJoinCachePtr = std::shared_ptr<PatchJoinCache>;
+
+struct PatchJoinReadResult : public PatchReadResult
+{
+    PatchJoinCache::Entries entries;
+    size_t num_buckets = 1;
+
+    bool empty() const override { return entries.empty(); }
+};
+
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, size_t num_buckets);
 
 }

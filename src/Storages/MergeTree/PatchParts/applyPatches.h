@@ -1,7 +1,6 @@
 #pragma once
 #include <deque>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
-#include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -72,17 +71,8 @@ struct PatchMergeReadResult : public PatchReadResult
     bool empty() const override { return blocks.empty(); }
 };
 
-struct PatchJoinReadResult : public PatchReadResult
-{
-    PatchJoinCache::Entries entries;
-    size_t num_buckets = 1;
-
-    bool empty() const override { return entries.empty(); }
-};
-
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
 PatchToApplyPtr applyPatchMerge(const Block & result_block, const ConstBlockPtr & patch_block, const PatchPartInfoForReader & patch);
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entries & entries, size_t num_buckets);
 
 /// Updates rows in result_block from patch_block at specified indices.
 /// versions_block is a shared block with current versions of rows for each updated column.
