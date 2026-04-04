@@ -357,9 +357,20 @@ ASTPtr tryParseQuery(
     UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
-        out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
-            this_query_end_pos->end, unmatched_parens, hilite, query_description);
-        return nullptr;
+        /// Filter to only include parentheses within the current query range,
+        /// to avoid assertion failures and excessive output when there are multiple queries.
+        const char * current_query_end = this_query_end_pos->end;
+        UnmatchedParentheses filtered_parens;
+        for (const auto & paren : unmatched_parens)
+            if (paren.begin >= query_begin && paren.begin < current_query_end)
+                filtered_parens.push_back(paren);
+
+        if (!filtered_parens.empty())
+        {
+            out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
+                current_query_end, filtered_parens, hilite, query_description);
+            return nullptr;
+        }
     }
 
     if (!parse_res)
