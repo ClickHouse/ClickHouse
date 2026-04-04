@@ -1,9 +1,4 @@
 -- Regression test for heap-buffer-overflow in leftPad/rightPad.
--- Pad strings of various lengths exercise different SIMD chunk counts:
--- 'abcdefghijklmnopq' (17 chars, no doubling, worst case: 15 byte overread)
--- 'abcdefghi' (9 chars, doubled to 18, 14 byte overread)
--- 'abc' (3 chars, doubled to 24, 8 byte overread)
--- 'abcdefghijklmnopqrstuvwxyz0123456' (33 chars, 3 SIMD chunks)
 
 -- Non-UTF8 paths (PaddingChars<false>)
 SELECT leftPad('x', 100, 'abcdefghijklmnopq');

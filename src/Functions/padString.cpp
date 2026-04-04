@@ -33,7 +33,7 @@ namespace
     class PaddingChars
     {
     public:
-        explicit PaddingChars(const String & pad_string) { init(pad_string); }
+        explicit PaddingChars(String && pad_string) { init(std::move(pad_string)); }
 
         ALWAYS_INLINE size_t numCharsInPadString() const
         {
@@ -70,7 +70,7 @@ namespace
         }
 
     private:
-        void init(const String & pad_string)
+        void init(String pad_string)
         {
             if (pad_string.empty())
                 pad_data.push_back(' ');
@@ -233,13 +233,13 @@ namespace
             StringSink res_sink{*col_res, input_rows_count};
 
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-                executeForSource(StringSource{*col}, column_length, pad_string, res_sink);
+                executeForSource(StringSource{*col}, column_length, std::move(pad_string), res_sink);
             else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
-                executeForSource(FixedStringSource{*col_fixed}, column_length, pad_string, res_sink);
+                executeForSource(FixedStringSource{*col_fixed}, column_length, std::move(pad_string), res_sink);
             else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                executeForSource(ConstSource<StringSource>{*col_const}, column_length, pad_string, res_sink);
+                executeForSource(ConstSource<StringSource>{*col_const}, column_length, std::move(pad_string), res_sink);
             else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
-                executeForSource(ConstSource<FixedStringSource>{*col_const_fixed}, column_length, pad_string, res_sink);
+                executeForSource(ConstSource<FixedStringSource>{*col_const_fixed}, column_length, std::move(pad_string), res_sink);
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -252,7 +252,7 @@ namespace
 
     private:
         template <typename SourceStrings>
-        void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
+        void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, String pad_string, StringSink & res_sink) const
         {
             const auto & chars = strings.getElements();
             bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
@@ -261,7 +261,7 @@ namespace
 
             if (!is_actually_utf8)
             {
-                PaddingChars<false> padding_chars{pad_string};
+                PaddingChars<false> padding_chars{std::move(pad_string)};
                 if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
                     executeForSourceAndLength<false>(
                         std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
@@ -271,7 +271,7 @@ namespace
             }
             else
             {
-                PaddingChars<true> padding_chars{pad_string};
+                PaddingChars<true> padding_chars{std::move(pad_string)};
                 if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
                     executeForSourceAndLength<true>(
                         std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
