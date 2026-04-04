@@ -1,0 +1,27 @@
+Row 1:
+──────
+value: hello\0world
+
+Row 1:
+──────
+value: \x01\x02\x03
+
+Row 1:
+──────
+value: tab\there
+
+Row 1:
+──────
+value: line\nbreak
+
+Row 1:
+──────
+value: carriage\rreturn
+
+Row 1:
+──────
+value: null\0and\x01mixed\etext
+
+Row 1:
+──────
+value: normal text

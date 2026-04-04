@@ -20,6 +20,10 @@ String highlightDigitGroups(String source);
 /// Highlights and underscores trailing spaces using ANSI escape sequences.
 String highlightTrailingSpaces(String source);
 
+/// Replace non-printable characters with C-style escape sequences or hex codes.
+/// If color is true, the escape sequences are highlighted with ANSI color codes.
+String escapeNonPrintableCharacters(String source, bool color);
+
 /// If the visible width of the name is longer than `cut_to` + `hysteresis`,
 /// and it isn't a proper identifier, truncate it to `cut_to`
 /// by cutting it in the middle and replacing with a single filler character (ascii or unicode).

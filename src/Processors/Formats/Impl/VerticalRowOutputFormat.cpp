@@ -81,10 +81,7 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
         constexpr size_t indent = 0;
         serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
     }
-    /// If we need highlighting.
-    else if (color
-        && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
-            || format_settings.pretty.highlight_trailing_spaces))
+    else
     {
         String serialized_value;
         {
@@ -92,19 +89,18 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
             serialization.serializeText(column, row_num, buf, format_settings);
         }
 
+        /// Escape non-printable characters so they are visible instead of being silently swallowed.
+        serialized_value = escapeNonPrintableCharacters(serialized_value, color);
+
         /// Highlight groups of thousands.
-        if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
+        if (color && format_settings.pretty.highlight_digit_groups && is_number[field_number])
             serialized_value = highlightDigitGroups(serialized_value);
 
         /// Highlight trailing spaces.
-        if (format_settings.pretty.highlight_trailing_spaces)
+        if (color && format_settings.pretty.highlight_trailing_spaces)
             serialized_value = highlightTrailingSpaces(serialized_value);
 
         out.write(serialized_value.data(), serialized_value.size());
-    }
-    else
-    {
-        serialization.serializeText(column, row_num, out, format_settings);
     }
 
     /// Write a tip.
