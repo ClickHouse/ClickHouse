@@ -4906,10 +4906,12 @@ def test_schema_evolution_add_column_legacy(started_cluster):
     """
 
     # Step 1: Create initial table with two columns.
+    # Note: Spark writes all columns as nullable in Delta Lake JSON metadata
+    # regardless of the Spark nullable flag, so the legacy parser returns Nullable types.
     initial_schema = StructType(
         [
-            StructField("id", IntegerType(), nullable=False),
-            StructField("name", StringType(), nullable=False),
+            StructField("id", IntegerType(), nullable=True),
+            StructField("name", StringType(), nullable=True),
         ]
     )
     initial_data = [(1, "Alice"), (2, "Bob")]
@@ -4919,7 +4921,7 @@ def test_schema_evolution_add_column_legacy(started_cluster):
 
     # Verify initial schema and data.
     assert node.query(f"DESCRIBE TABLE {delta_function} FORMAT TSV") == TSV(
-        [["id", "Int32"], ["name", "String"]]
+        [["id", "Nullable(Int32)"], ["name", "Nullable(String)"]]
     )
     assert (
         node.query(f"SELECT id, name FROM {delta_function} ORDER BY id")
@@ -4929,8 +4931,8 @@ def test_schema_evolution_add_column_legacy(started_cluster):
     # Step 2: Add a new column and append data with the evolved schema.
     evolved_schema = StructType(
         [
-            StructField("id", IntegerType(), nullable=False),
-            StructField("name", StringType(), nullable=False),
+            StructField("id", IntegerType(), nullable=True),
+            StructField("name", StringType(), nullable=True),
             StructField("age", IntegerType(), nullable=True),
         ]
     )
@@ -4939,9 +4941,9 @@ def test_schema_evolution_add_column_legacy(started_cluster):
     df2.write.option("mergeSchema", "true").mode("append").format("delta").save(path)
     upload_directory(minio_client, bucket, path, "")
 
-    # Verify evolved schema.
+    # Verify evolved schema includes the new column.
     assert node.query(f"DESCRIBE TABLE {delta_function} FORMAT TSV") == TSV(
-        [["id", "Int32"], ["name", "String"], ["age", "Nullable(Int32)"]]
+        [["id", "Nullable(Int32)"], ["name", "Nullable(String)"], ["age", "Nullable(Int32)"]]
     )
 
     # Old rows should have NULL for the new column, new rows should have the value.
