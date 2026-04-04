@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS test_metadata_removal_race_1;
+DROP TABLE IF EXISTS test_metadata_removal_race_1_new;
 DROP TABLE IF EXISTS test_metadata_removal_race_2;
 DROP TABLE IF EXISTS test_metadata_removal_race_3;
 
