@@ -30,10 +30,94 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
 {
+
+    /// Parse a setting string like 'col_a: 1, col_b: 2, col_c: 3' into a map.
+    std::optional<std::unordered_map<String, Int64>> parseColumnFieldIds(const String & str)
+    {
+        if (str.empty())
+            return std::nullopt;
+
+        std::unordered_map<String, Int64> result;
+        size_t pos = 0;
+        while (pos < str.size())
+        {
+            /// Skip whitespace.
+            while (pos < str.size() && str[pos] == ' ')
+                ++pos;
+            if (pos >= str.size())
+                break;
+
+            /// Read column name.
+            size_t name_start = pos;
+            while (pos < str.size() && str[pos] != ':' && str[pos] != ',')
+                ++pos;
+
+            if (pos >= str.size() || str[pos] != ':')
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid output_format_parquet_column_field_ids: expected 'column_name: field_id' pair, got '{}'",
+                    str.substr(name_start));
+
+            /// Trim trailing whitespace from name.
+            size_t name_end = pos;
+            while (name_end > name_start && str[name_end - 1] == ' ')
+                --name_end;
+
+            String name = str.substr(name_start, name_end - name_start);
+            if (name.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid output_format_parquet_column_field_ids: empty column name");
+
+            ++pos; /// Skip ':'.
+
+            /// Skip whitespace.
+            while (pos < str.size() && str[pos] == ' ')
+                ++pos;
+
+            /// Read field_id.
+            size_t id_start = pos;
+            while (pos < str.size() && str[pos] != ',' && str[pos] != ' ')
+                ++pos;
+
+            Int64 field_id;
+            try
+            {
+                field_id = std::stoll(str.substr(id_start, pos - id_start));
+            }
+            catch (...)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid output_format_parquet_column_field_ids: cannot parse field_id for column '{}'",
+                    name);
+            }
+
+            if (!result.emplace(name, field_id).second)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid output_format_parquet_column_field_ids: duplicate column name '{}'",
+                    name);
+
+            /// Skip whitespace.
+            while (pos < str.size() && str[pos] == ' ')
+                ++pos;
+
+            /// Skip comma.
+            if (pos < str.size() && str[pos] == ',')
+                ++pos;
+        }
+
+        if (result.empty())
+            return std::nullopt;
+
+        return result;
+    }
 
     parquet::ParquetVersion::type getParquetVersion(const FormatSettings & settings)
     {
@@ -81,6 +165,9 @@ namespace
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
     : IOutputFormat(header_, out_), format_settings{format_settings_}, format_filter_info(format_filter_info_)
 {
+    /// Parse user-specified field IDs from the setting.
+    column_field_ids = parseColumnFieldIds(format_settings.parquet.column_field_ids);
+
     if (format_settings.parquet.use_custom_encoder)
     {
         if (format_settings.parquet.output_version < FormatSettings::ParquetVersion::V2_6)
@@ -120,10 +207,14 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
         options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
-        if (format_filter_info_ && format_filter_info_->column_mapper)
-            schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
-        else
-            schema = convertSchema(*header_, options, std::nullopt);
+        /// Determine which field IDs to use: user setting takes priority over datalake metadata.
+        const auto & effective_field_ids = column_field_ids
+            ? column_field_ids
+            : (format_filter_info_ && format_filter_info_->column_mapper
+                ? std::optional<std::unordered_map<String, Int64>>(format_filter_info_->column_mapper->getStorageColumnEncoding())
+                : std::nullopt);
+
+        schema = convertSchema(*header_, options, effective_field_ids);
     }
 }
 
@@ -343,10 +434,14 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             });
     }
 
-    if (format_filter_info && format_filter_info->column_mapper)
-        ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num, format_filter_info->column_mapper->getStorageColumnEncoding());
-    else
-        ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num);
+    /// Determine which field IDs to use: user setting takes priority over datalake metadata.
+    const auto & effective_field_ids = column_field_ids
+        ? column_field_ids
+        : (format_filter_info && format_filter_info->column_mapper
+            ? std::optional<std::unordered_map<String, Int64>>(format_filter_info->column_mapper->getStorageColumnEncoding())
+            : std::nullopt);
+
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunks, columns_num, effective_field_ids);
 
     if (!file_writer)
     {

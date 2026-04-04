@@ -153,6 +153,9 @@ private:
     std::deque<Task> task_queue;
     std::deque<RowGroupState> row_groups;
     FormatFilterInfoPtr format_filter_info;
+
+    /// Parsed from output_format_parquet_column_field_ids setting.
+    std::optional<std::unordered_map<String, Int64>> column_field_ids;
 };
 
 }

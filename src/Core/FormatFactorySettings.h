@@ -1563,6 +1563,11 @@ Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/Mult
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
+    DECLARE(String, output_format_parquet_column_field_ids, "", R"(
+Specify Parquet field IDs for output columns. This is useful for producing Parquet files compatible with Apache Iceberg, which identifies columns by `field_id` rather than by name.
+
+The value is a comma-separated list of `column_name: field_id` pairs, for example: `'col_a: 1, col_b: 2, col_c: 3'`. Field IDs must be non-negative integers. All columns in the output must have a corresponding entry when this setting is non-empty.
+)", 0) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0) \
