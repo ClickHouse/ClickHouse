@@ -26,6 +26,7 @@
 #include <base/errnoToString.h>
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <fstream>
@@ -53,6 +54,14 @@ namespace ErrorCodes
 #if USE_SSL
     extern const int BAD_ARGUMENTS;
 #endif
+}
+
+/// Escape special XML characters in a string so it can be safely embedded as text content in an XML document.
+static std::string escapeForXMLText(const std::string & s)
+{
+    WriteBufferFromOwnString buf;
+    writeXMLStringForTextElement(s, buf);
+    return buf.str();
 }
 
 /// For cutting preprocessed path to this base
@@ -591,7 +600,17 @@ void ConfigProcessor::doIncludesRecursive(
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                /// First try parsing as-is to support XML sub-elements in ZooKeeper nodes.
+                /// If parsing fails (e.g. the value contains unescaped XML special characters),
+                /// escape the value and retry as plain text.
+                try
+                {
+                    zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
+                }
+                catch (Poco::Exception &)
+                {
+                    zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
+                }
                 return getRootNode(zk_document.get());
             };
 
@@ -612,7 +631,7 @@ void ConfigProcessor::doIncludesRecursive(
             if (env_val == nullptr)
                 return nullptr;
 
-            env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+            env_document = dom_parser.parseString("<from_env>" + escapeForXMLText(std::string{env_val}) + "</from_env>");
 
             return getRootNode(env_document.get());
         };
