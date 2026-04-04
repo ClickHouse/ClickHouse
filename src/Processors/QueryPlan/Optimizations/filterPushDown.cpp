@@ -927,6 +927,34 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (filter->getExpression().hasStatefulFunctions())
         return 0;
 
+    /// When the child is an ExpressionStep, merge it into the FilterStep so that
+    /// the filter can see through to the step below (e.g., TotalsHavingStep) and
+    /// potentially be pushed down further on the next optimization pass.
+    /// This is the same transformation as tryMergeExpressions for FilterStep -> ExpressionStep,
+    /// but it is needed here regardless of the query_plan_merge_expressions setting to ensure
+    /// consistent filter push-down behavior.
+    if (auto * child_expression = typeid_cast<ExpressionStep *>(child.get()))
+    {
+        auto & child_actions = child_expression->getExpression();
+        auto & parent_actions = filter->getExpression();
+
+        if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
+            return 0;
+
+        auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
+
+        auto new_filter = std::make_unique<FilterStep>(
+            child_expression->getInputHeaders().front(),
+            std::move(merged),
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn());
+        new_filter->setStepDescription(filter->getStepDescription());
+
+        parent_node->step = std::move(new_filter);
+        parent_node->children.swap(child_node->children);
+        return 1;
+    }
+
     const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());
     const auto * aggregating = typeid_cast<AggregatingStep *>(child.get());
 
