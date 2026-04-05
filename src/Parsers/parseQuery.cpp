@@ -343,8 +343,11 @@ ASTPtr tryParseQuery(
     if (last_token.isError())
     {
         /// Find the end of the current query to avoid printing all subsequent queries.
+        /// Note: do not stop at error tokens here, because last_token (the max token visited
+        /// by the parser) could be a later error token, and stopping at an earlier error would
+        /// make lex_end->end < last_token.begin, causing a size_t underflow in the error formatter.
         IParser::Pos lex_end = token_iterator;
-        while (!lex_end->isEnd() && !lex_end->isError() && lex_end->type != TokenType::Semicolon)
+        while (!lex_end->isEnd() && lex_end->type != TokenType::Semicolon)
             ++lex_end;
         out_error_message = getLexicalErrorMessage(query_begin, lex_end->end,
             last_token, hilite, query_description);
@@ -356,8 +359,9 @@ ASTPtr tryParseQuery(
     if (!unmatched_parens.empty())
     {
         /// Find the end of the current query to filter parens and avoid excessive output.
+        /// Note: do not stop at error tokens - same reasoning as the lexical error path above.
         IParser::Pos paren_end = token_iterator;
-        while (!paren_end->isEnd() && !paren_end->isError() && paren_end->type != TokenType::Semicolon)
+        while (!paren_end->isEnd() && paren_end->type != TokenType::Semicolon)
             ++paren_end;
         const char * current_query_end = paren_end->end;
 
