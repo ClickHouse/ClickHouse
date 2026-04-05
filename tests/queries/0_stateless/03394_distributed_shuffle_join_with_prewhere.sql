@@ -4,6 +4,8 @@ CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree()
 ORDER BY tuple()
 SETTINGS auto_statistics_types = 'tdigest,countmin,uniq,minmax';
 
+SET materialize_statistics_on_insert = 1;
+
 INSERT INTO test SELECT 'path' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path' || number::String, 'de', number FROM numbers(10);
 INSERT INTO test SELECT 'path' || number::String, 'ua', number FROM numbers(15);
@@ -16,11 +18,13 @@ SET
     enable_parallel_replicas = 0,
     distributed_plan_default_shuffle_join_bucket_count=3,
     distributed_plan_default_reader_bucket_count=3,
-    distributed_plan_force_exchange_kind='Streaming';
+    distributed_plan_force_exchange_kind='Streaming',
+    distributed_plan_max_rows_to_broadcast=0;
 
 SET enable_join_runtime_filters=1;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0; join order opt skipped → no [N] row counts in EXPLAIN output
 
 SELECT count() FROM test AS en, test AS de WHERE (en.path = de.path) AND (en.lang = 'en') AND (de.lang = 'de');
 
