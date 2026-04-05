@@ -498,6 +498,7 @@ public:
             table_functions = rhs.table_functions;
             executable_user_defined_functions = rhs.executable_user_defined_functions;
             sql_user_defined_functions = rhs.sql_user_defined_functions;
+            skip_index_types = rhs.skip_index_types;
         }
 
         QueryFactoriesInfo(QueryFactoriesInfo && rhs) = delete;
@@ -513,6 +514,7 @@ public:
         std::unordered_set<std::string> table_functions TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> executable_user_defined_functions TSA_GUARDED_BY(mutex);
         std::unordered_set<std::string> sql_user_defined_functions TSA_GUARDED_BY(mutex);
+        std::unordered_set<std::string> skip_index_types TSA_GUARDED_BY(mutex);
 
         mutable std::mutex mutex;
     };
@@ -1017,7 +1019,8 @@ public:
         Storage,
         TableFunction,
         ExecutableUserDefinedFunction,
-        SQLUserDefinedFunction
+        SQLUserDefinedFunction,
+        SkipIndexType
     };
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;

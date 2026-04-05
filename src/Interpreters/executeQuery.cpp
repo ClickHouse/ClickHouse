@@ -405,6 +405,7 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_table_functions = factories_info.table_functions;
         element.used_executable_user_defined_functions = factories_info.executable_user_defined_functions;
         element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
+        element.used_index_types = factories_info.skip_index_types;
     }
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();

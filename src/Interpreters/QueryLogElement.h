@@ -83,6 +83,7 @@ struct QueryLogElement
     std::unordered_set<String> used_table_functions;
     std::unordered_set<String> used_executable_user_defined_functions;
     std::unordered_set<String> used_sql_user_defined_functions;
+    std::unordered_set<String> used_index_types;
     std::set<String> used_row_policies;
     std::unordered_set<String> used_privileges;
     std::unordered_set<String> missing_privileges;

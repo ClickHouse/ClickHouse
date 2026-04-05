@@ -2652,6 +2652,10 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
             break;
         case QueryLogFactories::SQLUserDefinedFunction:
             query_factories_info.sql_user_defined_functions.emplace(created_object);
+            break;
+        case QueryLogFactories::SkipIndexType:
+            query_factories_info.skip_index_types.emplace(created_object);
+            break;
     }
 }
 

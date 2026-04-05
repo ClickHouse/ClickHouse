@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -1238,6 +1239,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             top_k_elapsed_us.load() / 1000,
             num_threads);
     }
+    /// Record used skip index types in the query log.
+    if (context->hasQueryContext() && settings[Setting::log_queries])
+    {
+        for (const auto & index_and_condition : skip_indexes.useful_indices)
+            context->getQueryContext()->addQueryFactoriesInfo(
+                Context::QueryLogFactories::SkipIndexType, index_and_condition.index->index.type);
+
+        if (skip_indexes.skip_index_for_top_k_filtering)
+            context->getQueryContext()->addQueryFactoriesInfo(
+                Context::QueryLogFactories::SkipIndexType, skip_indexes.skip_index_for_top_k_filtering->index.type);
+    }
+
     /// Skip empty ranges.
     std::erase_if(
         parts_with_ranges,
