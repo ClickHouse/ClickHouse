@@ -918,7 +918,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (fuzz_rand() % 20 == 0)
             fuzz_setting("inactive_parts_to_delay_insert", UInt64(fuzz_rand() % 50 + 1));
         if (fuzz_rand() % 20 == 0)
-            fuzz_setting("index_granularity", UInt64(1) << (fuzz_rand() % 14));
+            fuzz_setting("index_granularity", fuzz_rand() % 20 == 0 ? UInt64(0) : UInt64(1) << (fuzz_rand() % 14));
         if (fuzz_rand() % 20 == 0)
             fuzz_setting("lightweight_mutation_projection_mode", String(pickRandomly(fuzz_rand, Strings{"throw", "drop", "rebuild"})));
         if (fuzz_rand() % 20 == 0)

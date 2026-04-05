@@ -104,7 +104,9 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                             rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity],
                             my_max_block_size = this->block_size_params.max_block_size_rows]() -> std::optional<MarkRanges>
     {
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
+        const size_t max_marks_in_range = rows_granularity
+            ? (my_max_block_size + rows_granularity - 1) / rows_granularity
+            : 1;
         for (auto & desc : buffered_tasks)
         {
             if (desc.info == part_info && desc.projection_name == projection_name && !desc.ranges.empty())

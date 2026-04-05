@@ -1218,7 +1218,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         (const auto & ranges, int direction)
     {
         MarkRanges new_ranges;
-        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
+
+        /// How many marks are needed to have max_block_size_rows rows.
+        /// The idea is to read one mark first, then two marks, four marks, etc. until max_block_size_rows.
+        /// If index_granularity is 0, marks size is determined by index_granularity_bytes and so we cannot
+        /// easily estimate how many marks it takes.
+        /// However, in most cases, the use case for it is to have very large marks so we set max_marks_in_range to 1.
+        const size_t max_marks_in_range = rows_granularity
+            ? (my_max_block_size + rows_granularity - 1) / rows_granularity
+            : 1;
+
         size_t marks_in_range = 1;
 
         if (direction == 1)

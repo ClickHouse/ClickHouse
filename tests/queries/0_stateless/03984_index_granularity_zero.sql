@@ -28,3 +28,10 @@ SELECT count() FROM t;
 SELECT * FROM t FORMAT Null;
 
 DROP TABLE t;
+
+-- Test read in order path that had division by zero
+CREATE TABLE t (x UInt32) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 0;
+INSERT INTO t VALUES (1);
+SELECT * FROM t ORDER BY x;
+
+DROP TABLE t;
