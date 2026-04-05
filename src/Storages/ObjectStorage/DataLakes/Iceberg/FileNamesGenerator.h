@@ -51,9 +51,17 @@ public:
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
+    void setDataLocation(String data_location_)
+    {
+        data_location = std::move(data_location_);
+        if (!data_location.empty() && data_location.back() == '/')
+            data_location.pop_back();
+    }
+
 private:
     Poco::UUIDGenerator uuid_generator;
     String table_location;
+    String data_location; /// Optional override from `write.data.path` table property
     bool use_uuid_in_metadata = false;
     CompressionMethod compression_method = CompressionMethod::None;
     String format_name;
