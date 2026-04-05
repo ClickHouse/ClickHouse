@@ -125,6 +125,7 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
 - `used_executable_user_defined_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `executable user defined functions`, which were used during query execution.
 - `used_sql_user_defined_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `sql user defined functions`, which were used during query execution.
+- `used_index_types` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of data-skipping index types (e.g., `minmax`, `set`, `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`), which were used during query execution.
 - `used_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges which were successfully checked during query execution.
 - `missing_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges that are missing during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
@@ -212,6 +213,7 @@ used_storages:                         []
 used_table_functions:                  []
 used_executable_user_defined_functions:[]
 used_sql_user_defined_functions:       []
+used_skip_index_types:                 []
 used_privileges:                       []
 missing_privileges:                    []
 query_cache_usage:                     None
