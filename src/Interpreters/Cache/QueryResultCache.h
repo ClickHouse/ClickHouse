@@ -11,6 +11,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/UUID.h>
 
+#include <chrono>
 #include <optional>
 
 namespace DB
@@ -165,6 +166,10 @@ public:
 
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
+
+    /// Thundering herd prevention for streaming inserts: see `CacheBase::startAsyncInsert`.
+    bool startAsyncInsert(const Key & key, std::chrono::milliseconds timeout) { return cache.startAsyncInsert(key, timeout); }
+    void finishAsyncInsert(const Key & key) { cache.finishAsyncInsert(key); }
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;

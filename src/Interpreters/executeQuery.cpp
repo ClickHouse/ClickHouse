@@ -1661,6 +1661,13 @@ static BlockIO executeQueryImpl(
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        std::shared_ptr<QueryResultCache::Key> async_insert_key_to_finish;
+
+        SCOPE_EXIT({
+            if (async_insert_key_to_finish && query_result_cache)
+                query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
+        });
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
@@ -1688,14 +1695,18 @@ static BlockIO executeQueryImpl(
 
         if (!async_insert)
         {
+            /// Build the read key once (hash matches the write key; header differs but Key equality is AST-only).
+            std::optional<QueryResultCache::Key> qrc_key;
+            if (out_ast && can_use_query_result_cache)
+                qrc_key.emplace(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (qrc_key && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryResultCacheReader reader = query_result_cache->createReader(key);
+                    QueryResultCacheReader reader = query_result_cache->createReader(*qrc_key);
                     if (reader.hasCacheEntryForKey())
                     {
                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
@@ -1714,6 +1725,21 @@ static BlockIO executeQueryImpl(
 
             if (!get_result_from_query_result_cache())
             {
+                bool skip_execution = false;
+
+                /// Thundering herd: while one connection computes and streams into the cache, concurrent
+                /// identical queries wait here, then re-read from the cache instead of all executing.
+                if (qrc_key && settings[Setting::enable_writes_to_query_cache])
+                {
+                    const auto timeout = std::chrono::minutes(5);
+                    if (query_result_cache->startAsyncInsert(*qrc_key, timeout))
+                        async_insert_key_to_finish = std::make_shared<QueryResultCache::Key>(*qrc_key);
+                    else
+                        skip_execution = get_result_from_query_result_cache();
+                }
+
+                if (!skip_execution)
+                {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
                 {
@@ -1878,6 +1904,7 @@ static BlockIO executeQueryImpl(
                         }
                     }
                 }
+                }
             }
         }
 
@@ -1950,10 +1977,18 @@ static BlockIO executeQueryImpl(
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
                                      query_result_cache_usage,
+                                     query_result_cache,
+                                     async_insert_key_to_finish,
                                      // Need to be cached, since will be changed after complete()
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                auto finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                if (async_insert_key_to_finish)
+                {
+                    query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
+                    async_insert_key_to_finish.reset();
+                }
+                return finalized_info;
             };
 
             /// The finish callback logs the query result
@@ -1976,8 +2011,14 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span, query_result_cache, async_insert_key_to_finish](bool log_error) mutable
             {
+                if (async_insert_key_to_finish)
+                {
+                    query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
+                    async_insert_key_to_finish.reset();
+                }
+
                 if (implicit_tcl_executor->transactionRunning())
                 {
                     implicit_tcl_executor->rollback(context);
@@ -2000,6 +2041,7 @@ static BlockIO executeQueryImpl(
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
+            async_insert_key_to_finish.reset();
         }
     }
     catch (...)
