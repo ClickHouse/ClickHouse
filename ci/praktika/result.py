@@ -112,11 +112,8 @@ class Result(MetaClasses.Serializable):
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        # if not name:
-        #     name = _Environment.get().JOB_NAME
-        #     if not name:
-        #         print("ERROR: Failed to guess the .name")
-        #         raise
+        if not name:
+            name = _Environment.get().JOB_NAME
         start_time = None
         duration = None
         if not stopwatch:
@@ -337,26 +334,7 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def file_name_static(cls, name):
-        if not name:
-            return cls.experimental_file_name_static()
-        else:
-            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
-
-    @classmethod
-    def experimental_file_name_static(cls):
-        return f"{Settings.TEMP_DIR}/result_job.json"
-
-    @classmethod
-    def experimental_from_fs(cls, name):
-        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-        Shell.check(
-            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
-            verbose=True,
-        )
-        result = Result.from_fs(name)
-        result.name = name
-        result.dump()
-        return result
+        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
