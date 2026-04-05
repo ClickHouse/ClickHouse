@@ -1,6 +1,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -111,6 +112,16 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     if (apply_mode == "lazy" && !ctx_settings[Setting::allow_experimental_text_index_lazy_apply])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Lazy posting list apply mode requires setting allow_experimental_text_index_lazy_apply = 1");
+
+    bool has_posting_list_codec = postings_serialization.getPostingListCodec()
+        && postings_serialization.getPostingListCodec()->getType() != IPostingListCodec::Type::None;
+
+    if (apply_mode == "lazy" && !has_posting_list_codec)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Lazy posting list apply mode requires a posting list codec (e.g. posting_list_codec = 'bitpacking'). "
+            "The current text index was created without one, so `PostingListCursor` cannot decode non-compressed postings. "
+            "Either recreate the index with posting_list_codec = 'bitpacking', "
+            "or use text_index_posting_list_apply_mode = 'materialize'");
 
     use_lazy_mode = (apply_mode == "lazy") && (deserialization_state->version >= 2);
     lazy_density_threshold = ctx_settings[Setting::text_index_density_threshold].value;

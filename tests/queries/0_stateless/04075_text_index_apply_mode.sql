@@ -10,7 +10,7 @@ SELECT 'Test text_index_posting_list_apply_mode = materialize (default)';
 
 DROP TABLE IF EXISTS tab_mode;
 
-CREATE TABLE tab_mode(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
+CREATE TABLE tab_mode(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -68,7 +68,7 @@ SELECT 'Test lazy mode with merged parts';
 
 DROP TABLE IF EXISTS tab_merge;
 
-CREATE TABLE tab_merge(k UInt64, s String, INDEX idx s TYPE text(tokenizer = ngrams(2)))
+CREATE TABLE tab_merge(k UInt64, s String, INDEX idx s TYPE text(tokenizer = ngrams(2), posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -135,7 +135,7 @@ SELECT 'Test lazy mode with large dataset (>128 rows, compression block boundary
 
 DROP TABLE IF EXISTS tab_large;
 
-CREATE TABLE tab_large(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
+CREATE TABLE tab_large(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
@@ -172,7 +172,7 @@ SELECT 'Test lazy mode with multiple segments (multi-insert without merge)';
 
 DROP TABLE IF EXISTS tab_multi;
 
-CREATE TABLE tab_multi(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
+CREATE TABLE tab_multi(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -215,7 +215,7 @@ SELECT 'Test lazy mode with UTF-8 data and ngram tokenizer';
 
 DROP TABLE IF EXISTS tab_utf8;
 
-CREATE TABLE tab_utf8(k UInt64, s String, INDEX idx s TYPE text(tokenizer = ngrams(2)))
+CREATE TABLE tab_utf8(k UInt64, s String, INDEX idx s TYPE text(tokenizer = ngrams(2), posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -259,7 +259,7 @@ SELECT 'Test lazy mode consistency with direct read';
 
 DROP TABLE IF EXISTS tab_dr;
 
-CREATE TABLE tab_dr(k UInt64, text String, INDEX idx text TYPE text(tokenizer = 'splitByNonAlpha'))
+CREATE TABLE tab_dr(k UInt64, text String, INDEX idx text TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
 
@@ -294,7 +294,7 @@ DROP TABLE IF EXISTS tab_block_idx;
 
 -- Use small posting_list_block_size (256) to trigger multiple segments with fewer rows.
 -- This exercises the segment index layout where each segment has a trailing index section.
-CREATE TABLE tab_block_idx(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 256))
+CREATE TABLE tab_block_idx(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 256, posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
@@ -331,7 +331,7 @@ SELECT 'Test lazy mode with large posting list segment index after merge';
 
 DROP TABLE IF EXISTS tab_block_merge;
 
-CREATE TABLE tab_block_merge(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 256))
+CREATE TABLE tab_block_merge(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 256, posting_list_codec = 'bitpacking'))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 

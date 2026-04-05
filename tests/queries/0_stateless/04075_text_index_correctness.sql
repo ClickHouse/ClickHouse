@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS tab_eq;
 CREATE TABLE tab_eq(
     k UInt64,
     s String,
-    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 128)
+    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 128, posting_list_codec = 'bitpacking')
 ) ENGINE = MergeTree() ORDER BY k
   SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
