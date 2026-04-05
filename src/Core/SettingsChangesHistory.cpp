@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_materialized_cte", false, false, "New setting"},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
+            {"query_cache_herd_wait_timeout", 300, 300, "New setting: maximum wait for concurrent identical queries coalescing on query cache miss."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {

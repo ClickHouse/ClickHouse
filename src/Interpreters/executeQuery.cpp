@@ -160,6 +160,7 @@ namespace Setting
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsBool query_cache_compress_entries;
+    extern const SettingsSeconds query_cache_herd_wait_timeout;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
@@ -1731,8 +1732,10 @@ static BlockIO executeQueryImpl(
                 /// identical queries wait here, then re-read from the cache instead of all executing.
                 if (qrc_key && settings[Setting::enable_writes_to_query_cache])
                 {
-                    const auto timeout = std::chrono::minutes(5);
-                    if (query_result_cache->startAsyncInsert(*qrc_key, timeout))
+                    const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
+                    const std::optional<std::chrono::milliseconds> herd_wait_timeout
+                        = herd_wait_ms > 0 ? std::optional(std::chrono::milliseconds(herd_wait_ms)) : std::nullopt;
+                    if (query_result_cache->startAsyncInsert(*qrc_key, herd_wait_timeout))
                         async_insert_key_to_finish = std::make_shared<QueryResultCache::Key>(*qrc_key);
                     else
                         skip_execution = get_result_from_query_result_cache();
