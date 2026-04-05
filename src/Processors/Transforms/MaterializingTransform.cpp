@@ -5,9 +5,9 @@
 namespace DB
 {
 
-MaterializingTransform::MaterializingTransform(SharedHeader header, bool remove_special_representations_)
+MaterializingTransform::MaterializingTransform(SharedHeader header, bool remove_sparse_)
     : ISimpleTransform(header, std::make_shared<const Block>(materializeBlock(*header)), false)
-    , remove_special_representations(remove_special_representations_)
+    , remove_sparse(remove_sparse_)
 {
 }
 
@@ -19,8 +19,8 @@ void MaterializingTransform::transform(Chunk & chunk)
     for (auto & col : columns)
     {
         col = col->convertToFullColumnIfConst();
-        if (remove_special_representations)
-            col = removeSpecialRepresentations(col);
+        if (remove_sparse)
+            col = recursiveRemoveSparse(col);
     }
 
     chunk.setColumns(std::move(columns), num_rows);

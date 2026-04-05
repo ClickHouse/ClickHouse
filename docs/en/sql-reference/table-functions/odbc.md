@@ -4,7 +4,6 @@ sidebar_label: 'odbc'
 sidebar_position: 150
 slug: /sql-reference/table-functions/odbc
 title: 'odbc'
-doc_type: 'reference'
 ---
 
 # odbc Table Function
@@ -112,5 +111,5 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## Related {#see-also}
 
-- [ODBC dictionaries](/sql-reference/statements/create/dictionary/sources/odbc)
+- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
 - [ODBC table engine](/engines/table-engines/integrations/odbc).

@@ -48,6 +48,8 @@ private:
     void writeLists() TSA_REQUIRES(mutex);
     void scheduleWriteLists(AccessEntityType type) TSA_REQUIRES(mutex);
     void reloadAllAndRebuildLists() TSA_REQUIRES(mutex);
+    void setAllInMemory(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities) TSA_REQUIRES(mutex);
+    void removeAllExceptInMemory(const boost::container::flat_set<UUID> & ids_to_keep) TSA_REQUIRES(mutex);
 
     void listsWritingThreadFunc() TSA_NO_THREAD_SAFETY_ANALYSIS;
     void stopListsWritingThread();
@@ -60,27 +62,19 @@ private:
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;
     void deleteAccessEntityOnDisk(const UUID & id) const;
 
-    static bool isNotLoadedFromDisk(const AccessEntityPtr & entity);
-
-    /// Entity that hasn't been loaded yet.
-    struct EntityOnDisk : public IAccessEntity
+    using NameToIDMap = std::unordered_map<String, UUID>;
+    struct Entry
     {
-        EntityOnDisk(String name_, AccessEntityType type_): IAccessEntity(), type(type_) { this->setName(name_); }
-
-        std::shared_ptr<IAccessEntity> clone() const override { return std::make_shared<EntityOnDisk>(name, type); }
-
-        AccessEntityType getType() const override { return type; }
-    protected:
-        bool equal(const IAccessEntity & other) const override
-        {
-            return IAccessEntity::equal(other) && typeid(other) == typeid(EntityOnDisk);
-        }
-
+        UUID id;
+        String name;
         AccessEntityType type;
+        mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
     };
 
     String directory_path;
 
+    std::unordered_map<UUID, Entry> entries_by_id TSA_GUARDED_BY(mutex);
+    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)] TSA_GUARDED_BY(mutex);
     boost::container::flat_set<AccessEntityType> types_of_lists_to_write TSA_GUARDED_BY(mutex);
 
     /// Whether writing of the list files has been failed since the recent restart of the server.
@@ -94,9 +88,9 @@ private:
 
     bool lists_writing_thread_is_waiting = false;
 
+    AccessChangesNotifier & changes_notifier;
     std::atomic<bool> readonly;
     std::atomic<bool> backup_allowed;
     mutable std::mutex mutex;
-    mutable MemoryAccessStorage memory_storage TSA_GUARDED_BY(mutex);
 };
 }

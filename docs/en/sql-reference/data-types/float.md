@@ -5,7 +5,6 @@ sidebar_label: 'Float32 | Float64 | BFloat16'
 sidebar_position: 4
 slug: /sql-reference/data-types/float
 title: 'Float32 | Float64 | BFloat16 Types'
-doc_type: 'reference'
 ---
 
 :::note
@@ -118,7 +117,7 @@ See the rules for `NaN` sorting in the section [ORDER BY clause](../../sql-refer
 It is useful for machine learning and AI applications.
 
 ClickHouse supports conversions between `Float32` and `BFloat16` which 
-can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#toFloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#toBFloat16) functions.
+can be done using the [`toFloat32()`](../functions/type-conversion-functions.md/#tofloat32) or [`toBFloat16`](../functions/type-conversion-functions.md/#tobfloat16) functions.
 
 :::note
 Most other operations are not supported.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <Common/VariableContext.h>
 
@@ -38,6 +39,11 @@ public:
     static bool isBlocked(VariableContext current_level)
     {
         return current_level >= level;
+    }
+
+    static bool isBlockedAny()
+    {
+        return level < VariableContext::Max;
     }
 
     static VariableContext getLevel()

@@ -1,4 +1,0 @@
-<clickhouse>
-    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
-    <webassembly_udf_engine>wasmtime</webassembly_udf_engine>
-</clickhouse>

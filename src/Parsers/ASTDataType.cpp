@@ -13,26 +13,16 @@ String ASTDataType::getID(char delim) const
 
 ASTPtr ASTDataType::clone() const
 {
-    auto res = make_intrusive<ASTDataType>(*this);
-    const auto & arguments = getArguments();
+    auto res = std::make_shared<ASTDataType>(*this);
     res->children.clear();
 
     if (arguments)
-        res->children.push_back(arguments->clone());
+    {
+        res->arguments = arguments->clone();
+        res->children.push_back(res->arguments);
+    }
 
     return res;
-}
-
-ASTPtr ASTDataType::getArguments() const
-{
-    if (!children.empty())
-        return children[0];
-    return nullptr;
-}
-
-void ASTDataType::resetArguments()
-{
-    children.clear();
 }
 
 void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
@@ -46,7 +36,6 @@ void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
 {
     ostr << name;
 
-    const auto & arguments = getArguments();
     if (arguments && !arguments->children.empty())
     {
         ostr << '(';

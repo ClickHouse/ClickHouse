@@ -74,8 +74,7 @@ public:
     void alterTable(
         ContextPtr context,
         const StorageID & table_id,
-        const StorageInMemoryMetadata & metadata,
-        bool validate_new_create_query) override;
+        const StorageInMemoryMetadata & metadata) override;
 
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
@@ -108,13 +107,6 @@ protected:
     DiskPtr metadata_disk_ptr;
 
 private:
-    bool shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const;
-    void loadTableLazy(
-        ContextMutablePtr local_context,
-        const QualifiedTableName & name,
-        const ASTPtr & ast,
-        LoadingStrictnessLevel mode);
-
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
     String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
