@@ -253,3 +253,28 @@ Report the result and provide the PR URL.
 - Use Allman-style braces in any C++ code changes
 - When building ClickHouse after changes, redirect output to a log file in the build directory and use a subagent to analyze it
 - When running tests, redirect output to a log file and use a subagent to analyze it
+
+## 8. Fix unrelated CI failures
+
+After completing all work on the current PR (steps 1–7), review the CI failures that were identified as unrelated in step 4 — i.e., failures proven not caused by this PR's changes and not already being fixed by other open PRs.
+
+For each such unrelated failure:
+
+1. **Switch to master** and create a new branch:
+   ```bash
+   git checkout master
+   git pull origin master
+   git checkout -b fix/<descriptive-name>
+   ```
+
+2. **Investigate and fix** the failure: download logs, read the failing test and exercised code, and make the fix. Each fix goes on its own branch with its own PR.
+
+3. **Push and open a PR:**
+   ```bash
+   git push -u origin fix/<descriptive-name>
+   ```
+   Create a PR using `gh pr create` following the project's PR template (`.github/PULL_REQUEST_TEMPLATE.md`). Link to the open issue if one exists. Use the "CI Fix or improvement" changelog category.
+
+4. **Repeat** for each unrelated failure, one PR per fix.
+
+After all fixes are submitted, switch back to the original PR branch and report the list of new PRs created.
