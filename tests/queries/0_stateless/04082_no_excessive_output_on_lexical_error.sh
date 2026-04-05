@@ -9,7 +9,7 @@ yes 'SELECT 1 !;' | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -
 
 # Post-parse lexical errors (INSERT-prefix queries skip the early lookahead, so lexical errors
 # are caught by the post-parse last_token.isError() branch) should also be bounded:
-yes 'INSERT INTO t SELECT 1 !;' | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -c 'INSERT'
+yes 'INSERT INTO t SELECT 1 !;' | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'INSERT'
 
 # Unmatched parentheses should also not print all subsequent queries in the error message:
-yes 'SELECT (1;' | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -c 'SELECT'
+yes 'SELECT (1;' | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -cF 'SELECT'
