@@ -147,7 +147,6 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
         {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
         {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
         {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
-        {"_iceberg_metadata_file_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
     };
 }
 
@@ -255,9 +254,7 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                auto hive_format_settings = format_settings;
-                hive_format_settings.allow_number_leading_zeros = true;
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, hive_format_settings);
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
             }
         }
     }
@@ -402,7 +399,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (virtual_column.name == "_row_number")
         {
-#if USE_PARQUET
             auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
             if (chunk_info)
             {
@@ -415,33 +411,17 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                         column->insertValue(i + row_num_offset);
                 auto null_map = ColumnUInt8::create(chunk.getNumRows(), static_cast<UInt8>(0));
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
-                continue;
+                return;
             }
-            else
-            {
-                /// Row numbers not known, _row_number = NULL.
-                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-            }
-#else
-            // If Parquet format is not used, we don't have row numbers info, so _row_number = NULL.
+            /// Row numbers not known, _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
-#endif
-        }
-        else if (virtual_column.name == "_iceberg_metadata_file_path")
-        {
-            if (virtual_values.iceberg_metadata_file_path)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.iceberg_metadata_file_path)->convertToFullColumnIfConst());
-            else
-                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
-            FormatSettings hive_format_settings;
-            hive_format_settings.allow_number_leading_zeros = true;
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),
-                    convertFieldToType(Field(String(it->second)), *virtual_column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst());
+                    convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
     }
 }

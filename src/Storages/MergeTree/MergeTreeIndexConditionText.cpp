@@ -12,6 +12,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -741,26 +742,6 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
-
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
     ExpressionActions actions(std::move(subdag));
@@ -855,8 +836,14 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     Columns columns = prepared_set->getSetElements();
-    const auto & set_column = *columns[*set_key_position];
+    /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
 
+    if (*set_key_position >= columns.size())
+        return false;
+
+    const auto & set_column = *columns[*set_key_position];
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 
