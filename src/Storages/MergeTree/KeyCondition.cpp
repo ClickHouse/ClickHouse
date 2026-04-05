@@ -2437,8 +2437,6 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                 if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
                 {
-                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
-
                     const ActionsDAG::Node * next_node = nullptr;
                     for (const auto * arg : cur_node->children)
                     {
@@ -2453,6 +2451,11 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                     if (!next_node)
                         is_valid_chain = false;
+
+                    /// next_node is the non-constant child of cur_node, so next_node->result_type
+                    /// is the child's output type, which is the input type to cur_node's function.
+                    if (is_valid_chain)
+                        is_valid_chain = always_monotonic(*cur_node->function_base, *next_node->result_type);
 
                     cur_node = next_node;
                 }
