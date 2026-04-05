@@ -441,7 +441,7 @@ Non-ASCII characters in `s` are not modified by the function.
     };
     FunctionDocumentation::IntroducedIn translate_introduced_in = {22, 7};
     FunctionDocumentation::Category translate_category = FunctionDocumentation::Category::StringReplacement;
-    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
+    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, {}, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
 
     factory.registerFunction<FunctionTranslateASCII>(translate_documentation);
 
@@ -466,7 +466,7 @@ Like [`translate`](#translate) but assumes `s`, `from` and `to` are UTF-8 encode
         )"
     }
     };
-    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
+    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
 
     factory.registerFunction<FunctionTranslateUTF8>(utf8_documentation);
 }

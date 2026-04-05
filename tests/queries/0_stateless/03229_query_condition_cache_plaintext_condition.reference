@@ -1,8 +1,0 @@
---- with move to PREWHERE
-Run two queries, with and without query_condition_cache_store_conditions_as_plaintext enabled
-all_1_1_0	
-all_1_1_0	equals(b, 90000_UInt32)
---- without move to PREWHERE
-Run two queries, with and without query_condition_cache_store_conditions_as_plaintext enabled
-all_1_1_0	
-all_1_1_0	equals(b, 90000_UInt32)

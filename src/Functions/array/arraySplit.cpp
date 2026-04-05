@@ -126,7 +126,7 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1, 2, 3], [4, 5]]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArraySplit>(documentation);
 
@@ -141,7 +141,7 @@ REGISTER_FUNCTION(ArraySplit)
     FunctionDocumentation::Examples examples_split = {{"Usage example", "SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res", "[[1], [2, 3, 4], [5]]"}};
     FunctionDocumentation::IntroducedIn introduced_in_split = {20, 1};
     FunctionDocumentation::Category category_split = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_split = {description_split, syntax_split, arguments_split, returned_value_split, examples_split, introduced_in_split, category_split};
+    FunctionDocumentation documentation_split = {description_split, syntax_split, arguments_split, {}, returned_value_split, examples_split, introduced_in_split, category_split};
 
     factory.registerFunction<FunctionArrayReverseSplit>(documentation_split);
 }

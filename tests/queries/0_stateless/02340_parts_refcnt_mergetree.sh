@@ -53,11 +53,16 @@ function check_refcnt_for_table()
     done
 
     # NOTE: parts that are used in query will be holded in multiple places, and
-    # this is where magic 6 came from. Also there could be some other
+    # this is where magic 8 came from.
+    # Three of these are held reference held in the MergeTreeData itself
+    # - one which is the canonical reference to that part
+    # - another in a precomputed vector of active parts
+    # - another in a precomputed vector of ranges in active parts (each range in turn refers to the part)
+    # In addition to this, there also there could be some other
     # background threads (i.e. asynchronous metrics) that uses the part, so we
-    # simply filter parts not by "refcount > 1" but with some delta - "3", to
+    # simply filter parts not by "refcount > 1" but with some delta - "5", to
     # avoid flakiness.
-    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=6 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 3"
+    $CLICKHOUSE_CLIENT -q "select table, name, refcount>=8 from system.parts where database = '$CLICKHOUSE_DATABASE' and table = '$table' and refcount >= 5"
 
     # Kill the query gracefully.
     kill -INT $PID

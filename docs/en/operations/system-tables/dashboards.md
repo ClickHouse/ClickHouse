@@ -7,7 +7,7 @@ title: 'system.dashboards'
 doc_type: 'reference'
 ---
 
-Contains queries used by `/dashboard` page accessible though [HTTP interface](/interfaces/http.md).
+Contains queries used by `/dashboard` page accessible though [HTTP interface](/interfaces/http).
 This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.
 
 :::note

@@ -85,6 +85,7 @@ private:
 
     Coordination::XID close_xid = Coordination::CLOSE_XID;
     bool use_xid_64 = false;
+    bool expect_opentelemetry_tracing_context = false;
 
     /// Streams for reading/writing from/to client connection socket.
     std::optional<ReadBufferFromPocoSocket> in;
@@ -108,7 +109,7 @@ private:
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
-    bool tryExecuteFourLetterWordCmd(int32_t command);
+    bool tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 

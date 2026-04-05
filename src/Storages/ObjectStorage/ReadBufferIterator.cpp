@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -77,7 +76,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             if (!object_info->getObjectMetadata())
             {
-                auto meta = object_storage->tryGetObjectMetadata(path);
+                auto meta = object_storage->tryGetObjectMetadata(path, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }
@@ -120,20 +119,8 @@ void ReadBufferIterator::setNumRowsToLastFile(size_t num_rows)
 
 void ReadBufferIterator::setSchemaToLastFile(const ColumnsDescription & columns)
 {
-    if (query_settings.schema_inference_use_cache
-        && query_settings.schema_inference_mode == SchemaInferenceMode::UNION)
-    {
+    if (query_settings.schema_inference_use_cache)
         schema_cache.addColumns(getKeyForSchemaCache(*current_object_info, *format), columns);
-    }
-}
-
-void ReadBufferIterator::setResultingSchema(const ColumnsDescription & columns)
-{
-    if (query_settings.schema_inference_use_cache
-        && query_settings.schema_inference_mode == SchemaInferenceMode::DEFAULT)
-    {
-        schema_cache.addManyColumns(getKeysForSchemaCache(), columns);
-    }
 }
 
 void ReadBufferIterator::setFormatName(const String & format_name)

@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 bool parseUserNameWithHost(
-    IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTUserNameWithHost> & ast, bool allow_query_parameter)
+    IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & ast, bool allow_query_parameter)
 {
     return IParserBase::wrapParseImpl(
         pos,
@@ -68,9 +68,9 @@ bool parseUserNameWithHost(
             boost::algorithm::trim(host_pattern);
 
             if (host_pattern.empty() || host_pattern == "%")
-                ast = std::make_shared<ASTUserNameWithHost>(std::move(name_ast));
+                ast = make_intrusive<ASTUserNameWithHost>(std::move(name_ast));
             else
-                ast = std::make_shared<ASTUserNameWithHost>(std::move(name_ast), std::move(host_pattern));
+                ast = make_intrusive<ASTUserNameWithHost>(std::move(name_ast), std::move(host_pattern));
 
             return true;
         });
@@ -80,7 +80,7 @@ bool parseUserNameWithHost(
 
 bool ParserUserNameWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::shared_ptr<ASTUserNameWithHost> res;
+    boost::intrusive_ptr<ASTUserNameWithHost> res;
     if (!parseUserNameWithHost(pos, expected, res, allow_query_parameter))
         return false;
 
@@ -100,7 +100,7 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     auto parse_single_name = [&]
     {
-        std::shared_ptr<ASTUserNameWithHost> ast;
+        boost::intrusive_ptr<ASTUserNameWithHost> ast;
         if (!parseUserNameWithHost(pos, expected, ast, allow_query_parameter))
             return false;
 
@@ -111,7 +111,7 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!ParserList::parseUtil(pos, expected, parse_single_name, false))
         return false;
 
-    auto result = std::make_shared<ASTUserNamesWithHost>();
+    auto result = make_intrusive<ASTUserNamesWithHost>();
     result->children = std::move(names);
     node = result;
     return true;

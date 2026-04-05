@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <Analyzer/TableNode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -148,7 +149,7 @@ private:
         const ProjectionName & fill_step_expression_projection_name,
         const ProjectionName & fill_staleness_expression_projection_name);
 
-    QueryTreeNodePtr tryGetLambdaFromSQLUserDefinedFunctions(const std::string & function_name, ContextPtr context);
+    QueryTreeNodePtr tryGetLambdaFromUserDefinedSQLFunctions(const ASTPtr & create_function_ast, ContextPtr context);
 
     void evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & query_tree_node, IdentifierResolveScope & scope, bool execute_for_exists = false);
 
@@ -177,11 +178,36 @@ private:
 
     static std::optional<JoinTableSide> getColumnSideFromJoinTree(const QueryTreeNodePtr & resolved_identifier, const JoinNode & join_node);
 
+    /// IN - related functions
+
+    std::pair<QueryTreeNodePtr, ProjectionNames> makeNullSafeHas(QueryTreeNodePtr array_arg, QueryTreeNodePtr element_arg, const ProjectionNames & args_proj, IdentifierResolveScope & scope);
+
+    ProjectionNames buildHasExpression(
+        QueryTreeNodePtr & node,
+        QueryTreeNodePtr array_arg,
+        QueryTreeNodePtr element_arg,
+        bool is_not_in,
+        bool transform_null_in,
+        const ProjectionNames & arguments_projection_names,
+        const ProjectionNames & parameters_projection_names,
+        IdentifierResolveScope & scope);
+
+    ProjectionNames handleNullInTuple(const QueryTreeNodes & tuple_args, const std::string & function_name, const ProjectionNames & parameters_projection_names,
+                                        const ProjectionNames & arguments_projection_names, IdentifierResolveScope & scope, QueryTreeNodePtr & node);
+
+    QueryTreeNodePtr convertTupleToArray(const QueryTreeNodes & tuple_args, const QueryTreeNodePtr & in_first_argument, IdentifierResolveScope & scope);
+
+    QueryTreeNodePtr castNodeToType(const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & scope);
+
     /// Resolve identifier functions
 
     IdentifierResolveResult tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context);
+
+    IdentifierResolveResult tryResolveIdentifierFromCTE(
+        const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope);
 
     IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveContext identifier_resolve_context);
 
@@ -219,16 +245,17 @@ private:
         const QueryTreeNodes & lambda_arguments,
         IdentifierResolveScope & scope);
 
-    ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope);
+    ProjectionNames resolveFunction(QueryTreeNodePtr & function_node, IdentifierResolveScope & scope, bool allow_niladic_functions = true);
 
     ProjectionNames resolveExpressionNode(
         QueryTreeNodePtr & node,
         IdentifierResolveScope & scope,
         bool allow_lambda_expression,
         bool allow_table_expression,
-        bool ignore_alias = false);
+        bool ignore_alias = false,
+        bool allow_niladic_functions = true);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -258,6 +285,8 @@ private:
 
     void resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
+    void inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope) const;
+
     void resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope);
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
@@ -272,6 +301,9 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    /// Materialized CTEs that are referenced more than once during query analysis and should be materialized to temporary tables.
+    std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;

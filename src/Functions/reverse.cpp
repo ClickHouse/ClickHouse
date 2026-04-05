@@ -98,6 +98,13 @@ public:
         if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
         {
             size_t tuple_size = col_tuple->tupleSize();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col_tuple->size());
+            }
+
             Columns tuple_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
             {
@@ -122,6 +129,8 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
@@ -155,7 +164,7 @@ REGISTER_FUNCTION(Reverse)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<ReverseOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
 }

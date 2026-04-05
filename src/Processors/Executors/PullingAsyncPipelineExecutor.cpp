@@ -5,6 +5,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -71,7 +72,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }

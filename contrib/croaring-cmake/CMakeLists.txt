@@ -26,6 +26,12 @@ set(SRCS
 
 add_library(_roaring ${SRCS})
 
+# croaring expects bswap64() in portability.h from FreeBSD's byteswap.h,
+# but there is only bswap_64 and __bswap64.
+if (OS_FREEBSD)
+    target_compile_definitions(_roaring PRIVATE bswap64=__bswap64)
+endif()
+
 target_include_directories(_roaring PRIVATE "${LIBRARY_DIR}/include/roaring")
 target_include_directories(_roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
 target_include_directories(_roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/cpp")

@@ -60,8 +60,6 @@ This table can be configured with different schema types using the XML tag `<sch
 
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
-There is also a compatibility schema, `transposed_with_wide_view`, which stores actual data in a table with the transposed schema (`system.transposed_metric_log`) and creates a view on top of it using the wide schema. This view queries the transposed table, making it useful for migrating from the `wide` schema to the `transposed` schema.
-
 **See also**
 
 - [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.

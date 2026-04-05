@@ -1,12 +1,14 @@
 import random
 from decimal import Decimal, getcontext
 from datetime import datetime, timedelta, date
-import math
+import json
 import logging
+import math
 import string
 import threading
 import traceback
 from pyspark.sql import Row, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -28,7 +30,23 @@ from pyspark.sql.types import (
     MapType,
     DataType,
 )
+
+try:
+    from pyspark.sql.types import VariantType, VariantVal
+
+    HAS_VARIANT_TYPE = True
+except ImportError:
+    HAS_VARIANT_TYPE = False
+
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    HAS_TIMESTAMP_NTZ = True
+except ImportError:
+    HAS_TIMESTAMP_NTZ = False
+
 from .tablegenerator import LakeTableGenerator
+from .clickhousetospark import ClickHouseTypeMapper
 
 from .laketables import SparkTable
 
@@ -168,6 +186,29 @@ SOME_STRINGS = [
 ]
 
 
+def _to_json_safe(obj):
+    """Recursively convert a value to JSON-safe types."""
+    if obj is None:
+        return None
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, (int, float, str)):
+        return obj
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, bytes):
+        return obj.hex()
+    if isinstance(obj, Row):
+        return {k: _to_json_safe(v) for k, v in obj.asDict().items()}
+    if isinstance(obj, dict):
+        return {str(_to_json_safe(k)): _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    return str(obj)
+
+
 class LakeDataGenerator:
     def __init__(self, query_logger):
         self._thread_local = threading.local()
@@ -177,6 +218,7 @@ class LakeDataGenerator:
         self._thread_local._max_str_len = 100
         self.logger = logging.getLogger(__name__)
         self.spark_query_logger = query_logger
+        self.type_generator = ClickHouseTypeMapper()
 
     # ============================================================
     # Random data
@@ -293,6 +335,15 @@ class LakeDataGenerator:
             return self._rand_date()
         if isinstance(dtype, TimestampType):
             return self._rand_timestamp()
+        if HAS_TIMESTAMP_NTZ and isinstance(dtype, TimestampNTZType):
+            return self._rand_timestamp()
+        if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            # Spark stores variants as self-describing values, so any type works.
+            inner_type = self.type_generator.generate_random_spark_type(
+                allow_variant=False, max_depth=random.randint(1, 5)
+            )
+            val = self._random_value_for_type(inner_type, null_rate)
+            return None if val is None else json.dumps(_to_json_safe(val))
         if isinstance(dtype, ArrayType):
             # Arrays of variable length
             elem_null_rate = null_rate if dtype.containsNull else 0.0
@@ -337,7 +388,9 @@ class LakeDataGenerator:
 
     def _map_type_to_insert(self, dtype):
         # Char and Varchar have to be Strings
-        if isinstance(dtype, (CharType, VarcharType)):
+        if isinstance(dtype, (CharType, VarcharType)) or (
+            HAS_VARIANT_TYPE and isinstance(dtype, VariantType)
+        ):
             return StringType()
         if isinstance(dtype, ArrayType):
             return ArrayType(
@@ -362,6 +415,57 @@ class LakeDataGenerator:
                 ]
             )
         return dtype
+
+    def _contains_variant(self, dtype):
+        """Check if a type contains VariantType anywhere in its tree."""
+        if HAS_VARIANT_TYPE and isinstance(dtype, VariantType):
+            return True
+        if isinstance(dtype, StructType):
+            return any(self._contains_variant(f.dataType) for f in dtype.fields)
+        if isinstance(dtype, ArrayType):
+            return self._contains_variant(dtype.elementType)
+        if isinstance(dtype, MapType):
+            return self._contains_variant(dtype.keyType) or self._contains_variant(
+                dtype.valueType
+            )
+        return False
+
+    def _build_variant_conversion(self, col_expr, original_dtype):
+        """Build a Column expression that recursively converts string placeholders to VariantType."""
+        if HAS_VARIANT_TYPE and isinstance(original_dtype, VariantType):
+            return F.parse_json(col_expr)
+
+        if isinstance(original_dtype, StructType):
+            if not self._contains_variant(original_dtype):
+                return col_expr
+            fields = []
+            for field in original_dtype.fields:
+                converted = self._build_variant_conversion(
+                    col_expr[field.name], field.dataType
+                )
+                fields.append(converted.alias(field.name))
+            return F.struct(*fields)
+
+        if isinstance(original_dtype, ArrayType):
+            if not self._contains_variant(original_dtype.elementType):
+                return col_expr
+            return F.transform(
+                col_expr,
+                lambda x: self._build_variant_conversion(x, original_dtype.elementType),
+            )
+
+        if isinstance(original_dtype, MapType):
+            # Keys shouldn't be variant, but handle values
+            if not self._contains_variant(original_dtype.valueType):
+                return col_expr
+            return F.transform_values(
+                col_expr,
+                lambda k, v: self._build_variant_conversion(
+                    v, original_dtype.valueType
+                ),
+            )
+
+        return col_expr
 
     def _create_random_df(self, spark: SparkSession, table: SparkTable, n_rows: int):
         """
@@ -408,7 +512,15 @@ class LakeDataGenerator:
                 rec[f.name] = self._random_value_for_type(f.dataType, nr)
             rows.append(Row(**rec))
         # Use explicit schema so types match exactly
-        return spark.createDataFrame(rows, schema=struct2)
+        df = spark.createDataFrame(rows, schema=struct2)
+        if HAS_VARIANT_TYPE:
+            for f in struct1.fields:
+                if self._contains_variant(f.dataType):
+                    df = df.withColumn(
+                        f.name,
+                        self._build_variant_conversion(F.col(f.name), f.dataType),
+                    )
+        return df
 
     def insert_random_data(self, spark: SparkSession, table: SparkTable):
         nrows: int = random.randint(0, 100)
@@ -437,20 +549,20 @@ class LakeDataGenerator:
         match_options = [
             "DELETE",
             "UPDATE SET *",
-            f"UPDATE SET {",".join([f"t.{cname} = s.{cname}" for cname in to_update])}",
+            f"UPDATE SET {','.join([f't.{cname} = s.{cname}' for cname in to_update])}",
         ]
 
         self.logger.info(f"Merging {nrows} row(s) into {table.get_table_full_path()}")
         self.run_query(
             spark,
             f"MERGE INTO {table.get_table_full_path()} AS t USING updates AS s ON t.{next_pick} = s.{next_pick}\
- WHEN MATCHED THEN {random.choice(match_options)}{" WHEN NOT MATCHED BY TARGET THEN INSERT *" if random.randint(1, 4) == 1 else ""}\
-{f" WHEN NOT MATCHED BY SOURCE THEN DELETE" if random.randint(1, 4) == 1 else ""};",
+ WHEN MATCHED THEN {random.choice(match_options)}{' WHEN NOT MATCHED BY TARGET THEN INSERT *' if random.randint(1, 4) == 1 else ''}\
+{f' WHEN NOT MATCHED BY SOURCE THEN DELETE' if random.randint(1, 4) == 1 else ''};",
         )
 
     def delete_table(self, spark: SparkSession, table: SparkTable):
         delete_key = random.choice(list(table.flat_columns().keys()))
-        predicate = f"{delete_key} IS{random.choice([""," NOT"])} NULL"
+        predicate = f"{delete_key} IS{random.choice(['',' NOT'])} NULL"
 
         self.logger.info(f"Delete from table {table.get_table_full_path()}")
         self.run_query(
@@ -461,22 +573,38 @@ class LakeDataGenerator:
         self.logger.info(f"Truncate table {table.get_table_full_path()}")
         self.run_query(spark, f"DELETE FROM {table.get_table_full_path()};")
 
+    def insert_overwrite_data(self, spark: SparkSession, table: SparkTable):
+        nrows: int = random.randint(0, 100)
+        df = self._create_random_df(spark, table, nrows)
+        view_name = f"overwrite_src_{table.table_name}"
+        df.createOrReplaceTempView(view_name)
+        self.logger.info(
+            f"INSERT OVERWRITE {nrows} row(s) into {table.get_table_full_path()}"
+        )
+        self.run_query(
+            spark,
+            f"INSERT OVERWRITE {table.get_table_full_path()} SELECT * FROM {view_name};",
+        )
+
     def update_table(self, spark: SparkSession, table: SparkTable) -> bool:
         next_operation = random.randint(1, 1000)
 
         try:
-            if next_operation <= 400:
+            if next_operation <= 380:
                 # Insert
                 self.insert_random_data(spark, table)
-            elif next_operation <= 600:
+            elif next_operation <= 560:
                 # Update and delete
                 self.merge_into_table(spark, table)
-            elif next_operation <= 650:
+            elif next_operation <= 610:
                 # Delete
                 self.delete_table(spark, table)
-            elif next_operation <= 700:
+            elif next_operation <= 650:
                 # Truncate
                 self.truncate_table(spark, table)
+            elif next_operation <= 690:
+                # INSERT OVERWRITE (replaces all data)
+                self.insert_overwrite_data(spark, table)
             elif next_operation <= 850:
                 # SQL Procedures or other statements specific for the lake
                 next_table_generator = LakeTableGenerator.get_next_generator(
@@ -496,5 +624,5 @@ class LakeDataGenerator:
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()
-            self.logger.error(str(e))
+            self.logger.exception(e)
         return True

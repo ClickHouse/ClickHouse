@@ -40,7 +40,7 @@ namespace Setting
 }
 
 StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
-    : query_id(context->getCurrentQueryId()), lock_timeout(context->getSettingsRef()[Setting::lock_acquire_timeout]), next_row(0), rows(0)
+    : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), next_row(0), rows(0)
 {
 }
 
@@ -275,7 +275,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         Block block;
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeString>(), database_column_name));
 
-        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter_by_database = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter_by_database)
             VirtualColumnUtils::buildSetsForDAG(*filter_by_database, context);
 
@@ -284,7 +284,7 @@ void ReadFromSystemPartsBase::applyFilters(ActionDAGNodes added_filter_nodes)
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), active_column_name));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), storage_uuid_column_name));
 
-        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter_by_other_columns = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter_by_other_columns)
             VirtualColumnUtils::buildSetsForDAG(*filter_by_other_columns, context);
     }
@@ -347,7 +347,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
             return;
         ColumnDescription column(alias_name, columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
-        column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
+        column.default_desc.expression = make_intrusive<ASTIdentifier>(column_name);
         columns.add(column);
     };
 
@@ -367,7 +367,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
 
 bool StoragesInfoStreamBase::tryLockTable(StoragesInfo & info)
 {
-    info.table_lock = info.storage->tryLockForShare(query_id, lock_timeout);
+    info.table_lock = info.storage->tryLockForShare(query_id, Poco::Timespan(lock_timeout.count() * 1000));
     // nullptr means table was dropped while acquiring the lock
     return info.table_lock != nullptr;
 }

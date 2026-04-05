@@ -82,7 +82,7 @@ public:
             // allocate array of size 2
             // directedEdgeToCells func sets the origin and
             // destination at [0] and [1] of the input vector
-            std::array<H3Index, 2> res;
+            std::array<H3Index, 2> res{};
 
             directedEdgeToCells(edge, res.data());
 
@@ -126,7 +126,7 @@ Returns the origin and destination hexagon indexes from the given unidirectional
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetIndexesFromUnidirectionalEdge>(documentation);
 }
 

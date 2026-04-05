@@ -153,6 +153,7 @@ public:
 
     std::shared_ptr<ActionsDAG> getActionsDAG() const;
 
+    void resetNodeSources(NodeToSourceMapping expression_sources);
     void setNodeSources(const NodeToSourceMapping & expression_sources);
     std::pair<ActionsDAG, NodeToSourceMapping> detachActionsDAG();
 
@@ -226,9 +227,13 @@ public:
     bool fromLeft() const;
     bool fromRight() const;
     bool fromNone() const;
+    bool isFromSameActions(const JoinActionRef & other) const;
 
     bool isFunction(JoinConditionOperator op) const;
     std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> asBinaryPredicate() const;
+
+    /// Follow alias chain to the underlying non-alias node.
+    JoinActionRef resolveAliases() const;
 
     String dump() const;
 

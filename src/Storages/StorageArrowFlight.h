@@ -11,9 +11,12 @@ namespace DB
 class ArrowFlightConnection;
 class NamedCollection;
 class StorageFactory;
+struct StorageID;
 
 class StorageArrowFlight : public IStorage, protected WithContext
 {
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     struct Configuration
     {
@@ -31,7 +34,7 @@ public:
         String ssl_override_hostname;
     };
 
-    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context);
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context, const StorageID * table_id = nullptr);
     static Configuration processNamedCollectionResult(const NamedCollection & named_collection);
 
     StorageArrowFlight(
@@ -56,7 +59,7 @@ public:
     SinkToStoragePtr
     write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool async_write) override;
 
-    static ColumnsDescription getTableStructureFromData(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_);
+    static ColumnsDescription getTableStructureFromData(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, ContextPtr context_);
 
 private:
     std::shared_ptr<ArrowFlightConnection> connection;

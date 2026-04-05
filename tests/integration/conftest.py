@@ -4,16 +4,23 @@
 
 import logging
 import os
+from pathlib import Path
 
 import pytest  # pylint:disable=import-error; for style check
 
 from helpers.cluster import is_port_free, run_and_check
-from helpers.network import _NetworkManager
 
 # This is a workaround for a problem with logging in pytest [1].
 #
 #   [1]: https://github.com/pytest-dev/pytest/issues/5502
 logging.raiseExceptions = False
+
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
+if _ENV_FILE.is_file():
+    from dotenv import load_dotenv
+
+    load_dotenv(dotenv_path=_ENV_FILE, override=False)
+
 PORTS_PER_WORKER = 50
 
 
@@ -63,9 +70,6 @@ def tune_local_port_range():
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
     try:
-        if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
-            logging.debug("Cleaning all iptables rules")
-            _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) != 1:

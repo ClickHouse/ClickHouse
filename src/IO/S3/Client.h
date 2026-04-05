@@ -195,6 +195,7 @@ public:
     void setKMSHeaders(RequestType & request) const;
 
     Model::HeadObjectOutcome HeadObject(HeadObjectRequest & request) const;
+    Model::GetObjectTaggingOutcome GetObjectTagging(GetObjectTaggingRequest & request) const;
     Model::ListObjectsV2Outcome ListObjectsV2(ListObjectsV2Request & request) const;
     Model::ListObjectsOutcome ListObjects(ListObjectsRequest & request) const;
     Model::GetObjectOutcome GetObject(GetObjectRequest & request) const;
@@ -207,6 +208,7 @@ public:
 
     Model::CopyObjectOutcome CopyObject(CopyObjectRequest & request) const;
     Model::PutObjectOutcome PutObject(PutObjectRequest & request) const;
+    Model::PutObjectTaggingOutcome PutObjectTagging(PutObjectTaggingRequest & request) const;
     Model::DeleteObjectOutcome DeleteObject(DeleteObjectRequest & request) const;
     Model::DeleteObjectsOutcome DeleteObjects(DeleteObjectsRequest & request) const;
 
@@ -254,6 +256,7 @@ private:
     /// Leave regular functions private so we don't accidentally use them
     /// otherwise region and endpoint redirection won't work
     using Aws::S3::S3Client::HeadObject;
+    using Aws::S3::S3Client::GetObjectTagging;
     using Aws::S3::S3Client::ListObjectsV2;
     using Aws::S3::S3Client::ListObjects;
     using Aws::S3::S3Client::GetObject;
@@ -266,17 +269,18 @@ private:
 
     using Aws::S3::S3Client::CopyObject;
     using Aws::S3::S3Client::PutObject;
+    using Aws::S3::S3Client::PutObjectTagging;
     using Aws::S3::S3Client::DeleteObject;
     using Aws::S3::S3Client::DeleteObjects;
 
     ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequest(RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;

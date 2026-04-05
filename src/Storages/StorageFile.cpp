@@ -56,6 +56,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
+#include <Common/ErrnoException.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -109,6 +110,7 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -196,8 +198,14 @@ void listFilesWithRegexpMatchingImpl(
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
     const fs::directory_iterator end;
-    for (fs::directory_iterator it(prefix_without_globs); it != end; ++it)
+    std::error_code ec;
+    for (fs::directory_iterator it(prefix_without_globs, ec); it != end; it.increment(ec))
     {
+        if (ec)
+        {
+            return;
+        }
+
         const std::string full_path = it->path().string();
         const size_t last_slash = full_path.rfind('/');
         const String file_name = full_path.substr(last_slash);
@@ -207,7 +215,13 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size();
+                total_bytes_to_read += it->file_size(ec);
+                if (ec)
+                {
+                    ec.clear();
+                    continue;
+                }
+
                 result.push_back(it->path().string());
             }
         }
@@ -591,25 +605,13 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
             auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            auto cache_keys = getKeysForSchemaCache(paths, *format, format_settings, getContext());
-            StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
         String getLastFilePath() const override
@@ -857,8 +859,7 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files in archive, so we need to
@@ -866,22 +867,6 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
             auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            /// Also add schema for initial paths (maybe with globes) in cache,
-            /// so next time we won't iterate through files (that can be expensive).
-            for (const auto & archive : archive_info.paths_to_archives)
-                paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
-            auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, *format, format_settings, getContext());
-            schema_cache.addManyColumns(cache_keys, columns);
         }
 
         void setFormatName(const String & format_name) override
@@ -1294,7 +1279,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1323,7 +1308,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_, hive_columns);
 
     if (filter_dag)
     {
@@ -1668,9 +1653,10 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
+                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified
+                    .last_modified = current_file_last_modified,
                 }, getContext());
 
             return chunk;
@@ -1796,6 +1782,9 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     if (use_table_fd)
     {
         paths = {""};   /// when use fd, paths are empty
@@ -1834,7 +1823,8 @@ void StorageFile::read(
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files];
+        && context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,
@@ -2334,7 +2324,7 @@ void StorageFile::truncate(
 void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     if (checkAndGetLiteralArgument<String>(evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context), "format") == "auto")
-        args[0] = std::make_shared<ASTLiteral>(format_name);
+        args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
 void registerStorageFile(StorageFactory & factory)
@@ -2433,6 +2423,9 @@ void registerStorageFile(StorageFactory & factory)
 
             if (0 <= source_fd) /// File descriptor
                 return std::make_shared<StorageFile>(source_fd, storage_args);
+
+            if (!file_source)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
 
             /// User's file
             return std::make_shared<StorageFile>(*file_source, storage_args);

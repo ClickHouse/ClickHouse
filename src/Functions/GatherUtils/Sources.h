@@ -369,7 +369,7 @@ struct EnumSource
 
     size_t getElementSize() const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         return name.size();
     }
 
@@ -380,13 +380,13 @@ struct EnumSource
 
     Slice getWhole() const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
     }
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset >= name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, name.size() - offset};
@@ -394,7 +394,7 @@ struct EnumSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset >= name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, std::min(length, name.size() - offset)};
@@ -402,7 +402,7 @@ struct EnumSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset > name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, offset};
@@ -410,7 +410,7 @@ struct EnumSource
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset > name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), length + name.size() > offset ? std::min(name.size(), length + name.size() - offset) : 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, std::min(length, offset)};

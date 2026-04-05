@@ -20,20 +20,20 @@ using namespace DB;
  */
 bool testCombineFilters(size_t size)
 {
-    auto generateFilterWithAlternatingOneAndZero = [](size_t len)->ColumnPtr
+    auto generate_filter_with_alternating_one_and_zero = [](size_t len)->ColumnPtr
     {
-        auto filter = ColumnUInt8::create(len, 0);
+        auto filter = ColumnUInt8::create(len, false);
         auto & filter_data = filter->getData();
 
         for (size_t i = 0; i < len; i += 2)
-            filter_data[i] = 1;
+            filter_data[i] = true;
 
         return filter;
     };
 
-    auto first_filter = generateFilterWithAlternatingOneAndZero(size);
+    auto first_filter = generate_filter_with_alternating_one_and_zero(size);
     /// The count of 1s in the first_filter is floor((size + 1) / 2), which should be the size of the second_filter.
-    auto second_filter = generateFilterWithAlternatingOneAndZero((size + 1) / 2);
+    auto second_filter = generate_filter_with_alternating_one_and_zero((size + 1) / 2);
 
     auto result = combineFilters(first_filter, second_filter);
 
@@ -75,9 +75,9 @@ bool testCombineFilters(size_t size)
  */
 bool testCombineColumns(size_t size)
 {
-    auto generateFirstColumn = [] (size_t len, size_t & non_zero_count)->ColumnPtr
+    auto generate_first_column = [] (size_t len, size_t & non_zero_count)->ColumnPtr
     {
-        auto column = ColumnUInt8::create(len, 0);
+        auto column = ColumnUInt8::create(len, static_cast<UInt8>(0));
         auto & column_data = column->getData();
 
         non_zero_count = 0;
@@ -89,9 +89,9 @@ bool testCombineColumns(size_t size)
         return column;
     };
 
-    auto generateSecondColumn = [] (size_t len)->ColumnPtr
+    auto generate_second_column = [] (size_t len)->ColumnPtr
     {
-        auto column = ColumnUInt8::create(len, 0);
+        auto column = ColumnUInt8::create(len, static_cast<UInt8>(0));
         auto & column_data = column->getData();
 
         for (size_t i = 0; i < len; i++)
@@ -103,11 +103,11 @@ bool testCombineColumns(size_t size)
     };
 
     size_t non_zero_count = 0;
-    auto first_column = generateFirstColumn(size, non_zero_count);
+    auto first_column = generate_first_column(size, non_zero_count);
     const auto & first_column_data = typeid_cast<const ColumnUInt8 *>(first_column.get())->getData();
 
     /// The count of non-zero values in the first column should be the size of the second column.
-    auto second_column = generateSecondColumn(non_zero_count);
+    auto second_column = generate_second_column(non_zero_count);
 
     auto result = combineFilters(first_column, second_column);
     const auto & result_data = typeid_cast<const ColumnUInt8 *>(result.get())->getData();
@@ -143,7 +143,7 @@ bool testCombineColumns(size_t size)
  */
 bool testAndFilters(size_t size)
 {
-    auto generateFastIncrementColumn = [](size_t len)->ColumnPtr
+    auto generate_fast_increment_column = [](size_t len)->ColumnPtr
     {
         auto filter = ColumnUInt8::create(len);
         auto & filter_data = filter->getData();
@@ -154,7 +154,7 @@ bool testAndFilters(size_t size)
         return filter;
     };
 
-    auto generateSlowIncrementColumn = [](size_t len)->ColumnPtr
+    auto generate_slow_increment_column = [](size_t len)->ColumnPtr
     {
         auto filter = ColumnUInt8::create(len);
         auto & filter_data = filter->getData();
@@ -165,8 +165,8 @@ bool testAndFilters(size_t size)
         return filter;
     };
 
-    auto first_filter = generateFastIncrementColumn(size);
-    auto second_filter = generateSlowIncrementColumn(size);
+    auto first_filter = generate_fast_increment_column(size);
+    auto second_filter = generate_slow_increment_column(size);
 
     auto result = andFilters(first_filter, second_filter);
 

@@ -124,7 +124,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 
         if (max_level == GROUP)
         {
-            column_level.push_back(0);
+            column_level.push_back(static_cast<Int8>(0));
             column_level_null_map.push_back(true);
         }
         else
@@ -135,7 +135,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 
         if (parent_group == AccessType::NONE)
         {
-            column_parent_group.push_back(0);
+            column_parent_group.push_back(static_cast<Int16>(0));
             column_parent_group_null_map.push_back(true);
         }
         else

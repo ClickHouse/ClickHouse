@@ -32,8 +32,9 @@ static bool isAllASCII(const UInt8 * data, size_t size)
     return !(mask & 0x80);
 })
 
-DECLARE_SSE42_SPECIFIC_CODE(
+DECLARE_X86_64_V2_SPECIFIC_CODE(
 /// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
+/// See also https://lemire.me/blog/2025/12/20/performance-trick-optimistic-vs-pessimistic-checks/
 static bool isAllASCII(const UInt8 * data, size_t size)
 {
     __m128i masks = _mm_setzero_si128();
@@ -54,7 +55,7 @@ static bool isAllASCII(const UInt8 * data, size_t size)
     return !mask;
 })
 
-DECLARE_AVX2_SPECIFIC_CODE(
+DECLARE_X86_64_V3_SPECIFIC_CODE(
 static bool isAllASCII(const UInt8 * data, size_t size)
 {
     __m256i masks = _mm256_setzero_si256();
@@ -78,10 +79,10 @@ static bool isAllASCII(const UInt8 * data, size_t size)
 bool isAllASCII(const UInt8 * data, size_t size)
 {
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(DB::TargetArch::AVX2))
-        return TargetSpecific::AVX2::isAllASCII(data, size);
-    if (isArchSupported(DB::TargetArch::SSE42))
-        return TargetSpecific::SSE42::isAllASCII(data, size);
+    if (isArchSupported(DB::TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::isAllASCII(data, size);
+    if (isArchSupported(DB::TargetArch::x86_64_v2))
+        return TargetSpecific::x86_64_v2::isAllASCII(data, size);
 #endif
     return TargetSpecific::Default::isAllASCII(data, size);
 }

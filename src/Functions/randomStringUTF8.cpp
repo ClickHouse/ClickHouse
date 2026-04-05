@@ -6,6 +6,7 @@
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <base/defines.h>
 
@@ -13,7 +14,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -38,11 +38,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isNumber(*arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
 
+        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -68,18 +70,20 @@ public:
 
         const IColumn & col_length = *arguments[0].column;
         size_t total_codepoints = 0;
+        const size_t max_total_codepoints = 1ULL << 29;
         for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
         {
             size_t codepoints = col_length.getUInt(row_num);
+
+            if (codepoints > max_total_codepoints - total_codepoints)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
+
             total_codepoints += codepoints;
         }
 
         /* As we generate only assigned planes, the mathematical expectation of the number of bytes
          * per generated code point ~= 3.85. So, reserving for coefficient 4 will not be an overhead
          */
-
-        if (total_codepoints > (1 << 29))
-            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
         size_t max_byte_size = total_codepoints * 4 + input_rows_count;
         data_to.resize(max_byte_size);
@@ -117,7 +121,7 @@ public:
             size_t codepoints = col_length.getUInt(row_num);
             auto * pos = data_to.data() + offset;
 
-            for (size_t i = 0; i < codepoints; i +=2)
+            for (size_t i = 0; i < codepoints; i += 2)
             {
                 UInt64 rand = rng(); /// that's the bottleneck
 
@@ -169,7 +173,7 @@ It is still possible that the client interacting with ClickHouse server is not a
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomStringUTF8>(documentation);
 }

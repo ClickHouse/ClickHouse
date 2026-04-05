@@ -1,8 +1,10 @@
 import copy
 import fnmatch
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -42,11 +44,16 @@ class Job:
         command: str
 
         # What job requires
-        #   May be phony or physical names
+        #   May be `Artifact.Config.name` (for physical artifacts) or `Job.Config.name` (for ordering only)
         requires: List[str] = field(default_factory=list)
 
+        # If True, jobs listed in `requires` by `Job.Config.name` are treated as
+        # hard dependencies: they must run (and cannot be skipped as unaffected)
+        # unless their artifacts are already cached by CI.
+        needs_jobs_from_requires: bool = False
+
         # What job provides
-        #   May be phony or physical names
+        #   May be only `Artifact.Config.name`
         provides: List[str] = field(default_factory=list)
 
         job_requirements: Optional["Job.Requirements"] = None
@@ -72,7 +79,13 @@ class Job:
 
         parameter: Any = None
 
-        # List of commands to call upon job completion
+        # Per-job secrets (exported only for this job, not all jobs in the workflow)
+        secrets: list = field(default_factory=list)
+
+        # List of commands to call before job starts
+        pre_hooks: List[str] = field(default_factory=list)
+
+        # List of commands to call after job completes
         post_hooks: List[str] = field(default_factory=list)
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
@@ -197,7 +210,7 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_merge_on_failure(self, value):
+        def set_allow_merge_on_failure(self, value=True):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value
             return res
@@ -205,6 +218,11 @@ class Job:
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
             res.post_hooks = post_hooks
+            return res
+
+        def set_timeout(self, timeout):
+            res = copy.deepcopy(self)
+            res.timeout = timeout
             return res
 
         @staticmethod
@@ -260,5 +278,10 @@ class Job:
             if self.timeout_shell_cleanup:
                 return
             if self.run_in_docker:
-                # the container name is always the same (praktika) for every image
-                self.timeout_shell_cleanup = "docker rm -f praktika"
+                container_name = (
+                    "praktika_"
+                    + hashlib.sha1(
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
+                    ).hexdigest()[:12]
+                )
+                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

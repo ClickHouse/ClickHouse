@@ -71,8 +71,8 @@ public:
 
     static bool needsEscaping(unsigned char c) { return c < CHAR_TO_ESCAPE.size() && CHAR_TO_ESCAPE.test(c); }
 };
-
-String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
+DB::Row getPartitionFields(const String & partition, const PaimonTableSchema & table_schema);
+String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name);
 String concatPath(std::initializer_list<String> paths);
 
 template <typename T>

@@ -5,7 +5,6 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -19,6 +18,8 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+
 
 namespace DB
 {
@@ -132,6 +133,7 @@ private:
         MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_, MergeTreeDataFormatVersion format_version_)
             : entry(entry_)
             , parts_to_do(format_version_)
+            , parts_in_progress(format_version_)
         {
         }
 
@@ -145,6 +147,9 @@ private:
         /// We use ActiveDataPartSet structure to be able to manage covering and
         /// covered parts.
         ActiveDataPartSet parts_to_do;
+
+        /// Current parts that are currently being mutated.
+        ActiveDataPartSet parts_in_progress;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
@@ -160,6 +165,9 @@ private:
 
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
+
+    /// Mapping from part name to postpone reason
+    mutable std::map<String, String> current_parts_postpone_reasons;
 
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
@@ -264,6 +272,22 @@ private:
     /// or block_number == part.getDataVersion()
     ///    ^ (this may happen if we downloaded mutated part from other replica)
     void removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts);
+
+    /// Add part to mutations (parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
+    /// and block_number <= new_part_info.getMutationVersion()
+    void addPartInProgressToMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
+
+    /// Remove part from mutations(parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
+    /// and block_number <= new_part_info.getMutationVersion()
+    void removePartInProgressFromMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
+
+    /// Add part postpone reason into current_parts_postpone_reasons
+    void addPartsPostponeReasons(const String & part_name, const String & postpone_reason) const;
+
+    /// Clear current_parts_postpone_reasons
+    void clearPartsPostponeReasons() const;
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
@@ -447,6 +471,7 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
+
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time

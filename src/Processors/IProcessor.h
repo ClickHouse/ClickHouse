@@ -209,6 +209,14 @@ public:
       */
     virtual int schedule();
 
+    /** This method is similar to schedule() but also returns epoll events mask
+      * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
+      * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
+      */
+#ifdef OS_LINUX
+    virtual std::pair<int, uint32_t> scheduleForEvent();
+#endif
+
     /* The method is called right after asynchronous job is done
      * i.e. when file descriptor returned by schedule() is readable.
      * The sequence of method calls:
@@ -294,6 +302,28 @@ public:
 
     ProcessorDataStats getProcessorDataStats() const;
 
+    /// Information for system.processors_profile_log
+    struct ProcessorsProfileLogInfo
+    {
+        UInt64 id = 0;
+        std::vector<UInt64> parent_ids;
+        UInt64 plan_step = 0;
+        String plan_step_name;
+        String plan_step_description;
+        UInt64 plan_group = 0;
+        String processor_uniq_id;
+        String step_uniq_id;
+        String processor_name;
+        UInt64 elapsed_us = 0;
+        UInt64 input_wait_elapsed_us = 0;
+        UInt64 output_wait_elapsed_us = 0;
+        UInt64 input_rows = 0;
+        UInt64 input_bytes = 0;
+        UInt64 output_rows = 0;
+        UInt64 output_bytes = 0;
+    };
+    ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
+
     struct ReadProgressCounters
     {
         uint64_t read_rows = 0;
@@ -340,6 +370,7 @@ public:
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
 protected:
+    /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};

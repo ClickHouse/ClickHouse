@@ -42,7 +42,7 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     : Macros(config, root_key, log.get())
 {}
 
-Macros::Macros(std::map<String, String> map)
+Macros::Macros(std::map<String, String, std::less<>> map)
 {
     macros = std::move(map);
 }
@@ -165,14 +165,14 @@ String Macros::expand(const String & s,
     return expand(res, info);
 }
 
-String Macros::getValue(const String & key) const
+String Macros::getValue(std::string_view key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No macro {} in config", key);
 }
 
-std::optional<String> Macros::tryGetValue(const String & key) const
+std::optional<String> Macros::tryGetValue(std::string_view key) const
 {
     if (auto it = macros.find(key); it != macros.end())
         return it->second;

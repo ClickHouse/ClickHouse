@@ -67,7 +67,8 @@ def create_dict(table_name, index=0):
 def started_cluster():
     try:
         cluster.start()
-        node1.query("CREATE DATABASE IF NOT EXISTS test")
+        node1.query("DROP DATABASE IF EXISTS test")
+        node1.query("CREATE DATABASE test")
 
         postgres_conn = get_postgres_conn(
             ip=cluster.postgres_ip, port=cluster.postgres_port

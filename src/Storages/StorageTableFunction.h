@@ -3,7 +3,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
-#include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -109,7 +108,8 @@ public:
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                     from_header->getColumnsWithTypeAndName(),
                     to_header->getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
+                    ActionsDAG::MatchColumnsMode::Name,
+                    context);
 
             auto step = std::make_unique<ExpressionStep>(
                 query_plan.getCurrentHeader(),

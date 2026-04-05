@@ -3,8 +3,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -55,7 +53,7 @@ void registerFunction(FunctionFactory & factory, const String & element_type)
     FunctionDocumentation::Examples examples = {{"Usage example", fmt::format("SELECT emptyArray{}", element_type), "[]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction(
         FunctionEmptyArray::getNameImpl(element_type),

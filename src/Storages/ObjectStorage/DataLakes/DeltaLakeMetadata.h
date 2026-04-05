@@ -10,7 +10,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
 
 namespace DB
@@ -54,11 +54,16 @@ public:
         const ContextPtr & /*local_context*/,
         const std::optional<ColumnsDescription> & /*columns*/,
         ASTPtr /*partition_by*/,
+        ASTPtr /*order_by*/,
         bool /*if_not_exists*/,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
         const StorageID & /*table_id_*/)
     {
     }
+
+    static bool supportsTotalRows(ContextPtr, ObjectStorageType);
+
+    static bool supportsTotalBytes(ContextPtr, ObjectStorageType);
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,

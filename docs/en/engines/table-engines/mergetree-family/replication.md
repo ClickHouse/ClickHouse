@@ -165,6 +165,7 @@ CREATE TABLE table_name
     CounterID UInt32,
     UserID UInt32,
     ver UInt16
+)
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
@@ -186,7 +187,7 @@ CREATE TABLE table_name
 
 </details>
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the [macros](/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
+As the example shows, these parameters can contain substitutions in `{}`. The substituted values are taken from the [macros](/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
 
 Example:
 

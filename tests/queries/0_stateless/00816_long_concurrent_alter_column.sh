@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
+# no-msan: too slow, concurrent ALTER operations with 500 columns can cause timeout
 
 set -e
 

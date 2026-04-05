@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan, no-flaky-check
+# Tags: no-fasttest, no-msan, no-flaky-check, no-parallel
 # msan: too slow
+# no-parallel: thread starvation leads to flakiness
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

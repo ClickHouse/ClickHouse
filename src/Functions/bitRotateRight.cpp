@@ -25,8 +25,8 @@ struct BitRotateRightImpl
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Bit rotate is not implemented for big integers");
         else
-            return (static_cast<Result>(a) >> static_cast<Result>(b))
-                | (static_cast<Result>(a) << ((sizeof(Result) * 8) - static_cast<Result>(b)));
+            return static_cast<Result>((static_cast<Result>(a) >> static_cast<Result>(b))
+                | (static_cast<Result>(a) << static_cast<Result>((sizeof(Result) * 8) - static_cast<Result>(b))));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -68,7 +68,7 @@ SELECT 99 AS a, bin(a), bitRotateRight(a, 2) AS a_rotated, bin(a_rotated);
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBitRotateRight>(documentation);
 }

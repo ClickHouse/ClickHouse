@@ -126,8 +126,25 @@ JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
 
     JoinStep::PrimaryKeySharding sharding;
 
+    bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
+        bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;
+        bool rdesc = (pos < rhs_pk.reverse_flags.size()) ? rhs_pk.reverse_flags[pos] : false;
+        if (ldesc != rdesc)
+            break;
+
+        if (first)
+        {
+            first = false;
+            sharding.is_reverse_order = ldesc;
+        }
+        else
+        {
+            if (sharding.is_reverse_order != ldesc)
+                break;
+        }
+
         const auto * lhs_pk_output = lhs_pk_dag.tryFindInOutputs(lhs_pk_colum_names[pos]);
         const auto * rhs_pk_output = rhs_pk_dag.tryFindInOutputs(rhs_pk_colum_names[pos]);
 
@@ -175,7 +192,7 @@ JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     return sharding;
 }
 
-/// We can apply shardin for multiple join steps at the same time.
+/// We can apply sharding for multiple join steps at the same time.
 /// We only need to check that sharding is the same for all the sources.
 struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
 {
@@ -198,6 +215,8 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     std::list<SortingStep *> sorting_steps;
     /// Apply the minimum prefix in case of multiple joins.
     size_t common_prefix = std::numeric_limits<size_t>::max();
+    /// Whether the common primary key prefix used for sharding is in reverse order.
+    bool is_reverse_order = false;
 };
 
 /// Apply the sharding optimization for the chosen joins.
@@ -232,11 +251,16 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Generally, it should work because we don't use the part a lot. The only needed info is the PK prefix.
     /// The types of PK prefix expression always match because JOIN equality is applied to identical types (after conversions).
     auto logger = getLogger("optimizeJoinByLayers");
-    auto all_split = splitIntersectingPartsRangesIntoLayers(all_parts, data.sources.front()->getNumStreams(), data.common_prefix, false, logger);
+    auto all_split = splitIntersectingPartsRangesIntoLayers(
+        all_parts, data.sources.front()->getNumStreams(), data.common_prefix, data.is_reverse_order, logger);
     std::vector<SplitPartsByRanges> splits(analysis_results.size());
     splits[0].borders = std::move(all_split.borders);
+    splits[0].in_reverse_order = data.is_reverse_order;
     for (size_t i = 1; i < splits.size(); ++i)
+    {
         splits[i].borders = splits[0].borders;
+        splits[i].in_reverse_order = splits[0].in_reverse_order;
+    }
 
     /// After we got a layers, restore the part source back.
     for (auto & layer : all_split.layers)
@@ -276,7 +300,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     for (const auto & sorting_step : data.sorting_steps)
         sorting_step->convertToPartitionedFinishSorting();
 
-    /// Do not breake shards after full_sorting_merge JOIN. For hash join it is automatically true.
+    /// Do not break shards after full_sorting_merge JOIN. For hash join it is automatically true.
     for (const auto & join_step : data.joins_to_keep_in_order)
         join_step->keepLeftPipelineInOrder();
 }
@@ -290,7 +314,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 /// The case with multiple joins is supported.
 /// Generally, we can apply sharding to JOIN if
 /// * the leftmost source of the left subtree and the leftmost source of the right subtree is reading from MergerTree
-/// * no steps from source to JOIN can breake sharding
+/// * no steps from source to JOIN can break sharding
 ///
 /// The last criteria
 /// * true for Expression, Filter, HashJoin steps
@@ -386,6 +410,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.common_prefix = std::min(result->joins.common_prefix, sharding.size());
                 result->joins.common_prefix = std::min(result->joins.common_prefix, frame.results.back()->joins.common_prefix);
 
+                result->joins.is_reverse_order = sharding.is_reverse_order;
                 result->joins.joins.emplace_back(join_step, std::move(sharding));
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
@@ -415,7 +440,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             sorting && sorting->isSortingForMergeJoin() && sorting->getType() == SortingStep::Type::FinishSorting)
         {
             /// Here we assume that read-in-order is applied for full sorting merge join.
-            /// The SortingStep can potentially apper from ORDER BY,
+            /// The SortingStep can potentially appear from ORDER BY,
             /// but it would be useless because JOIN does not enforce sorting by itself.
 
             if (frame.results.size() == 1 && frame.results[0])

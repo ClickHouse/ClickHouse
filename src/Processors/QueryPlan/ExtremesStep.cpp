@@ -36,7 +36,7 @@ void ExtremesStep::serialize(Serialization & ctx) const
     (void)ctx;
 }
 
-std::unique_ptr<IQueryPlanStep> ExtremesStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ExtremesStep::deserialize(Deserialization & ctx)
 {
     return std::make_unique<ExtremesStep>(ctx.input_headers.front());
 }

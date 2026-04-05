@@ -41,14 +41,20 @@ LimitStep::LimitStep(
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<LimitTransform>(
-        pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), always_read_till_end, with_ties, description);
-
+        pipeline.getSharedHeader(),
+        limit,
+        offset,
+        pipeline.getNumStreams(),
+        always_read_till_end,
+        with_ties,
+        description,
+        dataflow_cache_updater);
     pipeline.addTransform(std::move(transform));
 }
 
 void LimitStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Limit " << limit << '\n';
     settings.out << prefix << "Offset " << offset << '\n';
 
@@ -96,7 +102,7 @@ void LimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> LimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

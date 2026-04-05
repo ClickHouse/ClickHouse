@@ -1,17 +1,17 @@
 services:
   nessie:
-    image: ghcr.io/projectnessie/nessie:latest
+    image: ghcr.io/projectnessie/nessie:0.107.2
     depends_on:
       minio:
         condition: service_started
     ports:
-      - "19120:19120"
+      - "${ICEBERG_REST_CATALOG_PORT}:19120"
     environment:
       - nessie.version.store.type=IN_MEMORY
       - nessie.catalog.default-warehouse=warehouse
       - nessie.catalog.warehouses.warehouse.location=s3://warehouse-rest/
       - nessie.catalog.service.s3.default-options.endpoint=http://minio:9000/
-      - nessie.catalog.service.s3.default-options.external-endpoint=http://127.0.0.1:9002/
+      - nessie.catalog.service.s3.default-options.external-endpoint=http://127.0.0.1:${ICEBERG_MINIO_PORT}/
       - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
       - nessie.catalog.service.s3.default-options.path-style-access=true
       - nessie.catalog.service.s3.default-options.auth-type=STATIC
@@ -25,6 +25,7 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    cpus: 3
 
   # TODO: can we simply use with_minio=True instead?
   minio:
@@ -38,9 +39,9 @@ services:
         aliases:
           - warehouse-rest.minio
     ports:
-      - "9001:9001"
-      - "9002:9000"
+      - "${ICEBERG_MINIO_PORT}:9000"
     command: ["server", "/data", "--console-address", ":9001"]
+    cpus: 3
 
   # TODO: move this code to cluster.py
   mc:
@@ -58,5 +59,6 @@ services:
       /usr/bin/mc rm -r --force minio/warehouse-rest;
       /usr/bin/mc mb minio/warehouse-rest --ignore-existing;
       /usr/bin/mc policy set public minio/warehouse-rest;
-      tail -f /dev/null
       "
+    restart: "no"
+    cpus: 3

@@ -43,7 +43,7 @@ Like [`positionUTF8`](#positionUTF8) but searches case-insensitively.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>(documentation);
 }

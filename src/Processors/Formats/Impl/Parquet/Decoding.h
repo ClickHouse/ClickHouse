@@ -53,7 +53,7 @@ struct Dictionary
 struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
-    virtual void decode(size_t num_values, IColumn &) = 0;
+    virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
 
     explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
     virtual ~PageDecoder() = default;
@@ -215,6 +215,14 @@ struct FixedStringConverter : public FixedSizeConverter
     bool isTrivial() const override { return true; }
 
     void convertField(std::span<const char> data, bool /*is_max*/, Field & out) const override;
+};
+
+struct UUIDConverter : public FixedSizeConverter
+{
+    UUIDConverter() { input_size = 16; }
+
+    void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
+    void convertField(std::span<const char> data, bool is_max, Field & out) const override;
 };
 
 struct TrivialStringConverter : public StringConverter

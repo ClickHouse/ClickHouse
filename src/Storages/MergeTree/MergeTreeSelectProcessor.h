@@ -35,10 +35,9 @@ public:
         size_t number_of_current_replica_,
         size_t total_nodes_count_);
 
-    void sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const;
+    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
 
-    std::optional<ParallelReadResponse>
-    sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
+    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
     size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
@@ -92,6 +91,9 @@ struct MergeTreeIndexBuildContext
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
+struct LazyMaterializingRows;
+using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
@@ -101,22 +103,27 @@ public:
         MergeTreeSelectAlgorithmPtr algorithm_,
         const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
-        const LazilyReadInfoPtr & lazily_read_info_,
         const IndexReadTasks & index_read_tasks_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
-        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {});
+        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
 
     static Block transformHeader(
         Block block,
-        const LazilyReadInfoPtr & lazily_read_info,
         const FilterDAGInfoPtr & row_level_filter,
         const PrewhereInfoPtr & prewhere_info);
 
     Block getHeader() const { return result_header; }
 
+    /// Reads a single MergeTreeReadTask in a stateless manner.
+    /// Can be called concurrently and is used, for example, by SingleProjectionIndexReader.
+    ChunkAndProgress readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const;
+
+    /// Reads using the standard task-based algorithm, managing task state internally.
+    /// Not thread-safe: must not be called concurrently on the same MergeTreeSelectProcessor instance.
     ChunkAndProgress read();
 
     void cancel() noexcept;
@@ -137,11 +144,6 @@ public:
 
 private:
     friend class SingleProjectionIndexReader;
-
-    static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
-
-    /// Sets up range readers corresponding to data readers
-    void initializeReadersChain();
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
@@ -168,6 +170,8 @@ private:
 
     /// Shared context used for building indexes during query execution.
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
+
+    LazyMaterializingRowsPtr lazy_materializing_rows;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

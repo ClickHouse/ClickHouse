@@ -188,7 +188,7 @@ public:
         ///   --> create two slices based on selector [0, 0, 1, 0]
         ///       - slice0: 'elem1', 'elem2', 'elem4''
         ///       - slice1: 'elem3'
-        std::vector<MutableColumns> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
+        std::vector<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
             for (size_t i = 0; i < num_array_cols; ++i)
@@ -230,7 +230,7 @@ public:
             /// Scatter the accumulator into two columns
             /// - one column with accumulator values for rows less than slice-many elements, no further calculation is performed on them
             /// - one column with accumulator values for rows with slice-many or more elements, these are updated in this or following iteration
-            std::vector<IColumn::MutablePtr> finished_unfinished_accumulator_values = accumulator_col->scatter(2, prev_selector);
+            auto finished_unfinished_accumulator_values = accumulator_col->scatter(2, prev_selector);
             IColumn::MutablePtr & finished_accumulator_values = finished_unfinished_accumulator_values[0];
             IColumn::MutablePtr & unfinished_accumulator_values = finished_unfinished_accumulator_values[1];
 
@@ -241,15 +241,15 @@ public:
             /// we care about.
             IColumn::Filter filter(unfinished_rows);
             for (size_t i = 0; i < prev_selector.size(); ++i)
-                filter[i] = prev_selector[i];
+                filter[i] = static_cast<UInt8>(prev_selector[i]);
             ColumnPtr lambda_col_filtered = lambda_col->filter(filter, lambda_col->size());
             IColumn::MutablePtr lambda_col_filtered_cloned = lambda_col_filtered->cloneResized(lambda_col_filtered->size()); /// clone so we can bind more arguments
             auto * lambda = typeid_cast<ColumnFunction *>(lambda_col_filtered_cloned.get());
 
             /// Bind arguments to lambda function (accumulator + array arguments)
-            lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)}));
+            lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(unfinished_accumulator_values), arguments.back().type, arguments.back().name)});
             for (size_t array_col = 0; array_col < num_array_cols; ++array_col)
-                lambda->appendArguments(std::vector({ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)}));
+                lambda->appendArguments(ColumnsWithTypeAndName{ColumnWithTypeAndName(std::move(vertical_slices[array_col][slice]), arrays_data_with_type_and_name[array_col].type, arrays_data_with_type_and_name[array_col].name)});
 
             /// Perform the actual calculation and copy the result into the accumulator
             ColumnWithTypeAndName res_with_type_and_name = lambda->reduce();
@@ -337,7 +337,7 @@ SELECT arrayFold(
 };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayFold>(documentation);
 }

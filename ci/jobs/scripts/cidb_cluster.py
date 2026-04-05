@@ -1,4 +1,6 @@
 import json
+import os
+import re
 import time
 import traceback
 
@@ -30,7 +32,7 @@ class CIDBCluster:
             self.url = None
             self.pwd = None
         self._session = None
-        self._auth = None
+        self._auth = {}
 
     def close_session(self):
         if self._session:
@@ -39,7 +41,7 @@ class CIDBCluster:
 
     def is_ready(self):
         if not self.url:
-            self.url, self.user, passwd = (
+            self.url, self.user, self.pwd = (
                 self.url_secret.join_with(self.user_secret)
                 .join_with(self.pwd_secret)
                 .get_value()
@@ -47,18 +49,14 @@ class CIDBCluster:
             if not self.url:
                 print("ERROR: failed to retrieve password for LogCluster")
                 return False
-            if not passwd:
+            if not self.pwd:
                 print("ERROR: failed to retrieve password for LogCluster")
                 return False
-        else:
-            passwd = self.pwd
-        if passwd:
+        if self.pwd and not self._auth:
             self._auth = {
                 "X-ClickHouse-User": self.user,
-                "X-ClickHouse-Key": passwd,
+                "X-ClickHouse-Key": self.pwd,
             }
-        else:
-            self._auth = {}
         params = {
             "query": f"SELECT 1",
         }
@@ -71,7 +69,9 @@ class CIDBCluster:
                 timeout=3,
             )
             if not response.ok:
-                print("ERROR: No connection to LogCluster")
+                print(
+                    f"ERROR: No connection to cluster [{self.url}]: [{response.text}]"
+                )
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
@@ -103,7 +103,6 @@ class CIDBCluster:
                     headers=self._auth,
                     timeout=timeout,
                 )
-                print(response)
                 if response.ok:
                     return response.text
                 else:
@@ -174,6 +173,68 @@ class CIDBCluster:
             query=f"INSERT INTO {table} FORMAT JSONEachRow", data=json_str
         )
         self.close_session()
+
+    def insert_keeper_metrics_from_file(
+        self,
+        file_path: str,
+        chunk_size: int = 1000,
+        retries: int = 3,
+    ):
+        if not self.is_ready():
+            print("ERROR: CIDBCluster not ready, skipping keeper metrics ingestion")
+            return 0, 0
+        metrics_db = Settings.KEEPER_STRESS_METRICS_DB_NAME
+        table = Settings.KEEPER_STRESS_METRICS_TABLE_NAME
+        for _ident in (metrics_db, table):
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", _ident):
+                raise ValueError(f"Invalid identifier for keeper metrics table: {_ident!r}")
+        if not file_path or not os.path.exists(file_path):
+            return 0, 0
+
+        insert_params = {
+            "database": metrics_db,
+            "query": f"INSERT INTO {metrics_db}.{table} FORMAT JSONEachRow",
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+
+        def _insert_chunk(lines: list) -> int:
+            if not lines:
+                return 0
+            body = "\n".join(lines)
+            last_status = None
+            for attempt in range(retries):
+                response = requests.post(
+                    url=self.url,
+                    params=insert_params,
+                    data=body,
+                    headers=self._auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                last_status = response.status_code
+                if response.ok:
+                    return len(lines)
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            raise RuntimeError(
+                f"Failed to write keeper metrics after {retries} attempts, last response code [{last_status}]"
+            )
+
+        inserted = 0
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            chunk = []
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                chunk.append(s)
+                if len(chunk) >= chunk_size:
+                    inserted += _insert_chunk(chunk)
+                    chunk = []
+            inserted += _insert_chunk(chunk)
+
+        print(f"INFO: keeper metrics inserted: {inserted}")
+        return inserted, 0
 
 
 if __name__ == "__main__":

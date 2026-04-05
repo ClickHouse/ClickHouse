@@ -7,6 +7,9 @@ profiles:
         receive_timeout: 15
         # Disable async INSERT, since the batches should be big enough
         async_insert: 0
+        # Avoid polluting caches
+        enable_filesystem_cache_on_write_operations: 0
+        write_through_distributed_cache: 0
 users:
     ci_logs_sender:
         profile: ci_logs_sender

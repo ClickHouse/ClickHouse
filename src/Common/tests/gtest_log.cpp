@@ -1,13 +1,18 @@
 #include <string>
 #include <vector>
+#include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <gtest/gtest.h>
 
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
+#include <Poco/FileChannel.h>
 #include <Poco/NullChannel.h>
 #include <Poco/StreamChannel.h>
+#include <Poco/TemporaryFile.h>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <thread>
 
@@ -197,4 +202,58 @@ TEST(Logger, ExceptionsFromPocoLoggerAreNotPropagated)
     EXPECT_NO_THROW(LOG_TRACE(log, "my value is {}", 42));
 
     EXPECT_EQ(oss.str(), "");
+}
+
+std::vector<std::string> getLogFileNames(const std::string & log_dir)
+{
+    std::vector<std::string> log_file_names;
+    for (const auto & entry : std::filesystem::directory_iterator(log_dir))
+        log_file_names.emplace_back(entry.path().filename());
+    std::sort(log_file_names.begin(), log_file_names.end());
+    return log_file_names;
+}
+
+std::string readLogFile(const std::string & path, bool skip_comments = true)
+{
+    std::string file_contents;
+    std::ifstream input(path);
+    while (input)
+    {
+        std::string line;
+        std::getline(input, line, '\n');
+        if (!line.empty() && (!skip_comments || !line.starts_with("#")))
+            file_contents.append(line).append("\n");
+    }
+    return file_contents;
+}
+
+TEST(Logger, Rotation)
+{
+    Poco::TemporaryFile temp_dir;
+    temp_dir.createDirectories();
+
+    auto my_channel = Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel());
+    std::filesystem::path log_dir = std::filesystem::path{temp_dir.path()};
+    my_channel->setProperty(Poco::FileChannel::PROP_PATH, log_dir / "logger.log");
+    my_channel->setProperty(Poco::FileChannel::PROP_ROTATION, "200, 100 milliseconds");
+    auto log = createLogger("Logger", my_channel.get());
+    log->setLevel("trace");
+
+    LOG_INFO(log, "A");
+    LOG_INFO(log, "B");
+    LOG_INFO(log, "{}", std::string(201, 'C')); /// This should cause a rotation.
+
+    LOG_INFO(log, "D");
+    LOG_INFO(log, "E");
+
+    sleepForMilliseconds(101); /// This should cause a rotation.
+
+    LOG_INFO(log, "F");
+
+    /// We expect three log files at this point: "logger.log.1", "logger.log.0", "logger.log".
+    std::vector<std::string> expected_log_file_names{"logger.log", "logger.log.0", "logger.log.1"};
+    EXPECT_EQ(getLogFileNames(log_dir), expected_log_file_names);
+    EXPECT_EQ(readLogFile(log_dir / "logger.log.1"), "A\nB\n" + std::string(201, 'C') + "\n");
+    EXPECT_EQ(readLogFile(log_dir / "logger.log.0"), "D\nE\n");
+    EXPECT_EQ(readLogFile(log_dir / "logger.log"), "F\n");
 }

@@ -71,7 +71,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         return false;
 
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     bool all = false;
     bool current_quota = false;
     bool current_user = false;
@@ -112,7 +112,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             bool wildcard = false;
             bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))
-                row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
+                row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(ast);
             else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
             {
                 if (database.empty() && !default_database)
@@ -151,11 +151,42 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 current_quota = true;
             break;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            String database;
+            String table_name;
+            bool wildcard = false;
+            bool default_database = false;
+            if (parseIdentifierOrStringLiteral(pos, expected, short_name)
+                && parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
+            {
+                database_and_table_name.emplace(database, table_name);
+            }
+            else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
+            {
+                if (database.empty() && !default_database)
+                    all = true;
+                else
+                    database_and_table_name.emplace(database, table_name);
+            }
+            else if (!short_name.empty())
+            {
+                // Already parsed short_name in the first condition
+            }
+            else if (parseIdentifiersOrStringLiterals(pos, expected, names))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                return false;
+            break;
+        }
         case AccessEntityType::MAX:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type {} is not implemented in SHOW CREATE query", toString(type));
     }
 
-    auto query = std::make_shared<ASTShowCreateAccessEntityQuery>();
+    auto query = make_intrusive<ASTShowCreateAccessEntityQuery>();
     node = query;
 
     query->type = type;

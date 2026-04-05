@@ -4,6 +4,7 @@
 #include <Access/AccessRights.h>
 #include <Access/GrantedRoles.h>
 #include <Access/SettingsProfileElement.h>
+#include <optional>
 
 
 namespace DB
@@ -14,6 +15,7 @@ struct Role : public IAccessEntity
     AccessRights access;
     GrantedRoles granted_roles;
     SettingsProfileElements settings;
+    std::optional<UInt64> fetched_from_remote_at_ms;
 
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<Role>(); }

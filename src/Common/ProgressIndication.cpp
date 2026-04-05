@@ -43,7 +43,7 @@ void ProgressIndication::resetProgress()
     {
         std::lock_guard lock(profile_events_mutex);
         watch.restart();
-        cpu_usage_meter.reset(getElapsedNanoseconds());
+        cpu_usage_meter.reset(static_cast<double>(getElapsedNanoseconds()));
         hosts_data.clear();
     }
 }
@@ -70,13 +70,13 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
         total_cpu_ns += us_to_ns * new_host.second.time();
         hosts_data[new_host.first] = new_host.second;
     }
-    cpu_usage_meter.add(getElapsedNanoseconds(), total_cpu_ns);
+    cpu_usage_meter.add(static_cast<double>(getElapsedNanoseconds()), static_cast<double>(total_cpu_ns));
 }
 
 double ProgressIndication::getCPUUsage()
 {
     std::lock_guard lock(profile_events_mutex);
-    return cpu_usage_meter.rate(getElapsedNanoseconds());
+    return cpu_usage_meter.rate(static_cast<double>(getElapsedNanoseconds()));
 }
 
 ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
@@ -98,13 +98,13 @@ void ProgressIndication::writeFinalProgress()
     if (progress.read_rows < 1000)
         return;
 
-    output_stream << "Processed " << formatReadableQuantity(progress.read_rows) << " rows, "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+    output_stream << "Processed " << formatReadableQuantity(progress.read_rows.load()) << " rows, "
+                  << formatReadableSizeWithDecimalSuffix(progress.read_bytes.load());
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
-        output_stream << " (" << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                    << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.)";
+        output_stream << " (" << formatReadableQuantity(static_cast<double>(progress.read_rows.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << " rows/s., "
+                    << formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << "/s.)";
     else
         output_stream << ". ";
 
@@ -145,14 +145,14 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     message << indicator << " Progress: ";
     message
-        << formatReadableQuantity(progress.read_rows) << " rows, "
-        << formatReadableSizeWithDecimalSuffix(progress.read_bytes);
+        << formatReadableQuantity(progress.read_rows.load()) << " rows, "
+        << formatReadableSizeWithDecimalSuffix(progress.read_bytes.load());
 
     UInt64 elapsed_ns = getElapsedNanoseconds();
     if (elapsed_ns)
         message << " ("
-                << formatReadableQuantity(progress.read_rows * 1000000000.0 / elapsed_ns) << " rows/s., "
-                << formatReadableSizeWithDecimalSuffix(progress.read_bytes * 1000000000.0 / elapsed_ns) << "/s.) ";
+                << formatReadableQuantity(static_cast<double>(progress.read_rows.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << " rows/s., "
+                << formatReadableSizeWithDecimalSuffix(static_cast<double>(progress.read_bytes.load()) * 1000000000.0 / static_cast<double>(elapsed_ns)) << "/s.) ";
     else
         message << ". ";
 
@@ -221,7 +221,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
                 if (width_of_progress_bar > 0)
                 {
-                    double bar_width = UnicodeBar::getWidth(current_count, 0, max_count, width_of_progress_bar);
+                    double bar_width = UnicodeBar::getWidth(static_cast<double>(current_count), 0, static_cast<double>(max_count), static_cast<double>(width_of_progress_bar));
                     std::string bar = UnicodeBar::render(bar_width);
                     size_t bar_width_in_terminal = bar.size() / UNICODE_BAR_CHAR_SIZE;
 

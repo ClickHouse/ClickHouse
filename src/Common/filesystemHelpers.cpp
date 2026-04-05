@@ -16,6 +16,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
 
@@ -129,7 +130,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return BlockDeviceType::UNKNOWN;
     }
@@ -152,7 +153,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return static_cast<UInt64>(-1);
     }
@@ -219,7 +220,17 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
     auto rel = fs::relative(path, prefix_path);
-    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
@@ -230,7 +241,18 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
     /// not be a path of a symlink itself.
 
     auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
-    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
+
+    if (rel.empty() || rel == "..")
+        return false;
+
+    while (rel.has_relative_path())
+    {
+        rel = rel.parent_path();
+        if (rel == "..")
+            return false;
+    }
+
+    return true;
 }
 
 bool pathStartsWith(const String & path, const String & prefix_path)

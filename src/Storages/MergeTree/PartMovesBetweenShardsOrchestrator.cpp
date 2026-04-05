@@ -33,7 +33,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
     /// Schedule pool is not designed for long-running tasks. TODO replace with a separate thread?
-    task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), logger_name, [this]{ run(); });
 }
 
 void PartMovesBetweenShardsOrchestrator::run()
@@ -193,6 +193,7 @@ bool PartMovesBetweenShardsOrchestrator::step()
 
 PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::stepEntry(Entry entry, zkutil::ZooKeeperPtr zk)
 {
+    StorageReplicatedMergeTree::WatchEventByPath watch_events;
     switch (entry.state.value)
     {
         case EntryState::DONE: [[fallthrough]];
@@ -257,7 +258,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, sync_source_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, sync_source_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -315,7 +316,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, sync_destination_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, sync_destination_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -376,7 +377,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, fetch_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -456,7 +457,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                     LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
                 }
 
-                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1);
+                Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, attach_rollback_log_entry, 1, watch_events);
                 if (!unwaited.empty())
                     throw Exception(
                         ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -475,13 +476,17 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             /// Allocating block number in other replicas zookeeper path
             /// TODO Maybe we can do better.
             auto block_number_lock
-                = storage.allocateBlockNumber(part->info.getPartitionId(), zk, attach_log_entry_barrier_path, entry.to_shard);
+                = storage.allocateBlockNumber(
+                    part->info.getPartitionId(),
+                    zk,
+                    {attach_log_entry_barrier_path},
+                    entry.to_shard);
 
             ReplicatedMergeTreeLogEntryData log_entry;
 
-            if (block_number_lock)
+            if (block_number_lock.isLocked())
             {
-                auto block_number = block_number_lock->getNumber();
+                auto block_number = block_number_lock.getNumber();
 
                 auto part_info = part->info;
                 part_info.min_block = block_number;
@@ -519,7 +524,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 log_entry = *ReplicatedMergeTreeLogEntry::parse(log_entry_str, stat, storage.format_version);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));
@@ -594,7 +599,7 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
                 LOG_DEBUG(log, "Pushed log entry: {}", log_znode_path);
             }
 
-            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, source_drop_log_entry, 1);
+            Strings unwaited = storage.tryWaitForAllReplicasToProcessLogEntry(zookeeper_path, source_drop_log_entry, 1, watch_events);
             if (!unwaited.empty())
                 throw Exception(
                     ErrorCodes::TIMEOUT_EXCEEDED, "Some replicas haven't processed event: {}, will retry later.", toString(unwaited));

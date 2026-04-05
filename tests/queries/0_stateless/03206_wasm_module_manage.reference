@@ -1,0 +1,20 @@
+module1	1
+module1	369f6098ed1ac69a97735c26039f090ab78c31d729e8110f086b2ea13611c57d
+is_prime	1
+2
+3
+5
+7
+11
+wrong	is_prime	7718
+correct	is_prime	1
+is_prime	1
+correct	is_prime	1
+wasm_l
+return_default	1
+times2	1
+wasm_h	1
+42
+times2	1
+wasm_h2	1
+42

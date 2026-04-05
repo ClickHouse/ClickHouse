@@ -12,7 +12,6 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/StringRef.h>
 
 
 namespace DB

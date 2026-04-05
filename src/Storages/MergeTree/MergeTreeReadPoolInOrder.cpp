@@ -23,7 +23,8 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     const Names & column_names_,
     const PoolSettings & settings_,
     const MergeTreeReadTask::BlockSizeParams & params_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
         std::move(mutations_snapshot_),
@@ -40,6 +41,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         context_)
     , has_limit_below_one_block(has_limit_below_one_block_)
     , read_type(read_type_)
+    , updater(std::move(updater_))
 {
     per_part_mark_ranges.reserve(parts_ranges.size());
     for (const auto & part_with_ranges : parts_ranges)
@@ -75,7 +77,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrder::getTask(size_t task_idx, MergeTre
         mark_ranges_for_task = std::move(all_mark_ranges);
     }
 
-    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task);
+    return createTask(per_part_infos[task_idx], std::move(mark_ranges_for_task), previous_task, updater);
 }
 
 }

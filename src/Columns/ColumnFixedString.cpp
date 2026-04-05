@@ -3,7 +3,7 @@
 #include <Columns/ColumnCompressed.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/Arena.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -11,11 +11,15 @@
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <base/sort.h>
-#include <base/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
+#endif
+
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
 #endif
 
 
@@ -50,6 +54,13 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 
     return new_col_holder;
 }
+
+void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const
+{
+    if (options.notFull(name_buf))
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
+}
+
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
@@ -119,22 +130,26 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     memset(chars.data() + old_size + length, 0, n - length);
 }
 
-const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
+void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(chars.data() + old_size, pos, n);
-    return pos + n;
+    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
+void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + n;
+    in.ignore(n);
 }
 
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
+}
+
+void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
 }
 
 WeakHash32 ColumnFixedString::getWeakHash32() const
@@ -161,6 +176,34 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(n);
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
+
+#if USE_EMBEDDED_COMPILER
+bool ColumnFixedString::isComparatorCompilable() const { return true; }
+llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_row_index = b.CreateExtractValue(lhs, {1});
+    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_row_index = b.CreateExtractValue(rhs, {1});
+
+    auto * size_type = b.getInt64Ty();
+    auto * n_value = llvm::ConstantInt::get(size_type, n);
+
+    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, b.CreateMul(lhs_row_index, n_value));
+    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, b.CreateMul(rhs_row_index, n_value));
+
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    auto * memcmp_func_type = llvm::FunctionType::get(b.getInt32Ty(),
+        {lhs_current_ptr->getType(), n_value->getType(), rhs_current_ptr->getType(), n_value->getType()}, false);
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
+    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, n_value, rhs_current_ptr, n_value});
+
+    /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
+    return b.CreateTrunc(compare_result, b.getInt8Ty());
+}
+#endif
 
 struct ColumnFixedString::ComparatorBase
 {
@@ -219,7 +262,7 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        auto value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -313,6 +356,69 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
+void ColumnFixedString::filter(const IColumn::Filter & filt)
+{
+    size_t col_size = size();
+    if (col_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + col_size;
+    const auto * data_pos = chars.data();
+    auto * res_data_pos = chars.data();
+    size_t res_chars_size = 0;
+
+    /** A slightly more optimized version.
+        * Based on the assumption that often pieces of consecutive values
+        *  completely pass or do not pass the filter.
+        * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+        */
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
+    const size_t chars_per_simd_elements = SIMD_BYTES * n;
+
+    while (filt_pos < filt_end_aligned)
+    {
+        uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            memmove(res_data_pos + res_chars_size, data_pos, chars_per_simd_elements);
+            res_chars_size += chars_per_simd_elements;
+        }
+        else
+        {
+            while (mask)
+            {
+                size_t index = std::countr_zero(mask);
+                memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
+                res_chars_size += n;
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
+            }
+        }
+        data_pos += chars_per_simd_elements;
+        filt_pos += SIMD_BYTES;
+    }
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+        {
+            memmove(res_data_pos + res_chars_size, data_pos, n);
+            res_chars_size += n;
+        }
+
+        ++filt_pos;
+        data_pos += n;
+    }
+
+    chars.resize_assume_reserved(res_chars_size);
+}
+
 void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 {
     if (mask.size() < size())
@@ -379,7 +485,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 
     auto res = ColumnFixedString::create(n);
 
-    if (0 == col_size)
+    if (col_size == 0 || offsets.back() == 0)
         return res;
 
     Chars & res_chars = res->chars;
@@ -393,21 +499,19 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
     return res;
 }
 
-void ColumnFixedString::getExtremes(Field & min, Field & max) const
+void ColumnFixedString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     auto cmp_less = ComparatorAscendingUnstable(*this);
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_less(i, min_idx))
             min_idx = i;

@@ -55,18 +55,19 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     for (auto & cur_pipeline : pipelines)
     {
-#if !defined(NDEBUG)
-        assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
-#endif
         /// Headers for union must be equal.
         /// But, just in case, convert it to the same header if not.
+        /// This can happen when PREWHERE optimization adds extra pass-through columns
+        /// to ReadFromMergeTree output that are not consumed by the expression DAG above,
+        /// causing plan headers and pipeline headers to diverge.
         if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), *getOutputHeader()))
         {
             QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputHeader()->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
 
             auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
             cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)
@@ -77,6 +78,10 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             auto added_processors = collector.detachProcessors();
             processors.insert(processors.end(), added_processors.begin(), added_processors.end());
         }
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
+#endif
     }
 
     *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), new_max_threads, &processors);
@@ -93,7 +98,7 @@ void UnionStep::serialize(Serialization & ctx) const
     (void)ctx;
 }
 
-std::unique_ptr<IQueryPlanStep> UnionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
     return std::make_unique<UnionStep>(ctx.input_headers);
 }

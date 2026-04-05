@@ -96,29 +96,26 @@ ExpressionSide getExpressionSide(
 {
     auto inputs = getExpressionInputs(expr);
 
+    /// Whether at least one input comes from the left/right stream with an unchanged type.
     bool has_left = false;
-    for (const auto * input : inputs)
-    {
-        if (left_allowed_inputs.contains(input))
-        {
-            has_left = true;
-            break;
-        }
-    }
-
     bool has_right = false;
+
+    /// Whether at least one input is not available from either side (e.g. a USING column whose
+    /// type was changed by the JOIN USING clause). We cannot safely assign this expression to one side.
+    bool has_unavailable = false;
+
     for (const auto * input : inputs)
     {
-        if (right_allowed_inputs.contains(input))
-        {
-            has_right = true;
-            break;
-        }
+        bool in_left = left_allowed_inputs.contains(input);
+        bool in_right = right_allowed_inputs.contains(input);
+        has_left |= in_left;
+        has_right |= in_right;
+        has_unavailable |= !in_left && !in_right;
     }
 
-    if (has_left && !has_right)
+    if (has_left && !has_right && !has_unavailable)
         return ExpressionSide::LEFT;
-    else if (!has_left && has_right)
+    else if (!has_left && has_right && !has_unavailable)
         return ExpressionSide::RIGHT;
 
     return ExpressionSide::UNKNOWN;
@@ -133,7 +130,7 @@ const ActionsDAG::Node & createResultPredicate(
 {
     if (!original_predicate->result_type->equals(*new_predicate_expr->result_type))
     {
-        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name);
+        return filter_dag.addCast(*new_predicate_expr, original_predicate->result_type, original_predicate->result_name, nullptr);
     }
     else
     {
@@ -199,7 +196,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         rejected_conjuncts.push_back(conjunct);
     }
 
-    bool trivial_filter = rejected_conjuncts.empty();
+    const auto trivial_filter = rejected_conjuncts.empty();
     if (!result.empty())
     {
         /// There's a non-empty list of extracted condition parts.

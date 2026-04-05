@@ -42,8 +42,8 @@ void writeNumpyStrings(const ColumnPtr & column, size_t length, WriteBuffer & bu
     for (size_t i = 0; i < string_column->size(); ++i)
     {
         auto data = string_column->getDataAt(i);
-        buf.write(data.data, data.size);
-        writeChar(0, length - data.size, buf);
+        buf.write(data.data(), data.size());
+        writeChar(0, length - data.size(), buf);
     }
 }
 

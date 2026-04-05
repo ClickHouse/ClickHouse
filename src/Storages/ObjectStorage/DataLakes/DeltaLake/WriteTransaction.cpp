@@ -80,7 +80,6 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             std::make_shared<DB::DataTypeString>()), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
-        {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
         {std::make_shared<DB::DataTypeTuple>(
                 DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
     };
@@ -103,10 +102,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTime());
-        columns[4]->insert(true);
         std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
         DB::Tuple stats{stats_json};
-        columns[5]->insert(stats);
+        columns[4]->insert(stats);
     }
 
     DB::FormatSettings format_settings;

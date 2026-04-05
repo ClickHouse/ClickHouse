@@ -19,7 +19,7 @@ Functions in this section also assume that the searched string (referred to in t
 violated, no exception is thrown and results are undefined. Search with UTF-8 encoded strings is usually provided by separate function
 variants. Likewise, if a UTF-8 function variant is used and the input strings are not UTF-8 encoded text, no exception is thrown and the
 results are undefined. Note that no automatic Unicode normalization is performed, however you can use the
-[normalizeUTF8*()](https://clickhouse.com../functions/string-functions/) functions for that.
+[normalizeUTF8*()](/sql-reference/functions/string-functions#normalizeUTF8NFC) functions for that.
 
 [General strings functions](string-functions.md) and [functions for replacing in strings](string-replace-functions.md) are described separately.
 

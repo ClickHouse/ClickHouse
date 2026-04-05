@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 
@@ -20,9 +21,15 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
+        size_t filters_to_merge_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_);
+        UInt64 bloom_filter_hash_functions_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        bool allow_to_use_not_exact_filter_,
+        ContextPtr query_context_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
@@ -39,7 +46,8 @@ private:
 
     FunctionBasePtr cast_to_target_type;
 
-    std::unique_ptr<RuntimeFilter> built_filter;
+    UniqueRuntimeFilterPtr built_filter;
+    ContextPtr query_context;
 
     void finish();
 };

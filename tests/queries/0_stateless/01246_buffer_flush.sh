@@ -30,7 +30,7 @@ function get_buffer_delay()
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     query "
         WITH
-            (SELECT event_time_microseconds FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryStart' AND query_id = '$buffer_insert_id') AS begin_,
+            (SELECT event_time_microseconds FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryStart' AND query_id = '$buffer_insert_id') AS begin_,
             (SELECT max(event_time) FROM data_01256) AS end_
         SELECT dateDiff('seconds', begin_, end_)::UInt64
     "

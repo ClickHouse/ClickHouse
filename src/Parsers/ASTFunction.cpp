@@ -1,6 +1,9 @@
+#include <algorithm>
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
@@ -32,6 +35,19 @@ namespace ErrorCodes
 }
 
 
+void ASTFunction::setNoEmptyArgs(bool value)
+{
+    flags<ASTFunctionFlags>().no_empty_args = value;
+    /// Also clear the empty arguments node to keep formatting round-trip consistent:
+    /// `MergeTree()` with noEmptyArgs formats as `MergeTree`, which re-parses without arguments.
+    if (value && arguments && arguments->children.empty())
+    {
+        children.erase(std::remove(children.begin(), children.end(), arguments), children.end());
+        arguments.reset();
+    }
+}
+
+
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// These functions contain some unexpected ASTs in arguments (e.g. SETTINGS or even a SELECT query)
@@ -52,7 +68,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     if (parameters)
     {
         writeChar('(', ostr);
-        for (auto * it = parameters->children.begin(); it != parameters->children.end(); ++it)
+        for (auto it = parameters->children.begin(); it != parameters->children.end(); ++it)
         {
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
@@ -65,7 +81,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     writeChar('(', ostr);
     if (arguments)
     {
-        for (auto * it = arguments->children.begin(); it != arguments->children.end(); ++it)
+        for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
         {
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
@@ -76,12 +92,12 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
     writeChar(')', ostr);
 
-    if (nulls_action == NullsAction::RESPECT_NULLS)
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
         writeCString(" RESPECT NULLS", ostr);
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         writeCString(" IGNORE NULLS", ostr);
 
-    if (is_window_function)
+    if (isWindowFunction())
     {
         writeCString(" OVER ", ostr);
         if (!window_name.empty())
@@ -102,12 +118,12 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 
 void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    if (nulls_action == NullsAction::RESPECT_NULLS)
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
         ostr << " RESPECT NULLS";
-    else if (nulls_action == NullsAction::IGNORE_NULLS)
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
         ostr << " IGNORE NULLS";
 
-    if (!is_window_function)
+    if (!isWindowFunction())
         return;
 
     ostr << " OVER ";
@@ -131,7 +147,7 @@ String ASTFunction::getID(char delim) const
 
 ASTPtr ASTFunction::clone() const
 {
-    auto res = std::make_shared<ASTFunction>(*this);
+    auto res = make_intrusive<ASTFunction>(*this);
     res->children.clear();
 
     if (arguments) { res->arguments = arguments->clone(); res->children.push_back(res->arguments); }
@@ -146,15 +162,14 @@ ASTPtr ASTFunction::clone() const
     return res;
 }
 
-
 void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(name.size());
     hash_state.update(name);
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
-    hash_state.update(nulls_action);
-    if (is_window_function)
+    hash_state.update(getNullsAction());
+    if (isWindowFunction())
     {
         hash_state.update(window_name.size());
         hash_state.update(window_name);
@@ -186,7 +201,7 @@ static ASTPtr createLiteral(const ASTs & arguments)
             return {};
     }
 
-    return std::make_shared<ASTLiteral>(container);
+    return make_intrusive<ASTLiteral>(container);
 }
 
 ASTPtr ASTFunction::toLiteral() const
@@ -254,9 +269,21 @@ static bool isAcceptableArgumentsForLambdaExpression(const ASTs & arguments)
     return false;
 }
 
+namespace
+{
+
+struct FunctionOperatorMapping
+{
+    std::string_view function_name;
+    std::string_view operator_name;
+};
+
+}
+
 void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.expression_list_prepend_whitespace = false;
+    auto kind = getKind();
     if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
         frame.allow_operators = false;
     FormatStateStacked nested_need_parens = frame;
@@ -302,24 +329,20 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Should this function to be written as operator?
     bool written = false;
-    if (is_operator && arguments && !parameters && frame.allow_operators && nulls_action == NullsAction::EMPTY)
+    if (isOperator() && arguments && !parameters && frame.allow_operators && getNullsAction() == NullsAction::EMPTY)
     {
         /// Unary prefix operators.
         if (arguments->children.size() == 1)
         {
-            const char * operators[] =
-            {
-                "negate",      "-",
-                "not",         "NOT ",
-                nullptr
-            };
+            static constexpr std::array<FunctionOperatorMapping, 2> operators = {{
+                {"negate", "-"},
+                {"not", "NOT "},
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
+                it != operators.end())
             {
-                if (strcasecmp(name.c_str(), func[0]) != 0)
-                {
-                    continue;
-                }
+                const auto & func_symbol = it->operator_name;
 
                 const auto * literal = arguments->children[0]->as<ASTLiteral>();
                 const auto * function = arguments->children[0]->as<ASTFunction>();
@@ -328,21 +351,28 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                              || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
                 bool is_array = (literal && literal->value.getType() == Field::Types::Array)
                              || (function && function->name == "array");
+                bool has_alias = !arguments->children[0]->tryGetAlias().empty();
 
                 /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
                 /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
-                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
-                bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                    || (subquery && name == "not") || (is_tuple && name == "not");
+                /// Also extra parentheses are needed for subqueries with NOT, because NOT (SELECT 1) is ambiguous.
+                /// Note: Tuples no longer need inside_parens for NOT because NOT is now always parsed as a
+                /// unary prefix operator (not a function call), so NOT (1, 2, 3) correctly produces NOT(tuple(1,2,3)).
+                /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
+                bool inside_parens = !has_alias
+                    && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
+                        || (subquery && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && !inside_parens;
+                /// Only negate (-) can safely move before parentheses: -(x + y) is unambiguous.
+                /// NOT cannot: NOT (subquery) NOT LIKE x would be parsed as NOT ((subquery) NOT LIKE x),
+                /// because boolean NOT has lower precedence than comparison operators.
+                bool can_move_before_parens = frame.allow_moving_operators_before_parens && (name == "negate");
+                bool outside_parens = frame.need_parens && (!can_move_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
@@ -351,7 +381,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (outside_parens)
                     ostr << '(';
 
-                ostr << func[1];
+                ostr << func_symbol;
 
                 if (inside_parens)
                     ostr << '(';
@@ -364,38 +394,28 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
                 if (outside_parens)
                     ostr << ')';
-
-                break;
             }
         }
 
         /// Unary postfix operators.
         if (!written && arguments->children.size() == 1)
         {
-            const char * operators[] =
-            {
-                "isNull",          " IS NULL",
-                "isNotNull",       " IS NOT NULL",
-                nullptr
-            };
+            static constexpr std::array<FunctionOperatorMapping, 2> operators = {{
+                {"isNull", " IS NULL"},
+                {"isNotNull", " IS NOT NULL"},
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
+                it != operators.end())
             {
-                if (strcasecmp(name.c_str(), func[0]) != 0)
-                {
-                    continue;
-                }
-
                 if (frame.need_parens)
                     ostr << '(';
                 arguments->format(ostr, settings, state, nested_need_parens);
-                ostr << func[1];
+                ostr << it->operator_name;
                 if (frame.need_parens)
                     ostr << ')';
 
                 written = true;
-
-                break;
             }
         }
 
@@ -405,64 +425,75 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && arguments->children.size() == 2)
         {
-            const char * operators[] =
-            {
-                "multiply",          " * ",
-                "divide",            " / ",
-                "modulo",            " % ",
-                "plus",              " + ",
-                "minus",             " - ",
-                "notEquals",         " != ",
-                "lessOrEquals",      " <= ",
-                "greaterOrEquals",   " >= ",
-                "less",              " < ",
-                "greater",           " > ",
-                "equals",            " = ",
-                "isNotDistinctFrom", " <=> ",
-                "like",              " LIKE ",
-                "ilike",             " ILIKE ",
-                "notLike",           " NOT LIKE ",
-                "notILike",          " NOT ILIKE ",
-                "in",                " IN ",
-                "notIn",             " NOT IN ",
-                "globalIn",          " GLOBAL IN ",
-                "globalNotIn",       " GLOBAL NOT IN ",
-                nullptr
-            };
+            static constexpr std::array<FunctionOperatorMapping, 21> operators =
+            {{
+                {"multiply",          " * "},
+                {"divide",            " / "},
+                {"modulo",            " % "},
+                {"plus",              " + "},
+                {"minus",             " - "},
+                {"notEquals",         " != "},
+                {"lessOrEquals",      " <= "},
+                {"greaterOrEquals",   " >= "},
+                {"less",              " < "},
+                {"greater",           " > "},
+                {"equals",            " = "},
+                {"isNotDistinctFrom", " <=> "},
+                {"isDistinctFrom",    " IS DISTINCT FROM "},
+                {"like",              " LIKE "},
+                {"ilike",             " ILIKE "},
+                {"notLike",           " NOT LIKE "},
+                {"notILike",          " NOT ILIKE "},
+                {"in",                " IN "},
+                {"notIn",             " NOT IN "},
+                {"globalIn",          " GLOBAL IN "},
+                {"globalNotIn",       " GLOBAL NOT IN "}
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                if (name == std::string_view(func[0]))
+                /// IN operators need extra parentheses to avoid parsing ambiguity when used as function arguments.
+                /// The parser cannot handle IN inside multi-argument function calls without parentheses.
+                /// Example: position(1 IN (SELECT 1), 2) must be formatted as position((1 IN (SELECT 1)), 2)
+                bool is_in_operator = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn");
+                bool in_function_args = frame.current_function != nullptr;
+                bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
+                if (need_parens_around_in)
+                    ostr << '(';
+                arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                ostr << it->operator_name;
+
+                /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
+                const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
+                const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
+                bool is_literal_tuple_or_array = second_arg_literal
+                    && (second_arg_literal->value.getType() == Field::Types::Tuple
+                        || second_arg_literal->value.getType() == Field::Types::Array);
+
+                /** Conditions for extra parens:
+                 *  1. Is IN operator
+                 *  2. 2nd arg is not subquery, function, or literal tuple or array
+                 *  3. If the 2nd argument has alias, we ignore condition 2 and add extra parens
+                 *
+                 *  Condition 3 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
+                 */
+                bool extra_parents_around_in_rhs = is_in_operator
+                    && ((!arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array)
+                        || !arguments->children[1]->tryGetAlias().empty());
+
+                if (extra_parents_around_in_rhs)
                 {
-                    if (frame.need_parens)
-                        ostr << '(';
-                    arguments->children[0]->format(ostr, settings, state, nested_need_parens);
-                    ostr << func[1];
-
-                    /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
-                    const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
-                    const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
-                    bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
-                        && !second_arg_func
-                        && !(second_arg_literal
-                             && (second_arg_literal->value.getType() == Field::Types::Tuple
-                                || second_arg_literal->value.getType() == Field::Types::Array))
-                        && !arguments->children[1]->as<ASTSubquery>();
-
-                    if (extra_parents_around_in_rhs)
-                    {
-                        ostr << '(';
-                        arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
-                        ostr << ')';
-                    }
-
-                    if (!extra_parents_around_in_rhs)
-                        arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-
-                    if (frame.need_parens)
-                        ostr << ')';
-                    written = true;
+                    ostr << '(';
+                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                    ostr << ')';
                 }
+
+                if (!extra_parents_around_in_rhs)
+                    arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+
+                if (need_parens_around_in)
+                    ostr << ')';
+                written = true;
             }
 
             if (!written && name == "arrayElement"sv)
@@ -470,6 +501,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
 
+                /// Don't allow moving operators like '-' before parents,
+                /// otherwise (-(42))[3] will be formatted as -(42)[3] that will be parsed as -(42[3]);
+                nested_need_parens.allow_moving_operators_before_parens = false;
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << '[';
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
@@ -480,7 +514,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
             }
 
-            if (!written && name == "tupleElement"sv)
+            if (!written && name == "tupleElement"sv && arguments->children.size() == 2)
             {
                 // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
@@ -495,6 +529,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 //
                 // So instead of printing it as regular tuple,
                 // let's print it as ExpressionList instead (i.e. with ", " delimiter).
+                //
+                // Only use dot-syntax for 2-argument tupleElement (expr.field).
+                // The 3-argument form tupleElement(expr, field, default) cannot use
+                // dot-syntax because the default value would be lost during formatting.
                 bool tuple_arguments_valid = true;
                 const auto * lit_left = arguments->children[0]->as<ASTLiteral>();
                 const auto * lit_right = arguments->children[1]->as<ASTLiteral>();
@@ -511,10 +549,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                 }
 
-                // It can be printed in a form of 'x.1' only if right hand side
-                // is an unsigned integer lineral. We also allow nonnegative
-                // signed integer literals, because the fuzzer sometimes inserts
-                // them, and we want to have consistent formatting.
+                /// It can be printed in a form of 'x.1' only if right hand side
+                /// is an unsigned integer lineral. We also allow nonnegative
+                /// signed integer literals, because the fuzzer sometimes inserts
+                /// them, and we want to have consistent formatting.
                 if (tuple_arguments_valid && lit_right)
                 {
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
@@ -523,7 +561,31 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
+                        /// Little hack: Expression like this: (tab.*).1 (tab contains single tuple column)
+                        /// causes inconsistent formatting because it is formatted as tab.*.1 which is invalid.
+                        /// So when child 0 has more than one element, we surround it with parens.
+                        /// Exception: array and tuple functions format with their own brackets ([...] and (...)),
+                        /// which are already unambiguous with .N syntax. Adding extra parens around them
+                        /// would cause inconsistent formatting when re-parsed, because the parser's fast path
+                        /// creates ASTLiteral (size=1, no parens) while ASTFunction has size>1.
+                        const auto * left_func = arguments->children[0]->as<ASTFunction>();
+                        bool left_needs_parens = arguments->children[0]->size() > 1
+                            && !(left_func && (left_func->name == "array" || left_func->name == "tuple"));
+
+                        if (left_needs_parens)
+                        {
+                            nested_need_parens.need_parens = false; /// Don't want duplicate parens
+                            ostr << '(';
+                        }
+
+                        /// Don't allow moving operators like '-' before parents,
+                        /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
+                        nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+
+                        if (left_needs_parens)
+                            ostr << ')';
+
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;
@@ -571,35 +633,31 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
         if (!written && arguments->children.size() >= 2)
         {
-            const char * operators[] =
-            {
-                "and", " AND ",
-                "or", " OR ",
-                nullptr
-            };
+            constexpr std::array<FunctionOperatorMapping, 2> operators
+            {{
+                {"and", " AND "},
+                {"or", " OR "}
+            }};
 
-            for (const char ** func = operators; *func; func += 2)
+            if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                if (name == std::string_view(func[0]))
+                if (frame.need_parens)
+                    ostr << '(';
+                for (size_t i = 0; i < arguments->children.size(); ++i)
                 {
-                    if (frame.need_parens)
-                        ostr << '(';
-                    for (size_t i = 0; i < arguments->children.size(); ++i)
-                    {
-                        if (i != 0)
-                            ostr << func[1];
-                        if (arguments->children[i]->as<ASTSetQuery>())
-                            ostr << "SETTINGS ";
-                        arguments->children[i]->format(ostr, settings, state, nested_need_parens);
-                    }
-                    if (frame.need_parens)
-                        ostr << ')';
-                    written = true;
+                    if (i != 0)
+                        ostr << it->operator_name;
+                    if (arguments->children[i]->as<ASTSetQuery>())
+                        ostr << "SETTINGS ";
+                    arguments->children[i]->format(ostr, settings, state, nested_need_parens);
                 }
+                if (frame.need_parens)
+                    ostr << ')';
+                written = true;
             }
         }
 
-        if (!written && name == "array"sv)
+        if (!written && name == "array"sv && isOperator())
         {
             ostr << '[';
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -615,10 +673,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && isOperator() && !(frame.need_parens && !alias.empty()))
         {
-            ostr << ((frame.need_parens && !alias.empty()) ? "tuple" : "") << '('
-                         ;
+            ostr << '(';
 
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
@@ -667,7 +724,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << ')';
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+    /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
+    /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
+    bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
+    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
+
+    if (need_parens)
         ostr << '(';
 
     if (arguments)
@@ -736,11 +798,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             }
 
             nested_dont_need_parens.list_element_index = i;
+            /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
+            if (arguments->children.size() > 1)
+                nested_dont_need_parens.current_function = this;
             argument->format(ostr, settings, state, nested_dont_need_parens);
         }
+
     }
 
-    if ((arguments && !arguments->children.empty()) || !no_empty_args)
+    if (need_parens)
         ostr << ')';
 
     finishFormatWithWindow(ostr, settings, state, frame);

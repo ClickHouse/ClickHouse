@@ -219,7 +219,7 @@ Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Base
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionSeriesDecomposeSTL>(documentation);
 }

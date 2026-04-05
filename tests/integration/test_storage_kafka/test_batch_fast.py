@@ -32,6 +32,7 @@ instance = cluster.add_instance(
         "kafka_format_json_each_row": "JSONEachRow",
     },
     clickhouse_path_dir="clickhouse_path",
+    cpu_limit=5,
 )
 
 
@@ -858,6 +859,43 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
     k.kafka_check_result(result, True)
 
 
+def test_kafka_protobuflist(kafka_cluster):
+    """Test ProtobufList format with Kafka engine.
+    https://github.com/ClickHouse/ClickHouse/issues/78746
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+    topic = f"pb_list_{suffix}"
+
+    admin_client = k.get_admin_client(kafka_cluster)
+    with k.kafka_topic(admin_client, topic):
+        # Produce 3 separate Kafka messages, each a ProtobufList envelope
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 0, 20)
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 20, 1)
+        k.kafka_produce_protobuf_messages_protobuflist(kafka_cluster, topic, 21, 29)
+
+        instance.query(f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value String)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic}',
+                         kafka_group_name = '{topic}',
+                         kafka_format = 'ProtobufList',
+                         kafka_commit_on_select = 1,
+                         kafka_schema = 'kafka_protobuflist.proto:KeyValuePair';
+        """)
+
+        result = ""
+        while True:
+            result += instance.query(
+                f"SELECT * FROM test.{kafka_table}", ignore_error=True
+            )
+            if k.kafka_check_result(result):
+                break
+
+        k.kafka_check_result(result, True)
+
+
 def test_kafka_protobuf_transaction_oneof(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
@@ -1076,7 +1114,8 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
 
         logging.debug(("Check compression {}".format(compression_type)))
 
-        topic_name = "test_librdkafka_compression_{}".format(compression_type)
+        # Use suffix in topic name to avoid stale messages from previous failed runs
+        topic_name = "test_librdkafka_compression_{}_{}".format(compression_type, suffix)
         topic_config = {"compression.type": compression_type}
         with k.kafka_topic(admin_client, topic_name, config=topic_config):
             instance.query(f"""{{create_query}};
@@ -1101,7 +1140,9 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
             k.kafka_produce(kafka_cluster, topic_name, messages)
 
             instance.wait_for_log_line(current_log_line.format(offset=number_of_messages, topic=topic_name))
-            result = instance.query(f"SELECT * FROM test.{kafka_table}_view")
+            result = instance.query(
+                f"SELECT * FROM test.{kafka_table}_view ORDER BY key"
+            )
             assert TSV(result) == TSV(expected)
 
             instance.query(f"DROP TABLE test.{kafka_table} SYNC")
@@ -2080,18 +2121,12 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
 
     topic_name = "flush_by_block_size" + k.get_topic_postfix(create_query_generator)
 
-    cancel = threading.Event()
-
-    def produce():
-        while not cancel.is_set():
-            messages = []
-            messages.append(json.dumps({"key": 0, "value": 0}))
-            k.kafka_produce(kafka_cluster, topic_name, messages)
-
-    kafka_thread = threading.Thread(target=produce)
-
     with k.kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        kafka_thread.start()
+        # Pre-produce enough messages before consumer starts.
+        # This ensures all messages are available immediately when the consumer starts polling,
+        # avoiding the KAFKA_MAX_THREAD_WORK_DURATION_MS limit (60s) that could cause early flushing.
+        messages = [json.dumps({"key": i, "value": i}) for i in range(200)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
 
         create_query = create_query_generator(
             kafka_table,
@@ -2126,9 +2161,6 @@ def test_kafka_flush_by_block_size(kafka_cluster, create_query_generator):
             )
         ):
             time.sleep(0.5)
-
-        cancel.set()
-        kafka_thread.join()
 
         # more flushes can happens during test, we need to check only result of first flush (part named all_1_1_0).
         result = instance.query(f"SELECT count() FROM test.{kafka_table}_view WHERE _part='all_1_1_0'")
@@ -3104,13 +3136,17 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
             CREATE MATERIALIZED VIEW test.{kafka_table}_view ENGINE=MergeTree ORDER BY tuple() AS SELECT * FROM test.{kafka_table};
             """
         )
-        instance.query_with_retry(f"SELECT count() FROM test.{kafka_table}_view", check_callback=lambda res: int(res) == 4)
+        count = instance.query_with_retry(
+            f"SELECT count() FROM test.{kafka_table}_view",
+            check_callback=lambda res: int(res) == 6,
+        )
+        assert int(count) == 6
 
         instance.query_with_retry(f"DROP TABLE test.{kafka_table}_view SYNC")
 
         check_query = f"""
             create or replace function stable_timestamp as
-            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+            (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 120, 'now', toString(d));
 
             -- check last_used stores microseconds correctly
             create or replace function check_last_used as
@@ -3627,6 +3663,50 @@ def test_kafka_assigned_partitions(kafka_cluster):
         """,
         metrics_before,
     )
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_generator):
+    """
+    Test that kafka_consumer_reschedule_ms is properly validated against
+    kafka_consumers_pool_ttl_ms (reschedule_ms < pool_ttl_ms).
+    """
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_reschedule_invalid_{suffix}"
+    topic_name = f"test_reschedule_validation_{suffix}"
+
+    # Should fail: reschedule_ms > pool_ttl_ms
+    create_query = create_query_generator(
+        kafka_table,
+        "key UInt64, value UInt64",
+        topic_list=topic_name,
+        consumer_group=topic_name,
+        settings={
+            "kafka_consumers_pool_ttl_ms": 1000,
+            "kafka_consumer_reschedule_ms": 2000,  # Invalid: greater than TTL
+        },
+    )
+    with pytest.raises(
+        QueryRuntimeException,
+        match=r".*kafka_consumers_pool_ttl_ms.*cannot be less than.*kafka_consumer_reschedule_ms.*"
+    ):
+        instance.query(create_query)
+
+    # Should succeed: reschedule_ms < pool_ttl_ms
+    kafka_table_valid = f"kafka_reschedule_valid_{suffix}"
+    create_query = create_query_generator(
+        kafka_table_valid,
+        "key UInt64, value UInt64",
+        topic_list=topic_name,
+        consumer_group=f"{topic_name}_valid",
+        settings={
+            "kafka_consumers_pool_ttl_ms": 10000,
+            "kafka_consumer_reschedule_ms": 100,  # Valid
+        },
+    )
+    instance.query(create_query)
 
 
 if __name__ == "__main__":

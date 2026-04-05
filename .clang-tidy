@@ -33,8 +33,10 @@ Checks: [
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-sizeof-expression', # too aggressive
 
   '-cert-dcl16-c',
+  '-cert-arr39-c', # alias of bugprone-sizeof-expression
   '-cert-err58-cpp',
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
@@ -42,6 +44,9 @@ Checks: [
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-security.ArrayBound', # only false positives
+
+  '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
+  '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
 
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
