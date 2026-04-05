@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Test that MinMax index on JSON column is rejected (JSON values can have varying types per row).
 -- Related to: https://github.com/ClickHouse/ClickHouse/issues/101700
 
