@@ -11,12 +11,12 @@
 
 SET max_execution_time = 30;
 
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier} SYNC;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
-CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier}
-    ENGINE = Replicated('/clickhouse/databases/{database}', 'shard1', 'replica1');
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}
+    ENGINE = Replicated('/clickhouse/databases/{database}_04090', 'shard1', 'replica1');
 
-USE {CLICKHOUSE_DATABASE:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 SET distributed_ddl_output_mode = 'none';
 
@@ -40,7 +40,7 @@ SELECT 't2', count() FROM t2;
 SELECT 't3', count() FROM t3;
 
 -- SYSTEM SYNC DATABASE REPLICA exercises getConsistentMetadataSnapshotImpl.
-SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE:Identifier};
+SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- ALTER adds a DDL log entry, bumping max_log_ptr and causing the next
 -- metadata snapshot to re-read it via tryGet (the buggy path).
@@ -49,7 +49,7 @@ SELECT '--- after alter';
 SELECT id, data, extra FROM t1 ORDER BY id;
 
 -- Another sync after ALTER to re-exercise the snapshot with new max_log_ptr.
-SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE:Identifier};
+SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- DROP TABLE also bumps the log pointer then snapshots metadata.
 DROP TABLE t3 SYNC;
@@ -57,8 +57,8 @@ SELECT '--- after drop';
 SELECT name FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 -- Final sync to exercise snapshot after DROP changed max_log_ptr.
-SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE:Identifier};
+SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Cleanup
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier} SYNC;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 SELECT '--- done';
