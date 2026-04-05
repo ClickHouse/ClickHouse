@@ -168,7 +168,7 @@ public:
     size_t recordQueryRun(const Key & key);
 
     /// Thundering herd prevention for streaming inserts: see `CacheBase::startAsyncInsert`.
-    bool startAsyncInsert(const Key & key, std::chrono::milliseconds timeout) { return cache.startAsyncInsert(key, timeout); }
+    bool startAsyncInsert(const Key & key, std::optional<std::chrono::milliseconds> timeout) { return cache.startAsyncInsert(key, timeout); }
     void finishAsyncInsert(const Key & key) { cache.finishAsyncInsert(key); }
 
     /// For debugging and system tables
