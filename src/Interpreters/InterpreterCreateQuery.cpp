@@ -952,6 +952,34 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
         properties.columns_inferred_from_select_query = true;
     }
+    else if (create.insert_select && !create.columns_list)
+    {
+        SharedHeader as_select_sample;
+
+        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                create.insert_select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+        }
+        else
+        {
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(
+                create.insert_select->clone(),
+                getContext(),
+                false,
+                false);
+        }
+
+        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        properties.columns_inferred_from_select_query = true;
+    }
+    else if ((create.has_and_insert || create.has_as_insert) && !create.insert_select && !create.columns_list)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "CREATE TABLE with AND INSERT/AS INSERT using VALUES or FORMAT requires an explicit column list");
+    }
     else if (create.as_table_function)
     {
         /// Table function without columns list.
@@ -1769,8 +1797,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool created = doCreateTable(create, properties, ddl_guard, mode);
     ddl_guard.reset();
 
-    if (!created)   /// Table already exists
+    if (!created)
+    {
+        if (create.has_and_insert)
+        {
+            auto existing_table = DatabaseCatalog::instance().getTable(
+            {create.getDatabase(), create.getTable()}, getContext());
+            create.uuid = existing_table->getStorageID().uuid;
+            return fillTableIfNeeded(create);
+        }
         return {};
+    }
 
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
@@ -2320,13 +2357,24 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     {
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
+
         if (create.is_window_view)
         {
             auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
             insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
         }
-        else
+        else if (create.insert_select)
+        {
+            insert->select = create.insert_select->clone();
+        }
+        else if (!create.insert_format.empty())
+        {
+            insert->format = create.insert_format;
+        }
+        else if (create.select)
+        {
             insert->select = create.select->clone();
+        }
 
         return InterpreterInsertQuery(
                    insert,

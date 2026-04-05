@@ -303,6 +303,8 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->as_table_function, as_table_function->clone());
     if (comment)
         res->set(res->comment, comment->clone());
+    if (insert_select)
+        res->set(res->insert_select, insert_select->clone());
 
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
@@ -597,7 +599,36 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         comment->format(ostr, settings, state, frame);
     }
 
-    if (select)
+    if (has_and_insert || has_as_insert)
+    {
+        ostr << settings.nl_or_ws;
+        ostr << (has_and_insert ? "AND INSERT " : "AS INSERT ");
+
+        if (insert_select)
+        {
+            if (settings_ast || frame.has_trailing_output_options)
+            {
+                ostr << "(";
+                frame.parent_has_trailing_settings = false;
+                frame.has_trailing_output_options = false;
+                insert_select->format(ostr, settings, state, frame);
+                ostr << ")";
+            }
+            else
+            {
+                insert_select->format(ostr, settings, state, frame);
+            }
+        }
+        else if (insert_format == "Values")
+        {
+            ostr << "VALUES";
+        }
+        else if (!insert_format.empty())
+        {
+            ostr << "FORMAT " << insert_format;
+        }
+    }
+    else if (select)
     {
         ostr << settings.nl_or_ws;
         ostr << "AS ";
@@ -695,6 +726,6 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
 
 bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
 {
-    return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
+    return (select || has_and_insert || has_as_insert) && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
 }
 }
