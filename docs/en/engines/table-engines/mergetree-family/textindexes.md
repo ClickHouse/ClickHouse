@@ -1021,7 +1021,7 @@ If the posting list is larger than `posting_list_block_size`, it is split into m
 When data parts are merged, the text index does not need to be rebuilt from scratch; instead, it can be merged efficiently in a separate step of the merge process.
 During this step, the sorted dictionaries of the text indexes of each input part are read and combined into a new unified dictionary.
 The row numbers in the postings lists are also recalculated to reflect their new positions in the merged data part, using a mapping of old to new row numbers that is created during the initial merge phase.
-This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#normal-projection-with-part-offset-field) with `_part_offset` column are merged.
+This method of merging text indexes is similar to how [projections](/docs/sql-reference/statements/alter/projection#projection-indexes) with `_part_offset` column are merged.
 If index is not materialized in the source part, it is built, written into a temporary file and then merged together with indexes from the other parts and from other temporary index files.
 
 **Debugging**
