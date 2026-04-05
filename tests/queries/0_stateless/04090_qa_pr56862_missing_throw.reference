@@ -1,15 +1,19 @@
 --- tables
-t1
-t2
-t3
+t1_04090
+t2_04090
+t3_04090
 --- counts
-t1	2
-t2	2
-t3	2
+t1_04090	2
+t2_04090	2
+t3_04090	2
 --- after alter
 1	alpha	x
 2	beta	x
+--- tables after alter
+t1_04090
+t2_04090
+t3_04090
 --- after drop
-t1
-t2
+t1_04090
+t2_04090
 --- done
