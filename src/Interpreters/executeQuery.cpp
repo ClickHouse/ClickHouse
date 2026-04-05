@@ -1662,9 +1662,9 @@ static BlockIO executeQueryImpl(
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
-        /// Set only when this query is the herd "executor" (see `startAsyncInsert` below). Released in
+        /// Set only when this query is the herd "executor" (see `QueryResultCache::startAsyncInsert` below). Released in
         /// finalize/exception callbacks after `finalizeWriteInQueryResultCache`
-        std::shared_ptr<QueryResultCache::Key> async_insert_key_to_finish;
+        std::shared_ptr<QueryResultCache::HerdCoalescingKey> async_insert_key_to_finish;
 
         /// This `SCOPE_EXIT` covers failures before the finalize/exception callbacks are installed.
         SCOPE_EXIT({
@@ -1733,18 +1733,24 @@ static BlockIO executeQueryImpl(
                 bool skip_execution = false;
 
                 /// Thundering herd (streaming path): concurrent identical `SELECT`s share one in-flight
-                /// computation via `CacheBase::startAsyncInsert` / `finishAsyncInsert`, not `getOrSet` — the
+                /// computation via `QueryResultCache::startAsyncInsert` / `finishAsyncInsert`, not `getOrSet` — the
                 /// latter would require a synchronous `load_func` that fully materializes the result before
                 /// `set`, which would break the existing pipeline + `QueryResultCacheWriter` streaming design.
+                /// Coalescing uses `HerdCoalescingKey` (user/roles when sharing is off), not AST-only `Key` equality.
                 /// Wait cap: `query_cache_herd_wait_timeout` (`0` = unbounded wait in `startAsyncInsert`).
                 if (qrc_key && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache])
                 {
                     const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
                     const std::optional<std::chrono::milliseconds> herd_wait_timeout
                         = herd_wait_ms > 0 ? std::optional(std::chrono::milliseconds(herd_wait_ms)) : std::nullopt;
-                    if (query_result_cache->startAsyncInsert(*qrc_key, herd_wait_timeout))
+                    const QueryResultCache::HerdCoalescingKey herd_key{
+                        qrc_key->ast_hash,
+                        qrc_key->user_id,
+                        qrc_key->current_user_roles,
+                        settings[Setting::query_cache_share_between_users]};
+                    if (query_result_cache->startAsyncInsert(herd_key, herd_wait_timeout))
                         // Set to indicate that this query is the herd "executor".
-                        async_insert_key_to_finish = std::make_shared<QueryResultCache::Key>(*qrc_key);
+                        async_insert_key_to_finish = std::make_shared<QueryResultCache::HerdCoalescingKey>(herd_key);
                     else
                         skip_execution = get_result_from_query_result_cache();
                 }

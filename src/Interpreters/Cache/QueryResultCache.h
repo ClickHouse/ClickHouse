@@ -12,7 +12,12 @@
 #include <base/UUID.h>
 
 #include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -118,6 +123,23 @@ public:
         bool operator==(const Key & other) const;
     };
 
+    /// Coalescing key for thundering herd: unlike `Key::operator==` (AST-only), this includes user id and
+    /// roles when `query_cache_share_between_users` is false, matching `QueryResultCacheReader` access rules.
+    struct HerdCoalescingKey
+    {
+        IASTHash ast_hash;
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_user_roles;
+        bool share_between_users;
+
+        bool operator==(const HerdCoalescingKey & other) const;
+    };
+
+    struct HerdCoalescingKeyHash
+    {
+        size_t operator()(const HerdCoalescingKey & key) const;
+    };
+
     struct Entry
     {
         Chunks chunks;
@@ -167,8 +189,9 @@ public:
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
 
-    bool startAsyncInsert(const Key & key, std::optional<std::chrono::milliseconds> timeout) { return cache.startAsyncInsert(key, timeout); }
-    void finishAsyncInsert(const Key & key) { cache.finishAsyncInsert(key); }
+    bool startAsyncInsert(const HerdCoalescingKey & key, std::optional<std::chrono::milliseconds> timeout)
+        TSA_NO_THREAD_SAFETY_ANALYSIS;
+    void finishAsyncInsert(const HerdCoalescingKey & key);
 
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
@@ -185,6 +208,19 @@ private:
     /// Cache configuration
     size_t max_entry_size_in_bytes TSA_GUARDED_BY(mutex) = 0;
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
+
+    struct HerdAsyncInsertToken
+    {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool done = false;
+    };
+
+    using HerdAsyncInsertTokenPtr = std::shared_ptr<HerdAsyncInsertToken>;
+    std::mutex herd_async_mutex;
+    std::unordered_map<HerdCoalescingKey, HerdAsyncInsertTokenPtr, HerdCoalescingKeyHash> herd_async_tokens;
+
+    void wakeHerdAsyncWaiters(std::vector<HerdAsyncInsertTokenPtr> tokens);
 
     friend class StorageSystemQueryResultCache;
     friend class QueryResultCacheWriter;

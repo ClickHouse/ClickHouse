@@ -10,8 +10,6 @@
 #include <base/defines.h>
 
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -229,25 +227,11 @@ public:
 
     void clear()
     {
-        std::vector<std::shared_ptr<AsyncInsertToken>> async_tokens_to_wake;
-        {
-            std::lock_guard lock(mutex);
-            insert_tokens.clear();
-            hits = 0;
-            misses = 0;
-            cache_policy->clear();
-
-            /// Save async tokens before erasing `async_insert_tokens`.
-            async_tokens_to_wake.reserve(async_insert_tokens.size());
-            for (const auto & kv : async_insert_tokens)
-                async_tokens_to_wake.push_back(kv.second);
-            async_insert_tokens.clear();
-        }
-        /// The waiters blocked in startAsyncInsert are waiting for a currently running query to finish and insert its result into the cache.
-        /// When the cache is cleared (SYSTEM CLEAR QUERY CACHE), there will no longer be any in-progress entry for their key,
-        /// so these waiters are woken up. Once woken, they will each attempt to execute the queries themselves and possibly insert their result,
-        /// rather than waiting any longer. Without this, the waiters would stall until timeout unnecessarily.
-        wakeAsyncInsertWaiters(std::move(async_tokens_to_wake));
+        std::lock_guard lock(mutex);
+        insert_tokens.clear();
+        hits = 0;
+        misses = 0;
+        cache_policy->clear();
     }
 
     void remove(const Key & key)
@@ -302,69 +286,6 @@ public:
     {
         std::lock_guard lock(mutex);
         cache_policy->setQuotaForUser(user_id, max_size_in_bytes, max_entries);
-    }
-
-    /// Register this thread as the executor for an async (out-of-band) insert of `key`.
-    ///
-    /// Returns true  — no other thread was computing this key; this thread should run the query
-    ///                 and call finishAsyncInsert when done (whether or not the cache insert succeeds).
-    /// Returns false — another thread was already computing it; this method blocked until that
-    ///                 thread called finishAsyncInsert, or `timeout` elapsed (if set). Re-check the cache.
-    ///
-    /// If `timeout` is std::nullopt, waits until notified with no deadline (same idea as an unbounded query).
-    ///
-    /// Used for query result cache thundering herd prevention without synchronous getOrSet load_func.
-    bool startAsyncInsert(const Key & key, std::optional<std::chrono::milliseconds> timeout)
-        TSA_NO_THREAD_SAFETY_ANALYSIS
-    {
-        std::shared_ptr<AsyncInsertToken> existing_token;
-        {
-            std::lock_guard lock(mutex);
-            auto [it, inserted] = async_insert_tokens.try_emplace(key, std::make_shared<AsyncInsertToken>());
-            if (inserted)
-                return true;
-            existing_token = it->second;
-        }
-        auto & token = *existing_token;
-        std::unique_lock token_lock(token.mutex);
-        /// Loop until the token is done or the timeout is reached.
-        if (timeout.has_value())
-        {
-            const auto deadline = std::chrono::steady_clock::now() + *timeout;
-            while (!token.done)
-            {
-                if (token.cv.wait_until(token_lock, deadline) == std::cv_status::timeout)
-                    break;
-            }
-        }
-        else
-        {
-            while (!token.done)
-                token.cv.wait(token_lock);
-        }
-        return false;
-    }
-
-    /// Signal threads waiting in startAsyncInsert that computation finished. Call exactly once
-    /// per startAsyncInsert that returned true.
-    void finishAsyncInsert(const Key & key)
-    {
-        std::shared_ptr<AsyncInsertToken> token;
-        {
-            std::lock_guard lock(mutex);
-            auto it = async_insert_tokens.find(key);
-            if (it == async_insert_tokens.end())
-                return;
-            // Remove the token from the map
-            token = std::move(it->second);
-            async_insert_tokens.erase(it);
-        }
-        {
-            std::lock_guard token_lock(token->mutex);
-            token->done = true;
-        }
-        /// Notify all waiters blocked in startAsyncInsert.
-        token->cv.notify_all();
     }
 
     virtual ~CacheBase() = default;
@@ -444,32 +365,6 @@ private:
     friend struct InsertTokenHolder;
 
     InsertTokenById insert_tokens TSA_GUARDED_BY(mutex);
-
-    /// Token for async inserts outside getOrSet (e.g. query result streaming into cache).
-    struct AsyncInsertToken
-    {
-        std::mutex mutex;
-        std::condition_variable cv;
-        bool done TSA_GUARDED_BY(mutex) = false;
-    };
-
-    using AsyncInsertTokenById = std::unordered_map<Key, std::shared_ptr<AsyncInsertToken>, HashFunction>;
-    AsyncInsertTokenById async_insert_tokens TSA_GUARDED_BY(mutex);
-
-    /// Mark tokens done and notify all waiters blocked in startAsyncInsert.
-    void wakeAsyncInsertWaiters(std::vector<std::shared_ptr<AsyncInsertToken>> tokens)
-    {
-        if (tokens.empty())
-            return;
-
-        for (const auto & token : tokens)
-        {
-            std::lock_guard token_lock(token->mutex);
-            token->done = true;
-        }
-        for (const auto & token : tokens)
-            token->cv.notify_all();
-    }
 
     /// This is called when an entry is being evicted from the cache.
     /// Override this method if you want to handle individual entry removals from cache

@@ -19,6 +19,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
+#include <chrono>
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -365,6 +366,35 @@ bool QueryResultCache::Key::operator==(const Key & other) const
 size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 {
     return key.ast_hash.low64;
+}
+
+bool QueryResultCache::HerdCoalescingKey::operator==(const HerdCoalescingKey & other) const
+{
+    if (ast_hash != other.ast_hash)
+        return false;
+    if (share_between_users != other.share_between_users)
+        return false;
+    if (share_between_users)
+        return true;
+    return user_id == other.user_id && current_user_roles == other.current_user_roles;
+}
+
+/// Hash the herd coalescing key
+/// If not sharing between users, include the user id and roles in the hash.
+size_t QueryResultCache::HerdCoalescingKeyHash::operator()(const HerdCoalescingKey & k) const
+{
+    SipHash hash;
+    hash.update(k.ast_hash.low64);
+    hash.update(k.ast_hash.high64);
+    hash.update(k.share_between_users);
+    if (!k.share_between_users)
+    {
+        if (k.user_id.has_value())
+            hash.update(k.user_id->toUnderType());
+        for (const auto & role : k.current_user_roles)
+            hash.update(role.toUnderType());
+    }
+    return hash.get64();
 }
 
 size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
@@ -773,6 +803,20 @@ void QueryResultCache::clear(const std::optional<String> & tag)
     else
     {
         cache.clear();
+        std::vector<HerdAsyncInsertTokenPtr> herd_tokens_to_wake;
+        {
+            std::lock_guard herd_lock(herd_async_mutex);
+            herd_tokens_to_wake.reserve(herd_async_tokens.size());
+            // Save the async tokens before clearing `herd_async_tokens`.
+            for (const auto & kv : herd_async_tokens)
+                herd_tokens_to_wake.push_back(kv.second);
+            herd_async_tokens.clear();
+        }
+        /// The waiters blocked in startAsyncInsert are waiting for a currently running query to finish and insert its result into the cache.
+        /// When the cache is cleared (SYSTEM CLEAR QUERY CACHE), there will no longer be any in-progress entry for their key,
+        /// so these waiters are woken up. Once woken, they will each attempt to execute the queries themselves and possibly insert their result,
+        /// rather than waiting any longer. Without this, the waiters would stall until timeout unnecessarily.
+        wakeHerdAsyncWaiters(std::move(herd_tokens_to_wake));
     }
 
     std::lock_guard lock(mutex);
@@ -808,6 +852,72 @@ size_t QueryResultCache::recordQueryRun(const Key & key)
 std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
 {
     return cache.dump();
+}
+
+void QueryResultCache::wakeHerdAsyncWaiters(std::vector<HerdAsyncInsertTokenPtr> tokens)
+{
+    if (tokens.empty())
+        return;
+
+    for (const auto & token : tokens)
+    {
+        std::lock_guard token_lock(token->mutex);
+        token->done = true;
+    }
+    for (const auto & token : tokens)
+        token->cv.notify_all();
+}
+
+bool QueryResultCache::startAsyncInsert(
+    const HerdCoalescingKey & key,
+    std::optional<std::chrono::milliseconds> timeout)
+    TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    std::shared_ptr<HerdAsyncInsertToken> existing_token;
+    {
+        std::lock_guard lock(herd_async_mutex);
+        auto [it, inserted] = herd_async_tokens.try_emplace(key, std::make_shared<HerdAsyncInsertToken>());
+        if (inserted)
+            return true;
+        existing_token = it->second;
+    }
+
+    auto & token = *existing_token;
+    std::unique_lock token_lock(token.mutex);
+    /// Loop until the token is done or the timeout is reached.
+    if (timeout.has_value())
+    {
+        const auto deadline = std::chrono::steady_clock::now() + *timeout;
+        while (!token.done)
+        {
+            if (token.cv.wait_until(token_lock, deadline) == std::cv_status::timeout)
+                break;
+        }
+    }
+    else
+    {
+        while (!token.done)
+            token.cv.wait(token_lock);
+    }
+    return false;
+}
+
+void QueryResultCache::finishAsyncInsert(const HerdCoalescingKey & key)
+{
+    std::shared_ptr<HerdAsyncInsertToken> token;
+    {
+        std::lock_guard lock(herd_async_mutex);
+        auto it = herd_async_tokens.find(key);
+        if (it == herd_async_tokens.end())
+            return;
+        token = std::move(it->second);
+        herd_async_tokens.erase(it);
+    }
+    {
+        std::lock_guard token_lock(token->mutex);
+        token->done = true;
+    }
+    token->cv.notify_all();
 }
 
 }
