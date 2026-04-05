@@ -1,6 +1,4 @@
-1
-1
-1
-1
-1
-1
+1	false	true	BUG
+2	true	true	OK
+3	false	false	OK
+4	false	true	BUG

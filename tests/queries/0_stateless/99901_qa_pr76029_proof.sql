@@ -1,52 +1,66 @@
--- Test for issue: processWarning methods use stale metrics after values.swap(new_values)
--- Bug location: AsynchronousMetrics.cpp:2428-2431
--- After values.swap(new_values), new_values contains OLD metrics but is passed to processWarning functions
+SET max_execution_time = 30;
 
-SET max_execution_time=30;
+-- Bug: InstrumentationManager.cpp:171 shouldPatchFunction() calls find() once,
+-- gets the first match. If that position is inside template <> args, the
+-- bracket-depth check rejects it and returns false -- never searching for
+-- a second occurrence outside template args. This is a false-negative bug.
+--
+-- Since shouldPatchFunction is internal C++ with no SQL-visible effect,
+-- we reproduce its exact algorithm in SQL to demonstrate the false negative.
 
-DROP TABLE IF EXISTS test_pending_mutations_warning;
+DROP TABLE IF EXISTS shouldpatch_cases;
 
--- Create a table and trigger mutations to generate NumberOfPendingMutations metric
-CREATE TABLE test_pending_mutations_warning (
-    id UInt32,
-    value String,
-    counter UInt32
-) ENGINE = MergeTree()
-ORDER BY id;
+CREATE TABLE shouldpatch_cases
+(
+    case_id        UInt8,
+    needle         String,
+    haystack       String,
+    expect_correct Bool
+)
+ENGINE = Memory;
 
--- Insert some data
-INSERT INTO test_pending_mutations_warning VALUES (1, 'a', 1), (2, 'b', 2), (3, 'c', 3);
+-- Case 1: needle first appears inside <>, but also exists outside => bug (false negative)
+-- Case 2: needle only appears outside <> => OK
+-- Case 3: needle only appears inside <> => correctly rejected
+-- Case 4: longer needle, first match inside <>, second outside => bug (false negative)
+INSERT INTO shouldpatch_cases VALUES
+    (1, 'startQuery', 'Wrapper<Foo::startQuery>::Bar::startQuery', true),
+    (2, 'startQuery', 'DB::something<bool>::QueryMetricLog::startQuery', true),
+    (3, 'startQuery', 'Wrapper<Foo::startQuery>::doSomethingElse', false),
+    (4, 'QueryMetricLog::startQuery',
+        'std::__call_func<DB::QueryMetricLog::startQuery()::$_0>::QueryMetricLog::startQuery(int)', true);
 
--- Set a low threshold for mutation warnings to trigger the warning logic
-SET max_pending_mutations_to_warn = 0;
+-- Reproduce the buggy single-find algorithm from shouldPatchFunction():
+--   1. found_pos = find(haystack, needle)          -- only first occurrence
+--   2. count '<' and '>' before found_pos          -- bracket depth via stack
+--   3. depth == 0 => return true, else return false -- never retries
+--
+-- Bracket depth = count('<' in prefix) - count('>' in prefix)
+SELECT
+    case_id,
+    buggy_result,
+    expect_correct AS correct_result,
+    if(buggy_result != expect_correct, 'BUG', 'OK') AS verdict
+FROM
+(
+    SELECT
+        case_id,
+        expect_correct,
+        if(first_pos = 0, false,
+            (length(prefix) - length(replaceAll(prefix, '<', '')))
+            - (length(prefix) - length(replaceAll(prefix, '>', '')))
+            = 0
+        ) AS buggy_result
+    FROM
+    (
+        SELECT
+            case_id,
+            expect_correct,
+            position(haystack, needle) AS first_pos,
+            if(first_pos > 0, substring(haystack, 1, toUInt64(first_pos - 1)), '') AS prefix
+        FROM shouldpatch_cases
+    )
+)
+ORDER BY case_id;
 
--- Start multiple asynchronous mutations that will be pending
--- These should trigger the NumberOfPendingMutations asynchronous metric
-ALTER TABLE test_pending_mutations_warning UPDATE counter = counter + 1 WHERE id = 1;
-ALTER TABLE test_pending_mutations_warning UPDATE counter = counter + 2 WHERE id = 2;
-ALTER TABLE test_pending_mutations_warning UPDATE counter = counter + 3 WHERE id = 3;
-
--- Force asynchronous metrics calculation by querying system tables
--- This exercises the code path where stale metrics might be used
-SELECT count(*) >= 0 FROM system.asynchronous_metrics WHERE metric = 'NumberOfPendingMutations';
-
--- Check for mutation-related warnings in system.warnings
--- The bug causes processWarningForMutationStats to use stale metrics after swap
--- This test exercises that code path, even if output looks correct
-SELECT count(*) >= 0 FROM system.warnings WHERE message LIKE '%pending mutations%';
-
--- Exercise memory and CPU warning paths too (also affected by the bug)
-SELECT count(*) >= 0 FROM system.asynchronous_metrics WHERE metric LIKE '%Memory%';
-SELECT count(*) >= 0 FROM system.asynchronous_metrics WHERE metric LIKE '%CPU%';
-
--- Trigger another round of asynchronous metrics updates
-SELECT sleep(0.1) FORMAT Null;
-SELECT count(*) >= 0 FROM system.asynchronous_metrics WHERE metric = 'NumberOfPendingMutations';
-
--- Check warnings again to exercise the stale metrics code path multiple times
-SELECT count(*) >= 0 FROM system.warnings;
-
--- Wait for mutations to complete and clean up
-SYSTEM FLUSH LOGS;
-
-DROP TABLE IF EXISTS test_pending_mutations_warning;
+DROP TABLE shouldpatch_cases;
