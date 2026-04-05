@@ -453,7 +453,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 {
     ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
     DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
-    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
+    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator(), /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
 
     std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
     std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
