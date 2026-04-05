@@ -1335,6 +1335,56 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.columns = ColumnsDescription(std::move(columns_from_select));
         properties.columns_inferred_from_select_query = true;
     }
+    else if (create.insert_select && !create.columns_list)
+    {
+        SharedHeader as_select_sample;
+
+        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                create.insert_select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+        }
+        else
+        {
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(
+                create.insert_select->clone(),
+                getContext(),
+                false,
+                false);
+        }
+        properties.columns = ColumnsDescription(std::move(columns_from_select));
+        properties.columns_inferred_from_select_query = true;
+    }
+    else if (create.insert_select && !create.columns_list)
+    {
+        SharedHeader as_select_sample;
+
+        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(
+                create.insert_select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+        }
+        else
+        {
+            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(
+                create.insert_select->clone(),
+                getContext(),
+                false,
+                false);
+        }
+
+        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        properties.columns_inferred_from_select_query = true;
+    }
+    else if ((create.has_and_insert || create.has_as_insert) && !create.insert_select && !create.columns_list)
+    {
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "CREATE TABLE with AND INSERT/AS INSERT using VALUES or FORMAT requires an explicit column list");
+    }
     else if (create.as_table_function)
     {
         /// Table function without columns list.
@@ -2611,9 +2661,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
 
-    if (!created)   /// Table already exists
+    if (!created)
     {
         ddl_guard.reset();
+        if (create.has_and_insert)
+        {
+            auto existing_table = DatabaseCatalog::instance().getTable(
+            {create.getDatabase(), create.getTable()}, getContext());
+            create.uuid = existing_table->getStorageID().uuid;
+            return fillTableIfNeeded(create);
+        }
         return {};
     }
 
@@ -3613,6 +3670,19 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             local_context->setSetting("enable_parallel_replicas", Field{0});
             removeSettingsFromQuery(insert->select, settings_sending_population_to_other_servers);
             insert_context = local_context;
+        }
+
+        if (create.insert_select)
+        {
+            insert->select = create.insert_select->clone();
+        }
+        else if (!create.insert_format.empty())
+        {
+            insert->format = create.insert_format;
+        }
+        else if (create.select)
+        {
+            insert->select = create.select->clone();
         }
 
         InterpreterInsertQuery interpreter(
