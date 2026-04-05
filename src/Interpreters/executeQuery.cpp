@@ -1733,10 +1733,7 @@ static BlockIO executeQueryImpl(
                 bool skip_execution = false;
 
                 /// Thundering herd (streaming path): concurrent identical `SELECT`s share one in-flight
-                /// computation via `QueryResultCache::startAsyncInsert` / `finishAsyncInsert`, not `getOrSet` — the
-                /// latter would require a synchronous `load_func` that fully materializes the result before
-                /// `set`, which would break the existing pipeline + `QueryResultCacheWriter` streaming design.
-                /// Coalescing uses `HerdCoalescingKey` (user/roles when sharing is off), not AST-only `Key` equality.
+                /// computation via `QueryResultCache::startAsyncInsert` / `finishAsyncInsert`.
                 /// Wait cap: `query_cache_herd_wait_timeout` (`0` = unbounded wait in `startAsyncInsert`).
                 if (qrc_key && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache])
                 {
