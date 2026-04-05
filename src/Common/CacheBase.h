@@ -237,12 +237,16 @@ public:
             misses = 0;
             cache_policy->clear();
 
-            // Save the async tokens to wake so that they don't outlive the clear() call.
+            /// Save async tokens before erasing `async_insert_tokens`.
             async_tokens_to_wake.reserve(async_insert_tokens.size());
             for (const auto & kv : async_insert_tokens)
                 async_tokens_to_wake.push_back(kv.second);
             async_insert_tokens.clear();
         }
+        /// The waiters blocked in startAsyncInsert are waiting for a currently running query to finish and insert its result into the cache.
+        /// When the cache is cleared (SYSTEM CLEAR QUERY CACHE), there will no longer be any in-progress entry for their key,
+        /// so these waiters are woken up. Once woken, they will each attempt to execute the queries themselves and possibly insert their result,
+        /// rather than waiting any longer. Without this, the waiters would stall until timeout unnecessarily.
         wakeAsyncInsertWaiters(std::move(async_tokens_to_wake));
     }
 
@@ -323,7 +327,7 @@ public:
         }
         auto & token = *existing_token;
         std::unique_lock token_lock(token.mutex);
-        /// Loop until the token is done (not a predicate lambda so Clang TSA sees `done` under `token_lock`).
+        /// Loop until the token is done or the timeout is reached.
         if (timeout.has_value())
         {
             const auto deadline = std::chrono::steady_clock::now() + *timeout;
@@ -351,6 +355,7 @@ public:
             auto it = async_insert_tokens.find(key);
             if (it == async_insert_tokens.end())
                 return;
+            // Remove the token from the map
             token = std::move(it->second);
             async_insert_tokens.erase(it);
         }
@@ -358,6 +363,7 @@ public:
             std::lock_guard token_lock(token->mutex);
             token->done = true;
         }
+        /// Notify all waiters blocked in startAsyncInsert.
         token->cv.notify_all();
     }
 
@@ -450,7 +456,7 @@ private:
     using AsyncInsertTokenById = std::unordered_map<Key, std::shared_ptr<AsyncInsertToken>, HashFunction>;
     AsyncInsertTokenById async_insert_tokens TSA_GUARDED_BY(mutex);
 
-    /// After async_insert_tokens is cleared under `mutex`, wake threads blocked in startAsyncInsert.
+    /// Mark tokens done and notify all waiters blocked in startAsyncInsert.
     void wakeAsyncInsertWaiters(std::vector<std::shared_ptr<AsyncInsertToken>> tokens)
     {
         if (tokens.empty())

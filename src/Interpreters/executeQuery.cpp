@@ -1662,8 +1662,11 @@ static BlockIO executeQueryImpl(
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// Set only when this query is the herd "executor" (see `startAsyncInsert` below). Released in
+        /// finalize/exception callbacks after `finalizeWriteInQueryResultCache`
         std::shared_ptr<QueryResultCache::Key> async_insert_key_to_finish;
 
+        /// This `SCOPE_EXIT` covers failures before the finalize/exception callbacks are installed.
         SCOPE_EXIT({
             if (async_insert_key_to_finish && query_result_cache)
                 query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
@@ -1696,7 +1699,8 @@ static BlockIO executeQueryImpl(
 
         if (!async_insert)
         {
-            /// Build the read key once (hash matches the write key; header differs but Key equality is AST-only).
+            /// Build the read key once (hash matches the write key).
+            /// Note the header differs but Key equality is AST-only.
             std::optional<QueryResultCache::Key> qrc_key;
             if (out_ast && can_use_query_result_cache)
                 qrc_key.emplace(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
@@ -1728,14 +1732,18 @@ static BlockIO executeQueryImpl(
             {
                 bool skip_execution = false;
 
-                /// Thundering herd: while one connection computes and streams into the cache, concurrent
-                /// identical queries wait here, then re-read from the cache instead of all executing.
+                /// Thundering herd (streaming path): concurrent identical `SELECT`s share one in-flight
+                /// computation via `CacheBase::startAsyncInsert` / `finishAsyncInsert`, not `getOrSet` — the
+                /// latter would require a synchronous `load_func` that fully materializes the result before
+                /// `set`, which would break the existing pipeline + `QueryResultCacheWriter` streaming design.
+                /// Wait cap: `query_cache_herd_wait_timeout` (`0` = unbounded wait in `startAsyncInsert`).
                 if (qrc_key && settings[Setting::enable_writes_to_query_cache])
                 {
                     const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
                     const std::optional<std::chrono::milliseconds> herd_wait_timeout
                         = herd_wait_ms > 0 ? std::optional(std::chrono::milliseconds(herd_wait_ms)) : std::nullopt;
                     if (query_result_cache->startAsyncInsert(*qrc_key, herd_wait_timeout))
+                        // Set to indicate that this query is the herd "executor".
                         async_insert_key_to_finish = std::make_shared<QueryResultCache::Key>(*qrc_key);
                     else
                         skip_execution = get_result_from_query_result_cache();
@@ -1986,6 +1994,7 @@ static BlockIO executeQueryImpl(
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
                 auto finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                /// Unblock herd waiters only after streaming finalized (including cache write skip paths).
                 if (async_insert_key_to_finish)
                 {
                     query_result_cache->finishAsyncInsert(*async_insert_key_to_finish);
@@ -2044,6 +2053,7 @@ static BlockIO executeQueryImpl(
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
             res.finish_callbacks.push_back(std::move(finish_callback));
             res.exception_callbacks.push_back(std::move(exception_callback));
+            /// Callbacks now own `finishAsyncInsert`; disarm `SCOPE_EXIT` above.
             async_insert_key_to_finish.reset();
         }
     }

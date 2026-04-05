@@ -167,7 +167,6 @@ public:
     /// Record new execution of query represented by key. Returns number of executions so far.
     size_t recordQueryRun(const Key & key);
 
-    /// Thundering herd prevention for streaming inserts: see `CacheBase::startAsyncInsert`.
     bool startAsyncInsert(const Key & key, std::optional<std::chrono::milliseconds> timeout) { return cache.startAsyncInsert(key, timeout); }
     void finishAsyncInsert(const Key & key) { cache.finishAsyncInsert(key); }
 
