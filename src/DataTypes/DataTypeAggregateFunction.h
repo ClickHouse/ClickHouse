@@ -62,7 +62,7 @@ public:
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
     bool supportsSparseSerialization() const override { return false; }
 
     bool isVersioned() const;

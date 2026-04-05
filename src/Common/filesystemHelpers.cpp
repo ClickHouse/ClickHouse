@@ -130,7 +130,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
     }
-    catch (const std::exception &)
+    catch (...)
     {
         return BlockDeviceType::UNKNOWN;
     }
@@ -153,7 +153,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
     }
-    catch (const std::exception &)
+    catch (...)
     {
         return static_cast<UInt64>(-1);
     }

@@ -9,8 +9,8 @@ doc_type: 'guide'
 
 # How to Build ClickHouse on Linux
 
-:::info This build guide is for contributors modifying ClickHouse itself.
-If you are not changing ClickHouse source code, you can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/docs/get-started/quick-start).
+:::info You don't have to build ClickHouse yourself!
+You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
 :::
 
 ClickHouse can be build on the following platforms:
@@ -119,11 +119,8 @@ ninja
 You can control the number of parallel build jobs using parameter `-j`:
 
 ```sh
-ninja -j 1 clickhouse
+ninja -j 1 clickhouse-server clickhouse-client
 ```
-
-:::note
-`clickhouse-server`, `clickhouse-client`, and similar binaries are symbolic links in the `programs/` directory that point to the `clickhouse` executable after the build is completed.
 
 :::tip
 CMake provides shortcuts for above commands:

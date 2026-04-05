@@ -24,7 +24,6 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     size_t getLimit() const { return limit; }
-    size_t getOffset() const { return offset; }
 
     size_t getLimitForSorting() const
     {

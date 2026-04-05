@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -93,7 +92,7 @@ public:
 
     void recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket);
 
-    void recordAggregationKeySizes(const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types);
+    void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
     /// Updates should_continue_sampling to true if the current read block is chosen for sampling.
     /// It is needed because in general we read each block in multiple steps because of prewhere.

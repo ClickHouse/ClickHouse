@@ -66,7 +66,7 @@ private:
     SortDescription sort_description;
     SortDescriptionWithPositions group_by_description;
     bool group_by_key = false;
-    Chunk group_by_chunk;
+    Block group_by_block;
     ColumnRawPtrs key_columns_raw;
 
     Aggregator::AggregateColumns aggregate_columns;
