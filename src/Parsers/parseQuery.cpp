@@ -1,6 +1,5 @@
 #include <Parsers/parseQuery.h>
 
-#include <algorithm>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -347,9 +346,7 @@ ASTPtr tryParseQuery(
         && this_query_end_pos->type != TokenType::Semicolon)
         ++this_query_end_pos;
 
-    /// Ensure the end pointer is at least past the last token the parser looked at,
-    /// because the parser may have backtracked past the semicolon during lookahead.
-    const char * current_query_end = std::max(this_query_end_pos->end, last_token.end);
+    const char * current_query_end = this_query_end_pos->end;
 
     /// Lexical error
     if (last_token.isError())
