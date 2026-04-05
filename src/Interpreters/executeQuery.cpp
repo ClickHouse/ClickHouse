@@ -77,7 +77,6 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -206,9 +205,9 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    // extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS; // commented out for style check for now
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
-    // extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
+    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -1713,11 +1712,7 @@ static BlockIO executeQueryImpl(
                 return false;
             };
 
-            /// Common query setup: starts implicit transaction, creates interpreter, checks
-            /// quotas, fires the HTTP continue callback, and calls interpreter->execute().
-            /// Extracted to avoid duplicating this logic between the getOrSet executor path
-            /// (where it runs only on the winning thread) and the writes-disabled fallback path.
-            auto setup_interpreter_and_execute = [&]()
+            if (!get_result_from_query_result_cache())
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !(out_ast && out_ast->as<ASTTransactionControl>()))
@@ -1818,141 +1813,71 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
-                }
-            };
 
-            /// When writes are enabled, getOrSet is called directly to prevent thundering herds.
-            ///
-            /// getOrSet serializes concurrent requests for the same key using an InsertToken:
-            ///   - Executor thread: wins the token and runs the lambda below, which executes the
-            ///     query synchronously and materializes all result blocks into a cache Entry.
-            ///   - Waiter threads: observe a pending token, block, and receive the same Entry
-            ///     once the executor finishes — without re-running the query themselves.
-            ///
-            /// Prerequisite: TTLCachePolicy::get() must treat stale entries as misses. Otherwise,
-            /// getOrSet serve stale data forever after the first entry's TTL expires.
-            ///
-            /// Known limitation: the lambda must return a complete Entry, so the full query
-            /// result is materialized in memory via PullingPipelineExecutor before any data is
-            /// streamed to the client. There is no row-by-row streaming when this path is taken.
-            if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
-            {
-                auto created_at = std::chrono::system_clock::now();
-                auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
-
-                /// Build the key used to insert into the cache.
-                /// Note:The header field is passed as null because the result header is only known
-                /// after interpreter->execute() runs inside the lambda below. This is okay because header
-                /// is not part of Key::operator== or KeyHasher, so null is fine for cache lookup/insert purposes.
-                ///
-                /// After we execute the query, we save the header in the entry when building the reading pipeline.
-                QueryResultCache::Key write_key(
-                    out_ast, context->getCurrentDatabase(), *settings_copy,
-                    nullptr, /// header: unknown before execution; stored in Entry::header instead
-                    context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(),
-                    settings[Setting::query_cache_share_between_users],
-                    created_at, expires_at,
-                    settings[Setting::query_cache_compress_entries]);
-
-                /// getOrSet calls the lambda exactly once per key, even under concurrent load.
-                /// was_inserted == true  → this thread computed the result (executor).
-                /// was_inserted == false → another thread computed it first (waiter); cached_entry
-                ///                        is the entry produced by the executor thread.
-                auto [cached_entry, was_inserted] = query_result_cache->getOrSet(write_key,
-                    [&]() -> std::shared_ptr<QueryResultCache::Entry>
+                    /// If it is a non-internal SELECT query, and active (write) use of the query result cache is enabled, then add a
+                    /// processor on top of the pipeline which stores the result in the query result cache.
+                    if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
                     {
-                        /// This lambda runs only on the executor thread. Waiter threads block
-                        /// inside getOrSet and never enter here.
+                        /// Only use the query result cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 
-                        // Execute the query.
-                        setup_interpreter_and_execute();
+                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(out_ast, context);
+                        const bool ast_contains_system_tables = astContainsSystemTables(out_ast, context);
 
-                        /// Record timestamps now, after the query has finished, so that the
-                        /// TTL is counted from completion rather than from when the query started.
-                        /// This prevents entries from being immediately stale if the query took
-                        /// longer than the configured TTL to run.
-                        auto entry = std::make_shared<QueryResultCache::Entry>();
-                        entry->created_at = std::chrono::system_clock::now();
-                        entry->expires_at = entry->created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+                        const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
+                            = settings[Setting::query_cache_nondeterministic_function_handling];
+                        const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
 
-                        /// Synchronously drain the pipeline and collect main result blocks,
-                        /// then collect totals and extremes. The header is the same for all three.
-                        entry->header = res.pipeline.getSharedHeader();
+                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
+                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                                "The query result was not cached because the query contains a non-deterministic function."
+                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+                        if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
+                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                                "The query result was not cached because the query contains a system table."
+                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
+                            && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
-                            PullingPipelineExecutor pulling_executor(res.pipeline);
-                            Block block;
-                            while (pulling_executor.pull(block))
+                            auto created_at = std::chrono::system_clock::now();
+                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
+
+                            QueryResultCache::Key key(
+                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
+                                context->getCurrentQueryId(),
+                                context->getUserID(), context->getCurrentRoles(),
+                                settings[Setting::query_cache_share_between_users],
+                                created_at, expires_at,
+                                settings[Setting::query_cache_compress_entries]);
+
+                            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+                            if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                             {
-                                Chunk chunk(block.getColumns(), block.rows());
-                                QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(chunk);
-                                entry->chunks.emplace_back(std::move(chunk));
+                                LOG_TRACE(getLogger("QueryResultCache"),
+                                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                    num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+                            }
+                            else
+                            {
+                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
+                                     key,
+                                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                     settings[Setting::query_cache_squash_partial_results],
+                                     settings[Setting::max_block_size],
+                                     settings[Setting::query_cache_max_size_in_bytes],
+                                     settings[Setting::query_cache_max_entries]));
+                                res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
+                                query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
 
-                            if (Chunk totals = pulling_executor.getTotals(); totals.hasColumns())
-                            {
-                                QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(totals);
-                                entry->totals = std::move(totals);
-                            }
-                            if (Chunk extremes = pulling_executor.getExtremes(); extremes.hasColumns())
-                            {
-                                QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(extremes);
-                                entry->extremes = std::move(extremes);
-                            }
+                            /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
+                            /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+                            if (settings[Setting::enable_reads_from_query_cache])
+                                result_details.query_cache_entry_expires_at = expires_at;
                         }
-                        return entry;
-                        /// After the lambda returns, getOrSet stores the entry in the cache
-                        /// and releases the InsertToken, unblocking any waiter threads.
-                    });
-
-                /// Profile events (hits/misses, read bytes/rows, age).
-                QueryResultCache::incrementProfileEventsForCacheLookup(was_inserted);
-                if (!was_inserted)
-                    QueryResultCache::incrementProfileEventsForReadFromCacheEntry(*cached_entry);
-
-                /// Both the executor (was_inserted == true) and all waiters (was_inserted == false)
-                /// reach this point. Each builds an independent reading pipeline over clones of
-                /// the cached data so every connection consumes at its own pace without interfering
-                /// with the shared Entry in the cache.
-                Chunks cloned_chunks;
-                for (const auto & chunk : cached_entry->chunks)
-                    cloned_chunks.push_back(chunk.clone());
-
-                std::unique_ptr<SourceFromChunks> source_totals;
-                if (cached_entry->totals.has_value())
-                {
-                    Chunks totals_chunks;
-                    totals_chunks.emplace_back(cached_entry->totals->clone());
-                    source_totals = std::make_unique<SourceFromChunks>(cached_entry->header, std::move(totals_chunks));
+                    }
                 }
-
-                std::unique_ptr<SourceFromChunks> source_extremes;
-                if (cached_entry->extremes.has_value())
-                {
-                    Chunks extremes_chunks;
-                    extremes_chunks.emplace_back(cached_entry->extremes->clone());
-                    source_extremes = std::make_unique<SourceFromChunks>(cached_entry->header, std::move(extremes_chunks));
-                }
-
-                QueryPipeline reading_pipeline;
-                reading_pipeline.readFromQueryResultCache(
-                    std::make_unique<SourceFromChunks>(cached_entry->header, std::move(cloned_chunks)),
-                    std::move(source_totals),
-                    std::move(source_extremes));
-                res.pipeline = std::move(reading_pipeline);
-
-                query_result_cache_usage = was_inserted ? QueryResultCacheUsage::Write : QueryResultCacheUsage::Read;
-
-                if (settings[Setting::enable_reads_from_query_cache])
-                {
-                    result_details.query_cache_entry_expires_at = cached_entry->expires_at;
-                    if (!was_inserted)
-                        result_details.query_cache_entry_created_at = cached_entry->created_at;
-                }
-            }
-            /// If cache is not configured or (cache miss and writing to the cache is disabled), just execute the query.
-            else if (!get_result_from_query_result_cache())
-            {
-                setup_interpreter_and_execute();
             }
         }
 

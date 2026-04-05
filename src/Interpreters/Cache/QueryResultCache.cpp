@@ -377,49 +377,10 @@ size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
     return res;
 }
 
-bool QueryResultCache::IsStale::operator()(const Key & key, const Entry & entry) const
+bool QueryResultCache::IsStale::operator()(const Key & key) const
 {
-    /// Use entry's timestamp if it exists because it was recorded after the query finished.
-    /// Otherwise, fallback to the key's timestamp. TODO: unused right now i think.
-    auto expires_at = (entry.expires_at != std::chrono::system_clock::time_point{})
-        ? entry.expires_at
-        : key.expires_at;
-    return expires_at < std::chrono::system_clock::now();
+    return (key.expires_at < std::chrono::system_clock::now());
 };
-
-void QueryResultCache::incrementProfileEventsForWriteMaterializedChunk(const Chunk & chunk)
-{
-    if (chunk.empty())
-        return;
-
-    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenRows, chunk.getNumRows());
-    ProfileEvents::increment(ProfileEvents::QueryCacheWrittenBytes, chunk.bytes());
-}
-
-void QueryResultCache::incrementProfileEventsForReadFromCacheEntry(const Entry & entry)
-{
-    size_t total_rows = 0;
-    size_t total_bytes = 0;
-    for (const auto & chunk : entry.chunks)
-    {
-        total_rows += chunk.getNumRows();
-        total_bytes += chunk.bytes();
-    }
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadRows, total_rows);
-    ProfileEvents::increment(ProfileEvents::QueryCacheReadBytes, total_bytes);
-
-    const auto age = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now() - entry.created_at).count();
-    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
-}
-
-void QueryResultCache::incrementProfileEventsForCacheLookup(bool was_inserted)
-{
-    if (was_inserted)
-        ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
-    else
-        ProfileEvents::increment(ProfileEvents::QueryCacheHits);
-}
 
 QueryResultCacheWriter::QueryResultCacheWriter(
     Cache & cache_,
@@ -437,7 +398,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key, *entry->mapped))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -519,7 +480,7 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key, *entry->mapped))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -669,21 +630,13 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    if (QueryResultCache::IsStale()(entry_key, *entry_mapped))
+    if (QueryResultCache::IsStale()(entry_key))
     {
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
 
-    /// Result metadata: The `getOrSet` path stores a null header on the key and keeps the real header on `Entry` only
-    /// Fallback to the key's header if the entry's header is not set (e.g. streaming path)
-    const SharedHeader result_header = entry_mapped->header ? entry_mapped->header : entry_key.header;
-
-    const auto created_at_for_metrics = entry_mapped->created_at != std::chrono::system_clock::time_point{}
-        ? entry_mapped->created_at
-        : entry_key.created_at;
-
-    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - created_at_for_metrics).count();
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
     ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
 
     if (!entry_key.is_compressed)
@@ -698,7 +651,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         for (const auto & chunk : entry_mapped->chunks)
             cloned_chunks.push_back(chunk.clone());
 
-        buildSourceFromChunks(result_header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(cloned_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
     else
     {
@@ -717,13 +670,11 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
             decompressed_chunks.push_back(std::move(decompressed_chunk));
         }
 
-        buildSourceFromChunks(result_header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
+        buildSourceFromChunks(entry_key.header, std::move(decompressed_chunks), entry_mapped->totals, entry_mapped->extremes);
     }
 
-    created_at = created_at_for_metrics;
-    expires_at = entry_mapped->expires_at != std::chrono::system_clock::time_point{}
-        ? entry_mapped->expires_at
-        : entry_key.expires_at;
+    created_at = entry_key.created_at;
+    expires_at = entry_key.expires_at;
 
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }

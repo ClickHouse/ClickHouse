@@ -190,9 +190,6 @@ public:
         auto it = cache.find(key);
         if (it == cache.end())
             return {};
-        /// Treat stale entries as cache misses
-        if (is_stale_function(it->first, *it->second))
-            return {};
         return it->second;
     }
 
@@ -205,9 +202,6 @@ public:
     {
         auto it = cache.find(key);
         if (it == cache.end())
-            return std::nullopt;
-        /// Treat stale entries as cache misses
-        if (is_stale_function(it->first, *it->second))
             return std::nullopt;
         return std::make_optional<KeyMapped>({it->first, it->second});
     }
@@ -240,7 +234,7 @@ public:
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
             {
-                if (is_stale_function(it->first, *it->second))
+                if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
                     if (it->first.user_id.has_value())
