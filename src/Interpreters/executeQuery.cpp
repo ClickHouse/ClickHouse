@@ -1737,7 +1737,7 @@ static BlockIO executeQueryImpl(
                 /// latter would require a synchronous `load_func` that fully materializes the result before
                 /// `set`, which would break the existing pipeline + `QueryResultCacheWriter` streaming design.
                 /// Wait cap: `query_cache_herd_wait_timeout` (`0` = unbounded wait in `startAsyncInsert`).
-                if (qrc_key && settings[Setting::enable_writes_to_query_cache])
+                if (qrc_key && settings[Setting::enable_writes_to_query_cache] && settings[Setting::enable_reads_from_query_cache])
                 {
                     const UInt64 herd_wait_ms = settings[Setting::query_cache_herd_wait_timeout].totalMilliseconds();
                     const std::optional<std::chrono::milliseconds> herd_wait_timeout
