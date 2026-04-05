@@ -311,8 +311,13 @@ public:
         }
         auto & token = *existing_token;
         std::unique_lock token_lock(token.mutex);
-        if (!token.done)
-            token.cv.wait_for(token_lock, timeout);
+        /// Loop until the token is done or the timeout is reached (not a predicate lambda so Clang TSA sees `done` under `token_lock`).
+        const auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (!token.done)
+        {
+            if (token.cv.wait_until(token_lock, deadline) == std::cv_status::timeout)
+                break;
+        }
         return false;
     }
 
