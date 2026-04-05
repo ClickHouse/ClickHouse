@@ -107,17 +107,17 @@ public:
 /// UTC_timestamp for MySQL interface support
 REGISTER_FUNCTION(UTCTimestamp)
 {
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_UTCTimestamp = R"(
 Returns the current date and time at the moment of query analysis. The function is a constant expression.
 
 This function gives the same result that `now('UTC')` would. It was added only for MySQL support. [`now`](#now) is the preferred usage.
     )";
-    FunctionDocumentation::Syntax syntax = R"(
+    FunctionDocumentation::Syntax syntax_UTCTimestamp = R"(
 UTCTimestamp()
     )";
-    FunctionDocumentation::Arguments arguments = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date and time at the moment of query analysis.", {"DateTime"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::Arguments arguments_UTCTimestamp = {};
+    FunctionDocumentation::ReturnedValue returned_value_UTCTimestamp = {"Returns the current date and time at the moment of query analysis.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_UTCTimestamp = {
         {"Get current UTC timestamp", R"(
 SELECT UTCTimestamp()
         )",
@@ -127,11 +127,11 @@ SELECT UTCTimestamp()
 └─────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in,category};
+    FunctionDocumentation::IntroducedIn introduced_in_UTCTimestamp = {22, 11};
+    FunctionDocumentation::Category category_UTCTimestamp = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_UTCTimestamp = {description_UTCTimestamp, syntax_UTCTimestamp, arguments_UTCTimestamp, {}, returned_value_UTCTimestamp, examples_UTCTimestamp, introduced_in_UTCTimestamp,category_UTCTimestamp};
 
-    factory.registerFunction<UTCTimestampOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<UTCTimestampOverloadResolver>(documentation_UTCTimestamp, FunctionFactory::Case::Insensitive);
     factory.registerAlias("UTC_timestamp", UTCTimestampOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

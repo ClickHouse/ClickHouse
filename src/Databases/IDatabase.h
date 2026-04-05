@@ -38,13 +38,6 @@ struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
 
-/// This structure is returned when getLightweightTablesIterator is called
-/// It contains basic details of the table, currently only the table name
-struct LightWeightTableDetails
-{
-    String name;
-};
-
 class IDatabaseTablesIterator
 {
 public:
@@ -53,8 +46,9 @@ public:
 
     virtual const String & name() const = 0;
 
-    /// This method can return nullptr if table metadata could not be loaded
-    /// (e.g. DataLake database where individual table metadata fetch fails).
+    /// This method can return nullptr if it's Lazy database
+    /// (a database with support for lazy tables loading
+    /// - it maintains a list of tables but tables are loaded lazily).
     virtual const StoragePtr & table() const = 0;
 
     explicit IDatabaseTablesIterator(const String & database_name_) : database_name(database_name_) { }
@@ -277,17 +271,9 @@ public:
 
     /// Same as above, but may return non-fully initialized StoragePtr objects which are not suitable for reading.
     /// Useful for queries like "SHOW TABLES"
-    virtual std::vector<LightWeightTableDetails> getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
+    virtual DatabaseTablesIteratorPtr getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}, bool skip_not_loaded = false) const /// NOLINT
     {
-        std::vector<LightWeightTableDetails> result;
-
-        for (auto iterator = getTablesIterator(context, filter_by_table_name, skip_not_loaded); iterator->isValid(); iterator->next())
-        {
-            if (const auto & table = iterator->table())
-                result.emplace_back(iterator->name());
-        }
-
-        return result;
+        return getTablesIterator(context, filter_by_table_name, skip_not_loaded);
     }
 
     virtual DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(

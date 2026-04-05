@@ -5,12 +5,27 @@
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
-#include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
 #include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
+
+/// A segment of the text index.
+/// Created during materialization of text index.
+struct TextIndexSegment
+{
+    TextIndexSegment(DataPartStoragePtr part_storage_, String index_file_name_, size_t part_index_)
+        : part_storage(std::move(part_storage_))
+        , index_file_name(std::move(index_file_name_))
+        , part_index(part_index_)
+    {
+    }
+
+    DataPartStoragePtr part_storage;
+    String index_file_name;
+    size_t part_index;
+};
 
 /// Transform that builds text indexes and periodically flushes their segments
 /// into temporary storage, when amount of accumulated data reaches some threshold.
@@ -83,8 +98,6 @@ public:
 
     bool executeStep() override;
     void cancel() noexcept override;
-
-    MutableDataPartsVector extractTemporaryParts() override { return {}; }
     void addToChecksums(MergeTreeDataPartChecksums & checksums) override;
 
 private:
@@ -135,7 +148,7 @@ private:
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
-    PostingsSerialization postings_serialization;
+    PostingListCodecPtr posting_list_codec;
 
     bool is_initialized = false;
 };

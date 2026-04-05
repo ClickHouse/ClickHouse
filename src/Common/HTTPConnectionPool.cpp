@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProxyConfiguration.h>
-#include <Common/CurrentThread.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SipHash.h>
 #include <Common/Scheduler/ResourceGuard.h>
@@ -211,7 +210,7 @@ public:
         }
     }
 
-    void atConnectionDestroy() noexcept
+    void atConnectionDestroy()
     {
         std::lock_guard lock(mutex);
 
@@ -600,23 +599,10 @@ public:
 
             wipeExpiredImpl(expired_connections);
 
-            while (!stored_connections.empty())
+            if (!stored_connections.empty())
             {
                 auto it = stored_connections.top();
                 stored_connections.pop();
-
-                /// Check if the server has already closed this connection (sent FIN/RST).
-                /// This catches the case where the server's actual keep-alive timeout is shorter
-                /// than what the pool assumes (e.g. S3 closes idle connections after ~5s while our
-                /// pool may assume 30s).
-                if (isStale(*it))
-                {
-                    it->markAsExpired();
-                    expired_connections.push_back(it);
-                    ProfileEvents::increment(getMetrics().expired, 1);
-                    CurrentMetrics::sub(getMetrics().stored_count, 1);
-                    continue;
-                }
 
                 setTimeouts(*it, timeouts);
 
@@ -695,23 +681,6 @@ private:
         return connection->isKeepAliveExpired(0.8);
     }
 
-    /// Detect connections that have been silently closed by the remote end.
-    /// An idle keep-alive connection should have no data pending in the socket.
-    /// If poll(SELECT_READ, 0) returns true on such a connection, it means the
-    /// server has sent a FIN (or RST), so the next request on this connection
-    /// would fail with "No message received" (NoMessageException).
-    static bool isStale(Session & connection)
-    {
-        try
-        {
-            return connection.socket().poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ);
-        }
-        catch (Poco::IOException &)
-        {
-            return true;
-        }
-    }
-
 
     ConnectionPtr prepareNewConnection(const ConnectionTimeouts & timeouts, UInt64 * connect_time)
     {
@@ -745,7 +714,7 @@ private:
         return connection;
     }
 
-    void atConnectionDestroy(PooledConnection & connection) noexcept
+    void atConnectionDestroy(PooledConnection & connection)
     {
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
@@ -760,25 +729,17 @@ private:
             return;
         }
 
-        try
-        {
-            auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
-            connection_to_store->assign(connection);
+        auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
+        connection_to_store->assign(connection);
 
-            {
-                MemoryTrackerSwitcher switcher{&total_memory_tracker};
-                std::lock_guard lock(mutex);
-                stored_connections.push(connection_to_store);
-            }
-
-            CurrentMetrics::add(getMetrics().stored_count, 1);
-            ProfileEvents::increment(getMetrics().preserved, 1);
-        }
-        catch (...)
         {
-            ProfileEvents::increment(getMetrics().reset, 1);
-            tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
+            MemoryTrackerSwitcher switcher{&total_memory_tracker};
+            std::lock_guard lock(mutex);
+            stored_connections.push(connection_to_store);
         }
+
+        CurrentMetrics::add(getMetrics().stored_count, 1);
+        ProfileEvents::increment(getMetrics().preserved, 1);
     }
 
 

@@ -1,4 +1,3 @@
-#include <memory>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
 #if USE_AWS_S3
@@ -8,7 +7,6 @@
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/Throttler.h>
-#include <Common/HTTPHeaderFilter.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -26,8 +24,6 @@
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskLocal.h>
-#include <Interpreters/StorageID.h>
-#include <Common/Logger.h>
 
 namespace DB
 {
@@ -71,9 +67,6 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
-    extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -89,7 +82,6 @@ namespace S3RequestSetting
 namespace ErrorCodes
 {
 extern const int NO_ELEMENTS_IN_CONFIG;
-extern const int BAD_ARGUMENTS;
 }
 
 std::unique_ptr<S3::Client> getClient(
@@ -97,18 +89,17 @@ std::unique_ptr<S3::Client> getClient(
     const S3Settings & settings,
     ContextPtr context,
     bool for_disk_s3,
-    std::optional<std::string> opt_disk_name,
-    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
+    std::optional<std::string> opt_disk_name)
 
 {
     auto url = S3::URI(endpoint);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback);
+    return getClient(url, settings, context, for_disk_s3, opt_disk_name);
 }
 
 std::unique_ptr<S3::Client>
-getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name, std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
+getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name)
 {
     const auto & auth_settings = settings.auth_settings;
     const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -176,9 +167,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     client_configuration.service_account = auth_settings[S3AuthSetting::service_account];
     client_configuration.metadata_service = auth_settings[S3AuthSetting::metadata_service];
     client_configuration.request_token_path = auth_settings[S3AuthSetting::request_token_path];
-    client_configuration.google_adc_client_id = auth_settings[S3AuthSetting::google_adc_client_id];
-    client_configuration.google_adc_client_secret = auth_settings[S3AuthSetting::google_adc_client_secret];
-    client_configuration.google_adc_refresh_token = auth_settings[S3AuthSetting::google_adc_refresh_token];
 
     client_configuration.endpointOverride = url.endpoint;
     client_configuration.s3_use_adaptive_timeouts = auth_settings[S3AuthSetting::use_adaptive_timeouts];
@@ -210,52 +198,16 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         /*sts_endpoint_override=*/""
     };
 
-    String access_key_id = auth_settings[S3AuthSetting::access_key_id];
-    String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
-    String session_token = auth_settings[S3AuthSetting::session_token];
-    auto headers = auth_settings.getHeaders();
-
-    if (refresh_credentials_callback)
-    {
-        auto updated_credentials = (*refresh_credentials_callback)();
-        if (updated_credentials)
-        {
-            if (auto gcs_creds = std::dynamic_pointer_cast<DataLake::GCSCredentials>(updated_credentials))
-            {
-                /// GCS Bearer token: replace the Authorization header with the refreshed token.
-                /// no_sign_request is already set from the initial configuration.
-                headers.erase(
-                    std::remove_if(headers.begin(), headers.end(), [](const auto & h) { return h.name == "Authorization"; }),
-                    headers.end());
-                headers.push_back({"Authorization", "Bearer " + gcs_creds->getToken()});
-            }
-            else if (auto s3_creds = std::dynamic_pointer_cast<DataLake::S3Credentials>(updated_credentials))
-            {
-                access_key_id = s3_creds->getAccessKeyId();
-                secret_access_key = s3_creds->getSecretAccessKey();
-                session_token = s3_creds->getSessionToken();
-                LOG_DEBUG(getLogger("getClient"), "Got new S3 access tokens");
-            }
-            else
-            {
-                throw DB::Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Unexpected credentials type for S3 storage");
-            }
-        }
-    }
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
-
     return S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
-        access_key_id,
-        secret_access_key,
+        auth_settings[S3AuthSetting::access_key_id],
+        auth_settings[S3AuthSetting::secret_access_key],
         auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
         auth_settings.server_side_encryption_kms_config,
-        headers,
+        auth_settings.getHeaders(),
         credentials_configuration,
-        session_token);
+        auth_settings[S3AuthSetting::session_token]);
 }
 
 }

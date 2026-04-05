@@ -1,4 +1,4 @@
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <base/demangle.h>
 #include <DataTypes/DataTypeNullable.h>

@@ -25,11 +25,7 @@ class FunctionH3IndexesAreNeighbors : public IFunction
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";
 
-    H3Validator validator;
-
-    explicit FunctionH3IndexesAreNeighbors(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3IndexesAreNeighbors>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IndexesAreNeighbors>(); }
 
     std::string getName() const override { return name; }
 
@@ -97,14 +93,11 @@ public:
         {
             const UInt64 hindex_origin = data_hindex_origin[row];
             const UInt64 hindex_dest = data_hindex_dest[row];
-            UInt8 res = 0;
 
-            if (validator.validateCell(hindex_origin) && validator.validateCell(hindex_dest))
-            {
-                int are_neighbors = 0;
-                if (!areNeighborCells(hindex_origin, hindex_dest, &are_neighbors))
-                    res = static_cast<UInt8>(are_neighbors);
-            }
+            validateH3Cell(hindex_origin);
+            validateH3Cell(hindex_dest);
+
+            auto res = static_cast<UInt8>(areNeighborCells(hindex_origin, hindex_dest));
 
             dst_data[row] = res;
         }

@@ -44,8 +44,7 @@ void FractionalOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, co
 
 void FractionalOffsetStep::describeActions(FormatSettings & settings) const
 {
-    const auto & prefix = settings.detail_prefix;
-    settings.out << prefix << "Fractional Offset " << fractional_offset << '\n';
+    settings.out << String(settings.offset, ' ') << "Fractional Offset " << fractional_offset << '\n';
 }
 
 void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -58,7 +57,7 @@ void FractionalOffsetStep::serialize(Serialization & ctx) const
     writeFloatBinary(fractional_offset, ctx.out);
 }
 
-QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> FractionalOffsetStep::deserialize(Deserialization & ctx)
 {
     Float64 offset;
     readFloatBinary(offset, ctx.in);

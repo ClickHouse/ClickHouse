@@ -106,7 +106,6 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
     size_t elements,
     const CacheStateGuard::Lock & lock,
     IteratorPtr reservee,
-    const OriginInfo &,
     bool best_effort) const
 {
     if (best_effort)
@@ -126,6 +125,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
+    const UserInfo &,
     const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock * state_lock,
     bool is_startup)
@@ -179,7 +179,8 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     size_t elements,
     IFileCachePriority::Iterator * reservee,
     bool is_total_space_cleanup,
-    const OriginInfo & origin_info,
+    bool is_dynamic_resize,
+    const UserInfo & user,
     const CacheStateGuard::Lock & lock)
 {
     if (!size && !elements)
@@ -202,7 +203,8 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
             evict_elements_from_probationary,
             reservee,
             is_total_space_cleanup,
-            origin_info,
+            is_dynamic_resize,
+            user,
             lock);
 
         size_t evict_size_from_protected = size ? std::min(size, protected_queue.getSize(lock)) : 0;
@@ -214,8 +216,30 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
                 evict_elements_from_protected,
                 reservee,
                 is_total_space_cleanup,
-                origin_info,
+                is_dynamic_resize,
+                user,
                 lock));
+        return info;
+    }
+
+    if (is_dynamic_resize)
+    {
+        auto info = protected_queue.collectEvictionInfo(
+            getRatio(size, size_ratio, /* ceil */true),
+            getRatio(elements, size_ratio, /* ceil */true),
+            /* reservee */nullptr,
+            is_total_space_cleanup,
+            is_dynamic_resize,
+            user,
+            lock);
+        info->add(probationary_queue.collectEvictionInfo(
+            getRatio(size, 1 - size_ratio, /* ceil */true),
+            getRatio(elements, 1 - size_ratio, /* ceil */true),
+            /* reservee */nullptr,
+            is_total_space_cleanup,
+            is_dynamic_resize,
+            user,
+            lock));
         return info;
     }
 
@@ -239,11 +263,11 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
         /// But we cannot do it here, as we do not know in advance the exact size to downgrade.
         /// So we will do it in collectCandidatesForEviction.
         return protected_queue.collectEvictionInfo(
-            size, elements, reservee, is_total_space_cleanup, origin_info, lock);
+            size, elements, reservee, is_total_space_cleanup, is_dynamic_resize, user, lock);
     }
 
     return probationary_queue.collectEvictionInfo(
-        size, elements, reservee, is_total_space_cleanup, origin_info, lock);
+        size, elements, reservee, is_total_space_cleanup, is_dynamic_resize, user, lock);
 }
 
 bool SLRUFileCachePriority::collectCandidatesForEviction(
@@ -255,7 +279,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
-    const OriginInfo & origin_info,
+    const UserInfo & user,
     CachePriorityGuard & cache_guard,
     CacheStateGuard & state_guard)
 {
@@ -270,7 +294,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
-            origin_info,
+            user,
             cache_guard,
             state_guard);
         /// We do not quit here if !success_probationary,
@@ -289,7 +313,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
-            origin_info,
+            user,
             cache_guard,
             state_guard);
 
@@ -309,7 +333,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
-            origin_info,
+            user,
             cache_guard,
             state_guard);
     }
@@ -334,7 +358,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
-            origin_info,
+            user,
             cache_guard,
             state_guard);
     }
@@ -350,7 +374,7 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
-            origin_info,
+            user,
             cache_guard,
             state_guard);
     }
@@ -369,7 +393,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
     bool continue_from_last_eviction_pos,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
-    const OriginInfo & origin_info,
+    const UserInfo & user,
     CachePriorityGuard & cache_guard,
     CacheStateGuard & state_guard)
 {
@@ -384,7 +408,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         continue_from_last_eviction_pos,
         max_candidates_size,
         is_total_space_cleanup,
-        origin_info,
+        user,
         cache_guard,
         state_guard))
     {
@@ -408,7 +432,8 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
         downgrade_stat.total_stat.releasable_count,
         /* reservee */nullptr,
         /* is_total_space_cleanup */false,
-        origin_info,
+        /* is_dynamic_resize */false,
+        user,
         state_guard.lock());
 
     const bool requires_eviction = probationary_eviction_info->requiresEviction();
@@ -428,7 +453,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
             continue_from_last_eviction_pos,
             max_candidates_size,
             is_total_space_cleanup,
-            origin_info,
+            user,
             cache_guard,
             state_guard))
         {
@@ -611,7 +636,8 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             /* elements */1,
             /* reservee */nullptr,
             /* is_total_space_cleanup */false,
-            FileCache::getInternalOrigin(),
+            /* is_dynamic_resize */false,
+            FileCache::getInternalUser(),
             lock);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -634,7 +660,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         /* continue_from_last_eviction_pos */false,
         /* max_candidates_size */0,
         /* is_total_space_cleanup */false,
-        FileCache::getInternalOrigin(),
+        FileCache::getInternalUser(),
         queue_guard,
         state_guard))
     {
@@ -663,9 +689,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
             prev_entry->offset,
             /* size */0,
             prev_entry->key_metadata);
-
-        return protected_queue.add(
-            std::move(empty_entry), lock, /* state_lock */nullptr);
+        return protected_queue.add(std::move(empty_entry), lock, /* state_lock */nullptr);
     }();
 
     auto prev_iterator = iterator.lru_iterator;
@@ -734,8 +758,8 @@ LRUFileCachePriority::LRUIterator SLRUFileCachePriority::addOrThrow(
 
 IFileCachePriority::PriorityDumpPtr SLRUFileCachePriority::dump(const CachePriorityGuard::ReadLock & lock)
 {
-    auto res = probationary_queue.dump(lock);
-    auto part_res = protected_queue.dump(lock);
+    auto res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(probationary_queue.dump(lock));
+    auto part_res = dynamic_pointer_cast<LRUFileCachePriority::LRUPriorityDump>(protected_queue.dump(lock));
     res->merge(*part_res);
     return res;
 }
@@ -759,30 +783,6 @@ bool SLRUFileCachePriority::modifySizeLimits(
     max_elements = max_elements_;
     size_ratio = size_ratio_;
     return true;
-}
-
-EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoForResize(
-    size_t desired_max_size,
-    size_t desired_max_elements,
-    const IFileCachePriority::OriginInfo & origin_info,
-    const CacheStateGuard::Lock & lock)
-{
-    /// Delegate to each sub-queue's collectEvictionInfoForResize with per-sub-queue
-    /// desired limits derived from the desired total and ratio.
-    /// This is needed because the total cache size might be under the desired total,
-    /// but one sub-queue (e.g. protected) might exceed its new sub-limit.
-
-    auto info = protected_queue.collectEvictionInfoForResize(
-        getRatio(desired_max_size, size_ratio),
-        getRatio(desired_max_elements, size_ratio),
-        origin_info, lock);
-
-    info->add(probationary_queue.collectEvictionInfoForResize(
-        getRatio(desired_max_size, 1 - size_ratio),
-        getRatio(desired_max_elements, 1 - size_ratio),
-        origin_info, lock));
-
-    return info;
 }
 
 SLRUFileCachePriority::SLRUIterator::SLRUIterator(

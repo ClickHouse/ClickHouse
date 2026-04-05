@@ -152,10 +152,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (output.isFinished())
     {
         output_finished = true;
-        if (!always_read_till_end || rows_read == 0)
+        if (!always_read_till_end)
         {
-            /// The rows_read == 0 is a corner case. If no rows were read before the output is closed,
-            /// do not read data even with always_read_till_end to avoid Not-ready Set (sets might not be built).
             input.close();
             return Status::Finished;
         }
