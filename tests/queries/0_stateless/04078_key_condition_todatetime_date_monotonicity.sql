@@ -14,6 +14,6 @@ OPTIMIZE TABLE test FINAL;
 
 SELECT count() FROM test WHERE stamp >= '2024-11-01' SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
-SELECT count() FROM test WHERE stamp >= '2024-11-01';;
+SELECT count() FROM test WHERE stamp >= '2024-11-01';
 
 DROP TABLE test;
