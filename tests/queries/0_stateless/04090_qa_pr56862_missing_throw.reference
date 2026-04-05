@@ -1,0 +1,15 @@
+--- tables
+t1
+t2
+t3
+--- counts
+t1	2
+t2	2
+t3	2
+--- after alter
+1	alpha	x
+2	beta	x
+--- after drop
+t1
+t2
+--- done
