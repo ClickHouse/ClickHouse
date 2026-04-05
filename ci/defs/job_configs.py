@@ -273,11 +273,34 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
+            parameter=BuildTypes.ARM_DEBUG,
+            provides=[ArtifactNames.CH_ARM_DEBUG, ArtifactNames.DEB_ARM_DEBUG],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
             provides=[
                 ArtifactNames.CH_ARM_ASAN_UBSAN,
                 ArtifactNames.DEB_ARM_ASAN_UBSAN,
             ],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_TSAN,
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
+                ArtifactNames.DEB_ARM_TSAN,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_MSAN,
+            provides=[ArtifactNames.CH_ARM_MSAN, ArtifactNames.DEB_ARM_MSAN],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_UBSAN,
+            provides=[ArtifactNames.CH_ARM_UBSAN, ArtifactNames.DEB_ARM_UBSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -291,11 +314,18 @@ class JobConfigs:
     )
     coverage_build_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
-            parameter=BuildTypes.AMD_COVERAGE,
+            parameter=BuildTypes.LLVM_COVERAGE_BUILD,
             provides=[
-                ArtifactNames.CH_COV_BIN,
+                ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
             ],
-            runs_on=RunnerLabels.ARM_LARGE,
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.PER_TEST_COVERAGE,
+            provides=[
+                ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
+            ],
+            runs_on=RunnerLabels.AMD_LARGE,
         ),
     )
     release_build_jobs = common_build_job_config.set_post_hooks(
@@ -471,6 +501,11 @@ class JobConfigs:
     )
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
+            parameter="arm_asan_ubsan, flaky check",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
             parameter="amd_asan_ubsan, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
@@ -489,18 +524,6 @@ class JobConfigs:
             parameter="amd_debug, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
-        ),
-        Job.ParamSet(
-            parameter="amd_binary, flaky check",
-            runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_BINARY],
-        ),
-    )
-    stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
-        Job.ParamSet(
-            parameter="arm_asan_ubsan, targeted",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
@@ -672,9 +695,9 @@ class JobConfigs:
     functional_tests_jobs_coverage = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"{BuildTypes.AMD_COVERAGE}, {batch}/{total_batches}",
+                parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_test_coverage, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_SMALL,
-                requires=[ArtifactNames.CH_COV_BIN],
+                requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
             )
             for total_batches in (8,)
             for batch in range(1, total_batches + 1)
@@ -725,9 +748,34 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_DEBUG],
         ),
         Job.ParamSet(
+            parameter="amd_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
             parameter="amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.DEB_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_msan",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_RELEASE],
+        ),
+        Job.ParamSet(
+            parameter="arm_debug",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="arm_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan, s3",
@@ -735,9 +783,19 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
-            parameter="amd_msan",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
+            parameter="arm_tsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_msan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_MSAN],
+        ),
+        Job.ParamSet(
+            parameter="arm_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.DEB_ARM_UBSAN],
         ),
     )
     # might be heavy on azure - run only on master
