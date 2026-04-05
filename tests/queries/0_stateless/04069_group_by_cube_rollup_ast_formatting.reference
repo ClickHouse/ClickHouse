@@ -1,0 +1,8 @@
+1
+1
+1
+1
+SELECT 1\nGROUP BY ROLLUP(\n    1,\n    2,\n    3)\n    WITH CUBE
+1
+SELECT 1\nGROUP BY ROLLUP(\n    1,\n    2,\n    3)\n    WITH CUBE
+1
