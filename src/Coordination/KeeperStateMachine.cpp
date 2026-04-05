@@ -51,11 +51,8 @@ namespace ProfileEvents
     extern const Event KeeperSaveSnapshotFailed;
     extern const Event KeeperSaveSnapshot;
     extern const Event KeeperStorageLockWaitMicroseconds;
-    extern const Event KeeperStorageLockHoldMicroseconds;
     extern const Event KeeperStorageSharedLockWaitMicroseconds;
-    extern const Event KeeperStorageSharedLockHoldMicroseconds;
     extern const Event KeeperProcessAndResponsesLockWaitMicroseconds;
-    extern const Event KeeperProcessAndResponsesLockHoldMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -228,10 +225,10 @@ void assertDigest(
 /// Macros to construct timed lock guards for storage_mutex with appropriate ProfileEvents.
 /// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
 #define KEEPER_STORAGE_LOCK_EXCLUSIVE(name) \
-    ProfiledExclusiveLock name(storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds, ProfileEvents::KeeperStorageLockHoldMicroseconds)
+    ProfiledExclusiveLock name(storage_mutex, ProfileEvents::KeeperStorageLockWaitMicroseconds)
 
 #define KEEPER_STORAGE_LOCK_SHARED(name) \
-    ProfiledSharedLock name(storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, ProfileEvents::KeeperStorageSharedLockHoldMicroseconds)
+    ProfiledSharedLock name(storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds)
 
 union XidHelper
 {
@@ -693,7 +690,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
             {
                 KEEPER_STORAGE_LOCK_SHARED(lock);
-                ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+                ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
                 KeeperResponsesForSessions responses_for_sessions
                     = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                 for (auto & response_for_session : responses_for_sessions)
@@ -1474,7 +1471,7 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
     /// Pure local request, just process it with storage
     {
         KEEPER_STORAGE_LOCK_SHARED(storage_lock);
-        ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds, ProfileEvents::KeeperProcessAndResponsesLockHoldMicroseconds);
+        ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
         auto responses = storage->processRequest(
             request_for_session.request, request_for_session.session_id, std::nullopt, true /*check_acl*/, true /*is_local*/);
         for (auto & response_for_session : responses)
