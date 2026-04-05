@@ -3,7 +3,7 @@
 # Tag no-parallel: Uses global query cache and concurrent clients.
 #
 # SYSTEM CLEAR QUERY CACHE must mark async-insert tokens done and notify waiters
-# blocked in CacheBase::startAsyncInsert. Otherwise finishAsyncInsert no longer finds the key
+# blocked in QueryResultCache::startAsyncInsert. Otherwise finishAsyncInsert no longer finds the key
 # and waiters can stall until the herd timeout.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
 # First query is the herd executor; second blocks until CLEAR marks the token done or the first completes.
-# sleep(10) keeps the executor busy long enough for the second session to enter startAsyncInsert.
+# sleep(10) keeps the executor busy long enough for the second session to enter QueryResultCache::startAsyncInsert.
 QUERY="SELECT sleep(10) FORMAT Null SETTINGS use_query_cache=1, query_cache_min_query_duration=0, query_cache_min_query_runs=0, query_cache_nondeterministic_function_handling='save'"
 
 ${CLICKHOUSE_CLIENT} --query "${QUERY}" --query_id="qcache_herd_clear_1_${CLICKHOUSE_DATABASE}" >/dev/null 2>&1 &

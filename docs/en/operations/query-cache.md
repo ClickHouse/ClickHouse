@@ -74,7 +74,7 @@ FROM table
 SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
 ```
 
-When several clients run the same `SELECT` simultaneously on a cache miss, one execution computes the result and streams it into the cache while others wait briefly and then re-read the cache. Setting [query_cache_herd_wait_timeout](/operations/settings/settings#query_cache_herd_wait_timeout) bounds how long a waiting query blocks before it gives up and runs the query itself (trading duplicate work for lower latency). The default is 300 seconds. Use `0` to wait without a fixed deadline until the in-flight query finishes or the cache is cleared.
+When several clients run the same `SELECT` simultaneously on a cache miss, one execution computes the result and streams it into the cache while others wait briefly and then re-read the cache. Waiters are grouped by the same rules as cache read access: if `query_cache_share_between_users` is false (default), only sessions with the same user and roles coalesce; if it is true, concurrent identical queries share one herd regardless of user. Setting [query_cache_herd_wait_timeout](/operations/settings/settings#query_cache_herd_wait_timeout) bounds how long a waiting query blocks before it gives up and runs the query itself (trading duplicate work for lower latency). The default is 300 seconds. Use `0` to wait without a fixed deadline until the in-flight query finishes or the cache is cleared.
 
 For maximum control, it is generally recommended to provide settings `use_query_cache`, `enable_writes_to_query_cache` and
 `enable_reads_from_query_cache` only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
