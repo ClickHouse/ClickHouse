@@ -114,7 +114,7 @@ REGISTER_FUNCTION(ExtractGroups)
     FunctionDocumentation::Description description = R"(
 Extracts all groups from non-overlapping substrings matched by a regular expression.
     )";
-    FunctionDocumentation::Syntax syntax = "extractAllGroups(s, regexp)";
+    FunctionDocumentation::Syntax syntax = "extractGroups(s, regexp)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string to extract from.", {"String", "FixedString"}},
         {"regexp", "Regular expression. Constant.", {"const String", "const FixedString"}}
@@ -129,7 +129,7 @@ WITH '< Server: nginx
 < Content-Type: text/html; charset=UTF-8
 < Connection: keep-alive
 ' AS s
-SELECT extractAllGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
+SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 )",
             R"(
 [['Server','nginx'],['Date','Tue, 22 Jan 2019 00:26:14 GMT'],['Content-Type','text/html; charset=UTF-8'],['Connection','keep-alive']]

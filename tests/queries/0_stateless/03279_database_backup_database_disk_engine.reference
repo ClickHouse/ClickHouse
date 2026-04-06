@@ -20,6 +20,7 @@
 8	1500
 9	1500
 --
+CREATE DATABASE default_inner_backup_database\nENGINE = Backup(\'default_inner\', \'Disk(\\\'backups\\\', \\\'default_inner\\\')\')
 test_table_1	15000
 test_table_2	15000
 --

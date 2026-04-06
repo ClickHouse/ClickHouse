@@ -10,7 +10,8 @@ from helpers.iceberg_utils import (
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 @pytest.mark.parametrize("is_table_function", [False, True])
-def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_table_function):
+@pytest.mark.parametrize("use_prewhere", [False, True])
+def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_table_function, use_prewhere):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_minmax_pruning_" + storage_type + "_" + get_uuid_str()
@@ -95,6 +96,11 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
             instance, TABLE_NAME, settings1, settings2, 'IcebergMinMaxIndexPrunedFiles', select_expression
         )
 
+
+    where_condition = "WHERE"
+    if use_prewhere and not is_table_function:
+        where_condition = "PREWHERE"
+
     assert (
         check_validity_and_get_prunned_files(
             f"SELECT * FROM {creation_expression} ORDER BY ALL"
@@ -103,55 +109,55 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
     )
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE date <= '2024-01-25' ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} date <= '2024-01-25' ORDER BY ALL"
         )
         == 3
     )
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE ts <= timestamp('2024-03-20 14:00:00.000000') ORDER BY ALL"
-        )
-        == 3
-    )
-
-    assert (
-        check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE tag == 1 ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} ts <= timestamp('2024-03-20 14:00:00.000000') ORDER BY ALL"
         )
         == 3
     )
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} tag == 1 ORDER BY ALL"
         )
         == 3
     )
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE name == 'vasilisa' ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} tag <= 1 ORDER BY ALL"
         )
         == 3
     )
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE name < 'kek' ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} name == 'vasilisa' ORDER BY ALL"
+        )
+        == 3
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} {where_condition} name < 'kek' ORDER BY ALL"
         )
         == 2
     )
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE number == 8 ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} number == 8 ORDER BY ALL"
         )
         == 3
     )
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE number <= 5 ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} number <= 5 ORDER BY ALL"
         )
         == 3
     )
@@ -163,7 +169,7 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE date3 <= '2024-01-25' ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} date3 <= '2024-01-25' ORDER BY ALL"
         )
         == 3
     )
@@ -172,14 +178,14 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} tag <= 1 ORDER BY ALL"
         )
         == 3
     )
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} time_struct.a <= '2024-02-01' ORDER BY ALL"
         )
         == 3
     )
@@ -190,7 +196,7 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} time_struct.a <= '2024-02-01' ORDER BY ALL"
         )
         == 4
     )
@@ -211,7 +217,7 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
 
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE ddd >= 100 ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} ddd >= 100 ORDER BY ALL"
         )
         == 2
     )
@@ -219,7 +225,7 @@ def test_minmax_pruning(started_cluster_iceberg_with_spark, storage_type, is_tab
     # Please check the code where we parse lower bounds and upper bounds
     assert (
         check_validity_and_get_prunned_files(
-            f"SELECT * FROM {creation_expression} WHERE ddd >= toDecimal64('17.21', 3) ORDER BY ALL"
+            f"SELECT * FROM {creation_expression} {where_condition} ddd >= toDecimal64('17.21', 3) ORDER BY ALL"
         )
         == 1
     )

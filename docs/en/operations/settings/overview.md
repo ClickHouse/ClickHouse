@@ -16,14 +16,14 @@ supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud
 service, you must use [SQL-driven Settings Profiles](/operations/access-rights#settings-profiles-management).
 :::
 
-There are two main groups of ClickHouse settings:
+There are following main groups of ClickHouse settings:
 
 - Global server settings
 - Session settings
+- Query settings
+- Background operations settings
 
-The main distinction between both is that global server settings apply globally 
-for the ClickHouse server, while session settings apply to user sessions or even
-individual queries.
+Global settings apply by default unless overridden at further levels. Session settings can be specified via profiles, user configuration and SET commands. Query settings can be provided via SETTINGS clause and are applied to individual queries. Background operations settings are applied to Mutations, Merges and potentially other operations, executed asynchronously in the background.
 
 ## Viewing non-default settings {#see-non-default-settings}
 
@@ -60,3 +60,4 @@ Which will return something like this:
   ClickHouse server at the global server level.
 - See [session settings](/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse 
   server at the session level.
+- See [context hierarchy](/development/architecture.md#context) to learn more about configuration processing by Clickhouse.

@@ -1143,11 +1143,11 @@ def test_tables_dependency():
         "Table mydb.clusterfunc10 has no dependencies (level 0)",
     ]
     for expect in expect_in_logs_1:
-        assert node1.contains_in_log(f"RestorerFromBackup: {expect}")
+        assert node1.contains_in_log(f"BackupMetadataFinder: {expect}")
     for expect in expect_in_logs_2:
-        assert node2.contains_in_log(f"RestorerFromBackup: {expect}")
+        assert node2.contains_in_log(f"BackupMetadataFinder: {expect}")
     for expect in expect_in_logs_3:
-        assert node3.contains_in_log(f"RestorerFromBackup: {expect}")
+        assert node3.contains_in_log(f"BackupMetadataFinder: {expect}")
 
 
 def test_get_error_from_other_host():

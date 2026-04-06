@@ -19,6 +19,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
+#include <Common/FailPoint.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/BackupLog.h>
@@ -61,6 +62,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsUInt64 readonly;
     extern const SettingsBool s3_disable_checksum;
 }
 
@@ -69,8 +71,15 @@ namespace ServerSetting
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
 }
 
+namespace FailPoints
+{
+    extern const char backup_pause_on_start[];
+    extern const char restore_pause_on_start[];
+}
+
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
@@ -163,8 +172,8 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
-        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         read_settings.read_through_distributed_cache = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
     }
 
@@ -360,7 +369,7 @@ struct BackupsWorker::BackupStarter
 {
     BackupsWorker & backups_worker;
     LoggerPtr log;
-    std::shared_ptr<ASTBackupQuery> backup_query;
+    boost::intrusive_ptr<ASTBackupQuery> backup_query;
     ContextPtr query_context; /// We have to keep `query_context` until the end of the operation because a pointer to it is stored inside the ThreadGroup we're using.
     ContextMutablePtr backup_context;
     BackupSettings backup_settings;
@@ -377,19 +386,22 @@ struct BackupsWorker::BackupStarter
     BackupStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
-        , backup_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
+        , backup_query(boost::static_pointer_cast<ASTBackupQuery>(query_->clone()))
         , query_context(context_)
         , backup_context(Context::createCopy(query_context))
     {
         backup_settings = BackupSettings::fromBackupQuery(*backup_query);
-
         backup_context->makeQueryContext();
-        backup_context->checkSettingsConstraints(backup_settings.core_settings, SettingSource::QUERY);
-        backup_context->applySettingsChanges(backup_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
+
+        /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
+        /// It should not be allowed for an initial query explicitly specified by a user.
+        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
+
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
@@ -455,6 +467,8 @@ struct BackupsWorker::BackupStarter
 
     void doBackup()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::backup_pause_on_start);
+
         chassert(!backup_coordination);
         if (on_cluster && !is_internal_backup)
         {
@@ -462,6 +476,17 @@ struct BackupsWorker::BackupStarter
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
+
+        /// Check access rights before opening the backup destination (e.g., S3).
+        /// This ensures we fail fast with a proper ACCESS_DENIED error instead of trying to connect to external storage first.
+        /// For ON CLUSTER queries, access rights are checked in executeDDLQueryOnCluster() before distributing the query.
+        if (!on_cluster)
+        {
+            backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
+            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+            query_context->checkAccess(required_access);
+        }
+
         chassert(backup_settings.data_file_name_prefix_length);
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
         backup_coordination->startup();
@@ -469,7 +494,7 @@ struct BackupsWorker::BackupStarter
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
                                 on_cluster, cluster);
 
         if (!is_internal_backup)
@@ -560,7 +585,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }
@@ -616,12 +641,11 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
 
 void BackupsWorker::doBackup(
     BackupMutablePtr backup,
-    const std::shared_ptr<ASTBackupQuery> & backup_query,
+    const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
     const OperationID & backup_id,
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
-    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -636,17 +660,13 @@ void BackupsWorker::doBackup(
 
     bool is_internal_backup = backup_settings.internal;
 
-    /// Checks access rights if this is not ON CLUSTER query.
-    /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
-    if (!on_cluster)
-        query_context->checkAccess(required_access);
-
     maybeSleepForTesting();
 
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
+        auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);
         sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
@@ -666,8 +686,13 @@ void BackupsWorker::doBackup(
         BackupEntries backup_entries;
         {
             BackupEntriesCollector backup_entries_collector(
-                backup_query->elements, backup_settings, backup_coordination,
-                read_settings, context, getThreadPool(ThreadPoolId::BACKUP));
+                backup_query->elements,
+                backup_settings,
+                backup_id,
+                backup_coordination,
+                read_settings,
+                context,
+                getThreadPool(ThreadPoolId::BACKUP));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -768,7 +793,10 @@ void BackupsWorker::writeBackupEntries(
         auto & entry = backup_entries[index].second;
         const auto & file_info = file_infos[index];
 
-        auto job = [&]()
+        /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
+        /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
+        /// destroyed after)
+        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id]()
         {
             if (failed)
                 return;
@@ -818,7 +846,7 @@ struct BackupsWorker::RestoreStarter
 {
     BackupsWorker & backups_worker;
     LoggerPtr log;
-    std::shared_ptr<ASTBackupQuery> restore_query;
+    boost::intrusive_ptr<ASTBackupQuery> restore_query;
     ContextPtr query_context; /// We have to keep `query_context` until the end of the operation because a pointer to it is stored inside the ThreadGroup we're using.
     ContextMutablePtr restore_context;
     RestoreSettings restore_settings;
@@ -834,19 +862,29 @@ struct BackupsWorker::RestoreStarter
     RestoreStarter(BackupsWorker & backups_worker_, const ASTPtr & query_, const ContextPtr & context_)
         : backups_worker(backups_worker_)
         , log(backups_worker.log)
-        , restore_query(std::static_pointer_cast<ASTBackupQuery>(query_->clone()))
+        , restore_query(boost::static_pointer_cast<ASTBackupQuery>(query_->clone()))
         , query_context(context_)
         , restore_context(Context::createCopy(query_context))
     {
         restore_settings = RestoreSettings::fromRestoreQuery(*restore_query);
-
         restore_context->makeQueryContext();
-        restore_context->checkSettingsConstraints(restore_settings.core_settings, SettingSource::QUERY);
-        restore_context->applySettingsChanges(restore_settings.core_settings);
 
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
+
+        /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
+        /// It should not be allowed for an initial query explicitly specified by a user.
+        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
+
+        /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
+        /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
+        /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
+        /// which is explicitly set by the user to enforce read-only mode.
+        if (query_context->getSettingsRef()[Setting::readonly] == 1)
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot execute RESTORE in readonly mode");
+
         on_cluster = !restore_query->cluster.empty() || is_internal_restore;
 
         if (!restore_settings.restore_uuid)
@@ -885,6 +923,8 @@ struct BackupsWorker::RestoreStarter
 
     void doRestore()
     {
+        FailPointInjection::pauseFailPoint(FailPoints::restore_pause_on_start);
+
         chassert(!restore_coordination);
         if (on_cluster && !is_internal_restore)
         {
@@ -970,7 +1010,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (...)
+                catch (const std::exception &)
                 {
                     starter->onException();
                 }
@@ -1009,7 +1049,7 @@ BackupPtr BackupsWorker::openBackupForReading(const BackupInfo & backup_info, co
 }
 
 void BackupsWorker::doRestore(
-    const std::shared_ptr<ASTBackupQuery> & restore_query,
+    const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
     const OperationID & restore_id,
     const BackupInfo & backup_info,
     RestoreSettings restore_settings,

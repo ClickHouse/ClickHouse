@@ -45,13 +45,21 @@ public:
     }
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(const Columns * columns)
+    void reinit(const Columns * columns, const ScatteredBlock::Selector & selector)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
             assert(per_row_flags[columns].size() <= columns->at(0)->size());
             need_flags = true;
             per_row_flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
+
+            /// Mark all rows outside of selector as used.
+            /// We should not emit them in RIGHT/FULL JOIN result,
+            /// since they belongs to another shard, which will handle flags for these rows
+            for (auto & flag : per_row_flags[columns])
+                flag.store(true);
+            for (size_t index : selector)
+                per_row_flags[columns][index].store(false);
         }
     }
 
@@ -77,14 +85,24 @@ public:
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
                 for (auto it = mapped.begin(); it.ok(); ++it)
-                    per_row_flags[&it->columns_info->columns][it->row_num].store(true, std::memory_order_relaxed);
+                {
+                    auto & flag = per_row_flags[&it->columns_info->columns][it->row_num];
+                    if (!flag.load(std::memory_order_relaxed))
+                        flag.store(true, std::memory_order_relaxed);
+                }
             }
             else
-                per_row_flags[&mapped.columns_info->columns][mapped.row_num].store(true, std::memory_order_relaxed);
+            {
+                auto & flag = per_row_flags[&mapped.columns_info->columns][mapped.row_num];
+                if (!flag.load(std::memory_order_relaxed))
+                    flag.store(true, std::memory_order_relaxed);
+            }
         }
         else
         {
-            per_offset_flags[f.getOffset()].store(true, std::memory_order_relaxed);
+            auto & flag = per_offset_flags[f.getOffset()];
+            if (!flag.load(std::memory_order_relaxed))
+                flag.store(true, std::memory_order_relaxed);
         }
     }
 
@@ -97,11 +115,15 @@ public:
         /// Could be set simultaneously from different threads.
         if constexpr (flag_per_row)
         {
-            per_row_flags[columns][row_num].store(true, std::memory_order_relaxed);
+            auto & flag = per_row_flags[columns][row_num];
+            if (!flag.load(std::memory_order_relaxed))
+                flag.store(true, std::memory_order_relaxed);
         }
         else
         {
-            per_offset_flags[offset].store(true, std::memory_order_relaxed);
+            auto & flag = per_offset_flags[offset];
+            if (!flag.load(std::memory_order_relaxed))
+                flag.store(true, std::memory_order_relaxed);
         }
     }
 

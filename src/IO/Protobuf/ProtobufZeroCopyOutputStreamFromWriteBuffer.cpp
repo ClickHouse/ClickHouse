@@ -27,6 +27,7 @@ ProtobufZeroCopyOutputStreamFromWriteBuffer::ProtobufZeroCopyOutputStreamFromWri
 
 bool ProtobufZeroCopyOutputStreamFromWriteBuffer::Next(void ** data, int * size)
 {
+    out->nextIfAtEnd();
     *data = out->position();
     *size = static_cast<int>(out->available());
     out->position() += *size;

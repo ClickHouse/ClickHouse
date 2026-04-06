@@ -27,7 +27,7 @@ namespace
     /// CREATE TABLE or CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
     void visitCreateQuery(ASTCreateQuery & create, const DDLRenamingVisitor::Data & data)
     {
-        if (create.temporary)
+        if (create.isTemporary())
         {
             /// CREATE TEMPORARY TABLE
             String table_name = create.getTable();
@@ -38,7 +38,7 @@ namespace
                 create.setTable(new_table_name.table);
                 if (new_table_name.database != DatabaseCatalog::TEMPORARY_DATABASE)
                 {
-                    create.temporary = false;
+                    create.setIsTemporary(false);
                     create.setDatabase(new_table_name.database);
                 }
             }
@@ -58,7 +58,7 @@ namespace
                     create.setTable(new_table_name.table);
                     if (new_table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
                     {
-                        create.temporary = true;
+                        create.setIsTemporary(true);
                         create.setDatabase("");
                     }
                     else
@@ -127,7 +127,7 @@ namespace
         if (new_qualified_name == qualified_name)
             return;
 
-        expr.database_and_table_name = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+        expr.database_and_table_name = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
         expr.children.push_back(expr.database_and_table_name);
     }
 
@@ -231,7 +231,7 @@ namespace
                 return;
 
             auto new_qualified_name = data.renaming_map.getNewTableName(qualified_name);
-            arg = std::make_shared<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
+            arg = make_intrusive<ASTTableIdentifier>(new_qualified_name.database, new_qualified_name.table);
             return;
         }
     }

@@ -1,7 +1,7 @@
 import argparse
 import os
 import random
-import re
+import subprocess
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -9,12 +9,12 @@ from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
 
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
@@ -64,16 +64,23 @@ def parse_args():
         help="Optional. Number of parallel workers for the test runner. Default: automatically computed from CPU count and job type",
         default=None,
     )
+    parser.add_argument(
+        "--debug",
+        help="Optional. Open clickhouse-client console after test run",
+        default=False,
+        action="store_true",
+    )
     return parser.parse_args()
 
 
 def run_tests(
     batch_num: int,
     batch_total: int,
-    tests: list[str] = None,
+    tests: list[str] | None = None,
     extra_args="",
     rerun_count=1,
     random_order=False,
+    global_time_limit=0,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -85,18 +92,20 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
+    memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(command, verbose=True)
+    Shell.run(command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
+    "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
     "DatabaseReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -118,7 +127,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
-    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
 
 
@@ -136,7 +144,8 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
-    is_coverage = False
+    is_llvm_coverage = False
+    is_per_test_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -146,32 +155,38 @@ def main():
         if "/" in to:
             batch_num, total_batches = map(int, to.split("/"))
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
-            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
-            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
+            pass
         elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            print(
-                f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
-            )
+            pass
+        elif to == "per_test_coverage":
+            pass
         else:
             assert False, f"Unknown option [{to}]"
+
+        if to in OPTIONS_TO_INSTALL_ARGUMENTS:
+            print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
+            config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             if to in ("parallel", "sequential") and args.test:
                 # skip setting up parallel/sequential if specific tests are provided
                 continue
-            runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+            else:
+                runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
+                print(
+                    f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
+                )
 
-        if "targeted" in to:
-            is_targeted_check = True
-        elif "flaky" in to:
+        if "flaky" in to:
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "coverage" in to:
-            is_coverage = True
-
+        elif to.startswith("amd_") and "coverage" in to:
+            is_llvm_coverage = True
+        if "per_test_coverage" in to:
+            is_per_test_coverage = True
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
@@ -191,37 +206,78 @@ def main():
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
             nproc = int(Utils.cpu_count() * 0.4)
-        elif is_coverage:
+        elif "msan" in args.options:
+            # MSan is slow
+            nproc = int(Utils.cpu_count() * 0.4)
+        elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
-            assert cidb_cluster.is_ready()
+            if not info.is_local_run:
+                assert cidb_cluster.is_ready()
             nproc = 1
         else:
             pass
 
+    workers = None
     if args.workers:
         print(f"Workers count set from --workers: {args.workers}")
-        runner_options += f" --jobs {args.workers}"
+        workers = args.workers
+    elif is_flaky_check:
+        workers = max(1, nproc - 1)
+        print(f"Workers count set to nproc-1 for flaky check: {workers}")
     else:
         print(f"Workers count set to optimal value: {nproc}")
-        runner_options += f" --jobs {nproc}"
+        workers = nproc
+
+    runner_options += f" --jobs {workers}"
+
+    if is_flaky_check:
+        # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
+        # The 45-min global_time_limit is the primary stopping condition for healthy PRs.
+        runner_options += " --max-failures 5"
+
+    if is_llvm_coverage:
+        # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
+        runner_options += " --llvm-coverage"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
+        if is_per_test_coverage:
+            runner_options += " --collect-per-test-coverage"
+        else:
+            runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
+
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_llvm_coverage
+        and not is_bugfix_validation
+        and not args.test
+        and "--no-random-settings" not in runner_options
+    ):
+        runner_options += " --repeat-newly-modified-tests"
 
     rerun_count = 1
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
     elif is_flaky_check:
-        print(f"Rerun count set to 50 for flaky check")
+        # Large repeat count so the 45-min global_time_limit is the effective stopping
+        # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
+        # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
-    elif is_targeted_check:
-        print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 5
+
+    if is_flaky_check:
+        # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
+        # Derived from rerun_count so the ratio stays stable as policy evolves.
+        runner_options += f" --sequential-test-runs {rerun_count // 2}"
+
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        os.environ["AZURE_CONNECTION_STRING"] = Shell.get_output(
+        azure_connection_string = Shell.get_output(
             f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
             verbose=True,
+            strict=True,
         )
+        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
     else:
         print("Disable azure for a local run")
         config_installs_args += " --no-azure"
@@ -270,13 +326,13 @@ def main():
     debug_files = []
 
     stages = list(JobStages)
-    if not is_coverage:
+    if not is_per_test_coverage:
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or is_bugfix_validation or info.is_local_run:
-        # not needed for these job flavors
-        # moreover it updates/rewrites inverted Tests status for bugfix validation check which should stay inverted
+    if is_per_test_coverage or info.is_local_run or is_bugfix_validation:
+        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
+        # regular test failures are assumed to be sufficient to validate the test
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -285,14 +341,42 @@ def main():
             stages.remove(JobStages.COLLECT_COVERAGE)
     if (
         is_flaky_check
-        or is_coverage
+        or is_per_test_coverage
         or is_bugfix_validation
-        or is_targeted_check
         or info.is_local_run
     ):
         stages.remove(JobStages.RETRIES)
 
     tests = args.test
+
+    # for local run check if stateful tests are present to skip prepare_stateful_data and start faster if not
+    has_stateful_tests = True
+    if tests and info.is_local_run:
+        from glob import glob
+
+        has_stateful = False
+        for test_pattern in tests:
+            test_pattern_clean = test_pattern.strip()
+            matching_files = glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sql", recursive=True
+            )
+            matching_files += glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sh", recursive=True
+            )
+            for test_file in matching_files:
+                try:
+                    with open(test_file, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        if "stateful" in content.lower():
+                            has_stateful = True
+                            break
+                except Exception:
+                    pass
+            if has_stateful:
+                break
+        if not has_stateful:
+            has_stateful_tests = False
+
     targeter = Targeting(info=info)
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
@@ -300,7 +384,40 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            tests = targeter.get_changed_tests()
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
+                # Not a bugfix PR - run a simple sanity test
+                tests = ["00001_select_1"]
+            elif is_flaky_check:
+                # Step 1: changed/new test files in this PR
+                changed_tests = targeter.get_changed_tests()
+                changed_str = ", ".join(changed_tests) if changed_tests else "(none)"
+                print(f"[flaky-check] Step 1 — changed/new tests ({len(changed_tests)}): {changed_str}")
+
+                # Step 2: tests that failed in previous CI runs for this PR
+                try:
+                    previously_failed = targeter.get_previously_failed_tests()
+                except Exception as e:
+                    print(f"[flaky-check] Step 2 — failed to fetch previously-failed tests: {e}")
+                    previously_failed = []
+                failed_str = ", ".join(previously_failed) if previously_failed else "(none)"
+                print(f"[flaky-check] Step 2 — previously failed tests ({len(previously_failed)}): {failed_str}")
+
+                # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
+                relevant_tests, relevance_result = targeter.get_most_relevant_tests()
+                results.append(relevance_result)
+                relevant_preview = ", ".join(relevant_tests[:20]) + ("..." if len(relevant_tests) > 20 else "")
+                print(f"[flaky-check] Step 3 — coverage-relevant tests ({len(relevant_tests)}): {relevant_preview if relevant_tests else '(none)'}")
+
+                # Merge all three sets preserving priority order (changed first)
+                seen: set = set()
+                tests = []
+                for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+                    if t not in seen:
+                        seen.add(t)
+                        tests.append(t)
+                print(f"[flaky-check] Total unique tests to run: {len(tests)}")
+            else:
+                tests = targeter.get_changed_tests()
 
         if tests:
             print(f"Test list: [{tests}]")
@@ -308,17 +425,6 @@ def main():
             # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED, info="No tests to run"
-            ).complete_job()
-
-    if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check ???"
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(ch_path)
-        results.append(results_with_info)
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -331,7 +437,9 @@ def main():
 
     Utils.add_to_PATH(f"{ch_path}:tests")
     CH = ClickHouseProc(
-        is_db_replicated=is_database_replicated, is_shared_catalog=is_shared_catalog
+        is_db_replicated=is_database_replicated,
+        is_shared_catalog=is_shared_catalog,
+        is_per_test_coverage=is_per_test_coverage,
     )
 
     job_info = ""
@@ -346,7 +454,7 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/*",
+            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
             f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
@@ -365,14 +473,17 @@ def main():
             CH.set_random_timezone,
         ]
 
-        if is_flaky_check or is_targeted_check:
+        if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
+            sanitizers = ("asan", "tsan", "msan", "ubsan")
+            if any(san in args.options for san in sanitizers):
+                commands.append(lambda: CH.set_memory_ratio(0.8))
 
         os.environ["MALLOC_CONF"] = (
-            f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
+            f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
-        if not is_coverage:
+        if not is_llvm_coverage:
             commands.append(configure_log_export)
 
         results.append(
@@ -394,6 +505,9 @@ def main():
             res = res and CH.start()
             res = res and CH.wait_ready()
             if res:
+                if not CH.start_kafka():
+                    print("WARNING: Failed to start Kafka")
+
                 if not Info().is_local_run:
                     if not CH.start_log_exports(stop_watch.start_time):
                         info.add_workflow_report_message(
@@ -406,13 +520,14 @@ def main():
                     )
                     print("Failed to create minio log tables")
 
-                res = (
-                    CH.prepare_stateful_data(
-                        with_s3_storage=is_s3_storage,
-                        is_db_replicated=is_database_replicated,
+                if has_stateful_tests:
+                    res = (
+                        CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                        )
+                        and CH.insert_system_zookeeper_config()
                     )
-                    and CH.insert_system_zookeeper_config()
-                )
             if res:
                 print("stateful data prepared")
             return res
@@ -431,85 +546,37 @@ def main():
         step_name = "Tests"
         print(step_name)
 
-        # FIXME: Determine optimal mode for targeted job:
-        # Mode (1): Run all tests N times in one go (flaky-mode)
-        #   - Drawback: Noisy errors when tests can't run in parallel with themselves
-        #   - Skips tests marked as no-flaky-check
-        # Mode (2): N consequent runs for chosen tests
-        #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
-        #
-        # Mode (1):
-        # run_sets_cnt = 1
-        # Mode (2):
-        run_sets_cnt = rerun_count if is_targeted_check else 1
-        rerun_count = 1 if is_targeted_check else rerun_count
-
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
-        # Track collected test results across multiple runs (only used when run_sets_cnt > 1)
-        collected_test_results = []
-        seen_test_names = set()
-
-        for cnt in range(run_sets_cnt):
-            run_tests(
-                batch_num=batch_num if not tests else 0,
-                batch_total=total_batches if not tests else 0,
-                tests=tests,
-                extra_args=runner_options,
-                random_order=is_flaky_check
-                or is_targeted_check
-                or is_bugfix_validation,
-                rerun_count=rerun_count,
+        global_time_limit = 0
+        if is_flaky_check:
+            # Hard 45-minute wall-clock limit for the test runner.
+            FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
+            global_time_limit = max(
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
             )
-            test_result = ft_res_processor.run()
+            print(
+                f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" remaining: {global_time_limit}s)"
+            )
 
-            # Experimental mode for targeted check: collect first failure of each test,
-            # or all results on the final attempt
-            if run_sets_cnt > 1:
-                is_final_run = cnt == run_sets_cnt - 1
-
-                for test_case_result in test_result.results:
-                    # Only collect each test once (first failure or final result)
-                    if test_case_result.name not in seen_test_names:
-                        # On non-final runs: collect only failed test cases
-                        # On final run: collect all remaining test cases
-                        should_collect = not test_case_result.is_ok() or is_final_run
-                        if should_collect:
-                            test_case_result.set_info(
-                                f"Run attempt {cnt + 1} out of {run_sets_cnt}"
-                            )
-                            collected_test_results.append(test_case_result)
-                            seen_test_names.add(test_case_result.name)
-
-                # On final run, replace results with collected ones
-                if is_final_run:
-                    test_result.results = collected_test_results
-                    # Set overall status to failed if any collected test cases failed
-                    has_failures = any(not t.is_ok() for t in collected_test_results)
-                    if has_failures and test_result.is_ok():
-                        test_result.set_failed()
+        run_tests(
+            batch_num=batch_num if not tests else 0,
+            batch_total=total_batches if not tests else 0,
+            tests=tests,
+            extra_args=runner_options,
+            random_order=is_flaky_check or is_bugfix_validation,
+            rerun_count=rerun_count,
+            global_time_limit=global_time_limit,
+        )
+        test_result = ft_res_processor.run()
 
         if not info.is_local_run:
             CH.stop_log_exports()
 
         results.append(test_result)
         debug_files += ft_res_processor.debug_files
-
-        # invert result status for bugfix validation
-        if is_bugfix_validation:
-            has_failure = False
-            for r in results[-1].results:
-                r.set_label("xfail")
-                if r.status == Result.StatusExtended.FAIL:
-                    r.status = Result.StatusExtended.OK
-                    has_failure = True
-                elif r.status == Result.StatusExtended.OK:
-                    r.status = Result.StatusExtended.FAIL
-            if not has_failure:
-                print("Failed to reproduce the bug")
-                results[-1].set_failed().set_info("Failed to reproduce the bug")
-            else:
-                results[-1].set_success()
 
         results[-1].set_timing(stopwatch=stop_watch_)
         if results[-1].info:
@@ -520,7 +587,17 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [t.name for t in test_result.results if t.is_failure()]
+        failed_tests = []
+        for t in test_result.results:
+            if t.is_failure() and t.name and t.name[0].isdigit():
+                failed_tests.append(t.name)
+            elif t.is_error():
+                failed_tests = []
+                print(
+                    "NOTE: Skipping retry stage because the main test run ended with errors"
+                )
+                break
+
         if len(failed_tests) > 10:
             results.append(
                 Result(
@@ -550,13 +627,26 @@ def main():
             if success_after_rerun or failed_after_rerun:
                 for test_case in test_result.results:
                     if test_case.name in success_after_rerun:
-                        test_case.set_label(Result.Label.OK_ON_RETRY)
+                        if is_llvm_coverage:
+                            print(
+                                f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
+                            )
+                            test_case.remove_label(Result.Status.FAILED)
+                            test_case.remove_label(Result.StatusExtended.FAIL)
+                            test_case.set_status(Result.StatusExtended.OK)
+                        else:
+                            test_case.set_label(Result.Label.OK_ON_RETRY)
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
 
+    if args.debug:
+        print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
+        subprocess.call("clickhouse-client", shell=True)
+
     CH.terminate()
 
+    reset_success = False
     if (
         test_result
         and not test_result.is_error()
@@ -574,6 +664,8 @@ def main():
                 ).do(),
             )
         )
+        if results[-1].is_ok():
+            reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
         # must not be performed for a test validation - test must fail and log errors are not respected
@@ -590,8 +682,25 @@ def main():
         # fatal failures found in logs represented as normal test cases
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
-        if not results[-1].is_ok():
-            results[-1].set_info("Found errors added into Tests results")
+
+    # invert result status for bugfix validation
+    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+        has_failure = False
+        for r in test_result.results:
+            r.set_label("xfail")
+            if r.status == Result.StatusExtended.FAIL:
+                r.status = Result.StatusExtended.OK
+                has_failure = True
+            elif r.status == Result.StatusExtended.OK:
+                r.status = Result.StatusExtended.FAIL
+        if not has_failure:
+            print("Failed to reproduce the bug")
+            test_result.set_failed().set_info("Failed to reproduce the bug")
+        else:
+            # For bugfix validation, the expected behavior is:
+            # - At least one test must fail (bug reproduced)
+            # - The overall Tests result is treated as success in that case
+            test_result.set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
@@ -622,16 +731,87 @@ def main():
                 f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
             )
             force_ok_exit = True
+    if is_llvm_coverage and test_result:
+        # do not block pipeline on amd_llvm_coverage job failures
+        print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+        force_ok_exit = True
 
     if test_result:
         test_result.sort()
 
-    Result.create_from(
+    R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    )
+
+    if is_llvm_coverage and not is_per_test_coverage:
+        print("Collecting and merging LLVM coverage files...")
+        Shell.get_output("pwd", verbose=True).strip().split("\n")
+        profraw_files = (
+            Shell.get_output("find . -name '*.profraw'", verbose=True)
+            .strip()
+            .split("\n")
+        )
+        profraw_files = [f.strip() for f in profraw_files if f.strip()]
+
+        if profraw_files:
+            print(f"Found {len(profraw_files)} .profraw files:")
+            for f in profraw_files:
+                try:
+                    size_bytes = os.path.getsize(f)
+                    print(f"  {size_bytes:>12} bytes | {f}")
+                except OSError:
+                    continue
+
+            # Auto-detect available LLVM profdata tool
+            llvm_profdata = None
+            for ver in ["21", "20", "18", "19", "17", "16", ""]:
+                cmd = f"llvm-profdata{'-' + ver if ver else ''}"
+                if Shell.check(f"command -v {cmd}", verbose=False):
+                    llvm_profdata = cmd
+                    break
+
+            if not llvm_profdata:
+                print("ERROR: llvm-profdata not found in PATH")
+            else:
+                print(f"Using {llvm_profdata} to merge coverage files")
+
+                # Merge all profraw files to current directory
+                joined_test_options = "_".join(test_options) if test_options else "all"
+                joined_test_options = joined_test_options.replace(" ", "_").replace("/", "_")
+                merged_file = f"./ft-{joined_test_options}.profdata"
+                merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
+                merge_output = Shell.get_output(merge_cmd, verbose=True)
+
+                # Check for corrupted files in the output
+                corrupted_files = [
+                    line
+                    for line in merge_output.split("\n")
+                    if "invalid instrumentation profile" in line
+                    or "file header is corrupt" in line
+                ]
+                if corrupted_files:
+                    print(
+                        f"WARNING: Found {len(corrupted_files)} corrupted profraw files:"
+                    )
+                    for corrupted in corrupted_files:
+                        print(f"  {corrupted}")
+
+                # Attach profdata file to the result report so it is uploaded
+                # unconditionally (even when tests fail) and visible in the CI report.
+                if os.path.exists(merged_file):
+                    R.files.append(merged_file)
+
+        else:
+            print("No .profraw files found for coverage")
+
+    if reset_success:
+        # coverage job ignores test failures
+        R.set_success()
+
+    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

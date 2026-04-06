@@ -1,0 +1,18 @@
+perimeterSpherical with readWKTPolygon
+0.06981051179132045
+areaSpherical with readWKTPolygon
+-0.0003046096848622019
+perimeterCartesian with readWKTPolygon
+4
+areaCartesian with readWKTPolygon
+-1
+perimeterSpherical with readWKTRing
+0.06981051179132045
+perimeterSpherical with readWKTPoint
+0
+perimeterSpherical with readWKTMultiPolygon
+0.06981051179132045
+perimeterSpherical with readWKT (Geometry variant)
+0.06981051179132045
+perimeterSpherical with column alias
+[[(0,0),(1,0),(1,1),(0,1),(0,0)]]	0.06981051179132045

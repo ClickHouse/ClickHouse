@@ -1,7 +1,5 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
-#include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
-#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -17,6 +15,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_END_OF_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
@@ -110,10 +109,11 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
 
     size_t block_size = settings.page_cache_block_size;
 
-    if (chunk != nullptr && file_offset_of_buffer_end >= cache_key.offset + block_size)
+    if (chunk != nullptr)
     {
-        chassert(file_offset_of_buffer_end == cache_key.offset + block_size);
-        chunk.reset();
+        chassert(chunk->key.hash() == cache_key.hash());
+        if (file_offset_of_buffer_end < cache_key.offset || file_offset_of_buffer_end >= cache_key.offset + block_size)
+            chunk.reset();
     }
 
     if (chunk == nullptr)
@@ -121,10 +121,8 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         cache_key.offset = file_offset_of_buffer_end / block_size * block_size;
         cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
 
-        last_read_hit_cache = true;
         chunk = cache->getOrSet(cache_key, settings.read_from_page_cache_if_exists_otherwise_bypass_cache, settings.page_cache_inject_eviction, [&](auto cell)
         {
-            last_read_hit_cache = false;
             Buffer prev_in_buffer = in->internalBuffer();
             SCOPE_EXIT({ in->set(prev_in_buffer.begin(), prev_in_buffer.size()); });
 
@@ -196,14 +194,9 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
 
     if (!internal_buffer.empty())
     {
-        /// We were given an external buffer to read into. Copy the data into it.
-        /// Would be nice to avoid this copy, somehow, maybe by making ReadBufferFromRemoteFSGather
-        /// and AsynchronousBoundedReadBuffer explicitly aware of the page cache.
-        size_t n = std::min(available(), internal_buffer.size());
-        memcpy(internal_buffer.begin(), pos, n);
-        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
-        pos = working_buffer.begin();
-        nextimpl_working_buffer_offset = 0;
+        /// We were given an external buffer to read into. We currently don't allow this as it would
+        /// require unnecessary memcpy.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CachedInMemoryReadBufferFromFile doesn't support using external buffer");
     }
 
     size_t size = available();
@@ -211,6 +204,57 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, size);
 
     return true;
+}
+
+bool CachedInMemoryReadBufferFromFile::supportsReadAt()
+{
+    return in->supportsReadAt();
+}
+
+size_t CachedInMemoryReadBufferFromFile::readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t m)> & progress_callback) const
+{
+    /// This method is called from multiple threads in parallel (e.g. by the Parquet reader's
+    /// prefetcher via Arrow's ReadAsync). Each call creates independent S3 requests through
+    /// in->readBigAt(), enabling parallel downloads. The page cache is thread-safe.
+
+    size_t block_size = settings.page_cache_block_size;
+    size_t end_offset = std::min(offset + n, file_size.value());
+    size_t bytes_copied = 0;
+
+    while (offset + bytes_copied < end_offset)
+    {
+        size_t current_offset = offset + bytes_copied;
+        size_t block_start = current_offset / block_size * block_size;
+        size_t block_data_size = std::min(block_size, file_size.value() - block_start);
+
+        size_t offset_in_block = current_offset - block_start;
+        size_t to_copy = std::min(block_data_size - offset_in_block, end_offset - current_offset);
+
+        PageCacheKey key;
+        key.path = cache_key.path;
+        key.file_version = cache_key.file_version;
+        key.offset = block_start;
+        key.size = block_data_size;
+
+        auto cell = cache->getOrSet(key, settings.read_from_page_cache_if_exists_otherwise_bypass_cache, settings.page_cache_inject_eviction, [&](const auto & c)
+        {
+            /// Download the whole block using positional read (thread-safe, creates independent HTTP request).
+            size_t bytes_read = in->readBigAt(c->data(), c->size(), block_start, nullptr);
+            if (bytes_read < c->size())
+                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "File {} ended after {} bytes, but we expected {}",
+                    cache_key.path, block_start + bytes_read, file_size.value());
+        });
+
+        memcpy(to + bytes_copied, cell->data() + offset_in_block, to_copy);
+        bytes_copied += to_copy;
+
+        ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, to_copy);
+
+        if (progress_callback && progress_callback(bytes_copied))
+            break;
+    }
+
+    return bytes_copied;
 }
 
 bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*size*/)
@@ -224,10 +268,14 @@ bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*s
     }
 
     size_t block_size = settings.page_cache_block_size;
-    auto old_offset = std::exchange(cache_key.offset, offset / block_size * block_size);
-    auto old_size = std::exchange(cache_key.size, std::min(block_size, file_size.value() - cache_key.offset));
-    SCOPE_EXIT(cache_key.offset = old_offset; cache_key.size = old_size;);
-    return cache->contains(cache_key, settings.page_cache_inject_eviction);
+    cache_key.offset = offset / block_size * block_size;
+    cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
+
+    /// Use get() instead of contains() to populate `chunk`, so the subsequent nextImpl() call
+    /// can reuse it without a second cache lookup.
+    chunk = cache->get(cache_key, settings.page_cache_inject_eviction);
+
+    return chunk != nullptr;
 }
 
 }

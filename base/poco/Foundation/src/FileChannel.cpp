@@ -24,6 +24,7 @@
 #include "Poco/String.h"
 #include "Poco/Exception.h"
 #include "Poco/Ascii.h"
+#include "Poco/CombinedRotateStrategy.h"
 
 
 namespace Poco {
@@ -236,53 +237,7 @@ const std::string& FileChannel::path() const
 
 void FileChannel::setRotation(const std::string& rotation)
 {
-	std::string::const_iterator it  = rotation.begin();
-	std::string::const_iterator end = rotation.end();
-	UInt64 n = 0;
-	while (it != end && Ascii::isSpace(*it)) ++it;
-	while (it != end && Ascii::isDigit(*it)) { n *= 10; n += *it++ - '0'; }
-	while (it != end && Ascii::isSpace(*it)) ++it;
-	std::string unit;
-	while (it != end && Ascii::isAlpha(*it)) unit += *it++;
-	
-	RotateStrategy* pStrategy = 0;
-	if ((rotation.find(',') != std::string::npos) || (rotation.find(':') != std::string::npos))
-	{
-		if (_times == "utc")
-			pStrategy = new RotateAtTimeStrategy<DateTime>(rotation);
-		else if (_times == "local")
-			pStrategy = new RotateAtTimeStrategy<LocalDateTime>(rotation);
-		else
-			throw PropertyNotSupportedException("times", _times);
-	}
-	else if (unit == "daily")
-		pStrategy = new RotateByIntervalStrategy(Timespan(1*Timespan::DAYS));
-	else if (unit == "weekly")
-		pStrategy = new RotateByIntervalStrategy(Timespan(7*Timespan::DAYS));
-	else if (unit == "monthly")
-		pStrategy = new RotateByIntervalStrategy(Timespan(30*Timespan::DAYS));
-	else if (unit == "seconds") // for testing only
-		pStrategy = new RotateByIntervalStrategy(Timespan(n*Timespan::SECONDS));
-	else if (unit == "minutes")
-		pStrategy = new RotateByIntervalStrategy(Timespan(n*Timespan::MINUTES));
-	else if (unit == "hours")
-		pStrategy = new RotateByIntervalStrategy(Timespan(n*Timespan::HOURS));
-	else if (unit == "days")
-		pStrategy = new RotateByIntervalStrategy(Timespan(n*Timespan::DAYS));
-	else if (unit == "weeks")
-		pStrategy = new RotateByIntervalStrategy(Timespan(n*7*Timespan::DAYS));
-	else if (unit == "months")
-		pStrategy = new RotateByIntervalStrategy(Timespan(n*30*Timespan::DAYS));
-	else if (unit == "K")
-		pStrategy = new RotateBySizeStrategy(n*1024);
-	else if (unit == "M")
-		pStrategy = new RotateBySizeStrategy(n*1024*1024);
-	else if (unit == "G")
-		pStrategy = new RotateBySizeStrategy(n*1024*1024*1024);
-	else if (unit.empty())
-		pStrategy = new RotateBySizeStrategy(n);
-	else if (unit != "never")
-		throw InvalidArgumentException("rotation", rotation);
+	auto * pStrategy = new CombinedRotateStrategy(rotation, _times);
 	delete _pRotateStrategy;
 	_pRotateStrategy = pStrategy;
 	_rotation = rotation;

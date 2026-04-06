@@ -456,12 +456,13 @@ void FlatDictionary::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
 
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
             {
@@ -501,11 +502,11 @@ void FlatDictionary::loadData()
     {
         BlockIO io = source_ptr->loadAll();
 
-        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
-        io.pipeline.setConcurrencyControl(false);
-
         io.executeWithCallbacks([&]()
         {
+            DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+            io.pipeline.setConcurrencyControl(false);
+
             Block block;
             while (executor.pull(block))
                 blockToAttributes(block);
@@ -584,7 +585,7 @@ void FlatDictionary::calculateBytesAllocated()
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
     auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-    Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), {}};
+    Attribute attribute{.is_nullable_set = std::move(is_nullable_set), .container = {}, .type = dictionary_attribute.underlying_type};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {

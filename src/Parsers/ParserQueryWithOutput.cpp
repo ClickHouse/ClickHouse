@@ -22,6 +22,7 @@
 #include <Parsers/ParserShowFunctionsQuery.h>
 #include <Parsers/ParserShowIndexesQuery.h>
 #include <Parsers/ParserShowSettingQuery.h>
+#include <Parsers/ParserSnapshotQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ParserDescribeCacheQuery.h>
@@ -66,6 +67,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserShowPrivilegesQuery show_privileges_p;
     ParserExplainQuery explain_p(end, allow_settings_after_format_in_insert);
     ParserBackupQuery backup_p;
+    ParserSnapshotQuery snapshot_p;
 
     ASTPtr query;
 
@@ -96,7 +98,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_access_entities_p.parse(pos, query, expected)
         || show_grants_p.parse(pos, query, expected)
         || show_privileges_p.parse(pos, query, expected)
-        || backup_p.parse(pos, query, expected);
+        || backup_p.parse(pos, query, expected)
+        || snapshot_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
@@ -114,19 +117,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserKeyword s_append(Keyword::APPEND);
         if (s_append.ignore(pos, expected))
         {
-            query_with_output.is_outfile_append = true;
+            query_with_output.setIsOutfileAppend(true);
         }
 
         ParserKeyword s_truncate(Keyword::TRUNCATE);
         if (s_truncate.ignore(pos, expected))
         {
-            query_with_output.is_outfile_truncate = true;
+            query_with_output.setIsOutfileTruncate(true);
         }
 
         ParserKeyword s_stdout(Keyword::AND_STDOUT);
         if (s_stdout.ignore(pos, expected))
         {
-            query_with_output.is_into_outfile_with_stdout = true;
+            query_with_output.setIsIntoOutfileWithStdout(true);
         }
 
         ParserKeyword s_compression_method(Keyword::COMPRESSION);
@@ -200,6 +203,18 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
         else
             break;
+    }
+
+    /// The formatter always outputs FORMAT before SETTINGS. Ensure children
+    /// are in the same canonical order so that tree hash is stable after
+    /// a formatting roundtrip (regardless of the original clause order).
+    if (query_with_output.format_ast && query_with_output.settings_ast)
+    {
+        auto & ch = query_with_output.children;
+        auto fmt_it = std::find(ch.begin(), ch.end(), query_with_output.format_ast);
+        auto set_it = std::find(ch.begin(), ch.end(), query_with_output.settings_ast);
+        if (fmt_it != ch.end() && set_it != ch.end() && set_it < fmt_it)
+            std::iter_swap(fmt_it, set_it);
     }
 
     node = std::move(query);

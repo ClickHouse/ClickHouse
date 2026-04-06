@@ -60,7 +60,7 @@ void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
 
 void ArrayJoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     bool first = true;
 
     settings.out << prefix << (array_join.is_left ? "LEFT " : "") << "ARRAY JOIN ";
@@ -107,7 +107,7 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ArrayJoinStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 {
     UInt8 flags;
     readIntBinary(flags, ctx.in);

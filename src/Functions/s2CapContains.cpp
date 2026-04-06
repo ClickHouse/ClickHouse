@@ -161,7 +161,22 @@ public:
 
 REGISTER_FUNCTION(S2CapContains)
 {
-    factory.registerFunction<FunctionS2CapContains>();
+    FunctionDocumentation::Description description = R"(
+Determines if an S2 cap contains an S2 point. A cap represents a portion of the sphere that has been cut off by a plane. It is defined by a center point and a radius in degrees.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2CapContains(center, degrees, point)";
+    FunctionDocumentation::Arguments arguments = {
+        {"center", "S2 cell identifier of the cap center point.", {"UInt64"}},
+        {"degrees", "Radius of the cap in degrees.", {"Float64"}},
+        {"point", "S2 cell identifier of the point to test.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the cap contains the point and 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2CapContains>(documentation);
 }
 
 

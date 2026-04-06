@@ -5,6 +5,7 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISource.h>
 #include <Interpreters/IJoin.h>
 
 namespace DB
@@ -172,6 +173,33 @@ private:
 
     void resetTask();
     Block nextNonJoinedBlock();
+};
+
+/// Generates non-joined rows from the right table for a specific bucket partition
+class NonJoinedBlocksTransform : public ISource
+{
+public:
+    NonJoinedBlocksTransform(
+        SharedHeader output_header,
+        JoinPtr join_,
+        Block left_sample_block_,
+        UInt64 max_block_size_,
+        size_t stream_index_,
+        size_t num_streams_);
+
+    String getName() const override { return "NonJoinedBlocksTransform"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    JoinPtr join;
+    Block left_sample_block;
+    Block result_sample_block;
+    UInt64 max_block_size;
+    size_t stream_index;
+    size_t num_streams;
+    IBlocksStreamPtr non_joined_blocks;
 };
 
 }

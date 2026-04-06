@@ -131,7 +131,7 @@ Enable logging for the table via the table setting `enable_logging_to_queue_log=
 
 Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
-1. Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
+1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
   ```xml
@@ -141,7 +141,7 @@ Introspection capabilities are the same as the [S3Queue table engine](/engines/t
   </azure_queue_log>
   ```
 
-This persistent table has the same information as `system.s3queue`, but for processed and failed files.
+This persistent table has the same information as `system.s3queue_metadata_cache`, but for processed and failed files.
 
 The table has the following structure:
 
@@ -165,7 +165,6 @@ CREATE TABLE system.azure_queue_log
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (event_date, event_time)
-SETTINGS index_granularity = 8192
 COMMENT 'Contains logging entries with the information files processes by S3Queue engine.'
 
 ```

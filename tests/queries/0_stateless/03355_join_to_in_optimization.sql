@@ -1,5 +1,7 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET query_plan_merge_filters = 1; -- Filter nodes must be merged for stable EXPLAIN output
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -29,7 +31,7 @@ EXPLAIN
 SELECT hostName() AS hostName
 FROM system.query_log AS a
 INNER JOIN system.processes AS b ON (a.query_id = b.query_id) AND (type = 'QueryStart')
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 SELECT dummy
@@ -90,6 +92,6 @@ SELECT 10
 FROM system.query_log AS a
 INNER JOIN system.processes AS b
 ON (a.query_id = b.query_id) AND (a.query_id = b.query_id)
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 FORMAT Null
 SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;

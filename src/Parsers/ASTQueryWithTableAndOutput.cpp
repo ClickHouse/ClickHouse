@@ -30,7 +30,7 @@ void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 
     if (!name.empty())
     {
-        database = std::make_shared<ASTIdentifier>(name);
+        database = make_intrusive<ASTIdentifier>(name);
         children.push_back(database);
     }
 }
@@ -45,7 +45,7 @@ void ASTQueryWithTableAndOutput::setTable(const String & name)
 
     if (!name.empty())
     {
-        table = std::make_shared<ASTIdentifier>(name);
+        table = make_intrusive<ASTIdentifier>(name);
         children.push_back(table);
     }
 }

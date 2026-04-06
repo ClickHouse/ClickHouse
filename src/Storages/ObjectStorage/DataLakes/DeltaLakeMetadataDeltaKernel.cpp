@@ -3,6 +3,8 @@
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -18,28 +20,44 @@
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Interpreters/DeltaMetadataLog.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric DeltaLakeSnapshotCacheSizeElements;
+};
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char delta_lake_metadata_iterate_pause[];
 }
 
 namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
+    extern const SettingsBool delta_lake_reload_schema_for_consistency;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsInt64 delta_lake_snapshot_version;
 }
 
-[[maybe_unused]] static void tracingCallback(struct ffi::Event event)
+void tracingCallback(struct ffi::Event event)
 {
-    /// Do not pollute logs.
-    if (event.message.len > 100)
+    /// Do not pollute logs with very long messages
+    if (event.message.len > 200)
         return;
 
     const auto message = fmt::format(
@@ -75,37 +93,179 @@ namespace Setting
 static constexpr auto deltalake_metadata_directory = "_delta_log";
 static constexpr auto metadata_file_suffix = ".json";
 
+namespace
+{
+
+std::optional<size_t> extractDeltaLakeSnapshotVersionFromMetadata(StorageMetadataPtr storage_metadata)
+{
+    if (!storage_metadata || !storage_metadata->datalake_table_state.has_value())
+        return std::nullopt;
+
+    if (!std::holds_alternative<DeltaLake::TableStateSnapshot>(storage_metadata->datalake_table_state.value()))
+        return std::nullopt;
+
+    const auto & state = std::get<DeltaLake::TableStateSnapshot>(storage_metadata->datalake_table_state.value());
+    return state.version;
+}
+
+}
+
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
-    ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationWeakPtr configuration_,
-    ContextPtr context)
+    ObjectStoragePtr object_storage_,
+    StorageObjectStorageConfigurationWeakPtr configuration_)
     : log(getLogger("DeltaLakeMetadata"))
-    , kernel_helper(DB::getKernelHelper(configuration_.lock(), object_storage))
-    , table_snapshot(std::make_shared<DeltaLake::TableSnapshot>(
+    , kernel_helper(DB::getKernelHelper(configuration_.lock(), object_storage_))
+    , object_storage(object_storage_)
+    , format_name(configuration_.lock()->format)
+    /// TODO: Supports size limit, not just elements limit.
+    /// TODO: Support weight function (by default weight = 1 for all elements).
+    /// TODO: Add a setting for cache size.
+    ///       At the moment leave it as a small value (10),
+    ///       because in most cases users only use latest snapshot version.
+    , snapshots(
+        CurrentMetrics::end(),
+        CurrentMetrics::DeltaLakeSnapshotCacheSizeElements,
+        /* max_size_in_bytes */10,
+        /* max_count */10)
+{
+}
+
+
+static std::optional<DeltaLakeMetadataDeltaKernel::SnapshotVersion>
+getSnapshotVersion(const Settings & settings)
+{
+    const auto & value = settings[Setting::delta_lake_snapshot_version].value;
+    if (value >= 0)
+        return static_cast<UInt64>(value);
+
+    if (value == DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        return std::nullopt;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Incorrect delta_lake_snapshot_version setting value: {}. "
+        "Expected value >= -1 "
+        "(-1 is latest snapshot version, value >= 0 is a specific snapshot version)",
+        value);
+}
+
+DeltaLake::TableSnapshotPtr
+DeltaLakeMetadataDeltaKernel::getTableSnapshot(std::optional<SnapshotVersion> version) const
+{
+    std::lock_guard lock(snapshots_mutex);
+
+    /// Fallback to latest_snapshot_version.
+    /// In case we needed a newer version - update() must
+    /// have been called to reload latest_snapshot_version.
+    std::optional<SnapshotVersion> result_snapshot_version = version.has_value()
+        ? version
+        : latest_snapshot_version;
+
+    auto snapshot_creator = [&]()
+    {
+        /// Constructor itself is lightweight.
+        return std::make_shared<DeltaLake::TableSnapshot>(
+            result_snapshot_version,
             kernel_helper,
             object_storage,
-            context,
-            log))
-    , format_name(configuration_.lock()->format)
-{
-    object_storage_common = object_storage;
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    //ffi::enable_event_tracing(tracingCallback, ffi::Level::TRACE);
-#endif
+            log);
+    };
+
+    DeltaLake::TableSnapshotPtr snapshot;
+    bool created = true;
+    if (result_snapshot_version.has_value())
+    {
+        std::tie(snapshot, created) = snapshots.getOrSet(
+            result_snapshot_version.value(), std::move(snapshot_creator));
+    }
+    else
+    {
+        snapshot = snapshot_creator();
+        latest_snapshot_version = snapshot->getVersion();
+        snapshots.set(latest_snapshot_version.value(), snapshot);
+    }
+
+    LOG_TEST(
+        log, "Using snapshot version: {}, latest loaded snapshot version: {}, reused cached snapshot: {}",
+        result_snapshot_version.has_value() ? result_snapshot_version.value() : snapshot->getVersion(),
+        latestSnapshotVersionToStr(), !created);
+
+    return snapshot;
 }
 
 bool DeltaLakeMetadataDeltaKernel::operator ==(const IDataLakeMetadata & metadata) const
 {
     const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel &>(metadata);
-    std::lock_guard lk1(table_snapshot_mutex);
-    std::lock_guard lk2(delta_lake_metadata.table_snapshot_mutex);
-    return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
+    return getTableSnapshot()->getVersion() == delta_lake_metadata.getTableSnapshot()->getVersion();
+}
+
+std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalRows(ContextPtr context) const
+{
+    const auto & settings = context->getSettingsRef();
+    if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+    {
+        /// TODO: Support total rows/bytes for CDF.
+        return std::nullopt;
+    }
+
+    auto snapshot_version = getSnapshotVersion(settings);
+    try
+    {
+        return getTableSnapshot(snapshot_version)->getTotalRows();
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(
+            log, "Failed to get total rows for Delta Lake table at location " + kernel_helper->getTableLocation());
+        return std::nullopt;
+    }
+}
+
+std::optional<size_t> DeltaLakeMetadataDeltaKernel::totalBytes(ContextPtr context) const
+{
+    const auto & settings = context->getSettingsRef();
+    if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+    {
+        /// TODO: Support total rows/bytes for CDF.
+        return std::nullopt;
+    }
+
+    auto snapshot_version = getSnapshotVersion(settings);
+    try
+    {
+        return getTableSnapshot(snapshot_version)->getTotalBytes();
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(
+            log, "Failed to get total bytes for Delta Lake table at location " + kernel_helper->getTableLocation());
+        return std::nullopt;
+    }
 }
 
 void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
 {
-    std::lock_guard lock(table_snapshot_mutex);
-    table_snapshot->update(context);
+    const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
+    if (!snapshot_version.has_value())
+    {
+        std::lock_guard lock(snapshots_mutex);
+        auto latest_snapshot = std::make_shared<DeltaLake::TableSnapshot>(
+                /* version */std::nullopt,
+                kernel_helper,
+                object_storage,
+                log);
+
+        size_t version = latest_snapshot->getVersion();
+        snapshots.getOrSet(version, [&]() { return latest_snapshot; });
+
+        LOG_TEST(
+            log, "Updating latest snapshot version from {} to {}",
+            latestSnapshotVersionToStr(), version);
+
+        latest_snapshot_version = version;
+    }
 }
 
 DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
@@ -117,21 +277,64 @@ DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
     return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper, header, format_settings, format_name, context);
 }
 
+std::optional<DataLakeTableStateSnapshot> DeltaLakeMetadataDeltaKernel::getTableStateSnapshot(ContextPtr context) const
+{
+    const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
+    auto snapshot = getTableSnapshot(snapshot_version);
+
+    DeltaLake::TableStateSnapshot state;
+    state.version = snapshot->getVersion();
+    return DataLakeTableStateSnapshot{state};
+}
+
+std::unique_ptr<StorageInMemoryMetadata> DeltaLakeMetadataDeltaKernel::buildStorageMetadataFromState(
+    const DataLakeTableStateSnapshot & state, ContextPtr) const
+{
+    chassert(std::holds_alternative<DeltaLake::TableStateSnapshot>(state));
+    const auto & delta_state = std::get<DeltaLake::TableStateSnapshot>(state);
+    auto snapshot = getTableSnapshot(static_cast<SnapshotVersion>(delta_state.version));
+
+    auto result = std::make_unique<StorageInMemoryMetadata>();
+    result->setColumns(ColumnsDescription{snapshot->getTableSchema()});
+    result->setDataLakeTableState(state);
+    return result;
+}
+
+bool DeltaLakeMetadataDeltaKernel::shouldReloadSchemaForConsistency(ContextPtr context) const
+{
+    return context->getSettingsRef()[Setting::delta_lake_reload_schema_for_consistency];
+}
+
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t list_batch_size,
-    StorageMetadataPtr /*storage_metadata_snapshot*/,
+    StorageMetadataPtr storage_metadata_snapshot,
     ContextPtr context) const
 {
     logMetadataFiles(context);
-    std::lock_guard lock(table_snapshot_mutex);
-    return table_snapshot->iterate(filter_dag, callback, list_batch_size);
+
+    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_metadata_iterate_pause);
+
+    /// Use the snapshot version from the storage metadata snapshot if available.
+    /// This ensures we use the same version that was captured when the storage snapshot was created,
+    /// preventing logical races where the table is updated between snapshot creation and iteration.
+    std::optional<SnapshotVersion> snapshot_version;
+    if (auto version_from_metadata = extractDeltaLakeSnapshotVersionFromMetadata(storage_metadata_snapshot))
+    {
+        snapshot_version = static_cast<SnapshotVersion>(*version_from_metadata);
+        LOG_TEST(log, "Using snapshot version {} from storage metadata snapshot", snapshot_version.value());
+    }
+    else
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No version found in table state snapshot");
+    }
+
+    return getTableSnapshot(snapshot_version)->iterate(filter_dag, callback, list_batch_size, context);
 }
 
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
-    std::lock_guard lock(table_snapshot_mutex);
     const auto & settings = local_context->getSettingsRef();
     if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
         start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
@@ -149,7 +352,8 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_
             /* format_settings */{},
             local_context)->getSchema();
     }
-    return table_snapshot->getTableSchema();
+    const auto snapshot_version = getSnapshotVersion(local_context->getSettingsRef());
+    return getTableSnapshot(snapshot_version)->getTableSchema();
 }
 
 void DeltaLakeMetadataDeltaKernel::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
@@ -178,7 +382,8 @@ static std::pair<Names, NamesAndTypesList> splitVirtualColumns(
 
 static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     const DataTypePtr & type,
-    const std::string & parent_explicit_name,
+    const std::string & parent_logical_name,
+    const std::string & parent_physical_name,
     const NameToNameMap & physical_names_map)
 {
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
@@ -196,21 +401,38 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     for (size_t i = 0; i < element_names.size(); ++i)
     {
         const auto & element_name = element_names[i];
-        const auto full_element_name = parent_explicit_name.empty() ? element_name : parent_explicit_name + "." + element_name;
+        const auto full_element_name = parent_logical_name.empty() ? element_name : parent_logical_name + "." + element_name;
 
         auto physical_name = DeltaLake::tryGetPhysicalName(full_element_name, physical_names_map);
+        /// full_child_physical_path: the complete "parent.child" physical path as stored in the
+        /// map (e.g. "d2.inner" or "d2.inner.a.foo"). Passed to recursive calls so that deeper
+        /// levels can correctly strip *their* parent prefix regardless of nesting depth.
+        std::string full_child_physical_path;
         if (physical_name)
         {
-            auto pos = physical_name->find_last_of('.');
-            if (pos != std::string::npos)
-                physical_name = physical_name->substr(pos + 1);
-            result_element_names[i] = *physical_name;
+            full_child_physical_path = *physical_name;
+            /// The map value is the full physical path "parent_physical.child_physical".
+            /// Strip the parent prefix to get just the child's local physical name.
+            /// We cannot use find_last_of('.') because the child physical name may itself
+            /// contain dots (e.g. column mapping "name" mode where logical name "a.foo" is
+            /// also used as the physical name).
+            if (!parent_physical_name.empty() && physical_name->size() > parent_physical_name.size() + 1)
+                result_element_names[i] = physical_name->substr(parent_physical_name.size() + 1);
+            else
+                result_element_names[i] = *physical_name;
         }
         else
+        {
+            /// Field not in the map (no column mapping). Reconstruct a best-effort full path
+            /// so children at deeper levels still have a correct prefix to strip against.
+            full_child_physical_path = parent_physical_name.empty()
+                ? element_name
+                : parent_physical_name + "." + element_name;
             result_element_names[i] = element_name;
+        }
 
         const auto & child_type = elements[i];
-        result_elements[i] = replaceTypeNamesToPhysicalRecursively(child_type, full_element_name, physical_names_map);
+        result_elements[i] = replaceTypeNamesToPhysicalRecursively(child_type, full_element_name, full_child_physical_path, physical_names_map);
     }
     return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
@@ -225,7 +447,7 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     LoggerPtr log)
 {
     auto physical_name_in_storage = DeltaLake::getPhysicalName(column.getNameInStorage(), physical_names_map);
-    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_names_map);
+    auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_name_in_storage, physical_names_map);
 
     /// Take column from read_schema, but only use it to check if column is readable,
     /// because read_schema_column.type can be different from physical_type_in_storage,
@@ -270,18 +492,34 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     /// but is adjusted for delta-lake.
     ReadFromFormatInfo info;
 
+    /// Use the snapshot version from the storage metadata snapshot if available.
+    /// This ensures we use the same version that was captured when the storage snapshot was created,
+    /// preventing logical races where the table is updated between snapshot creation and reading.
+    std::optional<SnapshotVersion> snapshot_version;
+    if (auto version_from_metadata = extractDeltaLakeSnapshotVersionFromMetadata(storage_snapshot->metadata))
+    {
+        snapshot_version = static_cast<SnapshotVersion>(*version_from_metadata);
+        LOG_TEST(log, "Using snapshot version {} from storage metadata snapshot for prepareReadingFromFormat", snapshot_version.value());
+    }
+    else
+    {
+        /// Fall back to reading from settings if no version is stored in metadata.
+        snapshot_version = getSnapshotVersion(context->getSettingsRef());
+        LOG_TEST(
+            log, "Using snapshot version {} from settings (no version in metadata)",
+            snapshot_version.has_value() ? toString(snapshot_version.value()) : "Latest");
+    }
+
+    auto snapshot = getTableSnapshot(snapshot_version);
+
     /// Read schema is different from table schema in case:
     /// 1. we have partition columns (they are not stored in the actual data)
     /// 2. columnMapping.mode = 'name' or 'id'.
-    DB::NameToNameMap physical_names_map;
-    ColumnsDescription read_columns_desc;
+    const auto physical_names_map = snapshot->getPhysicalNamesMap();
+    const auto read_columns_desc = ColumnsDescription(snapshot->getReadSchema());
     std::unordered_set<std::string> partition_columns;
     {
-        std::lock_guard lock(table_snapshot_mutex);
-        physical_names_map = table_snapshot->getPhysicalNamesMap();
-        read_columns_desc = ColumnsDescription(table_snapshot->getReadSchema());
-
-        auto columns = table_snapshot->getPartitionColumns();
+        auto columns = snapshot->getPartitionColumns();
         partition_columns.insert(columns.begin(), columns.end());
     }
 
@@ -376,7 +614,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
     const StorageID & /* table_id */,
-    ObjectStoragePtr object_storage,
+    ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
@@ -389,11 +627,9 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
     }
 
-    Names partition_columns;
-    {
-        std::lock_guard lock(table_snapshot_mutex);
-        partition_columns = table_snapshot->getPartitionColumns();
-    }
+    const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
+    auto snapshot = getTableSnapshot(snapshot_version);
+    Names partition_columns = snapshot->getPartitionColumns();
 
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
     delta_transaction->create();
@@ -402,7 +638,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     {
         return std::make_shared<DeltaLakeSink>(
             delta_transaction,
-            object_storage,
+            object_storage_,
             context,
             sample_block,
             format_settings,
@@ -413,7 +649,7 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     return std::make_shared<DeltaLakePartitionedSink>(
         delta_transaction,
         partition_columns,
-        object_storage,
+        object_storage_,
         context,
         sample_block,
         format_settings,
@@ -426,17 +662,22 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
     if (!context->getSettingsRef()[Setting::delta_lake_log_metadata].value)
         return;
 
-    const auto keys = listFiles(*object_storage_common, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
+    const auto keys = listFiles(*object_storage, kernel_helper->getDataPath(), deltalake_metadata_directory, metadata_file_suffix);
     auto read_settings = context->getReadSettings();
     for (const String & key : keys)
     {
         RelativePathWithMetadata object_info(key);
-        auto buf = createReadBuffer(object_info, object_storage_common, context, log);
+        auto buf = createReadBuffer(object_info, object_storage, context, log);
         String json_str;
         readStringUntilEOF(json_str, *buf);
         insertDeltaRowToLogTable(context, json_str, kernel_helper->getDataPath(), key);
     }
 
+}
+
+std::string DeltaLakeMetadataDeltaKernel::latestSnapshotVersionToStr() const
+{
+    return latest_snapshot_version.has_value() ? toString(latest_snapshot_version.value()) : "Unknown";
 }
 
 }

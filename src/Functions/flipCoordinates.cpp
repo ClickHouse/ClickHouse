@@ -43,7 +43,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -153,12 +153,18 @@ private:
 
 REGISTER_FUNCTION(FlipCoordinates)
 {
-    FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
+    FunctionDocumentation::Description description = R"(
+Flips the x and y coordinates of geometric objects. This operation swaps latitude and longitude, which is useful for converting between different coordinate systems or correcting coordinate order.
+
+For a Point, it swaps the x and y coordinates. For complex geometries (LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
+
+The function supports both individual geometry types (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
+)";
     FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
+        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "Ring", "Polygon", "MultiPolygon"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The return type matches the input type.", {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}};
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",
@@ -168,7 +174,13 @@ REGISTER_FUNCTION(FlipCoordinates)
          "[(2.0, 1.0), (4.0, 3.0)]"},
         {"polygon",
          "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
-         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"}
+         "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"},
+        {"geometry_wkt",
+         "SELECT flipCoordinates(readWkt('POINT(10 20)'));",
+         "(20, 10)"},
+        {"geometry_polygon_wkt",
+         "SELECT flipCoordinates(readWkt('POLYGON((0 0, 5 0, 5 5, 0 5, 0 0))'));",
+         "[[(0, 0), (0, 5), (5, 5), (5, 0), (0, 0)]]"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

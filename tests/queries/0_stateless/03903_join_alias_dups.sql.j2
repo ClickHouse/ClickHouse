@@ -1,0 +1,32 @@
+{% for enable_analyzer in [0, 1] -%}
+
+SET enable_analyzer = {{ enable_analyzer }};
+SET join_algorithm = 'hash';
+
+SELECT A.g
+FROM ( SELECT 1::Int8 AS d ) AS B
+JOIN ( SELECT 1::Int8 as d, g, 42::Int32 AS g FROM ( SELECT '128' AS g ) ) AS A
+USING (d);
+
+WITH B AS (
+SELECT
+    1 AS d
+        ),
+        A AS (
+SELECT
+    g, d,
+    MAX(IF(m = 'A', g, NULL)) AS g
+FROM
+    (
+    SELECT
+        'g' AS g, 1 d,
+        'A' m
+        )
+GROUP BY ALL )
+SELECT
+    B.*,
+    A.g
+FROM
+    B
+LEFT JOIN A USING d;
+{% endfor -%}

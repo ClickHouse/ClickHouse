@@ -1,2 +1,1 @@
-default	test_merge_tree_03745	1	BackgroundJobsAssignee:DataProcessing	1
 default	test_distributed_03745	1	default.test_distributed_03745.DistributedInsertQueue.default/Bg	1	1

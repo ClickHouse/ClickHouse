@@ -8,9 +8,6 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 
-#if defined(SANITIZE_COVERAGE)
-#    include <Common/Coverage.h>
-#endif
 
 #include "config.h"
 #include "config_tools.h"
@@ -37,6 +34,21 @@ const char * __asan_default_options()
 const char * __lsan_default_options()
 {
     return "max_allocation_size_mb=32768";
+}
+const char * __lsan_default_suppressions()
+{
+    /// OpenSSL intentionally does not free all global state at exit.
+    /// These are known false positives from OpenSSL provider and EVP initialization.
+    return "leak:ossl_provider_new\n"
+           "leak:OSSL_PROVIDER_try_load_ex\n"
+           "leak:ossl_rand_ctx_new\n"
+           "leak:OSSL_LIB_CTX_new\n"
+           "leak:ossl_legacy_provider_init\n"
+           /// OpenSSL EVP method objects are cached globally and never freed at exit.
+           /// Triggered when S3 client initializes HMAC (AWS SDK -> OpenSSL HMAC_Init_ex).
+           "leak:evp_md_new\n"
+           "leak:construct_evp_method\n"
+           "leak:CRYPTO_THREAD_lock_new\n";
 }
 #endif
 
@@ -78,6 +90,7 @@ int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
@@ -149,6 +162,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
+    {"docker-init", mainEntryClickHouseDockerInit},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
     {"check-marks", mainEntryClickHouseCheckMarks},
@@ -262,15 +276,15 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
+extern "C" void (*je_malloc_message)(void *, const char * s);
 __attribute__((constructor(0))) void init_je_malloc_message()
 {
-    malloc_message = [](void *, const char * str)
+    je_malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -377,11 +391,27 @@ int main(int argc_, char ** argv_)
         main_func = mainEntryClickHouseLocal;
     }
 
-    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
+    /// If the argument looks like a file path but doesn't exist, provide a helpful error
+    /// instead of the generic "Use one of the following commands" message.
+    /// The check above routes existing files to clickhouse-local, but when the file
+    /// doesn't exist, we fall through to `printHelp` which is confusing:
+    ///     $ clickhouse tests/queries/0_stateless/my_test.sql
+    ///     Use one of the following commands: ...
+    /// We detect file-like arguments by the presence of `/` (path separator)
+    /// or `.` (file extension), which distinguishes them from mistyped subcommand
+    /// names like "clickhouse sever" where the generic help is appropriate.
+    if (main_func == printHelp && argv.size() >= 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg.contains('/') || arg.contains('.'))
+        {
+            std::cerr << "Error: no such file: " << arg << std::endl;
+            std::cerr << "If you intended to run a script, please check the path." << std::endl;
+            return 1;
+        }
+    }
 
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
+    int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
 
     return exit_code;
 }

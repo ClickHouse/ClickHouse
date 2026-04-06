@@ -2,8 +2,6 @@
 
 -- Tests that match() utilizes the text index
 
-SET allow_experimental_full_text_index = true;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

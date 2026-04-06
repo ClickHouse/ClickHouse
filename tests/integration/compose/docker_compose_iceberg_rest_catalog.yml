@@ -11,15 +11,12 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
-    ports:
-      - 8080:8080
-      - 10002:10000
-      - 10003:10001
     stop_grace_period: 5s
+    cpus: 3
   rest:
     image: tabulario/iceberg-rest:1.6.0
     ports:
-      - 8182:8181
+      - "${ICEBERG_REST_CATALOG_PORT}:8181"
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
@@ -34,6 +31,7 @@ services:
       retries: 10
       start_period: 30s
     stop_grace_period: 5s
+    cpus: 3
   # TODO: can we simply use with_minio=True instead?
   minio:
     image: minio/minio:RELEASE.2024-07-31T05-46-26Z
@@ -50,6 +48,7 @@ services:
       - 9000
     command: ["server", "/data", "--console-address", ":9001"]
     stop_grace_period: 5s
+    cpus: 3
   # TODO: move this code to cluster.py
   mc:
     depends_on:
@@ -69,3 +68,4 @@ services:
       tail -f /dev/null
       "
       stop_grace_period: 5s
+    cpus: 3

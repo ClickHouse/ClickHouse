@@ -14,16 +14,16 @@ ALWAYS_INLINE inline char * outOneDigit(char * p, uint8_t value)
 // Using a lookup table to convert binary numbers from 0 to 99
 // into ascii characters as described by Andrei Alexandrescu in
 // https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
-const char digits[201] = "00010203040506070809"
-                         "10111213141516171819"
-                         "20212223242526272829"
-                         "30313233343536373839"
-                         "40414243444546474849"
-                         "50515253545556575859"
-                         "60616263646566676869"
-                         "70717273747576777879"
-                         "80818283848586878889"
-                         "90919293949596979899";
+constexpr char digits[201] = "00010203040506070809"
+                             "10111213141516171819"
+                             "20212223242526272829"
+                             "30313233343536373839"
+                             "40414243444546474849"
+                             "50515253545556575859"
+                             "60616263646566676869"
+                             "70717273747576777879"
+                             "80818283848586878889"
+                             "90919293949596979899";
 ALWAYS_INLINE inline char * outTwoDigits(char * p, uint8_t value)
 {
     memcpy(p, &digits[value * 2], 2);
@@ -126,7 +126,7 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
         /// Original jeaii code
         //      *reinterpret_cast<pair *>(b) = digits.fd[n];
         //      return n < 10 ? b + 1 : b + 2;
-        return n < 10 ? outOneDigit(b, n) : outTwoDigits(b, n);
+        return n < 10 ? outOneDigit(b, static_cast<uint8_t>(n)) : outTwoDigits(b, static_cast<uint8_t>(n));
     }
     if (n < UInt32(1e6))
     {
@@ -288,59 +288,130 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
 }
 }
 
-const uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
-const int max_multiple_of_hundred_blocks = 9;
+constexpr uint64_t max_multiple_of_hundred_that_fits_in_64_bits = 1'00'00'00'00'00'00'00'00'00ull;
+constexpr int max_multiple_of_hundred_blocks = 9;
 static_assert(max_multiple_of_hundred_that_fits_in_64_bits % 100 == 0);
+
+/// Divide a 128-bit unsigned integer by 10^18 using Barrett reduction.
+/// Returns the quotient and stores the remainder in `remainder`.
+/// This replaces the expensive `__udivti3` compiler runtime call with
+/// a few multiplications and one correction step.
+///
+/// Barrett reduction: q ≈ floor(n * M / 2^128) where M = floor(2^128 / 10^18).
+/// The approximation may be off by 1, corrected by checking the remainder.
+ALWAYS_INLINE inline unsigned __int128 divmod_1e18(unsigned __int128 n, uint64_t & remainder)
+{
+    /// M = floor(2^128 / 10^18) = 340282366920938463463 (69 bits)
+    /// Split as M_hi:M_lo where M = M_hi * 2^64 + M_lo.
+    constexpr uint64_t M_lo = 0x725DD1D243ABA0E7ULL;
+    constexpr uint64_t M_hi = 0x12ULL;
+
+    /// Compute q = (n * M) >> 128 using schoolbook 64-bit multiplication.
+    ///
+    /// n * M = (n_hi * 2^64 + n_lo) * (M_hi * 2^64 + M_lo)
+    ///       = n_hi*M_hi * 2^128 + (n_hi*M_lo + n_lo*M_hi) * 2^64 + n_lo*M_lo
+    ///
+    /// We need the bits at position 128 and above.
+    uint64_t n_lo = static_cast<uint64_t>(n);
+    uint64_t n_hi = static_cast<uint64_t>(n >> 64);
+
+    /// Carry from n_lo * M_lo (upper 64 bits of 128-bit product)
+    unsigned __int128 c = static_cast<unsigned __int128>(n_lo) * M_lo;
+    uint64_t c_hi = static_cast<uint64_t>(c >> 64);
+
+    /// Middle terms + carry, computed in 128 bits to capture overflow
+    unsigned __int128 mid = static_cast<unsigned __int128>(n_hi) * M_lo
+                          + static_cast<unsigned __int128>(n_lo) * M_hi
+                          + c_hi;
+
+    /// High part: n_hi * M_hi + carry from mid. This is the quotient approximation.
+    /// n_hi * M_hi can exceed 64 bits (up to 68 bits), so use 128-bit arithmetic.
+    unsigned __int128 q = static_cast<unsigned __int128>(n_hi) * M_hi
+                        + static_cast<uint64_t>(mid >> 64);
+
+    /// Correct: Barrett approximation may be off by 1.
+    unsigned __int128 r = n - q * max_multiple_of_hundred_that_fits_in_64_bits;
+    if (r >= max_multiple_of_hundred_that_fits_in_64_bits)
+    {
+        q++;
+        r -= max_multiple_of_hundred_that_fits_in_64_bits;
+    }
+    remainder = static_cast<uint64_t>(r);
+    return q;
+}
+
+/// Extract up to 9 digit pairs from a u64 value into the provided output buffer.
+ALWAYS_INLINE inline void extractDigitPairs(uint64_t remainder, uint8_t * two_values)
+{
+    for (int i = 0; i < max_multiple_of_hundred_blocks; ++i)
+    {
+        two_values[i] = uint8_t(remainder % 100);
+        remainder /= 100;
+    }
+}
+
+/// Write `count` digit pairs from `two_values` (in reverse order) to the output buffer.
+template <int count>
+ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values)
+{
+    for (int i = count - 1; i >= 0; --i)
+    {
+        outTwoDigits(p, two_values[i]);
+        p += 2;
+    }
+    return p;
+}
+
+ALWAYS_INLINE inline char * writeDigitPairs(char * p, const uint8_t * two_values, int count)
+{
+    for (int i = count - 1; i >= 0; --i)
+    {
+        outTwoDigits(p, two_values[i]);
+        p += 2;
+    }
+    return p;
+}
 
 ALWAYS_INLINE inline char * writeUIntText(UInt128 _x, char * p)
 {
-    /// If we the highest 64bit item is empty, we can print just the lowest item as u64
-    if (_x.items[UInt128::_impl::little(1)] == 0)
+    /// If the highest 64-bit item is empty, we can print just the lowest item as u64.
+    /// Even though technically there are more numbers in the range where this isn't true, in real-life data this isn't the case
+    if (likely(_x.items[UInt128::_impl::little(1)] == 0))
         return jeaiii::to_text_from_integer(p, _x.items[UInt128::_impl::little(0)]);
 
-    /// Doing operations using __int128 is faster and we already rely on this feature
+    /// Doing operations using __int128 is faster and we already rely on this feature.
     using T = unsigned __int128;
     T x = (T(_x.items[UInt128::_impl::little(1)]) << 64) + T(_x.items[UInt128::_impl::little(0)]);
 
-    /// We are going to accumulate blocks of 2 digits to print until the number is small enough to be printed as u64
-    /// To do this we could do: x / 100, x % 100
-    /// But these would mean doing many iterations with long integers, so instead we divide by a much longer integer
-    /// multiple of 100 (100^9) and then get the blocks out of it (as u64)
-    /// Once we reach u64::max we can stop and use the fast method to print that in the front
-    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-    static const T largest_uint64 = std::numeric_limits<uint64_t>::max();
-    uint8_t two_values[20] = {0}; // 39 Max characters / 2
+    /// Split into blocks of up to 18 digits (10^18 per block) using Barrett reduction.
+    /// UInt128 max is ~3.4e38, so at most 2 divisions are needed.
+    /// Unrolled: first division always needed (x > uint64 max since high item != 0),
+    /// second division only if quotient still exceeds uint64 max.
+    uint8_t two_values[18] = {0};
 
-    int current_block = 0;
-    while (x > largest_uint64)
+    uint64_t r1;
+    x = divmod_1e18(x, r1);
+    extractDigitPairs(r1, two_values);
+
+    constexpr T largest_uint64 = std::numeric_limits<uint64_t>::max();
+    if (unlikely(x > largest_uint64))
     {
-        uint64_t u64_remainder = uint64_t(x % large_divisor);
-        x /= large_divisor;
+        uint64_t r2;
+        x = divmod_1e18(x, r2);
+        extractDigitPairs(r2, two_values + max_multiple_of_hundred_blocks);
 
-        int pos = current_block;
-        while (u64_remainder)
-        {
-            two_values[pos] = uint8_t(u64_remainder % 100);
-            pos++;
-            u64_remainder /= 100;
-        }
-        current_block += max_multiple_of_hundred_blocks;
+        char * out = jeaiii::to_text_from_integer(p, uint64_t(x));
+        return writeDigitPairs<2 * max_multiple_of_hundred_blocks>(out, two_values);
     }
 
-    char * highest_part_print = jeaiii::to_text_from_integer(p, uint64_t(x));
-    for (int i = 0; i < current_block; i++)
-    {
-        outTwoDigits(highest_part_print, two_values[current_block - 1 - i]);
-        highest_part_print += 2;
-    }
-
-    return highest_part_print;
+    char * out = jeaiii::to_text_from_integer(p, uint64_t(x));
+    return writeDigitPairs<max_multiple_of_hundred_blocks>(out, two_values);
 }
 
 ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
 {
     /// If possible, treat it as a smaller integer as they are much faster to print
-    if (_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0)
+    if (likely(_x.items[UInt256::_impl::little(3)] == 0 && _x.items[UInt256::_impl::little(2)] == 0))
         return writeUIntText(UInt128{_x.items[UInt256::_impl::little(0)], _x.items[UInt256::_impl::little(1)]}, p);
 
     /// If available (x86) we transform from our custom class to _BitInt(256) which has better support in the compiler
@@ -368,21 +439,14 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     uint8_t two_values[39] = {0}; // 78 Max characters / 2
     int current_pos = 0;
 
-    static const T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
-    static const T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
+    constexpr T large_divisor = max_multiple_of_hundred_that_fits_in_64_bits;
+    constexpr T largest_uint128 = T(std::numeric_limits<uint64_t>::max()) << 64 | T(std::numeric_limits<uint64_t>::max());
 
     while (x > largest_uint128)
     {
         uint64_t u64_remainder = uint64_t(x % large_divisor);
         x /= large_divisor;
-
-        int pos = current_pos;
-        while (u64_remainder)
-        {
-            two_values[pos] = uint8_t(u64_remainder % 100);
-            pos++;
-            u64_remainder /= 100;
-        }
+        extractDigitPairs(u64_remainder, two_values + current_pos);
         current_pos += max_multiple_of_hundred_blocks;
     }
 
@@ -392,14 +456,8 @@ ALWAYS_INLINE inline char * writeUIntText(UInt256 _x, char * p)
     UInt128 pending{x.items[UInt256::_impl::little(0)], x.items[UInt256::_impl::little(1)]};
 #endif
 
-    char * highest_part_print = writeUIntText(pending, p);
-    for (int i = 0; i < current_pos; i++)
-    {
-        outTwoDigits(highest_part_print, two_values[current_pos - 1 - i]);
-        highest_part_print += 2;
-    }
-
-    return highest_part_print;
+    char * out = writeUIntText(pending, p);
+    return writeDigitPairs(out, two_values, current_pos);
 }
 
 ALWAYS_INLINE inline char * writeLeadingMinus(char * pos)
@@ -414,7 +472,7 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
     static_assert(std::is_same_v<T, Int128> || std::is_same_v<T, Int256>);
 
     using UnsignedT = make_unsigned_t<T>;
-    static constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
+    constexpr T min_int = UnsignedT(1) << (sizeof(T) * 8 - 1);
 
     if (unlikely(x == min_int))
     {

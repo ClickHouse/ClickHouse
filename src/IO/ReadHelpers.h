@@ -9,7 +9,7 @@
 
 #include <type_traits>
 
-#include <Common/StackTrace.h>
+#include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -173,8 +173,8 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
-template <typename T>
-void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readVectorBinary(std::vector<T, Alloc> & v, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -570,7 +570,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             month = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
-                month = month * 10 + pos[1] - '0';
+                month = static_cast<UInt8>(month * 10 + pos[1] - '0');
                 pos += 3;
             }
             else
@@ -585,7 +585,7 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
             day = pos[0] - '0';
             if (isNumericASCII(pos[1]))
             {
-                day = day * 10 + pos[1] - '0';
+                day = static_cast<UInt8>(day * 10 + pos[1] - '0');
                 pos += 2;
             }
             else
@@ -601,20 +601,20 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (unlikely(from < 0))
+    if (from < 0) [[unlikely]]
         date = 0;
-    else if (unlikely(from > 0xFFFF))
+    else if (from > 0xFFFF) [[unlikely]]
         date = 0xFFFF;
     else
-        date = from;
+        date = static_cast<UInt16>(from);
 }
 
 inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
 {
-    if (unlikely(from < 0 || from > 0xFFFF))
+    if (from < 0 || from > 0xFFFF) [[unlikely]]
         return false;
 
-    date = from;
+    date = static_cast<UInt16>(from);
     return true;
 }
 
@@ -769,7 +769,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), buf.available()));
+        throw Exception(ErrorCodes::CANNOT_PARSE_IPV4, "Cannot parse IPv4 {}", std::string_view(buf.position(), std::min(buf.available(), 15uz))); /// 15 = max IPv4 address length
     else
         return ReturnType(false);
 }
@@ -791,7 +791,8 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
         return ReturnType(true);
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), buf.available()));
+        throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Cannot parse IPv6 {}", std::string_view(buf.position(), std::min(buf.available(), 45uz))); /// 45 = max IPv6 address length
+                                                                                                                                                   /// https://stackoverflow.com/a/166157
     else
         return ReturnType(false);
 }
@@ -1563,7 +1564,7 @@ inline void readBinary(CityHash_v1_0_2::uint128 & x, ReadBuffer & buf)
     readPODBinary(x.high64, buf);
 }
 
-inline void readBinary(StackTrace::FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(FramePointers & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 template <std::endian endian, typename T>
 inline void readBinaryEndian(T & x, ReadBuffer & buf)
@@ -1842,8 +1843,8 @@ inline bool tryReadCSV(UInt256 & x, ReadBuffer & buf) { return readCSVSimple<UIn
 inline void readCSV(Int256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(Int256 & x, ReadBuffer & buf) { return readCSVSimple<Int256, bool>(x, buf); }
 
-template <typename T>
-void readBinary(std::vector<T> & x, ReadBuffer & buf)
+template <typename T, typename Alloc = std::allocator<T>>
+void readBinary(std::vector<T, Alloc> & x, ReadBuffer & buf)
 {
     size_t size = 0;
     readVarUInt(size, buf);
@@ -2103,6 +2104,10 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
+
+/// Skip whitespace and SQL-style comments (-- to end of line, /* */ blocks).
+/// Used so that trailing comments after the last row in VALUES format do not cause parse errors.
+void skipWhitespaceAndSQLComments(ReadBuffer & buf);
 
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);

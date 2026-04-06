@@ -4,6 +4,9 @@
 -- pre-join filters without changing query results, and that when the optimization is disabled
 -- such pre-join filters are not produced. It also validates join-order-dependent pushdown
 SET enable_analyzer=1;
+SET enable_join_runtime_filters=0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;
@@ -190,7 +193,7 @@ FROM (
         ORDER BY a ASC, c ASC
     )
 
-WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0
+WHERE explain ILIKE '%Filter column: %' SETTINGS enable_parallel_replicas = 0, query_plan_merge_filters = 1 -- CI may inject False; per-side pushed filters stay separate instead of being merged with the outer a>0/c>0 conditions
 FORMAT TSV;
 
 SELECT '--- Case D: plan (disabled) ---';

@@ -22,7 +22,7 @@ The first form (without `subquery`) sets that all the following queries in the c
 
 The second form (with `subquery`) executes only the specified `subquery` on behalf of the specified `target_user`.
 
-In order to work both forms require server setting [allow_impersonate_user](/operations/server-configuration-parameters/settings#allow_impersonate_user)
+In order to work both forms require config setting `access_control_improvements.allow_impersonate_user`
 to be set to `1` and the `IMPERSONATE` privilege to be granted. For example, the following commands
 ```sql
 GRANT IMPERSONATE ON user1 TO user2;

@@ -206,9 +206,9 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 }
 
 
-SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
+SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
+    return SerializationAggregateFunction::create(function, getName(), getVersion());
 }
 
 
@@ -248,7 +248,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
-        action = parametric->nulls_action;
+        action = parametric->getNullsAction();
 
         if (parametric->arguments)
         {

@@ -22,7 +22,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     if (!ast || !ast->as<ASTLiteral>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
 
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+    return static_cast<ValueType>(ast->as<ASTLiteral>()->value.safeGet<ValueType>());
 }
 
 class DatabaseFactory : private boost::noncopyable, public IHints<>

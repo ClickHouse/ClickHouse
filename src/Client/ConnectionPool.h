@@ -104,7 +104,7 @@ protected:
             proto_send_chunked, proto_recv_chunked,
             SSHKey(), /*jwt*/ "", quota_key,
             cluster, cluster_secret,
-            client_name, compression, secure, bind_host);
+            client_name, compression, secure, "", bind_host);
     }
 
 private:

@@ -134,9 +134,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             IdentifierSemantic::setMembership(identifier, table_pos);
 
             /// In case if column from the joined table are in source columns, change it's name to qualified.
-            /// Also always leave unusual identifiers qualified.
             const auto & table = data.tables[table_pos].table;
-            if (table_pos && (data.hasColumn(short_name) || !isValidIdentifierBegin(short_name.at(0))))
+            if (table_pos && (data.hasColumn(short_name)))
                 IdentifierSemantic::setColumnLongName(identifier, table);
             else
                 IdentifierSemantic::setColumnShortName(identifier, table);
@@ -240,7 +239,7 @@ static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table,
     String table_name = table.getQualifiedNamePrefix(false);
     if (!table_name.empty()) parts.insert(parts.begin(), table_name);
 
-    nodes.emplace_back(std::make_shared<ASTIdentifier>(std::move(parts)));
+    nodes.emplace_back(make_intrusive<ASTIdentifier>(std::move(parts)));
 }
 
 /// Replace *, alias.*, database.table.* with a list of columns.

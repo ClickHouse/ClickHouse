@@ -46,8 +46,10 @@ def started_cluster():
         for node in [node1, node2]:
             node.query(
                 f"""
-                CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary;
-                CREATE DATABASE IF NOT EXISTS test;
+                DROP DATABASE IF EXISTS dict;
+                DROP DATABASE IF EXISTS test;
+                CREATE DATABASE dict ENGINE=Dictionary;
+                CREATE DATABASE test;
                 CREATE TABLE test_table_src(date Date, id UInt32, dummy UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_table', '{nodenum}')
                 PARTITION BY date ORDER BY id
@@ -70,6 +72,7 @@ def get_status(dictionary_name):
 def test_dict_get_data(started_cluster):
     query = node1.query
 
+    query("DROP TABLE IF EXISTS test.elements")
     query(
         "CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;"
     )
@@ -134,33 +137,38 @@ def dependent_tables_assert():
     assert "system.join" in res
     assert "default.src" in res
     assert "dict.dep_y" in res
-    assert "lazy.log" in res
     assert "test.d" in res
     assert "default.join" in res
     assert "a.t" in res
 
 
+def cleanup_dependent_tables():
+    """Clean up tables in correct dependency order to allow repeatable test runs."""
+    # Tables/objects must be dropped in reverse dependency order:
+    # a.t depends on: system.join, test.d, default.join
+    # default.join depends on: test.d
+    # src depends on: system.join
+    # test.d depends on: src
+    node1.query("DROP TABLE IF EXISTS a.t")
+    node1.query("DROP TABLE IF EXISTS default.join")
+    node1.query("DROP DICTIONARY IF EXISTS test.d")
+    node1.query("DROP TABLE IF EXISTS default.src")
+    node1.query("DROP TABLE IF EXISTS system.join")
+    node1.query("DROP DATABASE IF EXISTS a")
+
+
 def test_dependent_tables(started_cluster):
     query = node1.query
-    query("drop database if exists a")
-    query("drop database if exists lazy")
-    query("create database lazy engine=Lazy(10)")
+    cleanup_dependent_tables()
     query("create database a")
-    query("create table lazy.src (n int, m int) engine=Log")
-    query(
-        "create dictionary a.d (n int default 0, m int default 42) primary key n "
-        "source(clickhouse(host 'localhost' port tcpPort() user 'default' table 'src' password '' db 'lazy'))"
-        "lifetime(min 1 max 10) layout(flat())"
-    )
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     for i in range(2, 100):
         query(f"insert into system.join values (1, {i})")
 
     query(
-        "create table src (n int, m default joinGet('system.join', 'm', 1::int),"
-        "t default dictGetOrNull('a.d', 'm', toUInt64(3)),"
-        "k default dictGet('a.d', 'm', toUInt64(4))) engine=MergeTree order by n"
+        "create table src (n int, m default joinGet('system.join', 'm', 1::int))"
+        "engine=MergeTree order by n"
     )
     query(
         "create dictionary test.d (n int default 0, m int default 42) primary key n "
@@ -168,34 +176,32 @@ def test_dependent_tables(started_cluster):
         "lifetime(min 1 max 10) layout(flat())"
     )
     query(
-        "create table join (n int, m default dictGet('a.d', 'm', toUInt64(3)),"
+        "create table join (n int,"
         "k default dictGet('test.d', 'm', toUInt64(0))) engine=Join(any, left, n)"
-    )
-    query(
-        "create table lazy.log (n default dictGet(test.d, 'm', toUInt64(0))) engine=Log"
     )
     query(
         "create table a.t (n default joinGet('system.join', 'm', 1::int),"
         "m default dictGet('test.d', 'm', toUInt64(3)),"
-        "k default joinGet(join, 'm', 1::int)) engine=MergeTree order by n"
+        "k default joinGet(join, 'k', 1::int)) engine=MergeTree order by n"
     )
 
     dependent_tables_assert()
     node1.restart_clickhouse()
     dependent_tables_assert()
     query("drop table a.t")
-    query("drop table lazy.log")
     query("drop table join")
     query("drop dictionary test.d")
     query("drop table src")
     query("drop table system.join")
     query("drop database a")
-    query("drop database lazy")
 
 
 def test_multiple_tables(started_cluster):
     query = node1.query
     tables_count = 20
+    # Clean up any leftover tables from previous runs
+    for i in range(tables_count):
+        query(f"drop table if exists test.table_{i}")
     for i in range(tables_count):
         query(
             f"create table test.table_{i} (n UInt64, s String) engine=MergeTree order by n as select number, randomString(100) from numbers(100)"

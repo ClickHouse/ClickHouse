@@ -38,7 +38,7 @@ Positions: 0
                        ALIAS value :: 1 -> __table2.value DateTime : 3
                        FUNCTION equals(key :: 0, 162601_UInt32 :: 2) -> equals(__table2.key, 162601_UInt32) UInt8 : 1
               Positions: 1 3
-                ReadFromStorage (Log)
+                ReadFromStorageLog
             Expression (Right Pre Join Actions)
             Actions: INPUT :: 0 -> __table3.value DateTime : 0
             Positions: 0
@@ -46,4 +46,4 @@ Positions: 0
               Actions: INPUT : 0 -> value DateTime : 0
                        ALIAS value :: 0 -> __table3.value DateTime : 1
               Positions: 1
-                ReadFromStorage (Log)
+                ReadFromStorageLog

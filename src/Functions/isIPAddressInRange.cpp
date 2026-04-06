@@ -13,7 +13,6 @@
 #include <charconv>
 
 
-#include <Common/logger_useful.h>
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -278,7 +277,7 @@ namespace DB
         {
             const auto addr = parseConstantIP(col_addr_const);
             if (!addr.has_value())
-                return ColumnUInt8::create(input_rows_count, 0);
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();

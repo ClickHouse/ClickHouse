@@ -77,15 +77,15 @@ private:
 
 REGISTER_FUNCTION(GetSizeOfEnumType)
 {
-    FunctionDocumentation::Description description_getSizeOfEnumType = R"(
+    FunctionDocumentation::Description description = R"(
 Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
 )";
-    FunctionDocumentation::Syntax syntax_getSizeOfEnumType = "getSizeOfEnumType(x)";
-    FunctionDocumentation::Arguments arguments_getSizeOfEnumType = {
+    FunctionDocumentation::Syntax syntax = "getSizeOfEnumType(x)";
+    FunctionDocumentation::Arguments arguments = {
         {"x", "Value of type `Enum`.", {"Enum"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_getSizeOfEnumType = {"Returns the number of fields with `Enum` input values.", {"UInt8/16"}};
-    FunctionDocumentation::Examples examples_getSizeOfEnumType = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of fields with `Enum` input values.", {"UInt8/16"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -98,11 +98,11 @@ SELECT getSizeOfEnumType(CAST('a' AS Enum8('a' = 1, 'b' = 2))) AS x;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_getSizeOfEnumType = {1, 1};
-    FunctionDocumentation::Category category_getSizeOfEnumType = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_getSizeOfEnumType = {description_getSizeOfEnumType, syntax_getSizeOfEnumType, arguments_getSizeOfEnumType, {}, returned_value_getSizeOfEnumType, examples_getSizeOfEnumType, introduced_in_getSizeOfEnumType, category_getSizeOfEnumType};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGetSizeOfEnumType>(documentation_getSizeOfEnumType);
+    factory.registerFunction<FunctionGetSizeOfEnumType>(documentation);
 }
 
 }

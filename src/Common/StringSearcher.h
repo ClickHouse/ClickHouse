@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include <base/getPageSize.h>
-#include <Common/TargetSpecific.h>
 #include <Common/UTF8Helpers.h>
 
 #include <Poco/Unicode.h>
@@ -163,8 +162,11 @@ public:
 #endif
     }
 
-    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * /*haystack_end*/, const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
+        if (needle == needle_end)
+            return true;
+
 #ifdef __SSE4_1__
         if (isPageSafe(pos))
         {
@@ -181,7 +183,7 @@ public:
                     pos += N;
                     const auto * needle_pos = needle + N;
 
-                    while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
+                    while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
                     {
                         ++pos;
                         ++needle_pos;
@@ -203,7 +205,7 @@ public:
             ++pos;
             const auto * needle_pos = needle + 1;
 
-            while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
+            while (needle_pos < needle_end && pos < haystack_end && std::tolower(*pos) == std::tolower(*needle_pos))
             {
                 ++pos;
                 ++needle_pos;
@@ -347,8 +349,8 @@ public:
         if (*needle < 0x80u)
         {
             first_needle_symbol_is_ascii = true;
-            l = std::tolower(*needle);
-            u = std::toupper(*needle);
+            l = static_cast<uint8_t>(std::tolower(*needle));
+            u = static_cast<uint8_t>(std::toupper(*needle));
         }
         else
         {
@@ -471,6 +473,9 @@ public:
 
     ALWAYS_INLINE bool compare(const UInt8 * /*haystack*/, const UInt8 * haystack_end, const UInt8 * pos) const
     {
+        if (needle == needle_end)
+            return true;
+
 #ifdef __SSE4_1__
         if (isPageSafe(pos) && !force_fallback)
         {

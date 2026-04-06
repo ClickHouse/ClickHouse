@@ -1,328 +1,251 @@
-/*
- * Summary: compile-time version information
- * Description: compile-time version information for the XML library
+/**
+ * @file
  *
- * Copy: See Copyright for the status of this software.
+ * @brief compile-time version information
  *
- * Author: Daniel Veillard
+ * compile-time version information for the XML library
+ *
+ * @copyright See Copyright for the status of this software.
+ *
+ * @author Daniel Veillard
  */
 
 #ifndef __XML_VERSION_H__
 #define __XML_VERSION_H__
 
 /**
- * LIBXML_DOTTED_VERSION:
- *
  * the version string like "1.2.3"
  */
-#define LIBXML_DOTTED_VERSION "2.14.5"
+#define LIBXML_DOTTED_VERSION "2.15.1"
 
 /**
- * LIBXML_VERSION:
- *
  * the version number: 1.2.3 value is 10203
  */
-#define LIBXML_VERSION 21403
+#define LIBXML_VERSION 21501
 
 /**
- * LIBXML_VERSION_STRING:
- *
  * the version number string, 1.2.3 value is "10203"
  */
-#define LIBXML_VERSION_STRING "21403"
+#define LIBXML_VERSION_STRING "21501"
 
 /**
- * LIBXML_VERSION_EXTRA:
- *
  * extra version information, used to show a git commit description
  */
 #define LIBXML_VERSION_EXTRA ""
 
 /**
- * LIBXML_TEST_VERSION:
- *
  * Macro to check that the libxml version in use is compatible with
  * the version the software has been compiled against
  */
-#define LIBXML_TEST_VERSION xmlCheckVersion(21403);
+#define LIBXML_TEST_VERSION xmlCheckVersion(21501);
 
+#if 1
 /**
- * LIBXML_THREAD_ENABLED:
- *
  * Whether the thread support is configured in
  */
-#if 1
 #define LIBXML_THREAD_ENABLED
 #endif
 
+#if 0
 /**
- * LIBXML_THREAD_ALLOC_ENABLED:
- *
  * Whether the allocation hooks are per-thread
  */
-#if 0
 #define LIBXML_THREAD_ALLOC_ENABLED
 #endif
 
 /**
- * LIBXML_TREE_ENABLED:
- *
  * Always enabled since 2.14.0
  */
 #define LIBXML_TREE_ENABLED
 
+#if 1
 /**
- * LIBXML_OUTPUT_ENABLED:
- *
  * Whether the serialization/saving support is configured in
  */
-#if 1
 #define LIBXML_OUTPUT_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_PUSH_ENABLED:
- *
  * Whether the push parsing interfaces are configured in
  */
-#if 1
 #define LIBXML_PUSH_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_READER_ENABLED:
- *
  * Whether the xmlReader parsing interface is configured in
  */
-#if 1
 #define LIBXML_READER_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_PATTERN_ENABLED:
- *
  * Whether the xmlPattern node selection interface is configured in
  */
-#if 1
 #define LIBXML_PATTERN_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_WRITER_ENABLED:
- *
  * Whether the xmlWriter saving interface is configured in
  */
-#if 1
 #define LIBXML_WRITER_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_SAX1_ENABLED:
- *
  * Whether the older SAX1 interface is configured in
  */
-#if 1
 #define LIBXML_SAX1_ENABLED
 #endif
 
-/**
- * LIBXML_HTTP_ENABLED:
- *
- * Whether the HTTP support is configured in
- */
 #if 0
-#define LIBXML_HTTP_ENABLED
+/**
+ * HTTP support was removed in 2.15
+ */
+#define LIBXML_HTTP_STUBS_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_VALID_ENABLED:
- *
  * Whether the DTD validation support is configured in
  */
-#if 1
 #define LIBXML_VALID_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_HTML_ENABLED:
- *
  * Whether the HTML support is configured in
  */
-#if 1
 #define LIBXML_HTML_ENABLED
 #endif
 
-/**
- * LIBXML_LEGACY_ENABLED:
- *
+/*
  * Removed in 2.14
  */
 #undef LIBXML_LEGACY_ENABLED
 
+#if 1
 /**
- * LIBXML_C14N_ENABLED:
- *
  * Whether the Canonicalization support is configured in
  */
-#if 1
 #define LIBXML_C14N_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_CATALOG_ENABLED:
- *
  * Whether the Catalog support is configured in
  */
-#if 1
 #define LIBXML_CATALOG_ENABLED
+#define LIBXML_SGML_CATALOG_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_XPATH_ENABLED:
- *
  * Whether XPath is configured in
  */
-#if 1
 #define LIBXML_XPATH_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_XPTR_ENABLED:
- *
  * Whether XPointer is configured in
  */
-#if 1
 #define LIBXML_XPTR_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_XINCLUDE_ENABLED:
- *
  * Whether XInclude is configured in
  */
-#if 1
 #define LIBXML_XINCLUDE_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_ICONV_ENABLED:
- *
  * Whether iconv support is available
  */
-#if 1
 #define LIBXML_ICONV_ENABLED
 #endif
 
+#if 0
 /**
- * LIBXML_ICU_ENABLED:
- *
  * Whether icu support is available
  */
-#if 0
 #define LIBXML_ICU_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_ISO8859X_ENABLED:
- *
  * Whether ISO-8859-* support is made available in case iconv is not
  */
-#if 1
 #define LIBXML_ISO8859X_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_DEBUG_ENABLED:
- *
  * Whether Debugging module is configured in
  */
-#if 1
 #define LIBXML_DEBUG_ENABLED
 #endif
 
-/**
- * LIBXML_UNICODE_ENABLED:
- *
+/*
  * Removed in 2.14
  */
 #undef LIBXML_UNICODE_ENABLED
 
+#if 1
 /**
- * LIBXML_REGEXP_ENABLED:
- *
  * Whether the regular expressions interfaces are compiled in
  */
-#if 1
 #define LIBXML_REGEXP_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_AUTOMATA_ENABLED:
- *
  * Whether the automata interfaces are compiled in
  */
-#if 1
 #define LIBXML_AUTOMATA_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_RELAXNG_ENABLED:
- *
  * Whether the RelaxNG validation interfaces are compiled in
  */
-#if 1
 #define LIBXML_RELAXNG_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_SCHEMAS_ENABLED:
- *
  * Whether the Schemas validation interfaces are compiled in
  */
-#if 1
 #define LIBXML_SCHEMAS_ENABLED
 #endif
 
+#if 0
 /**
- * LIBXML_SCHEMATRON_ENABLED:
- *
  * Whether the Schematron validation interfaces are compiled in
  */
-#if 1
 #define LIBXML_SCHEMATRON_ENABLED
 #endif
 
+#if 1
 /**
- * LIBXML_MODULES_ENABLED:
- *
  * Whether the module interfaces are compiled in
  */
-#if 1
 #define LIBXML_MODULES_ENABLED
 /**
- * LIBXML_MODULE_EXTENSION:
- *
  * the string suffix used by dynamic modules (usually shared libraries)
  */
-#define LIBXML_MODULE_EXTENSION ".so"
+#define LIBXML_MODULE_EXTENSION ".so" 
 #endif
 
+#if 0
 /**
- * LIBXML_ZLIB_ENABLED:
- *
  * Whether the Zlib support is compiled in
  */
-#if 0
 #define LIBXML_ZLIB_ENABLED
-#endif
-
-/**
- * LIBXML_LZMA_ENABLED:
- *
- * Whether the Lzma support is compiled in
- */
-#if 0
-#define LIBXML_LZMA_ENABLED
 #endif
 
 #include <libxml/xmlexports.h>

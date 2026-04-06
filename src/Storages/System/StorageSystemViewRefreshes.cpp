@@ -103,7 +103,9 @@ void StorageSystemViewRefreshes::fillData(
         res_columns[i++]->insert(retries);
         if (refresh.znode.last_attempt_replica.empty() || refresh.replica_name == refresh.znode.last_attempt_replica)
         {
-            res_columns[i++]->insert(Float64(refresh.progress.read_rows) / std::max(refresh.progress.total_rows_to_read, UInt64(1)));
+            res_columns[i++]->insert(
+                static_cast<double>(refresh.progress.read_rows)
+                / static_cast<double>(std::max(refresh.progress.total_rows_to_read, UInt64(1))));
             res_columns[i++]->insert(refresh.progress.read_rows);
             res_columns[i++]->insert(refresh.progress.read_bytes);
             res_columns[i++]->insert(refresh.progress.total_rows_to_read);

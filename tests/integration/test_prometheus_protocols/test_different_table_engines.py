@@ -53,7 +53,7 @@ test_queries = [
         '{"resultType": "vector", "result": [{"metric": {"code": "200", "handler": "/api/v1/query", "instance": "prometheus:9090", "job": "prometheus"}, "value": [1753199684.626, "0.2"]}]}',
         [
             [
-                "[('__name__','prometheus_http_requests_total'),('code','200'),('handler','/api/v1/query'),('instance','prometheus:9090'),('job','prometheus')]",
+                "[('code','200'),('handler','/api/v1/query'),('instance','prometheus:9090'),('job','prometheus')]",
                 "2025-07-22 15:54:44.626",
                 "0.2",
             ]

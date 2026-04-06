@@ -153,6 +153,7 @@ public:
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
     NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
+    std::string getDescription() const override { return ""; }
 
 private:
     std::optional<VectorSearchParameters> parameters;

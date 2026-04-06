@@ -12,6 +12,7 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_b
             Description: minmax GRANULARITY 1
+            Condition: (b in (-Inf, 99])
             Parts: 2/2
             Granules: 4/32
           Ranges: 2
@@ -29,6 +30,7 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_b
             Description: minmax GRANULARITY 1
+            Condition: (b in (-Inf, 99])
             Parts: 1/1
             Granules: 4/32
           Ranges: 1

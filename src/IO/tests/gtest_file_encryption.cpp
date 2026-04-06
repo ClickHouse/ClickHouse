@@ -230,7 +230,7 @@ TEST(FileEncryptionPositionUpdateTest, Decryption)
     header.init_vector = InitVector::random();
 
     auto lwb = std::make_unique<WriteBufferFromFile>(tmp_path);
-    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header);
+    WriteBufferFromEncryptedFile wb(10, std::move(lwb), key, header, /*old_file_size=*/0, /*use_adaptive_buffer_size_=*/ false, /*adaptive_buffer_initial_size=*/ 0);
     auto data = getRandomASCIIString(20);
     wb.write(data.data(), data.size());
     wb.finalize();

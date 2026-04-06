@@ -25,7 +25,7 @@ public:
     bool empty() const { return parent_profile.empty() && setting_name.empty(); }
 
     String getID(char) const override { return "SettingsProfileElement"; }
-    ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElement>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTSettingsProfileElement>(*this); }
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -38,7 +38,7 @@ protected:
 class ASTSettingsProfileElements : public IAST
 {
 public:
-    std::vector<std::shared_ptr<ASTSettingsProfileElement>> elements;
+    std::vector<boost::intrusive_ptr<ASTSettingsProfileElement>> elements;
 
     bool empty() const;
 
@@ -67,9 +67,9 @@ protected:
 class ASTAlterSettingsProfileElements : public IAST
 {
 public:
-    std::shared_ptr<ASTSettingsProfileElements> add_settings;
-    std::shared_ptr<ASTSettingsProfileElements> modify_settings;
-    std::shared_ptr<ASTSettingsProfileElements> drop_settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> add_settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> modify_settings;
+    boost::intrusive_ptr<ASTSettingsProfileElements> drop_settings;
 
     bool drop_all_settings = false;
     bool drop_all_profiles = false;

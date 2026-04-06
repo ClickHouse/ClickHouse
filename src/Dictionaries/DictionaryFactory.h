@@ -54,6 +54,8 @@ public:
 
     void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex = true);
 
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
 private:
     struct RegisteredLayout
     {
@@ -62,7 +64,7 @@ private:
         bool has_layout_complex;
     };
 
-    using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;
+    using LayoutRegistry = UnorderedMapWithMemoryTracking<std::string, RegisteredLayout>;
     LayoutRegistry registered_layouts;
 
 };

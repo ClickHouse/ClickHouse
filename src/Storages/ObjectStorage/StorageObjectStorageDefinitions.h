@@ -213,6 +213,14 @@ struct IcebergHDFSClusterDefinition
     static constexpr auto object_storage_type = "hdfs";
 };
 
+struct IcebergLocalClusterDefinition
+{
+    static constexpr auto name = "icebergLocalCluster";
+    static constexpr auto storage_engine_name = "IcebergLocalCluster";
+    static constexpr auto non_clustered_storage_engine_name = IcebergLocalDefinition::storage_engine_name;
+    static constexpr auto object_storage_type = "local";
+};
+
 struct DeltaLakeClusterDefinition
 {
     static constexpr auto name = "deltaLakeCluster";

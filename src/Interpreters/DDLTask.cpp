@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
@@ -317,7 +318,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     }
 
     if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
+    {
+        /// Clamp settings to the constraints of the local node, similar to how
+        /// TCPHandler handles secondary queries. Without this, settings from the
+        /// initiator node could bypass stricter constraints on worker nodes.
+        /// Work on a copy to avoid mutating the entry, which may be read later
+        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
+        auto settings_changes = *entry.settings;
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     return query_context;
 }
@@ -664,6 +674,20 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+
+        /// Make sure that we did not disable replicated DDL queries
+        const auto & macros = from_context->getMacros();
+        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
+        if (should_check_stop_flag)
+        {
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = macros->expand(stop_flag_path);
+
+            zookeeper->createAncestors(stop_flag_path);
+
+            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());

@@ -6,6 +6,7 @@
 #include <optional>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
+#include <boost/intrusive/set.hpp>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/ISlotControl.h>
@@ -42,6 +43,10 @@ namespace DB
  *    Also uses round-robin, but `min` slot are NOT holding real CPU slots.
  *    This way all `min` slots do not count into overall number of allocated slots. This leads to more fair competition.
  *    There is no oversubscription: total amount of allocated slots CANNOT exceed `setMaxConcurrency(limit)`.
+ *  - "max_min_fair":
+ *    Similar to "fair_round_robin", but released slots are always granted to the allocation with the minimum
+ *    number of currently allocated slots. This provides better fairness under high oversubscription scenarios
+ *    where many queries compete for limited CPU slots.
  */
 
 class ConcurrencyControl;
@@ -244,6 +249,112 @@ private:
     Waiters::iterator cur_waiter; // round-robin pointer
 };
 
+class ConcurrencyControlMaxMinFairScheduler
+{
+public:
+    // Forward declarations
+    struct AllocationCompare;
+    struct Slot;
+
+    // Manages group of slots for a single query, see ConcurrencyControl::allocate(min, max)
+    struct Allocation : public ISlotAllocation
+    {
+        ~Allocation() override;
+
+        // Take one already granted slot if available. Lock-free iff there is no granted slot.
+        [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
+
+        // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
+        [[nodiscard]] AcquiredSlotPtr acquire() override;
+
+    private:
+        friend struct Slot; // for release()
+        friend class ConcurrencyControlMaxMinFairScheduler; // for grant(), free() and ctor
+        friend struct AllocationCompare;
+
+        Allocation(ConcurrencyControlMaxMinFairScheduler & parent_, SlotCount min_, SlotCount max, SlotCount granted_, UInt64 sequence_number_);
+
+        auto cancel()
+        {
+            std::unique_lock lock{mutex};
+            return std::pair{allocated - released, waiters_hook.is_linked()};
+        }
+
+        // Grant single slot to allocation, returns true iff more slot(s) are required
+        bool grant();
+
+        // Release one slot and grant it to other allocation if required
+        void release();
+
+        ConcurrencyControlMaxMinFairScheduler & parent;
+        const SlotCount min;
+        const SlotCount limit;
+
+        mutable std::mutex mutex; // the following values must be accessed under this mutex
+        SlotCount allocated; // allocated total excluding non-competing (including already `released`)
+        SlotCount released = 0;
+        size_t last_slot_id = 0;
+
+        std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
+        std::atomic<SlotCount> granted; // allocated competing slots, but not yet acquired
+
+        UInt64 sequence_number; // monotonically increasing counter for FIFO ordering
+        boost::intrusive::set_member_hook<> waiters_hook; // intrusive hook for waiters set, use is_linked() to check if waiting
+    };
+
+    // Scoped guard for acquired slot, see Allocation::tryAcquire()
+    struct Slot : public IAcquiredSlot
+    {
+        ~Slot() override;
+
+    private:
+        friend struct Allocation; // for ctor
+
+        Slot(SlotAllocationPtr && allocation_, bool competing_, size_t slot_id_);
+
+        SlotAllocationPtr allocation;
+        bool competing; // true iff we count this slot in cur_concurrency
+        CurrentMetrics::Increment acquired_slot_increment;
+    };
+
+    // Use boost intrusive set sorted by (allocated, sequence_number) to efficiently find minimum allocation
+    // sequence_number ensures FIFO order when allocated counts are equal
+    struct AllocationCompare
+    {
+        bool operator()(const Allocation & lhs, const Allocation & rhs) const;
+    };
+    using Waiters = boost::intrusive::set<
+        Allocation,
+        boost::intrusive::compare<AllocationCompare>,
+        boost::intrusive::member_hook<Allocation, boost::intrusive::set_member_hook<>, &Allocation::waiters_hook>
+    >;
+
+    ConcurrencyControlMaxMinFairScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_);
+
+    // WARNING: all Allocation objects MUST be destructed before ConcurrencyControl
+    // NOTE: Recommended way to achieve this is to use `instance()` and do graceful shutdown of queries
+    ~ConcurrencyControlMaxMinFairScheduler();
+
+    // Allocate at least `min` and at most `max` slots.
+    // If not all `max` slots were successfully allocated, a subscription for later allocation is created
+    // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
+    SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
+
+    // Max-min fair scheduling of available slots among waiting allocations
+    void schedule(std::unique_lock<std::mutex> &);
+
+private:
+    friend struct Allocation; // for free() and release()
+
+    void free(Allocation * allocation);
+    void release(SlotCount amount);
+
+    ConcurrencyControl & parent;
+    ConcurrencyControlState & state;
+    Waiters waiters;
+    UInt64 next_sequence_number = 0; // monotonically increasing counter for FIFO ordering
+};
+
 class ConcurrencyControl : public ISlotControl
 {
 public:
@@ -273,10 +384,11 @@ public:
 private:
     ConcurrencyControlState state;
 
-    enum class Scheduler : uint8_t { RoundRobin, FairRoundRobin };
+    enum class Scheduler : uint8_t { RoundRobin, FairRoundRobin, MaxMinFair };
     Scheduler scheduler = Scheduler::RoundRobin;
     ConcurrencyControlRoundRobinScheduler round_robin;
     ConcurrencyControlFairRoundRobinScheduler fair_round_robin;
+    ConcurrencyControlMaxMinFairScheduler max_min_fair;
 };
 
 }

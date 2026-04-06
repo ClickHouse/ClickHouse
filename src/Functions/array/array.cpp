@@ -253,7 +253,8 @@ private:
         const size_t tuple_size = concrete_out_data->tupleSize();
         if (tuple_size == 0)
         {
-            out_data.insertManyDefaults(columns.size());
+            /// Tuple() has no subcolumns to fill. Create `columns.size()` elements per row to match array offsets
+            out_data.insertManyDefaults(columns.size() * input_rows_count);
         }
         else
         {

@@ -2,17 +2,10 @@
 
 #if USE_H3
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
 #include <h3api.h>
 

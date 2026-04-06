@@ -130,7 +130,8 @@ class GH:
                 break
             if not res:
                 retry_count += 1
-                time.sleep(5)
+                delay = min(2 ** (retry_count + 1), 60)
+                time.sleep(delay)
 
         if not res:
             print(
@@ -190,6 +191,74 @@ class GH:
                 temp_file.write(comment_body)
                 temp_file_path = temp_file.name
 
+            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            return cls.do_command_with_retries(cmd)
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+
+    '''
+    TODO: @maxknv
+    The fact that a comment can get lost is also an issue for other CI automated comments. 
+    I think it makes sense to make this the default behavior for post_updateable_comment() and avoid introducing another method.
+    '''
+    @classmethod
+    def post_fresh_comment(
+        cls,
+        tag: str,
+        body: str,
+        pr=None,
+        repo=None,
+        verbose=True,
+    ):
+        """Delete any existing comment with the given tag and post a new one at the bottom.
+
+        Unlike post_updateable_comment, this always creates a fresh comment so it
+        appears as the most recent comment (next to the merge button).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        TAG_START = f"<!-- CI automatic comment start :{tag}: -->"
+        TAG_END = f"<!-- CI automatic comment end :{tag}: -->"
+
+        # Fetch all comments and delete those carrying our tag.
+        cmd_list = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/issues/{pr}/comments" '
+            f"--jq '[.[] | {{id: .id, body: .body}}]' --paginate"
+        )
+        output = Shell.get_output(cmd_list, verbose=verbose)
+        if output:
+            try:
+                for comment in json.loads(output):
+                    if TAG_START in comment["body"] and TAG_END in comment["body"]:
+                        comment_id = comment["id"]
+                        if verbose:
+                            print(f"Deleting old coverage comment [{comment_id}]")
+                        Shell.run(
+                            f'gh api -X DELETE '
+                            f'-H "Accept: application/vnd.github.v3+json" '
+                            f'"/repos/{repo}/issues/comments/{comment_id}"',
+                            verbose=verbose,
+                        )
+            except Exception as e:
+                print(f"WARNING: Failed to delete old comment: {e}")
+
+        # Post a new comment at the bottom.
+        full_body = f"{TAG_START}\n{body}\n{TAG_END}\n"
+        temp_file_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".txt", encoding="utf-8"
+            ) as temp_file:
+                temp_file.write(full_body)
+                temp_file_path = temp_file.name
             cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
             return cls.do_command_with_retries(cmd)
         finally:
@@ -514,6 +583,12 @@ class GH:
         if labels is None:
             labels = []
 
+        # GitHub API limit for issue body is 65536 characters
+        max_body_length = 65536
+        if len(body) > max_body_length:
+            truncation_note = "\n\n... (truncated due to GitHub body size limit)"
+            body = body[: max_body_length - len(truncation_note)] + truncation_note
+
         temp_file_path = None
         try:
             # Create temp file for body to avoid shell escaping issues
@@ -556,6 +631,8 @@ class GH:
             return status
         if status in Result.Status.RUNNING:
             return Result.Status.PENDING
+        elif status in Result.Status.DROPPED:
+            return Result.Status.ERROR
         else:
             assert (
                 False
@@ -590,6 +667,7 @@ class GH:
         )
         info: str = ""
         comment: str = ""
+        extra_links: List[tuple] = dataclasses.field(default_factory=list)
 
         @classmethod
         def from_result(cls, result: Result, sha=""):
@@ -614,8 +692,8 @@ class GH:
                     for item in hlabels:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
-                        if text and href:
-                            links.append(f"[{text}]({href})")
+                            if text and href:
+                                links.append(f"[{text}]({href})")
                     return ", ".join(links)
                 except Exception:
                     return ""
@@ -677,6 +755,13 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
+            # Collect links from jobs that have hlabels (e.g. keeper-stress Grafana links).
+            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            for job_result in getattr(result, "results", []) or []:
+                if job_result.ext.get("hlabels"):
+                    links_md = extract_hlabels_info(job_result)
+                    if links_md:
+                        summary.extra_links.append((job_result.name, links_md))
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
@@ -692,7 +777,9 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-
+            if self.extra_links:
+                for job_name, links_md in self.extra_links:
+                    body += f"**{job_name}:** {links_md}\n"
             if self.failed_results:
                 if len(self.failed_results) > 15:
                     body += (
@@ -737,12 +824,52 @@ class GH:
 
 
 if __name__ == "__main__":
-    # test
-    GH.post_updateable_comment(
-        comment_tags_and_bodies={
-            "test": "foobar4",
-            "test3": "foobar33",
-        },
-        pr=81471,
-        repo="ClickHouse/ClickHouse",
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="GitHub PR comment helper")
+    subparsers = parser.add_subparsers(dest="command")
+
+    post_parser = subparsers.add_parser(
+        "post-or-update",
+        help="Post a new PR comment or update an existing one with the given tag",
     )
+    post_parser.add_argument(
+        "--tag",
+        required=True,
+        help="Tag identifying the comment section (e.g. 'review')",
+    )
+    post_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body",
+    )
+    post_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    post_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+    post_parser.add_argument(
+        "--only-update",
+        action="store_true",
+        help="Only update an existing comment; do not create a new one",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "post-or-update":
+        with open(args.body_file, "r", encoding="utf-8") as f:
+            body = f.read()
+        kwargs = dict(
+            comment_tags_and_bodies={args.tag: body},
+            only_update=args.only_update,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    else:
+        parser.print_help()
+        sys.exit(1)

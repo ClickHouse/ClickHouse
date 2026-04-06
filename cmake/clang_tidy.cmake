@@ -7,14 +7,14 @@ if (ENABLE_CLANG_TIDY)
 
     find_program (CLANG_TIDY_CACHE_PATH NAMES "clang-tidy-cache")
     if (CLANG_TIDY_CACHE_PATH)
-        find_program (_CLANG_TIDY_PATH NAMES "clang-tidy-21" "clang-tidy-20" "clang-tidy-19" "clang-tidy")
+        find_program (_CLANG_TIDY_PATH NAMES "clang-tidy-23" "clang-tidy-22" "clang-tidy-21" "clang-tidy")
 
         # Why do we use ';' here?
         # It's a cmake black magic: https://cmake.org/cmake/help/latest/prop_tgt/LANG_CLANG_TIDY.html#prop_tgt:%3CLANG%3E_CLANG_TIDY
         # The CLANG_TIDY_PATH is passed to CMAKE_CXX_CLANG_TIDY, which follows CXX_CLANG_TIDY syntax.
         set (CLANG_TIDY_PATH "${CLANG_TIDY_CACHE_PATH};${_CLANG_TIDY_PATH}" CACHE STRING "A combined command to run clang-tidy with caching wrapper")
     else ()
-        find_program (CLANG_TIDY_PATH NAMES "clang-tidy-21" "clang-tidy-20" "clang-tidy-19" "clang-tidy")
+        find_program (CLANG_TIDY_PATH NAMES "clang-tidy-23" "clang-tidy-22" "clang-tidy-21" "clang-tidy")
     endif ()
 
     if (CLANG_TIDY_PATH)
