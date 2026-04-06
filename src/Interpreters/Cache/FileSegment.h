@@ -63,7 +63,7 @@ public:
     enum SizeAlignment
     {
         /// Use the default size alignment,
-        /// which is chosen according to `use_real_cache_size` cache setting.
+        /// which is chosen according to `use_real_disk_size` cache setting.
         DEFAULT_ALIGNMENT,
         /// Use aligned size.
         ALIGNED,
