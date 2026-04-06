@@ -150,7 +150,6 @@ void MergeTreeReaderTextIndex::readGranule()
     dictionary_stream->seekToStart();
     small_postings_stream->seekToStart();
     lazy_cursor_handles.clear();
-    large_postings_streams.clear();
 
     MergeTreeIndexInputStreams streams;
     streams[MergeTreeIndexSubstream::Type::Regular] = sparse_index_stream.get();

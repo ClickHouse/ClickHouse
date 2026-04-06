@@ -66,10 +66,10 @@ PostingListCursorHandle::PostingListCursorHandle(const TokenPostingsInfo & info_
     if (!info->embedded_postings)
         return;
 
-    if (info->cardinality > BLOCK_SIZE)
+    if (info->cardinality > MAX_EMBEDDED_POSTING_LIST_ROWS)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Embedded posting list cardinality ({}) exceeds BLOCK_SIZE ({})",
-            info->cardinality, BLOCK_SIZE);
+            "Embedded posting list cardinality ({}) exceeds MAX_EMBEDDED_POSTING_LIST_ROWS ({})",
+            info->cardinality, MAX_EMBEDDED_POSTING_LIST_ROWS);
 
     embedded_count = static_cast<size_t>(info->cardinality);
     if (embedded_count > 0)

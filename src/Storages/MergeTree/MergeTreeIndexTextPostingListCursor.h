@@ -7,7 +7,6 @@
 
 #include <Storages/MergeTree/BitpackingBlockCodec.h>
 
-#include <limits>
 #include <memory>
 #include <vector>
 
@@ -17,6 +16,8 @@ namespace DB
 struct TokenPostingsInfo;
 class IColumn;
 class MergeTreeReaderStream;
+
+constexpr size_t MAX_EMBEDDED_POSTING_LIST_ROWS = 6;
 
 /// Immutable description of a posting list.
 /// It owns or references the on-disk metadata and can be cached safely across reads.
@@ -40,14 +41,13 @@ private:
     bool is_embedded = false;
 
     /// Pre-decoded embedded postings reused by ephemeral cursors.
-    alignas(16) uint32_t embedded_values[BLOCK_SIZE]{};
+    alignas(16) uint32_t embedded_values[MAX_EMBEDDED_POSTING_LIST_ROWS]{};
     size_t embedded_count = 0;
 
     double density_val = 0;
 };
 
 using PostingListCursorHandlePtr = std::shared_ptr<PostingListCursorHandle>;
-using PostingListCursorHandleMap = absl::flat_hash_map<std::string_view, PostingListCursorHandlePtr>;
 
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///

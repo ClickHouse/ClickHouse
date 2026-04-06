@@ -24,7 +24,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <numeric>
 #include <random>
 #include <set>
 #include <vector>
@@ -3511,7 +3510,7 @@ TEST(PostingListCursorTest, MultiCursorPartialOverlap)
 
 TEST(PostingListCursorTest, RawSingleBlockMaterializedCursorDrain)
 {
-    const std::vector<uint32_t> docs = {3, 10, 17, 24, 31, 38, 45};
+    const std::vector<uint32_t> docs = {3, 10, 17, 24, 31, 38};
     auto info = makeMaterializedSingleBlockInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
@@ -3520,7 +3519,7 @@ TEST(PostingListCursorTest, RawSingleBlockMaterializedCursorDrain)
 
 TEST(PostingListCursorTest, RawSingleBlockMaterializedIntersectWithCompressed)
 {
-    const std::vector<uint32_t> raw_docs = {3, 10, 17, 24, 31, 38, 45};
+    const std::vector<uint32_t> raw_docs = {3, 10, 17, 24, 31, 38};
     auto raw_info = makeMaterializedSingleBlockInfo(raw_docs);
 
     auto compressed = makeMultiBlockData({generateRange(0, 20)});
@@ -3535,7 +3534,7 @@ TEST(PostingListCursorTest, RawSingleBlockMaterializedIntersectWithCompressed)
 
 TEST(PostingListCursorTest, RawSingleBlockMaterializedUnionWithCompressed)
 {
-    const std::vector<uint32_t> raw_docs = {3, 10, 17, 24, 31, 38, 45};
+    const std::vector<uint32_t> raw_docs = {3, 10, 17, 24, 31, 38};
     auto raw_info = makeMaterializedSingleBlockInfo(raw_docs);
 
     auto compressed = makeMultiBlockData({generateRange(0, 20)});
@@ -3547,7 +3546,7 @@ TEST(PostingListCursorTest, RawSingleBlockMaterializedUnionWithCompressed)
     auto result = unionAndCollect(postings, {"compressed", "raw"}, 0, 50);
 
     std::vector<uint32_t> expected = generateRange(0, 20);
-    expected.insert(expected.end(), {24, 31, 38, 45});
+    expected.insert(expected.end(), {24, 31, 38});
     EXPECT_EQ(result, expected);
 }
 
