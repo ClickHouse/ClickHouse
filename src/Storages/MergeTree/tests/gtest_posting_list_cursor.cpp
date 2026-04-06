@@ -51,6 +51,16 @@ TokenPostingsInfo makeEmbeddedInfo(const std::vector<uint32_t> & doc_ids)
     return info;
 }
 
+/// Helper: build TokenPostingsInfo for a materialized raw single-block posting list.
+/// This matches how lazy mode wraps `RawPostings | SingleBlock` tokens after the reader fix:
+/// the original on-disk format is raw, but the granule already materialized it into a bitmap.
+TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & doc_ids)
+{
+    TokenPostingsInfo info = makeEmbeddedInfo(doc_ids);
+    info.header = PostingsSerialization::Flags::RawPostings | PostingsSerialization::Flags::SingleBlock;
+    return info;
+}
+
 /// Helper: create a PostingListCursor for an embedded posting list.
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
@@ -3437,5 +3447,47 @@ TEST(PostingListCursorTest, MultiCursorPartialOverlap)
 
     auto result = unionAndCollect(postings, {"t1", "t2"}, 0, 400);
     auto expected = generateRange(0, 400);
+    EXPECT_EQ(result, expected);
+}
+
+TEST(PostingListCursorTest, RawSingleBlockMaterializedCursorDrain)
+{
+    const std::vector<uint32_t> docs = {3, 10, 17, 24, 31, 38, 45};
+    auto info = makeMaterializedSingleBlockInfo(docs);
+    auto cursor = makeEmbeddedCursor(info);
+
+    EXPECT_EQ(drainCursor(cursor), docs);
+}
+
+TEST(PostingListCursorTest, RawSingleBlockMaterializedIntersectWithCompressed)
+{
+    const std::vector<uint32_t> raw_docs = {3, 10, 17, 24, 31, 38, 45};
+    auto raw_info = makeMaterializedSingleBlockInfo(raw_docs);
+
+    auto compressed = makeMultiBlockData({generateRange(0, 20)});
+
+    PostingListCursorMap postings;
+    postings["raw"] = makeEmbeddedCursor(raw_info);
+    postings["compressed"] = makeMultiBlockCursor(compressed);
+
+    auto result = intersectAndCollect(postings, {"compressed", "raw"}, 0, 100, false, 100.0f);
+    EXPECT_EQ(result, std::vector<uint32_t>({3, 10, 17}));
+}
+
+TEST(PostingListCursorTest, RawSingleBlockMaterializedUnionWithCompressed)
+{
+    const std::vector<uint32_t> raw_docs = {3, 10, 17, 24, 31, 38, 45};
+    auto raw_info = makeMaterializedSingleBlockInfo(raw_docs);
+
+    auto compressed = makeMultiBlockData({generateRange(0, 20)});
+
+    PostingListCursorMap postings;
+    postings["compressed"] = makeMultiBlockCursor(compressed);
+    postings["raw"] = makeEmbeddedCursor(raw_info);
+
+    auto result = unionAndCollect(postings, {"compressed", "raw"}, 0, 50);
+
+    std::vector<uint32_t> expected = generateRange(0, 20);
+    expected.insert(expected.end(), {24, 31, 38, 45});
     EXPECT_EQ(result, expected);
 }

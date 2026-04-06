@@ -296,6 +296,46 @@ SELECT count() FROM tab_dr WHERE hasToken(s, 'common') AND hasToken(s, 'other');
 SET query_plan_direct_read_from_text_index = 0;
 
 ----------------------------------------------------
+SELECT 'Test 11: Raw single-block postings in lazy mode';
+
+DROP TABLE IF EXISTS tab_raw_single;
+
+CREATE TABLE tab_raw_single(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking', posting_list_block_size = 128))
+    ENGINE = MergeTree() ORDER BY k
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab_raw_single VALUES
+    (0, 'dense tiny'),
+    (1, 'dense filler'),
+    (2, 'dense filler'),
+    (3, 'dense tiny'),
+    (4, 'dense filler'),
+    (5, 'dense filler'),
+    (6, 'dense filler'),
+    (7, 'dense filler'),
+    (8, 'dense tiny'),
+    (9, 'dense filler'),
+    (10, 'dense filler'),
+    (11, 'dense tiny'),
+    (12, 'dense filler'),
+    (13, 'dense filler'),
+    (14, 'dense tiny'),
+    (15, 'dense filler'),
+    (16, 'dense filler'),
+    (17, 'dense filler'),
+    (18, 'dense filler'),
+    (19, 'dense filler');
+
+SET query_plan_direct_read_from_text_index = 1;
+
+SELECT count() FROM tab_raw_single WHERE hasToken(s, 'tiny') SETTINGS text_index_posting_list_apply_mode = 'lazy';
+SELECT groupArray(k) FROM (SELECT k FROM tab_raw_single WHERE hasToken(s, 'tiny') SETTINGS text_index_posting_list_apply_mode = 'lazy' ORDER BY k);
+SELECT count() FROM tab_raw_single WHERE hasAllTokens(s, ['dense', 'tiny']) SETTINGS text_index_posting_list_apply_mode = 'lazy';
+SELECT count() FROM tab_raw_single WHERE hasAnyTokens(s, ['tiny', 'missing']) SETTINGS text_index_posting_list_apply_mode = 'lazy';
+
+SET query_plan_direct_read_from_text_index = 0;
+
+----------------------------------------------------
 DROP TABLE IF EXISTS tab_multi_seg;
 DROP TABLE IF EXISTS tab_seek;
 DROP TABLE IF EXISTS tab_boundary;
@@ -309,3 +349,4 @@ DROP TABLE IF EXISTS tab_empty_seek;
 DROP TABLE IF EXISTS tab_merge_seg;
 DROP TABLE IF EXISTS tab_seek_seg;
 DROP TABLE IF EXISTS tab_dr;
+DROP TABLE IF EXISTS tab_raw_single;

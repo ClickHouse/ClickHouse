@@ -668,7 +668,9 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
 
             const auto & token_info = *info_it->second;
 
-            /// Compressed postings use lazy cursor; embedded postings use stream-free cursor.
+            /// Compressed postings use a stream-backed cursor.
+            /// Embedded and raw single-block postings are already materialized by the granule,
+            /// so lazy mode must wrap them into a stream-free cursor instead of dropping them.
             PostingListCursorPtr cursor;
             if (token_info.header & PostingsSerialization::Flags::IsCompressed)
             {
@@ -678,6 +680,14 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
                     : small_postings_stream.get();
 
                 cursor = std::make_shared<PostingListCursor>(*postings_stream, token_info);
+            }
+            else if (auto rare_postings = granule_text.getPostingsForRareToken(token))
+            {
+                TokenPostingsInfo materialized_info = token_info;
+                materialized_info.embedded_postings = std::move(rare_postings);
+                materialized_info.offsets = {0};
+                materialized_info.ranges = {{rare_postings->minimum(), rare_postings->maximum()}};
+                cursor = std::make_shared<PostingListCursor>(materialized_info);
             }
             else if (token_info.embedded_postings)
             {

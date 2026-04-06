@@ -42,3 +42,8 @@ Test 9: Seek within and across segments with ngrams
 Test 10: Direct read mode with large posting list
 200
 0
+Test 11: Raw single-block postings in lazy mode
+5
+[0,3,8,11,14]
+5
+5
