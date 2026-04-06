@@ -16,7 +16,7 @@
 
 # 2026 Changelog
 
-### <a id="263"></a> ClickHouse release 26.3 LTS, 2026-03-26. [Presentation](https://presentations.clickhouse.com/), Video (TODO)
+### <a id="263"></a> ClickHouse release 26.3 LTS, 2026-03-26. [Presentation](https://presentations.clickhouse.com/), [Video](https://www.youtube.com/watch?v=_bY0ucNB1lQ)
 
 #### Backward Incompatible Change
 * Remove the `hypothesis` skip index type. It was an obscure, experimental feature with limited practical use. Creating tables with `INDEX ... TYPE hypothesis` will now produce an error. [#96874](https://github.com/ClickHouse/ClickHouse/pull/96874) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
@@ -48,7 +48,7 @@
 * Add `restore_access_entities_with_current_grants` server setting. When enabled, restored users/roles from backups have their grants limited to what the restoring user is allowed to grant (same semantics as `GRANT CURRENT GRANTS`), instead of failing with `ACCESS_DENIED`. [#98795](https://github.com/ClickHouse/ClickHouse/pull/98795) ([pufit](https://github.com/pufit)).
 * Add `caseFoldUTF8` and `removeDiacriticsUTF8` functions for Unicode case folding and diacritical mark removal. [#98973](https://github.com/ClickHouse/ClickHouse/pull/98973) ([George Larionov](https://github.com/george-larionov)).
 * Add `normalizeUTF8NFKCCasefold` string function for NFKC_Casefold Unicode normalization, which combines NFKC normalization with case folding. [#99276](https://github.com/ClickHouse/ClickHouse/pull/99276) ([George Larionov](https://github.com/george-larionov)).
-* Add `unicodeWord` tokenizer for full-text indexes and the `tokens` function. It splits text using Unicode word boundary rules: ASCII words are formed with connector characters (underscore, colon, dot, single quote), while non-ASCII Unicode characters become single-character tokens. [#99357](https://github.com/ClickHouse/ClickHouse/pull/99357) ([Amos Bird](https://github.com/amosbird)).
+* Add `asciiCJK` tokenizer for full-text indexes and the `tokens` function. It splits text using Unicode word boundary rules: ASCII words are formed with connector characters (underscore, colon, dot, single quote), while non-ASCII Unicode characters become single-character tokens. [#99357](https://github.com/ClickHouse/ClickHouse/pull/99357) ([Amos Bird](https://github.com/amosbird)).
 * Added `max_skip_unavailable_shards_num` and `max_skip_unavailable_shards_ratio` settings to limit how many shards can be silently skipped when `skip_unavailable_shards` is enabled. If the number or ratio of unavailable shards exceeds the configured threshold, an exception is thrown instead of returning silently incomplete results. [#99369](https://github.com/ClickHouse/ClickHouse/pull/99369) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 * Users can now use `SOME` keyword for subquery expressions. It behaves identically to `ANY`. [#99842](https://github.com/ClickHouse/ClickHouse/pull/99842) ([Artem Kytkin](https://github.com/Vinceent)).
 * Add `output_format_trim_fixed_string` setting to strip trailing null bytes from `FixedString` values in text output formats. [#97558](https://github.com/ClickHouse/ClickHouse/pull/97558) ([NeedmeFordev](https://github.com/spider-yamet)).
