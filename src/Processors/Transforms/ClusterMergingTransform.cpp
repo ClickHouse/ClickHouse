@@ -3,8 +3,10 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
+#include <Processors/Port.h>
 
 #include <algorithm>
+#include <numeric>
 
 namespace DB
 {
