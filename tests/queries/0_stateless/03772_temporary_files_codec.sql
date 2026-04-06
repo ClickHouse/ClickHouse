@@ -8,7 +8,7 @@ SET group_by_two_level_threshold = '100K';
 SET group_by_two_level_threshold_bytes = '50M';
 SET max_memory_usage = '1G';
 
-CREATE TEMPORARY TABLE start_ts AS ( SELECT now() AS ts );
+CREATE TEMPORARY TABLE start_ts AS ( SELECT now64(6) AS ts );
 
 SELECT * FROM (SELECT number, 'payload' FROM numbers(2_000_000)) ORDER BY number
 SETTINGS log_comment='03772_temporary_files_codec/sort', temporary_files_codec = 'NONE'
@@ -59,7 +59,7 @@ USING key
 SETTINGS log_comment='03772_temporary_files_codec/partial_merge_join', temporary_files_codec = 'LZ4'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS system.query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     log_comment,
@@ -67,9 +67,9 @@ SELECT
     (sumIf(ProfileEvents['ExternalProcessingUncompressedBytesTotal'], Settings['temporary_files_codec'] = 'NONE') AS without_compression) > 0,
     with_compression < without_compression
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= (SELECT ts FROM start_ts)
+WHERE event_date >= yesterday() AND event_time_microseconds >= (SELECT ts FROM start_ts)
     AND current_database = currentDatabase()
-    AND type != 1
+    AND type = 'QueryFinish'
     AND log_comment like '03772_temporary_files_codec/%'
 GROUP BY log_comment
 ORDER BY log_comment
