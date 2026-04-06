@@ -900,7 +900,7 @@ TEST(PostingListCursorTest, BruteForceIntersectThree)
 
 TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
 {
-    std::mt19937 rng(42);
+    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     std::uniform_int_distribution<uint32_t> dist(0, 999);
 
     for (int trial = 0; trial < 10; ++trial)
@@ -1126,12 +1126,13 @@ TEST(PostingListCursorTest, UnionZeroCursors)
 
 TEST(PostingListCursorTest, StressRandomIntersectTwo)
 {
-    std::mt19937 rng(12345);
+    std::mt19937 rng(12345); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 20; ++trial)
     {
         std::uniform_int_distribution<uint32_t> dist(0, 9999);
-        std::set<uint32_t> s1, s2;
+        std::set<uint32_t> s1; // NOLINT(readability-isolate-declaration)
+        std::set<uint32_t> s2;
 
         size_t sz1 = 200 + trial * 50;
         size_t sz2 = 100 + trial * 30;
@@ -1159,7 +1160,7 @@ TEST(PostingListCursorTest, StressRandomIntersectTwo)
 
 TEST(PostingListCursorTest, StressRandomIntersectFour)
 {
-    std::mt19937 rng(54321);
+    std::mt19937 rng(54321); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -1185,7 +1186,9 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
             postings[tokens[i]] = makeMultiBlockCursor(data[i]);
 
         // Compute expected 4-way intersection
-        std::vector<uint32_t> tmp1, tmp2, expected;
+        std::vector<uint32_t> tmp1; // NOLINT(readability-isolate-declaration)
+        std::vector<uint32_t> tmp2;
+        std::vector<uint32_t> expected;
         std::set_intersection(sets[0].begin(), sets[0].end(), sets[1].begin(), sets[1].end(), std::back_inserter(tmp1));
         std::set_intersection(sets[2].begin(), sets[2].end(), sets[3].begin(), sets[3].end(), std::back_inserter(tmp2));
         std::set_intersection(tmp1.begin(), tmp1.end(), tmp2.begin(), tmp2.end(), std::back_inserter(expected));
@@ -1197,7 +1200,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
 
 TEST(PostingListCursorTest, StressRandomUnion)
 {
-    std::mt19937 rng(99999);
+    std::mt19937 rng(99999); // NOLINT(cert-msc32-c,cert-msc51-cpp)
 
     for (int trial = 0; trial < 10; ++trial)
     {
@@ -1920,12 +1923,12 @@ TEST(PostingListCursorTest, MultiBlockIntersectTwoMultiBlockCursors)
     /// Cursor A: block0=[0..149], block1=[500..699]
     /// Cursor B: block0=[100..299], block1=[600..799]
     /// Intersection: [100..149] ∪ [600..699]
-    auto dataA = makeMultiBlockData({generateRange(0, 150), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(100, 200), generateRange(600, 200)});
+    auto data_a = makeMultiBlockData({generateRange(0, 150), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(100, 200), generateRange(600, 200)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 800, false, 100.0);
 
@@ -1942,12 +1945,12 @@ TEST(PostingListCursorTest, MultiBlockIntersectMultiBlockWithEmbedded)
     /// Multi-block cursor A: [0..199], [500..699]
     /// Embedded cursor B: {50, 150, 550, 650, 800}
     /// Intersection: {50, 150, 550, 650}
-    auto dataA = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
-    auto infoB = makeEmbeddedInfo({50, 150, 550, 650, 800});
+    auto data_a = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
+    auto info_b = makeEmbeddedInfo({50, 150, 550, 650, 800});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeEmbeddedCursor(infoB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeEmbeddedCursor(info_b);
 
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 1000, false, 100.0);
     std::vector<uint32_t> expected = {50, 150, 550, 650};
@@ -1956,12 +1959,12 @@ TEST(PostingListCursorTest, MultiBlockIntersectMultiBlockWithEmbedded)
 
 TEST(PostingListCursorTest, MultiBlockIntersectDisjoint)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 150)});
-    auto dataB = makeMultiBlockData({generateRange(500, 150)});
+    auto data_a = makeMultiBlockData({generateRange(0, 150)});
+    auto data_b = makeMultiBlockData({generateRange(500, 150)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 700, false, 100.0);
     EXPECT_TRUE(result.empty());
@@ -1974,12 +1977,12 @@ TEST(PostingListCursorTest, MultiBlockIntersectDisjoint)
 
 TEST(PostingListCursorTest, MultiBlockUnionTwoCursors)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 150)});
-    auto dataB = makeMultiBlockData({generateRange(500, 150)});
+    auto data_a = makeMultiBlockData({generateRange(0, 150)});
+    auto data_b = makeMultiBlockData({generateRange(500, 150)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     auto result = unionAndCollect(postings, {"a", "b"}, 0, 700);
     std::vector<uint32_t> expected;
@@ -1995,12 +1998,12 @@ TEST(PostingListCursorTest, MultiBlockUnionTwoCursors)
 
 TEST(PostingListCursorTest, MultiBlockBruteForceIntersect)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(100, 200), generateRange(600, 200)});
+    auto data_a = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(100, 200), generateRange(600, 200)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 800, true);
 
@@ -2014,19 +2017,19 @@ TEST(PostingListCursorTest, MultiBlockBruteForceIntersect)
 
 TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogConsistency)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(50, 250), generateRange(550, 250)});
+    auto data_a = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(50, 250), generateRange(550, 250)});
 
     // Brute force
     {
         PostingListCursorMap postings;
-        postings["a"] = makeMultiBlockCursor(dataA);
-        postings["b"] = makeMultiBlockCursor(dataB);
+        postings["a"] = makeMultiBlockCursor(data_a);
+        postings["b"] = makeMultiBlockCursor(data_b);
         auto bf = intersectAndCollect(postings, {"a", "b"}, 0, 800, true);
 
         PostingListCursorMap postings2;
-        postings2["a"] = makeMultiBlockCursor(dataA);
-        postings2["b"] = makeMultiBlockCursor(dataB);
+        postings2["a"] = makeMultiBlockCursor(data_a);
+        postings2["b"] = makeMultiBlockCursor(data_b);
         auto lf = intersectAndCollect(postings2, {"a", "b"}, 0, 800, false, 100.0);
 
         EXPECT_EQ(bf, lf);
@@ -2317,14 +2320,14 @@ TEST(PostingListCursorTest, MultiBlockIntersectThreeMultiBlockCursors)
     /// Cursor B: [50..249], [550..749]
     /// Cursor C: [100..299], [600..799]
     /// Intersection: [100..199] ∪ [600..699]
-    auto dataA = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(50, 200), generateRange(550, 200)});
-    auto dataC = makeMultiBlockData({generateRange(100, 200), generateRange(600, 200)});
+    auto data_a = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(50, 200), generateRange(550, 200)});
+    auto data_c = makeMultiBlockData({generateRange(100, 200), generateRange(600, 200)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
-    postings["c"] = makeMultiBlockCursor(dataC);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
+    postings["c"] = makeMultiBlockCursor(data_c);
 
     auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 800, false, 100.0);
 
@@ -2341,16 +2344,16 @@ TEST(PostingListCursorTest, MultiBlockIntersectFourMultiBlockCursors)
     /// Cursor C: [100..299]
     /// Cursor D: [150..349]
     /// Intersection: [150..199]
-    auto dataA = makeMultiBlockData({generateRange(0, 200)});
-    auto dataB = makeMultiBlockData({generateRange(50, 200)});
-    auto dataC = makeMultiBlockData({generateRange(100, 200)});
-    auto dataD = makeMultiBlockData({generateRange(150, 200)});
+    auto data_a = makeMultiBlockData({generateRange(0, 200)});
+    auto data_b = makeMultiBlockData({generateRange(50, 200)});
+    auto data_c = makeMultiBlockData({generateRange(100, 200)});
+    auto data_d = makeMultiBlockData({generateRange(150, 200)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
-    postings["c"] = makeMultiBlockCursor(dataC);
-    postings["d"] = makeMultiBlockCursor(dataD);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
+    postings["c"] = makeMultiBlockCursor(data_c);
+    postings["d"] = makeMultiBlockCursor(data_d);
 
     auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 400, false, 100.0);
 
@@ -2363,18 +2366,18 @@ TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlockLeapfrogLinear)
 {
     /// 5 cursors → dispatches to intersectLeapfrogLinear.
     /// All share [100..149].
-    auto dataA = makeMultiBlockData({generateRange(0, 200)});
-    auto dataB = makeMultiBlockData({generateRange(50, 200)});
-    auto dataC = makeMultiBlockData({generateRange(100, 200)});
-    auto dataD = makeMultiBlockData({generateRange(100, 150)});
-    auto dataE = makeMultiBlockData({generateRange(100, 130)});
+    auto data_a = makeMultiBlockData({generateRange(0, 200)});
+    auto data_b = makeMultiBlockData({generateRange(50, 200)});
+    auto data_c = makeMultiBlockData({generateRange(100, 200)});
+    auto data_d = makeMultiBlockData({generateRange(100, 150)});
+    auto data_e = makeMultiBlockData({generateRange(100, 130)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
-    postings["c"] = makeMultiBlockCursor(dataC);
-    postings["d"] = makeMultiBlockCursor(dataD);
-    postings["e"] = makeMultiBlockCursor(dataE);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
+    postings["c"] = makeMultiBlockCursor(data_c);
+    postings["d"] = makeMultiBlockCursor(data_d);
+    postings["e"] = makeMultiBlockCursor(data_e);
 
     auto result = intersectAndCollect(postings, {"a", "b", "c", "d", "e"}, 0, 400, false, 100.0);
 
@@ -2388,14 +2391,14 @@ TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlockLeapfrogLinear)
 
 TEST(PostingListCursorTest, MultiBlockIntersectThreeDisjoint)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 150)});
-    auto dataB = makeMultiBlockData({generateRange(200, 150)});
-    auto dataC = makeMultiBlockData({generateRange(400, 150)});
+    auto data_a = makeMultiBlockData({generateRange(0, 150)});
+    auto data_b = makeMultiBlockData({generateRange(200, 150)});
+    auto data_c = makeMultiBlockData({generateRange(400, 150)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
-    postings["c"] = makeMultiBlockCursor(dataC);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
+    postings["c"] = makeMultiBlockCursor(data_c);
 
     auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 600, false, 100.0);
     EXPECT_TRUE(result.empty());
@@ -2582,12 +2585,12 @@ TEST(PostingListCursorTest, MultiBlockWithEmbeddedBruteForceIntersect)
     /// Multi-block cursor A: [0..199], [500..699]
     /// Embedded cursor B: all even numbers 0,2,4,...,698
     /// Brute-force intersection: even numbers in [0..199] ∪ even numbers in [500..699]
-    auto dataA = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(0, 350, 2)}); // 0,2,4,...,698
+    auto data_a = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(0, 350, 2)}); // 0,2,4,...,698
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 700, true);
 
@@ -2600,14 +2603,14 @@ TEST(PostingListCursorTest, MultiBlockWithEmbeddedBruteForceIntersect)
 TEST(PostingListCursorTest, MultiBlockWithEmbeddedBruteForceThreeWay)
 {
     /// 3-way brute-force: multi-block A, multi-block B, embedded C.
-    auto dataA = makeMultiBlockData({generateRange(0, 300)});
-    auto dataB = makeMultiBlockData({generateRange(100, 300)});
-    auto dataC = makeMultiBlockData({generateRange(150, 50)}); // 150..199
+    auto data_a = makeMultiBlockData({generateRange(0, 300)});
+    auto data_b = makeMultiBlockData({generateRange(100, 300)});
+    auto data_c = makeMultiBlockData({generateRange(150, 50)}); // 150..199
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
-    postings["c"] = makeMultiBlockCursor(dataC);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
+    postings["c"] = makeMultiBlockCursor(data_c);
 
     auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 500, true);
 
@@ -2673,14 +2676,14 @@ TEST(PostingListCursorTest, MultiBlockLinearAndPackedBlockSkipAndEarlyReturn)
 
 TEST(PostingListCursorTest, MultiBlockUnionThreeMultiBlockCursors)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 150)});   // 0..149
-    auto dataB = makeMultiBlockData({generateRange(200, 150)});  // 200..349
-    auto dataC = makeMultiBlockData({generateRange(400, 150)});  // 400..549
+    auto data_a = makeMultiBlockData({generateRange(0, 150)});   // 0..149
+    auto data_b = makeMultiBlockData({generateRange(200, 150)});  // 200..349
+    auto data_c = makeMultiBlockData({generateRange(400, 150)});  // 400..549
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
-    postings["c"] = makeMultiBlockCursor(dataC);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
+    postings["c"] = makeMultiBlockCursor(data_c);
 
     auto result = unionAndCollect(postings, {"a", "b", "c"}, 0, 600);
 
@@ -2694,12 +2697,12 @@ TEST(PostingListCursorTest, MultiBlockUnionThreeMultiBlockCursors)
 TEST(PostingListCursorTest, MultiBlockUnionOverlapping)
 {
     /// Two multi-block cursors with overlapping doc ranges.
-    auto dataA = makeMultiBlockData({generateRange(0, 200)});   // 0..199
-    auto dataB = makeMultiBlockData({generateRange(100, 200)});  // 100..299
+    auto data_a = makeMultiBlockData({generateRange(0, 200)});   // 0..199
+    auto data_b = makeMultiBlockData({generateRange(100, 200)});  // 100..299
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     auto result = unionAndCollect(postings, {"a", "b"}, 0, 300);
 
@@ -2710,12 +2713,12 @@ TEST(PostingListCursorTest, MultiBlockUnionOverlapping)
 
 TEST(PostingListCursorTest, MultiBlockUnionWithWindow)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(300, 200)});
+    auto data_a = makeMultiBlockData({generateRange(0, 200), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(300, 200)});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
 
     /// Window [250, 600) should capture: A's [500..599], B's [300..499]
     auto result = unionAndCollect(postings, {"a", "b"}, 250, 350);
@@ -2733,22 +2736,22 @@ TEST(PostingListCursorTest, MultiBlockUnionWithWindow)
 
 TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogThreeWay)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 300), generateRange(500, 200)});
-    auto dataB = makeMultiBlockData({generateRange(50, 300), generateRange(550, 200)});
-    auto dataC = makeMultiBlockData({generateRange(100, 200), generateRange(600, 150)});
+    auto data_a = makeMultiBlockData({generateRange(0, 300), generateRange(500, 200)});
+    auto data_b = makeMultiBlockData({generateRange(50, 300), generateRange(550, 200)});
+    auto data_c = makeMultiBlockData({generateRange(100, 200), generateRange(600, 150)});
 
     // Brute force
     PostingListCursorMap postings_bf;
-    postings_bf["a"] = makeMultiBlockCursor(dataA);
-    postings_bf["b"] = makeMultiBlockCursor(dataB);
-    postings_bf["c"] = makeMultiBlockCursor(dataC);
+    postings_bf["a"] = makeMultiBlockCursor(data_a);
+    postings_bf["b"] = makeMultiBlockCursor(data_b);
+    postings_bf["c"] = makeMultiBlockCursor(data_c);
     auto bf = intersectAndCollect(postings_bf, {"a", "b", "c"}, 0, 800, true);
 
     // Leapfrog
     PostingListCursorMap postings_lf;
-    postings_lf["a"] = makeMultiBlockCursor(dataA);
-    postings_lf["b"] = makeMultiBlockCursor(dataB);
-    postings_lf["c"] = makeMultiBlockCursor(dataC);
+    postings_lf["a"] = makeMultiBlockCursor(data_a);
+    postings_lf["b"] = makeMultiBlockCursor(data_b);
+    postings_lf["c"] = makeMultiBlockCursor(data_c);
     auto lf = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 800, false, 100.0);
 
     EXPECT_EQ(bf, lf);
@@ -2764,23 +2767,23 @@ TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogThreeWay)
 
 TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogFourWay)
 {
-    auto dataA = makeMultiBlockData({generateRange(0, 250)});
-    auto dataB = makeMultiBlockData({generateRange(50, 250)});
-    auto dataC = makeMultiBlockData({generateRange(100, 250)});
-    auto dataD = makeMultiBlockData({generateRange(150, 250)});
+    auto data_a = makeMultiBlockData({generateRange(0, 250)});
+    auto data_b = makeMultiBlockData({generateRange(50, 250)});
+    auto data_c = makeMultiBlockData({generateRange(100, 250)});
+    auto data_d = makeMultiBlockData({generateRange(150, 250)});
 
     PostingListCursorMap postings_bf;
-    postings_bf["a"] = makeMultiBlockCursor(dataA);
-    postings_bf["b"] = makeMultiBlockCursor(dataB);
-    postings_bf["c"] = makeMultiBlockCursor(dataC);
-    postings_bf["d"] = makeMultiBlockCursor(dataD);
+    postings_bf["a"] = makeMultiBlockCursor(data_a);
+    postings_bf["b"] = makeMultiBlockCursor(data_b);
+    postings_bf["c"] = makeMultiBlockCursor(data_c);
+    postings_bf["d"] = makeMultiBlockCursor(data_d);
     auto bf = intersectAndCollect(postings_bf, {"a", "b", "c", "d"}, 0, 500, true);
 
     PostingListCursorMap postings_lf;
-    postings_lf["a"] = makeMultiBlockCursor(dataA);
-    postings_lf["b"] = makeMultiBlockCursor(dataB);
-    postings_lf["c"] = makeMultiBlockCursor(dataC);
-    postings_lf["d"] = makeMultiBlockCursor(dataD);
+    postings_lf["a"] = makeMultiBlockCursor(data_a);
+    postings_lf["b"] = makeMultiBlockCursor(data_b);
+    postings_lf["c"] = makeMultiBlockCursor(data_c);
+    postings_lf["d"] = makeMultiBlockCursor(data_d);
     auto lf = intersectAndCollect(postings_lf, {"a", "b", "c", "d"}, 0, 500, false, 100.0);
 
     EXPECT_EQ(bf, lf);
@@ -2987,7 +2990,7 @@ TEST(PostingListCursorTest, ArithmeticMixedNonArithThenArith)
 
     /// Block 0: 128 docs with variable gaps (non-constant delta).
     uint32_t prev = 0;
-    std::mt19937 rng(42);
+    std::mt19937 rng(42); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 5);  // gap 1-5 (variable → non-constant delta)
@@ -3015,7 +3018,7 @@ TEST(PostingListCursorTest, ArithmeticSeekFromNonArithToArith)
     docs.push_back(0);
 
     uint32_t prev = 0;
-    std::mt19937 rng(123);
+    std::mt19937 rng(123); // NOLINT(cert-msc32-c,cert-msc51-cpp)
     for (int i = 0; i < 128; ++i)
     {
         prev += 1 + (rng() % 10);
@@ -3100,16 +3103,16 @@ TEST(PostingListCursorTest, ArithmeticBlock0NotOptimized)
 TEST(PostingListCursorTest, ArithmeticIntersectTwoLeapfrog)
 {
     /// Cursor A: 257 consecutive docs [0..256], block 1 is arithmetic.
-    auto docsA = generateRange(0, 257);
-    auto dataA = makeMultiBlockData({docsA});
+    auto docs_a = generateRange(0, 257);
+    auto data_a = makeMultiBlockData({docs_a});
 
     /// Cursor B: 257 docs with step 2 [0, 2, 4, ..., 512], block 1 is arithmetic.
-    auto docsB = generateRange(0, 257, 2);
-    auto dataB = makeMultiBlockData({docsB});
+    auto docs_b = generateRange(0, 257, 2);
+    auto data_b = makeMultiBlockData({docs_b});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 520, false, 100.0);
 
     /// Intersection: even numbers from 0 to 256.
@@ -3122,15 +3125,15 @@ TEST(PostingListCursorTest, ArithmeticIntersectTwoLeapfrog)
 /// Intersection (brute force) with arithmetic blocks.
 TEST(PostingListCursorTest, ArithmeticIntersectTwoBruteForce)
 {
-    auto docsA = generateRange(0, 257);
-    auto dataA = makeMultiBlockData({docsA});
+    auto docs_a = generateRange(0, 257);
+    auto data_a = makeMultiBlockData({docs_a});
 
-    auto docsB = generateRange(0, 257, 2);
-    auto dataB = makeMultiBlockData({docsB});
+    auto docs_b = generateRange(0, 257, 2);
+    auto data_b = makeMultiBlockData({docs_b});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
     auto result = intersectAndCollect(postings, {"a", "b"}, 0, 520, true);
 
     std::vector<uint32_t> expected;
@@ -3142,20 +3145,20 @@ TEST(PostingListCursorTest, ArithmeticIntersectTwoBruteForce)
 /// Union with arithmetic blocks.
 TEST(PostingListCursorTest, ArithmeticUnionTwo)
 {
-    auto docsA = generateRange(0, 257);
-    auto dataA = makeMultiBlockData({docsA});
+    auto docs_a = generateRange(0, 257);
+    auto data_a = makeMultiBlockData({docs_a});
 
-    auto docsB = generateRange(300, 130, 2);  // 300, 302, ..., 558
-    auto dataB = makeMultiBlockData({docsB});
+    auto docs_b = generateRange(300, 130, 2);  // 300, 302, ..., 558
+    auto data_b = makeMultiBlockData({docs_b});
 
     PostingListCursorMap postings;
-    postings["a"] = makeMultiBlockCursor(dataA);
-    postings["b"] = makeMultiBlockCursor(dataB);
+    postings["a"] = makeMultiBlockCursor(data_a);
+    postings["b"] = makeMultiBlockCursor(data_b);
     auto result = unionAndCollect(postings, {"a", "b"}, 0, 600);
 
     /// Build expected: union of both sets.
-    std::set<uint32_t> expected_set(docsA.begin(), docsA.end());
-    expected_set.insert(docsB.begin(), docsB.end());
+    std::set<uint32_t> expected_set(docs_a.begin(), docs_a.end());
+    expected_set.insert(docs_b.begin(), docs_b.end());
     std::vector<uint32_t> expected(expected_set.begin(), expected_set.end());
     EXPECT_EQ(result, expected);
 }
@@ -3233,25 +3236,25 @@ TEST(PostingListCursorTest, ArithmeticSeekBeyondBlock)
 /// Brute force vs leapfrog consistency with arithmetic blocks.
 TEST(PostingListCursorTest, ArithmeticBruteForceVsLeapfrogConsistency)
 {
-    auto docsA = generateRange(0, 385);
-    auto dataA = makeMultiBlockData({docsA});
+    auto docs_a = generateRange(0, 385);
+    auto data_a = makeMultiBlockData({docs_a});
 
-    auto docsB = generateRange(0, 257, 2);
-    auto dataB = makeMultiBlockData({docsB});
+    auto docs_b = generateRange(0, 257, 2);
+    auto data_b = makeMultiBlockData({docs_b});
 
-    auto docsC = generateRange(100, 200);
-    auto dataC = makeMultiBlockData({docsC});
+    auto docs_c = generateRange(100, 200);
+    auto data_c = makeMultiBlockData({docs_c});
 
     PostingListCursorMap postings_bf;
-    postings_bf["a"] = makeMultiBlockCursor(dataA);
-    postings_bf["b"] = makeMultiBlockCursor(dataB);
-    postings_bf["c"] = makeMultiBlockCursor(dataC);
+    postings_bf["a"] = makeMultiBlockCursor(data_a);
+    postings_bf["b"] = makeMultiBlockCursor(data_b);
+    postings_bf["c"] = makeMultiBlockCursor(data_c);
     auto bf = intersectAndCollect(postings_bf, {"a", "b", "c"}, 0, 520, true);
 
     PostingListCursorMap postings_lf;
-    postings_lf["a"] = makeMultiBlockCursor(dataA);
-    postings_lf["b"] = makeMultiBlockCursor(dataB);
-    postings_lf["c"] = makeMultiBlockCursor(dataC);
+    postings_lf["a"] = makeMultiBlockCursor(data_a);
+    postings_lf["b"] = makeMultiBlockCursor(data_b);
+    postings_lf["c"] = makeMultiBlockCursor(data_c);
     auto lf = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 520, false, 100.0);
 
     EXPECT_EQ(bf, lf);
