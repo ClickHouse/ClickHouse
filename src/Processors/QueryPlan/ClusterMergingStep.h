@@ -1,10 +1,14 @@
 #pragma once
 
+#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/Transforms/AggregatingTransform.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
+
+struct AggregatingTransformParams;
+using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
 /// Adds a ClusterMergingTransform to the pipeline that merges adjacent groups
 /// within a specified distance for a GROUP BY WITH CLUSTER key.

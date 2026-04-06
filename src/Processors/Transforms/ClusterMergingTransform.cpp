@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Arena.h>
 #include <Processors/Port.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <algorithm>
 #include <numeric>

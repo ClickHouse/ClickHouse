@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/ClusterMergingStep.h>
 #include <Processors/Transforms/ClusterMergingTransform.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/Port.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
