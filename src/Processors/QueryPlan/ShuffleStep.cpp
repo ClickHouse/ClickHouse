@@ -28,6 +28,21 @@ ShuffleStep::ShuffleStep(SharedHeader header, size_t limit_)
 
 void ShuffleStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (limit > 0 && pipeline.getNumStreams() > 1)
+    {
+        pipeline.addSimpleTransform([&](SharedHeader header)
+        {
+            return std::make_shared<PartialShuffleTransform>(header, limit);
+        });
+
+        pipeline.resize(1);
+        pipeline.addSimpleTransform([&](SharedHeader header)
+        {
+            return std::make_shared<MergingShuffleTransform>(header, limit);
+        });
+        return;
+    }
+
     pipeline.resize(1);
     pipeline.addSimpleTransform([&](SharedHeader header)
     {
