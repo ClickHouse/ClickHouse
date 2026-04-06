@@ -10,10 +10,10 @@ SET max_block_size = 65536;
 SET min_insert_block_size_rows = 0;
 SET min_insert_block_size_bytes = 0;
 
-DROP TABLE IF EXISTS tab_bitpacking;
-DROP TABLE IF EXISTS tab_uncompressed;
+DROP TABLE IF EXISTS tab_bp_validation;
+DROP TABLE IF EXISTS tab_uc_validation;
 
-CREATE TABLE tab_bitpacking
+CREATE TABLE tab_bp_validation
 (
     ts DateTime CODEC(LZ4),
     str String CODEC(LZ4),
@@ -40,7 +40,7 @@ SETTINGS
    serialization_info_version = 'basic',
    auto_statistics_types = 'minmax';
 
-CREATE TABLE tab_uncompressed
+CREATE TABLE tab_uc_validation
 (
     ts DateTime CODEC(LZ4),
     str String CODEC(LZ4),
@@ -66,36 +66,36 @@ SETTINGS
    serialization_info_version = 'basic',
    auto_statistics_types = 'minmax';
 
-INSERT INTO tab_bitpacking
+INSERT INTO tab_bp_validation
 SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str
 FROM numbers(1024000);
-INSERT INTO tab_uncompressed
+INSERT INTO tab_uc_validation
 SELECT '2026-01-09 11:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str
 FROM numbers(1024000);
 
-INSERT INTO tab_bitpacking
+INSERT INTO tab_bp_validation
 SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') AS str
 FROM numbers(512);
-INSERT INTO tab_uncompressed
+INSERT INTO tab_uc_validation
 SELECT '2026-01-09 13:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') AS str
 FROM numbers(512);
 
-INSERT INTO tab_bitpacking
+INSERT INTO tab_bp_validation
 SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') AS str
 FROM numbers(1500);
-INSERT INTO tab_uncompressed
+INSERT INTO tab_uc_validation
 SELECT '2026-01-09 15:00:00', if(number < 1003, 'mid1003', 'noise') AS str
 FROM numbers(1500);
 
-INSERT INTO tab_bitpacking
+INSERT INTO tab_bp_validation
 SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') AS str
 FROM numbers(2000);
-INSERT INTO tab_uncompressed
+INSERT INTO tab_uc_validation
 SELECT '2026-01-09 17:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') AS str
 FROM numbers(2000);
 
-OPTIMIZE TABLE tab_bitpacking FINAL;
-OPTIMIZE TABLE tab_uncompressed FINAL;
+OPTIMIZE TABLE tab_bp_validation FINAL;
+OPTIMIZE TABLE tab_uc_validation FINAL;
 
 -- Compare the size of the text index for the same dataset with bitpacking compression and uncompressed formats.
 SELECT
@@ -103,9 +103,9 @@ SELECT
     sum(rows),
     sum(secondary_indices_compressed_bytes)
 FROM system.parts
-WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking', 'tab_uncompressed')
+WHERE database = currentDatabase() AND active AND table IN ('tab_bp_validation', 'tab_uc_validation')
 GROUP BY table
 ORDER BY table;
 
-DROP TABLE tab_bitpacking;
-DROP TABLE tab_uncompressed;
+DROP TABLE tab_bp_validation;
+DROP TABLE tab_uc_validation;
