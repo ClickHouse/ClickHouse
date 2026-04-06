@@ -30,7 +30,7 @@ ClusterMergingStep::ClusterMergingStep(
     AggregatingTransformParamsPtr params_,
     String cluster_key_name_,
     Float64 cluster_distance_)
-    : ITransformingStep(input_header_, input_header_, getTraits())
+    : ITransformingStep(input_header_, std::make_shared<const Block>(params_->getHeader()), getTraits())
     , params(std::move(params_))
     , cluster_key_name(std::move(cluster_key_name_))
     , cluster_distance(cluster_distance_)
@@ -62,7 +62,7 @@ void ClusterMergingStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void ClusterMergingStep::updateOutputHeader()
 {
-    output_header = input_headers.front();
+    output_header = std::make_shared<const Block>(params->getHeader());
 }
 
 }

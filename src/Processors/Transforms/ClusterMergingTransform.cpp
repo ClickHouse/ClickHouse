@@ -22,7 +22,7 @@ ClusterMergingTransform::ClusterMergingTransform(
     AggregatingTransformParamsPtr params_,
     String cluster_key_name_,
     Float64 cluster_distance_)
-    : IAccumulatingTransform(header_, header_)
+    : IAccumulatingTransform(header_, std::make_shared<const Block>(params_->getHeader()))
     , params(std::move(params_))
     , cluster_key_name(std::move(cluster_key_name_))
     , cluster_distance(cluster_distance_)

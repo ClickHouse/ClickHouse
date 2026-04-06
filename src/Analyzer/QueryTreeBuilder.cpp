@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
@@ -580,7 +581,10 @@ QueryTreeNodePtr QueryTreeBuilder::buildGroupByList(const ASTPtr & group_by_expr
             {
                 Float64 distance = 0;
                 if (auto distance_ast = group_by_element->getClusterDistance())
-                    distance = distance_ast->as<ASTLiteral &>().value.safeGet<Float64>();
+                {
+                    const auto & val = distance_ast->as<ASTLiteral &>().value;
+                    distance = applyVisitor(FieldVisitorConvertToNumber<Float64>(), val);
+                }
                 query_node.setGroupByClusterInfo(key_index, distance);
             }
 

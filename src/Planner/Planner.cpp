@@ -427,7 +427,8 @@ public:
         aggregate_overflow_row = query_node.isGroupByWithTotals() && settings[Setting::max_rows_to_group_by]
             && settings[Setting::group_by_overflow_mode] == OverflowMode::ANY && settings[Setting::totals_mode] != TotalsMode::AFTER_HAVING_EXCLUSIVE;
         aggregate_final = query_processing_info.getToStage() > QueryProcessingStage::WithMergeableState
-            && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+            && !query_node.isGroupByWithTotals() && !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube()
+            && !query_node.hasGroupByWithCluster();
         aggregation_with_rollup_or_cube_or_grouping_sets = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() ||
             query_node.isGroupByWithGroupingSets();
         aggregation_should_produce_results_in_order_of_bucket_number
@@ -683,17 +684,11 @@ void addAggregationStep(QueryPlan & query_plan,
             storage_has_evenly_distributed_read = table_function_node->getStorageOrThrow()->hasEvenlyDistributedRead();
     }
 
-    bool has_cluster = aggregation_analysis_result.cluster_key_info.has_value();
-
-    /// When WITH CLUSTER is used, aggregation must produce non-finalized states
-    /// so that ClusterMergingTransform can merge adjacent groups.
-    bool aggregate_final = has_cluster ? false : query_analysis_result.aggregate_final;
-
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentHeader(),
         aggregator_params,
         aggregation_analysis_result.grouping_sets_parameters_list,
-        aggregate_final,
+        query_analysis_result.aggregate_final,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
         merge_threads,
@@ -706,23 +701,6 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         settings[Setting::force_aggregation_in_order]);
     query_plan.addStep(std::move(aggregating_step));
-
-    if (has_cluster)
-    {
-        const auto & cluster_info = *aggregation_analysis_result.cluster_key_info;
-
-        auto transform_params = std::make_shared<AggregatingTransformParams>(
-            query_plan.getCurrentHeader(),
-            aggregator_params,
-            /*final=*/false);
-
-        auto cluster_merging_step = std::make_unique<ClusterMergingStep>(
-            query_plan.getCurrentHeader(),
-            std::move(transform_params),
-            cluster_info.key_name,
-            cluster_info.distance);
-        query_plan.addStep(std::move(cluster_merging_step));
-    }
 }
 
 void addMergingAggregatedStep(QueryPlan & query_plan,
@@ -864,6 +842,37 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
             query_plan.getCurrentHeader(), std::move(aggregator_params), true /*final*/, settings[Setting::group_by_use_nulls]);
         query_plan.addStep(std::move(cube_step));
     }
+}
+
+void addClusterMergingStepIfNeeded(QueryPlan & query_plan,
+    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
+    const QueryNode & /*query_node*/)
+{
+    if (!aggregation_analysis_result.cluster_key_info.has_value())
+        return;
+
+    auto aggregator_params = getAggregatorParams(planner_context,
+        aggregation_analysis_result,
+        query_analysis_result,
+        select_query_info,
+        true /*aggregate_descriptions_remove_arguments*/);
+
+    const auto & cluster_info = *aggregation_analysis_result.cluster_key_info;
+
+    auto transform_params = std::make_shared<AggregatingTransformParams>(
+        query_plan.getCurrentHeader(),
+        std::move(aggregator_params),
+        /*final=*/true);
+
+    auto cluster_merging_step = std::make_unique<ClusterMergingStep>(
+        query_plan.getCurrentHeader(),
+        std::move(transform_params),
+        cluster_info.key_name,
+        cluster_info.distance);
+    query_plan.addStep(std::move(cluster_merging_step));
 }
 
 void addDistinctStep(QueryPlan & query_plan,
@@ -2230,6 +2239,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
+            addClusterMergingStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);

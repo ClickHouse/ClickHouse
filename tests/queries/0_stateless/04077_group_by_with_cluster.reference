@@ -1,0 +1,35 @@
+1	8	60
+100	105	90
+200	200	60
+alice	1	5	30
+alice	100	100	30
+bob	1	2	90
+bob	200	200	60
+1	30
+2	70
+1	9	5
+1	1
+100	1
+200	1
+1	11	3
+100	100	1
+--- EXPLAIN AST ---
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 1)
+    Function sum (children 1)
+     ExpressionList (children 1)
+      Identifier x
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      Function numbers (children 1)
+       ExpressionList (children 1)
+        Literal UInt64_10
+   ExpressionList (children 2)
+    GroupByElement (children 1)
+     Identifier number
+    GroupByElement (children 2)
+     Identifier x
+     Literal UInt64_42
