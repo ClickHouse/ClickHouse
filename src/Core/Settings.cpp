@@ -7333,7 +7333,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
 )", 0) \
-    DECLARE(Bool, optimize_and_compare_chain_pruning, true, R"(
+    DECLARE(Bool, optimize_redundant_comparisons, true, R"(
 Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(

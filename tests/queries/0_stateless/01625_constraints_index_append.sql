@@ -16,7 +16,7 @@ SET optimize_using_constraints = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_substitute_columns = 1;
 SET optimize_append_index = 1;
-SET optimize_and_compare_chain_pruning = 0;
+SET optimize_redundant_comparisons = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_extract_common_expressions = 0;
 

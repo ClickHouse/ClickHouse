@@ -25,7 +25,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_min_inequality_conjunction_chain_length;
     extern const SettingsBool optimize_extract_common_expressions;
     extern const SettingsBool optimize_and_compare_chain;
-    extern const SettingsBool optimize_and_compare_chain_pruning;
+    extern const SettingsBool optimize_redundant_comparisons;
 }
 
 namespace ErrorCodes
@@ -1484,7 +1484,7 @@ private:
     /** Optimize AND chains by analyzing comparison conditions on the same expression.
       * This method performs two things in a single pass:
       *
-      * (a) Comparison chain pruning (when `optimize_and_compare_chain_pruning` is enabled):
+      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled):
       *     Given an AND expression where the same column appears in multiple comparisons
       *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
       *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.
@@ -1514,7 +1514,7 @@ private:
         if (function_node.getResultType()->isNullable())
             return;
 
-        const bool enable_pruning = getSettings()[Setting::optimize_and_compare_chain_pruning];
+        const bool enable_pruning = getSettings()[Setting::optimize_redundant_comparisons];
 
         ComparisonFilterMap filter_map;
         QueryTreeNodePtrWithHashMap<QueryTreeNodeConstRawPtrWithHashSet> not_equals_node_to_constants;

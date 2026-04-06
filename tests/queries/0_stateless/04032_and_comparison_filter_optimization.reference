@@ -10,7 +10,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -20,7 +20,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_eq_diff
 SELECT
     __table1.i AS i,
@@ -31,7 +31,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -41,7 +41,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_eq_flip
 SELECT
     __table1.i AS i,
@@ -52,7 +52,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (3 = __table1.i) AND (__table1.i = 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -62,7 +62,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_eq_cross_same
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -75,7 +75,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = _CAST(3, \'UInt8\'))
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -85,7 +85,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_eq_cross_diff
 SELECT
     __table1.i AS i,
@@ -96,7 +96,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = _CAST(5, \'UInt8\'))
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -106,7 +106,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_eq_float_same
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -119,7 +119,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = 3.)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -129,7 +129,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_eq_float_lossy
 SELECT
     __table1.i AS i,
@@ -140,7 +140,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -150,7 +150,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_lt_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -163,7 +163,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i < 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -173,7 +173,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_lt_conflict
 SELECT
     __table1.i AS i,
@@ -184,7 +184,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i < 2)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -194,7 +194,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_gt_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -207,7 +207,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i > 1)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -217,7 +217,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_gt_conflict
 SELECT
     __table1.i AS i,
@@ -228,7 +228,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i > 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -238,7 +238,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_le_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -251,7 +251,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i <= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -261,7 +261,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_ge_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -274,7 +274,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -284,7 +284,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_le_conflict
 SELECT
     __table1.i AS i,
@@ -295,7 +295,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i <= 2)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -305,7 +305,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_ge_conflict
 SELECT
     __table1.i AS i,
@@ -316,7 +316,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i >= 4)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -326,7 +326,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_lt_cross_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -339,7 +339,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i < 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -349,7 +349,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_lt_cross_conflict
 SELECT
     __table1.i AS i,
@@ -360,7 +360,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i < 2.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -370,7 +370,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_ne_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -383,7 +383,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i != 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -393,7 +393,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_ne_conflict
 SELECT
     __table1.i AS i,
@@ -404,7 +404,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i != 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -414,7 +414,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_lt_prune
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -427,7 +427,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i < 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -437,7 +437,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i < 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_gt_prune
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -450,7 +450,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i > 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -460,7 +460,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_le_keep
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -473,7 +473,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i <= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -483,7 +483,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i <= 3)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_ge_keep
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -496,7 +496,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -506,7 +506,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_ne_same
 1	10	1.5	a	x	2024-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -521,7 +521,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i != 3
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -531,7 +531,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i != 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_ne_diff
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -544,7 +544,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i != 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -554,7 +554,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3) AND (__table1.i != 5)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_lt_tighter
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -567,7 +567,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 5) AND (__table1.i < 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -577,7 +577,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i < 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 le_le_tighter
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -592,7 +592,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 5) AND (__table1.i <= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -602,7 +602,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i <= 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_le_same_val
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -615,7 +615,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3) AND (__table1.i <= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -625,7 +625,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i < 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 le_lt_same_val
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -638,7 +638,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 3) AND (__table1.i < 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -648,7 +648,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i < 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 gt_gt_tighter
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -661,7 +661,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i > 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -671,7 +671,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ge_ge_tighter
 3	30	3	c	y	2024-06-15 12:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -686,7 +686,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i >= 1) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -696,7 +696,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i >= 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 gt_ge_same_val
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -709,7 +709,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -719,7 +719,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_gt_valid
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -732,7 +732,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 5) AND (__table1.i > 1)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -742,7 +742,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 5) AND (__table1.i > 1)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_gt_conflict
 SELECT
     __table1.i AS i,
@@ -753,7 +753,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 1) AND (__table1.i > 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -763,7 +763,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 le_ge_point
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -776,7 +776,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -786,7 +786,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_ge_conflict
 SELECT
     __table1.i AS i,
@@ -797,7 +797,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3) AND (__table1.i >= 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -807,7 +807,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 le_gt_conflict
 SELECT
     __table1.i AS i,
@@ -818,7 +818,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 3) AND (__table1.i > 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -828,7 +828,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_gt_conflict_same
 SELECT
     __table1.i AS i,
@@ -839,7 +839,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3) AND (__table1.i > 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -849,7 +849,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lt_gt_cross
 3	30	3	c	y	2024-06-15 12:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -864,7 +864,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -874,7 +874,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5.5)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 flip_less
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -887,7 +887,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (5 > __table1.i) AND (__table1.i > 1)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -897,7 +897,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (5 > __table1.i) AND (__table1.i > 1)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 flip_equals_and_range
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -910,7 +910,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (3 = __table1.i) AND (10 > __table1.i)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -920,7 +920,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 3 = __table1.i
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 flip_both_sides
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -933,7 +933,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (5 > __table1.i) AND (1 < __table1.i)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -943,7 +943,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (5 > __table1.i) AND (1 < __table1.i)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 multi_expr
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -956,7 +956,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5) AND (__table1.f > 2.) AND (__table1.f < 6.)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -966,7 +966,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5) AND (__table1.f > 2.) AND (__table1.f < 6.)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 multi_expr_conflict
 SELECT
     __table1.i AS i,
@@ -977,7 +977,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = 5) AND (__table1.f > 1.)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -987,7 +987,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 eq_range_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1000,7 +1000,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i > 1) AND (__table1.i < 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1010,7 +1010,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 range_tighten
 SELECT
     __table1.i AS i,
@@ -1021,7 +1021,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5) AND (__table1.i > 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1031,7 +1031,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 5) AND (__table1.i > 3)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 three_way_conflict
 SELECT
     __table1.i AS i,
@@ -1042,7 +1042,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i < 5) AND (__table1.i > 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1052,7 +1052,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lc_eq_eq
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1065,7 +1065,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.lc = \'y\') AND (__table1.lc = \'y\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1075,7 +1075,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE _CAST(__table1.lc = \'y\', \'UInt8\')
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 lc_eq_conflict
 SELECT
     __table1.i AS i,
@@ -1086,7 +1086,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.lc = \'y\') AND (__table1.lc = \'z\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1096,7 +1096,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 str_eq_eq
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1109,7 +1109,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.s = \'c\') AND (__table1.s = \'c\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1119,7 +1119,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.s = \'c\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 str_eq_conflict
 SELECT
     __table1.i AS i,
@@ -1130,7 +1130,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.s = \'c\') AND (__table1.s = \'a\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1140,7 +1140,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 transitive_conflict
 SELECT
     __table1.i AS i,
@@ -1151,7 +1151,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i = __table1.u) AND (__table1.u = 5) AND (__table1.i = 5) AND (__table1.u = 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1161,7 +1161,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 transitive_no_redundant
 SELECT
     __table1.i AS i,
@@ -1172,7 +1172,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3) AND (__table1.u > 3) AND (__table1.u < 10)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1182,7 +1182,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3) AND (__table1.u > 3) AND (__table1.u < 10)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 transitive_infer
 SELECT
     __table1.i AS i,
@@ -1193,7 +1193,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > __table1.u) AND (__table1.u > 2) AND (__table1.i > 2)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1203,7 +1203,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > __table1.u) AND (__table1.u > 2) AND (__table1.i > 2)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 transitive_eq_chain
 SELECT
     __table1.i AS i,
@@ -1214,7 +1214,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = __table1.u) AND (__table1.u = 3) AND (__table1.i = 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1224,7 +1224,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = __table1.u) AND (__table1.u = 3) AND (__table1.i = 3)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 mixed_operands
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1237,7 +1237,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5) AND notEmpty(__table1.s)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1247,7 +1247,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1) AND (__table1.i < 5) AND notEmpty(__table1.s)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_chain_not_in
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -1260,7 +1260,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i NOT IN (1, 3, 7)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1270,7 +1270,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i NOT IN (1, 3, 7)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 ne_chain_dedup
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -1283,7 +1283,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i NOT IN (1, 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1293,7 +1293,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i NOT IN (1, 3)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 single
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1306,7 +1306,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1316,7 +1316,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 non_const
 SELECT
     __table1.i AS i,
@@ -1327,7 +1327,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > __table1.u) AND (__table1.i < __table1.u)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1337,7 +1337,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > __table1.u) AND (__table1.i < __table1.u)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 null_safe
 SELECT
     __table1.i AS i,
@@ -1348,7 +1348,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND _CAST(NULL, \'Nullable(Nothing)\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1358,7 +1358,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND _CAST(NULL, \'Nullable(Nothing)\')
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 int_str_eq_same
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1371,7 +1371,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = \'3\') AND (__table1.i = 3)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1381,7 +1381,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = \'3\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 int_str_eq_diff
 SELECT
     __table1.i AS i,
@@ -1392,7 +1392,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = \'3\') AND (__table1.i = \'5\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1402,7 +1402,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 int_str_range
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1415,7 +1415,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > \'1\') AND (__table1.i < \'5\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1425,7 +1425,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > \'1\') AND (__table1.i < \'5\')
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_int_eq_same
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1438,7 +1438,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = 3) AND (__table1.f = 3.)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1448,7 +1448,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.f = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_int_eq_diff
 SELECT
     __table1.i AS i,
@@ -1459,7 +1459,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = 3) AND (__table1.f = 4)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1469,7 +1469,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_int_range
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1484,7 +1484,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f > 1) AND (__table1.f < 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1494,7 +1494,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f > 1) AND (__table1.f < 5)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_int_eq_float_lt
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1507,7 +1507,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = 3) AND (__table1.f < 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1517,7 +1517,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.f = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_str_eq_same
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -1530,7 +1530,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = \'1.5\') AND (__table1.f = 1.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1540,7 +1540,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.f = \'1.5\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_str_and_int
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1553,7 +1553,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = \'3.0\') AND (__table1.f < 5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1563,7 +1563,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.f = \'3.0\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_str_eq_diff
 SELECT
     __table1.i AS i,
@@ -1574,7 +1574,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = \'3.0\') AND (__table1.f = \'5.0\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1584,7 +1584,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_str_range
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1599,7 +1599,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f > \'1\') AND (__table1.f < \'5\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1609,7 +1609,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f > \'1\') AND (__table1.f < \'5\')
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_str_eq_same
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1622,7 +1622,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = \'2024-06-15 12:00:00\') AND (__table1.dt = \'2024-06-15 12:00:00\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1632,7 +1632,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.dt = \'2024-06-15 12:00:00\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_str_eq_diff
 SELECT
     __table1.i AS i,
@@ -1643,7 +1643,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = \'2024-06-15 12:00:00\') AND (__table1.dt = \'2025-01-01 00:00:00\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1653,7 +1653,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_str_range
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1666,7 +1666,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt > \'2024-01-01 00:00:00\') AND (__table1.dt < \'2025-01-01 00:00:00\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1676,7 +1676,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt > \'2024-01-01 00:00:00\') AND (__table1.dt < \'2025-01-01 00:00:00\')
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_str_eq_gt_conflict
 SELECT
     __table1.i AS i,
@@ -1687,7 +1687,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = \'2024-06-15 12:00:00\') AND (__table1.dt > \'2025-01-01 00:00:00\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1697,7 +1697,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_str_eq_lt_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1710,7 +1710,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = \'2024-06-15 12:00:00\') AND (__table1.dt < \'2025-01-01 00:00:00\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1720,7 +1720,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.dt = \'2024-06-15 12:00:00\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_int_eq_prune
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1733,7 +1733,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = 1718452800) AND (__table1.dt > 1704067200)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1743,7 +1743,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.dt = 1718452800
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_int_eq_conflict
 SELECT
     __table1.i AS i,
@@ -1754,7 +1754,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = 1718452800) AND (__table1.dt = 1735689600)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1764,7 +1764,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_int_range
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1777,7 +1777,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt > 1704067200) AND (__table1.dt < 1735689600)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1787,7 +1787,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt > 1704067200) AND (__table1.dt < 1735689600)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 int_mixed_three
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1800,7 +1800,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i > 1.5) AND (__table1.i < \'5\')
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1810,7 +1810,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i = 3
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_mixed_three
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1823,7 +1823,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.f = \'3.0\') AND (__table1.f > 1) AND (__table1.f < 5.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1833,7 +1833,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.f = \'3.0\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 dt_mixed
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1846,7 +1846,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.dt = \'2024-06-15 12:00:00\') AND (__table1.dt > 1704067200)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1856,7 +1856,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.dt = \'2024-06-15 12:00:00\'
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_above_max_eq
 SELECT
     __table1.i AS i,
@@ -1867,7 +1867,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u = 256) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1877,7 +1877,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_above_max_gt
 SELECT
     __table1.i AS i,
@@ -1888,7 +1888,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u > 256) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1898,7 +1898,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_above_max_lt
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1915,7 +1915,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u < 256) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1925,7 +1925,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_above_max_ne
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -1942,7 +1942,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u != 256) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1952,7 +1952,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_below_min_eq
 SELECT
     __table1.i AS i,
@@ -1963,7 +1963,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u = -1) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1973,7 +1973,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_below_min_lt
 SELECT
     __table1.i AS i,
@@ -1984,7 +1984,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u < -1) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -1994,7 +1994,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_below_min_gt
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2011,7 +2011,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u > -1) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2021,7 +2021,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_at_max_gt
 SELECT
     __table1.i AS i,
@@ -2032,7 +2032,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u > 255) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2042,7 +2042,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_at_max_ge
 SELECT
     __table1.i AS i,
@@ -2053,7 +2053,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u >= 255) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2063,7 +2063,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u >= 255) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_at_max_le
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2080,7 +2080,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u <= 255) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2090,7 +2090,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_at_min_lt
 SELECT
     __table1.i AS i,
@@ -2101,7 +2101,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u < 0) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2111,7 +2111,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_at_min_le
 SELECT
     __table1.i AS i,
@@ -2122,7 +2122,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u <= 0) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2132,7 +2132,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u <= 0) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_at_min_ge
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2149,7 +2149,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u >= 0) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2159,7 +2159,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_combined_conflict
 SELECT
     __table1.i AS i,
@@ -2170,7 +2170,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u > 255) AND (__table1.u < 100)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2180,7 +2180,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 boundary_combined_tighten
 SELECT
     __table1.i AS i,
@@ -2191,7 +2191,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u >= 255) AND (__table1.u != 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2201,7 +2201,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.u >= 255
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_gt
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -2214,7 +2214,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2224,7 +2224,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_lt
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2239,7 +2239,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2249,7 +2249,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i < 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_ge
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -2262,7 +2262,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i >= 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2272,7 +2272,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i >= 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_le
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2287,7 +2287,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2297,7 +2297,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i <= 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_eq
 SELECT
     __table1.i AS i,
@@ -2308,7 +2308,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2318,7 +2318,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_ne
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2335,7 +2335,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i != 3.5) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2345,7 +2345,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.u > 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_exact
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -2358,7 +2358,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 3.) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2368,7 +2368,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 3.) AND (__table1.u > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_boundary
 SELECT
     __table1.i AS i,
@@ -2379,7 +2379,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u > 254.5) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2389,7 +2389,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u > 254.5) AND (__table1.i > 0)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_range
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2402,7 +2402,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1.5) AND (__table1.i < 4.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2412,7 +2412,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1.5) AND (__table1.i < 4.5)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_conflict
 SELECT
     __table1.i AS i,
@@ -2423,7 +2423,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 3.5) AND (__table1.i < 2.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2433,7 +2433,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_redundant
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
@@ -2446,7 +2446,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 1.5) AND (__table1.i > 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2456,7 +2456,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 3.5
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_point
 3	30	3	c	y	2024-06-15 12:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2469,7 +2469,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 2.5) AND (__table1.i < 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2479,7 +2479,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i > 2.5) AND (__table1.i < 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 float_rewrite_eq_conflict
 SELECT
     __table1.i AS i,
@@ -2490,7 +2490,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.i = 3) AND (__table1.i > 3.5)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2500,7 +2500,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 0
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 all_redundant_true
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2517,7 +2517,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u >= 0) AND (__table1.u < 300)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2527,7 +2527,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 1
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
 all_redundant_three
 1	10	1.5	a	x	2024-01-01 00:00:00
 3	30	3	c	y	2024-06-15 12:00:00
@@ -2544,7 +2544,7 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE (__table1.u >= 0) AND (__table1.u <= 255) AND (__table1.u != 256)
-SETTINGS optimize_and_compare_chain_pruning = 0
+SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
     __table1.u AS u,
@@ -2554,4 +2554,4 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 1
-SETTINGS optimize_and_compare_chain_pruning = 1
+SETTINGS optimize_redundant_comparisons = 1
