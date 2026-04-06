@@ -157,9 +157,7 @@ static struct InitFiu
     REGULAR(lightweight_show_tables) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
-    REGULAR(storage_merge_tree_background_schedule_merge_fail) \
-    ONCE(parallel_replicas_check_read_mode_always) \
-    REGULAR(lightweight_show_tables)
+    REGULAR(storage_merge_tree_background_schedule_merge_fail)
 
 namespace FailPoints
 {
