@@ -4142,6 +4142,79 @@ def test_system_delta_lake_history_with_checkpoint(started_cluster, use_delta_ke
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
 
+def test_system_delta_lake_history_sparse_versions_without_checkpoint(started_cluster):
+    """Without checkpoint, history should include only discovered metadata versions."""
+    node = get_node(started_cluster, "0")
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_history_sparse_versions")
+    HIGH_VERSION = 50000
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+
+    high_version_filename = f"{HIGH_VERSION:020d}.json"
+    high_version_path = f"/{TABLE_NAME}/_delta_log/{high_version_filename}"
+    with open(high_version_path, "w", encoding="utf-8") as f:
+        f.write(
+            '{"commitInfo":{"timestamp":1,"operation":"WRITE","operationParameters":{"source":"sparse_test"}}}\n'
+        )
+
+    default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+    create_delta_table(node, "s3", TABLE_NAME, started_cluster)
+
+    history_count = int(
+        node.query(
+            f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+        )
+    )
+    assert history_count == 2, f"Expected sparse history with 2 versions, got {history_count}"
+
+    versions = node.query(
+        f"""
+        SELECT version
+        FROM system.delta_lake_history
+        WHERE table = '{TABLE_NAME}'
+        ORDER BY version
+        """
+    ).strip()
+    assert versions == f"0\n{HIGH_VERSION}", f"Expected versions 0 and {HIGH_VERSION}, got: {versions}"
+
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
+def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster):
+    """A too-large checkpoint should trigger the history materialization guard."""
+    node = get_node(started_cluster, "0")
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_history_guard_checkpoint")
+    TOO_LARGE_CHECKPOINT = 1_000_000
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+
+    last_checkpoint_path = f"/{TABLE_NAME}/_delta_log/_last_checkpoint"
+    with open(last_checkpoint_path, "w", encoding="utf-8") as f:
+        f.write(f'{{"version":{TOO_LARGE_CHECKPOINT},"size":1,"parts":1}}\n')
+
+    default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+    create_delta_table(node, "s3", TABLE_NAME, started_cluster)
+
+    error = node.query_and_get_error(
+        f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+    )
+    assert "Refusing to materialize Delta Lake history" in error
+
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_3(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
@@ -4693,8 +4766,6 @@ def test_early_return_limit(started_cluster, use_delta_kernel):
     # we get +1 scanned file.
     assert scanned_files == 3, \
         f"Early return should scan 3 files with LIMIT 1, but scanned {scanned_files}"
-
-
 def test_struct_dotted_field_names(started_cluster):
     """Regression test for struct fields whose logical (and physical) names contain dots.
 

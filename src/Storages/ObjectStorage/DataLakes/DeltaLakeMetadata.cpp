@@ -639,8 +639,9 @@ static std::optional<UInt64> extractVersionFromFilename(const String & path)
     catch (const std::out_of_range &) { return std::nullopt; }
 }
 
-/// Helper: read _last_checkpoint file and return the checkpoint version (0 if none).
-static UInt64 readLastCheckpointVersion(
+/// Helper: read _last_checkpoint file and return the checkpoint version.
+/// Returns std::nullopt when no checkpoint exists or it cannot be parsed.
+static std::optional<UInt64> readLastCheckpointVersion(
     ObjectStoragePtr object_storage,
     const String & table_path,
     ContextPtr local_context,
@@ -650,7 +651,7 @@ static UInt64 readLastCheckpointVersion(
     const auto last_checkpoint_file = std::filesystem::path(table_path) / deltalake_metadata_directory / "_last_checkpoint";
 
     if (!object_storage->exists(StoredObject(last_checkpoint_file)))
-        return 0;
+        return std::nullopt;
 
     try
     {
@@ -664,7 +665,7 @@ static UInt64 readLastCheckpointVersion(
     catch (...)
     {
         tryLogCurrentException(log, "Failed to read _last_checkpoint");
-        return 0;
+        return std::nullopt;
     }
 }
 
@@ -742,47 +743,92 @@ DeltaLakeHistory parseDeltaLakeHistory(
 
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto metadata_file_suffix = ".json";
+    static constexpr UInt64 max_history_records = 1'000'000;
 
     try
     {
         /// Read _last_checkpoint to find checkpoint version.
         /// When a checkpoint exists, .json files for versions <= checkpoint_version
         /// may have been removed. We still need to report those versions in the history.
-        const UInt64 checkpoint_version = readLastCheckpointVersion(object_storage, table_path, local_context, log);
+        const auto checkpoint_version = readLastCheckpointVersion(object_storage, table_path, local_context, log);
 
         Strings metadata_files = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
 
         /// Build a set of versions that have .json files available
         std::map<UInt64, String> version_to_file;
-        UInt64 max_version = checkpoint_version;
         for (const auto & file : metadata_files)
         {
             if (auto version = extractVersionFromFilename(file))
-            {
                 version_to_file[*version] = file;
-                max_version = std::max(max_version, *version);
+        }
+
+        if (!checkpoint_version.has_value() && version_to_file.empty())
+            return history;
+
+        /// Delta history can have sparse, very large version numbers.
+        /// Avoid dense expansion and guard against unbounded materialization.
+        UInt64 expected_history_size = 0;
+        if (checkpoint_version.has_value())
+        {
+            if (*checkpoint_version >= max_history_records)
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Refusing to materialize Delta Lake history for {}: checkpoint version {} exceeds hard cap {} records",
+                    table_path,
+                    *checkpoint_version,
+                    max_history_records);
+            }
+
+            expected_history_size = *checkpoint_version + 1;
+            for (auto it = version_to_file.upper_bound(*checkpoint_version); it != version_to_file.end(); ++it)
+            {
+                ++expected_history_size;
+                if (expected_history_size > max_history_records)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Refusing to materialize Delta Lake history for {}: expected {} records exceeds hard cap {}",
+                        table_path,
+                        expected_history_size,
+                        max_history_records);
+                }
+            }
+        }
+        else
+        {
+            expected_history_size = version_to_file.size();
+            if (expected_history_size > max_history_records)
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Refusing to materialize Delta Lake history for {}: discovered {} metadata versions exceeds hard cap {}",
+                    table_path,
+                    expected_history_size,
+                    max_history_records);
             }
         }
 
-        if (max_version == 0 && version_to_file.empty())
-            return history;
+        UInt64 latest_version = 0;
+        if (checkpoint_version.has_value())
+            latest_version = *checkpoint_version;
+        if (!version_to_file.empty())
+            latest_version = std::max(latest_version, version_to_file.rbegin()->first);
 
-        /// Iterate all versions from 0 to max_version.
-        /// For versions with .json files, parse commitInfo.
-        /// For versions without .json files (removed after checkpoint), emit a record with just the version.
-        for (UInt64 version = 0; version <= max_version; ++version)
+        history.reserve(expected_history_size);
+
+        auto append_record = [&](UInt64 version, const String * metadata_file_path)
         {
             try
             {
                 DeltaLakeHistoryRecord record;
                 record.version = version;
-                record.is_latest_version = (version == max_version);
+                record.is_latest_version = (version == latest_version);
 
-                auto it = version_to_file.find(version);
-                if (it != version_to_file.end())
+                if (metadata_file_path)
                 {
                     /// .json file exists — parse commitInfo
-                    RelativePathWithMetadata object_info(it->second);
+                    RelativePathWithMetadata object_info(*metadata_file_path);
                     auto buf = createReadBuffer(object_info, object_storage, local_context, log);
                     parseCommitInfo(*buf, record);
                 }
@@ -793,7 +839,34 @@ DeltaLakeHistory parseDeltaLakeHistory(
             {
                 tryLogCurrentException(log, fmt::format("Failed to process version {}", version));
             }
+        };
+
+        auto version_it = version_to_file.begin();
+        if (checkpoint_version.has_value())
+        {
+            /// For versions in [0, checkpoint], emit synthetic entries if .json files were compacted away.
+            for (UInt64 version = 0; version <= *checkpoint_version; ++version)
+            {
+                const String * metadata_file_path = nullptr;
+                if (version_it != version_to_file.end() && version_it->first == version)
+                {
+                    metadata_file_path = &version_it->second;
+                    ++version_it;
+                }
+                append_record(version, metadata_file_path);
+            }
         }
+
+        /// For versions above checkpoint (or all versions when there is no checkpoint),
+        /// emit only discovered metadata versions (sparse iteration).
+        for (; version_it != version_to_file.end(); ++version_it)
+            append_record(version_it->first, &version_it->second);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::INCORRECT_DATA)
+            throw;
+        tryLogCurrentException(log, "Failed to get Delta Lake history");
     }
     catch (...)
     {

@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemDeltaLakeHistory.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include "config.h"
@@ -32,6 +33,11 @@ namespace DB
 namespace Setting
 {
 extern const SettingsSeconds lock_acquire_timeout;
+}
+
+namespace ErrorCodes
+{
+extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -176,13 +182,22 @@ private:
                 }
                 catch (...)
                 {
+                    const auto exception_code = getCurrentExceptionCode();
+                    const auto exception_message = getCurrentExceptionMessage(false);
+
+                    /// Propagate history materialization guard errors instead of silently skipping:
+                    /// this is a deliberate safety limit, not a malformed-table parsing issue.
+                    if (exception_code == ErrorCodes::INCORRECT_DATA
+                        && exception_message.find("Refusing to materialize Delta Lake history") != String::npos)
+                        throw;
+
                     /// Broken external Delta tables are expected during broad system-table scans.
                     /// Keep this at debug level to avoid polluting stderr in stateless tests.
                     LOG_DEBUG(
                         getLogger("SystemDeltaLakeHistory"),
                         "Ignoring broken table {}: {}",
                         object_storage_table->getStorageID().getFullTableName(),
-                        getCurrentExceptionMessage(false));
+                        exception_message);
                 }
             }
 
