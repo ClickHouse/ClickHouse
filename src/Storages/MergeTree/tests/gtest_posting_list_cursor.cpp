@@ -71,6 +71,11 @@ PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
     return std::make_shared<PostingListCursor>(info);
 }
 
+PostingListCursorHandlePtr makeEmbeddedHandle(const TokenPostingsInfo & info)
+{
+    return std::make_shared<PostingListCursorHandle>(info);
+}
+
 /// Helper: generate a sequence of doc IDs: {start, start+step, start+2*step, ...}
 std::vector<uint32_t> generateRange(uint32_t start, uint32_t count, uint32_t step = 1)
 {
@@ -252,6 +257,12 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     return std::make_shared<PostingListCursor>(*data.stream, data.info);
 }
 
+PostingListCursorHandlePtr makeMultiBlockHandle(const MultiBlockTestData & data)
+{
+    makeMultiBlockCursor(data);
+    return std::make_shared<PostingListCursorHandle>(*data.stream, data.info);
+}
+
 } // anonymous namespace
 
 
@@ -323,6 +334,25 @@ TEST(PostingListCursorTest, NextAfterInvalidIsNoop)
     EXPECT_FALSE(cursor->valid());
 }
 
+TEST(PostingListCursorTest, EmbeddedHandleCreatesIndependentCursors)
+{
+    auto info = makeEmbeddedInfo({10, 20, 30, 40});
+    auto handle = makeEmbeddedHandle(info);
+
+    auto cursor1 = std::make_shared<PostingListCursor>(handle);
+    cursor1->advance(30);
+    ASSERT_TRUE(cursor1->valid());
+    EXPECT_EQ(cursor1->value(), 30U);
+    cursor1->next();
+    ASSERT_TRUE(cursor1->valid());
+    EXPECT_EQ(cursor1->value(), 40U);
+
+    auto cursor2 = std::make_shared<PostingListCursor>(handle);
+    cursor2->advance(10);
+    ASSERT_TRUE(cursor2->valid());
+    EXPECT_EQ(cursor2->value(), 10U);
+}
+
 
 // ===========================================================================================
 // Section 2: Seek operations
@@ -369,6 +399,28 @@ TEST(PostingListCursorTest, SeekToFirstDoc)
     cursor->advance(10);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 10u);
+}
+
+TEST(PostingListCursorTest, MultiBlockHandleCreatesIndependentCursors)
+{
+    auto data = makeMultiBlockData({
+        generateRange(100, 64, 2),
+        generateRange(400, 64, 2),
+    });
+    auto handle = makeMultiBlockHandle(data);
+
+    auto cursor1 = std::make_shared<PostingListCursor>(handle);
+    cursor1->advance(420);
+    ASSERT_TRUE(cursor1->valid());
+    EXPECT_EQ(cursor1->value(), 420u);
+    cursor1->next();
+    ASSERT_TRUE(cursor1->valid());
+    EXPECT_EQ(cursor1->value(), 422u);
+
+    auto cursor2 = std::make_shared<PostingListCursor>(handle);
+    cursor2->advance(100);
+    ASSERT_TRUE(cursor2->valid());
+    EXPECT_EQ(cursor2->value(), 100u);
 }
 
 TEST(PostingListCursorTest, SeekToLastDoc)

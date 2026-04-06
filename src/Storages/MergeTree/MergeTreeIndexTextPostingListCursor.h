@@ -18,6 +18,37 @@ struct TokenPostingsInfo;
 class IColumn;
 class MergeTreeReaderStream;
 
+/// Immutable description of a posting list.
+/// It owns or references the on-disk metadata and can be cached safely across reads.
+class PostingListCursorHandle
+{
+public:
+    PostingListCursorHandle(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
+    explicit PostingListCursorHandle(const TokenPostingsInfo & info_);
+
+    double density() const { return density_val; }
+    UInt32 cardinality() const;
+
+private:
+    friend class PostingListCursor;
+
+    MergeTreeReaderStream * stream = nullptr;
+    std::shared_ptr<TokenPostingsInfo> owned_info;
+    const TokenPostingsInfo * info = nullptr;
+
+    size_t total_segments = 0;
+    bool is_embedded = false;
+
+    /// Pre-decoded embedded postings reused by ephemeral cursors.
+    alignas(16) uint32_t embedded_values[BLOCK_SIZE]{};
+    size_t embedded_count = 0;
+
+    double density_val = 0;
+};
+
+using PostingListCursorHandlePtr = std::shared_ptr<PostingListCursorHandle>;
+using PostingListCursorHandleMap = absl::flat_hash_map<std::string_view, PostingListCursorHandlePtr>;
+
 /// Lazy cursor over a compressed posting list (sorted row IDs for a token).
 ///
 /// Storage layout (two-level hierarchy):
@@ -47,6 +78,10 @@ public:
     /// Construct a cursor without a stream (embedded posting lists only).
     explicit PostingListCursor(const TokenPostingsInfo & info_);
 
+    /// Construct a cursor from an immutable handle.
+    explicit PostingListCursor(const PostingListCursorHandle & handle_);
+    explicit PostingListCursor(PostingListCursorHandlePtr handle_);
+
     /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     void linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
 
@@ -67,13 +102,15 @@ public:
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
-    double density() const { return density_val; }
+    double density() const;
 
     /// Total number of doc_ids in the posting list.
     /// Used to sort cursors by selectivity for leapfrog intersection.
     UInt32 cardinality() const;
 
 private:
+    void initializeFromHandle();
+
     /// Load metadata for `segment_idx`-th segment.
     /// For compressed postings: reads the Index Section from .pst (packed block index),
     /// but does NOT decode any packed block data yet.
@@ -88,9 +125,8 @@ private:
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
 
-    MergeTreeReaderStream * stream = nullptr;
-    std::shared_ptr<TokenPostingsInfo> owned_info;
-    const TokenPostingsInfo * info = nullptr;
+    PostingListCursorHandlePtr owned_handle;
+    const PostingListCursorHandle * handle = nullptr;
 
     /// Decoded doc_ids of the current packed block (compressed postings) or all doc_ids (embedded postings).
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
@@ -116,14 +152,10 @@ private:
     std::vector<uint8_t> payload_buffer;
 
     /// Segment iteration state.
-    size_t total_segments = 0;
     size_t current_segment_idx = 0;
     bool has_prepared_first_segment = false;
 
     bool is_valid = true;
-    bool is_embedded = false;
-
-    double density_val = 0;
 };
 
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;

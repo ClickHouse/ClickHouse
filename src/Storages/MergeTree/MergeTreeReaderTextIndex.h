@@ -58,6 +58,7 @@ private:
     void readGranule();
     void analyzeTokensCardinality();
     void initializePostingStreams();
+    PostingListCursorHandlePtr makeLazyCursorHandle(std::string_view token, const TokenPostingsInfo & token_info) const;
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
 
     size_t getNumRowsInGranule(size_t index_mark) const;
@@ -102,9 +103,10 @@ private:
     bool use_lazy_mode = false;
     float lazy_density_threshold = 0.5f;
 
-    /// Cached lazy cursors keyed by token, reused across marks within the same part.
-    /// Row offsets increase monotonically, so cursor segment positions remain valid.
-    PostingListCursorMap lazy_cursor_cache;
+    /// Immutable lazy posting-list handles are safe to reuse across reads because they do not
+    /// contain any iterator state. `PostingListCursor` objects are created from these handles per call.
+    absl::flat_hash_map<String, PostingListCursorHandlePtr> lazy_cursor_handles;
+
 };
 
 }
