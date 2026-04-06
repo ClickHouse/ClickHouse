@@ -289,10 +289,13 @@ set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+# Sanitizer builds do not benefit from these size optimizations and the extra
+# sections hurt instruction-cache locality in hot loops, causing timing-sensitive
+# tests to fail.
+# Coverage builds need -ffunction-sections to prevent the linker from merging
+# __llvm_prf_data records across functions, which causes coverage counter data
+# to be lost (particularly on ARM where more records get merged without it).
+if (NOT SANITIZE AND NOT SANITIZE_COVERAGE)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
     # -faddrsig emits an address-significance table that lets lld's ICF
     # distinguish address-taken symbols from non-address-taken ones.
