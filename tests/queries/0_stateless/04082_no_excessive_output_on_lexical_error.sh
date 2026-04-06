@@ -7,5 +7,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Lexical errors (e.g. '!' character) should not print all subsequent queries in the error message:
 yes "SELECT 1 !;" | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -F 'SELECT 1' | wc -l
 
-# Unmatched parentheses should also not print all subsequent queries in the error message:
-yes "SELECT (1;" | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -c 'SELECT'
+# Unmatched parentheses: error starts at '(' token, so 'SELECT' should NOT appear.
+# Before the fix, all subsequent queries leaked into the error message, making 'SELECT' appear.
+yes "SELECT (1;" | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -c 'SELECT' || echo 0
