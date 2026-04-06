@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -70,7 +71,6 @@ namespace DB
   * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
   */
 
-class IPostingListCodec;
 using PostingListCodecPtr = const IPostingListCodec *;
 
 struct MergeTreeIndexTextParams
@@ -109,8 +109,16 @@ public:
     bool isEmpty() const { return size() == 0; }
     bool isSmall() const { return small_size < max_small_size; }
     bool isLarge() const { return !isSmall(); }
-    UInt32 minimum() const { return isSmall() ? small[0] : large.postings->minimum(); }
-    UInt32 maximum() const { return isSmall() ? small[small_size - 1] : large.postings->maximum(); }
+    UInt32 minimum() const
+    {
+        chassert(!isEmpty());
+        return isSmall() ? small[0] : large.postings->minimum();
+    }
+    UInt32 maximum() const
+    {
+        chassert(!isEmpty());
+        return isSmall() ? small[small_size - 1] : large.postings->maximum();
+    }
 
     SmallContainer & getSmall() { return small; }
     const SmallContainer & getSmall() const { return small; }
@@ -242,6 +250,19 @@ struct TextIndexSerialization
     enum class SparseIndexVersion
     {
         Initial = 0,
+        WithCodec = 1,
+    };
+
+    struct SparseIndexHeader
+    {
+        MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(SparseIndexVersion::Initial);
+        IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
+    };
+
+    struct SparseIndexData
+    {
+        SparseIndexHeader header;
+        DictionarySparseIndex sparse_index;
     };
 
     enum class TokensFormat : UInt64
@@ -258,9 +279,9 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr);
+    static void serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr, PostingListCodecPtr posting_list_codec);
 
-    static DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr);
+    static SparseIndexData deserializeSparseIndex(ReadBuffer & istr);
     /// If postings_serialization is null, embedded postings are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization);
     static void skipTokenInfo(ReadBuffer & istr);
@@ -309,6 +330,8 @@ public:
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
+    PostingListCodecPtr getPostingListCodec() const { return posting_list_codec_holder.get(); }
+    MergeTreeIndexVersion getSparseIndexVersion() const { return sparse_index_version; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -325,7 +348,7 @@ private:
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
 
-    DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
+    std::shared_ptr<TextIndexSerialization::SparseIndexData> loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
@@ -339,6 +362,8 @@ private:
     std::optional<RowsRange> current_range;
     /// Unique identifier for text index in the current data part.
     String index_id_for_caches;
+    MergeTreeIndexVersion sparse_index_version = static_cast<MergeTreeIndexVersion>(TextIndexSerialization::SparseIndexVersion::Initial);
+    std::unique_ptr<IPostingListCodec> posting_list_codec_holder;
     /// Serialization for the posting lists.
     PostingsSerialization postings_serialization;
 };

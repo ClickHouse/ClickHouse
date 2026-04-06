@@ -50,6 +50,7 @@ private:
 class PostingListCodecFactory : public boost::noncopyable
 {
 public:
+    static std::unique_ptr<IPostingListCodec> createPostingListCodec(IPostingListCodec::Type type);
     static std::unique_ptr<IPostingListCodec> createPostingListCodec(std::string_view codec_name, const String & caller_name);
 };
 

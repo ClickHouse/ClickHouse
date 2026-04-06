@@ -685,11 +685,14 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
             }
             else if (auto rare_postings = granule_text.getPostingsForRareToken(token))
             {
-                TokenPostingsInfo materialized_info = token_info;
-                materialized_info.embedded_postings = std::move(rare_postings);
-                materialized_info.offsets = {0};
-                materialized_info.ranges = {{rare_postings->minimum(), rare_postings->maximum()}};
-                cursor = std::make_shared<PostingListCursor>(materialized_info);
+                if (rare_postings->cardinality() > 0)
+                {
+                    TokenPostingsInfo materialized_info = token_info;
+                    materialized_info.offsets = {0};
+                    materialized_info.ranges = {{rare_postings->minimum(), rare_postings->maximum()}};
+                    materialized_info.embedded_postings = std::move(rare_postings);
+                    cursor = std::make_shared<PostingListCursor>(materialized_info);
+                }
             }
             else if (token_info.embedded_postings)
             {

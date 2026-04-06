@@ -357,11 +357,13 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     MergeTreeIndexDeserializationState & state)
 {
     auto tokens_to_read = fillTokensFromCache(state);
+    auto sparse_index_data = loadSparseIndex(header_stream, state);
+    const auto & sparse_index = sparse_index_data->sparse_index;
+
     if (tokens_to_read.empty())
         return;
 
-    auto sparse_index = loadSparseIndex(header_stream, state);
-    if (sparse_index->empty())
+    if (sparse_index.empty())
         return;
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
@@ -373,7 +375,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
 
     for (const auto & token : tokens_to_read)
     {
-        size_t idx = sparse_index->upperBound(token);
+        size_t idx = sparse_index.upperBound(token);
         if (idx != 0)
             --idx;
 
@@ -389,7 +391,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(
     for (const auto & [block_idx, needed_tokens] : blocks_to_read)
     {
         /// Seek to the dictionary block and deserialize tokens.
-        UInt64 offset_in_file = sparse_index->getOffsetInFile(block_idx);
+        UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
         dictionary_stream.seekToMark({offset_in_file, 0});
         auto * data_buffer = dictionary_stream.getDataBuffer();
 
@@ -480,17 +482,24 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     return tokens_to_read;
 }
 
-DictionarySparseIndexPtr MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
+std::shared_ptr<TextIndexSerialization::SparseIndexData> MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
 {
     const auto load_sparse_index = [&]
     {
-        auto index = TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer());
-        return std::make_shared<DictionarySparseIndex>(std::move(index));
+        return std::make_shared<TextIndexSerialization::SparseIndexData>(
+            TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer()));
     };
 
     auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    return condition_text.headerCache()->getOrSet(header_hash, load_sparse_index);
+    auto sparse_index_data = condition_text.headerCache()->getOrSet(header_hash, load_sparse_index);
+
+    sparse_index_version = sparse_index_data->header.version;
+    posting_list_codec_holder = PostingListCodecFactory::createPostingListCodec(sparse_index_data->header.codec_type);
+    postings_serialization = PostingsSerialization(posting_list_codec_holder.get());
+    state.version = sparse_index_version;
+
+    return sparse_index_data;
 }
 
 PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
@@ -894,10 +903,11 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr)
+void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & sparse_index, WriteBuffer & ostr, PostingListCodecPtr posting_list_codec)
 {
-    UInt64 version = static_cast<UInt64>(SparseIndexVersion::Initial);
+    UInt64 version = static_cast<UInt64>(SparseIndexVersion::WithCodec);
     writeVarUInt(version, ostr);
+    writeVarUInt(static_cast<UInt64>(posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None), ostr);
     chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
 
     auto serialization_string = SerializationString::create();
@@ -908,15 +918,25 @@ void TextIndexSerialization::serializeSparseIndex(const DictionarySparseIndex & 
     serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
 }
 
-DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
+TextIndexSerialization::SparseIndexData TextIndexSerialization::deserializeSparseIndex(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
     UInt64 version;
     readVarUInt(version, istr);
 
-    if (version != static_cast<UInt64>(SparseIndexVersion::Initial))
+    if (version > static_cast<UInt64>(SparseIndexVersion::WithCodec))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
+
+    SparseIndexHeader header;
+    header.version = static_cast<MergeTreeIndexVersion>(version);
+
+    if (version >= static_cast<UInt64>(SparseIndexVersion::WithCodec))
+    {
+        UInt64 codec_type;
+        readVarUInt(codec_type, istr);
+        header.codec_type = static_cast<IPostingListCodec::Type>(codec_type);
+    }
 
     size_t num_sparse_index_tokens;
     readVarUInt(num_sparse_index_tokens, istr);
@@ -926,7 +946,7 @@ DictionarySparseIndex TextIndexSerialization::deserializeSparseIndex(ReadBuffer 
 
     auto serialization_number = SerializationNumber<UInt64>::create();
     serialization_number->deserializeBinaryBulk(*offsets, istr, 0, num_sparse_index_tokens, 0.0);
-    return DictionarySparseIndex(std::move(tokens), std::move(offsets));
+    return TextIndexSerialization::SparseIndexData{header, DictionarySparseIndex(std::move(tokens), std::move(offsets))};
 }
 
 TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr, PostingsSerialization * postings_serialization)
@@ -949,8 +969,11 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         else
         {
             auto postings = postings_serialization->deserialize(istr, info.header, info.cardinality);
-            info.offsets.emplace_back(0);
-            info.ranges.emplace_back(postings->minimum(), postings->maximum());
+            if (postings && postings->cardinality() > 0)
+            {
+                info.offsets.emplace_back(0);
+                info.ranges.emplace_back(postings->minimum(), postings->maximum());
+            }
             info.embedded_postings = std::move(postings);
         }
     }
@@ -1157,7 +1180,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         params,
         postings_serialization);
 
-    TextIndexSerialization::serializeSparseIndex(sparse_index_block, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeSparseIndex(sparse_index_block, index_stream->compressed_hashing, postings_serialization.getPostingListCodec());
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1387,23 +1410,14 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
 {
     return
     {
-        {MergeTreeIndexSubstream::Type::Regular, "", ".idx2"},
-        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx2"},
-        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx2"}
+        {MergeTreeIndexSubstream::Type::Regular, "", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"},
+        {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 }
 
 MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx2"))
-    {
-        return {2, {
-            {MergeTreeIndexSubstream::Type::Regular, "", ".idx2"},
-            {MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx2"},
-            {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx2"}
-        }};
-    }
-
     if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
     {
         return {1, {

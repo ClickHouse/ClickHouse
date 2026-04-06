@@ -3,12 +3,16 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
@@ -78,7 +82,7 @@ std::vector<uint32_t> generateRange(uint32_t start, uint32_t count, uint32_t ste
 }
 
 /// Helper: collect all remaining doc IDs from a cursor using next().
-/// For non-embedded cursors, seek() must be called first to decode the first packed block.
+/// For non-embedded cursors, advance() must be called first to decode the first packed block.
 std::vector<uint32_t> drainCursor(PostingListCursorPtr cursor)
 {
     std::vector<uint32_t> result;
@@ -90,12 +94,12 @@ std::vector<uint32_t> drainCursor(PostingListCursorPtr cursor)
     return result;
 }
 
-/// Helper: seek to the first doc, then drain.
+/// Helper: advance to the first doc, then drain.
 /// Used for multi-block (non-embedded) cursors where construction only loads the
 /// Index Section but does not decode any packed block.
-std::vector<uint32_t> seekAndDrainCursor(PostingListCursorPtr cursor, uint32_t first_doc)
+std::vector<uint32_t> advanceAndDrainCursor(PostingListCursorPtr cursor, uint32_t first_doc)
 {
-    cursor->seek(first_doc);
+    cursor->advance(first_doc);
     return drainCursor(cursor);
 }
 
@@ -242,7 +246,7 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
         CLOCK_MONOTONIC_COARSE);
 
     /// Force stream initialization so that plain_file_buffer is ready
-    /// before the cursor calls seekToMark.
+    /// before the cursor calls advanceToMark.
     data.stream->getDataBuffer();
 
     return std::make_shared<PostingListCursor>(*data.stream, data.info);
@@ -330,7 +334,7 @@ TEST(PostingListCursorTest, SeekToExactValue)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(30);
+    cursor->advance(30);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 30u);
 }
@@ -341,7 +345,7 @@ TEST(PostingListCursorTest, SeekToNonExistentGoesToNext)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(25);
+    cursor->advance(25);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 30u);
 }
@@ -352,7 +356,7 @@ TEST(PostingListCursorTest, SeekBeyondLastInvalidates)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(31);
+    cursor->advance(31);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -362,7 +366,7 @@ TEST(PostingListCursorTest, SeekToFirstDoc)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(10);
+    cursor->advance(10);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 10u);
 }
@@ -373,7 +377,7 @@ TEST(PostingListCursorTest, SeekToLastDoc)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(30);
+    cursor->advance(30);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 30u);
 
@@ -387,7 +391,7 @@ TEST(PostingListCursorTest, SeekToZero)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(0);
+    cursor->advance(0);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 0u);
 }
@@ -398,7 +402,7 @@ TEST(PostingListCursorTest, SeekBeforeFirst)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(50);
+    cursor->advance(50);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 100u);
 }
@@ -409,15 +413,15 @@ TEST(PostingListCursorTest, SeekProgressivelyForward)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(25);
+    cursor->advance(25);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 30u);
 
-    cursor->seek(55);
+    cursor->advance(55);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 60u);
 
-    cursor->seek(61);
+    cursor->advance(61);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -427,7 +431,7 @@ TEST(PostingListCursorTest, SeekThenNext)
     auto info = makeEmbeddedInfo(docs);
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(15);
+    cursor->advance(15);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 15u);
 
@@ -791,18 +795,18 @@ TEST(PostingListCursorTest, IntersectFiveCursors)
 TEST(PostingListCursorTest, IntersectEightCursors)
 {
     auto docs = generateRange(0, 6, 10); // 0,10,20,30,40,50
-    std::vector<MultiBlockTestData> datas(8);
+    std::vector<MultiBlockTestData> data(8);
     PostingListCursorMap postings;
     std::vector<String> tokens;
 
     for (int i = 0; i < 8; ++i)
     {
-        datas[i] = makeMultiBlockData({docs});
+        data[i] = makeMultiBlockData({docs});
         String name = "t" + std::to_string(i);
         tokens.push_back(name);
     }
     for (int i = 0; i < 8; ++i)
-        postings[tokens[i]] = makeMultiBlockCursor(datas[i]);
+        postings[tokens[i]] = makeMultiBlockCursor(data[i]);
 
     auto result = intersectAndCollect(postings, tokens, 0, 60, false, 100.0);
     EXPECT_EQ(result, docs);
@@ -835,7 +839,7 @@ TEST(PostingListCursorTest, IntersectNineCursorsHeap)
 
 TEST(PostingListCursorTest, IntersectTenCursorsWithVaryingDocs)
 {
-    std::vector<MultiBlockTestData> datas(10);
+    std::vector<MultiBlockTestData> data(10);
     PostingListCursorMap postings;
     std::vector<String> tokens;
 
@@ -850,8 +854,8 @@ TEST(PostingListCursorTest, IntersectTenCursorsWithVaryingDocs)
         std::vector<uint32_t> docs;
         for (uint32_t d = 0; d < 1000; d += (i + 1))
             docs.push_back(d);
-        datas[i] = makeMultiBlockData({docs});
-        postings[tokens[i]] = makeMultiBlockCursor(datas[i]);
+        data[i] = makeMultiBlockData({docs});
+        postings[tokens[i]] = makeMultiBlockCursor(data[i]);
     }
 
     auto result = intersectAndCollect(postings, tokens, 0, 1000, false, 100.0);
@@ -901,7 +905,7 @@ TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
 
     for (int trial = 0; trial < 10; ++trial)
     {
-        std::vector<MultiBlockTestData> datas(3);
+        std::vector<MultiBlockTestData> data(3);
         std::vector<std::vector<uint32_t>> all_docs(3);
 
         for (int i = 0; i < 3; ++i)
@@ -911,21 +915,21 @@ TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
             while (s.size() < count)
                 s.insert(dist(rng));
             all_docs[i].assign(s.begin(), s.end());
-            datas[i] = makeMultiBlockData({all_docs[i]});
+            data[i] = makeMultiBlockData({all_docs[i]});
         }
 
         // Brute force
         PostingListCursorMap postings_bf;
-        postings_bf["a"] = makeMultiBlockCursor(datas[0]);
-        postings_bf["b"] = makeMultiBlockCursor(datas[1]);
-        postings_bf["c"] = makeMultiBlockCursor(datas[2]);
+        postings_bf["a"] = makeMultiBlockCursor(data[0]);
+        postings_bf["b"] = makeMultiBlockCursor(data[1]);
+        postings_bf["c"] = makeMultiBlockCursor(data[2]);
         auto bf_result = intersectAndCollect(postings_bf, {"a", "b", "c"}, 0, 1000, true);
 
         // Leapfrog (low density threshold to force leapfrog)
         PostingListCursorMap postings_lf;
-        postings_lf["a"] = makeMultiBlockCursor(datas[0]);
-        postings_lf["b"] = makeMultiBlockCursor(datas[1]);
-        postings_lf["c"] = makeMultiBlockCursor(datas[2]);
+        postings_lf["a"] = makeMultiBlockCursor(data[0]);
+        postings_lf["b"] = makeMultiBlockCursor(data[1]);
+        postings_lf["c"] = makeMultiBlockCursor(data[2]);
         auto lf_result = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 1000, false, 100.0);
 
         EXPECT_EQ(bf_result, lf_result) << "Brute-force vs leapfrog mismatch at trial " << trial;
@@ -1162,7 +1166,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
         std::uniform_int_distribution<uint32_t> dist(0, 4999);
 
         std::vector<std::set<uint32_t>> sets(4);
-        std::vector<MultiBlockTestData> datas(4);
+        std::vector<MultiBlockTestData> data(4);
         PostingListCursorMap postings;
         std::vector<String> tokens;
 
@@ -1172,13 +1176,13 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
             while (sets[i].size() < sz) sets[i].insert(dist(rng));
 
             std::vector<uint32_t> v(sets[i].begin(), sets[i].end());
-            datas[i] = makeMultiBlockData({v});
+            data[i] = makeMultiBlockData({v});
 
             String name = "t" + std::to_string(i);
             tokens.push_back(name);
         }
         for (int i = 0; i < 4; ++i)
-            postings[tokens[i]] = makeMultiBlockCursor(datas[i]);
+            postings[tokens[i]] = makeMultiBlockCursor(data[i]);
 
         // Compute expected 4-way intersection
         std::vector<uint32_t> tmp1, tmp2, expected;
@@ -1200,7 +1204,7 @@ TEST(PostingListCursorTest, StressRandomUnion)
         std::uniform_int_distribution<uint32_t> dist(0, 999);
 
         std::set<uint32_t> all;
-        std::vector<MultiBlockTestData> datas(3);
+        std::vector<MultiBlockTestData> data(3);
         PostingListCursorMap postings;
         std::vector<String> tokens;
 
@@ -1212,13 +1216,13 @@ TEST(PostingListCursorTest, StressRandomUnion)
             all.insert(s.begin(), s.end());
 
             std::vector<uint32_t> v(s.begin(), s.end());
-            datas[i] = makeMultiBlockData({v});
+            data[i] = makeMultiBlockData({v});
 
             String name = "t" + std::to_string(i);
             tokens.push_back(name);
         }
         for (int i = 0; i < 3; ++i)
-            postings[tokens[i]] = makeMultiBlockCursor(datas[i]);
+            postings[tokens[i]] = makeMultiBlockCursor(data[i]);
 
         std::vector<uint32_t> expected(all.begin(), all.end());
         auto result = unionAndCollect(postings, tokens, 0, 1000);
@@ -1298,7 +1302,7 @@ TEST(PostingListCursorTest, BruteForceDenseLargeRange)
 
 
 // ===========================================================================================
-// Section 21: Cursor-level seek+next interleaving
+// Section 21: Cursor-level advance+next interleaving
 // ===========================================================================================
 
 TEST(PostingListCursorTest, AlternatingSeekAndNext)
@@ -1312,7 +1316,7 @@ TEST(PostingListCursorTest, AlternatingSeekAndNext)
     EXPECT_EQ(cursor->value(), 0u);
 
     // Seek to 2 -> should land on 3 (first multiple of 3 >= 2)
-    cursor->seek(2);
+    cursor->advance(2);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 3u);
 
@@ -1322,7 +1326,7 @@ TEST(PostingListCursorTest, AlternatingSeekAndNext)
     EXPECT_EQ(cursor->value(), 6u);
 
     // Seek to 10 -> should land on 12
-    cursor->seek(10);
+    cursor->advance(10);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 12u);
 
@@ -1362,15 +1366,15 @@ TEST(PostingListCursorTest, NextExhaustsAllElementsProperly)
     EXPECT_EQ(count, 6u);
 }
 
-/// The seek() bug: seek on the slow path should start from the next large block,
-/// not retry the current one. For embedded cursors, this manifests as: after seek
+/// The advance() bug: advance on the slow path should start from the next large block,
+/// not retry the current one. For embedded cursors, this manifests as: after advance
 /// fails (target beyond all data), cursor should be invalid.
 TEST(PostingListCursorTest, SeekBeyondEndMakesInvalid)
 {
     auto info = makeEmbeddedInfo({10, 20, 30});
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(31);
+    cursor->advance(31);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -1379,7 +1383,7 @@ TEST(PostingListCursorTest, SeekExactLastThenNextInvalidates)
     auto info = makeEmbeddedInfo({10, 20, 30});
     auto cursor = makeEmbeddedCursor(info);
 
-    cursor->seek(30);
+    cursor->advance(30);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 30u);
 
@@ -1451,7 +1455,7 @@ TEST(PostingListCursorTest, OneEmptyOneFullIntersection)
     postings["full"] = makeMultiBlockCursor(data2);
 
     // The empty cursor is invalid from the start, so intersect should return empty.
-    // But since the cursor is invalid after seek(0), intersect returns immediately.
+    // But since the cursor is invalid after advance(0), intersect returns immediately.
     auto result = intersectAndCollect(postings, {"empty", "full"}, 0, 100, false, 100.0);
     EXPECT_TRUE(result.empty());
 }
@@ -1518,7 +1522,7 @@ TEST(PostingListCursorTest, MultiBlockSingleBlockSmall)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
 
@@ -1530,7 +1534,7 @@ TEST(PostingListCursorTest, MultiBlockSingleBlockExact128)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
 
@@ -1541,7 +1545,7 @@ TEST(PostingListCursorTest, MultiBlockSingleBlockWithTail)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
 
@@ -1555,7 +1559,7 @@ TEST(PostingListCursorTest, MultiBlockTwoBlocks)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, data.all_docs);
 }
 
@@ -1568,7 +1572,7 @@ TEST(PostingListCursorTest, MultiBlockThreeBlocks)
     auto data = makeMultiBlockData({block0, block1, block2});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, data.all_docs);
 }
 
@@ -1580,13 +1584,13 @@ TEST(PostingListCursorTest, MultiBlockSparseDocsInBlocks)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, data.all_docs);
 }
 
 
 // ===========================================================================================
-// Section 28: Multi-large-block — seek operations
+// Section 28: Multi-large-block — advance operations
 // ===========================================================================================
 
 TEST(PostingListCursorTest, MultiBlockSeekWithinFirstBlock)
@@ -1596,7 +1600,7 @@ TEST(PostingListCursorTest, MultiBlockSeekWithinFirstBlock)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(100);
+    cursor->advance(100);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 100u);
 }
@@ -1608,7 +1612,7 @@ TEST(PostingListCursorTest, MultiBlockSeekToSecondBlock)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(500);
+    cursor->advance(500);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 500u);
 }
@@ -1621,7 +1625,7 @@ TEST(PostingListCursorTest, MultiBlockSeekToGapBetweenBlocks)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to 300 — beyond block 0, should land on block 1's first doc (500)
-    cursor->seek(300);
+    cursor->advance(300);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 500u);
 }
@@ -1633,7 +1637,7 @@ TEST(PostingListCursorTest, MultiBlockSeekBeyondAll)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(700);
+    cursor->advance(700);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -1645,19 +1649,19 @@ TEST(PostingListCursorTest, MultiBlockSeekProgressivelyAcrossBlocks)
     auto data = makeMultiBlockData({block0, block1, block2});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(50);
+    cursor->advance(50);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 50u);
 
-    cursor->seek(600);
+    cursor->advance(600);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 600u);
 
-    cursor->seek(1050);
+    cursor->advance(1050);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 1050u);
 
-    cursor->seek(1100);
+    cursor->advance(1100);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -1668,7 +1672,7 @@ TEST(PostingListCursorTest, MultiBlockSeekThenNext)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(148);
+    cursor->advance(148);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 148u);
 
@@ -1784,7 +1788,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndIncrementsExisting)
 
 
 // ===========================================================================================
-// Section 31: Multi-large-block — packed block index binary search (seekImpl)
+// Section 31: Multi-large-block — packed block index binary search (advanceImpl)
 // ===========================================================================================
 
 TEST(PostingListCursorTest, MultiBlockSeekToMiddleOfPackedBlocks)
@@ -1796,12 +1800,12 @@ TEST(PostingListCursorTest, MultiBlockSeekToMiddleOfPackedBlocks)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to doc 200 → should be in packed block 1 (docs 129..256)
-    cursor->seek(200);
+    cursor->advance(200);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 200u);
 
     /// Seek forward to 350 → should be in packed block 2
-    cursor->seek(350);
+    cursor->advance(350);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 350u);
 }
@@ -1815,12 +1819,12 @@ TEST(PostingListCursorTest, MultiBlockSeekExactPackedBlockBoundary)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to exactly doc 128 (last doc of first packed block)
-    cursor->seek(128);
+    cursor->advance(128);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 128u);
 
     /// Seek to doc 129 (first doc of second packed block)
-    cursor->seek(129);
+    cursor->advance(129);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 129u);
 }
@@ -1838,7 +1842,7 @@ TEST(PostingListCursorTest, MultiBlockNextCrossesPackedBlockBoundary)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to last element in first packed block (doc 128)
-    cursor->seek(128);
+    cursor->advance(128);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 128u);
 
@@ -1856,7 +1860,7 @@ TEST(PostingListCursorTest, MultiBlockNextCrossesLargeBlockBoundary)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Drain to end of block 0
-    cursor->seek(129);
+    cursor->advance(129);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 129u);
 
@@ -1878,7 +1882,7 @@ TEST(PostingListCursorTest, MultiBlockTailBlockOnly)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
 
@@ -1889,7 +1893,7 @@ TEST(PostingListCursorTest, MultiBlockExactlyOneFullBlock)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
 
@@ -1902,7 +1906,7 @@ TEST(PostingListCursorTest, MultiBlockTailInSecondLargeBlock)
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, data.all_docs);
 }
 
@@ -2042,7 +2046,7 @@ TEST(PostingListCursorTest, MultiBlockLargeDocCount)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, docs);
 }
 
@@ -2056,7 +2060,7 @@ TEST(PostingListCursorTest, MultiBlockManyLargeBlocks)
     auto data = makeMultiBlockData(blocks);
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, data.all_docs);
 }
 
@@ -2073,13 +2077,13 @@ TEST(PostingListCursorTest, MultiBlockSeekAcrossManyBlocks)
     for (int i = 0; i < 5; ++i)
     {
         uint32_t target = static_cast<uint32_t>(i * 500 + 65);
-        cursor->seek(target);
-        ASSERT_TRUE(cursor->valid()) << "Block " << i << " seek failed";
+        cursor->advance(target);
+        ASSERT_TRUE(cursor->valid()) << "Block " << i << " advance failed";
         EXPECT_EQ(cursor->value(), target) << "Block " << i;
     }
 
     /// Seek beyond last block
-    cursor->seek(5000);
+    cursor->advance(5000);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -2100,7 +2104,7 @@ TEST(PostingListCursorTest, MultiBlockCardinality)
 
 
 // ===========================================================================================
-// Section 39: Multi-block — seek to middle packed block, then next() across large block boundary
+// Section 39: Multi-block — advance to middle packed block, then next() across large block boundary
 // ===========================================================================================
 
 TEST(PostingListCursorTest, MultiBlockSeekToMiddlePackedBlockThenDrainAcrossLargeBlock)
@@ -2114,7 +2118,7 @@ TEST(PostingListCursorTest, MultiBlockSeekToMiddlePackedBlockThenDrainAcrossLarg
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(200);
+    cursor->advance(200);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 200u);
 
@@ -2136,7 +2140,7 @@ TEST(PostingListCursorTest, MultiBlockSeekToMiddlePackedBlockThenDrainAcrossLarg
 
 
 // ===========================================================================================
-// Section 40: Multi-block — seek on sparse doc IDs (gap values)
+// Section 40: Multi-block — advance on sparse doc IDs (gap values)
 // ===========================================================================================
 
 TEST(PostingListCursorTest, MultiBlockSparseSeekToGapValue)
@@ -2149,27 +2153,27 @@ TEST(PostingListCursorTest, MultiBlockSparseSeekToGapValue)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to 4 (between 3 and 6) → should land on 6
-    cursor->seek(4);
+    cursor->advance(4);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 6u);
 
     /// Seek to 100 (between 99 and 102) → should land on 102
-    cursor->seek(100);
+    cursor->advance(100);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 102u);
 
     /// Seek to 500 (in gap between blocks) → should land on 1000
-    cursor->seek(500);
+    cursor->advance(500);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 1000u);
 
     /// Seek to 1001 (between 1000 and 1005) → should land on 1005
-    cursor->seek(1001);
+    cursor->advance(1001);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 1005u);
 
     /// Seek to 1746 (beyond last doc) → invalid
-    cursor->seek(1746);
+    cursor->advance(1746);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -2181,12 +2185,12 @@ TEST(PostingListCursorTest, MultiBlockSparseSeekToFirstDocOfEachBlock)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to exact first doc of block 0
-    cursor->seek(10);
+    cursor->advance(10);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 10u);
 
     /// Seek to exact first doc of block 1
-    cursor->seek(1000);
+    cursor->advance(1000);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 1000u);
 }
@@ -2287,7 +2291,7 @@ TEST(PostingListCursorTest, MultiBlockDensityAfterSeekToSecondLargeBlock)
     /// Block 0: 0..199 (dense, 200 docs).
     /// Block 1: 500,502,504,...,698 → 100 docs, step 2.
     /// Global density = cardinality / (global_end - global_begin + 1) = 300 / 699.
-    /// Density is computed once at construction and does not change after seek.
+    /// Density is computed once at construction and does not change after advance.
     std::vector<uint32_t> block0 = generateRange(0, 200);
     std::vector<uint32_t> block1 = generateRange(500, 100, 2); // 500,502,...,698
     auto data = makeMultiBlockData({block0, block1});
@@ -2297,7 +2301,7 @@ TEST(PostingListCursorTest, MultiBlockDensityAfterSeekToSecondLargeBlock)
     EXPECT_NEAR(cursor->density(), expected_density, 1e-6);
 
     /// Seek to block 1 — density stays the same (global).
-    cursor->seek(500);
+    cursor->advance(500);
     ASSERT_TRUE(cursor->valid());
     EXPECT_NEAR(cursor->density(), expected_density, 1e-6);
 }
@@ -2399,7 +2403,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectThreeDisjoint)
 
 
 // ===========================================================================================
-// Section 44: Multi-block — seek to first_doc_id with non-zero start
+// Section 44: Multi-block — advance to first_doc_id with non-zero start
 // ===========================================================================================
 
 TEST(PostingListCursorTest, MultiBlockSeekToFirstDocIdNonZero)
@@ -2410,7 +2414,7 @@ TEST(PostingListCursorTest, MultiBlockSeekToFirstDocIdNonZero)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(1000);
+    cursor->advance(1000);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 1000u);
 
@@ -2426,7 +2430,7 @@ TEST(PostingListCursorTest, MultiBlockSeekBeforeFirstDocIdNonZero)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(400);
+    cursor->advance(400);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 500u);
 }
@@ -2438,16 +2442,16 @@ TEST(PostingListCursorTest, MultiBlockDrainFromFirstDocIdNonZero)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, 5000);
+    auto result = advanceAndDrainCursor(cursor, 5000);
     EXPECT_EQ(result, docs);
 }
 
 
 // ===========================================================================================
-// Section 45: Multi-block — need_seek_before_decode state transitions
-//   Seek sets need_seek=true, decodeNextBlock clears it, subsequent next()
-//   should do sequential reads (no redundant seek).
-//   We verify indirectly: seek to a packed block, then next() through
+// Section 45: Multi-block — need_advance_before_decode state transitions
+//   Seek sets need_advance=true, decodeNextBlock clears it, subsequent next()
+//   should do sequential reads (no redundant advance).
+//   We verify indirectly: advance to a packed block, then next() through
 //   the remaining packed blocks and into the next large block.
 // ===========================================================================================
 
@@ -2461,7 +2465,7 @@ TEST(PostingListCursorTest, MultiBlockSeekThenSequentialNextThroughMultiplePacke
     auto data = makeMultiBlockData({block0, block1});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(200);
+    cursor->advance(200);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 200u);
 
@@ -2502,13 +2506,13 @@ TEST(PostingListCursorTest, MultiBlockMinimalBlock)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, 100);
+    auto result = advanceAndDrainCursor(cursor, 100);
     EXPECT_EQ(result, docs);
 }
 
 
 // ===========================================================================================
-// Section 47: Multi-block — many large blocks (10+) seek stress test
+// Section 47: Multi-block — many large blocks (10+) advance stress test
 // ===========================================================================================
 
 TEST(PostingListCursorTest, MultiBlockTenLargeBlocksSeekStress)
@@ -2521,17 +2525,17 @@ TEST(PostingListCursorTest, MultiBlockTenLargeBlocksSeekStress)
     auto data = makeMultiBlockData(blocks);
     auto cursor = makeMultiBlockCursor(data);
 
-    /// Forward seek to every block's last doc
+    /// Forward advance to every block's last doc
     for (int i = 0; i < 10; ++i)
     {
         uint32_t last_doc = static_cast<uint32_t>(i * 500 + 129);
-        cursor->seek(last_doc);
-        ASSERT_TRUE(cursor->valid()) << "Block " << i << " last doc seek failed";
+        cursor->advance(last_doc);
+        ASSERT_TRUE(cursor->valid()) << "Block " << i << " last doc advance failed";
         EXPECT_EQ(cursor->value(), last_doc) << "Block " << i;
     }
 
     /// Seek beyond all
-    cursor->seek(5000);
+    cursor->advance(5000);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -2544,13 +2548,13 @@ TEST(PostingListCursorTest, MultiBlockTenLargeBlocksFullDrain)
     auto data = makeMultiBlockData(blocks);
     auto cursor = makeMultiBlockCursor(data);
 
-    auto result = seekAndDrainCursor(cursor, data.all_docs.front());
+    auto result = advanceAndDrainCursor(cursor, data.all_docs.front());
     EXPECT_EQ(result, data.all_docs);
 }
 
 TEST(PostingListCursorTest, MultiBlockTwentyLargeBlocksSeekSkip)
 {
-    /// 20 blocks — seek to every other block to test skipping.
+    /// 20 blocks — advance to every other block to test skipping.
     std::vector<std::vector<uint32_t>> blocks;
     for (int i = 0; i < 20; ++i)
         blocks.push_back(generateRange(static_cast<uint32_t>(i * 300), 130));
@@ -2562,7 +2566,7 @@ TEST(PostingListCursorTest, MultiBlockTwentyLargeBlocksSeekSkip)
     for (int i = 0; i < 20; i += 2)
     {
         uint32_t target = static_cast<uint32_t>(i * 300 + 50);
-        cursor->seek(target);
+        cursor->advance(target);
         ASSERT_TRUE(cursor->valid()) << "Block " << i;
         EXPECT_EQ(cursor->value(), target) << "Block " << i;
     }
@@ -2795,7 +2799,7 @@ TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogFourWay)
 //   - Zero-delta blocks (consecutive doc_ids, step=1)
 //   - Constant-delta blocks (uniform step > 1)
 //   - Mixed blocks (some arithmetic, some not)
-//   - seek/next/linearOr/linearAnd/intersection through arithmetic blocks
+//   - advance/next/linearOr/linearAnd/intersection through arithmetic blocks
 //   - Tail blocks (< 128 elements) that are arithmetic
 //   - Large block 0 packed block 0 is excluded (prepend_first_doc_id)
 //   - Transitions between arithmetic and non-arithmetic blocks
@@ -2810,7 +2814,7 @@ TEST(PostingListCursorTest, ArithmeticZeroDeltaSeekDrain)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to a doc_id in the second packed block (block 1, which is arithmetic).
-    cursor->seek(200);
+    cursor->advance(200);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 200u);
 
@@ -2822,14 +2826,14 @@ TEST(PostingListCursorTest, ArithmeticZeroDeltaSeekDrain)
     EXPECT_EQ(remaining, expected);
 }
 
-/// Zero-delta: full drain via seek(0) + next.
+/// Zero-delta: full drain via advance(0) + next.
 TEST(PostingListCursorTest, ArithmeticZeroDeltaFullDrain)
 {
     auto docs = generateRange(0, 257);
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto all = seekAndDrainCursor(cursor, 0);
+    auto all = advanceAndDrainCursor(cursor, 0);
     EXPECT_EQ(all, docs);
 }
 
@@ -2887,7 +2891,7 @@ TEST(PostingListCursorTest, ArithmeticConstantDeltaSeekDrain)
 
     /// Seek to something in the second packed block (arithmetic, step=3).
     /// Block 1 starts at docs[129] = 129*3 = 387.
-    cursor->seek(400);
+    cursor->advance(400);
     ASSERT_TRUE(cursor->valid());
     /// 400 is not a multiple of 3 from 0, so we expect the next multiple: ceil((400-387)/3)*3 + 387
     /// docs in block 1: 387, 390, 393, ...; first >= 400 is 402.
@@ -2905,7 +2909,7 @@ TEST(PostingListCursorTest, ArithmeticConstantDeltaFullDrain)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto all = seekAndDrainCursor(cursor, 0);
+    auto all = advanceAndDrainCursor(cursor, 0);
     EXPECT_EQ(all, docs);
 }
 
@@ -2920,7 +2924,7 @@ TEST(PostingListCursorTest, ArithmeticConstantDeltaLinearOr)
     EXPECT_EQ(result, docs);
 }
 
-/// Constant-delta: seek to exact arithmetic value.
+/// Constant-delta: advance to exact arithmetic value.
 TEST(PostingListCursorTest, ArithmeticConstantDeltaSeekExact)
 {
     auto docs = generateRange(10, 257, 5);  // 10, 15, 20, ..., 10 + 256*5 = 1290
@@ -2928,12 +2932,12 @@ TEST(PostingListCursorTest, ArithmeticConstantDeltaSeekExact)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to 650 (which is 10 + 128*5 = 650, first doc of block 1).
-    cursor->seek(650);
+    cursor->advance(650);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 650u);
 }
 
-/// Constant-delta: seek to first and last doc of arithmetic block.
+/// Constant-delta: advance to first and last doc of arithmetic block.
 TEST(PostingListCursorTest, ArithmeticSeekFirstAndLastOfBlock)
 {
     auto docs = generateRange(0, 257, 2);  // 0, 2, 4, ..., 512
@@ -2941,13 +2945,13 @@ TEST(PostingListCursorTest, ArithmeticSeekFirstAndLastOfBlock)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Block 1 (arithmetic): docs[129]=258 to docs[256]=512.
-    cursor->seek(258);
+    cursor->advance(258);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 258u);
 
-    /// Re-create cursor, seek to last doc of block 1.
+    /// Re-create cursor, advance to last doc of block 1.
     auto cursor2 = makeMultiBlockCursor(data);
-    cursor2->seek(512);
+    cursor2->advance(512);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 512u);
 
@@ -2965,7 +2969,7 @@ TEST(PostingListCursorTest, ArithmeticNextTransitionsToNextBlock)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek to last element of block 1: docs[256]=256.
-    cursor->seek(256);
+    cursor->advance(256);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 256u);
 
@@ -3000,11 +3004,11 @@ TEST(PostingListCursorTest, ArithmeticMixedNonArithThenArith)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto all = seekAndDrainCursor(cursor, 0);
+    auto all = advanceAndDrainCursor(cursor, 0);
     EXPECT_EQ(all, docs);
 }
 
-/// Seek across a mixed sequence: seek from non-arithmetic block into arithmetic block.
+/// Seek across a mixed sequence: advance from non-arithmetic block into arithmetic block.
 TEST(PostingListCursorTest, ArithmeticSeekFromNonArithToArith)
 {
     std::vector<uint32_t> docs;
@@ -3027,7 +3031,7 @@ TEST(PostingListCursorTest, ArithmeticSeekFromNonArithToArith)
 
     /// Seek from block 0 into block 1.
     auto cursor = makeMultiBlockCursor(data);
-    cursor->seek(block1_start + 50);
+    cursor->advance(block1_start + 50);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), block1_start + 50);
 }
@@ -3041,7 +3045,7 @@ TEST(PostingListCursorTest, ArithmeticTailBlock)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek into the tail block.
-    cursor->seek(140);
+    cursor->advance(140);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 140u);
 
@@ -3061,18 +3065,18 @@ TEST(PostingListCursorTest, ArithmeticTailBlockConstantDelta)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Tail block starts at docs[129] = 129 * 4 = 516.
-    cursor->seek(516);
+    cursor->advance(516);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 516u);
 
     /// Seek to non-exact value in tail.
     auto cursor2 = makeMultiBlockCursor(data);
-    cursor2->seek(520);
+    cursor2->advance(520);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 520u);
 
     auto cursor3 = makeMultiBlockCursor(data);
-    cursor3->seek(519);
+    cursor3->advance(519);
     ASSERT_TRUE(cursor3->valid());
     EXPECT_EQ(cursor3->value(), 520u);
 }
@@ -3088,7 +3092,7 @@ TEST(PostingListCursorTest, ArithmeticBlock0NotOptimized)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Should still work correctly — full decode path.
-    auto all = seekAndDrainCursor(cursor, 0);
+    auto all = advanceAndDrainCursor(cursor, 0);
     EXPECT_EQ(all, docs);
 }
 
@@ -3165,7 +3169,7 @@ TEST(PostingListCursorTest, ArithmeticMultipleBlocksAllZeroDelta)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto all = seekAndDrainCursor(cursor, 0);
+    auto all = advanceAndDrainCursor(cursor, 0);
     EXPECT_EQ(all, docs);
 }
 
@@ -3190,7 +3194,7 @@ TEST(PostingListCursorTest, ArithmeticSeekEveryDocInBlock)
     for (uint32_t target = 387; target <= 768; target += 3)
     {
         auto cursor = makeMultiBlockCursor(data);
-        cursor->seek(target);
+        cursor->advance(target);
         ASSERT_TRUE(cursor->valid()) << "target=" << target;
         EXPECT_EQ(cursor->value(), target) << "target=" << target;
     }
@@ -3207,7 +3211,7 @@ TEST(PostingListCursorTest, ArithmeticSeekBetweenDocs)
     {
         if (target % 5 == 0) continue;  // skip exact matches
         auto cursor = makeMultiBlockCursor(data);
-        cursor->seek(target);
+        cursor->advance(target);
         ASSERT_TRUE(cursor->valid()) << "target=" << target;
         /// Should land on the next multiple of 5 >= target.
         uint32_t expected_val = ((target + 4) / 5) * 5;
@@ -3222,7 +3226,7 @@ TEST(PostingListCursorTest, ArithmeticSeekBeyondBlock)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    cursor->seek(300);
+    cursor->advance(300);
     EXPECT_FALSE(cursor->valid());
 }
 
@@ -3266,7 +3270,7 @@ TEST(PostingListCursorTest, ArithmeticSecondLargeBlock)
     /// block1 docs_to_encode starts from docs[0]=200 with delta_base=199.
     /// Packed block 0 of large block 1: docs[0..127] = 200..327.
     /// Packed block 1 of large block 1: docs[128..256] = 328..456 — arithmetic.
-    cursor->seek(350);
+    cursor->advance(350);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 350u);
 
@@ -3302,7 +3306,7 @@ TEST(PostingListCursorTest, ArithmeticLargeStep)
     auto data = makeMultiBlockData({docs});
     auto cursor = makeMultiBlockCursor(data);
 
-    auto all = seekAndDrainCursor(cursor, 0);
+    auto all = advanceAndDrainCursor(cursor, 0);
     EXPECT_EQ(all, docs);
 
     /// linearOr
@@ -3319,19 +3323,19 @@ TEST(PostingListCursorTest, ArithmeticRepeatedSeekSameBlock)
     auto cursor = makeMultiBlockCursor(data);
 
     /// Seek multiple times within block 1 (arithmetic).
-    cursor->seek(130);
+    cursor->advance(130);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 130u);
 
-    cursor->seek(150);
+    cursor->advance(150);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 150u);
 
-    cursor->seek(200);
+    cursor->advance(200);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 200u);
 
-    cursor->seek(256);
+    cursor->advance(256);
     ASSERT_TRUE(cursor->valid());
     EXPECT_EQ(cursor->value(), 256u);
 }
@@ -3490,4 +3494,52 @@ TEST(PostingListCursorTest, RawSingleBlockMaterializedUnionWithCompressed)
     std::vector<uint32_t> expected = generateRange(0, 20);
     expected.insert(expected.end(), {24, 31, 38, 45});
     EXPECT_EQ(result, expected);
+}
+
+TEST(PostingListCursorTest, SparseIndexHeaderPersistsCodecType)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("alpha");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(42);
+
+    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+
+    WriteBufferFromOwnString out;
+    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    TextIndexSerialization::serializeSparseIndex(sparse_index, out, codec.get());
+
+    ReadBufferFromString in(out.str());
+    auto sparse_index_data = TextIndexSerialization::deserializeSparseIndex(in);
+
+    EXPECT_EQ(sparse_index_data.header.version, static_cast<MergeTreeIndexVersion>(TextIndexSerialization::SparseIndexVersion::WithCodec));
+    EXPECT_EQ(sparse_index_data.header.codec_type, IPostingListCodec::Type::Bitpacking);
+    EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "alpha");
+    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 42u);
+}
+
+TEST(PostingListCursorTest, SparseIndexHeaderInitialVersionDefaultsToNoneCodec)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(static_cast<UInt64>(TextIndexSerialization::SparseIndexVersion::Initial), out);
+    writeVarUInt(1u, out);
+
+    auto tokens = ColumnString::create();
+    tokens->insert("beta");
+    SerializationString::create()->serializeBinaryBulk(*tokens, out, 0, tokens->size());
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(7);
+    SerializationNumber<UInt64>::create()->serializeBinaryBulk(*offsets, out, 0, offsets->size());
+
+    ReadBufferFromString in(out.str());
+    auto sparse_index_data = TextIndexSerialization::deserializeSparseIndex(in);
+
+    EXPECT_EQ(sparse_index_data.header.version, static_cast<MergeTreeIndexVersion>(TextIndexSerialization::SparseIndexVersion::Initial));
+    EXPECT_EQ(sparse_index_data.header.codec_type, IPostingListCodec::Type::None);
+    EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
+    EXPECT_EQ(assert_cast<const ColumnString &>(*sparse_index_data.sparse_index.tokens).getDataAt(0), "beta");
+    EXPECT_EQ(assert_cast<const ColumnUInt64 &>(*sparse_index_data.sparse_index.offsets_in_file).getData()[0], 7u);
 }

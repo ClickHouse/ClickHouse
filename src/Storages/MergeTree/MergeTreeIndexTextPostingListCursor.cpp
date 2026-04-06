@@ -522,6 +522,9 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
 {
     if (is_embedded)
     {
+        if (decoded_count == 0)
+            return;
+
         /// Level 1 (dense memset): if every row in the range is in the posting list, just memset.
         if (!info.ranges.empty())
         {
@@ -550,6 +553,9 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         padColumn<PadOp::Or>(data, decoded_values, row_offset, begin_idx, end_idx);
         return;
     }
+
+    if (info.ranges.empty() || total_segments == 0)
+        return;
 
     for (size_t i = current_segment_idx; i < total_segments; ++i)
     {

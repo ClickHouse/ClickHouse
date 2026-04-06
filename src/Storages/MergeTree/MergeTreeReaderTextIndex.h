@@ -97,7 +97,8 @@ private:
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
     PostingsSerialization postings_serialization;
 
-    /// Lazy mode state, computed once in `readGranule` and reused across `fillColumn` calls.
+    /// Lazy mode is requested once in the constructor, but enabled per granule after reading the sparse-index header.
+    bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
     float lazy_density_threshold = 0.5f;
 
