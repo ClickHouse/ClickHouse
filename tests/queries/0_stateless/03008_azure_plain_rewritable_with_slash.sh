@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database, long
 # Tag no-fasttest: requires Azure
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: Not supported auth type
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
+# Tag long: timeouts during high number of concurrent runs
 
 set -e
 
@@ -18,7 +19,7 @@ hostname="${HOSTNAME}"
 ${CLICKHOUSE_CLIENT} --query "drop table if exists test_azure_mt"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-create table test_azure_mt (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 1000) order by tuple(a, b)
+create table test_azure_mt (a Int32, b Int64, c Int64) engine = MergeTree() partition by intDiv(a, 5000) order by tuple(a, b)
 settings disk = disk(
     type = object_storage,
     metadata_type = plain_rewritable,

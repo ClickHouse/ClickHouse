@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache, no-replicated-database, long
 # Tag no-fasttest: requires Azure
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: Not supported auth type
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
+# Tag long: timeouts during high number of concurrent runs
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
