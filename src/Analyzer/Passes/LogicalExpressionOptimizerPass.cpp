@@ -290,13 +290,48 @@ static ComparisonFunction flipComparisonFunction(ComparisonFunction f)
     UNREACHABLE();
 }
 
+static String comparisonFunctionToName(ComparisonFunction f)
+{
+    switch (f)
+    {
+    case ComparisonFunction::EQUALS:
+        return "equals";
+    case ComparisonFunction::NOT_EQUALS:
+        return "notEquals";
+    case ComparisonFunction::LESS:
+        return "less";
+    case ComparisonFunction::LESS_OR_EQUALS:
+        return "lessOrEquals";
+    case ComparisonFunction::GREATER:
+        return "greater";
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        return "greaterOrEquals";
+    }
+    UNREACHABLE();
+}
+
+static ComparisonFunction strengthenComparison(ComparisonFunction f)
+{
+    switch (f)
+    {
+    case ComparisonFunction::LESS_OR_EQUALS:
+        return ComparisonFunction::LESS;
+    case ComparisonFunction::GREATER_OR_EQUALS:
+        return ComparisonFunction::GREATER;
+    default:
+        UNREACHABLE();
+    }
+}
+
 /// Result of comparing two filters on the same expression.
 enum class ValueComparisonResult
 {
-    PRUNE_LEFT,   /// The left (existing) filter is weaker and can be removed.
-    PRUNE_RIGHT,  /// The right (new) filter is weaker and can be discarded.
-    CONFLICT,     /// The two filters are contradictory — the AND is always false.
-    NONE          /// Filters are independent, both must be kept.
+    PRUNE_LEFT,        /// The left (existing) filter is weaker and can be removed.
+    PRUNE_RIGHT,       /// The right (new) filter is weaker and can be discarded.
+    STRENGTHEN_LEFT,   /// Left's inclusive comparison is tightened to strict (e.g. <= → <); right is pruned.
+    STRENGTHEN_RIGHT,  /// Right's inclusive comparison is tightened to strict (e.g. <= → <); left is pruned.
+    CONFLICT,          /// The two filters are contradictory — the AND is always false.
+    NONE               /// Filters are independent, both must be kept.
 };
 
 /// Result of inserting a new filter into the per-expression filter list.
@@ -321,11 +356,19 @@ using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<std::vector<ComparisonFi
 
 static ValueComparisonResult invertComparisonResult(ValueComparisonResult result)
 {
-    if (result == ValueComparisonResult::PRUNE_LEFT)
+    switch (result)
+    {
+    case ValueComparisonResult::PRUNE_LEFT:
         return ValueComparisonResult::PRUNE_RIGHT;
-    if (result == ValueComparisonResult::PRUNE_RIGHT)
+    case ValueComparisonResult::PRUNE_RIGHT:
         return ValueComparisonResult::PRUNE_LEFT;
-    return result;
+    case ValueComparisonResult::STRENGTHEN_LEFT:
+        return ValueComparisonResult::STRENGTHEN_RIGHT;
+    case ValueComparisonResult::STRENGTHEN_RIGHT:
+        return ValueComparisonResult::STRENGTHEN_LEFT;
+    default:
+        return result;
+    }
 }
 
 /// Try to convert a constant to the expression's (column) type using strict (lossless) conversion.
@@ -609,11 +652,14 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
 
         /// notEquals vs range: if the range already excludes the notEquals value,
         /// the notEquals is redundant (e.g. `a != 3 AND a < 3` → PRUNE_LEFT).
+        /// When the values are equal and the range is inclusive, strengthen the range
+        /// (e.g. `a != 3 AND a <= 3` → `a < 3`, returned as STRENGTHEN_RIGHT).
         /// Otherwise both are independent (e.g. `a != 3 AND a < 5` → NONE).
         /// notEquals vs notEquals: duplicate → PRUNE_RIGHT, otherwise NONE.
         if (lf == ComparisonFunction::NOT_EQUALS)
         {
             bool prune_left = false;
+            bool can_strengthen_right = false;
             switch (rf)
             {
             case ComparisonFunction::LESS:
@@ -621,12 +667,16 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
                 break;
             case ComparisonFunction::LESS_OR_EQUALS:
                 prune_left = accurateLess(rc, lc);
+                if (!prune_left)
+                    can_strengthen_right = accurateEquals(lc, rc);
                 break;
             case ComparisonFunction::GREATER:
                 prune_left = !accurateLess(rc, lc);
                 break;
             case ComparisonFunction::GREATER_OR_EQUALS:
                 prune_left = accurateLess(lc, rc);
+                if (!prune_left)
+                    can_strengthen_right = accurateEquals(lc, rc);
                 break;
             case ComparisonFunction::NOT_EQUALS:
                 if (accurateEquals(lc, rc))
@@ -635,7 +685,11 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
             case ComparisonFunction::EQUALS:
                 UNREACHABLE();
             }
-            return prune_left ? ValueComparisonResult::PRUNE_LEFT : ValueComparisonResult::NONE;
+            if (prune_left)
+                return ValueComparisonResult::PRUNE_LEFT;
+            if (can_strengthen_right)
+                return ValueComparisonResult::STRENGTHEN_RIGHT;
+            return ValueComparisonResult::NONE;
         }
 
         /// Right is notEquals — swap arguments and invert the result.
@@ -691,6 +745,23 @@ static ValueComparisonResult compareComparisonFilters(const ComparisonFilterInfo
     }
 }
 
+/// Rebuild the `original_node` of a filter after its `function` has been changed (e.g. by strengthening).
+/// Preserves the original argument order.
+static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPtr & context)
+{
+    auto * orig = filter.original_node->as<FunctionNode>();
+    chassert(orig);
+    bool constant_on_left = orig->getArguments().getNodes()[0]->as<ConstantNode>() != nullptr;
+    auto output_func = constant_on_left ? flipComparisonFunction(filter.function) : filter.function;
+    auto func_name = comparisonFunctionToName(output_func);
+
+    auto new_node = std::make_shared<FunctionNode>(func_name);
+    new_node->markAsOperator();
+    new_node->getArguments().getNodes() = orig->getArguments().getNodes();
+    resolveOrdinaryFunctionNodeByName(*new_node, func_name, context);
+    filter.original_node = std::move(new_node);
+}
+
 /// Insert a new comparison filter for `expression` into `filter_map`.
 /// When `enable_pruning` is true, performs type conversion, boundary folding, and
 /// pairwise comparison against existing filters for the same expression.
@@ -700,7 +771,8 @@ static AddComparisonFilterResult addComparisonFilter(
     ComparisonFilterMap & filter_map,
     const QueryTreeNodePtr & expression,
     ComparisonFilterInfo new_filter,
-    bool enable_pruning)
+    bool enable_pruning,
+    const ContextPtr & context)
 {
     /// Pruning disabled — just store the filter without analysis.
     if (!enable_pruning)
@@ -741,6 +813,16 @@ static AddComparisonFilterResult addComparisonFilter(
             break;
         case ValueComparisonResult::PRUNE_RIGHT:
             return AddComparisonFilterResult::REDUNDANT;
+        case ValueComparisonResult::STRENGTHEN_LEFT:
+            info_list[i].function = strengthenComparison(info_list[i].function);
+            rebuildComparisonNode(info_list[i], context);
+            return AddComparisonFilterResult::REDUNDANT;
+        case ValueComparisonResult::STRENGTHEN_RIGHT:
+            new_filter.function = strengthenComparison(new_filter.function);
+            rebuildComparisonNode(new_filter, context);
+            info_list.erase(info_list.begin() + static_cast<std::ptrdiff_t>(i));
+            --i;
+            break;
         case ValueComparisonResult::CONFLICT:
             return AddComparisonFilterResult::CONFLICT;
         case ValueComparisonResult::NONE:
@@ -1572,7 +1654,7 @@ private:
             /// Normalize so that expression is always on the left (e.g. `3 < a` → `a > 3`).
             auto normalized = constant_on_left ? flipComparisonFunction(*comparison_func) : *comparison_func;
             ComparisonFilterInfo new_filter{constant, normalized, argument, {}, argument_index};
-            auto result = addComparisonFilter(filter_map, expression, std::move(new_filter), enable_pruning);
+            auto result = addComparisonFilter(filter_map, expression, std::move(new_filter), enable_pruning, getContext());
 
             /// Contradiction detected — the entire AND is false.
             if (result == AddComparisonFilterResult::CONFLICT)

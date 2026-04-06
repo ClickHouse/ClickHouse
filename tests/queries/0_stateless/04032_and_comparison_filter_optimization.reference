@@ -461,7 +461,7 @@ SELECT
 FROM default.`04032_t` AS __table1
 WHERE __table1.i > 3
 SETTINGS optimize_redundant_comparisons = 1
-ne_le_keep
+ne_le_strengthen
 1	10	1.5	a	x	2024-01-01 00:00:00
 1	10	1.5	a	x	2024-01-01 00:00:00
 SELECT
@@ -482,9 +482,9 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i <= 3)
+WHERE __table1.i < 3
 SETTINGS optimize_redundant_comparisons = 1
-ne_ge_keep
+ne_ge_strengthen
 5	50	5.5	e	z	2025-01-01 00:00:00
 5	50	5.5	e	z	2025-01-01 00:00:00
 SELECT
@@ -505,7 +505,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE (__table1.i != 3) AND (__table1.i >= 3)
+WHERE __table1.i > 3
 SETTINGS optimize_redundant_comparisons = 1
 ne_ne_same
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -2554,4 +2554,236 @@ SELECT
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
 WHERE 1
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_strengthen_flip
+1	10	1.5	a	x	2024-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (3 >= __table1.i) AND (__table1.i != 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 3 > __table1.i
+SETTINGS optimize_redundant_comparisons = 1
+ne_ge_strengthen_flip
+5	50	5.5	e	z	2025-01-01 00:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (3 <= __table1.i) AND (__table1.i != 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 3 < __table1.i
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_diff_prune
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.i != 5) AND (__table1.i <= 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.i <= 3
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_strengthen_with_range
+1	10	1.5	a	x	2024-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.i != 3) AND (__table1.i <= 3) AND (__table1.i >= 1)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.i < 3) AND (__table1.i >= 1)
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_strengthen_cross_type
+1	10	1.5	a	x	2024-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.i != _CAST(3, \'UInt8\')) AND (__table1.i <= 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.i < 3
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_strengthen_float
+1	10	1.5	a	x	2024-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.f != 3.) AND (__table1.f <= 3.)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.f < 3.
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_strengthen_float_literal
+1	10	1.5	a	x	2024-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.i != 3.) AND (__table1.i <= 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.i < 3
+SETTINGS optimize_redundant_comparisons = 1
+ne_ge_strengthen_float_range
+5	50	5.5	e	z	2025-01-01 00:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.i != 3) AND (__table1.i >= 3.)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.i > 3.
+SETTINGS optimize_redundant_comparisons = 1
+ne_le_strengthen_float_col_int_ne
+1	10	1.5	a	x	2024-01-01 00:00:00
+1	10	1.5	a	x	2024-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.f != 3) AND (__table1.f <= 3.)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.f < 3.
+SETTINGS optimize_redundant_comparisons = 1
+ne_ge_strengthen_float_col_int_range
+5	50	5.5	e	z	2025-01-01 00:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE (__table1.f != 3.) AND (__table1.f >= 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE __table1.f > 3
 SETTINGS optimize_redundant_comparisons = 1

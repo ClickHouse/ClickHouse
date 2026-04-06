@@ -140,6 +140,11 @@ namespace DB
  * -- out of range: UInt8 cannot exceed 255
  * will be transformed into
  * SELECT * FROM table WHERE false;
+ *
+ * SELECT * FROM table WHERE a != 3 AND a <= 3;
+ * -- strengthen: `!=` combined with inclusive range tightens to strict
+ * will be transformed into
+ * SELECT * FROM table WHERE a < 3;
  * -------------------------------
  */
 

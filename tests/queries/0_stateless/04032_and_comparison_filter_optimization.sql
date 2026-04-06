@@ -180,15 +180,15 @@ SELECT * FROM 04032_t WHERE i != 3 AND i > 3 ORDER BY i SETTINGS optimize_redund
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i > 3 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i > 3 SETTINGS optimize_redundant_comparisons = 1;
 
--- a != 3 AND a <= 3 → keep both (a could be 2)
-SELECT 'ne_le_keep';
+-- a != 3 AND a <= 3 → strengthen to a < 3
+SELECT 'ne_le_strengthen';
 SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
 SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 SETTINGS optimize_redundant_comparisons = 1;
 
--- a != 3 AND a >= 3 → keep both (a could be 4)
-SELECT 'ne_ge_keep';
+-- a != 3 AND a >= 3 → strengthen to a > 3
+SELECT 'ne_ge_strengthen';
 SELECT * FROM 04032_t WHERE i != 3 AND i >= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
 SELECT * FROM 04032_t WHERE i != 3 AND i >= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i >= 3 SETTINGS optimize_redundant_comparisons = 0;
@@ -899,5 +899,79 @@ SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 ORDER BY i SETTINGS
 SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 SETTINGS optimize_redundant_comparisons = 0;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE u >= 0 AND u <= 255 AND u != 256 SETTINGS optimize_redundant_comparisons = 1;
+
+-- =====================================================================
+-- Section: notEquals + inclusive range strengthening
+-- =====================================================================
+
+-- constant on left side: 3 >= i AND i != 3 → i < 3
+SELECT 'ne_le_strengthen_flip';
+SELECT * FROM 04032_t WHERE 3 >= i AND i != 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE 3 >= i AND i != 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE 3 >= i AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE 3 >= i AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- constant on left side: 3 <= i AND i != 3 → i > 3
+SELECT 'ne_ge_strengthen_flip';
+SELECT * FROM 04032_t WHERE 3 <= i AND i != 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE 3 <= i AND i != 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE 3 <= i AND i != 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE 3 <= i AND i != 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- different values: i != 5 AND i <= 3 → no strengthening, != is pruned (5 > 3)
+SELECT 'ne_le_diff_prune';
+SELECT * FROM 04032_t WHERE i != 5 AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE i != 5 AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 5 AND i <= 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 5 AND i <= 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- strengthen + additional range: i != 3 AND i <= 3 AND i >= 1 → i < 3 AND i >= 1
+SELECT 'ne_le_strengthen_with_range';
+SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 AND i >= 1 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 AND i >= 1 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 AND i >= 1 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i <= 3 AND i >= 1 SETTINGS optimize_redundant_comparisons = 1;
+
+-- cross-type: i != toUInt8(3) AND i <= 3 → strengthen to i < 3
+SELECT 'ne_le_strengthen_cross_type';
+SELECT * FROM 04032_t WHERE i != toUInt8(3) AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE i != toUInt8(3) AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != toUInt8(3) AND i <= 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != toUInt8(3) AND i <= 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- float column: f != 3.0 AND f <= 3.0 → f < 3.0
+SELECT 'ne_le_strengthen_float';
+SELECT * FROM 04032_t WHERE f != 3.0 AND f <= 3.0 ORDER BY f SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE f != 3.0 AND f <= 3.0 ORDER BY f SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3.0 AND f <= 3.0 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3.0 AND f <= 3.0 SETTINGS optimize_redundant_comparisons = 1;
+
+-- cross-type int col: != 3.0 AND <= 3 (float literal with int range) → i < 3
+SELECT 'ne_le_strengthen_float_literal';
+SELECT * FROM 04032_t WHERE i != 3.0 AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE i != 3.0 AND i <= 3 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3.0 AND i <= 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3.0 AND i <= 3 SETTINGS optimize_redundant_comparisons = 1;
+
+-- cross-type int col: != 3 AND >= 3.0 (int literal with float range) → i > 3.0
+SELECT 'ne_ge_strengthen_float_range';
+SELECT * FROM 04032_t WHERE i != 3 AND i >= 3.0 ORDER BY i SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE i != 3 AND i >= 3.0 ORDER BY i SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i >= 3.0 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE i != 3 AND i >= 3.0 SETTINGS optimize_redundant_comparisons = 1;
+
+-- cross-type float col: f != 3 AND f <= 3.0 (int literal != with float range) → f < 3.0
+SELECT 'ne_le_strengthen_float_col_int_ne';
+SELECT * FROM 04032_t WHERE f != 3 AND f <= 3.0 ORDER BY f SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE f != 3 AND f <= 3.0 ORDER BY f SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3 AND f <= 3.0 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3 AND f <= 3.0 SETTINGS optimize_redundant_comparisons = 1;
+
+-- cross-type float col: f != 3.0 AND f >= 3 (float != with int range) → f > 3
+SELECT 'ne_ge_strengthen_float_col_int_range';
+SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 ORDER BY f SETTINGS optimize_redundant_comparisons = 0;
+SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 ORDER BY f SETTINGS optimize_redundant_comparisons = 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 SETTINGS optimize_redundant_comparisons = 0;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM 04032_t WHERE f != 3.0 AND f >= 3 SETTINGS optimize_redundant_comparisons = 1;
 
 DROP TABLE IF EXISTS 04032_t;
