@@ -540,7 +540,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         if (hasGroupByWithCluster())
         {
-            auto group_by_ast = std::make_shared<ASTExpressionList>(',');
+            auto group_by_ast = make_intrusive<ASTExpressionList>(',');
             auto & group_by_nodes = getGroupBy().getNodes();
             for (int i = 0; i < static_cast<int>(group_by_nodes.size()); ++i)
             {
