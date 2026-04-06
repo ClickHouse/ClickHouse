@@ -329,7 +329,7 @@ INSERT INTO tab_raw_single VALUES
 SET query_plan_direct_read_from_text_index = 1;
 
 SELECT count() FROM tab_raw_single WHERE hasToken(s, 'tiny') SETTINGS text_index_posting_list_apply_mode = 'lazy';
-SELECT groupArray(k) FROM (SELECT k FROM tab_raw_single WHERE hasToken(s, 'tiny') SETTINGS text_index_posting_list_apply_mode = 'lazy' ORDER BY k);
+SELECT arraySort(groupArray(k)) FROM tab_raw_single WHERE hasToken(s, 'tiny') SETTINGS text_index_posting_list_apply_mode = 'lazy';
 SELECT count() FROM tab_raw_single WHERE hasAllTokens(s, ['dense', 'tiny']) SETTINGS text_index_posting_list_apply_mode = 'lazy';
 SELECT count() FROM tab_raw_single WHERE hasAnyTokens(s, ['tiny', 'missing']) SETTINGS text_index_posting_list_apply_mode = 'lazy';
 
