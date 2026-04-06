@@ -61,6 +61,7 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndexCondition * condition;
     const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
+    size_t mark = 0; /// Index mark currently being deserialized, used e.g. to load vectors from the data part.
 };
 
 }

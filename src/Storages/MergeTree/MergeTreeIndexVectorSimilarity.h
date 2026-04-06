@@ -44,7 +44,7 @@ public:
         UsearchHnswParams usearch_hnsw_params);
 
     void serialize(WriteBuffer & ostr) const;
-    void deserialize(ReadBuffer & istr);
+    void deserialize(ReadBuffer & istr, bool exclude_vectors = false);
 
     struct Statistics
     {
@@ -91,6 +91,7 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
     bool empty() const override { return !index || index->size() == 0; }
 
@@ -109,7 +110,16 @@ private:
     /// Note: USearch prefixes the serialized data with its own version header. We can't rely on that because 1. the index in ClickHouse
     /// is (at least in theory) agnostic of specific vector search libraries, and 2. additional data (e.g. the number of dimensions)
     /// outside USearch exists which we should version separately.
-    static constexpr UInt64 FILE_FORMAT_VERSION = 1;
+    ///
+    /// Version 1: Vectors and HNSW graph are both stored in the index file.
+    /// Version 2: Only the HNSW graph is stored in the index file. Vectors are loaded from the table part on demand.
+    static constexpr UInt64 FILE_FORMAT_VERSION = 2;
+
+    /// Set after deserializing a v2 index - signals that vectors still need to be loaded from the part data column.
+    bool needs_vectors_from_part = false;
+
+    /// Reads vectors from the table data part and plugs them into the index using set_vector_at_position.
+    void loadVectorsFromPart(const IMergeTreeDataPart & part, const IMergeTreeIndex & idx, size_t mark);
 };
 
 
