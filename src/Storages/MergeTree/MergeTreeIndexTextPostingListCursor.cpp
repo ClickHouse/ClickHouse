@@ -36,41 +36,42 @@ namespace ErrorCodes
 
 PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
     : stream(&stream_)
-    , info(info_)
-    , total_segments(info.offsets.size())
+    , info(&info_)
+    , total_segments(info_.offsets.size())
 {
     /// Compute global density once: cardinality / total_range_span.
-    if (!info.ranges.empty())
+    if (!info->ranges.empty())
     {
-        double span = static_cast<double>(info.ranges.back().end) - static_cast<double>(info.ranges.front().begin) + 1.0;
-        density_val = span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
+        double span = static_cast<double>(info->ranges.back().end) - static_cast<double>(info->ranges.front().begin) + 1.0;
+        density_val = span > 0.0 ? static_cast<double>(info->cardinality) / span : 0.0;
     }
 }
 
 PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
-    : info(info_)
-    , total_segments(info.offsets.size())
+    : owned_info(std::make_shared<TokenPostingsInfo>(info_))
+    , info(owned_info.get())
+    , total_segments(info->offsets.size())
     , is_embedded(true)
 {
-    if (info.embedded_postings)
+    if (info->embedded_postings)
     {
         /// Embedded postings must fit in a single decoded block.
         /// If this ever fires, the token should use compressed postings instead.
-        if (info.cardinality > BLOCK_SIZE)
+        if (info->cardinality > BLOCK_SIZE)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Embedded posting list cardinality ({}) exceeds BLOCK_SIZE ({})",
-                info.cardinality, BLOCK_SIZE);
+                info->cardinality, BLOCK_SIZE);
 
         /// Decode all embedded postings directly into decoded_values.
-        decoded_count = static_cast<size_t>(info.cardinality);
+        decoded_count = static_cast<size_t>(info->cardinality);
         if (decoded_count > 0)
-            info.embedded_postings->toUint32Array(decoded_values);
+            info->embedded_postings->toUint32Array(decoded_values);
         is_valid = decoded_count > 0;
 
-        if (!info.ranges.empty())
+        if (!info->ranges.empty())
         {
-            double span = static_cast<double>(info.ranges.back().end) - static_cast<double>(info.ranges.front().begin) + 1.0;
-            density_val = span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
+            double span = static_cast<double>(info->ranges.back().end) - static_cast<double>(info->ranges.front().begin) + 1.0;
+            density_val = span > 0.0 ? static_cast<double>(info->cardinality) / span : 0.0;
         }
     }
     else
@@ -81,7 +82,7 @@ PostingListCursor::PostingListCursor(const TokenPostingsInfo & info_)
 
 UInt32 PostingListCursor::cardinality() const
 {
-    return info.cardinality;
+    return info->cardinality;
 }
 
 void PostingListCursor::prepareSegment(size_t segment_idx)
@@ -96,7 +97,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
     chassert(segment_idx < total_segments);
 
-    UInt64 segment_file_offset = info.offsets[segment_idx];
+    UInt64 segment_file_offset = info->offsets[segment_idx];
 
     /// Seek to segment start and read the header.
     stream->seekToMark({segment_file_offset, 0});
@@ -125,7 +126,7 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
     payload_buffer.resize(payload_bytes);
     data_buffer->readStrict(reinterpret_cast<char *>(payload_buffer.data()), payload_bytes);
 
-    if (info.header & PostingsSerialization::Flags::HasBlockIndex)
+    if (info->header & PostingsSerialization::Flags::HasBlockIndex)
     {
         /// V2 Index Section follows immediately after the payload in the .pst stream.
         /// No additional seek needed — just continue reading.
@@ -294,7 +295,7 @@ void PostingListCursor::advance(uint32_t target)
     /// Try current segment first.
     if (has_prepared_first_segment)
     {
-        if (target <= static_cast<uint32_t>(info.ranges[current_segment_idx].end))
+        if (target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
         {
             if (advanceImpl(target))
                 return;
@@ -304,10 +305,10 @@ void PostingListCursor::advance(uint32_t target)
     /// Binary search across segments.
     size_t start = has_prepared_first_segment ? current_segment_idx + 1 : 0;
     const auto * it = std::lower_bound(
-        info.ranges.begin() + start, info.ranges.end(), static_cast<size_t>(target),
+        info->ranges.begin() + start, info->ranges.end(), static_cast<size_t>(target),
         [](const RowsRange & range, size_t t) { return range.end < t; });
 
-    for (size_t i = static_cast<size_t>(it - info.ranges.begin()); i < total_segments; ++i)
+    for (size_t i = static_cast<size_t>(it - info->ranges.begin()); i < total_segments; ++i)
     {
         prepareSegment(i);
         if (advanceImpl(target))
@@ -526,13 +527,13 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
             return;
 
         /// Level 1 (dense memset): if every row in the range is in the posting list, just memset.
-        if (!info.ranges.empty())
+        if (!info->ranges.empty())
         {
-            size_t range_begin = info.ranges.front().begin;
-            size_t range_end = info.ranges.back().end;
+            size_t range_begin = info->ranges.front().begin;
+            size_t range_end = info->ranges.back().end;
             size_t range_span = range_end - range_begin + 1;
 
-            if (info.cardinality == range_span)
+            if (info->cardinality == range_span)
             {
                 size_t clip_begin = std::max(range_begin, row_offset);
                 size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
@@ -554,13 +555,13 @@ void PostingListCursor::linearOr(UInt8 * data, size_t row_offset, size_t num_row
         return;
     }
 
-    if (info.ranges.empty() || total_segments == 0)
+    if (info->ranges.empty() || total_segments == 0)
         return;
 
     for (size_t i = current_segment_idx; i < total_segments; ++i)
     {
-        size_t seg_begin = info.ranges[i].begin;
-        size_t seg_end = info.ranges[i].end;
+        size_t seg_begin = info->ranges[i].begin;
+        size_t seg_end = info->ranges[i].end;
 
         if (row_offset > seg_end)
             continue;
@@ -652,13 +653,13 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
     {
         /// Dense shortcut: if every row in the range is in the posting list,
         /// just increment the entire clipped region without binary search.
-        if (!info.ranges.empty())
+        if (!info->ranges.empty())
         {
-            size_t range_begin = info.ranges.front().begin;
-            size_t range_end = info.ranges.back().end;
+            size_t range_begin = info->ranges.front().begin;
+            size_t range_end = info->ranges.back().end;
             size_t range_span = range_end - range_begin + 1;
 
-            if (info.cardinality == range_span)
+            if (info->cardinality == range_span)
             {
                 size_t clip_begin = std::max(range_begin, row_offset);
                 size_t clip_end = std::min(range_end + 1, row_offset + num_rows);
@@ -684,8 +685,8 @@ void PostingListCursor::linearAnd(UInt8 * data, size_t row_offset, size_t num_ro
 
     for (size_t i = current_segment_idx; i < total_segments; ++i)
     {
-        size_t seg_begin = info.ranges[i].begin;
-        size_t seg_end = info.ranges[i].end;
+        size_t seg_begin = info->ranges[i].begin;
+        size_t seg_end = info->ranges[i].end;
 
         if (row_offset > seg_end)
             continue;

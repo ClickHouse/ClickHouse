@@ -89,7 +89,8 @@ private:
     void decodeBlock(size_t block_idx);
 
     MergeTreeReaderStream * stream = nullptr;
-    const TokenPostingsInfo & info;
+    std::shared_ptr<TokenPostingsInfo> owned_info;
+    const TokenPostingsInfo * info = nullptr;
 
     /// Decoded doc_ids of the current packed block (compressed postings) or all doc_ids (embedded postings).
     alignas(16) uint32_t decoded_values[BLOCK_SIZE]{};
