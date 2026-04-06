@@ -3858,7 +3858,7 @@ Possible values:
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
-    DECLARE(Bool, optimize_topn_aggregation, false, R"(
+    DECLARE(Bool, optimize_topn_aggregation, true, R"(
 Enables fused TopN aggregation optimization for queries of the form `GROUP BY ... ORDER BY aggregate LIMIT K`.
 When enabled, combines aggregation, sorting, and limiting into a single pass.
 
