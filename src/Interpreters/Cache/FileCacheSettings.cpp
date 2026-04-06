@@ -243,6 +243,14 @@ void FileCacheSettings::validate()
     if (settings[FileCacheSetting::max_size].changed && settings[FileCacheSetting::max_size] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`max_size` cannot be 0");
 
+    if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`boundary_alignment` ({}) must not exceed `max_file_segment_size` ({}): "
+            "each file segment must be large enough to cover the alignment window",
+            settings[FileCacheSetting::boundary_alignment].value,
+            settings[FileCacheSetting::max_file_segment_size].value);
+
     if (settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
     {
         if (settings[FileCacheSetting::max_size_ratio_to_total_space] <= 0 || settings[FileCacheSetting::max_size_ratio_to_total_space] > 1)
