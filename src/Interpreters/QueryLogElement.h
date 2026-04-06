@@ -79,6 +79,7 @@ struct QueryLogElement
     std::unordered_set<String> used_dictionaries;
     std::unordered_set<String> used_formats;
     std::unordered_set<String> used_functions;
+    std::unordered_set<String> used_index_types;
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
     std::unordered_set<String> used_executable_user_defined_functions;

@@ -2655,6 +2655,18 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
     }
 }
 
+std::unordered_set<String> Context::getUsedIndexTypes() const
+{
+    std::lock_guard lock(query_index_types_info.mutex);
+    return query_index_types_info.used_index_types;
+}
+
+void Context::insertUsedIndexType(const String & type_name) const
+{
+    std::lock_guard lock(query_index_types_info.mutex);
+    query_index_types_info.used_index_types.emplace(type_name);
+}
+
 void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
 {
     std::lock_guard lock(query_privileges_info->mutex);

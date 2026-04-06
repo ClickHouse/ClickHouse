@@ -843,6 +843,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
+    /// Track whether primary key and skip indexes were used for this query
+    std::atomic<bool> primary_key_used = false;
+    std::atomic<bool> skip_indexes_used = false;
+
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
@@ -919,6 +923,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (ranges.ranges.empty())
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+
+                /// Track that primary key was used for filtering when ranges were actually analyzed
+                if (metadata_snapshot->hasPrimaryKey() && (total_marks_count > ranges.ranges.getNumberOfMarks() || !ranges.ranges.empty()))
+                {
+                    primary_key_used.store(true, std::memory_order_relaxed);
+                    context->insertUsedIndexType("primary");
+                }
             }
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1017,6 +1028,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
+
+                    /// Track that this skip index was used
+                    context->insertUsedIndexType(index_and_condition.index->index.name);
+                    skip_indexes_used.store(true, std::memory_order_relaxed);
                 }
 
                 if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
@@ -1048,6 +1063,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
                     min_max_granules->getTopKMarks(top_k_filter_info->limit_n, top_k_handle_ties, parts_top_k_granules[part_index]);
+                    /// Track that minmax index was used for top-K optimization
+                    context->insertUsedIndexType(skip_indexes.skip_index_for_top_k_filtering->index.name);
+                    skip_indexes_used.store(true, std::memory_order_relaxed);
                 }
                 top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }

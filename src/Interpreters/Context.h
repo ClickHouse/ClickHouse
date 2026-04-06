@@ -538,9 +538,27 @@ public:
 
     using QueryPrivilegesInfoPtr = std::shared_ptr<QueryPrivilegesInfo>;
 
+    struct QueryIndexTypesInfo
+    {
+        QueryIndexTypesInfo() = default;
+
+        QueryIndexTypesInfo(const QueryIndexTypesInfo & rhs)
+        {
+            std::lock_guard<std::mutex> lock(rhs.mutex);
+            used_index_types = rhs.used_index_types;
+        }
+
+        QueryIndexTypesInfo(QueryIndexTypesInfo && rhs) = delete;
+
+        std::unordered_set<std::string> used_index_types TSA_GUARDED_BY(mutex);
+
+        mutable std::mutex mutex;
+    };
+
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
+    mutable QueryIndexTypesInfo query_index_types_info;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
@@ -1022,6 +1040,9 @@ public:
 
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
+
+    std::unordered_set<String> getUsedIndexTypes() const;
+    void insertUsedIndexType(const String & type_name) const;
 
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
