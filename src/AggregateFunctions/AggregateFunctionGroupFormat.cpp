@@ -226,7 +226,11 @@ public:
         const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`groupFormat` `getOwnNullAdapter` probe: {} arguments, first argument type {}",
+            arguments.size(),
+            arguments.empty() ? String("n/a") : arguments.front()->getName());
     }
 
     bool preservesNullablePayloadForIf() const override
