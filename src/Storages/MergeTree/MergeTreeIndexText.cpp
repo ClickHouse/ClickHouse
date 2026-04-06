@@ -192,7 +192,11 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
 
         /// If the posting list is completely in the buffer, avoid copying.
         if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-            return std::make_shared<PostingList>(PostingList::read(istr.position()));
+        {
+            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
+            istr.position() += num_bytes;
+            return result;
+        }
 
         std::vector<char> buf(num_bytes);
         istr.readStrict(buf.data(), num_bytes);

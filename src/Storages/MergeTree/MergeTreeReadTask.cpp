@@ -243,6 +243,15 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     size_t num_readers = prewhere_actions.steps.size() + task_readers.prewhere.size() + 1;
     range_readers.reserve(num_readers);
 
+    /// Compute a combined flag: true only if ALL readers in the chain support incomplete granules.
+    /// This ensures that the first reader in the chain (which decides batch boundaries) does not
+    /// create mid-mark boundaries when a later reader cannot handle them.
+    bool can_read_incomplete_granules = task_readers.main->canReadIncompleteGranules()
+        && std::ranges::all_of(task_readers.prewhere, [](const auto & reader)
+        {
+            return reader->canReadIncompleteGranules();
+        });
+
     if (task_readers.prepared_index)
     {
         range_readers.emplace_back(
@@ -250,7 +259,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             Block{},
             /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCounterForIndexStep(),
-            /*main_reader_=*/ false);
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
     }
 
     size_t counter_idx = 0;
@@ -261,7 +271,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
             read_steps_performance_counters.getCountersForStep(counter_idx++),
-            /*main_reader_=*/ false);
+            /*main_reader_=*/ false,
+            can_read_incomplete_granules);
     }
 
     if (!task_readers.main->getColumns().empty())
@@ -271,7 +282,8 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
             read_steps_performance_counters.getCountersForStep(counter_idx),
-            /*main_reader_=*/ true);
+            /*main_reader_=*/ true,
+            can_read_incomplete_granules);
     }
 
     return MergeTreeReadersChain{std::move(range_readers), task_readers.patches};
@@ -318,13 +330,7 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
 
     if (index_read_result || lazy_materializing_rows)
     {
-        bool can_read_incomplete_granules = readers.main->canReadIncompleteGranules()
-            && std::ranges::all_of(readers.prewhere, [](const auto & reader)
-            {
-                return reader->canReadIncompleteGranules();
-            });
-
-        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows, can_read_incomplete_granules);
+        readers.prepared_index = std::make_unique<MergeTreeReaderIndex>(readers.main.get(), std::move(index_read_result), part_rows);
     }
 
 }

@@ -104,7 +104,7 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
         if (table_node || table_function_node)
         {
             const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_storage->getStorageID() == storage->getStorageID())
+            if (table_storage && table_storage->getStorageID() == storage->getStorageID())
                 return true;
         }
 
