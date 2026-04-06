@@ -11,6 +11,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithElement.h>
 
@@ -243,7 +244,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (!select_query->group_by_all)
         {
-            if (!exp_list.parse(pos, group_expression_list, expected))
+            ParserList group_by_elem_list(
+                std::make_unique<ParserGroupByElement>(),
+                std::make_unique<ParserToken>(TokenType::Comma),
+                false);
+            if (!group_by_elem_list.parse(pos, group_expression_list, expected))
                 return false;
         }
 

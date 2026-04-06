@@ -501,6 +501,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** Element of GROUP BY expression, with optional WITH CLUSTER modifier.
+  */
+class ParserGroupByElement : public IParserBase
+{
+protected:
+    const char * getName() const override { return "element of GROUP BY expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 /** Element of INTERPOLATE expression
   */
 class ParserInterpolateElement : public IParserBase

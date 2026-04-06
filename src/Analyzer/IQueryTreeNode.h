@@ -37,6 +37,7 @@ enum class QueryTreeNodeType : uint8_t
     COLUMN,
     LAMBDA,
     SORT,
+    GROUP_BY_ELEMENT,
     INTERPOLATE,
     WINDOW,
     TABLE,

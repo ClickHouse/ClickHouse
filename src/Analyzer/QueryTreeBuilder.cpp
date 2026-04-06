@@ -22,6 +22,7 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTGroupByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSampleRatio.h>
 #include <Parsers/ASTWindowDefinition.h>
@@ -122,6 +123,8 @@ private:
         const CommonTableExpressionData & cte_data,
         const ASTPtr & aliases,
         const ContextPtr & context) const;
+
+    QueryTreeNodePtr buildGroupByList(const ASTPtr & group_by_expression_list, const ContextPtr & context, QueryNode & query_node) const;
 
     QueryTreeNodePtr buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const;
 
@@ -406,7 +409,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         }
         else
         {
-            current_query_tree->getGroupByNode() = buildExpressionList(group_by_list, current_context);
+            current_query_tree->getGroupByNode() = buildGroupByList(group_by_list, current_context, *current_query_tree);
         }
     }
 
@@ -556,6 +559,43 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
     return current_query_tree;
+}
+
+QueryTreeNodePtr QueryTreeBuilder::buildGroupByList(const ASTPtr & group_by_expression_list, const ContextPtr & context, QueryNode & query_node) const
+{
+    auto list_node = std::make_shared<ListNode>();
+
+    auto & expression_list_typed = group_by_expression_list->as<ASTExpressionList &>();
+    list_node->getNodes().reserve(expression_list_typed.children.size());
+
+    int key_index = 0;
+    for (auto & expression : expression_list_typed.children)
+    {
+        if (const auto * group_by_element = expression->as<ASTGroupByElement>())
+        {
+            const auto & expr_ast = group_by_element->children.at(0);
+            auto expr_node = buildExpression(expr_ast, context);
+
+            if (group_by_element->with_cluster)
+            {
+                Float64 distance = 0;
+                if (auto distance_ast = group_by_element->getClusterDistance())
+                    distance = distance_ast->as<ASTLiteral &>().value.safeGet<Float64>();
+                query_node.setGroupByClusterInfo(key_index, distance);
+            }
+
+            list_node->getNodes().push_back(std::move(expr_node));
+        }
+        else
+        {
+            /// Fallback for plain expressions (backward compatibility)
+            auto expression_node = buildExpression(expression, context);
+            list_node->getNodes().push_back(std::move(expression_node));
+        }
+        ++key_index;
+    }
+
+    return list_node;
 }
 
 QueryTreeNodePtr QueryTreeBuilder::buildSortList(const ASTPtr & order_by_expression_list, const ContextPtr & context) const

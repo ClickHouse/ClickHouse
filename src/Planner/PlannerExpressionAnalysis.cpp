@@ -301,6 +301,18 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
     aggregation_analysis_result.grouping_sets_parameters_list = std::move(grouping_sets_parameters_list);
     aggregation_analysis_result.group_by_with_constant_keys = group_by_with_constant_keys;
 
+    if (query_node.hasGroupByWithCluster())
+    {
+        int cluster_idx = query_node.getGroupByClusterKeyIndex();
+        if (cluster_idx >= 0 && cluster_idx < static_cast<int>(aggregation_analysis_result.aggregation_keys.size()))
+        {
+            ClusterKeyInfo info;
+            info.key_name = aggregation_analysis_result.aggregation_keys[cluster_idx];
+            info.distance = query_node.getGroupByClusterDistance();
+            aggregation_analysis_result.cluster_key_info = std::move(info);
+        }
+    }
+
     return aggregation_analysis_result;
 }
 

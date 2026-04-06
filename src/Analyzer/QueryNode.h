@@ -261,6 +261,31 @@ public:
         is_group_by_all = is_group_by_all_value;
     }
 
+    /// Returns true if any GROUP BY key has WITH CLUSTER modifier
+    bool hasGroupByWithCluster() const
+    {
+        return group_by_cluster_key_index >= 0;
+    }
+
+    /// Get the index of the GROUP BY key with WITH CLUSTER modifier (-1 if none)
+    int getGroupByClusterKeyIndex() const
+    {
+        return group_by_cluster_key_index;
+    }
+
+    /// Get the cluster distance
+    Float64 getGroupByClusterDistance() const
+    {
+        return group_by_cluster_distance;
+    }
+
+    /// Set the GROUP BY WITH CLUSTER info
+    void setGroupByClusterInfo(int key_index, Float64 distance)
+    {
+        group_by_cluster_key_index = key_index;
+        group_by_cluster_distance = distance;
+    }
+
     /// Returns true, if query node has ORDER BY ALL modifier, false otherwise
     bool isOrderByAll() const
     {
@@ -706,6 +731,8 @@ private:
     bool is_group_by_with_cube = false;
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
+    int group_by_cluster_key_index = -1;
+    Float64 group_by_cluster_distance = 0;
     bool is_order_by_all = false;
     bool is_limit_by_all = false;
 

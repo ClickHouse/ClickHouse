@@ -3128,6 +3128,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             [[fallthrough]];
         case QueryTreeNodeType::SORT:
             [[fallthrough]];
+        case QueryTreeNodeType::GROUP_BY_ELEMENT:
+            [[fallthrough]];
         case QueryTreeNodeType::INTERPOLATE:
             [[fallthrough]];
         case QueryTreeNodeType::WINDOW:

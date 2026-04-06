@@ -32,6 +32,12 @@ struct FilterAnalysisResult
     bool remove_filter_column = false;
 };
 
+struct ClusterKeyInfo
+{
+    String key_name;
+    Float64 distance = 0;
+};
+
 struct AggregationAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
@@ -39,6 +45,7 @@ struct AggregationAnalysisResult
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
+    std::optional<ClusterKeyInfo> cluster_key_info;
 };
 
 struct WindowAnalysisResult

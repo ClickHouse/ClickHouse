@@ -23,6 +23,8 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTGroupByElement.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -359,6 +361,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
         is_group_by_with_grouping_sets == rhs_typed.is_group_by_with_grouping_sets &&
         is_group_by_all == rhs_typed.is_group_by_all &&
+        group_by_cluster_key_index == rhs_typed.group_by_cluster_key_index &&
+        group_by_cluster_distance == rhs_typed.group_by_cluster_distance &&
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
@@ -406,6 +410,8 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_group_by_with_cube);
     state.update(is_group_by_with_grouping_sets);
     state.update(is_group_by_all);
+    state.update(group_by_cluster_key_index);
+    state.update(group_by_cluster_distance);
     state.update(is_order_by_all);
     state.update(is_limit_by_all);
 
@@ -437,6 +443,8 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
     result_query_node->is_group_by_all = is_group_by_all;
+    result_query_node->group_by_cluster_key_index = group_by_cluster_key_index;
+    result_query_node->group_by_cluster_distance = group_by_cluster_distance;
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
@@ -529,7 +537,29 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, getWhere()->toAST(options));
 
     if (!is_group_by_all && hasGroupBy())
-        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+    {
+        if (hasGroupByWithCluster())
+        {
+            auto group_by_ast = std::make_shared<ASTExpressionList>(',');
+            auto & group_by_nodes = getGroupBy().getNodes();
+            for (int i = 0; i < static_cast<int>(group_by_nodes.size()); ++i)
+            {
+                auto elem = make_intrusive<ASTGroupByElement>();
+                elem->children.push_back(group_by_nodes[i]->toAST(options));
+                if (i == group_by_cluster_key_index)
+                {
+                    elem->with_cluster = true;
+                    elem->setClusterDistance(make_intrusive<ASTLiteral>(Field(group_by_cluster_distance)));
+                }
+                group_by_ast->children.push_back(std::move(elem));
+            }
+            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_ast));
+        }
+        else
+        {
+            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, getGroupBy().toAST(options));
+        }
+    }
 
     if (hasHaving())
         select_query->setExpression(ASTSelectQuery::Expression::HAVING, getHaving()->toAST(options));

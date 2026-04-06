@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/ClusterMergingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -681,11 +682,17 @@ void addAggregationStep(QueryPlan & query_plan,
             storage_has_evenly_distributed_read = table_function_node->getStorageOrThrow()->hasEvenlyDistributedRead();
     }
 
+    bool has_cluster = aggregation_analysis_result.cluster_key_info.has_value();
+
+    /// When WITH CLUSTER is used, aggregation must produce non-finalized states
+    /// so that ClusterMergingTransform can merge adjacent groups.
+    bool aggregate_final = has_cluster ? false : query_analysis_result.aggregate_final;
+
     auto aggregating_step = std::make_unique<AggregatingStep>(
         query_plan.getCurrentHeader(),
         aggregator_params,
         aggregation_analysis_result.grouping_sets_parameters_list,
-        query_analysis_result.aggregate_final,
+        aggregate_final,
         settings[Setting::max_block_size],
         settings[Setting::aggregation_in_order_max_block_bytes],
         merge_threads,
@@ -698,6 +705,23 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         settings[Setting::force_aggregation_in_order]);
     query_plan.addStep(std::move(aggregating_step));
+
+    if (has_cluster)
+    {
+        const auto & cluster_info = *aggregation_analysis_result.cluster_key_info;
+
+        auto transform_params = std::make_shared<AggregatingTransformParams>(
+            query_plan.getCurrentHeader(),
+            aggregator_params,
+            /*final=*/false);
+
+        auto cluster_merging_step = std::make_unique<ClusterMergingStep>(
+            query_plan.getCurrentHeader(),
+            std::move(transform_params),
+            cluster_info.key_name,
+            cluster_info.distance);
+        query_plan.addStep(std::move(cluster_merging_step));
+    }
 }
 
 void addMergingAggregatedStep(QueryPlan & query_plan,
