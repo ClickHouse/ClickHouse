@@ -59,7 +59,7 @@ USING key
 SETTINGS log_comment='03772_temporary_files_codec/partial_merge_join', temporary_files_codec = 'LZ4'
 FORMAT Null;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
