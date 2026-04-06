@@ -1,3 +1,6 @@
+# local CI environment overrides (see ci/local.env.example)
+ci/local.env
+
 # emacs files
 *~
 *\#

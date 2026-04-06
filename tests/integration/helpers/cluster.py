@@ -28,6 +28,8 @@ from typing import Any, List, Sequence, Tuple, Union
 import requests
 import urllib3
 
+temp_dir = "../../ci/tmp"
+
 try:
     # Please, add modules that required for specific tests only here.
     # So contributors will be able to run most tests locally
@@ -147,6 +149,7 @@ def run_and_check(
     args: Union[Sequence[str], str],
     env=None,
     shell=False,
+    input=None,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
     timeout=300,
@@ -175,6 +178,7 @@ def run_and_check(
     try:
         res = subprocess.run(
             args,
+            input=input,
             stdout=stdout,
             stderr=stderr,
             env=env,
@@ -691,6 +695,7 @@ class ClickHouseCluster:
         self.spark_session = None
         self.with_iceberg_catalog = False
         self._iceberg_rest_catalog_port = None
+        self._iceberg_minio_port = None
         self.with_glue_catalog = False
         self._glue_catalog_port = None
         self.with_hms_catalog = False
@@ -1011,6 +1016,13 @@ class ClickHouseCluster:
             return self._iceberg_rest_catalog_port
         self._iceberg_rest_catalog_port = self.port_pool.get_port()
         return self._iceberg_rest_catalog_port
+
+    @property
+    def iceberg_minio_port(self):
+        if self._iceberg_minio_port:
+            return self._iceberg_minio_port
+        self._iceberg_minio_port = self.port_pool.get_port()
+        return self._iceberg_minio_port
 
     @property
     def glue_catalog_port(self):
@@ -1779,6 +1791,7 @@ class ClickHouseCluster:
         if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
             file_name = extra_parameters["docker_compose_file_name"]
         env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        env_variables["ICEBERG_MINIO_PORT"] = str(self.iceberg_minio_port)
         self.base_cmd.extend(
             [
                 "--file",
@@ -3398,6 +3411,31 @@ class ClickHouseCluster:
     def wait_arrowflight_to_start(self):
         time.sleep(5) # TODO
 
+    def login_to_ecr(self):
+        if Path(f"{temp_dir}/ecr_token.json").exists():
+            with open(f"{temp_dir}/ecr_token.json", "r") as f:
+                tokens = json.load(f)
+
+            registries = set()
+            for i in self.instances.values():
+                registries.add(i.image.split("/", 1)[0])
+
+            for instance_registry in registries:
+                for region in tokens.keys():
+                    if region in instance_registry:
+                        user, password = (
+                            base64.b64decode(tokens[region])
+                            .decode("utf-8")
+                            .split(":", 1)
+                        )
+                        logging.info(
+                            f"Logging into {instance_registry}"
+                        )
+                        run_and_check(
+                            ["docker", "login", instance_registry, "-u", user, "--password-stdin"],
+                            input=password.encode(),
+                        )
+
     def start(self, connection_timeout=None):
         pytest_xdist_logging_to_separate_files.setup()
         logging.info("Running tests in {}".format(self.base_path))
@@ -3463,6 +3501,7 @@ class ClickHouseCluster:
                         "Got exception pulling images: %s", kwargs["exception"]
                     )
 
+            self.login_to_ecr()
             retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
 
             def logging_compose_up(**kwargs):
@@ -3950,6 +3989,7 @@ class ClickHouseCluster:
                 )
             )
             self.up_called = True
+
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
 
