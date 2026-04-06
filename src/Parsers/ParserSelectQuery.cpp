@@ -253,26 +253,29 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// WITH ROLLUP, CUBE, GROUPING SETS or TOTALS
-    if (s_with.ignore(pos, expected))
+    /// WITH ROLLUP, CUBE, or TOTALS (multiple modifiers allowed, e.g. WITH ROLLUP WITH CUBE WITH TOTALS)
+    while (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
+        {
+            if (select_query->group_by_with_rollup)
+                return false;
             select_query->group_by_with_rollup = true;
+        }
         else if (s_cube.ignore(pos, expected))
+        {
+            if (select_query->group_by_with_cube)
+                return false;
             select_query->group_by_with_cube = true;
+        }
         else if (s_totals.ignore(pos, expected))
+        {
+            if (select_query->group_by_with_totals)
+                return false;
             select_query->group_by_with_totals = true;
+        }
         else
             return false;
-    }
-
-    /// WITH TOTALS
-    if (s_with.ignore(pos, expected))
-    {
-        if (select_query->group_by_with_totals || !s_totals.ignore(pos, expected))
-            return false;
-
-        select_query->group_by_with_totals = true;
     }
 
     /// HAVING expr
