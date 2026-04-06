@@ -106,7 +106,6 @@ private:
     /// Immutable lazy posting-list handles are safe to reuse across reads because they do not
     /// contain any iterator state. `PostingListCursor` objects are created from these handles per call.
     absl::flat_hash_map<String, PostingListCursorHandlePtr> lazy_cursor_handles;
-
 };
 
 }

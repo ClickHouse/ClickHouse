@@ -353,10 +353,10 @@ void PostingListCursor::advance(uint32_t target)
     if (has_prepared_first_segment)
     {
         if (target <= static_cast<uint32_t>(handle->info->ranges[current_segment_idx].end))
-            {
-                if (advanceImpl(target))
-                    return;
-            }
+        {
+            if (advanceImpl(target))
+                return;
+        }
     }
 
     /// Binary search across segments.
