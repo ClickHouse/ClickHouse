@@ -9,4 +9,4 @@ yes "SELECT 1 !;" | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -
 
 # Unmatched parentheses: error starts at '(' token, so 'SELECT' should NOT appear.
 # Before the fix, all subsequent queries leaked into the error message, making 'SELECT' appear.
-yes "SELECT (1;" | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -c 'SELECT' || echo 0
+yes "SELECT (1;" | head -n10 | ${CLICKHOUSE_LOCAL} --ignore-error 2>&1 | grep -c 'SELECT' || true
