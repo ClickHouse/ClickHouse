@@ -223,7 +223,7 @@ public:
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & /*nested_function*/,
         const DataTypes & arguments,
-        const Array & params,
+        const Array & /*params*/,
         const AggregateFunctionProperties & /*properties*/) const override
     {
         throw Exception(
