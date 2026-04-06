@@ -278,20 +278,20 @@ SELECT k FROM tab_seek_seg WHERE s LIKE '%freq%' AND s LIKE '%zz00000%';
 ----------------------------------------------------
 SELECT 'Test 10: Direct read mode with large posting list';
 
-DROP TABLE IF EXISTS tab_dr_lazy;
+DROP TABLE IF EXISTS tab_dr;
 
-CREATE TABLE tab_dr_lazy(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 128))
+CREATE TABLE tab_dr(k UInt64, s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', posting_list_block_size = 128))
     ENGINE = MergeTree() ORDER BY k
     SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
-INSERT INTO tab_dr_lazy SELECT number, if(number % 3 = 0, 'common', 'other') FROM numbers(600);
+INSERT INTO tab_dr SELECT number, if(number % 3 = 0, 'common', 'other') FROM numbers(600);
 
 SET query_plan_direct_read_from_text_index = 1;
 
-SELECT count() FROM tab_dr_lazy WHERE hasToken(s, 'common');
+SELECT count() FROM tab_dr WHERE hasToken(s, 'common');
 
 -- AND: common + other = 0 (disjoint)
-SELECT count() FROM tab_dr_lazy WHERE hasToken(s, 'common') AND hasToken(s, 'other');
+SELECT count() FROM tab_dr WHERE hasToken(s, 'common') AND hasToken(s, 'other');
 
 SET query_plan_direct_read_from_text_index = 0;
 
@@ -348,5 +348,5 @@ DROP TABLE IF EXISTS tab_first_doc;
 DROP TABLE IF EXISTS tab_empty_seek;
 DROP TABLE IF EXISTS tab_merge_seg;
 DROP TABLE IF EXISTS tab_seek_seg;
-DROP TABLE IF EXISTS tab_dr_lazy;
+DROP TABLE IF EXISTS tab_dr;
 DROP TABLE IF EXISTS tab_raw_single;

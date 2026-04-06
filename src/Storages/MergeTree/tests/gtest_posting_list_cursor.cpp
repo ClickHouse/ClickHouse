@@ -628,12 +628,12 @@ TEST(PostingListCursorTest, IntersectTwoDenseVsSparse)
     auto dense_docs = generateRange(0, 1000);
     auto sparse_docs = generateRange(0, 100, 10); // 0,10,20,...,990
 
-    auto dataD = makeMultiBlockData({dense_docs});
-    auto dataS = makeMultiBlockData({sparse_docs});
+    auto data_dense = makeMultiBlockData({dense_docs});
+    auto data_sparse = makeMultiBlockData({sparse_docs});
 
     PostingListCursorMap postings;
-    postings["dense"] = makeMultiBlockCursor(dataD);
-    postings["sparse"] = makeMultiBlockCursor(dataS);
+    postings["dense"] = makeMultiBlockCursor(data_dense);
+    postings["sparse"] = makeMultiBlockCursor(data_sparse);
 
     auto result = intersectAndCollect(postings, {"dense", "sparse"}, 0, 1000, false, 100.0);
     EXPECT_EQ(result, sparse_docs);
