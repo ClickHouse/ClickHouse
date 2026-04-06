@@ -7643,7 +7643,7 @@ Using the text index postings cache can significantly reduce latency and increas
     DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(
 If set to true, allow using the lazy posting list apply mode for text index queries.
 )", EXPERIMENTAL) \
-    DECLARE(String, text_index_posting_list_apply_mode, "materialize", R"(
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
 'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).

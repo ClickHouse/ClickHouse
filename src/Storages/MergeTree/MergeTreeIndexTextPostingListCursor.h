@@ -30,13 +30,13 @@ class MergeTreeReaderStream;
 /// Each segment's Index Section (read in `prepareSegment`) stores two parallel arrays:
 ///   `block_last_row_ids[j]`  — last row_id of packed block j
 ///   `block_offsets[j]`       — relative byte offset of packed block j within payload
-/// These enable O(log N) seek via binary search + random data access.
+/// These enable O(log N) advance via binary search + random data access.
 ///
 /// Embedded postings (small cardinality tokens) are stored inline as raw values
 /// in the dictionary stream and decoded entirely in `prepareSegment`; no .pst stream is used.
 ///
 /// Two access patterns:
-///   1. Iterator: `valid` / `value` / `next` / `seek` — for leapfrog intersection.
+///   1. Iterator: `valid` / `value` / `next` / `advance` — for leapfrog intersection.
 ///   2. Linear scan: `linearOr` / `linearAnd` — for brute-force bitmap operations.
 class PostingListCursor
 {
@@ -63,7 +63,7 @@ public:
     uint32_t value() const { return decoded_values[index]; }
 
     /// Advance to the first doc_id >= target.
-    void seek(uint32_t target);
+    void advance(uint32_t target);
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
@@ -80,10 +80,10 @@ private:
     /// For embedded postings: decodes the entire array into `decoded_values`.
     void prepareSegment(size_t segment_idx);
 
-    /// Seek to the first doc_id >= target within the current segment.
+    /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
     /// Returns false if target exceeds this segment's range.
-    bool seekImpl(uint32_t target);
+    bool advanceImpl(uint32_t target);
 
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
@@ -105,7 +105,7 @@ private:
     UInt32 segment_first_row_id = 0;     /// First row_id of the current segment (for delta base).
 
     /// Packed block index loaded from Index Section in `prepareSegment`.
-    /// Enables O(log N) seek within a segment.
+    /// Enables O(log N) advance within a segment.
     std::vector<UInt32> block_last_row_ids;
     std::vector<UInt64> block_offsets;
 
@@ -145,7 +145,7 @@ void lazyUnionPostingLists(
 ///     Brute-force bitmap counting — first cursor sets bits, remaining cursors increment counters,
 ///     then a final pass keeps only rows where count == n.
 ///   - Sparse:  leapfrog intersection — cursors sorted by ascending cardinality, the sparsest
-///     cursor leads and others seek forward.
+///     cursor leads and others advance forward.
 void lazyIntersectPostingLists(
     IColumn & column,
     const PostingListCursorMap & postings,
