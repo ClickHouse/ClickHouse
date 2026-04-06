@@ -1542,13 +1542,13 @@ FileCache::CacheIteratorPtr FileCache::getCacheIterator(const UserID & user_id)
 void FileCache::removeKey(const Key & key, const UserID & user_id)
 {
     assertInitialized();
-    metadata.removeKey(key, /* if_exists */false, /* if_releasable */true, user_id);
+    metadata.removeKey(key, /* if_exists */false, user_id);
 }
 
 void FileCache::removeKeyIfExists(const Key & key, const UserID & user_id)
 {
     assertInitialized();
-    metadata.removeKey(key, /* if_exists */true, /* if_releasable */true, user_id);
+    metadata.removeKey(key, /* if_exists */true, user_id);
 }
 
 void FileCache::removeFileSegment(const Key & key, size_t offset, const UserID & user_id)
@@ -1576,7 +1576,7 @@ void FileCache::removeAllReleasable(const UserID & user_id)
     assertInitialized();
     assertCacheCorrectness();
 
-    metadata.removeAllKeys(/* if_releasable */true, user_id);
+    metadata.removeAllKeys(user_id);
 }
 
 void FileCache::loadMetadata()
@@ -1956,7 +1956,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
 
         if (key_metadata->sizeUnlocked() == 0)
         {
-            metadata.removeKey(key, false, false, origin_info.user_id);
+            metadata.removeKey(key, /* if_exists */false, origin_info.user_id);
         }
     }
 }

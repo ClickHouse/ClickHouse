@@ -123,6 +123,7 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     LockedKeyPtr lock();
 
+    /// Will only fail if key is not in ACTIVE state, e.g. REMOVING or REMOVED.
     LockedKeyPtr tryLock();
 
     bool createBaseDirectory(bool throw_if_failed = false);
@@ -144,6 +145,8 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
 
     size_t alignFileSize(size_t file_size) const;
     bool useRealDiskSize() const;
+
+    KeyState getState();
 
 private:
     const CacheMetadata * cache_metadata;
@@ -223,8 +226,8 @@ public:
         const OriginInfo & origin,
         bool is_initial_load = false);
 
-    void removeKey(const Key & key, bool if_exists, bool if_releasable, const UserID & user_id);
-    void removeAllKeys(bool if_releasable, const UserID & user_id);
+    void removeKey(const Key & key, bool if_exists, const UserID & user_id);
+    void removeAllKeys(const UserID & user_id);
 
     void shutdown();
 
@@ -360,7 +363,7 @@ struct LockedKey : private boost::noncopyable
     std::shared_ptr<const KeyMetadata> getKeyMetadata() const { return key_metadata; }
     std::shared_ptr<KeyMetadata> getKeyMetadata() { return key_metadata; }
 
-    bool removeAllFileSegments(bool if_releasable = true);
+    bool removeAllFileSegments();
 
     KeyMetadata::iterator removeFileSegment(
         size_t offset,
