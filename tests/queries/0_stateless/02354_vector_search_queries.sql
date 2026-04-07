@@ -5,6 +5,7 @@
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
+SET query_plan_max_limit_for_lazy_materialization = 10000; -- CI may inject 1; LIMIT 3 > 1 disables lazy materialization
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 
@@ -75,7 +76,7 @@ SELECT id, vec, cosineDistance(vec, reference_vec)
 FROM tab
 ORDER BY cosineDistance(vec, reference_vec)
 LIMIT 3
-SETTINGS max_limit_for_vector_search_queries = 2; -- LIMIT 3 > 2 --> don't use the ann index
+SETTINGS max_limit_for_vector_search_queries = 2, query_plan_max_limit_for_lazy_materialization = 10000; -- LIMIT 3 > 2 --> don't use the ann index; CI may inject query_plan_max_limit_for_lazy_materialization=1, disabling lazy mat
 
 DROP TABLE tab;
 
