@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -129,6 +130,7 @@ void filterByPathOrFile(
 struct VirtualsForFileLikeStorage
 {
     const String & path;
+    const StorageID & storage_id;
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
@@ -158,6 +160,10 @@ std::string_view findHivePartitioningInPath(const String & path);
 DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
     const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+
+/// Splits requested column names into physical and virtual.
+/// Returns {physical_names, virtual_names}. Always includes at least one physical column.
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 }
 
