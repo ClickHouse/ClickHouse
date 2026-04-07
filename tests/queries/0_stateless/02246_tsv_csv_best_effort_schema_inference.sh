@@ -155,7 +155,7 @@ echo
 echo "CSV"
 
 echo -e "42,Some string,'[1, 2, 3, 4]','[(1, 2, 3)]'
-42\,abcd,'[]','[(4, 5, 6)]'" > $DATA_FILE
+42,abcd,'[]','[(4, 5, 6)]'" > $DATA_FILE
 
 CLIENT_CMD="$CLICKHOUSE_CLIENT --format_csv_allow_single_quotes=1"
 
