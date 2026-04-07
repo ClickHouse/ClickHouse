@@ -960,14 +960,16 @@ Pipe ReadFromMergeTree::readByLayers(
                 sort_description.emplace_back(sorting_columns[i], input_order_info->direction);
         }
 
+        ReadType in_order_read_type = input_order_info->direction > 0 ? ReadType::InOrder : ReadType::InReverseOrder;
+
         reading_step_getter
-            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description](auto parts)
+            = [this, &index_build_context, &in_order_column_names_to_read, &info, sorting_expr, &sort_description, in_order_read_type](auto parts)
         {
             auto pipe = this->read(
                 std::move(parts),
                 index_build_context,
                 in_order_column_names_to_read,
-                ReadType::InOrder,
+                in_order_read_type,
                 1 /* num_streams */,
                 0 /* min_marks_for_concurrent_read */,
                 info.use_uncompressed_cache);
