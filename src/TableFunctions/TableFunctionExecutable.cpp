@@ -124,7 +124,8 @@ void TableFunctionExecutable::parseArguments(const ASTPtr & ast_function, Contex
 
     auto script_name_with_arguments_value = checkAndGetLiteralArgument<String>(args[0], "script_name_with_arguments_value");
 
-    auto script_name_with_arguments = [&]() {
+    auto script_name_with_arguments = [&]()
+    {
         try
         {
             return boost::program_options::split_unix(script_name_with_arguments_value);
