@@ -293,6 +293,9 @@ ASTPtr ASTBackupQuery::clone() const
     if (base_backup_name)
         res->set(res->base_backup_name, base_backup_name->clone());
 
+    if (base_snapshot_name)
+        res->set(res->base_snapshot_name, base_snapshot_name->clone());
+
     if (cluster_host_ids)
         res->cluster_host_ids = cluster_host_ids->clone();
 
@@ -309,7 +312,17 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ostr << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
-    formatElements(elements, ostr, fs);
+    if (base_snapshot_name)
+    {
+        /// BACKUP FROM SNAPSHOT <snapshot_name> [ON CLUSTER ...] TO <backup_name>
+        ostr << "FROM SNAPSHOT ";
+        base_snapshot_name->format(ostr, fs);
+    }
+    else
+    {
+        formatElements(elements, ostr, fs);
+    }
+
     formatOnCluster(ostr, fs);
 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");

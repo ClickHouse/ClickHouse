@@ -83,6 +83,10 @@ SECRETS = [
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
     ),
+    Secret.Config(
+        name="woolenwolf_gh_app.installation_id",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ),
 ]
 
 DOCKERS = [
@@ -307,6 +311,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_MSAN = "arm_msan"
     ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
+    PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
@@ -377,6 +382,9 @@ class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_LLVM_COVERAGE_BUILD = (
         "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
+    )
+    CH_AMD_PER_TEST_COVERAGE_BUILD = (
+        "CH_AMD_PER_TEST_COVERAGE_BUILD"  # build with LLVM coverage + per-test depth instrumentation
     )
     LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
@@ -493,6 +501,7 @@ class ArtifactConfigs:
         names=[
             ArtifactNames.CH_AMD_DEBUG,
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN_UBSAN,
             ArtifactNames.CH_AMD_TSAN,
