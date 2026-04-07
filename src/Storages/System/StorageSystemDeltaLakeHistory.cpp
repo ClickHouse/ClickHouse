@@ -43,6 +43,7 @@ extern const SettingsSeconds lock_acquire_timeout;
 namespace ErrorCodes
 {
 extern const int LIMIT_EXCEEDED;
+extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -193,8 +194,10 @@ private:
                     /// *after* row generation, so rethrowing here would let one
                     /// oversized unrelated table break queries targeting healthy tables.
                     /// If the query explicitly requested this table, rethrow
-                    /// `LIMIT_EXCEEDED`; otherwise log and skip.
-                    if (getCurrentExceptionCode() == ErrorCodes::LIMIT_EXCEEDED
+                    /// exceptions that indicate malformed/too-large metadata;
+                    /// otherwise log and skip.
+                    const int code = getCurrentExceptionCode();
+                    if ((code == ErrorCodes::LIMIT_EXCEEDED || code == ErrorCodes::INCORRECT_DATA)
                         && isExplicitlyRequestedTable(db_name, tbl_name))
                         throw;
 
