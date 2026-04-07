@@ -6,6 +6,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -20,6 +22,8 @@ using JoinPtr = std::shared_ptr<IJoin>;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+using CheckCancelled = std::function<bool()>;
 
 /// Sequence of actions on the block.
 /// Is used to calculate expressions.
@@ -98,9 +102,16 @@ public:
     /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
-    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    /// @param check_cancelled - optional callback to check for cancellation after each action.
+    void execute(
+        Block & block,
+        size_t & num_rows,
+        bool dry_run = false,
+        bool allow_duplicates_in_input = false,
+        CheckCancelled check_cancelled = nullptr) const;
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
-    void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false) const;
+    void
+    execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false, CheckCancelled check_cancelled = nullptr) const;
 
     bool hasArrayJoin() const;
     void assertDeterministic() const;

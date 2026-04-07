@@ -2937,9 +2937,22 @@ public:
             return {false, true, false, false};
         }
 
-        // For simplicity, we treat every single value interval as positive monotonic.
+        // For simplicity, we treat every single value interval as positive monotonic,
+        // unless the function is undefined at that point (e.g. division by zero).
         if (accurateEquals(left_point, right_point))
+        {
+            // Division is undefined at zero, so we must not report monotonicity:
+            // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
+            // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
+            bool is_div_function = name_view == "divide" || name_view == "intDiv";
+            bool right_arg_is_zero = left.column && isColumnConst(*left.column) && accurateEquals(left_point, Field(0));
+            bool right_const_is_zero = right.column && isColumnConst(*right.column) && accurateEquals((*right.column)[0], Field(0));
+
+            if (is_div_function && (right_arg_is_zero || right_const_is_zero))
+                return {false, true, false, false};
+
             return {true, true, false, false};
+        }
 
         if (name_view == "minus" || name_view == "plus")
         {

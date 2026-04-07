@@ -4,6 +4,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/AlterCommands.h>
@@ -100,6 +101,7 @@ class EmbeddedRocksDBSource : public ISource
 public:
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         SharedHeader header,
         FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
@@ -107,6 +109,8 @@ public:
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
+        , storage_snapshot(storage_snapshot_)
+        , physical_header(storage_snapshot_->metadata->getSampleBlock())
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -117,11 +121,14 @@ public:
 
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
         SharedHeader header,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
+        , storage_snapshot(storage_snapshot_)
+        , physical_header(storage_snapshot_->metadata->getSampleBlock())
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -131,12 +138,35 @@ public:
 
     Chunk generate() override
     {
+        Block block;
         if (keys)
-            return generateWithKeys();
-        return generateFullScan();
+            block = generateWithKeys();
+        else
+            block = generateFullScan();
+
+        if (block.empty())
+            return {};
+
+        fillVirtualColumns(block);
+        return Chunk(block.getColumns(), block.rows());
     }
 
-    Chunk generateWithKeys()
+    void fillVirtualColumns(Block & block) const
+    {
+        auto num_rows = block.rows();
+        for (const auto & [name, type] : storage_snapshot->virtual_columns->getNamesAndTypesList())
+        {
+            if (block.has(name))
+                continue;
+
+            if (name == "_table")
+                block.insert({type->createColumnConst(num_rows, storage.getStorageID().getTableName())->convertToFullColumnIfConst(), type, name});
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported virtual column '{}'", name);
+        }
+    }
+
+    Block generateWithKeys()
     {
         if (it >= end)
         {
@@ -144,21 +174,19 @@ public:
             return {};
         }
         auto raw_keys = serializeKeysToRawString(it, end, storage.getPrimaryKeyTypes(), max_block_size);
-        return storage.getBySerializedKeys(raw_keys, nullptr);
+        return storage.getBySerializedKeys(raw_keys, nullptr, physical_header);
     }
 
-    Chunk generateFullScan()
+    Block generateFullScan()
     {
         if (!iterator->Valid())
             return {};
 
-        const auto & sample_block = getPort().getHeader();
-        MutableColumns columns = sample_block.cloneEmptyColumns();
-
+        MutableColumns columns = physical_header.cloneEmptyColumns();
         for (size_t rows = 0; iterator->Valid() && rows < max_block_size; ++rows, iterator->Next())
         {
-            fillColumns(iterator->key(), storage.getPrimaryKeyPos(), getPort().getHeader(), columns);
-            fillColumns(iterator->value(), storage.getValueColumnPos(), getPort().getHeader(), columns);
+            fillColumns(iterator->key(), storage.getPrimaryKeyPos(), physical_header, columns);
+            fillColumns(iterator->value(), storage.getValueColumnPos(), physical_header, columns);
         }
 
         if (!iterator->status().ok())
@@ -169,12 +197,14 @@ public:
                 getName(),
                 iterator->status().ToString());
         }
-        Block block = sample_block.cloneWithColumns(std::move(columns));
-        return Chunk(block.getColumns(), block.rows());
+
+        return physical_header.cloneWithColumns(std::move(columns));
     }
 
 private:
     const StorageEmbeddedRocksDB & storage;
+    StorageSnapshotPtr storage_snapshot;
+    Block physical_header;
 
     /// For key scan
     FieldVectorPtr keys = nullptr;
@@ -210,6 +240,12 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
 {
     setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
+
+    {
+        VirtualColumnsDescription virtuals_desc;
+        virtuals_desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+        setVirtuals(std::move(virtuals_desc));
+    }
 
     if (rocksdb_dir.empty())
     {
@@ -661,7 +697,7 @@ void StorageEmbeddedRocksDB::read(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlock();
+    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(storage_snapshot->virtual_columns->getNamesAndTypesList());
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
         column_names,
@@ -683,7 +719,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     {
         auto iterator = std::unique_ptr<rocksdb::Iterator>(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
         iterator->SeekToFirst();
-        auto source = std::make_shared<EmbeddedRocksDBSource>(storage, sample_block, std::move(iterator), max_block_size);
+        auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(iterator), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
         pipeline.init(Pipe(std::move(source)));
         return;
@@ -712,7 +748,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
         size_t end = num_keys * (thread_idx + 1) / num_threads;
 
         auto source = std::make_shared<EmbeddedRocksDBSource>(
-            storage, sample_block, keys, keys->begin() + begin, keys->begin() + end, max_block_size);
+            storage, storage_snapshot, sample_block, keys, keys->begin() + begin, keys->begin() + end, max_block_size);
         source->setStorageLimits(query_info.storage_limits);
         pipes.emplace_back(std::move(source));
     }
@@ -893,7 +929,8 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
         wb.finalize();
     }
 
-    return getBySerializedKeys(raw_keys, &null_map);
+    auto block = getBySerializedKeys(raw_keys, &null_map, getInMemoryMetadataPtr()->getSampleBlock());
+    return Chunk(block.getColumns(), block.rows());
 }
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
@@ -901,10 +938,9 @@ Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
     return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
-Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map) const
+Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const
 {
     std::vector<String> values;
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
 
@@ -950,8 +986,7 @@ Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string>
         }
     }
 
-    size_t num_rows = columns.at(0)->size();
-    return Chunk(std::move(columns), num_rows);
+    return sample_block.cloneWithColumns(std::move(columns));
 }
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context) const

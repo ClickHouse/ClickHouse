@@ -25,9 +25,9 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 UInt128 SerializationArray::getHash(const SerializationPtr & nested_)

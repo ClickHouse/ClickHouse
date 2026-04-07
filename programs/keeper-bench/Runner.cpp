@@ -75,14 +75,10 @@ Runner::Runner(
 {
 
     DB::ConfigProcessor config_processor(config_path, true, false);
-    DB::ConfigurationPtr config = nullptr;
 
     if (!config_path.empty())
     {
-        config = config_processor.loadConfig().configuration;
-
-        if (config->has("generator"))
-            generator.emplace(*config);
+        config_ptr = config_processor.loadConfig().configuration;
     }
     else
     {
@@ -92,7 +88,7 @@ Runner::Runner(
         if (!std::filesystem::exists(input_request_log))
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "File on path {} does not exist", input_request_log);
     }
-
+    auto config = config_ptr;
 
     if (!hosts_strings_.empty())
     {
@@ -116,13 +112,6 @@ Runner::Runner(
     else
         concurrency = config->getUInt64("concurrency", DEFAULT_CONCURRENCY);
     std::cerr << "Concurrency: " << concurrency << std::endl;
-
-    if (config)
-        queue_depth = config->getUInt64("queue_depth", 1);
-    if (queue_depth == 0)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "queue_depth must be >= 1, got 0");
-    if (queue_depth > 1)
-        std::cerr << "Queue depth: " << queue_depth << std::endl;
 
     if (config)
         pipeline_depth = config->getUInt64("pipeline_depth", 1);
@@ -251,7 +240,7 @@ void Runner::parseHostsFromConfig(const Poco::Util::AbstractConfiguration & conf
     }
 }
 
-void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers)
+void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookeepers, ThreadState & thread_state)
 {
     struct RequestResult
     {
@@ -264,6 +253,9 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         std::future<RequestResult> future;
         Coordination::ZooKeeperRequestPtr request;
     };
+
+    auto generator = std::make_shared<Generator>();
+    generator->startup(*config_ptr, *zookeepers[0], thread_state.thread_idx);
 
     /// Randomly choosing connection index
     pcg64 rng(randomSeed());
@@ -329,34 +321,36 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
             if (warmup_complete)
             {
-                std::lock_guard lock(mutex);
                 auto bytes = slot.request->bytesSize() + result.response_bytes;
 
                 if (slot.request->isReadRequest())
-                    info->addRead(result.elapsed_microseconds, 1, bytes);
+                    thread_state.thread_info.addRead(result.elapsed_microseconds, 1, bytes);
                 else
-                    info->addWrite(result.elapsed_microseconds, 1, bytes);
+                    thread_state.thread_info.addWrite(result.elapsed_microseconds, 1, bytes);
 
-                info->addOp(slot.request->getOpNum(), result.elapsed_microseconds, 1, bytes);
+                thread_state.thread_info.addOp(slot.request->getOpNum(), result.elapsed_microseconds, 1, bytes);
             }
         }
         catch (...) // Ok: handle_request_exception logs and counts the error
         {
             handle_request_exception(slot.request);
         }
-
-        ++requests_executed;
     };
 
     while (true)
     {
-        if (shutdown
-            || (max_iterations && requests_executed >= max_iterations))
+        if (shutdown)
         {
             /// Drain remaining in-flight requests
             for (auto & slot : in_flight)
                 collect_request(slot);
             return;
+        }
+        size_t iteration_idx = requests_started.fetch_add(1);
+        if (max_iterations && warmup_complete && iteration_idx >= max_iterations)
+        {
+            shutdown = true;
+            continue;
         }
 
         /// Wait for the oldest request if the pipeline is full
@@ -366,30 +360,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             in_flight.pop_front();
         }
 
-        ZooKeeperRequestWithCallbacks request_with_callbacks;
-        bool extracted = false;
-
-        while (!extracted)
-        {
-            extracted = queue->tryPop(request_with_callbacks, 100);
-
-            /// Producer may be done while some requests are still in flight.
-            /// Collect one result to guarantee forward progress.
-            if (!extracted && !in_flight.empty())
-            {
-                collect_request(in_flight.front());
-                in_flight.pop_front();
-            }
-
-            if (shutdown
-                || (max_iterations && requests_executed >= max_iterations))
-            {
-                /// Drain remaining in-flight requests
-                for (auto & slot : in_flight)
-                    collect_request(slot);
-                return;
-            }
-        }
+        ZooKeeperRequestWithCallbacks request_with_callbacks = generator->generate();
 
         const auto connection_index = distribution(rng);
         auto & zk = zookeepers[connection_index];
@@ -406,7 +377,8 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             [promise,
              success_callbacks,
              failure_callbacks,
-             watch](const Coordination::Response & response)
+             watch,
+             generator](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
             if (response.error == Coordination::Error::ZOK)
@@ -448,54 +420,14 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
             for (const auto & cb : *failure_callbacks)
                 cb();
             handle_request_exception(slot.request);
-            ++requests_executed;
         }
     }
-}
-
-bool Runner::tryPushRequestInteractively(ZooKeeperRequestWithCallbacks && request, DB::InterruptListener & interrupt_listener)
-{
-    bool inserted = false;
-
-    while (!inserted)
-    {
-        inserted = queue->tryPush(request, 100);
-
-        if (shutdown)
-        {
-            /// An exception occurred in a worker
-            return false;
-        }
-
-        if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
-        {
-            std::cerr << "Stopping launch of queries. Requested time limit is exhausted.\n";
-            return false;
-        }
-
-        if (interrupt_listener.check())
-        {
-            std::cerr << "Stopping launch of queries. SIGINT received." << std::endl;
-            return false;
-        }
-
-        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
-        {
-            printNumberOfRequestsExecuted(requests_executed);
-
-            std::lock_guard lock(mutex);
-            info->report();
-            delay_watch.restart();
-        }
-    }
-
-    return true;
 }
 
 
 void Runner::runBenchmark()
 {
-    if (generator)
+    if (config_ptr && config_ptr->has("generator"))
         runBenchmarkWithGenerator();
     else
         runBenchmarkFromLog();
@@ -1269,24 +1201,24 @@ void Runner::runBenchmarkFromLog()
 void Runner::runBenchmarkWithGenerator()
 {
     pool.emplace(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency);
-    queue.emplace(concurrency * queue_depth);
     createConnections();
 
     std::cerr << "Preparing to run\n";
     benchmark_context.startup(*connections[0]);
-    generator->startup(*connections[0]);
     std::cerr << "Prepared\n";
 
     warmup_complete = warmup_seconds <= 0;
 
     int64_t start_timestamp_ms = 0;
+    threads = std::vector<ThreadState>(concurrency);
 
     try
     {
         for (size_t i = 0; i < concurrency; ++i)
         {
+            threads[i].thread_idx = i;
             auto thread_connections = connections;
-            pool->scheduleOrThrowOnError([this, my_connections = std::move(thread_connections)]() mutable { thread(my_connections); });
+            pool->scheduleOrThrowOnError([this, i, my_connections = std::move(thread_connections)]() mutable { thread(my_connections, threads.at(i)); });
         }
     }
     catch (...)
@@ -1304,13 +1236,38 @@ void Runner::runBenchmarkWithGenerator()
     Stopwatch warmup_watch;
     delay_watch.restart();
 
-    /// Push queries into queue
-    for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
+    while (!shutdown)
     {
+        if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
+        {
+            std::cerr << "Stopping launch of queries. Requested time limit is exhausted.\n";
+            shutdown = true;
+            break;
+        }
+
+        if (interrupt_listener.check())
+        {
+            std::cerr << "Stopping launch of queries. SIGINT received." << std::endl;
+            shutdown = true;
+            break;
+        }
+
+        if (delay > 0 && delay_watch.elapsedSeconds() > delay)
+        {
+            printNumberOfRequestsExecuted(requests_started);
+
+            std::lock_guard lock(mutex);
+            mergeThreadInfos()->report();
+            delay_watch.restart();
+        }
+
         if (!warmup_complete && warmup_watch.elapsedSeconds() >= warmup_seconds)
         {
             std::lock_guard lock(mutex);
             info->clear();
+            for (auto & t : threads)
+                t.thread_info.clear();
+            requests_started = 0;
             warmup_complete = true;
             std::cerr << "Warmup complete, starting measurement" << std::endl;
             total_watch.restart();
@@ -1318,23 +1275,20 @@ void Runner::runBenchmarkWithGenerator()
             start_timestamp_ms = Poco::Timestamp().epochMicroseconds() / 1000;
         }
 
-        if (!tryPushRequestInteractively(generator->generate(), interrupt_listener))
-        {
-            shutdown = true;
-            break;
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     pool->wait();
     total_watch.stop();
 
-    printNumberOfRequestsExecuted(requests_executed);
+    printNumberOfRequestsExecuted(requests_started);
 
     std::lock_guard lock(mutex);
-    info->report();
+    auto merged_info = mergeThreadInfos();
+    merged_info->report();
 
     DB::WriteBufferFromOwnString out;
-    info->writeJSON(out, start_timestamp_ms);
+    merged_info->writeJSON(out, start_timestamp_ms);
     auto output_string = std::move(out.str());
     writeOutputString(output_string, start_timestamp_ms);
 }
@@ -1429,10 +1383,20 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections
     return connections;
 }
 
+std::shared_ptr<Stats> Runner::mergeThreadInfos()
+{
+    if (threads.empty())
+        return info;
+    auto merged = std::make_shared<Stats>();
+    merged->merge(*info);
+    merged->elapsed = info->elapsed;
+    for (auto & t : threads)
+        merged->merge(t.thread_info);
+    return merged;
+}
+
 Runner::~Runner()
 {
-    if (queue)
-        queue->clearAndFinish();
     shutdown = true;
 
     if (pool)
