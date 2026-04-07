@@ -58,3 +58,18 @@
 - The postprocessor expression must return String
 - The postprocessor must not contain non-deterministic functions
 - The postprocessor must not contain arrayJoin
+9. Stop-word postprocessor: empty-mapped tokens must never match vacuously.
+0
+1
+1
+10. hasAllTokens / hasAnyTokens when all array elements are filtered out.
+0
+0
+1
+1
+11. Index-build path and row-scan path agree when postprocessor drops tokens.
+0
+1
+1
+1
+1

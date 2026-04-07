@@ -242,3 +242,73 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY tuple();  -- { serverError INCORRECT_QUERY }
 
 DROP TABLE IF EXISTS tab;
+
+SELECT '9. Stop-word postprocessor: empty-mapped tokens must never match vacuously.';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar'), (3, 'the quick');
+
+-- 'the' maps to empty via postprocessor; must return 0, not 3 (vacuously true).
+SELECT count() FROM tab WHERE hasToken(val, 'the');
+-- Non-stop-word tokens are unaffected.
+SELECT count() FROM tab WHERE hasToken(val, 'hello');
+SELECT count() FROM tab WHERE hasToken(val, 'quick');
+
+DROP TABLE tab;
+
+SELECT '10. hasAllTokens / hasAnyTokens when all array elements are filtered out.';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'stop', '', val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello world'), (2, 'foo bar');
+
+-- All array elements map to empty → must return 0 (not vacuously true).
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop']);
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop']);
+
+-- Mixed array: stop word is silently dropped; only the surviving token is required.
+-- hasAllTokens(['stop', 'hello']) reduces to hasAllTokens(['hello']).
+SELECT count() FROM tab WHERE hasAllTokens(val, ['stop', 'hello']);
+-- hasAnyTokens(['stop', 'foo']) reduces to hasAnyTokens(['foo']).
+SELECT count() FROM tab WHERE hasAnyTokens(val, ['stop', 'foo']);
+
+DROP TABLE tab;
+
+SELECT '11. Index-build path and row-scan path agree when postprocessor drops tokens.';
+
+CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+-- Old parts written before the index was added; these use the row-scan path.
+INSERT INTO tab VALUES (1, 'the quick'), (2, 'hello');
+
+ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = if(val = 'the', '', val));
+
+-- New parts written after the index; these use the index lookup path.
+INSERT INTO tab VALUES (3, 'the world'), (4, 'test');
+
+-- Stop word 'the' must return 0 across both old parts (row-scan) and new parts (index).
+SELECT count() FROM tab WHERE hasToken(val, 'the');
+-- Real tokens must be found consistently regardless of which path is used.
+SELECT count() FROM tab WHERE hasToken(val, 'hello');  -- row 2, old part (row-scan)
+SELECT count() FROM tab WHERE hasToken(val, 'test');   -- row 4, new part (index)
+-- Rows containing 'the' as a stop word are still indexed for their other tokens.
+SELECT count() FROM tab WHERE hasToken(val, 'quick');  -- row 1, old part (row-scan)
+SELECT count() FROM tab WHERE hasToken(val, 'world');  -- row 3, new part (index)
+
+SYSTEM START MERGES tab;
+DROP TABLE tab;

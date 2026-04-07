@@ -616,6 +616,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         tokens = postprocessor->applyBatch(tokens);
 
+        /// If the postprocessor mapped every token to empty (e.g. a stop-word filter),
+        /// fall back to an empty-string sentinel. The empty string is never stored in the
+        /// index, so the lookup will correctly produce no matches.
+        if (tokens.empty())
+            tokens.push_back("");
+
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
