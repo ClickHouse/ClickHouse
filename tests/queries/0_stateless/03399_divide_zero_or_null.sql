@@ -77,3 +77,7 @@ SELECT 'moduloOrNull_Int64', moduloOrNull(toInt64(-9223372036854775808), toInt64
 SELECT 'positiveModuloOrNull_Int64', positiveModuloOrNull(toInt64(-9223372036854775808), toInt64(-1));
 SELECT 'intDivOrNull_mat', intDivOrNull(materialize(toInt64(-9223372036854775808)), materialize(toInt64(-1)));
 SELECT 'moduloOrNull_mat', moduloOrNull(materialize(toInt64(-9223372036854775808)), materialize(toInt64(-1)));
+-- Verify normal operations still work
+SELECT 'normal_intDivOrNull', intDivOrNull(10, 3);
+SELECT 'normal_moduloOrNull', moduloOrNull(10, 3);
+SELECT 'normal_divideOrNull', divideOrNull(10, 2);

@@ -74,3 +74,6 @@ moduloOrNull_Int64	\N
 positiveModuloOrNull_Int64	\N
 intDivOrNull_mat	\N
 moduloOrNull_mat	\N
+normal_intDivOrNull	3
+normal_moduloOrNull	1
+normal_divideOrNull	5
