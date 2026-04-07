@@ -361,7 +361,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
-            
+
             if (column_names_to_sum.empty() || isInNames(column.name, column_names_to_sum))
             {
                 // Create aggregator to sum this column
