@@ -1146,6 +1146,17 @@ void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
     }
 }
 
+void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    for (const auto & path : sorted_typed_paths)
+        typed_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+
+    for (const auto & path : sorted_dynamic_paths)
+        dynamic_paths.find(path)->second->updateHashWithValueRange(begin, end, hash);
+
+    shared_data->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnObject::getWeakHash32() const
 {
     WeakHash32 hash(size());
