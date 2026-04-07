@@ -251,7 +251,7 @@ size_t MergeTreeReaderWide::readRows(
         /// merge_tree_reader streams will be ahead of the tracked position, but
         /// DelayedStream detects this mismatch on the next read and repositions
         /// by seeking to the correct mark.
-        if (read_rows > max_rows_to_read && max_rows_to_read > 0)
+        if (read_rows > max_rows_to_read)
         {
             for (size_t pos = 0; pos < num_columns; ++pos)
             {
