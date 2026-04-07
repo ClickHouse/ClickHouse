@@ -7,10 +7,13 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/misc.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -420,6 +423,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseMapElementKeyNode(function, out))
             return true;
 
+        if (traverseJSONSubcolumnKeyNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
@@ -810,6 +816,72 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTr
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
+}
+
+bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
+    const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    /// Handle functions like `func(json.some.path, ...)` where `json.some.path`
+    /// is a plain INPUT node referencing a JSON subcolumn.
+    /// Similar to traverseMapElementKeyNode but for JSON subcolumns.
+
+    const auto * dag_node = function_node.getDAGNode();
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
+        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
+        return false;
+
+    auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
+    auto required_columns = subdag.getRequiredColumns();
+    const auto & outputs = subdag.getOutputs();
+
+    if (required_columns.size() != 1 || outputs.size() != 1)
+        return false;
+
+    auto required_column = required_columns.front();
+    auto output_column_name = outputs.front()->result_name;
+
+    /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header);
+    if (!json_info)
+        return false;
+
+    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
+    /// The Set may not be ready yet because it is built later during query execution.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<ColumnSet>(node.column.get());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+    }
+
+    /// Evaluate the function on a default column value.
+    /// If the function returns true for the default value (what we'd get when the path is missing),
+    /// we cannot safely skip the granule.
+    Block block{{required_column.type->createColumnConstWithDefaultValue(1),
+                 required_column.type, required_column.name}};
+    ExpressionActions actions(std::move(subdag));
+    actions.execute(block);
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    if (result_column->getBool(0))
+        return false;
+
+    auto tokens = stringToTokens(Field(json_info->path));
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        "JSONPathExists", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
 }
 
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
