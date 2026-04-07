@@ -82,7 +82,7 @@ private:
     Poco::Net::HTTPBasicCredentials credentials;
 
     mutable std::mutex catalog_mutex;
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
 
     void validateSettings();
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;

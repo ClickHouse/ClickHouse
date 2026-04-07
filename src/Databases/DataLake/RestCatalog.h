@@ -123,7 +123,7 @@ protected:
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
     mutable std::mutex token_mutex;
-    mutable std::optional<AccessToken> access_token;
+    mutable std::optional<AccessToken> access_token TSA_GUARDED_BY(token_mutex);
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
