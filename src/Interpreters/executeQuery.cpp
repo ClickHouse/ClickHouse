@@ -1214,6 +1214,7 @@ static BlockIO executeQueryImpl(
                 out_ast = IAST::createFromJSON(String(begin, end),
                     settings[Setting::max_ast_depth],
                     settings[Setting::max_ast_elements]);
+                checkASTSizeLimits(*out_ast, settings);
             }
         }
         else

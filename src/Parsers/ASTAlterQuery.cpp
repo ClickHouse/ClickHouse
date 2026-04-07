@@ -4,8 +4,10 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Storages/DataDestinationType.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -89,6 +91,8 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeBool("first", first);
     w.writeBool("replace", replace);
 
+    w.writeString("move_destination_type", std::string(magic_enum::enum_name(move_destination_type)));
+
     if (!move_destination_name.empty())
         w.writeString("move_destination_name", move_destination_name);
     if (!from.empty())
@@ -132,6 +136,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeChild("sql_security", sql_security);
     w.writeChild("rename_to", rename_to);
     w.writeChild("refresh", refresh);
+    w.writeChild("snapshot_desc", snapshot_desc);
     w.writeChild("execute_args", execute_args);
 }
 
@@ -152,6 +157,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     first = r.getBool("first");
     replace = r.getBool("replace");
 
+    String move_dest_type_str = r.getString("move_destination_type");
+    auto move_dest_opt = magic_enum::enum_cast<DataDestinationType>(move_dest_type_str);
+    if (move_dest_opt)
+        move_destination_type = *move_dest_opt;
+
     move_destination_name = r.getString("move_destination_name");
     from = r.getString("from");
     with_name = r.getString("with_name");
@@ -165,7 +175,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 
     /// Reserve enough capacity so that emplace_back never reallocates and
     /// invalidates the raw pointers stored by readRawChild.
-    children.reserve(23);
+    children.reserve(24);
 
     auto readRawChild = [&](const char * key, IAST *& field)
     {
@@ -195,6 +205,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     readRawChild("select", select);
     readRawChild("sql_security", sql_security);
     readRawChild("rename_to", rename_to);
+    readRawChild("snapshot_desc", snapshot_desc);
     readRawChild("execute_args", execute_args);
 
     auto child = r.readChild("refresh");

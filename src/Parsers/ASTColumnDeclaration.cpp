@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 const char * toString(ColumnDefaultSpecifier kind)
 {
     switch (kind)
@@ -29,6 +34,8 @@ ColumnDefaultSpecifier columnDefaultSpecifierFromString(std::string_view str)
     if (str == "ALIAS") return ColumnDefaultSpecifier::Alias;
     if (str == "EPHEMERAL") return ColumnDefaultSpecifier::Ephemeral;
     if (str == "AUTO_INCREMENT") return ColumnDefaultSpecifier::AutoIncrement;
+    if (!str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown column default specifier: '{}'", str);
     return ColumnDefaultSpecifier::Empty;
 }
 

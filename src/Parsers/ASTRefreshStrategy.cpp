@@ -3,9 +3,15 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
+#include <magic_enum.hpp>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTRefreshStrategy::clone() const
 {
@@ -73,7 +79,7 @@ void ASTRefreshStrategy::formatImpl(
 void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
 {
     JSONObjectWriter w(out, "RefreshStrategy");
-    w.writeInt("schedule_kind", static_cast<Int64>(schedule_kind));
+    w.writeString("schedule_kind", std::string(magic_enum::enum_name(schedule_kind)));
     w.writeChild("period", period);
     w.writeChild("offset", offset);
     w.writeChild("spread", spread);
@@ -86,7 +92,12 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
 void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
-    schedule_kind = static_cast<RefreshScheduleKind>(r.getInt("schedule_kind"));
+    String schedule_kind_str = r.getString("schedule_kind");
+    auto kind_opt = magic_enum::enum_cast<RefreshScheduleKind>(schedule_kind_str);
+    if (kind_opt)
+        schedule_kind = *kind_opt;
+    else if (!schedule_kind_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown RefreshScheduleKind: '{}'", schedule_kind_str);
     auto period_child = r.readChild("period");
     if (period_child)
         set(period, period_child);
