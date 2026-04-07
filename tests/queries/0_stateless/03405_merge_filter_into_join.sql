@@ -10,22 +10,20 @@ set query_plan_join_swap_table = 0;
 set enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 set enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
 set parallel_hash_join_threshold = 0;
-set query_plan_merge_expressions = 1; -- Test checks merged expression step names in EXPLAIN
-set query_plan_merge_filter_into_join_condition = 1; -- Test verifies this optimization
 
 -- { echoOn }
 
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; WHERE condition not merged into JOIN ON clause → stays as CROSS JOIN with Filter above instead of INNER JOIN
 SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
 
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; WHERE condition not merged into JOIN ON clause → stays as CROSS JOIN with Filter above instead of INNER JOIN
 SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL;
 
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; WHERE condition not merged into JOIN ON clause → stays as CROSS JOIN with Filter above instead of INNER JOIN
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; WHERE condition not merged into JOIN ON clause → stays as CROSS JOIN with Filter above instead of INNER JOIN
 EXPLAIN PLAN actions = 1
-SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0;
+SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 1; -- CI may inject False; WHERE condition not merged into JOIN ON clause → stays as CROSS JOIN with Filter above instead of INNER JOIN

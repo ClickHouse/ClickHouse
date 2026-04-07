@@ -640,13 +640,16 @@ Projections can be modified or dropped with the [ALTER](/sql-reference/statement
 
 ### Projection indexes {#projection-index}
 
-Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
-Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
+Projection indexes extend the projection subsystem by providing a lightweight and explicit way to define projection-level indexes.
+Externally, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving materialized data.
+Internally, a projection index does not materialize the original table in permuted row order like a regular projection.
+Instead, the permutation is stored in the form of a numeric permutation column `_part_offset`, i.e. `SELECT _part_offset ORDER BY <index_expr>`.
 
 #### Syntax {#projection-index-syntax}
+
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
-````
+```
 
 Example:
 
@@ -692,6 +695,12 @@ Determines the lifetime of values.
 The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
 Expressions must evaluate to [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md), [DateTime](/sql-reference/data-types/datetime.md) or [DateTime64](/sql-reference/data-types/datetime64.md) data type.
+
+:::tip[Avoid non-deterministic functions in TTL expressions]
+TTL is evaluated during background merges, and not at insert time.
+Functions like `rand()`, `now()`, or `now64()` will be re-evaluated on every merge, leading to unpredictable deletion behavior.
+ClickHouse blocks expressions with no column dependency at all, but does not currently reject non-deterministic functions mixed with a column reference (e.g. `ts + rand()`). TTL expressions should be based solely on deterministic, column-derived values for predictable results.
+:::
 
 **Syntax**
 
