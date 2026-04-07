@@ -108,7 +108,7 @@ private:
     /// a) vector search with large vector indexes
     /// b) top-k using only minmax index (e.g SELECT * FROM youtube ORDER BY dislike_count LIMIT 10)
     /// These 2 cannot be packaged in the 'predicate'
-    void parseArgumentsForOptimizations(const ASTs & args, ContextPtr context);
+    void parseArgumentsForOptimizations(const ASTs & args, ContextPtr context, size_t start_index);
 
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
@@ -156,7 +156,11 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
         parts = extractParts(args[2], context);
 
     if (args.size() > 3)
-        parseArgumentsForOptimizations(args, context);
+    {
+        if (args.size() < 5)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
+        parseArgumentsForOptimizations(args, context, 3);
+    }
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
@@ -164,9 +168,9 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
 void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context)
 {
     ASTs & args = args_func.at(0)->children;
-    if (args.size() < 2 || args.size() > 4)
+    if (args.size() < 2 || args.size() > 6)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Table function '{}' must have from 2 to 4 arguments (database, table, condition[, parts_array]), got: {}", getName(), args.size());
+            "Table function '{}' must have from 2 to 4 or 6 arguments (database, table, condition[, parts_array], [, optimization, args_array]), got: {}", getName(), args.size());
 
     args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     auto database = checkAndGetLiteralArgument<String>(args[0], "database");
@@ -180,40 +184,41 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     if (args.size() > 3)
         parts = extractParts(args[3], context);
 
-    if (args.size() > 3)
-        parseArgumentsForOptimizations(args, context);
+    if (args.size() > 4)
+    {
+        if (args.size() < 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
+        parseArgumentsForOptimizations(args, context, 4);
+    }
 
     source_table_id = StorageID{database, table};
 }
 
-void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const ASTs & args, ContextPtr /*context*/)
+void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const ASTs & args, ContextPtr context, size_t start_index)
 {
-    if (args.size() == 5)
+    auto optimization = checkAndGetLiteralArgument<String>(args[start_index++], "extra_optimization");
+    if (optimization == "vector_search_index_analysis")
     {
-        auto optimization = checkAndGetLiteralArgument<String>(args[3], "extra_optimization");
-        if (optimization == "vector_search_index_analysis")
+        auto cast_node = args[start_index++]->children.at(0);
+        auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
+        if (vector_search_args.size() != 6)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "vector_search_index_analysis requires 6 arguments");
+
+        Array field_array = vector_search_args[3].safeGet<Array>();
+        std::vector<Float64> reference_vector;
+        for (const auto & field_array_value : field_array)
         {
-            auto cast_node = args[4]->children.at(0);
-            auto vector_search_args = cast_node->children.at(0)->as<ASTLiteral>()->value.safeGet<Array>();
-            if (vector_search_args.size() != 6)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "vector_search_index_analysis requires 6 arguments");
-
-            Array field_array = vector_search_args[3].safeGet<Array>();
-            std::vector<Float64> reference_vector;
-            for (const auto & field_array_value : field_array)
-            {
-                Float64 float64 = field_array_value.safeGet<Float64>();
-                reference_vector.push_back(float64);
-            }
-
-            vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
-                vector_search_args[1].safeGet<String>(), /// distance function
-                vector_search_args[2].safeGet<UInt64>(), /// limit
-                reference_vector, /// search vector
-                static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
-                static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
+            Float64 float64 = field_array_value.safeGet<Float64>();
+            reference_vector.push_back(float64);
         }
+
+        vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
+            vector_search_args[1].safeGet<String>(), /// distance function
+            vector_search_args[2].safeGet<UInt64>(), /// limit
+            reference_vector, /// search vector
+            static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
+            static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
     }
 }
 
