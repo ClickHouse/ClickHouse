@@ -7,7 +7,7 @@
 #include <Storages/DataDestinationType.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 
 namespace DB

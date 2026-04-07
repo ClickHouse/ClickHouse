@@ -3,7 +3,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/Operators.h>
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
