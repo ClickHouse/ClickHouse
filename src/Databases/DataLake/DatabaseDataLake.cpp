@@ -612,10 +612,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// because the configuration was initialized without table structure. Set it explicitly
     /// based on the datalake type to avoid attempting format auto-detection on directory paths.
     if (table_options.format == "auto")
-    {
-        if (datalake_type == DataLakeType::DeltaLake)
-            table_options.format = "Parquet";
-    }
+        table_options.format = "Parquet";
 
     switch (datalake_type)
     {
