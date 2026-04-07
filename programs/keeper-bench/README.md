@@ -100,7 +100,6 @@ Config can be YAML or XML.
 | `report_delay` | float | `1.0` | Seconds between periodic reports; `0` disables |
 | `timelimit` | float | `0` | Seconds to stop producing new requests; `0` disables |
 | `continue_on_error` | bool | `false` | Continue after request exceptions |
-| `queue_depth` | integer | `1` | Producer queue depth per thread (`>= 1`) |
 | `pipeline_depth` | integer | `1` | In-flight async requests per worker (`>= 1`) |
 | `warmup_seconds` | float | `0` | Measurement warmup window |
 | `enable_tracing` | bool | `false` | Attach OpenTelemetry trace context |
@@ -187,9 +186,6 @@ timelimit: 300
 
 # continue on request exceptions (default: false)
 continue_on_error: true
-
-# producer queue capacity multiplier per worker; must be >= 1 (default: 1)
-queue_depth: 4
 
 # max in-flight requests per worker; must be >= 1 (default: 1)
 pipeline_depth: 8
@@ -461,7 +457,6 @@ Common configuration exceptions:
 
 - `No config file or hosts defined`: provide `--hosts` or `connections`.
 - `Both --config and --input_request_log cannot be empty`: provide at least one mode input.
-- `queue_depth must be >= 1` / `pipeline_depth must be >= 1`: set both to positive values.
 - `Invalid path for request generator`: all paths must start with `/`.
 - `PathGetter has no paths after initialization`: `children_of` parent has no children and no explicit `path` entries were supplied.
 - `Generator weight must be >= 1`: use positive weights only.
