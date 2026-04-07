@@ -44,6 +44,8 @@ namespace ErrorCodes
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
+    DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", 0) \
+    DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", 0) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", 0) \
     DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
@@ -60,6 +62,7 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
+    DECLARE(Bool, asio_streaming_mode, false, "Enable NuRaft streaming mode, which allows sending subsequent requests without waiting for the response to previous requests", 0) \
     DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
     DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
@@ -76,6 +79,14 @@ namespace ErrorCodes
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
     DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
+    DECLARE(Bool, use_new_dispatcher, false, "Use new request dispatcher implementation (KeeperRequestDispatcher2)", 0) \
+    DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
+    DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
+    DECLARE(UInt64, max_response_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes across all response queues; the dispatch thread throttles at half this limit", 0) \
+    DECLARE(Bool, optimize_read_order, true, "Reorder read requests within a batch to group them together for parallel execution, without changing ordering guarantees within each session", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Sleep duration in microseconds for busy-wait loops in the dispatch and response threads", 0) \
+    DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
+    DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)

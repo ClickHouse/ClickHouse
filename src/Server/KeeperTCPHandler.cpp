@@ -477,7 +477,7 @@ void KeeperTCPHandler::runImpl()
 
     max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
 
-    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
+    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper, dispatcher = keeper_dispatcher.get()](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request) -> bool
     {
         if (request)
@@ -493,7 +493,7 @@ void KeeperTCPHandler::runImpl()
         UInt8 single_byte = 1;
         [[maybe_unused]] ssize_t result = write(my_poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
 
-        return false;
+        return true; // will call onResponseDeallocated on dequeue
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
@@ -517,6 +517,7 @@ void KeeperTCPHandler::runImpl()
         RequestWithResponse request_with_response;
         while (responses->tryPop(request_with_response))
         {
+            keeper_dispatcher->onResponseDeallocated(*request_with_response.response);
         }
     });
 
@@ -576,6 +577,9 @@ void KeeperTCPHandler::runImpl()
 
                 if (!responses->tryPop(request_with_response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
+
+                /// (Not quite deallocated yet, but close enough for our purposes.)
+                keeper_dispatcher->onResponseDeallocated(*request_with_response.response);
 
                 auto & response = request_with_response.response;
                 auto & request = request_with_response.request;

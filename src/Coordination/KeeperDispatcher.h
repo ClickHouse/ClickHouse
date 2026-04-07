@@ -18,6 +18,7 @@
 #include <Common/Macros.h>
 #include <Poco/JSON/Object.h>
 #include <Coordination/KeeperRequestDispatcher.h>
+#include <Coordination/KeeperRequestDispatcher2.h>
 
 namespace DB
 {
@@ -51,7 +52,10 @@ private:
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
+    /// Exactly one of these is non-null.
+    /// Hopefully KeeperRequestDispatcher2 will work well and we'll delete KeeperRequestDispatcher soon.
     std::unique_ptr<KeeperRequestDispatcher> dispatcher;
+    std::unique_ptr<KeeperRequestDispatcher2> dispatcher2;
 
     KeeperConnectionStats keeper_stats;
 
@@ -259,6 +263,7 @@ public:
 
     std::optional<AuthenticationData> getAuthenticationData() const { return server->getAuthenticationData(); }
 
+    void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 };
 
 }

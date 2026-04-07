@@ -84,6 +84,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds sleep_before_leader_change_ms;
+    extern const CoordinationSettingsBool use_new_dispatcher;
 }
 
 namespace ErrorCodes
@@ -125,18 +126,26 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             /// Special new session response.
             if (response.response->xid != Coordination::WATCH_XID && response.response->getOpNum() == Coordination::OpNum::SessionID)
                 onSessionIDResponse(response.response);
-            else
+            else if (dispatcher)
                 dispatcher->onResponse(std::move(response));
+            else
+                dispatcher2->onResponse(std::move(response));
         },
         snapshots_queue,
         keeper_context,
         snapshot_s3,
         [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
         {
-            dispatcher->onCommit(request_for_session);
+            if (dispatcher)
+                dispatcher->onCommit(request_for_session);
+            else
+                dispatcher2->onCommit(request_for_session);
         });
 
-    dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
+    if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
+        dispatcher2 = std::make_unique<KeeperRequestDispatcher2>(server.get());
+    else
+        dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
 
     try
     {
@@ -170,7 +179,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     LOG_DEBUG(log, "Dispatcher initialized");
 }
 
-void KeeperDispatcher::shutdown(bool /*closed_all_connections*/)
+void KeeperDispatcher::shutdown(bool closed_all_connections)
 {
     try
     {
@@ -194,6 +203,8 @@ void KeeperDispatcher::shutdown(bool /*closed_all_connections*/)
 
         if (dispatcher)
             dispatcher->shutdown();
+        if (dispatcher2)
+            dispatcher2->shutdown(closed_all_connections);
 
         if (server)
             server->shutdown();
@@ -239,12 +250,18 @@ void KeeperDispatcher::snapshotThread()
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
-    return dispatcher->putRequest(request, session_id, use_xid_64);
+    if (dispatcher)
+        return dispatcher->putRequest(request, session_id, use_xid_64);
+    else
+        return dispatcher2->putRequest(request, session_id, use_xid_64);
 }
 
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
-    return dispatcher->putLocalReadRequest(request, session_id);
+    if (dispatcher)
+        return dispatcher->putLocalReadRequest(request, session_id);
+    else
+        return dispatcher2->putLocalReadRequest(request, session_id);
 }
 
 void KeeperDispatcher::forceRecovery()
@@ -259,7 +276,10 @@ KeeperDispatcher::~KeeperDispatcher()
 
 void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    dispatcher->registerSession(session_id, std::move(callback));
+    if (dispatcher)
+        dispatcher->registerSession(session_id, std::move(callback));
+    else
+        dispatcher2->registerSession(session_id, std::move(callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()
@@ -309,7 +329,10 @@ void KeeperDispatcher::sessionCleanerTask()
 
 void KeeperDispatcher::finishSession(int64_t session_id)
 {
-    dispatcher->finishSession(session_id);
+    if (dispatcher)
+        dispatcher->finishSession(session_id);
+    else
+        dispatcher2->finishSession(session_id);
 }
 
 void KeeperDispatcher::onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept
@@ -951,6 +974,12 @@ void KeeperDispatcher::cleanResources()
 #if USE_JEMALLOC
     Jemalloc::purgeArenas();
 #endif
+}
+
+void KeeperDispatcher::onResponseDeallocated(const Coordination::ZooKeeperResponse & response)
+{
+    if (dispatcher2)
+        dispatcher2->onResponseDeallocated(response);
 }
 
 }

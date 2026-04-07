@@ -83,6 +83,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
     extern const CoordinationSettingsBool nuraft_test_mode;
+    extern const CoordinationSettingsBool asio_streaming_mode;
 }
 
 namespace ErrorCodes
@@ -332,6 +333,13 @@ void KeeperServer::KeeperRaftServer::commit_in_bg()
     nuraft::raft_server::commit_in_bg();
 }
 
+void KeeperServer::KeeperRaftServer::append_entries_in_bg()
+{
+    DB::setThreadName(ThreadName::KEEPER_APPEND);
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+    nuraft::raft_server::append_entries_in_bg();
+}
+
 std::unique_lock<std::recursive_mutex> KeeperServer::KeeperRaftServer::lockRaft()
 {
     return std::unique_lock(lock_);
@@ -546,6 +554,8 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     /// still as safeguard it's better to have some redundant capacity here
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
 
+    asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::asio_streaming_mode];
+
     if (state_manager->isSecure())
     {
 #if USE_SSL
@@ -712,10 +722,6 @@ void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_f
 
 RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
 {
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds, ProfileEvents::KeeperServerWriteLockHoldMicroseconds);
-    if (is_recovering)
-        return nullptr;
-
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
     for (const auto & request_for_session : requests_for_sessions)
