@@ -29,7 +29,6 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
-    - display totals
     - show/hide the editor
     - check for readonly
     - query caching
@@ -1091,6 +1090,15 @@ class QueryResultElement extends HTMLElement
                     color: var(--misc-text-color);
                 }
 
+                tfoot td
+                {
+                    font-weight: bold;
+                    background-color: var(--table-header-color);
+                    position: sticky;
+                    bottom: -0.5rem;
+                    border: 1px solid var(--border-color);
+                }
+
                 div.empty-result
                 {
                     opacity: 10%;
@@ -1182,6 +1190,7 @@ class QueryResultElement extends HTMLElement
         this._explain_graph = '';
         this._column_is_number = {};
         this._extremes = {};
+        this._totals = null;
         this._header = {};
         this._current_selected_cell = null;
         this._uplot = null;
@@ -1227,6 +1236,7 @@ class QueryResultElement extends HTMLElement
         this._dataDiv.classList.remove('fixed');
 
         this._extremes = {};
+        this._totals = null;
         this._header = {};
         this._row_idx = 0;
         this._elapsed_ns = 0;
@@ -1465,9 +1475,33 @@ class QueryResultElement extends HTMLElement
         }
     }
 
+    renderTotals()
+    {
+        if (!this._totals) return;
+
+        let table = this._dataTable;
+        let tfoot = document.createElement('tfoot');
+        let tr = document.createElement('tr');
+
+        let td = document.createElement('td');
+        td.className = 'row-number';
+        td.appendChild(document.createTextNode('\u03A3'));
+        tr.appendChild(td);
+
+        for (const column of this._header)
+        {
+            const td = this._renderCell(column.name, this._totals[column.name]);
+            tr.appendChild(td);
+        }
+
+        tfoot.appendChild(tr);
+        table.appendChild(tfoot);
+    }
+
     transposeIfNeeded()
     {
         let table = this._dataTable;
+        if (this._totals) return;
         if (Object.keys(this._header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
         let heads = table.tHead.childNodes;
@@ -1621,6 +1655,11 @@ class QueryResultElement extends HTMLElement
             {
                 return this.appendRow(json.row, fragment);
             }
+        }
+        else if (json.totals)
+        {
+            this._totals = json.totals;
+            return true;
         }
         else if (json.min)
         {
@@ -2434,6 +2473,7 @@ async function postImpl(posted_request_num, query)
         await resultEl.renderGraph();
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
     }
 
@@ -2556,6 +2596,7 @@ async function restoreFromHistory(state) {
         await resultEl.renderGraph();
     } else {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
     }
 

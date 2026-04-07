@@ -6,6 +6,7 @@
 #include <Disks/IDisk.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/IStorage.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 #include <Core/NamesAndTypes.h>
@@ -86,6 +87,8 @@ public:
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    static VirtualColumnsDescription createVirtuals();
 
 private:
     using ReadLock = std::shared_lock<std::shared_timed_mutex>;
