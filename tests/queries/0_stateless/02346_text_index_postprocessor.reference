@@ -1,0 +1,60 @@
+1. Basic lower postprocessor.
+1
+1
+1
+1
+1
+1
+0
+1
+1
+1
+1
+1
+0
+1
+1
+1
+1
+2
+0
+2. Postprocessor using concat.
+1
+0
+1
+0
+3. Postprocessor using substring (prefix matching).
+2
+2
+1
+0
+4. Stop-word filtering postprocessor.
+1
+1
+1
+1
+5. Regex-based postprocessor.
+1
+0
+1
+1
+6. Combined preprocessor and postprocessor.
+1
+1
+1
+1
+0
+7. Partially materialized index.
+1
+1
+1
+1
+1
+1
+0
+8. Negative tests.
+- The postprocessor expression must reference the index column
+- The postprocessor expression must be a function, not an identifier
+- The postprocessor expression must return String
+- The postprocessor must not contain non-deterministic functions
+- The postprocessor must not contain arrayJoin
