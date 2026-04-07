@@ -119,7 +119,7 @@ private:
     bool needs_vectors_from_part = false;
 
     /// Reads vectors from the table data part and plugs them into the index using set_vector_at_position.
-    void loadVectorsFromPart(const IMergeTreeDataPart & part, const IMergeTreeIndex & idx, size_t mark);
+    void loadVectorsFromPart(const IMergeTreeDataPart & part, const IMergeTreeIndex & idx, size_t mark) const;
 };
 
 

@@ -306,7 +306,7 @@ void MergeTreeIndexGranuleVectorSimilarity::deserializeBinaryWithMultipleStreams
 }
 
 void MergeTreeIndexGranuleVectorSimilarity::loadVectorsFromPart(
-    const IMergeTreeDataPart & part, const IMergeTreeIndex & idx, size_t mark)
+    const IMergeTreeDataPart & part, const IMergeTreeIndex & idx, size_t mark) const
 {
     LOG_TRACE(logger, "Loading vectors for vector similarity index from table part (mark {})", mark);
 
