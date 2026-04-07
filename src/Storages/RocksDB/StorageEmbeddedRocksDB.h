@@ -98,7 +98,7 @@ public:
     /// If in_out_null_map is passed, it should mark rows to skip on input (0 = skip, 1 = process).
     /// On output, it will be updated with 1/0 depending on key was/wasn't found. Result chunk may contain default values.
     /// If in_out_null_map is not passed, not found rows are excluded from result chunk.
-    Chunk getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map) const;
+    Block getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const;
 
     bool supportsDelete() const override { return true; }
 
