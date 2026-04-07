@@ -737,7 +737,6 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::createInitialTable(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id_)
 {
-    chassert(!if_not_exists);
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
