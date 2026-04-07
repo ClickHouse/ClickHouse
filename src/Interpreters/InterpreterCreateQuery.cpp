@@ -1797,7 +1797,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool created = doCreateTable(create, properties, ddl_guard, mode);
     ddl_guard.reset();
 
-    if (!created)
+    if (!created)   /// Table already exists
     {
         if (create.has_and_insert)
         {

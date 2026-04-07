@@ -956,6 +956,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
         else
         {
+            /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
             bool has_as = false;
             if (is_create_empty || is_clone_as)
             {
@@ -1008,9 +1009,11 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         }
         else
         {
+            /// When EMPTY or CLONE was parsed, AS is required; otherwise AS is optional.
             bool has_as = false;
             if (is_create_empty || is_clone_as)
             {
+                 /// ENGINE can not be specified for table functions.
                 if (!ParserKeyword{Keyword::AS}.ignore(pos, expected))
                     return false;
                 has_as = true;
@@ -1033,7 +1036,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                             if (!name_p.parse(pos, as_table, expected))
                                 return false;
                         }
-
+                        /// Optional - ENGINE can be specified.
                         if (!storage)
                             parse_storage();
                     }

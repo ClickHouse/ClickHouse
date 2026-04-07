@@ -143,9 +143,9 @@ public:
     bool attach_short_syntax : 1 = false;
     bool replace_table : 1 = false;
     bool create_or_replace : 1 = false;
-    bool has_attach_from_path : 1 = false;
+    bool has_attach_from_path : 1 = false; /// Whether attach_from_path is set
     bool has_and_insert : 1 = false;
-    bool has_as_insert : 1 = false; /// Whether attach_from_path is set
+    bool has_as_insert : 1 = false;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override;
