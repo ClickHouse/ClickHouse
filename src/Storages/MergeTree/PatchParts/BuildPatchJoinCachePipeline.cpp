@@ -112,7 +112,7 @@ static absl::node_hash_map<String, PatchStatsMap> collectPatchStats(
 /// Returns the subset of `patch_ranges` that overlap.
 static std::set<MarkRange> filterPatchRangesByOverlap(
     const MarkRanges & patch_ranges,
-    const PatchStatsMap * patch_stats,
+    const PatchStatsMap & patch_stats,
     const std::vector<MinMaxStat> & data_block_number_ranges,
     const std::vector<MinMaxStat> & data_block_offset_ranges)
 {
@@ -120,18 +120,15 @@ static std::set<MarkRange> filterPatchRangesByOverlap(
 
     for (const auto & range : patch_ranges)
     {
-        if (patch_stats)
+        auto stat_it = patch_stats.find(range);
+
+        if (stat_it != patch_stats.end())
         {
-            auto stat_it = patch_stats->find(range);
+            if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
+                continue;
 
-            if (stat_it != patch_stats->end())
-            {
-                if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
-                    continue;
-
-                if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
-                    continue;
-            }
+            if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
+                continue;
         }
 
         result.insert(range);
@@ -173,6 +170,7 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
     absl::node_hash_map<String, std::set<MarkRange>> filtered_ranges_by_patch;
     UInt64 global_min_block = std::numeric_limits<UInt64>::max();
     UInt64 global_max_block = 0;
+    const auto & all_patch_ranges = ranges_in_patch_parts.getRanges();
 
     for (const auto & part_idx : part_indexes_with_patches)
     {
@@ -208,19 +206,27 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
                 continue;
 
             const auto & patch_name = patch_part.part->getPartName();
-            auto ranges_it = ranges_in_patch_parts.getRanges().find(patch_name);
+            auto ranges_it = all_patch_ranges.find(patch_name);
 
-            if (ranges_it == ranges_in_patch_parts.getRanges().end())
+            if (ranges_it == all_patch_ranges.end())
                 continue;
 
             auto stats_it = patch_stats_by_name.find(patch_name);
-            const PatchStatsMap * patch_stats = stats_it != patch_stats_by_name.end() ? &stats_it->second : nullptr;
 
-            auto filtered = filterPatchRangesByOverlap(
-                ranges_it->second, patch_stats,
-                data_block_number_ranges, data_block_offset_ranges);
+            if (stats_it == patch_stats_by_name.end())
+            {
+                filtered_ranges_by_patch[patch_name].insert(ranges_it->second.begin(), ranges_it->second.end());
+            }
+            else
+            {
+                auto filtered = filterPatchRangesByOverlap(
+                    ranges_it->second,
+                    stats_it->second,
+                    data_block_number_ranges,
+                    data_block_offset_ranges);
 
-            filtered_ranges_by_patch[patch_name].merge(filtered);
+                filtered_ranges_by_patch[patch_name].merge(filtered);
+            }
         }
     }
 
