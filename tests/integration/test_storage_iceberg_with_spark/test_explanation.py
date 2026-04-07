@@ -53,7 +53,7 @@ def test_explanation(started_cluster_iceberg_with_spark, format_version, storage
             [
                 "Expression ((Project names + (Projection + Change column names to column identifiers)))"
             ],
-            [f"  ReadFromObjectStorage"],
+            [f"  ReadFromIceberg"],
         ]
 
         assert res == expected

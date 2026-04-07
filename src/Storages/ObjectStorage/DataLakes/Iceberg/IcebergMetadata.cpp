@@ -752,6 +752,8 @@ std::unique_ptr<IcebergMetadata> IcebergMetadata::createInitialTable(
     }
     if (!metadata_files.empty())
     {
+        if (if_not_exists)
+            return nullptr;
         throw Exception(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getRawPath().path);
     }

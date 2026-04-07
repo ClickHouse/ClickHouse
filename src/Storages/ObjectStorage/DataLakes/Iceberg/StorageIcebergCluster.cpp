@@ -169,6 +169,8 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster<IcebergMetadata>::getTaskI
 {
     ensureMetadataInitialized(local_context);
 
+    LOG_DEBUG(getLogger("StorageIcebergCluster"), "getTaskIteratorExtension: filter={}", filter != nullptr ? "non-null" : "null");
+
     auto iterator = current_metadata->iterate(
         filter,
         local_context->getFileProgressCallback(),
