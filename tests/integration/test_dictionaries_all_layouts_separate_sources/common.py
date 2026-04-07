@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 
 KEY_FIELDS = {
     "simple": [Field("KeyField", "UInt64", is_key=True, default_value_for_get=9999999)],
@@ -348,7 +348,6 @@ class RangedLayoutTester(BaseLayoutTester):
         self.layouts = LAYOUTS_RANGED
 
     def execute(self, layout_name, node):
-
         if layout_name not in self.layout_to_dictionary:
             raise RuntimeError("Source doesn't support layout: {}".format(layout_name))
 

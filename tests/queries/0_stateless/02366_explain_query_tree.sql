@@ -1,6 +1,6 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
-EXPLAIN QUERY TREE SELECT 1;
+EXPLAIN QUERY TREE run_passes = 0 SELECT 1;
 
 SELECT '--';
 
@@ -13,7 +13,7 @@ CREATE TABLE test_table
 
 INSERT INTO test_table VALUES (0, 'Value');
 
-EXPLAIN QUERY TREE SELECT id, value FROM test_table;
+EXPLAIN QUERY TREE run_passes = 0 SELECT id, value FROM test_table;
 
 SELECT '--';
 
@@ -21,7 +21,7 @@ EXPLAIN QUERY TREE run_passes = 1 SELECT id, value FROM test_table;
 
 SELECT '--';
 
-EXPLAIN QUERY TREE SELECT arrayMap(x -> x + id, [1, 2, 3]) FROM test_table;
+EXPLAIN QUERY TREE run_passes = 0 SELECT arrayMap(x -> x + id, [1, 2, 3]) FROM test_table;
 
 SELECT '--';
 
@@ -29,7 +29,7 @@ EXPLAIN QUERY TREE run_passes = 1 SELECT arrayMap(x -> x + 1, [1, 2, 3]) FROM te
 
 SELECT '--';
 
-EXPLAIN QUERY TREE WITH x -> x + 1 AS lambda SELECT lambda(id) FROM test_table;
+EXPLAIN QUERY TREE run_passes = 0 WITH x -> x + 1 AS lambda SELECT lambda(id) FROM test_table;
 
 SELECT '--';
 

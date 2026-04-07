@@ -1,11 +1,7 @@
 #pragma once
 
-#include <unordered_map>
-#include <mutex>
-
 #include <Common/NamePrompter.h>
-
-#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -13,9 +9,11 @@ namespace DB
 {
 class BackupEntriesCollector;
 class RestorerFromBackup;
+class IUserDefinedSQLObjectsStorage;
+class WasmModuleManager;
 
 /// Factory for SQLUserDefinedFunctions
-class UserDefinedSQLFunctionFactory : public IHints<1, UserDefinedSQLFunctionFactory>
+class UserDefinedSQLFunctionFactory : public IHints<>
 {
 public:
     static UserDefinedSQLFunctionFactory & instance();
@@ -47,24 +45,14 @@ public:
     /// Restores user-defined SQL functions from the backup.
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
+    void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
+
 private:
-    friend class UserDefinedSQLObjectsLoaderFromDisk;
-    friend class UserDefinedSQLObjectsLoaderFromZooKeeper;
+    ContextPtr global_context;
 
-    /// Checks that a specified function can be registered, throws an exception if not.
-    static void checkCanBeRegistered(const ContextPtr & context, const String & function_name, const IAST & create_function_query);
-    static void checkCanBeUnregistered(const ContextPtr & context, const String & function_name);
-
-    /// The following functions must be called only by the loader.
-    void setAllFunctions(const std::vector<std::pair<String, ASTPtr>> & new_functions);
-    std::vector<std::pair<String, ASTPtr>> getAllFunctions() const;
-    void setFunction(const String & function_name, const IAST & create_function_query);
-    void removeFunction(const String & function_name);
-    void removeAllFunctionsExcept(const Strings & function_names_to_keep);
-    std::unique_lock<std::recursive_mutex> getLock() const;
-
-    std::unordered_map<String, ASTPtr> function_name_to_create_query_map;
-    mutable std::recursive_mutex mutex;
+    UserDefinedSQLFunctionFactory();
 };
+
+ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const ContextPtr & context);
 
 }

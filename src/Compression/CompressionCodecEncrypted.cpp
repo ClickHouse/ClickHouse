@@ -1,20 +1,21 @@
-#include "config.h"
 #include <string_view>
-#include <Common/Exception.h>
-#include <base/types.h>
-#include <IO/VarInt.h>
-#include <Compression/CompressionFactory.h>
+#include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <Poco/Logger.h>
+#include <Compression/CompressionFactory.h>
+#include <IO/VarInt.h>
+#include <Parsers/IAST.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/OpenSSLHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
+#include <Core/Types.h>
+#include "config.h"
 
-// This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL
-#include <openssl/digest.h>
-#include <openssl/err.h>
-#include <boost/algorithm/hex.hpp>
-#include <openssl/aead.h>
+#    include <openssl/err.h>
+#    include <boost/algorithm/hex.hpp>
+#    include <openssl/evp.h>
 #endif
 
 // Common part for both parts (with SSL and without)
@@ -24,6 +25,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int OPENSSL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+EncryptionMethod toEncryptionMethod(const std::string & name)
+{
+    if (name == "AES_128_GCM_SIV")
+        return AES_128_GCM_SIV;
+    if (name == "AES_256_GCM_SIV")
+        return AES_256_GCM_SIV;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", name);
 }
 
 namespace
@@ -33,34 +44,20 @@ namespace
 String getMethodName(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
-    {
         return "AES_128_GCM_SIV";
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
+    if (Method == AES_256_GCM_SIV)
         return "AES_256_GCM_SIV";
-    }
-    else
-    {
-        return "";
-    }
+    return "";
 }
 
 /// Get method code (used for codec, to understand which one we are using)
 uint8_t getMethodCode(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
-    {
         return static_cast<uint8_t>(CompressionMethodByte::AES_128_GCM_SIV);
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
+    if (Method == AES_256_GCM_SIV)
         return static_cast<uint8_t>(CompressionMethodByte::AES_256_GCM_SIV);
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
 } // end of namespace
@@ -75,57 +72,50 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
 
 namespace
 {
+
 constexpr size_t tag_size          = 16;   /// AES-GCM-SIV always uses a tag of 16 bytes length
 constexpr size_t key_id_max_size   = 8;    /// Max size of varint.
 constexpr size_t nonce_max_size    = 13;   /// Nonce size and one byte to show if nonce in in text
 constexpr size_t actual_nonce_size = 12;   /// Nonce actual size
 const String empty_nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", actual_nonce_size};
 
-/// Get encryption/decryption algorithms.
-auto getMethod(EncryptionMethod Method)
-{
-    if (Method == AES_128_GCM_SIV)
-    {
-        return EVP_aead_aes_128_gcm_siv;
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
-        return EVP_aead_aes_256_gcm_siv;
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
-}
-
 /// Find out key size for each algorithm
 UInt64 methodKeySize(EncryptionMethod Method)
 {
     if (Method == AES_128_GCM_SIV)
-    {
         return 16;
-    }
-    else if (Method == AES_256_GCM_SIV)
-    {
+    if (Method == AES_256_GCM_SIV)
         return 32;
-    }
-    else
-    {
-        throw Exception("Wrong encryption Method. Got " + getMethodName(Method), ErrorCodes::BAD_ARGUMENTS);
-    }
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
-std::string lastErrorString()
+/// Get encryption/decryption algorithms.
+const char * getMethod(EncryptionMethod Method)
 {
-    std::array<char, 1024> buffer = {};
-    ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
-    return std::string(buffer.data());
+    /// The encrypting codecs were originally implemented using boringssl's API. At a later point and for FIPS-related reasons, an
+    /// implementation based on OpenSSL was added specifically for s390/x. At that time, OpenSSL did not provide *-SIV ciphers (they were
+    /// only added with OpenSSL 3.2), whereas boringssl provided them for ages. As a result, s390/x used non-SIV ciphers instead (leading to
+    /// a different ciphertext / persistence). When ClickHouse migrated to OpenSSL on all platforms, this twist for s390/x needed to be kept,
+    /// otherwise encrypted data on s390/x can no longer be read.
+    if (Method == AES_128_GCM_SIV)
+#if defined(__s390x__)
+        return "AES-128-GCM";
+#else
+        return "AES-128-GCM-SIV";
+#endif
+    else if (Method == AES_256_GCM_SIV)
+#if defined(__s390x__)
+        return "AES-256-GCM";
+#else
+        return "AES-256-GCM-SIV";
+#endif
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown encryption method. Got {}", getMethodName(Method));
 }
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
@@ -134,27 +124,55 @@ std::string lastErrorString()
 /// It returns length of encrypted text.
 size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, EncryptionMethod method, const String & key, const String & nonce)
 {
-    /// Init context for encryption, using key.
-    EVP_AEAD_CTX encrypt_ctx;
-    EVP_AEAD_CTX_zero(&encrypt_ctx);
-    const int ok_init = EVP_AEAD_CTX_init(&encrypt_ctx, getMethod(method)(),
-                                            reinterpret_cast<const uint8_t*>(key.data()), key.size(),
-                                            tag_size, nullptr);
-    if (!ok_init)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    int out_len;
+    int ciphertext_len;
 
-    /// encrypt data using context and given nonce.
-    size_t out_len;
-    const int ok_open = EVP_AEAD_CTX_seal(&encrypt_ctx,
-                                            reinterpret_cast<uint8_t *>(ciphertext_and_tag),
-                                            &out_len, plaintext.size() + tag_size,
-                                            reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
-                                            reinterpret_cast<const uint8_t *>(plaintext.data()), plaintext.size(),
-                                            nullptr, 0);
-    if (!ok_open)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    using EVP_CIPHER_CTX_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
+    const auto ctx = EVP_CIPHER_CTX_ptr(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
 
-    return out_len;
+    using EVP_CIPHER_ptr = std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)>;
+    const auto cipher = EVP_CIPHER_ptr(EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr), EVP_CIPHER_free);
+    if (!cipher)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_fetch failed: {}", getOpenSSLErrors());
+
+    if (EVP_EncryptInit_ex(ctx.get(), cipher.get(), nullptr, nullptr, nullptr) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
+
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
+
+    if (EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr,
+                            reinterpret_cast<const uint8_t*>(key.data()),
+                            reinterpret_cast<const uint8_t *>(nonce.data())) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptInit_ex failed: {}", getOpenSSLErrors());
+
+    if (EVP_EncryptUpdate(ctx.get(),
+                           reinterpret_cast<uint8_t *>(ciphertext_and_tag),
+                           &out_len,
+                           reinterpret_cast<const uint8_t *>(plaintext.data()),
+                           static_cast<int32_t>(plaintext.size())) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptUpdate failed: {}", getOpenSSLErrors());
+
+    __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
+
+    ciphertext_len = out_len;
+
+    if (EVP_EncryptFinal_ex(ctx.get(),
+                             reinterpret_cast<uint8_t *>(ciphertext_and_tag) + out_len,
+                             reinterpret_cast<int32_t *>(&out_len)) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_EncryptFinal_ex failed: {}", getOpenSSLErrors());
+
+    __msan_unpoison(ciphertext_and_tag, out_len); /// OpenSSL uses assembly which evades msan's analysis
+
+    ciphertext_len += out_len;
+
+    /// Get the tag
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, tag_size, reinterpret_cast<uint8_t *>(ciphertext_and_tag) + plaintext.size()) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
+
+    return ciphertext_len + tag_size;
 }
 
 /// Encrypt plaintext with particular algorithm and put result into ciphertext_and_tag.
@@ -163,28 +181,55 @@ size_t encrypt(std::string_view plaintext, char * ciphertext_and_tag, Encryption
 /// It returns length of encrypted text.
 size_t decrypt(std::string_view ciphertext, char * plaintext, EncryptionMethod method, const String & key, const String & nonce)
 {
-    /// Init context for decryption with given key.
-    EVP_AEAD_CTX decrypt_ctx;
-    EVP_AEAD_CTX_zero(&decrypt_ctx);
+    int out_len;
+    int plaintext_len;
 
-    const int ok_init = EVP_AEAD_CTX_init(&decrypt_ctx, getMethod(method)(),
-                                          reinterpret_cast<const uint8_t*>(key.data()), key.size(),
-                                          tag_size, nullptr);
-    if (!ok_init)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    using EVP_CIPHER_CTX_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
+    const auto ctx = EVP_CIPHER_CTX_ptr(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
 
-    /// decrypt data using given nonce
-    size_t out_len;
-    const int ok_open = EVP_AEAD_CTX_open(&decrypt_ctx,
-                                          reinterpret_cast<uint8_t *>(plaintext),
-                                          &out_len, ciphertext.size(),
-                                          reinterpret_cast<const uint8_t *>(nonce.data()), nonce.size(),
-                                          reinterpret_cast<const uint8_t *>(ciphertext.data()), ciphertext.size(),
-                                          nullptr, 0);
-    if (!ok_open)
-        throw Exception(lastErrorString(), ErrorCodes::OPENSSL_ERROR);
+    using EVP_CIPHER_ptr = std::unique_ptr<EVP_CIPHER, decltype(&EVP_CIPHER_free)>;
+    const auto cipher = EVP_CIPHER_ptr(EVP_CIPHER_fetch(nullptr, getMethod(method), nullptr), EVP_CIPHER_free);
+    if (!cipher)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_fetch failed: {}", getOpenSSLErrors());
 
-    return out_len;
+    if (EVP_DecryptInit_ex(ctx.get(), cipher.get(), nullptr, nullptr, nullptr) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
+
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int32_t>(nonce.size()), nullptr) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
+
+    if (EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr,
+                            reinterpret_cast<const uint8_t*>(key.data()),
+                            reinterpret_cast<const uint8_t *>(nonce.data())) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptInit_ex failed: {}", getOpenSSLErrors());
+
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(),
+                             EVP_CTRL_GCM_SET_TAG,
+                             tag_size,
+                             reinterpret_cast<uint8_t *>(const_cast<char *>(ciphertext.data())) + ciphertext.size() - tag_size) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_ctrl failed: {}", getOpenSSLErrors());
+
+    if (EVP_DecryptUpdate(ctx.get(),
+                           reinterpret_cast<uint8_t *>(plaintext),
+                           reinterpret_cast<int32_t *>(&out_len),
+                           reinterpret_cast<const uint8_t *>(ciphertext.data()),
+                           static_cast<int32_t>(ciphertext.size()) - tag_size) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptUpdate failed: {}", getOpenSSLErrors());
+
+    __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
+
+    plaintext_len = out_len;
+
+    if (EVP_DecryptFinal_ex(ctx.get(),
+                             reinterpret_cast<uint8_t *>(plaintext) + out_len,
+                             reinterpret_cast<int32_t *>(&out_len)) != 1)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DecryptFinal_ex failed: {}", getOpenSSLErrors());
+
+    __msan_unpoison(plaintext, out_len); /// OpenSSL uses assembly which evades msan's analysis
+
+    return plaintext_len + out_len;
 }
 
 /// Register codec in factory
@@ -196,9 +241,8 @@ void registerEncryptionCodec(CompressionCodecFactory & factory, EncryptionMethod
         if (arguments)
         {
             if (!arguments->children.empty())
-                throw Exception("Codec " + getMethodName(Method) + " must not have parameters, given " +
-                                std::to_string(arguments->children.size()),
-                                ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Codec {} must not have parameters, given {}",
+                                getMethodName(Method), arguments->children.size());
         }
         return std::make_shared<CompressionCodecEncrypted>(Method);
     });
@@ -229,21 +273,21 @@ inline char* writeNonce(const String& nonce, char* dest)
         ++dest;
         size_t copied_symbols = nonce.copy(dest, nonce.size());
         if (copied_symbols != nonce.size())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}", copied_symbols, nonce.size());
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                            "Can't copy nonce into destination. Count of copied symbols {}, need to copy {}",
+                            copied_symbols, nonce.size());
         dest += copied_symbols;
         return dest;
     }
-    else
-    {
-        *dest = 0;
-        return ++dest;
-    }
+
+    *dest = 0;
+    return ++dest;
 }
 
 /// Firstly, read a byte, which shows if the nonce will be put in text (if it was defined in config)
 /// Secondly, read nonce in text (this step depends from first step)
 /// return new position to read
-inline const char* readNonce(String& nonce, const char* source)
+inline const char * readNonce(String & nonce, const char * source)
 {
     /// If first is zero byte: move source and set zero-bytes nonce
     if (!*source)
@@ -273,7 +317,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 {
     // if method is not smaller than MAX_ENCRYPTION_METHOD it is incorrect
     if (method >= MAX_ENCRYPTION_METHOD)
-        throw Exception("Wrong argument for loading configurations.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong argument for loading configurations.");
 
     /// Scan all keys in config and add them into storage. If key is in hex, transform it.
     /// Remember key ID for each key, because it will be used in encryption/decryption
@@ -323,7 +367,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
 
         /// If there is only one key with non zero ID, curren_key_id should be defined.
         if (new_params->keys_storage[method].size() == 1 && !new_params->keys_storage[method].contains(0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. сurrent_key_id is required");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. current_key_id is required");
     }
 
     /// Try to find which key will be used for encryption. If there is no current_key and only one key without id
@@ -341,7 +385,8 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         new_params->nonce[method] = config.getString(config_prefix + ".nonce", "");
 
     if (new_params->nonce[method].size() != actual_nonce_size && !new_params->nonce[method].empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}", new_params->nonce[method].size(), actual_nonce_size);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}",
+                        new_params->nonce[method].size(), actual_nonce_size);
 }
 
 bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
@@ -363,26 +408,31 @@ bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
 
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    /// Try to create new parameters and fill them from config.
-    /// If there will be some errors, throw error
-    std::unique_ptr<Params> new_params(new Params);
-    if (config.has(config_prefix + ".aes_128_gcm_siv"))
+    /// Try to create new parameters and fill them from config, if any encryption method parameter is found
+    /// In case of an error, throw exception
+    std::unique_ptr<Params> new_params;
+    static constexpr std::pair<std::string_view, EncryptionMethod> config_encryption_methods[] =
+        {{".aes_128_gcm_siv", AES_128_GCM_SIV}, {".aes_256_gcm_siv", AES_256_GCM_SIV}};
+    for (const auto& config_encryption_method : config_encryption_methods)
     {
-        loadImpl(config, config_prefix + ".aes_128_gcm_siv", AES_128_GCM_SIV, new_params);
-    }
-    if (config.has(config_prefix + ".aes_256_gcm_siv"))
-    {
-        loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
+        auto encryption_method_key = config_prefix + config_encryption_method.first.data();
+        if (config.has(encryption_method_key))
+        {
+            if (!new_params)
+                new_params = std::make_unique<Params>();
+            loadImpl(config, encryption_method_key, config_encryption_method.second, new_params);
+        }
     }
 
-    params.set(std::move(new_params));
+    if (new_params)
+        params.set(std::move(new_params));
 }
 
 void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String &current_key, String & nonce) const
 {
     /// It parameters were not set, throw exception
     if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
 
     /// Save parameters in variable, because they can always change.
     /// As this function not atomic, we should be certain that we get information from one particular version for correct work.
@@ -409,7 +459,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     String key;
     /// See description of previous finction, logic is the same.
     if (!params.get())
-        throw Exception("Empty params in CompressionCodecEncrypted configuration", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty params in CompressionCodecEncrypted configuration");
 
     const auto current_params = params.get();
 
@@ -417,7 +467,7 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
     if (current_params->keys_storage[method].contains(key_id))
         key = current_params->keys_storage[method].at(key_id);
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config", key_id);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no key {} in config for {} encryption codec", key_id, getMethodName(method));
 
     return key;
 }
@@ -435,7 +485,7 @@ uint8_t CompressionCodecEncrypted::getMethodByte() const
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -461,7 +511,8 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Get key and nonce for encryption
     UInt64 current_key_id;
-    String current_key, nonce;
+    String current_key;
+    String nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
 
     /// Write current key id to support multiple keys.
@@ -479,13 +530,15 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Length of encrypted text should be equal to text length plus tag_size (which was added by algorithm).
     if (out_len != source_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't encrypt data, length after encryption {} is wrong, expected {}", out_len, source_size + tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't encrypt data, length after encryption {} is wrong, expected {}",
+                        out_len, source_size + tag_size);
 
     size_t out_size = out_len + keyid_size + nonce_size;
     return safe_cast<UInt32>(out_size);
 }
 
-void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     /// The key is needed for decrypting. That's why it is read at the beginning of process.
     UInt64 key_id;
@@ -505,12 +558,17 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
     /// Count text size (nonce and key_id was read from source)
     size_t ciphertext_size = source_size - keyid_size - nonce_size;
     if (ciphertext_size != uncompressed_size + tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}", uncompressed_size, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, uncompressed_size {} is wrong, expected {}",
+                        uncompressed_size, ciphertext_size - tag_size);
 
 
     size_t out_len = decrypt({ciphertext, ciphertext_size}, dest, encryption_method, key, nonce);
     if (out_len != ciphertext_size - tag_size)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't decrypt data, out length after decryption {} is wrong, expected {}", out_len, ciphertext_size - tag_size);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't decrypt data, out length after decryption {} is wrong, expected {}",
+                        out_len, ciphertext_size - tag_size);
+
+    return static_cast<UInt32>(out_len);
 }
 
 }
@@ -548,7 +606,7 @@ bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
 /// if encryption is disabled, print warning about this.
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config [[maybe_unused]], const String & config_prefix [[maybe_unused]])
 {
-    LOG_WARNING(&Poco::Logger::get("CompressionCodecEncrypted"), "Server was built without SSL support. Encryption is disabled.");
+    LOG_WARNING(getLogger("CompressionCodecEncrypted"), "Server was built without SSL support. Encryption is disabled.");
 }
 
 }

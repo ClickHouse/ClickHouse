@@ -1,18 +1,33 @@
 #include <gtest/gtest.h>
 
-#include <atomic>
-#include <barrier>
-#include <memory>
-#include <random>
-
+#include <Common/Exception.h>
+#include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+
+#include <barrier>
+#include <functional>
+#include <latch>
+#include <memory>
+#include <random>
+#include <thread>
+
 
 using namespace DB;
 
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric BackgroundMergesAndMutationsPoolSize;
+}
+
+namespace ProfileEvents
+{
+    extern const Event CommonBackgroundExecutorTaskExecuteStepMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
+    extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
+    extern const Event CommonBackgroundExecutorWaitMicroseconds;
 }
 
 std::random_device device;
@@ -31,12 +46,14 @@ public:
 
         auto choice = distribution(generator);
         if (choice == 0)
-            throw std::runtime_error("Unlucky...");
+            throw TestException();
 
         return false;
     }
 
-    StorageID getStorageID() override
+    void cancel() noexcept override { /* no op */ }
+
+    StorageID getStorageID() const override
     {
         return {"test", name};
     }
@@ -45,18 +62,100 @@ public:
     {
         auto choice = distribution(generator);
         if (choice == 0)
-            throw std::runtime_error("Unlucky...");
+            throw TestException();
     }
 
-    UInt64 getPriority() override { return 0; }
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return {}; }
 
 private:
     std::mt19937 generator;
     std::uniform_int_distribution<> distribution;
 
     String name;
-    std::function<void()> on_completed;
 };
+
+using StepFunc = std::function<void(const String & name, size_t steps_left)>;
+
+class LambdaExecutableTask : public IExecutableTask
+{
+public:
+    explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, Int64 priority_value = 0)
+        : name(name_)
+        , step_count(step_count_)
+        , step_func(step_func_)
+        , priority{priority_value}
+    {}
+
+    bool executeStep() override
+    {
+        if (step_func)
+            step_func(name, step_count);
+        return --step_count;
+    }
+
+    void cancel() noexcept override { chassert(false, "Not implemented"); }
+
+    StorageID getStorageID() const override
+    {
+        return {"test", name};
+    }
+
+    void onCompleted() override {}
+
+    Priority getPriority() const override { return priority; }
+    String getQueryId() const override { return "test::lambda"; }
+
+private:
+    String name;
+    size_t step_count;
+    StepFunc step_func;
+    Priority priority;
+};
+
+
+TEST(Executor, Simple)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        100, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    String schedule; // mutex is not required because we have a single worker
+    String expected_schedule = "ABCDEABCDABCDBCDCDD";
+    std::barrier<std::__empty_completion> barrier(2);
+    auto task = [&] (const String & name, size_t)
+    {
+        schedule += name;
+        if (schedule.size() == expected_schedule.size())
+            barrier.arrive_and_wait();
+    };
+
+    // Schedule tasks from this `init_task` to guarantee atomicity.
+    // Worker will see pending queue when we push all tasks.
+    // This is required to check scheduling properties of round-robin in deterministic way.
+    auto init_task = [&] (const String &, size_t)
+    {
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("A", 3, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("B", 4, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("C", 5, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("D", 6, task));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("E", 1, task));
+    };
+
+    executor->trySchedule(std::make_shared<LambdaExecutableTask>("init_task", 1, init_task));
+    barrier.arrive_and_wait(); // Do not finish until tasks are done
+    executor->wait();
+    ASSERT_EQ(schedule, expected_schedule);
+}
 
 
 TEST(Executor, RemoveTasks)
@@ -64,19 +163,23 @@ TEST(Executor, RemoveTasks)
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    auto executor = std::make_shared<DB::OrdinaryBackgroundExecutor>
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         tasks_kinds,
         tasks_kinds * batch,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
     for (size_t i = 0; i < batch; ++i)
         for (size_t j = 0; j < tasks_kinds; ++j)
             ASSERT_TRUE(
-                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j)))
-            );
+                executor->trySchedule(std::make_shared<FakeExecutableTask>(std::to_string(j))));
 
     std::vector<std::thread> threads(batch);
 
@@ -105,15 +208,20 @@ TEST(Executor, RemoveTasksStress)
     const size_t schedulers_count = 5;
     const size_t removers_count = 5;
 
-    auto executor = std::make_shared<DB::OrdinaryBackgroundExecutor>
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
     );
 
-    std::barrier barrier(schedulers_count + removers_count);
+    std::barrier<std::__empty_completion> barrier(schedulers_count + removers_count);
 
     auto scheduler_routine = [&] ()
     {
@@ -150,4 +258,135 @@ TEST(Executor, RemoveTasksStress)
     executor->wait();
 
     ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
+}
+
+
+TEST(Executor, UpdatePolicy)
+{
+    auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<DynamicRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        100, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    String schedule; // mutex is not required because we have a single worker
+    String expected_schedule = "ABCDEDDDDDCCBACBACB";
+    std::barrier<std::__empty_completion> barrier(2);
+    auto task = [&] (const String & name, size_t)
+    {
+        schedule += name;
+        if (schedule.size() == 5)
+            executor->updateSchedulingPolicy(PriorityRuntimeQueue::name);
+        if (schedule.size() == 12)
+            executor->updateSchedulingPolicy(RoundRobinRuntimeQueue::name);
+        if (schedule.size() == expected_schedule.size())
+            barrier.arrive_and_wait();
+    };
+
+    // Schedule tasks from this `init_task` to guarantee atomicity.
+    // Worker will see pending queue when we push all tasks.
+    // This is required to check scheduling properties in a deterministic way.
+    auto init_task = [&] (const String &, size_t)
+    {
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("A", 3, task, 5));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("B", 4, task, 4));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("C", 5, task, 3));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("D", 6, task, 2));
+        executor->trySchedule(std::make_shared<LambdaExecutableTask>("E", 1, task, 1));
+    };
+
+    executor->trySchedule(std::make_shared<LambdaExecutableTask>("init_task", 1, init_task));
+    barrier.arrive_and_wait(); // Do not finish until tasks are done
+    executor->wait();
+    ASSERT_EQ(schedule, expected_schedule);
+}
+
+
+/// Task whose destructor is artificially slow, simulating expensive cleanup
+/// (e.g. finalizing write buffers, releasing table locks).
+class SlowDestructorTask : public IExecutableTask
+{
+public:
+    SlowDestructorTask(const String & name_, std::latch & destruction_started_, std::chrono::milliseconds delay_)
+        : name(name_)
+        , destruction_started(destruction_started_)
+        , delay(delay_)
+    {}
+
+    ~SlowDestructorTask() override
+    {
+        destruction_started.count_down();
+        std::this_thread::sleep_for(delay);
+    }
+
+    bool executeStep() override { return false; }
+    void cancel() noexcept override {}
+    StorageID getStorageID() const override { return {"test", name}; }
+    void onCompleted() override {}
+    Priority getPriority() const override { return {}; }
+    String getQueryId() const override { return "test::slow_destructor"; }
+
+private:
+    String name;
+    std::latch & destruction_started;
+    std::chrono::milliseconds delay;
+};
+
+
+/// Demonstrates that slow task destruction blocks `removeTasksCorrespondingToStorage`
+/// because `resetTask` is called while holding the executor's mutex.
+///
+/// The test schedules a task with a slow destructor for storage "slow_storage",
+/// waits for destruction to begin (meaning the mutex is held), then calls
+/// `removeTasksCorrespondingToStorage` for a completely UNRELATED storage.
+/// That call should complete instantly but instead gets blocked for the
+/// entire duration of the task destructor.
+TEST(Executor, SlowTaskDestructionBlocksRemoveTasks)
+{
+    static constexpr int DESTRUCTION_DELAY_MS = 500;
+
+    /// Declared before executor so it outlives it (executor's destructor calls `wait`).
+    std::latch destruction_started(1);
+
+    auto executor = std::make_shared<MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
+    (
+        ThreadName::TEST_SCHEDULER,
+        1, // threads
+        10, // max_tasks
+        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
+        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
+        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+    );
+
+    executor->trySchedule(std::make_shared<SlowDestructorTask>(
+        "slow_storage", destruction_started, std::chrono::milliseconds(DESTRUCTION_DELAY_MS)));
+
+    /// Wait until the worker thread enters the task's destructor,
+    /// which means the executor's mutex is held by `release_task`.
+    destruction_started.wait();
+
+    /// Call `removeTasksCorrespondingToStorage` for a completely unrelated storage.
+    /// This needs the mutex only briefly (scan queues, find nothing, return),
+    /// but will be blocked for the entire duration of the slow destructor.
+    Stopwatch watch;
+    executor->removeTasksCorrespondingToStorage({"test", "unrelated_storage"});
+    auto elapsed_ms = watch.elapsedMilliseconds();
+
+    /// After fixing the issue (moving `resetTask` outside the lock),
+    /// this should complete in under 50 ms. Currently it takes ~500 ms.
+    EXPECT_LT(elapsed_ms, 100)
+        << "removeTasksCorrespondingToStorage for an unrelated storage was blocked for "
+        << elapsed_ms << " ms by slow task destruction holding the mutex";
+
+    executor->wait();
 }

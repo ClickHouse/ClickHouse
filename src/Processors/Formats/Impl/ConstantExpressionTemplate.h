@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
-#include <Parsers/TokenIterator.h>
-#include <Parsers/IAST.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
+#include <Parsers/LiteralTokenInfo.h>
+#include <Parsers/TokenIterator.h>
 
 namespace DB
 {
@@ -16,6 +16,9 @@ struct SpecialParserType;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+struct FormatSettings;
+struct Settings;
+
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
 /// Using ConstantExpressionTemplate for one expression is slower then evaluateConstantExpression(...),
@@ -24,12 +27,15 @@ class ConstantExpressionTemplate : boost::noncopyable
 {
     struct TemplateStructure : boost::noncopyable
     {
-        TemplateStructure(LiteralsInfo & replaced_literals, TokenIterator expression_begin, TokenIterator expression_end,
+        TemplateStructure(LiteralsInfo & replaced_literals,
+                          TokenIterator expression_begin, TokenIterator expression_end,
                           ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
-        static size_t getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
+        static UInt64 getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
                                       const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
+
+        String dumpTemplate() const;
 
         String result_column_name;
 
@@ -61,6 +67,7 @@ public:
                                                      TokenIterator expression_begin,
                                                      TokenIterator expression_end,
                                                      const ASTPtr & expression_,
+                                                     const LiteralTokenMap & token_map,
                                                      ContextPtr context,
                                                      bool * found_in_cache = nullptr,
                                                      const String & salt = {});
@@ -71,7 +78,8 @@ public:
 
     /// Read expression from istr, assert it has the same structure and the same types of literals (template matches)
     /// and parse literals into temporary columns
-    bool parseExpression(ReadBuffer & istr, const FormatSettings & format_settings, const Settings & settings);
+    bool parseExpression(
+        ReadBuffer & istr, const TokenIterator & token_iterator, const FormatSettings & format_settings, const Settings & settings);
 
     /// Evaluate batch of expressions were parsed using template.
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
@@ -80,10 +88,15 @@ public:
     size_t rowsCount() const { return rows_count; }
 
 private:
-    bool tryParseExpression(ReadBuffer & istr, const FormatSettings & format_settings, size_t & cur_column, const Settings & settings);
-    bool parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * type, size_t column_idx, const Settings & settings);
+    bool tryParseExpression(
+        ReadBuffer & istr,
+        const TokenIterator & token_iterator,
+        const FormatSettings & format_settings,
+        size_t & cur_column,
+        const Settings & settings);
+    bool parseLiteralAndAssertType(
+        ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 
-private:
     TemplateStructurePtr structure;
     MutableColumns columns;
 

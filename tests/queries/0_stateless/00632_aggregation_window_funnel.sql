@@ -1,3 +1,4 @@
+-- { echoOn }
 drop table if exists funnel_test;
 
 create table funnel_test (timestamp UInt32, event UInt32) engine=Memory;
@@ -93,6 +94,60 @@ insert into funnel_test_strict_increase values (0,1000),(1,1001),(1,1002),(1,100
 select 5 = windowFunnel(10000)(timestamp, event = 1000, event = 1001, event = 1002, event = 1003, event = 1004) from funnel_test_strict_increase;
 select 2 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1000, event = 1001, event = 1002, event = 1003, event = 1004) from funnel_test_strict_increase;
 select 3 = windowFunnel(10000)(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
+select 1 = windowFunnel(10000, 'strict_once')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 select 1 = windowFunnel(10000, 'strict_increase')(timestamp, event = 1004, event = 1004, event = 1004) from funnel_test_strict_increase;
 
+
+
+DROP TABLE IF EXISTS funnel_test2;
+create table funnel_test2 (event_ts UInt32, result String, uid UInt32) engine=Memory;
+insert into funnel_test2 SELECT data.1, data.2, data.3  FROM (
+        SELECT arrayJoin([
+            (100, 'failure', 234),
+            (200, 'success', 345),
+            (210, 'failure', 345),
+            (230, 'success', 345),
+            (250, 'failure', 234),
+            (180, 'failure', 123),
+            (220, 'failure', 123),
+            (250, 'success', 123)
+        ]) data);
+
+SELECT '-';
+SELECT uid, windowFunnel(200, 'strict_once', 'strict_increase')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
+SELECT '-';
+SELECT uid, windowFunnel(200, 'strict_once')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
+SELECT '-';
+SELECT uid, windowFunnel(200, 'strict_once', 'strict_deduplication')( toUInt32(event_ts), result='failure', result='failure', result='success' )
+FROM funnel_test2 WHERE event_ts >= 0 AND event_ts <= 300 GROUP BY uid ORDER BY uid;
+SELECT '-';
+
+DROP TABLE IF EXISTS funnel_test2;
+
+
 drop table funnel_test_strict_increase;
+
+drop table if exists funnel_test_reentry;
+create table funnel_test_reentry (uid Int32, dt UInt32, event String) engine = Memory;
+insert into funnel_test_reentry values (1, 10, 'a'), (1, 20, 'a'), (1, 30, 'b'), (1, 40, 'a'), (1, 50, 'c');
+insert into funnel_test_reentry values (2, 10, 'a'), (2, 20, 'c'), (2, 30, 'b'), (2, 40, 'c');
+insert into funnel_test_reentry values (3, 10, 'a'), (3, 20, 'c');
+
+select uid, windowFunnel(100, 'strict_order')(dt, event='a', event='b', event='a', event='c') as res
+from funnel_test_reentry where uid = 1 group by uid format JSONCompactEachRow;
+
+select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='a', event='c') as res
+from funnel_test_reentry where uid = 1 group by uid format JSONCompactEachRow;
+
+select uid, windowFunnel(100, 'strict_order')(dt, event='a', event='b', event='c') as res
+from funnel_test_reentry where uid = 2 group by uid format JSONCompactEachRow;
+
+select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c') as res
+from funnel_test_reentry where uid = 2 group by uid format JSONCompactEachRow;
+
+select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c') as res
+from funnel_test_reentry where uid = 3 group by uid format JSONCompactEachRow;
+drop table funnel_test_reentry;
+

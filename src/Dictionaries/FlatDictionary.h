@@ -2,18 +2,19 @@
 
 #include <atomic>
 #include <variant>
-#include <vector>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/IDataType.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryHelpers.h"
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/IDictionary.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryHelpers.h>
 
 namespace DB
 {
@@ -27,6 +28,7 @@ public:
         size_t max_array_size;
         bool require_nonempty;
         DictionaryLifetime dict_lifetime;
+        bool use_async_executor = false;
     };
 
     FlatDictionary(
@@ -40,23 +42,23 @@ public:
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(); }
 
     double getFoundRate() const override
     {
-        size_t queries = query_count.load(std::memory_order_relaxed);
+        size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(found_count.load(std::memory_order_relaxed)) / queries;
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
+    double getLoadFactor() const override { return static_cast<double>(element_count) / static_cast<double>(bucket_count); }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
@@ -75,11 +77,11 @@ public:
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Simple; }
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
-        const DataTypePtr & result_type,
+        const std::string & attribute_name,
+        const DataTypePtr & attribute_type,
         const Columns & key_columns,
         const DataTypes & key_types,
-        const ColumnPtr & default_values_column) const override;
+        DefaultOrFilter default_or_filter) const override;
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
@@ -106,13 +108,12 @@ public:
 
 private:
     template <typename Value>
-    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
+    using ContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
 
-    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>>;
+    using NullableSet = HashSet<UInt64, DefaultHash<UInt64>, HashTableGrower<>>;
 
     struct Attribute final
     {
-        AttributeUnderlyingType type;
         std::optional<NullableSet> is_nullable_set;
 
         std::variant<
@@ -136,9 +137,13 @@ private:
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,
-            ContainerType<StringRef>,
+            ContainerType<IPv4>,
+            ContainerType<IPv6>,
+            ContainerType<std::string_view>,
             ContainerType<Array>>
             container;
+
+        AttributeUnderlyingType type;
     };
 
     void createAttributes();
@@ -162,6 +167,10 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    void getItemsShortCircuitImpl(
+        const Attribute & attribute, const PaddedPODArray<UInt64> & keys, ValueSetter && set_value, IColumn::Filter & default_mask) const;
+
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
 
@@ -171,8 +180,8 @@ private:
     const DictionarySourcePtr source_ptr;
     const Configuration configuration;
 
-    std::vector<Attribute> attributes;
-    std::vector<bool> loaded_keys;
+    VectorWithMemoryTracking<Attribute> attributes;
+    VectorWithMemoryTracking<bool> loaded_keys;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;

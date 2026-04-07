@@ -27,6 +27,7 @@ public:
         const String & remote_table_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
+        const String & comment,
         ContextPtr context_);
 
     std::string getName() const override { return "SQLite"; }
@@ -40,13 +41,20 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
+
+    static ColumnsDescription getTableStructureFromData(
+        const SQLitePtr & sqlite_db_,
+        const String & table);
 
 private:
+    friend class SQLiteSink; /// for write_context
+
     String remote_table_name;
     String database_path;
     SQLitePtr sqlite_db;
-    Poco::Logger * log;
+    LoggerPtr log;
+    ContextPtr write_context;
 };
 
 }

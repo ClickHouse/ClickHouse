@@ -17,8 +17,6 @@ namespace DB
     {
         extern const int ILLEGAL_COLUMN;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-        extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-        extern const int CANNOT_PARSE_DATE;
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
@@ -52,9 +50,8 @@ namespace DB
             }
             else
             {
-                 throw Exception("Illegal column " + col_from->getName()
-                                 + " of first argument of function " + Name::name,
-                                 ErrorCodes::ILLEGAL_COLUMN);
+                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                                 col_from->getName(), Name::name);
             }
 
             using ColVecTo = typename ToDataType::ColumnType;
@@ -73,33 +70,24 @@ namespace DB
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t next_offset = offsets ? (*offsets)[i] : current_offset + fixed_string_size;
-                const size_t string_size = offsets ? next_offset - current_offset - 1 : fixed_string_size;
+                const size_t string_size = offsets ? next_offset - current_offset : fixed_string_size;
                 ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
                 current_offset = next_offset;
 
                 if constexpr (nullOnErrors)
                 {
-                    try
-                    {
-                        const GregorianDate<> date(read_buffer);
-                        vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
-                        vec_null_map_to[i] = false;
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::CANNOT_PARSE_DATE)
-                        {
-                            vec_to[i] = static_cast<Int32>(0);
-                            vec_null_map_to[i] = true;
-                        }
-                        else
-                            throw;
-                    }
+                    GregorianDate date;
+
+                    int64_t res = 0;
+                    bool success = date.tryInit(read_buffer) && date.tryToModifiedJulianDay(res);
+
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(res);
+                    vec_null_map_to[i] = !success;
                 }
                 else
                 {
-                    const GregorianDate<> date(read_buffer);
-                    vec_to[i] = date.toModifiedJulianDay<typename ToDataType::FieldType>();
+                    const GregorianDate date(read_buffer);
+                    vec_to[i] = static_cast<typename ToDataType::FieldType>(date.toModifiedJulianDay());
                 }
             }
 
@@ -147,7 +135,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool hasInformationAboutMonotonicity() const override
@@ -157,6 +145,9 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple invalid inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
@@ -192,8 +183,8 @@ namespace DB
         {
             if (!isStringOrFixedString(arguments[0]))
             {
-                throw Exception(
-                    "The argument of function " + getName() + " must be String or FixedString", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument of function {} must be String or FixedString",
+                    getName());
             }
 
             DataTypePtr base_type = std::make_shared<ToDataType>();
@@ -214,7 +205,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 
@@ -230,7 +221,65 @@ namespace DB
 
     REGISTER_FUNCTION(ToModifiedJulianDay)
     {
-        factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>();
-        factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>();
+        FunctionDocumentation::Description description_toModifiedJulianDay = R"(
+Converts a [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar) date in text form `YYYY-MM-DD` to a [Modified Julian Day](https://en.wikipedia.org/wiki/Julian_day#Variants) number in `Int32`. This function supports date from `0000-01-01` to `9999-12-31`. It raises an exception if the argument cannot be parsed as a date, or the date is invalid.
+    )";
+        FunctionDocumentation::Syntax syntax_toModifiedJulianDay = R"(
+toModifiedJulianDay(date)
+    )";
+        FunctionDocumentation::Arguments arguments_toModifiedJulianDay =
+        {
+            {"date", "The date in String form.", {"String", "FixedString"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDay = {"Returns Modified Julian Day number.", {"Int32"}};
+        FunctionDocumentation::Examples examples_toModifiedJulianDay =
+        {
+            {"Convert date to Modified Julian Day", R"(
+SELECT toModifiedJulianDay('2020-01-01')
+        )",
+            R"(
+┌─toModifiedJulianDay('2020-01-01')─┐
+│                             58849 │
+└───────────────────────────────────┘
+        )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDay = {21, 1};
+        FunctionDocumentation::Category category_toModifiedJulianDay = FunctionDocumentation::Category::DateAndTime;
+        FunctionDocumentation documentation_toModifiedJulianDay = {description_toModifiedJulianDay, syntax_toModifiedJulianDay, arguments_toModifiedJulianDay, {}, returned_value_toModifiedJulianDay, examples_toModifiedJulianDay, introduced_in_toModifiedJulianDay, category_toModifiedJulianDay};
+
+        factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDay, DataTypeInt32, false>>(documentation_toModifiedJulianDay);
+
+        FunctionDocumentation::Description description_toModifiedJulianDayOrNull = R"(
+Similar to [`toModifiedJulianDay()`](#toModifiedJulianDay), but instead of raising exceptions it returns `NULL`.
+    )";
+        FunctionDocumentation::Syntax syntax_toModifiedJulianDayOrNull = R"(
+toModifiedJulianDayOrNull(date)
+    )";
+        FunctionDocumentation::Arguments arguments_toModifiedJulianDayOrNull =
+        {
+            {"date", "Date in text form.", {"String", "FixedString"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value_toModifiedJulianDayOrNull = {"Returns the modified Julian day number for valid `date`, otherwise `null`.", {"Nullable(Int32)"}};
+        FunctionDocumentation::Examples examples_toModifiedJulianDayOrNull =
+        {
+            {"Convert date to Modified Julian Day with null handling", R"(
+SELECT toModifiedJulianDayOrNull('2020-01-01');
+SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
+        )",
+            R"(
+┌─toModifiedJu⋯020-01-01')─┐
+│                    58849 │
+└──────────────────────────┘
+┌─toModifiedJu⋯000-00-00')─┐
+│                     ᴺᵁᴸᴸ │
+└──────────────────────────┘
+        )"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};
+        FunctionDocumentation::Category category_toModifiedJulianDayOrNull = FunctionDocumentation::Category::DateAndTime;
+        FunctionDocumentation documentation_toModifiedJulianDayOrNull =
+        {description_toModifiedJulianDayOrNull, syntax_toModifiedJulianDayOrNull, arguments_toModifiedJulianDayOrNull, {}, returned_value_toModifiedJulianDayOrNull, examples_toModifiedJulianDayOrNull, introduced_in_toModifiedJulianDayOrNull, category_toModifiedJulianDayOrNull};
+
+        factory.registerFunction<ToModifiedJulianDayOverloadResolver<NameToModifiedJulianDayOrNull, DataTypeInt32, true>>(documentation_toModifiedJulianDayOrNull);
     }
 }

@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 
@@ -9,14 +11,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <TableFunctions/TableFunctionValues.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -26,11 +27,14 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
-static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
+namespace
+{
+
+void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
     if (res_columns.size() == 1) /// Parsing arguments as Fields
     {
@@ -51,12 +55,12 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
             const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get());
             if (!type_tuple)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Table function VALUES requires all but first argument (rows specification) to be either tuples or single values");
+                    "Table function VALUES requires all but the first argument (rows specification) to be either tuples or single values");
 
             const Tuple & value_tuple = value_field.safeGet<Tuple>();
 
             if (value_tuple.size() != sample_block.columns())
-                throw Exception("Values size should match with number of columns", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Values size should match with the number of columns");
 
             const DataTypes & value_types_tuple = type_tuple->getElements();
             for (size_t j = 0; j < value_tuple.size(); ++j)
@@ -68,34 +72,68 @@ static void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args
     }
 }
 
-DataTypes TableFunctionValues::getTypesFromArgument(const ASTPtr & arg, ContextPtr context)
+DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context)
 {
     const auto & [value_field, value_type_ptr] = evaluateConstantExpression(arg, context);
-    DataTypes types;
     if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(value_type_ptr.get()))
         return type_tuple->getElements();
 
     return {value_type_ptr};
 }
 
-void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+/* values(structure, values...) - creates a temporary storage filling columns with values
+ * values is case-insensitive table function.
+ *
+ * When interpret_first_argument_as_structure is true (default), the first string argument
+ * may be interpreted as a column schema definition (e.g. 'x UInt8, y String').
+ * When false (used by SQL standard VALUES clause rewrite), the first argument is always
+ * treated as row data, never as a schema.
+ */
+template <bool interpret_first_argument_as_structure>
+class TableFunctionValues : public ITableFunction
+{
+public:
+    static constexpr auto name = interpret_first_argument_as_structure ? "values" : "SQLStandardValues";
+    std::string getName() const override { return name; }
+    bool hasStaticStructure() const override { return true; }
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+    const char * getStorageEngineName() const override
+    {
+        /// It'd be StorageValues but it's not registered as a table engine
+        return "";
+    }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    ColumnsDescription structure;
+    bool has_structure_in_arguments = false;
+};
+
+template <bool interpret_first_argument_as_structure>
+void TableFunctionValues<interpret_first_argument_as_structure>::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function '" + getName() + "' must have arguments", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
 
     ASTs & args = args_func.at(0)->children;
 
     if (args.empty())
-        throw Exception("Table function '" + getName() + "' requires at least 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Table function '{}' requires at least 1 argument", getName());
 
-    const auto & literal = args[0]->as<const ASTLiteral>();
-    String value;
-    if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context))
+    if constexpr (interpret_first_argument_as_structure)
     {
-        has_structure_in_arguments = true;
-        return;
+        const auto & literal = args[0]->as<const ASTLiteral>();
+        String value;
+        String error;
+        if (args.size() > 1 && literal && literal->value.tryGet(value) && tryParseColumnsListFromString(value, structure, context, error))
+        {
+            has_structure_in_arguments = true;
+            return;
+        }
     }
 
     has_structure_in_arguments = false;
@@ -106,7 +144,7 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
         if (data_types.size() != arg_types.size())
             throw Exception(
                 ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE,
-                "Cannot determine common structure for {} function arguments: the amount of columns is differ for different arguments",
+                "Cannot determine a common structure for {} function arguments: the amount of columns is different for different arguments",
                 getName());
         for (size_t j = 0; j != arg_types.size(); ++j)
             data_types[j] = getLeastSupertype(DataTypes{data_types[j], arg_types[j]});
@@ -118,14 +156,16 @@ void TableFunctionValues::parseArguments(const ASTPtr & ast_function, ContextPtr
     structure = ColumnsDescription(names_and_types);
 }
 
-ColumnsDescription TableFunctionValues::getActualTableStructure(ContextPtr /*context*/) const
+template <bool interpret_first_argument_as_structure>
+ColumnsDescription TableFunctionValues<interpret_first_argument_as_structure>::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const
 {
     return structure;
 }
 
-StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+template <bool interpret_first_argument_as_structure>
+StoragePtr TableFunctionValues<interpret_first_argument_as_structure>::executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
 
     Block sample_block;
     for (const auto & name_type : columns.getOrdinary())
@@ -145,9 +185,15 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, Context
     return res;
 }
 
+}
+
 void registerTableFunctionValues(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionValues>({}, TableFunctionFactory::CaseInsensitive);
+    factory.registerFunction<TableFunctionValues<true>>({}, {.allow_readonly = true}, TableFunctionFactory::Case::Insensitive);
+    factory.registerFunction<TableFunctionValues<false>>({.description = R"(
+Internal table function used to implement SQL standard VALUES clause syntax.
+Created automatically by the parser when it encounters (VALUES (row1), (row2), ...) in a FROM clause.
+)", .category = FunctionDocumentation::Category::Internal}, {.allow_readonly = true});
 }
 
 }

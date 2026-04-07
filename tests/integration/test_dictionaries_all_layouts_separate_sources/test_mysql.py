@@ -1,12 +1,14 @@
-import os
 import math
+import os
+
 import pytest
 
-from .common import *
-
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 from helpers.external_sources import SourceMySQL
+from helpers.config_cluster import mysql_pass
+
+from .common import *
 
 SOURCE = None
 cluster = None
@@ -29,11 +31,11 @@ def setup_module(module):
     SOURCE = SourceMySQL(
         "MySQL",
         None,
-        cluster.mysql_port,
-        cluster.mysql_host,
-        cluster.mysql_port,
+        cluster.mysql8_port,
+        cluster.mysql8_host,
+        cluster.mysql8_port,
         "root",
-        "clickhouse",
+        mysql_pass,
     )
 
     simple_tester = SimpleLayoutTester(test_name)
@@ -53,7 +55,7 @@ def setup_module(module):
     dictionaries = simple_tester.list_dictionaries()
 
     node = cluster.add_instance(
-        "node", main_configs=main_configs, dictionaries=dictionaries, with_mysql=True
+        "node", main_configs=main_configs, dictionaries=dictionaries, with_mysql8=True
     )
 
 

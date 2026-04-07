@@ -1,43 +1,77 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTDropAccessEntityQuery.h>
-#include <Parsers/Access/ASTRowPolicyName.h>
+#include <Interpreters/InterpreterFactory.h>
+
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/MaskingPolicy.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
-
+#include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
 {
-    auto & query = query_ptr->as<ASTDropAccessEntityQuery &>();
+    const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
+    auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, getContext());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
-    auto do_drop = [&](const Strings & names)
+    auto do_drop = [&](const Strings & names, const String & storage_name)
     {
+        IAccessStorage * storage = &access_control;
+        MultipleAccessStorage::StoragePtr storage_ptr;
+        if (!storage_name.empty())
+        {
+            storage_ptr = access_control.getStorageByName(storage_name);
+            storage = storage_ptr.get();
+        }
+
         if (query.if_exists)
-            access_control.tryRemove(access_control.find(query.type, names));
+            storage->tryRemove(storage->find(query.type, names));
         else
-            access_control.remove(access_control.getIDs(query.type, names));
+            storage->remove(storage->getIDs(query.type, names));
     };
 
+    if (query.type == AccessEntityType::USER)
+    {
+        auto & view_definer_dependencies = ViewDefinerDependencies::instance();
+        for (const auto & name : query.names)
+        {
+            if (view_definer_dependencies.hasViewDependencies(name))
+            {
+                auto views_storage_ids = view_definer_dependencies.getViewsForDefiner(name);
+                std::vector<String> views;
+                views.reserve(views_storage_ids.size());
+                for (const auto & id : views_storage_ids)
+                    views.push_back(id.getNameForLogs());
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer in views {}.", name, toString(views));
+            }
+        }
+    }
+
     if (query.type == AccessEntityType::ROW_POLICY)
-        do_drop(query.row_policy_names->toStrings());
+        do_drop(query.row_policy_names->toStrings(), query.storage_name);
+    else if (query.type == AccessEntityType::MASKING_POLICY)
+        do_drop(Strings{query.masking_policy_name->toString()}, query.storage_name);
     else
-        do_drop(query.names);
+        do_drop(query.names, query.storage_name);
 
     return {};
 }
@@ -51,12 +85,14 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            res.emplace_back(AccessType::DROP_USER);
+            for (const auto & name : query.names)
+                res.emplace_back(AccessType::DROP_USER, name);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            res.emplace_back(AccessType::DROP_ROLE);
+            for (const auto & name : query.names)
+                res.emplace_back(AccessType::DROP_ROLE, name);
             return res;
         }
         case AccessEntityType::SETTINGS_PROFILE:
@@ -78,11 +114,24 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
             res.emplace_back(AccessType::DROP_QUOTA);
             return res;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            res.emplace_back(AccessType::DROP_MASKING_POLICY);
+            return res;
+        }
         case AccessEntityType::MAX:
             break;
     }
-    throw Exception(
-        toString(query.type) + ": type is not supported by DROP query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
+}
+
+void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterDropAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterDropAccessEntityQuery", create_fn);
 }
 
 }

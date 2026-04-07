@@ -1,11 +1,12 @@
 #pragma once
-#include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ThreadPool.h>
-#include <boost/noncopyable.hpp>
 #include <mutex>
 #include <unordered_map>
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
+#include <base/types.h>
+#include <boost/noncopyable.hpp>
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 namespace DB
 {
@@ -107,11 +108,14 @@ public:
 
     /// Returns CSN if transaction with specified ID was committed and UnknownCSN if it was not.
     /// Returns PrehistoricCSN for PrehistoricTID without creating a TransactionLog instance as a special case.
-    static CSN getCSN(const TransactionID & tid);
-    static CSN getCSN(const TIDHash & tid);
+    /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
+    static CSN getCSN(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
+    static CSN getCSN(const TIDHash & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
+    static CSN getCSNAndAssert(const TransactionID & tid, std::atomic<CSN> & failback_with_strict_load_csn);
 
     /// Ensures that getCSN returned UnknownCSN because transaction is not committed and not because entry was removed from the log.
-    static void assertTIDIsNotOutdated(const TransactionID & tid);
+    static void assertTIDIsNotOutdated(const TransactionID & tid, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr);
+
 
     /// Returns a pointer to transaction object if it's running or nullptr.
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
@@ -127,6 +131,10 @@ public:
     bool isShuttingDown() const { return stop_flag.load(); }
 
     void sync() const;
+
+    static void increaseAsyncTablesLoadingJobNumber();
+    static void decreaseAsyncTablesLoadingJobNumber();
+    static Int64 asyncTablesLoadingJobNumber();
 
 private:
     void loadLogFromZooKeeper() TSA_REQUIRES(mutex);
@@ -145,12 +153,15 @@ private:
     static TransactionID deserializeTID(const String & csn_node_content);
     static String serializeTID(const TransactionID & tid);
 
+    inline static std::atomic<Int64> async_tables_loading_job_number{0};
+
     ZooKeeperPtr getZooKeeper() const;
 
-    CSN getCSNImpl(const TIDHash & tid_hash) const;
+    /// Some time a transaction could be committed concurrently, in order to resolve it provide failback_with_strict_load_csn
+    CSN getCSNImpl(const TIDHash & tid_hash, const std::atomic<CSN> * failback_with_strict_load_csn = nullptr) const;
 
     const ContextPtr global_context;
-    Poco::Logger * const log;
+    LoggerPtr const log;
 
     /// The newest snapshot available for reading
     std::atomic<CSN> latest_snapshot;
@@ -173,7 +184,7 @@ private:
     /// Transactions that are currently processed
     TransactionsList running_list TSA_GUARDED_BY(running_list_mutex);
     /// If we lost connection on attempt to create csn- node then we don't know transaction's state.
-    using UnknownStateList = std::vector<std::pair<MergeTreeTransaction *, scope_guard>>;
+    using UnknownStateList = std::vector<std::pair<MergeTreeTransactionPtr, scope_guard>>;
     UnknownStateList unknown_state_list TSA_GUARDED_BY(running_list_mutex);
     UnknownStateList unknown_state_list_loaded TSA_GUARDED_BY(running_list_mutex);
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
@@ -187,8 +198,9 @@ private:
     String last_loaded_entry TSA_GUARDED_BY(mutex);
     /// The oldest CSN such that we store in log entries with TransactionIDs containing this CSN.
     std::atomic<CSN> tail_ptr = Tx::UnknownCSN;
+    std::atomic<bool> updated_tail_ptr{false};
 
-    zkutil::EventPtr log_updated_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr log_updated_event = std::make_shared<Poco::Event>();
 
     std::atomic_bool stop_flag = false;
     ThreadFromGlobalPool updating_thread;

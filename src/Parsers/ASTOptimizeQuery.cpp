@@ -1,33 +1,54 @@
 #include <Parsers/ASTOptimizeQuery.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
+
 
 namespace DB
 {
 
-void ASTOptimizeQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "")
-                  << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    ostr << "OPTIMIZE TABLE ";
 
-    formatOnCluster(settings);
+    if (database)
+    {
+        database->format(ostr, settings, state, frame);
+        ostr << '.';
+    }
+
+    chassert(table);
+    table->format(ostr, settings, state, frame);
+
+    formatOnCluster(ostr, settings);
 
     if (partition)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(settings, state, frame);
+        ostr << " PARTITION ";
+        partition->format(ostr, settings, state, frame);
+    }
+
+    if (dry_run)
+    {
+        ostr << " DRY RUN";
+        if (parts_list)
+        {
+            ostr << " PARTS ";
+            parts_list->format(ostr, settings, state, frame);
+        }
     }
 
     if (final)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
+        ostr << " FINAL";
 
     if (deduplicate)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
+        ostr << " DEDUPLICATE";
+
+    if (cleanup)
+        ostr << " CLEANUP";
 
     if (deduplicate_by_columns)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
-        deduplicate_by_columns->formatImpl(settings, state, frame);
+        ostr << " BY ";
+        deduplicate_by_columns->format(ostr, settings, state, frame);
     }
 }
 

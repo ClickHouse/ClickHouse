@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS nullable_low_cardinality_tsv_test;";
-$CLICKHOUSE_CLIENT --multiquery --query="CREATE TABLE nullable_low_cardinality_tsv_test
+$CLICKHOUSE_CLIENT --query="CREATE TABLE nullable_low_cardinality_tsv_test
 (
     A Date,
     S LowCardinality(Nullable(String)),

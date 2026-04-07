@@ -3,7 +3,7 @@ create table x (i UInt64, j UInt64, k UInt64, projection agg (select sum(j), avg
 
 insert into x values (1, 2, 3);
 
-set allow_experimental_projection_optimization = 1, use_index_for_in_with_subqueries = 0;
+set optimize_use_projections = 1, use_index_for_in_with_subqueries = 0;
 
 select sum(j), avg(k) from x where i in (select number from numbers(4));
 

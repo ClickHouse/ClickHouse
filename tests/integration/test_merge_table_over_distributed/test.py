@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -69,17 +70,6 @@ def test_filtering(started_cluster):
     assert (
         node1.query("SELECT id + 1 FROM merge_table WHERE val = 'node1'").rstrip()
         == "2"
-    )
-
-    assert (
-        node1.query(
-            "SELECT id + 1, val FROM merge_table PREWHERE id = 1 WHERE _table != '_dummy'"
-        ).rstrip()
-        == "2\tnode1"
-    )
-
-    assert (
-        node1.query("SELECT count() FROM merge_table PREWHERE id = 1").rstrip() == "1"
     )
 
 

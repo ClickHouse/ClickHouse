@@ -1,7 +1,8 @@
 #pragma once
+
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
-#include <Processors/DelayedPortsProcessor.h>
 
 
 namespace DB
@@ -22,7 +23,7 @@ public:
     static CrosswiseConnectionPtr createCrossConnection();
 
     CreateSetAndFilterOnTheFlyStep(
-        const DataStream & input_stream_,
+        const SharedHeader & input_header_,
         const Names & column_names_,
         size_t max_rows_in_set_,
         CrosswiseConnectionPtr crosswise_connection_,
@@ -36,11 +37,13 @@ public:
 
     SetWithStatePtr getSet() const { return own_set; }
 
+    bool isColumnPartOfSetKey(const String & column_name) const;
+
     /// Set for another stream.
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }
 
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     Names column_names;
 
@@ -53,7 +56,7 @@ private:
 
     JoinTableSide position;
 
-    Poco::Logger * log = &Poco::Logger::get("CreateSetAndFilterOnTheFlyStep");
+    LoggerPtr log = getLogger("CreateSetAndFilterOnTheFlyStep");
 };
 
 }

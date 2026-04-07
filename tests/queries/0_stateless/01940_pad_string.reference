@@ -1,50 +1,57 @@
 leftPad
-
-a
-ab
-abc
- abc
-  abc
-       abc
-ab
-*abc
-**abc
-*******abc
-ab
-*abc
-*.abc
-*.*.*.*abc
+	
+a	a
+ab	ab
+abc	abc
+ abc	 abc
+  abc	  abc
+       abc	       abc
+ab	ab
+*abc	*abc
+**abc	**abc
+*******abc	*******abc
+ab	ab
+*abc	*abc
+*.abc	*.abc
+*.*.*.*abc	*.*.*.*abc
 leftPadUTF8
-а
-аб
-аб
-абвг
-ЧАабвг
-ЧАСЧАСЧАабвг
+а	а
+аб	аб
+аб	аб
+абвг	абвг
+ЧАабвг	ЧАабвг
+ЧАСЧАСЧАабвг	ЧАСЧАСЧАабвг
 rightPad
-
-a
-ab
-abc
-abc 
-abc  
-abc       
-ab
-abc*
-abc**
-abc*******
-ab
-abc*
-abc*.
-abc*.*.*.*
+	
+a	a
+ab	ab
+abc	abc
+abc 	abc 
+abc  	abc  
+abc       	abc       
+ab	ab
+abc*	abc*
+abc**	abc**
+abc*******	abc*******
+ab	ab
+abc*	abc*
+abc*.	abc*.
+abc*.*.*.*	abc*.*.*.*
 rightPadUTF8
-а
-аб
-аб
-абвг
-абвгЧА
-абвгЧАСЧАСЧА
+а	а
+аб	аб
+аб	аб
+абвг	абвг
+абвгЧА	абвгЧА
+абвгЧАСЧАСЧА	абвгЧАСЧАСЧА
 numbers
+
+1^
+_2^^
+__3^^^
+___4^^^^
+____5^^^^^
+_____6^^^^^^
 
 1^
 _2^^

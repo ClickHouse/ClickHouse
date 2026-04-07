@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunctionFileLike.h>
+#include <Storages/StorageFile.h>
 
 
 namespace DB
@@ -20,18 +21,20 @@ public:
         return name;
     }
 
-    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
 protected:
     int fd = -1;
+    std::optional<StorageFile::FileSource> file_source;
+
     void parseFirstArguments(const ASTPtr & arg, const ContextPtr & context) override;
-    String getFormatFromFirstArgument() override;
+    std::optional<String> tryGetFormatFromFirstArgument() override;
 
 private:
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const std::string & compression_method_) const override;
-    const char * getStorageTypeName() const override { return "File"; }
+        const std::string & table_name, const std::string & compression_method_, bool) const override;
+    const char * getStorageEngineName() const override { return "File"; }
 };
 
 }

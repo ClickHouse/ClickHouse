@@ -1,11 +1,9 @@
 #pragma once
-#include <IO/ReadHelpers.h>
+
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
-#include <Compression/CompressionInfo.h>
 
 namespace DB
 {
@@ -79,7 +77,7 @@ public:
         for (const auto & name : keys)
         {
             if (!startsWith(name, "case"))
-                throw Exception("Unknown element in config: " + config_prefix + "." + name + ", must be 'case'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'case'", config_prefix, name);
 
             elements.emplace_back(config, config_prefix + "." + name);
         }

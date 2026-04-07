@@ -2,25 +2,32 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
+#include <Processors/RowsBeforeStepCounter.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+
 
 namespace DB
 {
 
-class AggregatedChunkInfo : public ChunkInfo
+class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
 {
 public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
+    UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
+    std::vector<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
-using AggregatorList = std::list<Aggregator>;
-using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 struct AggregatingTransformParams
 {
@@ -34,83 +41,44 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    Block header;
 
-    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(SharedHeader header_, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header_, params))
         , final(final_)
+        , header(*header_)
     {
     }
 
     AggregatingTransformParams(
-        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        const Block & header_, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header_, params))
         , final(final_)
+        , header(header_)
     {
     }
 
-    Block getHeader() const { return aggregator.getHeader(final); }
+    Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
+    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData
 {
     ManyAggregatedDataVariants variants;
-    std::vector<std::unique_ptr<std::mutex>> mutexes;
     std::atomic<UInt32> num_finished = 0;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), mutexes(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
-
-        for (auto & mut : mutexes)
-            mut = std::make_unique<std::mutex>();
     }
 
-    ~ManyAggregatedData()
-    {
-        try
-        {
-            if (variants.size() <= 1)
-                return;
-
-            // Aggregation states destruction may be very time-consuming.
-            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(variants.size());
-
-            for (auto && variant : variants)
-            {
-                if (variant->size() < 100'000) // some seemingly reasonable constant
-                    continue;
-
-                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-                if (variant->aggregator)
-                {
-                    // variant is moved here and will be destroyed in the destructor of the lambda function.
-                    pool->trySchedule(
-                        [variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
-                        {
-                            if (thread_group)
-                                CurrentThread::attachToIfDetached(thread_group);
-
-                            setThreadName("AggregDestruct");
-                        });
-                }
-            }
-
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    ~ManyAggregatedData();
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
@@ -131,25 +99,30 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform : public IProcessor
+class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     /// For Parallel aggregating.
     AggregatingTransform(
-        Block header,
+        SharedHeader header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t max_threads,
-        size_t temporary_data_merge_threads);
+        size_t temporary_data_merge_threads,
+        bool should_produce_results_in_order_of_bucket_number_ = true,
+        bool skip_merging_ = false,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -159,7 +132,7 @@ private:
     Processors processors;
 
     AggregatingTransformParamsPtr params;
-    Poco::Logger * log = &Poco::Logger::get("AggregatingTransform");
+    LoggerPtr log = getLogger("AggregatingTransform");
 
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
@@ -175,6 +148,9 @@ private:
     AggregatedDataVariants & variants;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
+    bool should_produce_results_in_order_of_bucket_number = true;
+    /// If we aggregate partitioned data merging is not needed.
+    bool skip_merging = false;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -182,7 +158,7 @@ private:
     UInt64 src_rows = 0;
     UInt64 src_bytes = 0;
 
-    bool is_generate_initialized = false;
+    std::atomic_flag is_generate_initialized;
     bool is_consume_finished = false;
     bool is_pipeline_created = false;
 
@@ -190,6 +166,12 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
+
+    RowsBeforeStepCounterPtr rows_before_aggregation;
+
+    std::list<TemporaryBlockStreamHolder> tmp_files;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     void initGenerate();
 };

@@ -161,8 +161,8 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         ASSERT_TRUE(write_result);
         ASSERT_EQ(block.getKeysSize(), 3);
 
-        PaddedPODArray<StringRef> expected = {"0","1","2"};
-        PaddedPODArray<StringRef> actual;
+        PaddedPODArray<std::string_view> expected = {"0","1","2"};
+        PaddedPODArray<std::string_view> actual;
 
         block.readComplexKeys(actual);
         ASSERT_EQ(actual, expected);
@@ -205,8 +205,8 @@ TEST(SSDCacheDictionaryStorage, SSDCacheBlockWithSSDCachComplexKey)
         SSDCacheBlock block(block_data_size);
         block.reset(block_data.get());
 
-        PaddedPODArray<StringRef> expected = {};
-        PaddedPODArray<StringRef> actual;
+        PaddedPODArray<std::string_view> expected = {};
+        PaddedPODArray<std::string_view> actual;
         block.readComplexKeys(actual);
         ASSERT_EQ(actual, expected);
     }

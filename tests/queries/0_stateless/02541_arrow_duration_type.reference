@@ -1,0 +1,2 @@
+duration	Nullable(IntervalNanosecond)					
+10000

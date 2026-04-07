@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include "ArraySourceVisitor.h"
+#include <Functions/GatherUtils/ArraySourceVisitor.h>
 
 namespace DB
 {
@@ -26,16 +26,13 @@ struct IArraySource
 
     virtual void accept(ArraySourceVisitor &)
     {
-        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
     }
 };
 
-#pragma GCC visibility push(hidden)
-
 template <typename Derived>
-class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
+class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
-#pragma GCC visibility pop
 }
 
 }

@@ -18,6 +18,9 @@ enum EncryptionMethod
     MAX_ENCRYPTION_METHOD
 };
 
+/// Get encryption method for string name. Throw exception for wrong name.
+EncryptionMethod toEncryptionMethod(const std::string & name);
+
 /** This codec encrypts and decrypts blocks with AES-128 in
     * GCM-SIV mode (RFC-8452), which is the only cipher currently
     * supported. Although it is implemented as a compression codec
@@ -44,7 +47,7 @@ enum EncryptionMethod
     * as otherwise our engines like ReplicatedMergeTree cannot
     * deduplicate data blocks.
     */
-class CompressionCodecEncrypted : public ICompressionCodec
+class CompressionCodecEncrypted final : public ICompressionCodec
 {
 public:
     /** If a key is available, the server is supposed to
@@ -104,20 +107,11 @@ public:
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
 
-    bool isCompression() const override
-    {
-        return false;
-    }
+    bool isCompression() const override { return false; }
+    bool isGenericCompression() const override { return false; }
+    bool isEncryption() const override { return true; }
+    String getDescription() const override { return "Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452)."; }
 
-    bool isGenericCompression() const override
-    {
-        return false;
-    }
-
-    bool isEncryption() const override
-    {
-        return true;
-    }
 protected:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -127,7 +121,7 @@ protected:
 
     /// Decrypt data with chosen method
     /// Throws exception if decryption is impossible or size of decrypted text is incorrect
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 private:
     EncryptionMethod encryption_method;
 };

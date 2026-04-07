@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include "s2_fwd.h"
+#include <Functions/s2_fwd.h>
 
 namespace DB
 {
@@ -64,6 +64,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
@@ -100,10 +105,12 @@ public:
             const UInt64 id_second = data_id_second[row];
 
             auto first_cell = S2CellId(id_first);
-            auto second_cell = S2CellId(id_second);
+            if (!first_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First cell (id {}) is not valid in function {}", id_first, getName());
 
-            if (!first_cell.is_valid() || !second_cell.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cell is not valid");
+            auto second_cell = S2CellId(id_second);
+            if (!second_cell.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second cell (id {}) is not valid in function {}", id_second, getName());
 
             dst_data.emplace_back(S2CellId(id_first).intersects(S2CellId(id_second)));
         }
@@ -117,7 +124,21 @@ public:
 
 REGISTER_FUNCTION(S2CellsIntersect)
 {
-    factory.registerFunction<FunctionS2CellsIntersect>();
+    FunctionDocumentation::Description description = R"(
+Determines if two provided S2 cells intersect or not.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2CellsIntersect(s2index1, s2index2)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2index1", "First S2 cell identifier.", {"UInt64"}},
+        {"s2index2", "Second S2 cell identifier.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the cells intersect and 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2CellsIntersect>(documentation);
 }
 
 

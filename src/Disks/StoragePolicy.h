@@ -1,27 +1,21 @@
 #pragma once
 
 #include <Disks/IStoragePolicy.h>
-#include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
-#include <Disks/IVolume.h>
-#include <Disks/VolumeJBOD.h>
-#include <Disks/SingleDiskVolume.h>
-#include <IO/WriteHelpers.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 
 #include <memory>
-#include <mutex>
 #include <unordered_map>
-#include <unistd.h>
-#include <boost/noncopyable.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
+
+namespace Poco::Util
+{
+    class AbstractConfiguration;
+};
 
 
 namespace DB
 {
+class DiskSelector;
+using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
 
 /**
  * Contains all information about volumes configuration for Storage.
@@ -59,16 +53,16 @@ public:
     const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtrOrError reserve(UInt64 bytes) const override;
 
     /// Reserves space on any volume or throws
     ReservationPtr reserveAndCheck(UInt64 bytes) const override;
 
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
+    ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
-    size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const override;
+    std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size.
@@ -85,16 +79,17 @@ public:
 
     VolumePtr tryGetVolumeByName(const String & volume_name) const override;
 
-    /// Finds a volume which contains a specified disk.
-    VolumePtr tryGetVolumeByDisk(const DiskPtr & disk_ptr) const override;
-
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
+
+    /// If the policy allows table partition operations (move, replace) with the other storage policy.
+    bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const override;
 
     /// Check if we have any volume with stopped merges
     bool hasAnyVolumeWithDisabledMerges() const override;
 
     bool containsVolume(const String & volume_name) const override;
+
 private:
     Volumes volumes;
     const String name;
@@ -108,7 +103,7 @@ private:
 
     void buildVolumeIndices();
 
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 
@@ -121,15 +116,24 @@ using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector
 {
 public:
+    static constexpr auto TMP_STORAGE_POLICY_PREFIX = "__";
+
     StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks);
 
-    StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks) const;
+    StoragePolicySelectorPtr updateFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, DiskSelectorPtr disks, Strings & new_disks) const;
 
     /// Policy by name
     StoragePolicyPtr get(const String & name) const;
 
+    StoragePolicyPtr tryGet(const String & name) const;
+
     /// All policies
     const StoragePoliciesMap & getPoliciesMap() const { return policies; }
+
+    /// Add storage policy to StoragePolicySelector.
+    /// Used when storage policy needs to be created on the fly, not being present in config file.
+    /// Done by getOrSetStoragePolicyForSingleDisk.
+    void add(StoragePolicyPtr storage_policy);
 
 private:
     StoragePoliciesMap policies;

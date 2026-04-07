@@ -1,12 +1,15 @@
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/URL/FunctionsURL.h>
+#include <Functions/StringHelpers.h>
+
+#include <algorithm>
 
 
 namespace DB
 {
 
+/// NOTE: Implementation is not RFC3986 compatible
 struct ExtractNetloc
 {
     /// We use the same as domain function
@@ -67,12 +70,13 @@ struct ExtractNetloc
         /// Now pos points to the first byte after scheme (if there is).
 
         bool has_identification = false;
+        Pos hostname_end = end;
         Pos question_mark_pos = end;
         Pos slash_pos = end;
         Pos start_of_host = pos;
         for (; pos < end; ++pos)
         {
-            switch (*pos)
+            switch (*pos) // NOLINT(bugprone-switch-missing-default-case)
             {
                 case '/':
                     if (has_identification)
@@ -90,33 +94,46 @@ struct ExtractNetloc
                     return std::string_view(start_of_host, pos - start_of_host);
                 case '@': /// foo:bar@example.ru
                     has_identification = true;
+                    hostname_end = end;
                     break;
+                case ';':
+                case '=':
+                case '&':
+                case '~':
+                case '%':
+                    /// Symbols above are sub-delims in RFC3986 and should be
+                    /// allowed for userinfo (named identification here).
+                    ///
+                    /// NOTE: that those symbols is allowed for reg-name (host)
+                    /// too, but right now host parsing looks more like in
+                    /// RFC1034 (in other words domains that are allowed to be
+                    /// registered).
+                    if (!has_identification)
+                    {
+                        hostname_end = pos;
+                        break;
+                    }
+                    [[fallthrough]];
                 case ' ': /// restricted symbols in whole URL
                 case '\t':
                 case '<':
                 case '>':
-                case '%':
                 case '{':
                 case '}':
                 case '|':
                 case '\\':
                 case '^':
-                case '~':
                 case '[':
                 case ']':
-                case ';':
-                case '=':
-                case '&':
                     return pos > start_of_host
-                        ? std::string_view(start_of_host, std::min(std::min(pos - 1, question_mark_pos), slash_pos) - start_of_host)
+                        ? std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos}) - start_of_host)
                         : std::string_view();
             }
         }
 
         if (has_identification)
             return std::string_view(start_of_host, pos - start_of_host);
-        else
-            return std::string_view(start_of_host, std::min(std::min(pos, question_mark_pos), slash_pos) - start_of_host);
+        return std::string_view(start_of_host, std::min({pos, question_mark_pos, slash_pos, hostname_end}) - start_of_host);
     }
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
@@ -134,8 +151,33 @@ using FunctionNetloc = FunctionStringToString<ExtractSubstringImpl<ExtractNetloc
 
 REGISTER_FUNCTION(Netloc)
 {
-    factory.registerFunction<FunctionNetloc>();
+    /// netloc documentation
+    FunctionDocumentation::Description description_netloc = R"(
+Extracts network locality (`username:password@host:port`) from a URL.
+    )";
+    FunctionDocumentation::Syntax syntax_netloc = "netloc(url)";
+    FunctionDocumentation::Arguments arguments_netloc = {
+        {"url", "URL.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_netloc = {"Returns `username:password@host:port` from a given URL.", {"String"}};
+    FunctionDocumentation::Examples examples_netloc = {
+    {
+        "Usage example",
+        R"(
+SELECT netloc('http://paul@www.example.com:80/');
+        )",
+        R"(
+┌─netloc('http⋯e.com:80/')─┐
+│ paul@www.example.com:80  │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_netloc = {20, 5};
+    FunctionDocumentation::Category category_netloc = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_netloc = {description_netloc, syntax_netloc, arguments_netloc, {}, returned_value_netloc, examples_netloc, introduced_in_netloc, category_netloc};
+
+    factory.registerFunction<FunctionNetloc>(documentation_netloc);
 }
 
 }
-

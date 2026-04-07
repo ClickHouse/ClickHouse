@@ -1,5 +1,5 @@
-#include <Poco/String.h>
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -10,12 +10,18 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsUInt64 max_ast_depth;
+extern const SettingsUInt64 max_expanded_ast_elements;
+extern const SettingsBool prefer_column_name_to_alias;
+}
 
 namespace ErrorCodes
 {
@@ -26,6 +32,13 @@ namespace ErrorCodes
 }
 
 
+QueryNormalizer::ExtractedSettings::ExtractedSettings(const Settings & settings)
+    : max_ast_depth(settings[Setting::max_ast_depth])
+    , max_expanded_ast_elements(settings[Setting::max_expanded_ast_elements])
+    , prefer_column_name_to_alias(settings[Setting::prefer_column_name_to_alias])
+{
+}
+
 class CheckASTDepth
 {
 public:
@@ -33,7 +46,7 @@ public:
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
-            throw Exception("Normalized AST is too deep. Maximum: " + toString(data.settings.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+            throw Exception(ErrorCodes::TOO_DEEP_AST, "Normalized AST is too deep. Maximum: {}", data.settings.max_ast_depth);
         ++data.level;
     }
 
@@ -68,6 +81,10 @@ private:
 
 void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 {
+    /// We do handle cycles via tracking current_asts
+    /// but in case of bug in that tricky logic we need to prevent stack overflow
+    checkStackSize();
+
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
@@ -76,14 +93,15 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     if (data.settings.prefer_column_name_to_alias)
     {
-        if (data.source_columns_set.find(node.name()) != data.source_columns_set.end())
+        if (data.source_columns_set.contains(node.name()))
             return;
     }
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-    auto it_alias = data.aliases.find(node.name());
     if (!data.allow_self_aliases && current_alias == node.name())
-        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias", backQuote(current_alias), backQuote(node.name()));
+        throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias",
+                        backQuote(current_alias), backQuote(node.name()));
+    auto it_alias = data.aliases.find(node.name());
 
     if (it_alias != data.aliases.end() && current_alias != node.name())
     {
@@ -101,7 +119,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
         if (current_asts.contains(alias_node.get()) /// We have loop of multiple aliases
             || (node.name() == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
-            throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
+            throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic aliases");
 
         /// Let's replace it with the corresponding tree node.
         if (!node_alias.empty() && node_alias != our_alias_or_name)
@@ -113,14 +131,41 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             if (!is_cycle)
             {
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
+                /// Check size of the alias before cloning too large alias AST
+                alias_node->checkSize(data.settings.max_expanded_ast_elements);
                 ast = alias_node->clone();
                 ast->setAlias(node_alias);
+
+                /// If the cloned AST was finished, this one should also be considered finished
+                if (data.finished_asts.contains(alias_node))
+                    data.finished_asts[ast] = ast;
+
+                /// If we had an alias for node_alias, point it instead to the new node so we don't have to revisit it
+                /// on subsequent calls
+                if (auto existing_alias = data.aliases.find(node_alias); existing_alias != data.aliases.end())
+                    existing_alias->second = ast;
             }
         }
         else
-            ast = alias_node;
+        {
+            /// Check size of the alias before cloning too large alias AST
+            alias_node->checkSize(data.settings.max_expanded_ast_elements);
+            auto alias_name = ast->getAliasOrColumnName();
+            ast = alias_node->clone();
+            ast->setAlias(alias_name);
+
+            /// If the cloned AST was finished, this one should also be considered finished
+            if (data.finished_asts.contains(alias_node))
+                data.finished_asts[ast] = ast;
+
+            /// If we had an alias for node_alias, point it instead to the new node so we don't have to revisit it
+            /// on subsequent calls
+            if (auto existing_alias = data.aliases.find(node_alias); existing_alias != data.aliases.end())
+                existing_alias->second = ast;
+        }
     }
 }
+
 
 void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
@@ -129,14 +174,32 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
     {
         auto & join = node.table_join->as<ASTTableJoin &>();
         if (join.on_expression)
+        {
+            ASTPtr original_on_expression = join.on_expression;
             visit(join.on_expression, data);
+            if (join.on_expression != original_on_expression)
+                join.children = { join.on_expression };
+        }
+
     }
 }
 
 static bool needVisitChild(const ASTPtr & child)
 {
     /// exclude interpolate elements - they are not subject for normalization and will be processed in filling transform
-    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>());
+    if (child->as<ASTSelectQuery>() || child->as<ASTTableExpression>() || child->as<ASTInterpolateElement>())
+        return false;
+
+    /// Column transformer children (EXCEPT, REPLACE, APPLY) contain column name references
+    /// that must not be substituted with alias expressions. For example, in
+    /// `SELECT * EXCEPT (Budget), toFloat64(Budget) AS Budget FROM t`, the `Budget` inside
+    /// EXCEPT refers to a column name to exclude, not to the alias `Budget`.
+    /// If the normalizer replaces it, the downstream ASTColumnsExceptTransformer::transform
+    /// will encounter a non-ASTIdentifier child and throw a LOGICAL_ERROR.
+    if (child->as<IASTColumnsTransformer>())
+        return false;
+
+    return true;
 }
 
 /// special visitChildren() for ASTSelectQuery
@@ -169,7 +232,7 @@ void QueryNormalizer::visitChildren(IAST * node, Data & data)
         if (func_node->tryGetQueryArgument())
         {
             if (func_node->name != "view")
-                throw Exception("Query argument can only be used in the `view` TableFunction", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query argument can only be used in the `view` TableFunction");
             /// Don't go into query argument.
             return;
         }
@@ -257,7 +320,10 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     else if (auto * node_select = ast->as<ASTSelectQuery>())
         visit(*node_select, ast, data);
     else if (auto * node_param = ast->as<ASTQueryParameter>())
-        throw Exception("Query parameter " + backQuote(node_param->name) + " was not set", ErrorCodes::UNKNOWN_QUERY_PARAMETER);
+    {
+        if (!data.is_create_parameterized_view)
+            throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Query parameter {} was not set", backQuote(node_param->name));
+    }
     else if (auto * node_function = ast->as<ASTFunction>())
         if (node_function->parameters)
             visit(node_function->parameters, data);

@@ -144,20 +144,20 @@ private:
     void checkEnoughSpaceToInsert() const
     {
         if (size() + 1 == container.size())
-            throw Exception("Not enough space to insert into FixedSizeDequeWithGaps with capacity "
-                            + std::to_string(container.size() - 1), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough space to insert into FixedSizeDequeWithGaps with capacity {}",
+                            container.size() - 1);
     }
 
     void checkHasValuesToRemove() const
     {
         if (empty())
-            throw Exception("Cannot remove from empty FixedSizeDequeWithGaps", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove from empty FixedSizeDequeWithGaps");
     }
 
     void checkHasValuesToGet() const
     {
         if (empty())
-            throw Exception("Cannot get value from empty FixedSizeDequeWithGaps", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get value from empty FixedSizeDequeWithGaps");
     }
 };
 

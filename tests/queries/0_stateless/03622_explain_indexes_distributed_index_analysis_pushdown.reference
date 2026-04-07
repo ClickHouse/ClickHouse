@@ -1,0 +1,105 @@
+100
+distributed_index_analysis=0
+{
+  "Type": "PrimaryKey",
+  "Keys": [
+    "key"
+  ],
+  "Condition": "(key in [100001, +Inf))",
+  "Search Algorithm": "binary search",
+  "Initial Parts": 100,
+  "Selected Parts": 90,
+  "Initial Granules": 100,
+  "Selected Granules": 90
+}
+distributed_index_analysis=1
+{
+  "Type": "PrimaryKey",
+  "Keys": [
+    "key"
+  ],
+  "Condition": "(key in [100001, +Inf))",
+  "Initial Parts": 100,
+  "Selected Parts": 90,
+  "Initial Granules": 100,
+  "Selected Granules": 90,
+  "Distributed": [
+    {
+      "Address": "",
+      "Parts send": 0,
+      "Parts received": 0,
+      "Granules send": 0,
+      "Granules received": 0
+    },
+    {
+      "Address": "127.0.0.10:9000",
+      "Parts send": 8,
+      "Parts received": 8,
+      "Granules send": 8,
+      "Granules received": 8
+    },
+    {
+      "Address": "127.0.0.1:9000",
+      "Parts send": 14,
+      "Parts received": 12,
+      "Granules send": 14,
+      "Granules received": 12
+    },
+    {
+      "Address": "127.0.0.2:9000",
+      "Parts send": 16,
+      "Parts received": 14,
+      "Granules send": 16,
+      "Granules received": 14
+    },
+    {
+      "Address": "127.0.0.3:9000",
+      "Parts send": 3,
+      "Parts received": 3,
+      "Granules send": 3,
+      "Granules received": 3
+    },
+    {
+      "Address": "127.0.0.4:9000",
+      "Parts send": 14,
+      "Parts received": 14,
+      "Granules send": 14,
+      "Granules received": 14
+    },
+    {
+      "Address": "127.0.0.5:9000",
+      "Parts send": 6,
+      "Parts received": 5,
+      "Granules send": 6,
+      "Granules received": 5
+    },
+    {
+      "Address": "127.0.0.6:9000",
+      "Parts send": 9,
+      "Parts received": 8,
+      "Granules send": 9,
+      "Granules received": 8
+    },
+    {
+      "Address": "127.0.0.7:9000",
+      "Parts send": 13,
+      "Parts received": 11,
+      "Granules send": 13,
+      "Granules received": 11
+    },
+    {
+      "Address": "127.0.0.8:9000",
+      "Parts send": 9,
+      "Parts received": 9,
+      "Granules send": 9,
+      "Granules received": 9
+    },
+    {
+      "Address": "127.0.0.9:9000",
+      "Parts send": 8,
+      "Parts received": 6,
+      "Granules send": 8,
+      "Granules received": 6
+    }
+  ]
+}

@@ -1,9 +1,10 @@
 #include <Parsers/ASTIdentifier.h>
 
+#include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <IO/Operators.h>
 
 
@@ -24,7 +25,7 @@ ASTIdentifier::ASTIdentifier(const String & short_name, ASTPtr && name_param)
         children.push_back(std::move(name_param));
 }
 
-ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, std::vector<ASTPtr> && name_params)
+ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, ASTs && name_params)
     : name_parts(name_parts_), semantic(std::make_shared<IdentifierSemanticImpl>())
 {
     assert(!name_parts.empty());
@@ -53,6 +54,11 @@ ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_, bool special, s
     }
 }
 
+bool ASTIdentifier::isParam() const
+{
+    return !children.empty();
+}
+
 ASTPtr ASTIdentifier::getParam() const
 {
     assert(full_name.empty() && children.size() == 1);
@@ -61,8 +67,9 @@ ASTPtr ASTIdentifier::getParam() const
 
 ASTPtr ASTIdentifier::clone() const
 {
-    auto ret = std::make_shared<ASTIdentifier>(*this);
+    auto ret = make_intrusive<ASTIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    ret->cloneChildren();
     return ret;
 }
 
@@ -86,6 +93,11 @@ void ASTIdentifier::setShortName(const String & new_name)
     semantic->table = table;
 }
 
+void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 const String & ASTIdentifier::name() const
 {
     if (children.empty())
@@ -97,13 +109,19 @@ const String & ASTIdentifier::name() const
     return full_name;
 }
 
-void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto format_element = [&](const String & elem_name)
     {
-        settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(elem_name);
-        settings.ostr << (settings.hilite ? hilite_none : "");
+        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
+        {
+            ostr << special_delimiter_and_identifier->first;
+            settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+        }
+        else
+        {
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+        }
     };
 
     if (compound())
@@ -111,14 +129,14 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         for (size_t i = 0, j = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
-                settings.ostr << '.';
+                ostr << '.';
 
             /// Some AST rewriting code, like IdentifierSemantic::setColumnLongName,
             /// does not respect children of identifier.
             /// Here we also ignore children if they are empty.
             if (name_parts[i].empty() && j < children.size())
             {
-                children[j]->formatImpl(settings, state, frame);
+                children[j]->format(ostr, settings, state, frame);
                 ++j;
             }
             else
@@ -129,7 +147,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     {
         const auto & name = shortName();
         if (name.empty() && !children.empty())
-            children.front()->formatImpl(settings, state, frame);
+            children.front()->format(ostr, settings, state, frame);
         else
             format_element(name);
     }
@@ -149,10 +167,10 @@ void ASTIdentifier::restoreTable()
     }
 }
 
-std::shared_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
+boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
 {
-    if (name_parts.size() == 1) return std::make_shared<ASTTableIdentifier>(name_parts[0]);
-    if (name_parts.size() == 2) return std::make_shared<ASTTableIdentifier>(name_parts[0], name_parts[1]);
+    if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
+    if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
     return nullptr;
 }
 
@@ -163,12 +181,12 @@ void ASTIdentifier::resetFullName()
         full_name += '.' + name_parts[i];
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & table_name, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const String & table_name, ASTs && name_params)
     : ASTIdentifier({table_name}, true, std::move(name_params))
 {
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTs && name_params)
     : ASTIdentifier(
         table_id.database_name.empty() ? std::vector<String>{table_id.table_name}
                                        : std::vector<String>{table_id.database_name, table_id.table_name},
@@ -177,28 +195,29 @@ ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, std::vector<A
     uuid = table_id.uuid;
 }
 
-ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, std::vector<ASTPtr> && name_params)
+ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params)
     : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
 {
 }
 
 ASTPtr ASTTableIdentifier::clone() const
 {
-    auto ret = std::make_shared<ASTTableIdentifier>(*this);
+    auto ret = make_intrusive<ASTTableIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    ret->cloneChildren();
     return ret;
 }
 
 StorageID ASTTableIdentifier::getTableId() const
 {
     if (name_parts.size() == 2) return {name_parts[0], name_parts[1], uuid};
-    else return {{}, name_parts[0], uuid};
+    return {{}, name_parts[0], uuid};
 }
 
 String ASTTableIdentifier::getDatabaseName() const
 {
     if (name_parts.size() == 2) return name_parts[0];
-    else return {};
+    return {};
 }
 
 ASTPtr ASTTableIdentifier::getTable() const
@@ -206,21 +225,19 @@ ASTPtr ASTTableIdentifier::getTable() const
     if (name_parts.size() == 2)
     {
         if (!name_parts[1].empty())
-            return std::make_shared<ASTIdentifier>(name_parts[1]);
+            return make_intrusive<ASTIdentifier>(name_parts[1]);
 
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[1]->clone());
-        else
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+            return make_intrusive<ASTIdentifier>("", children[1]->clone());
+        return make_intrusive<ASTIdentifier>("", children[0]->clone());
     }
-    else if (name_parts.size() == 1)
+    if (name_parts.size() == 1)
     {
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        else
-            return std::make_shared<ASTIdentifier>(name_parts[0]);
+            return make_intrusive<ASTIdentifier>("", children[0]->clone());
+        return make_intrusive<ASTIdentifier>(name_parts[0]);
     }
-    else return {};
+    return {};
 }
 
 ASTPtr ASTTableIdentifier::getDatabase() const
@@ -228,25 +245,24 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     if (name_parts.size() == 2)
     {
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        else
-            return std::make_shared<ASTIdentifier>(name_parts[0]);
+            return make_intrusive<ASTIdentifier>("", children[0]->clone());
+        return make_intrusive<ASTIdentifier>(name_parts[0]);
     }
-    else return {};
+    return {};
 }
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
-    auto identifier = std::make_shared<ASTTableIdentifier>(database_name, table_name);
+    auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;
 }
 
-void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state) const
+void ASTTableIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     hash_state.update(uuid);
-    IAST::updateTreeHashImpl(hash_state);
+    ASTIdentifier::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 String getIdentifierName(const IAST * ast)
@@ -254,7 +270,9 @@ String getIdentifierName(const IAST * ast)
     String res;
     if (tryGetIdentifierNameInto(ast, res))
         return res;
-    throw Exception(ast ? queryToString(*ast) + " is not an identifier" : "AST node is nullptr", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    if (ast)
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", ast->formatForErrorMessage());
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 
 std::optional<String> tryGetIdentifierName(const IAST * ast)

@@ -1,21 +1,17 @@
 #pragma once
 
-#include <type_traits>
+#include <exception>
 #include <typeinfo>
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+#include <type_traits>
 #include <typeindex>
 #include <string>
-
-#include <Common/Exception.h>
-#include <base/demangle.h>
+#endif
 
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int LOGICAL_ERROR;
-    }
-}
+[[noreturn]] void throwBadAssertCast(const std::type_info & from, const std::type_info & to);
+[[noreturn]] void throwBadAssertCastFromException(const std::exception & e);
 
 
 /** Perform static_cast in release build.
@@ -23,9 +19,9 @@ namespace DB
   * The exact match of the type is checked. That is, cast to the ancestor will be unsuccessful.
   */
 template <typename To, typename From>
-To assert_cast(From && from)
+inline To assert_cast(From && from)
 {
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     try
     {
         if constexpr (std::is_pointer_v<To>)
@@ -41,11 +37,10 @@ To assert_cast(From && from)
     }
     catch (const std::exception & e)
     {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
+        throwBadAssertCastFromException(e);
     }
 
-    throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-                        DB::ErrorCodes::LOGICAL_ERROR);
+    throwBadAssertCast(typeid(from), typeid(To));
 #else
     return static_cast<To>(from);
 #endif

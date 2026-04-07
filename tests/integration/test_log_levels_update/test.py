@@ -1,5 +1,6 @@
-import pytest
 import re
+
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 
@@ -10,7 +11,7 @@ node = cluster.add_instance(
 
 config = """<clickhouse>
     <logger>
-        <level>information</level>
+        <level>debug</level>
         <log>/var/log/clickhouse-server/clickhouse-server.log</log>
     </logger>
 </clickhouse>"""
@@ -63,4 +64,4 @@ def test_log_levels_update(start_cluster):
 
     log = get_log(node)
     assert len(log) > 0
-    assert not re.search("(<Trace>|<Debug>)", log)
+    assert not re.search("<Trace>", log)

@@ -81,10 +81,11 @@ int main(int argc, char ** argv)
     std::vector<Key> data(n);
     Value value;
 
+    NullsAction action = NullsAction::EMPTY;
     AggregateFunctionProperties properties;
-    AggregateFunctionPtr func_count = factory.get("count", data_types_empty, {}, properties);
-    AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64, {}, properties);
-    AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64, {}, properties);
+    AggregateFunctionPtr func_count = factory.get("count", action, data_types_empty, {}, properties);
+    AggregateFunctionPtr func_avg = factory.get("avg", action, data_types_uint64, {}, properties);
+    AggregateFunctionPtr func_uniq = factory.get("uniq", action, data_types_uint64, {}, properties);
 
     #define INIT \
     { \
@@ -119,7 +120,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -146,7 +147,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -177,7 +178,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap, AlternativeHash. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -209,7 +210,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap, CRC32Hash. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -233,7 +234,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "std::unordered_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -254,7 +255,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::dense_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -274,7 +275,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::sparse_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 

@@ -1,0 +1,26 @@
+Avro
+int8	Int32					
+uint8	Int32					
+int16	Int32					
+uint16	Int32					
+int32	Int32					
+uint32	Int32					
+int64	Int64					
+uint64	Int64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+0	0
+1.2	0.7692307692307692
+date	Date32					
+1970-01-01
+1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(Int64)					
+nested	Array(Array(Array(Int64)))					
+[0,1]	[[[0],[1]]]
+[1,2]	[[[1],[2]]]

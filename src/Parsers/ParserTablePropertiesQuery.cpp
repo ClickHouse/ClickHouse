@@ -12,78 +12,93 @@ namespace DB
 
 bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_exists("EXISTS");
-    ParserKeyword s_temporary("TEMPORARY");
-    ParserKeyword s_describe("DESCRIBE");
-    ParserKeyword s_desc("DESC");
-    ParserKeyword s_show("SHOW");
-    ParserKeyword s_create("CREATE");
-    ParserKeyword s_database("DATABASE");
-    ParserKeyword s_table("TABLE");
-    ParserKeyword s_view("VIEW");
-    ParserKeyword s_dictionary("DICTIONARY");
+    ParserKeyword s_exists(Keyword::EXISTS);
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
+    ParserKeyword s_show(Keyword::SHOW);
+    ParserKeyword s_create(Keyword::CREATE);
+    ParserKeyword s_database(Keyword::DATABASE);
+    ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_view(Keyword::VIEW);
+    ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
 
     ASTPtr database;
     ASTPtr table;
-    std::shared_ptr<ASTQueryWithTableAndOutput> query;
+    boost::intrusive_ptr<ASTQueryWithTableAndOutput> query;
 
     bool parse_only_database_name = false;
     bool parse_show_create_view = false;
     bool exists_view = false;
 
     bool temporary = false;
+
     if (s_exists.ignore(pos, expected))
     {
         if (s_database.ignore(pos, expected))
         {
-            query = std::make_shared<ASTExistsDatabaseQuery>();
+            query = make_intrusive<ASTExistsDatabaseQuery>();
             parse_only_database_name = true;
-        }
-        else if (s_view.ignore(pos, expected))
-        {
-            query = std::make_shared<ASTExistsViewQuery>();
-            exists_view = true;
         }
         else
         {
             if (s_temporary.ignore(pos, expected))
                 temporary = true;
 
-            if (s_table.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTExistsTableQuery>();
+            if (s_view.ignore(pos, expected))
+            {
+                query = make_intrusive<ASTExistsViewQuery>();
+                exists_view = true;
+            }
+            else if (s_table.checkWithoutMoving(pos, expected))
+                query = make_intrusive<ASTExistsTableQuery>();
             else if (s_dictionary.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTExistsDictionaryQuery>();
+                query = make_intrusive<ASTExistsDictionaryQuery>();
             else
-                query = std::make_shared<ASTExistsTableQuery>();
+                query = make_intrusive<ASTExistsTableQuery>();
         }
     }
     else if (s_show.ignore(pos, expected))
     {
-        if (!s_create.ignore(pos, expected))
-            return false;
+        bool has_create = false;
+
+        if (s_create.checkWithoutMoving(pos, expected))
+        {
+            has_create = true;
+            s_create.ignore(pos, expected);
+        }
+
+        // Check for TEMPORARY keyword after SHOW [CREATE]
+        if (s_temporary.ignore(pos, expected))
+            temporary = true;
 
         if (s_database.ignore(pos, expected))
         {
             parse_only_database_name = true;
-            query = std::make_shared<ASTShowCreateDatabaseQuery>();
+            query = make_intrusive<ASTShowCreateDatabaseQuery>();
         }
         else if (s_dictionary.checkWithoutMoving(pos, expected))
-            query = std::make_shared<ASTShowCreateDictionaryQuery>();
+            query = make_intrusive<ASTShowCreateDictionaryQuery>();
         else if (s_view.ignore(pos, expected))
         {
-            query = std::make_shared<ASTShowCreateViewQuery>();
+            query = make_intrusive<ASTShowCreateViewQuery>();
             parse_show_create_view = true;
         }
         else
-            query = std::make_shared<ASTShowCreateTableQuery>();
+        {
+            /// We support `SHOW CREATE tbl;` and `SHOW TABLE tbl`,
+            /// but do not support `SHOW tbl`, which is ambiguous
+            /// with other statement like `SHOW PRIVILEGES`.
+            if (has_create || s_table.checkWithoutMoving(pos, expected))
+                query = make_intrusive<ASTShowCreateTableQuery>();
+            else
+                return false;
+        }
     }
     else
     {
         return false;
     }
-
     if (parse_only_database_name)
     {
         if (!name_p.parse(pos, database, expected))
@@ -94,11 +109,14 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!(exists_view || parse_show_create_view))
         {
             if (temporary || s_temporary.ignore(pos, expected))
-                query->temporary = true;
+                query->setIsTemporary(true);
 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
+
+        query->setIsTemporary(temporary);
+
         if (!name_p.parse(pos, table, expected))
             return false;
         if (s_dot.ignore(pos, expected))

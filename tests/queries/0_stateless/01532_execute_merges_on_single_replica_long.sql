@@ -1,15 +1,15 @@
--- Tags: long, replica, no-replicated-database, no-parallel, no-s3-storage
+-- Tags: long, replica, no-replicated-database, no-parallel, no-object-storage
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 -- Tag no-parallel: static zk path
 
-DROP TABLE IF EXISTS execute_on_single_replica_r1 NO DELAY;
-DROP TABLE IF EXISTS execute_on_single_replica_r2 NO DELAY;
+DROP TABLE IF EXISTS execute_on_single_replica_r1 SYNC;
+DROP TABLE IF EXISTS execute_on_single_replica_r2 SYNC;
 
 /* that test requires fixed zookeeper path, so we cannot use ReplicatedMergeTree({database}) */
 CREATE TABLE execute_on_single_replica_r1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r1') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
 CREATE TABLE execute_on_single_replica_r2 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r2') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
 
-INSERT INTO execute_on_single_replica_r1 VALUES (1);
+INSERT INTO execute_on_single_replica_r1 SETTINGS insert_keeper_fault_injection_probability=0 VALUES (1);
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
 SET optimize_throw_if_noop=1;
@@ -42,6 +42,7 @@ SYSTEM STOP REPLICATION QUEUES execute_on_single_replica_r2;
 OPTIMIZE TABLE execute_on_single_replica_r1 FINAL SETTINGS replication_alter_partitions_sync=0;
 
 /* if we will check immediately we can find the log entry unchecked */
+SET function_sleep_max_microseconds_per_block = 10000000;
 SELECT * FROM numbers(4) where sleepEachRow(1);
 
 SELECT '****************************';
@@ -111,7 +112,7 @@ OPTIMIZE TABLE execute_on_single_replica_r1 FINAL;
 SYSTEM SYNC REPLICA execute_on_single_replica_r1;
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT '****************************';
 SELECT '*** part_log';
@@ -120,7 +121,7 @@ SELECT
     arraySort(groupArrayIf(table, event_type = 'MergeParts')) AS mergers,
     arraySort(groupArrayIf(table, event_type = 'DownloadPart')) AS fetchers
 FROM system.part_log
-WHERE (event_time > (now() - 120))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (event_time > (now() - 120))
   AND (table LIKE 'execute\\_on\\_single\\_replica\\_r%')
   AND (part_name NOT LIKE '%\\_0')
   AND (database = currentDatabase())
@@ -128,5 +129,5 @@ GROUP BY part_name
 ORDER BY part_name
 FORMAT Vertical;
 
-DROP TABLE execute_on_single_replica_r1 NO DELAY;
-DROP TABLE execute_on_single_replica_r2 NO DELAY;
+DROP TABLE execute_on_single_replica_r1 SYNC;
+DROP TABLE execute_on_single_replica_r2 SYNC;

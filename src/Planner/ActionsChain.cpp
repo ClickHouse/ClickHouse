@@ -1,33 +1,25 @@
 #include <Planner/ActionsChain.h>
 
-#include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 
+#include <DataTypes/IDataType.h>
+
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
+
 
 namespace DB
 {
 
-ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_)
-    : actions(std::move(actions_))
-    , available_output_columns_strategy(available_output_columns_stategy_)
-{
-    initialize();
-}
-
-ActionsChainStep::ActionsChainStep(ActionsDAGPtr actions_,
-    AvailableOutputColumnsStrategy available_output_columns_stategy_,
+ActionsChainStep::ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
+    bool use_actions_nodes_as_output_columns_,
     ColumnsWithTypeAndName additional_output_columns_)
     : actions(std::move(actions_))
-    , available_output_columns_strategy(available_output_columns_stategy_)
+    , use_actions_nodes_as_output_columns(use_actions_nodes_as_output_columns_)
     , additional_output_columns(std::move(additional_output_columns_))
 {
     initialize();
 }
-
 
 void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input_columns)
 {
@@ -36,12 +28,12 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
     auto child_input_columns_copy = child_input_columns;
 
     std::unordered_set<std::string_view> output_nodes_names;
-    output_nodes_names.reserve(actions->getOutputs().size());
+    output_nodes_names.reserve(actions->dag.getOutputs().size());
 
-    for (auto & output_node : actions->getOutputs())
+    for (auto & output_node : actions->dag.getOutputs())
         output_nodes_names.insert(output_node->result_name);
 
-    for (const auto & node : actions->getNodes())
+    for (const auto & node : actions->dag.getNodes())
     {
         auto it = child_input_columns_copy.find(node.result_name);
         if (it == child_input_columns_copy.end())
@@ -53,25 +45,25 @@ void ActionsChainStep::finalizeInputAndOutputColumns(const NameSet & child_input
         if (output_nodes_names.contains(node.result_name))
             continue;
 
-        actions->getOutputs().push_back(&node);
+        actions->dag.getOutputs().push_back(&node);
         output_nodes_names.insert(node.result_name);
     }
 
-    actions->removeUnusedActions();
+    actions->dag.removeUnusedActions();
     /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
-    actions->projectInput();
+    actions->project_input = true;
     initialize();
 }
 
 void ActionsChainStep::dump(WriteBuffer & buffer) const
 {
     buffer << "DAG" << '\n';
-    buffer << actions->dumpDAG();
+    buffer << actions->dag.dumpDAG();
 
-    if (!additional_output_columns.empty())
+    if (!available_output_columns.empty())
     {
-        buffer << "Additional output columns " << additional_output_columns.size() << '\n';
-        for (const auto & column : additional_output_columns)
+        buffer << "Available output columns " << available_output_columns.size() << '\n';
+        for (const auto & column : available_output_columns)
             buffer << "Name " << column.name << " type " << column.type->getName() << '\n';
     }
 
@@ -92,34 +84,22 @@ String ActionsChainStep::dump() const
 
 void ActionsChainStep::initialize()
 {
-    auto required_columns_names = actions->getRequiredColumnsNames();
+    auto required_columns_names = actions->dag.getRequiredColumnsNames();
     input_columns_names = NameSet(required_columns_names.begin(), required_columns_names.end());
 
     available_output_columns.clear();
 
-    /// TODO: Analyzer fix ActionsDAG input and constant nodes with same name
-    std::unordered_set<std::string_view> available_output_columns_names;
-
-    if (available_output_columns_strategy == AvailableOutputColumnsStrategy::ALL_NODES)
+    if (use_actions_nodes_as_output_columns)
     {
-        for (const auto & node : actions->getNodes())
+        std::unordered_set<std::string_view> available_output_columns_names;
+
+        for (const auto & node : actions->dag.getNodes())
         {
             if (available_output_columns_names.contains(node.result_name))
                 continue;
 
             available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
             available_output_columns_names.insert(node.result_name);
-        }
-    }
-    else if (available_output_columns_strategy == AvailableOutputColumnsStrategy::OUTPUT_NODES)
-    {
-        for (const auto & node : actions->getOutputs())
-        {
-            if (available_output_columns_names.contains(node->result_name))
-                continue;
-
-            available_output_columns.emplace_back(node->column, node->result_type, node->result_name);
-            available_output_columns_names.insert(node->result_name);
         }
     }
 

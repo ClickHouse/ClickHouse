@@ -14,6 +14,7 @@ namespace DB
 {
 
 class ASTSelectQuery;
+class ASTIdentifier;
 class ASTTableIdentifier;
 struct ASTTableExpression;
 
@@ -28,6 +29,7 @@ struct DatabaseAndTableWithAlias
 
     DatabaseAndTableWithAlias() = default;
     explicit DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
+    explicit DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
     explicit DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database = "");
     explicit DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 

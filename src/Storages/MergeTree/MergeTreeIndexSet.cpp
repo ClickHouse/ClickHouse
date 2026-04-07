@@ -1,14 +1,19 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
+#include <Common/FieldAccurateComparison.h>
+#include <Common/quoteString.h>
+
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/PreparedSets.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
+#include <Planner/PlannerActionsVisitor.h>
 
 namespace DB
 {
@@ -29,21 +34,29 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     size_t max_rows_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , index_sample_block(index_sample_block_)
-    , block(index_sample_block)
+    , block(index_sample_block_.cloneEmpty())
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
 }
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const String & index_name_,
     const Block & index_sample_block_,
     size_t max_rows_,
-    MutableColumns && mutable_columns_)
+    MutableColumns && mutable_columns_,
+    std::vector<Range> && set_hyperrectangle_)
     : index_name(index_name_)
     , max_rows(max_rows_)
-    , index_sample_block(index_sample_block_)
-    , block(index_sample_block.cloneWithColumns(std::move(mutable_columns_)))
+    , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
+    , set_hyperrectangle(std::move(set_hyperrectangle_))
 {
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
 }
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
@@ -51,32 +64,32 @@ void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty set index {}.", backQuote(index_name));
 
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    auto size_serialization = size_type->getDefaultSerialization();
-
     if (max_rows != 0 && size() > max_rows)
     {
-        size_serialization->serializeBinary(0, ostr);
+        UInt64 rows = 0;
+        writeBinary(rows, ostr);
         return;
     }
 
-    size_serialization->serializeBinary(size(), ostr);
+    UInt64 rows = size();
+    writeBinary(rows, ostr);
+    size_t num_columns = block.columns();
 
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & type = index_sample_block.getByPosition(i).type;
+        const auto & elem = block.getByPosition(i);
 
         ISerialization::SerializeBinaryBulkSettings settings;
         settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
         settings.position_independent_encoding = false;
-        settings.low_cardinality_max_dictionary_size = 0; //-V1048
+        settings.low_cardinality_max_dictionary_size = 0;
 
-        auto serialization = type->getDefaultSerialization();
         ISerialization::SerializeBinaryBulkStatePtr state;
 
-        serialization->serializeBinaryBulkStatePrefix(settings, state);
-        serialization->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
-        serialization->serializeBinaryBulkStateSuffix(settings, state);
+        const auto & column = *elem.column;
+        serializations[i]->serializeBinaryBulkStatePrefix(column, settings, state);
+        serializations[i]->serializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state);
+        serializations[i]->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -85,35 +98,105 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
-    block.clear();
+    UInt64 rows_to_read = 0;
+    readBinary(rows_to_read, istr);
+    if (rows_to_read == 0)
+    {
+        block.clear();
+        return;
+    }
 
-    Field field_rows;
-    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
-    size_type->getDefaultSerialization()->deserializeBinary(field_rows, istr);
-    size_t rows_to_read = field_rows.get<size_t>();
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.position_independent_encoding = false;
 
+    size_t num_columns = block.columns();
+    set_hyperrectangle.clear();
+    Field min_val;
+    Field max_val;
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        auto & elem = block.getByPosition(i);
+        elem.column = elem.column->cloneEmpty();
+
+        ISerialization::DeserializeBinaryBulkStatePtr state;
+
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(elem.column.get()))
+            column_nullable->getExtremesNullLast(min_val, max_val, 0, elem.column->size());
+        else
+            elem.column->getExtremes(min_val, max_val, 0, elem.column->size());
+
+        set_hyperrectangle.emplace_back(min_val, true, max_val, true);
+    }
+}
+
+
+MergeTreeIndexBulkGranulesSet::MergeTreeIndexBulkGranulesSet(
+    const Block & index_sample_block_)
+    : block(index_sample_block_.cloneEmpty()),
+    block_for_reading(index_sample_block_.cloneEmpty())
+{
+    size_t num_columns = block.columns();
+    serializations.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        serializations[i] = block.getByPosition(i).type->getDefaultSerialization();
+
+    block.insert(ColumnWithTypeAndName
+    {
+        ColumnUInt64::create(),
+        std::make_shared<DataTypeUInt64>(),
+        "_granule_num"
+    });
+}
+
+
+void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version)
+{
+    if (version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+
+    if (empty)
+    {
+        min_granule = granule_num;
+        empty = false;
+    }
+    max_granule = granule_num;
+
+    UInt64 rows_to_read;
+    readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
         return;
 
-    for (size_t i = 0; i < index_sample_block.columns(); ++i)
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.position_independent_encoding = false;
+
+    size_t num_columns = block.columns() - 1;
+
+    /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
+    for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & column = index_sample_block.getByPosition(i);
-        const auto & type = column.type;
-        ColumnPtr new_column = type->createColumn();
-
-
-        ISerialization::DeserializeBinaryBulkSettings settings;
-        settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
-        settings.position_independent_encoding = false;
-
+        auto column = block_for_reading.getByPosition(i).column;
         ISerialization::DeserializeBinaryBulkStatePtr state;
-        auto serialization = type->getDefaultSerialization();
 
-        serialization->deserializeBinaryBulkStatePrefix(settings, state);
-        serialization->deserializeBinaryBulkWithMultipleStreams(new_column, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
 
-        block.insert(ColumnWithTypeAndName(new_column, type, column.name));
+        block.getByPosition(i).column->assumeMutableRef().insertRangeFrom(*column, 0, rows_to_read);
+        column->assumeMutableRef().popBack(rows_to_read);
     }
+
+    /// The last column is designating the granule
+    auto & elem = block.getByPosition(num_columns);
+    MutableColumnPtr granule_num_column = elem.column->assumeMutable();
+
+    auto & data = assert_cast<ColumnUInt64 &>(*granule_num_column).getData();
+    for (size_t i = 0; i < rows_to_read; ++i)
+        data.push_back(granule_num);
 }
 
 
@@ -140,9 +223,8 @@ MergeTreeIndexAggregatorSet::MergeTreeIndexAggregatorSet(const String & index_na
 void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
-        throw Exception(
-                "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
+                "Position: {}, Block rows: {}.", *pos, block.rows());
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
@@ -180,10 +262,29 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
 
     if (has_new_data)
     {
+        FieldRef field_min;
+        FieldRef field_max;
         for (size_t i = 0; i < columns.size(); ++i)
         {
             auto filtered_column = block.getByName(index_columns[i]).column->filter(filter, block.rows());
             columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+
+            if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(filtered_column.get()))
+                column_nullable->getExtremesNullLast(field_min, field_max, 0, filtered_column->size());
+            else
+                filtered_column->getExtremes(field_min, field_max, 0, filtered_column->size());
+
+            if (set_hyperrectangle.size() <= i)
+            {
+                set_hyperrectangle.emplace_back(field_min, true, field_max, true);
+            }
+            else
+            {
+                set_hyperrectangle[i].left
+                    = accurateLess(set_hyperrectangle[i].left, field_min) ? set_hyperrectangle[i].left : field_min;
+                set_hyperrectangle[i].right
+                    = accurateLess(set_hyperrectangle[i].right, field_max) ? field_max : set_hyperrectangle[i].right;
+            }
         }
     }
 
@@ -219,7 +320,7 @@ bool MergeTreeIndexAggregatorSet::buildFilter(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns));
+    auto granule = std::make_shared<MergeTreeIndexGranuleSet>(index_name, index_sample_block, max_rows, std::move(columns), std::move(set_hyperrectangle));
 
     switch (data.type)
     {
@@ -238,235 +339,420 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSet::getGranuleAndReset()
     return granule;
 }
 
+KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+{
+    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+}
 
 MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
-    const String & index_name_,
-    const Block & index_sample_block_,
     size_t max_rows_,
-    const SelectQueryInfo & query,
-    ContextPtr context)
-    : index_name(index_name_)
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context,
+    const IndexDescription & index_description)
+    : index_name(index_description.name)
     , max_rows(max_rows_)
-    , index_sample_block(index_sample_block_)
+    , index_data_types(index_description.data_types)
+    , condition(buildCondition(index_description, filter_dag, context))
 {
-    for (const auto & name : index_sample_block.getNames())
+    for (const auto & name : index_description.sample_block.getNames())
         if (!key_columns.contains(name))
             key_columns.insert(name);
 
-    const auto & select = query.query->as<ASTSelectQuery &>();
-
-    if (select.where() && select.prewhere())
-        expression_ast = makeASTFunction(
-                "and",
-                select.where()->clone(),
-                select.prewhere()->clone());
-    else if (select.where())
-        expression_ast = select.where()->clone();
-    else if (select.prewhere())
-        expression_ast = select.prewhere()->clone();
-
-    useless = checkASTUseless(expression_ast);
-    /// Do not proceed if index is useless for this query.
-    if (useless)
+    if (!filter_dag.predicate)
         return;
 
-    /// Replace logical functions with bit functions.
-    /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
-    traverseAST(expression_ast);
+    std::vector<FutureSetPtr> sets_to_prepare;
+    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare))
+        return;
+    /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
+    for (auto & set : sets_to_prepare)
+        if (!set->buildOrderedSetInplace(context))
+            return;
 
-    auto syntax_analyzer_result = TreeRewriter(context).analyze(
-            expression_ast, index_sample_block.getNamesAndTypesList());
-    actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
+    auto filter_actions_dag = filter_dag.dag->clone();
+    const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
+    std::unordered_map<String, const ActionsDAG::Node *> key_column_inputs;
+    const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node, key_column_inputs);
+
+    auto sub_dag = ActionsDAG::cloneSubDAG({&predicate_node}, false);
+
+    actions_output_column_name = sub_dag.getOutputs().at(0)->result_name;
+    actions = std::make_shared<ExpressionActions>(std::move(sub_dag));
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
 {
-    return useless;
+    return isUseless();
 }
 
-bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
-    if (useless)
+    if (isUseless())
         return true;
 
-    auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSet>(idx_granule);
-    if (!granule)
-        throw Exception(
-                "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    const MergeTreeIndexGranuleSet & granule = assert_cast<const MergeTreeIndexGranuleSet &>(*idx_granule);
 
-    if (useless || granule->empty() || (max_rows != 0 && granule->size() > max_rows))
+    size_t size = granule.size();
+    if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
 
-    Block result = granule->block;
-    actions->execute(result);
-
-    auto column
-        = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
-
-    if (column->onlyNull())
+    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true)
         return false;
 
+    Block result = granule.block;
+    actions->execute(result);
+
+    const auto & column = result.getByName(actions_output_column_name).column;
+    const bool nullable = column->isNullable();
+
+    for (size_t i = 0; i < size; ++i)
+        /// The first part of the condition checks if any of them pass the filter.
+        /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+        /// Only in case the column is not nullable, check the null map.
+        if ((column->get64(i) & 1) && (nullable || !column->isNullAt(i)))
+            return true;
+
+    return false;
+}
+
+std::string MergeTreeIndexConditionSet::getDescription() const
+{
+    return condition.getDescription().condition;
+}
+
+MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const
+{
+    FilteredGranules res;
+    const MergeTreeIndexBulkGranulesSet & granules = assert_cast<const MergeTreeIndexBulkGranulesSet &>(*idx_granules);
+
+    /// This is the range of granules we will analyze.
+    /// We will return a subset of granules from this range.
+    size_t total_granules = 1 + granules.max_granule - granules.min_granule;
+
+    /// This block contains values of all set elements of all granules,
+    /// along with the corresponding granule number for them.
+    /// Some granules may not have any info, so they are not present in the block.
+    Block block = granules.block;
+    size_t block_size = block.rows();
+
+    /// Condition is useless (does not allow using the index)
+    /// Or index granules have no set elements.
+    auto whole_range = [total_granules, min_granule = granules.min_granule]
+    {
+        FilteredGranules whole;
+        whole.resize(total_granules);
+        for (size_t i = 0; i < total_granules; ++i)
+            whole[i] = min_granule + i;
+        return whole;
+    };
+
+    if (block_size == 0 || isUseless())
+        return whole_range();
+
+    /// Calculate the condition expression on top of every element of every set.
+    actions->execute(block);
+
+    /// This is the UInt8 mask of elements that passed the condition.
+    const auto & column = block.getByName(actions_output_column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+    if (column->onlyNull())
+        return whole_range();
+
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
-
     const NullMap * null_map = nullptr;
+    bool nullable = false;
 
-    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();
+        nullable = true;
     }
 
     if (!col_uint8)
-        throw Exception("ColumnUInt8 expected as Set index condition result.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "ColumnUInt8 is expected as a Set index condition result");
 
-    const auto & condition = col_uint8->getData();
+    const auto & filter_result = col_uint8->getData();
+    /// The column containing the corresponding granule nums. We will take the granules where the filter is true.
+    const auto & granule_nums = assert_cast<const ColumnUInt64 &>(*block.getByName("_granule_num").column).getData();
 
-    for (size_t i = 0; i < column->size(); ++i)
-        if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
-            return true;
-
-    return false;
-}
-
-void MergeTreeIndexConditionSet::traverseAST(ASTPtr & node) const
-{
-    if (operatorFromAST(node))
+    /// We will iterate over the range of granules and check if there is at least one elemnent from the sets passing the filter.
+    /// But if there are no set elements at all, it means no info, and the granule will also pass.
+    size_t block_pos = 0;
+    for (size_t i = 0; i < total_granules; ++i)
     {
-        auto & args = node->as<ASTFunction>()->arguments->children;
+        size_t current_granule = granules.min_granule + i;
+        size_t current_granule_in_block = block_pos < block_size ? granule_nums[block_pos] : 0;
 
-        for (auto & arg : args)
-            traverseAST(arg);
-        return;
+        if (block_pos >= block_size || current_granule < current_granule_in_block)
+        {
+            /// This granule does not have any info in the index - it passes.
+            res.push_back(current_granule);
+        }
+        else
+        {
+            /// This granule has set elements - check if any of them pass the filter.
+            chassert(current_granule == current_granule_in_block);
+            for (bool passed = false; block_pos < block_size && current_granule_in_block == granule_nums[block_pos]; ++block_pos)
+            {
+                if (!passed)
+                {
+                    /// The first part of the condition checks if any of them pass the filter.
+                    /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+                    /// Only in case the column is not nullable, check the null map.
+                    passed = (filter_result[block_pos] & 1) && (nullable || !null_map || !(*null_map)[block_pos]);
+                    if (passed)
+                        res.push_back(current_granule);
+                    /// After we found that it passes, we just iterate over the block to the next granule or the end.
+                }
+            }
+        }
     }
 
-    if (atomFromAST(node))
+    return res;
+}
+
+
+static const ActionsDAG::NodeRawConstPtrs & getArguments(const ActionsDAG::Node & node, ActionsDAG * result_dag_or_null, ActionsDAG::NodeRawConstPtrs * storage)
+{
+    chassert(node.type == ActionsDAG::ActionType::FUNCTION);
+    if (node.function_base->getName() != "indexHint")
+        return node.children;
+
+    /// indexHint arguments are stored inside of `FunctionIndexHint` class.
+    const auto & adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
+    const auto & index_hint = typeid_cast<const FunctionIndexHint &>(*adaptor.getFunction());
+    if (!result_dag_or_null)
+        return index_hint.getActions().getOutputs();
+
+    /// Import the DAG and map argument pointers.
+    auto actions_clone = index_hint.getActions().clone();
+    chassert(storage);
+    result_dag_or_null->mergeNodes(std::move(actions_clone), storage);
+    return *storage;
+}
+
+const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDAG::Node & node,
+    ActionsDAG & result_dag,
+    const ContextPtr & context,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
+    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
+{
+    auto result_node_it = node_to_result_node.find(&node);
+    if (result_node_it != node_to_result_node.end())
+        return *result_node_it->second;
+
+    const ActionsDAG::Node * result_node = nullptr;
+
+    if (const auto * operator_node_ptr = operatorFromDAG(node, result_dag, context, node_to_result_node, key_column_inputs))
     {
-        if (node->as<ASTIdentifier>() || node->as<ASTFunction>())
-            node = makeASTFunction("__bitWrapperFunc", node);
+        result_node = operator_node_ptr;
+    }
+    else if (const auto * atom_node_ptr = atomFromDAG(node, result_dag, context, key_column_inputs))
+    {
+        result_node = atom_node_ptr;
+
+        if (atom_node_ptr->type == ActionsDAG::ActionType::INPUT ||
+            atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION ||
+            (atom_node_ptr->type == ActionsDAG::ActionType::COLUMN && !WhichDataType(atom_node_ptr->result_type).isSet()))
+        {
+            auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
+            result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+        }
     }
     else
-        node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
+    {
+        ColumnWithTypeAndName unknown_field_column_with_type;
+
+        unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+        unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
+        unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
+
+        result_node = &result_dag.addColumn(unknown_field_column_with_type);
+    }
+
+    node_to_result_node.emplace(&node, result_node);
+    return *result_node;
 }
 
-bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
+const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDAG::Node & node, ActionsDAG & result_dag, const ContextPtr & context, std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
 {
     /// Function, literal or column
 
-    if (node->as<ASTLiteral>())
-        return true;
+    const auto * node_to_check = &node;
+    while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
+        node_to_check = node_to_check->children[0];
 
-    if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.contains(identifier->getColumnName());
+    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+        return &node;
 
-    if (auto * func = node->as<ASTFunction>())
+    RPNBuilderTreeContext tree_context(context);
+    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+
+    auto column_name = tree_node.getColumnName();
+    if (key_columns.contains(column_name))
     {
-        if (key_columns.contains(func->getColumnName()))
-        {
-            /// Function is already calculated.
-            node = std::make_shared<ASTIdentifier>(func->getColumnName());
-            return true;
-        }
+        /// Check if we already created an INPUT for this key column
+        auto it = key_column_inputs.find(column_name);
+        if (it != key_column_inputs.end())
+            return it->second;
 
-        auto & args = func->arguments->children;
+        const auto * result_node = node_to_check;
 
-        for (auto & arg : args)
-            if (!atomFromAST(arg))
-                return false;
+        if (node.type != ActionsDAG::ActionType::INPUT)
+            result_node = &result_dag.addInput(column_name, node.result_type);
 
-        return true;
+        key_column_inputs[column_name] = result_node;
+        return result_node;
     }
 
-    return false;
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return nullptr;
+
+    const auto & arguments = node.children;
+    size_t arguments_size = arguments.size();
+
+    ActionsDAG::NodeRawConstPtrs children(arguments_size);
+
+    for (size_t i = 0; i < arguments_size; ++i)
+    {
+        children[i] = atomFromDAG(*arguments[i], result_dag, context, key_column_inputs);
+
+        if (!children[i])
+            return nullptr;
+    }
+
+    return &result_dag.addFunction(node.function_base, children, {});
 }
 
-bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
+const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const ActionsDAG::Node & node,
+    ActionsDAG & result_dag,
+    const ContextPtr & context,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
+    std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
-    auto * func = node->as<ASTFunction>();
-    if (!func)
-        return false;
 
-    auto & args = func->arguments->children;
+    const auto * node_to_check = &node;
+    while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
+        node_to_check = node_to_check->children[0];
 
-    if (func->name == "not")
+    if (node_to_check->column && (isColumnConst(*node_to_check->column) || WhichDataType(node.result_type).isSet()))
+        return nullptr;
+
+    if (node_to_check->type != ActionsDAG::ActionType::FUNCTION)
+        return nullptr;
+
+    auto function_name = node_to_check->function->getName();
+    ActionsDAG::NodeRawConstPtrs temp_ptrs_to_argument;
+    const auto & arguments = getArguments(*node_to_check, &result_dag, &temp_ptrs_to_argument);
+    size_t arguments_size = arguments.size();
+
+    if (function_name == "not")
     {
-        if (args.size() != 1)
-            return false;
+        if (arguments_size != 1)
+            return nullptr;
 
-        func->name = "__bitSwapLastTwo";
+        const ActionsDAG::Node * argument = &traverseDAG(*arguments[0], result_dag, context, node_to_result_node, key_column_inputs);
+
+        auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
+        return &result_dag.addFunction(bit_swap_last_two_function, {argument}, {});
     }
-    else if (func->name == "and" || func->name == "indexHint")
+    if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
-        auto last_arg = args.back();
-        args.pop_back();
+        if (arguments_size < 1)
+            return nullptr;
 
-        ASTPtr new_func;
-        if (args.size() > 1)
-            new_func = makeASTFunction(
-                    "__bitBoolMaskAnd",
-                    node,
-                    last_arg);
+        ActionsDAG::NodeRawConstPtrs children;
+        children.resize(arguments_size);
+
+        for (size_t i = 0; i < arguments_size; ++i)
+            children[i] = &traverseDAG(*arguments[i], result_dag, context, node_to_result_node, key_column_inputs);
+
+        FunctionOverloadResolverPtr function;
+
+        if (function_name == "and" || function_name == "indexHint")
+            function = FunctionFactory::instance().get("__bitBoolMaskAnd", context);
         else
-            new_func = makeASTFunction(
-                    "__bitBoolMaskAnd",
-                    args.back(),
-                    last_arg);
+            function = FunctionFactory::instance().get("__bitBoolMaskOr", context);
 
-        node = new_func;
+        const auto * last_argument = children.back();
+        children.pop_back();
+
+        while (!children.empty())
+        {
+            const auto * before_last_argument = children.back();
+            children.pop_back();
+
+            last_argument = &result_dag.addFunction(function, {before_last_argument, last_argument}, {});
+        }
+
+        return last_argument;
     }
-    else if (func->name == "or")
-    {
-        auto last_arg = args.back();
-        args.pop_back();
 
-        ASTPtr new_func;
-        if (args.size() > 1)
-            new_func = makeASTFunction(
-                    "__bitBoolMaskOr",
-                    node,
-                    last_arg);
-        else
-            new_func = makeASTFunction(
-                    "__bitBoolMaskOr",
-                    args.back(),
-                    last_arg);
-
-        node = new_func;
-    }
-    else
-        return false;
-
-    return true;
+    return nullptr;
 }
 
-bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomic) const
+bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
 {
-    if (!node)
-        return true;
+    const auto * node_to_check = &node;
+    while (node_to_check->type == ActionsDAG::ActionType::ALIAS)
+        node_to_check = node_to_check->children[0];
 
-    if (const auto * func = node->as<ASTFunction>())
+    RPNBuilderTreeContext tree_context(context);
+    RPNBuilderTreeNode tree_node(node_to_check, tree_context);
+
+    if (WhichDataType(node.result_type).isSet())
     {
-        if (key_columns.contains(func->getColumnName()))
+        if (auto set = tree_node.tryGetPreparedSet())
+            sets_to_prepare.push_back(set);
+        return false;
+    }
+    if (node.column && isColumnConst(*node.column))
+    {
+        return !atomic && node.column->getBool(0);
+    }
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    {
+        auto column_name = tree_node.getColumnName();
+        if (key_columns.contains(column_name))
             return false;
 
-        const ASTs & args = func->arguments->children;
+        auto function_name = node.function_base->getName();
+        const auto & arguments = getArguments(node, nullptr, nullptr);
 
-        if (func->name == "and" || func->name == "indexHint")
-            return std::all_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
-        else if (func->name == "or")
-            return std::any_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
-        else if (func->name == "not")
-            return checkASTUseless(args[0], atomic);
-        else
-            return std::any_of(args.begin(), args.end(),
-                [this](const auto & arg) { return checkASTUseless(arg, true); });
+        if (function_name == "and" || function_name == "or" || function_name == "indexHint")
+        {
+            /// Can't use std::all_of() because we have to call checkDAGUseless() for all arguments
+            /// to populate sets_to_prepare.
+            bool all_useless = true;
+            for (const auto & arg : arguments)
+            {
+                /// For OR, skip constant false children — they are identity elements
+                /// of OR and don't affect filtering. Without this, the constant
+                /// check above returns false (not useless) for `getBool(0) == 0`,
+                /// which would incorrectly make the entire OR appear non-useless
+                /// even when no indexed columns are referenced.
+                if (function_name == "or" && arg->column && isColumnConst(*arg->column) && !arg->column->getBool(0))
+                    continue;
+
+                bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
+                all_useless = all_useless && u;
+            }
+            return all_useless;
+        }
+        if (function_name == "not")
+            return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
+        return std::any_of(
+            arguments.begin(),
+            arguments.end(),
+            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, /*atomic=*/ true); });
     }
-    else if (const auto * literal = node->as<ASTLiteral>())
-        return !atomic && literal->value.safeGet<bool>();
-    else if (const auto * identifier = node->as<ASTIdentifier>())
-        return key_columns.find(identifier->getColumnName()) == std::end(key_columns);
-    else
-        return true;
+
+    auto column_name = tree_node.getColumnName();
+    return !key_columns.contains(column_name);
 }
 
 
@@ -475,34 +761,35 @@ MergeTreeIndexGranulePtr MergeTreeIndexSet::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleSet>(index.name, index.sample_block, max_rows);
 }
 
+MergeTreeIndexBulkGranulesPtr MergeTreeIndexSet::createIndexBulkGranules() const
+{
+    return std::make_shared<MergeTreeIndexBulkGranulesSet>(index.sample_block);
+}
+
 MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
-    const SelectQueryInfo & query, ContextPtr context) const
+    const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionSet>(index.name, index.sample_block, max_rows, query, context);
-}
-
-bool MergeTreeIndexSet::mayBenefitFromIndexForIn(const ASTPtr &) const
-{
-    return false;
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 {
-    size_t max_rows = index.arguments[0].get<size_t>();
+    size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
     return std::make_shared<MergeTreeIndexSet>(index, max_rows);
 }
 
 void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
-    if (index.arguments.size() != 1)
-        throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
-    else if (index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception("Set index argument must be positive integer.", ErrorCodes::INCORRECT_QUERY);
+    if (!index.arguments || index.arguments->children.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
+    if (getFieldFromIndexArgumentAST(index.arguments->children[0]).getType() != Field::Types::UInt64)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer");
 }
 
 }

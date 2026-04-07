@@ -1,0 +1,560 @@
+#include <cmath>
+#include <string>
+#include <Processors/Formats/Impl/NpyRowInputFormat.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
+#include <Common/FloatUtils.h>
+#include <DataTypes/IDataType.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/WithFileSize.h>
+
+#include <IO/ReadBufferFromString.h>
+
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_TYPE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace
+{
+
+DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & numpy_type)
+{
+    switch (numpy_type->getTypeIndex())
+    {
+        case NumpyDataTypeIndex::Int8:
+            return std::make_shared<DataTypeInt8>();
+        case NumpyDataTypeIndex::Int16:
+            return std::make_shared<DataTypeInt16>();
+        case NumpyDataTypeIndex::Int32:
+            return std::make_shared<DataTypeInt32>();
+        case NumpyDataTypeIndex::Int64:
+            return std::make_shared<DataTypeInt64>();
+        case NumpyDataTypeIndex::UInt8:
+            return std::make_shared<DataTypeUInt8>();
+        case NumpyDataTypeIndex::UInt16:
+            return std::make_shared<DataTypeUInt16>();
+        case NumpyDataTypeIndex::UInt32:
+            return std::make_shared<DataTypeUInt32>();
+        case NumpyDataTypeIndex::UInt64:
+            return std::make_shared<DataTypeUInt64>();
+        case NumpyDataTypeIndex::Float16:
+            return std::make_shared<DataTypeFloat32>();
+        case NumpyDataTypeIndex::Float32:
+            return std::make_shared<DataTypeFloat32>();
+        case NumpyDataTypeIndex::Float64:
+            return std::make_shared<DataTypeFloat64>();
+        case NumpyDataTypeIndex::String:
+            return std::make_shared<DataTypeString>();
+        case NumpyDataTypeIndex::Unicode:
+            return std::make_shared<DataTypeString>();
+    }
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Numpy type {} is not supported", magic_enum::enum_name(numpy_type->getTypeIndex()));
+}
+
+DataTypePtr createNestedArrayType(const DataTypePtr & nested_type, size_t depth)
+{
+    DataTypePtr result_type = nested_type;
+    assert(depth > 0);
+    if (depth > 1)
+    {
+        for (size_t i = 0; i < depth - 1; ++i)
+            result_type = std::make_shared<DataTypeArray>(std::move(result_type));
+    }
+    return result_type;
+}
+
+size_t parseTypeSize(const std::string & size_str)
+{
+    ReadBufferFromString buf(size_str);
+    size_t size;
+    if (!tryReadIntText(size, buf))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid data type size: {}", size_str);
+    return size;
+}
+
+std::shared_ptr<NumpyDataType> parseType(String type)
+{
+    /// Parse endianness
+    NumpyDataType::Endianness endianness;
+    if (type[0] == '<')
+        endianness = NumpyDataType::Endianness::LITTLE;
+    else if (type[0] == '>')
+        endianness = NumpyDataType::Endianness::BIG;
+    else if (type[0] == '|')
+        endianness = NumpyDataType::Endianness::NONE;
+    else
+      throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong header data");
+
+    /// Parse type
+    if (type[1] == 'i')
+        return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), true);
+    if (type[1] == 'b')
+        return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
+    if (type[1] == 'u')
+        return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
+    if (type[1] == 'f')
+        return std::make_shared<NumpyDataTypeFloat>(endianness, parseTypeSize(type.substr(2)));
+    if (type[1] == 'S')
+        return std::make_shared<NumpyDataTypeString>(endianness, parseTypeSize(type.substr(2)));
+    if (type[1] == 'U')
+        return std::make_shared<NumpyDataTypeUnicode>(endianness, parseTypeSize(type.substr(2)));
+    if (type[1] == 'c')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
+    if (type[1] == 'O')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support object types");
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
+}
+
+std::vector<size_t> parseShape(String shape_string)
+{
+    if (!shape_string.starts_with('(') || !shape_string.ends_with(')'))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect shape format: {}", shape_string);
+    std::vector<std::string> result_str;
+    boost::split(result_str, std::string_view(shape_string.data() + 1, shape_string.size() - 2), boost::is_any_of(","));
+
+    std::vector<size_t> shape;
+    if (result_str[result_str.size()-1].empty())
+        result_str.pop_back();
+    if (result_str.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Npy shape must have at least one dimension, got: {}", shape_string);
+
+    shape.reserve(result_str.size());
+    for (const String & item : result_str)
+    {
+        ReadBufferFromString buf(item);
+        skipWhitespaceIfAny(buf);
+        /// Reject negative values before parsing as unsigned.
+        if (!buf.eof() && *buf.position() == '-')
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative shape dimension in shape {}", shape_string);
+        size_t value;
+        if (!tryReadIntText(value, buf))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid shape format: {}", shape_string);
+        shape.push_back(value);
+    }
+    return shape;
+}
+
+NumpyHeader parseHeader(ReadBuffer &buf)
+{
+    /// Check magic bytes
+    const char * magic_string = "\x93NUMPY";
+    assertString(magic_string, buf);
+
+    /// Read npy version.
+    UInt8 version_major;
+    UInt8 version_minor;
+    readBinary(version_major, buf);
+    readBinary(version_minor, buf);
+
+    /// Read header length.
+    UInt32 header_length;
+    /// In v1 header length is 2 bytes, in v2 - 4 bytes.
+    if (version_major == 1)
+    {
+        UInt16 header_length_u16;
+        readBinaryLittleEndian(header_length_u16, buf);
+        header_length = header_length_u16;
+    }
+    else
+    {
+        readBinaryLittleEndian(header_length, buf);
+    }
+
+    /// Remember current count of read bytes to skip remaining
+    /// bytes in header when we find all required fields.
+    size_t header_start = buf.count();
+
+    /// Start parsing header.
+    String shape;
+    String descr;
+
+    assertChar('{', buf);
+    skipWhitespaceIfAny(buf);
+    bool first = true;
+    while (!checkChar('}', buf))
+    {
+        /// Skip delimiter between key-value pairs.
+        if (!first)
+        {
+            skipWhitespaceIfAny(buf);
+        }
+        else
+        {
+            first = false;
+        }
+
+        /// Read map key.
+        String key;
+        readQuotedString(key, buf);
+        assertChar(':', buf);
+        skipWhitespaceIfAny(buf);
+        /// Read map value.
+        String value;
+        readQuotedField(value, buf);
+        assertChar(',', buf);
+        skipWhitespaceIfAny(buf);
+
+        if (key == "descr")
+            descr = value;
+        else if (key == "fortran_order")
+        {
+            if (value != "false")
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Fortran order is not supported");
+        }
+        else if (key == "shape")
+            shape = value;
+    }
+
+    if (shape.empty() || descr.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "npy file header doesn't contain required field 'shape' or 'descr'");
+
+    size_t read_bytes = buf.count() - header_start;
+    if (read_bytes > header_length)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Header size is incorrect");
+
+    /// Ignore remaining header data.
+    buf.ignore(header_length - read_bytes);
+
+    if (descr[0] == '\'')
+        descr = descr.substr(1, descr.length() - 1);
+    if (descr[descr.length() - 1] == '\'')
+        descr = descr.substr(0, descr.length() - 1);
+
+    if (shape[0] == '\'')
+        shape = shape.substr(1, shape.length() - 1);
+    if (shape[shape.length() - 1] == '\'')
+        shape = shape.substr(0, shape.length() - 1);
+
+    NumpyHeader res;
+    res.shape = parseShape(shape);
+    res.numpy_type = parseType(descr);
+
+    return res;
+}
+
+DataTypePtr getNestedType(DataTypePtr type)
+{
+    while (const auto * temp_type = typeid_cast<const DataTypeArray *>(type.get()))
+        type = temp_type->getNestedType();
+
+    return type;
+}
+}
+
+void NpyRowInputFormat::readPrefix()
+{
+    header = parseHeader(*in);
+
+    /// Validate that the product of all shape dimensions does not overflow
+    /// and is consistent with the available data size.
+    size_t element_size = header.numpy_type->getSize();
+    if (element_size == 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Npy element size is zero");
+
+    static constexpr size_t max_bytes_per_row = 2ULL * 1024 * 1024 * 1024; /// 2 GiB
+    if (element_size > max_bytes_per_row)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Npy element size is too large: {} bytes exceeds the {} byte limit",
+            element_size,
+            max_bytes_per_row);
+
+    size_t total_elements = 1;
+    for (size_t dim : header.shape)
+    {
+        if (dim != 0 && total_elements > std::numeric_limits<size_t>::max() / dim)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Npy shape overflow: product of dimensions exceeds the maximum value");
+        total_elements *= dim;
+    }
+
+    if (total_elements > std::numeric_limits<size_t>::max() / element_size)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Npy shape overflow: total data size exceeds the maximum value");
+
+    size_t expected_data_bytes = total_elements * element_size;
+
+    /// Validate per-row memory footprint. Each readRow call processes the product of all
+    /// inner dimensions at once without cancellation granularity. For 1D arrays, this is
+    /// just element_size (one element per row). Account for both data and ColumnArray
+    /// offset overhead: for shape (rows, d1, d2, ..., dk), the offset entries per row are
+    /// 1 + d1 + d1*d2 + ... + d1*...*d(k-1), one sum term per nesting level.
+    {
+        size_t elements_per_row = header.shape[0] != 0 ? total_elements / header.shape[0] : total_elements;
+        size_t data_bytes_per_row = elements_per_row * element_size;
+
+        size_t total_offsets_per_row = 0;
+        size_t cumulative_product = 1;
+        for (size_t i = 1; i < header.shape.size(); ++i)
+        {
+            if (total_offsets_per_row > std::numeric_limits<size_t>::max() - cumulative_product)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset count overflows");
+            total_offsets_per_row += cumulative_product;
+            /// cumulative_product * header.shape[i] can't overflow: it's a subset of the
+            /// already-validated total_elements product.
+            if (i + 1 < header.shape.size())
+                cumulative_product *= header.shape[i];
+        }
+        if (total_offsets_per_row > std::numeric_limits<size_t>::max() / sizeof(UInt64))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Npy row size is too large: offset byte count overflows");
+        size_t offset_bytes_per_row = total_offsets_per_row * sizeof(UInt64);
+
+        if (data_bytes_per_row > max_bytes_per_row - std::min(offset_bytes_per_row, max_bytes_per_row))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Npy row size is too large: {} data bytes + {} offset bytes per row exceeds the {} byte limit",
+                data_bytes_per_row,
+                offset_bytes_per_row,
+                max_bytes_per_row);
+    }
+
+    /// If the file size is known, validate the shape against it.
+    /// Skip for compressed wrappers: tryGetFileSizeFromReadBuffer unwraps them and
+    /// returns the compressed source size, which is smaller than the uncompressed
+    /// payload we're comparing against.
+    bool is_compressed = dynamic_cast<CompressedReadBufferWrapper *>(in) != nullptr;
+    auto file_size = !is_compressed ? tryGetFileSizeFromReadBuffer(*in) : std::nullopt;
+    if (file_size.has_value())
+    {
+        size_t header_bytes = in->count();
+        size_t available_data_bytes = *file_size > header_bytes ? *file_size - header_bytes : 0;
+        if (expected_data_bytes > available_data_bytes)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Npy shape claims {} bytes of data, but only {} bytes are available after the header",
+                expected_data_bytes,
+                available_data_bytes);
+    }
+}
+
+NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_))
+{
+    auto types = getPort().getHeader().getDataTypes();
+    if (types.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected number of columns for Npy input format, expected one column, got {} columns", types.size());
+    nested_type = getNestedType(types[0]);
+}
+
+size_t NpyRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t count;
+    if (counted_rows + max_block_size <= size_t(header.shape[0]))
+        count = max_block_size;
+    else
+        count = header.shape[0] - counted_rows;
+    counted_rows += count;
+    return count;
+}
+
+template <typename ColumnValue, typename DataValue>
+void NpyRowInputFormat::readBinaryValueAndInsert(MutableColumnPtr column, NumpyDataType::Endianness endianness)
+{
+    DataValue value;
+    if (endianness == NumpyDataType::Endianness::BIG)
+        readBinaryBigEndian(value, *in);
+    else
+        readBinaryLittleEndian(value, *in);
+    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue((static_cast<ColumnValue>(value)));
+}
+
+template <typename ColumnValue>
+void NpyRowInputFormat::readBinaryValueAndInsertFloat16(MutableColumnPtr column, NumpyDataType::Endianness endianness)
+{
+    uint16_t value;
+    if (endianness == NumpyDataType::Endianness::BIG)
+        readBinaryBigEndian(value, *in);
+    else
+        readBinaryLittleEndian(value, *in);
+    assert_cast<ColumnVector<ColumnValue> &>(*column).insertValue(static_cast<ColumnValue>(convertFloat16ToFloat32(value)));
+}
+
+template <typename T>
+void NpyRowInputFormat::readAndInsertInteger(IColumn * column, const DataTypePtr & data_type, const NumpyDataType & npy_type)
+{
+    switch (npy_type.getTypeIndex())
+    {
+        case NumpyDataTypeIndex::Int8: readBinaryValueAndInsert<T, UInt8>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::Int16: readBinaryValueAndInsert<T, UInt16>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::Int32: readBinaryValueAndInsert<T, UInt32>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::Int64: readBinaryValueAndInsert<T, UInt64>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::UInt8: readBinaryValueAndInsert<T, UInt8>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::UInt16: readBinaryValueAndInsert<T, UInt16>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::UInt32: readBinaryValueAndInsert<T, UInt32>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::UInt64: readBinaryValueAndInsert<T, UInt64>(column->getPtr(), npy_type.getEndianness()); break;
+        default:
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert Numpy value with type {} into column with type {}",
+                        magic_enum::enum_name(npy_type.getTypeIndex()), data_type->getName());
+    }
+}
+
+template <typename T>
+void NpyRowInputFormat::readAndInsertFloat(IColumn * column, const DataTypePtr & data_type, const NumpyDataType & npy_type)
+{
+    switch (npy_type.getTypeIndex())
+    {
+        case NumpyDataTypeIndex::Float16: readBinaryValueAndInsertFloat16<T>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::Float32: readBinaryValueAndInsert<T, Float32>(column->getPtr(), npy_type.getEndianness()); break;
+        case NumpyDataTypeIndex::Float64: readBinaryValueAndInsert<T, Float64>(column->getPtr(), npy_type.getEndianness()); break;
+        default:
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert Numpy value with type {} into column with type {}",
+                        magic_enum::enum_name(npy_type.getTypeIndex()), data_type->getName());
+    }
+}
+
+template <typename T>
+void NpyRowInputFormat::readAndInsertString(MutableColumnPtr column, const DataTypePtr & data_type, const NumpyDataType & npy_type, bool is_fixed)
+{
+    size_t size;
+    if (npy_type.getTypeIndex() == NumpyDataTypeIndex::String)
+        size = assert_cast<const NumpyDataTypeString &>(npy_type).getSize();
+    else if (npy_type.getTypeIndex() == NumpyDataTypeIndex::Unicode)
+        size = assert_cast<const NumpyDataTypeUnicode &>(npy_type).getSize();
+    else
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert Numpy value with type {} into column with type {}",
+                        magic_enum::enum_name(npy_type.getTypeIndex()), data_type->getName());
+
+    if (is_fixed)
+    {
+        auto & fixed_string_column = assert_cast<ColumnFixedString &>(*column);
+        size_t n = fixed_string_column.getN();
+        if (size > n)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string for FixedString column");
+        auto & chars = fixed_string_column.getChars();
+        size_t prev_size = chars.size();
+        chars.resize_fill(prev_size + n);
+        in->readStrict(reinterpret_cast<char *>(chars.data() + prev_size), size);
+    }
+    else
+    {
+        auto & column_string = assert_cast<ColumnString &>(*column);
+        String tmp;
+
+        tmp.resize(size);
+        in->readStrict(tmp.data(), size);
+        tmp.erase(std::remove(tmp.begin(), tmp.end(), '\0'), tmp.end());
+        column_string.insertData(tmp.c_str(), tmp.size());
+    }
+}
+
+void NpyRowInputFormat::readValue(IColumn * column)
+{
+    switch (nested_type->getTypeId())
+    {
+        case TypeIndex::UInt8: readAndInsertInteger<UInt8>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::UInt16: readAndInsertInteger<UInt16>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::UInt32: readAndInsertInteger<UInt32>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::UInt64: readAndInsertInteger<UInt64>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::Int8: readAndInsertInteger<Int8>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::Int16: readAndInsertInteger<Int16>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::Int32: readAndInsertInteger<Int32>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::Int64: readAndInsertInteger<Int64>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::Float32: readAndInsertFloat<Float32>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::Float64: readAndInsertFloat<Float64>(column, nested_type, *header.numpy_type); break;
+        case TypeIndex::String: readAndInsertString<String>(column->getPtr(), nested_type, *header.numpy_type, false); break;
+        case TypeIndex::FixedString: readAndInsertString<String>(column->getPtr(), nested_type, *header.numpy_type, true); break;
+        default:
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "ClickHouse type {} is not supported for import from Npy format", nested_type->getName());
+    }
+}
+
+bool NpyRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &  /*ext*/)
+{
+    if (in->eof())
+        return false;
+
+    auto & column = columns[0];
+    IColumn * current_column = column.get();
+    size_t elements_in_current_column = 1;
+    for (size_t i = 1; i != header.shape.size(); ++i)
+    {
+        auto * array_column = typeid_cast<ColumnArray *>(current_column);
+        if (!array_column)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected nesting level of column '{}', expected {}, got {}", column->getName(), header.shape.size() - 1, i - 1);
+        /// Fill offsets of array columns.
+        for (size_t j = 0; j != elements_in_current_column; ++j)
+            array_column->getOffsets().push_back(array_column->getOffsets().back() + header.shape[i]);
+        current_column = &array_column->getData();
+        /// Overflow safety: readPrefix validated that the product of all shape dimensions fits in size_t.
+        chassert(header.shape[i] == 0 || elements_in_current_column <= std::numeric_limits<size_t>::max() / header.shape[i]);
+        elements_in_current_column *= header.shape[i];
+    }
+
+    if (typeid_cast<ColumnArray *>(current_column))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected nesting level of column '{}', expected {}", column->getName(), header.shape.size() - 1);
+
+    for (size_t i = 0; i != elements_in_current_column; ++i)
+    {
+        readValue(current_column);
+
+        /// Check for cancellation periodically to respect max_execution_time
+        /// even when processing a single row with a very large inner dimension.
+        /// Throw rather than return false, because offsets and partial data are
+        /// already committed to the columns and cannot be cleanly rolled back.
+        if (i % 8192 == 0 && isCancelled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    }
+
+    return true;
+}
+
+NpySchemaReader::NpySchemaReader(ReadBuffer & in_)
+    : ISchemaReader(in_) {}
+
+NamesAndTypesList NpySchemaReader::readSchema()
+{
+    header = parseHeader(in);
+    DataTypePtr nested_type = getDataTypeFromNumpyType(header.numpy_type);
+    DataTypePtr result_type = createNestedArrayType(nested_type, header.shape.size());
+
+    return {{"array", result_type}};
+}
+
+std::optional<size_t> NpySchemaReader::readNumberOrRows()
+{
+    return header.shape[0];
+}
+
+void registerInputFormatNpy(FormatFactory & factory)
+{
+    factory.registerInputFormat("Npy", [](
+        ReadBuffer & buf,
+        const Block & sample,
+        IRowInputFormat::Params params,
+        const FormatSettings &)
+    {
+        return std::make_shared<NpyRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params));
+    });
+
+    factory.markFormatSupportsSubsetOfColumns("Npy");
+}
+void registerNpySchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("Npy", [](ReadBuffer & buf, const FormatSettings &)
+    {
+        return std::make_shared<NpySchemaReader>(buf);
+    });
+}
+
+}

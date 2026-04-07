@@ -1,8 +1,7 @@
 #pragma once
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/OvercommitTracker.h>
 #include <Core/Block.h>
-#include <re2/re2.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Common/re2.h>
 
 namespace DB
 {
@@ -24,7 +23,7 @@ public:
     void pushBlock(Block && log_block);
 
     /// Converts priority from Poco::Message::Priority to a string
-    static const char * getPriorityName(int priority);
+    static std::string_view getPriorityName(int priority);
 
     void setSourceRegexp(const String & regexp);
 private:

@@ -12,10 +12,4 @@ settings
     -- This is to activate as much signals as possible to trigger EINTR
     query_profiler_real_time_period_ns=1,
     -- This is to use MultiplexedConnections
-    use_hedged_requests=0,
-    -- This is to make the initiator waiting for cancel packet in MultiplexedConnections::getReplicaForReading()
-    --
-    -- NOTE: that even smaller sleep will be enough to trigger this problem
-    -- with 100% probability, however just to make it more reliable, increase
-    -- it to 2 seconds.
-    sleep_in_receive_cancel_ms=2000;
+    use_hedged_requests=0;

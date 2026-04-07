@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx3;"
 
 
 # NGRAM BF
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx
 (
     k UInt64,
@@ -20,9 +20,9 @@ CREATE TABLE bloom_filter_idx
     INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx2
 (
     k UInt64,
@@ -30,7 +30,7 @@ CREATE TABLE bloom_filter_idx2
     INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_idx VALUES
@@ -103,9 +103,13 @@ $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filte
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k"
 $CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT * FROM bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k FORMAT JSON" | grep "rows_read"
 
+# Weird conditions not supported by the index.
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT count() FROM bloom_filter_idx WHERE (s = 'asd') = (s = 'asd')"
+$CLICKHOUSE_CLIENT --optimize_or_like_chain 0 --query="SELECT count() FROM bloom_filter_idx WHERE has(['asd', 'some string'], s)"
+
 
 # TOKEN BF
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx3
 (
     k UInt64,
@@ -113,7 +117,7 @@ CREATE TABLE bloom_filter_idx3
     INDEX bf (s, lower(s)) TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
-SETTINGS index_granularity = 2;"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_idx3 VALUES
 (0, 'ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).'),
@@ -143,10 +147,22 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx2"
 $CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_idx3"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS bloom_filter_idx_na;"
-$CLICKHOUSE_CLIENT -n --query="
+$CLICKHOUSE_CLIENT --query="
 CREATE TABLE bloom_filter_idx_na
 (
     na Array(Array(String)),
     INDEX bf na TYPE bloom_filter(0.1) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY na" 2>&1 | grep -c 'DB::Exception: Unexpected type Array(Array(String)) of bloom filter index'
+
+# NGRAM BF with IPv6
+$CLICKHOUSE_CLIENT --query="
+CREATE TABLE bloom_filter_ipv6_idx
+(
+    foo IPv6,
+    INDEX fooIndex foo TYPE ngrambf_v1(8,512,3,0) GRANULARITY 1
+) ENGINE = MergeTree() ORDER BY foo;"
+
+$CLICKHOUSE_CLIENT --query="INSERT INTO bloom_filter_ipv6_idx VALUES ('::1.2.3.4'),('::0'),('::1')"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM bloom_filter_ipv6_idx WHERE foo IN ('::1')"
+$CLICKHOUSE_CLIENT --query="DROP TABLE bloom_filter_ipv6_idx"

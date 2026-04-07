@@ -8,7 +8,10 @@ namespace DB
 class ISourceStep : public IQueryPlanStep
 {
 public:
-    explicit ISourceStep(DataStream output_stream_);
+    explicit ISourceStep(SharedHeader output_header_);
+
+    ISourceStep(const ISourceStep &) = default;
+    ISourceStep(ISourceStep &&) = default;
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
 
@@ -16,9 +19,10 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
+    bool hasCorrelatedExpressions() const override { return false; }
+
 protected:
-    /// We collect processors got after pipeline transformation.
-    Processors processors;
+    void updateOutputHeader() override {}
 };
 
 }

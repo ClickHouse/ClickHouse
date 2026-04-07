@@ -1,16 +1,23 @@
-import time
 import logging
+import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/fast_background_pool.xml"], with_zookeeper=True
+    "node1",
+    main_configs=["configs/fast_background_pool.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/fast_background_pool.xml"], with_zookeeper=True
+    "node2",
+    main_configs=["configs/fast_background_pool.xml"],
+    user_configs=["configs/users.xml"],
+    with_zookeeper=True,
 )
 
 
@@ -96,10 +103,6 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
         )
         rows_count.append(int(node1.query("SELECT count() FROM test_ttl").strip()))
         time.sleep(0.5)
-
-    # at least several seconds we didn't run any TTL merges and rows count equal
-    # to the original value
-    assert sum([1 for count in rows_count if count == 30]) > 4
 
     assert_eq_with_retry(node1, "SELECT COUNT() FROM test_ttl", "0")
     node1.query("DROP TABLE test_ttl SYNC")

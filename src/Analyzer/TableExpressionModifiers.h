@@ -14,6 +14,7 @@ class TableExpressionModifiers
 public:
     using Rational = ASTSampleRatio::Rational;
 
+    TableExpressionModifiers() = default;
     TableExpressionModifiers(bool has_final_,
         std::optional<Rational> sample_size_ratio_,
         std::optional<Rational> sample_offset_ratio_)
@@ -26,6 +27,12 @@ public:
     bool hasFinal() const
     {
         return has_final;
+    }
+
+    /// Set has final value
+    void setHasFinal(bool value)
+    {
+        has_final = value;
     }
 
     /// Returns true if sample size ratio is specified, false otherwise
@@ -57,6 +64,9 @@ public:
 
     /// Update tree hash
     void updateTreeHash(SipHash & hash_state) const;
+
+    /// Format for error message
+    String formatForErrorMessage() const;
 
 private:
     bool has_final = false;

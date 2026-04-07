@@ -16,7 +16,7 @@ namespace DB
   * Dependencies between passes must be avoided.
   */
 class IQueryTreePass;
-using QueryTreePassPtr = std::shared_ptr<IQueryTreePass>;
+using QueryTreePassPtr = std::unique_ptr<IQueryTreePass>;
 using QueryTreePasses = std::vector<QueryTreePassPtr>;
 
 class IQueryTreePass
@@ -31,7 +31,7 @@ public:
     virtual String getDescription() = 0;
 
     /// Run pass over query tree
-    virtual void run(QueryTreeNodePtr query_tree_node, ContextPtr context) = 0;
+    virtual void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) = 0;
 
 };
 

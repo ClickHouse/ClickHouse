@@ -3,30 +3,13 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/HashUtils.h>
 
 namespace DB
 {
 
 namespace
 {
-
-struct QueryTreeNodeHash
-{
-    size_t operator()(const IQueryTreeNode * node) const
-    {
-        return node->getTreeHash().first;
-    }
-};
-
-struct QueryTreeNodeEqualTo
-{
-    size_t operator()(const IQueryTreeNode * lhs_node, const IQueryTreeNode * rhs_node) const
-    {
-        return lhs_node->isEqual(*rhs_node);
-    }
-};
-
-using QueryTreeNodeSet = std::unordered_set<const IQueryTreeNode *, QueryTreeNodeHash, QueryTreeNodeEqualTo>;
 
 class OrderByLimitByDuplicateEliminationVisitor : public InDepthQueryTreeVisitor<OrderByLimitByDuplicateEliminationVisitor>
 {
@@ -39,6 +22,7 @@ public:
 
         if (query_node->hasOrderBy())
         {
+            QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
             QueryTreeNodes result_nodes;
 
             auto & query_order_by_nodes = query_node->getOrderBy().getNodes();
@@ -62,10 +46,9 @@ public:
             query_order_by_nodes = std::move(result_nodes);
         }
 
-        unique_expressions_nodes_set.clear();
-
         if (query_node->hasLimitBy())
         {
+            QueryTreeNodeConstRawPtrWithHashSet unique_expressions_nodes_set;
             QueryTreeNodes result_nodes;
 
             auto & query_limit_by_nodes = query_node->getLimitBy().getNodes();
@@ -80,14 +63,11 @@ public:
             query_limit_by_nodes = std::move(result_nodes);
         }
     }
-
-private:
-    QueryTreeNodeSet unique_expressions_nodes_set;
 };
 
 }
 
-void OrderByLimitByDuplicateEliminationPass::run(QueryTreeNodePtr query_tree_node, ContextPtr)
+void OrderByLimitByDuplicateEliminationPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr)
 {
     OrderByLimitByDuplicateEliminationVisitor visitor;
     visitor.visit(query_tree_node);

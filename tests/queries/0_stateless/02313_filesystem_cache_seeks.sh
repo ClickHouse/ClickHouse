@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-s3-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
 
 # set -x
 
@@ -7,14 +7,43 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-TMP_PATH=${CLICKHOUSE_TEST_UNIQUE_NAME}
-QUERIES_FILE=02313_filesystem_cache_seeks.queries
-TEST_FILE=$CUR_DIR/filesystem_cache_queries/$QUERIES_FILE
 
-for storagePolicy in 's3_cache' 'local_cache' 's3_cache_multi'; do
-    echo "Using storage policy: $storagePolicy"
-    cat $TEST_FILE | sed -e "s/_storagePolicy/${storagePolicy}/"  > $TMP_PATH
-    ${CLICKHOUSE_CLIENT} --queries-file $TMP_PATH
-    rm $TMP_PATH
-    echo
+client_opts=(
+  --distributed_ddl_output_mode  'null_status_on_timeout'
+)
+
+for STORAGE_POLICY in 's3_cache' 'local_cache' 's3_cache_multi' 'azure_cache'; do
+    echo "Using storage policy: $STORAGE_POLICY"
+    $CLICKHOUSE_CLIENT --query "SYSTEM CLEAR FILESYSTEM CACHE"
+
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "DROP TABLE IF EXISTS test_02313" > /dev/null
+
+    # `s3_cache_multi` storage policy is incompatible with types that use multiple streams.
+    # To ensure compatibility, force `serialization_info_version` to `default` in this case.
+    if [ "$STORAGE_POLICY" = "s3_cache_multi" ]; then
+        STRING_SERIALIZE_SETTING=", serialization_info_version = 'basic'"
+    else
+        STRING_SERIALIZE_SETTING=""
+    fi
+
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "CREATE TABLE test_02313 (id Int32, val String)
+    ENGINE = MergeTree()
+    ORDER BY tuple()
+    SETTINGS storage_policy = '$STORAGE_POLICY' $STRING_SERIALIZE_SETTING" > /dev/null
+
+    $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_02313
+    SELECT * FROM
+        generateRandom('id Int32, val String')
+    LIMIT 100000"
+
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+    $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02313 WHERE val LIKE concat('%', randomPrintableASCII(3), '%') FORMAT Null"
+
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" --query "DROP TABLE test_02313" > /dev/null
+
 done

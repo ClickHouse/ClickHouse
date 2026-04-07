@@ -8,29 +8,31 @@
 #include <IO/Progress.h>
 #include <Core/NamesAndTypes.h>
 #include <Common/Stopwatch.h>
+#include <functional>
 #include <utility>
 
 namespace DB
 {
+
+class Block;
+struct JSONInferenceInfo;
 
 namespace JSONUtils
 {
     std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows);
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows);
 
-    /// Parse JSON from string and convert it's type to ClickHouse type. Make the result type always Nullable.
-    /// JSON array with different nested types is treated as Tuple.
-    /// If cannot convert (for example when field contains null), return nullptr.
-    DataTypePtr getDataTypeFromField(const String & field, const FormatSettings & settings);
+    void skipRowForJSONEachRow(ReadBuffer & in);
+    void skipRowForJSONCompactEachRow(ReadBuffer & in);
 
     /// Read row in JSONEachRow format and try to determine type for each field.
     /// Return list of names and types.
     /// If cannot determine the type of some field, return nullptr for it.
-    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings);
+    NamesAndTypesList readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info);
 
     /// Read row in JSONCompactEachRow format and try to determine type for each field.
     /// If cannot determine the type of some field, return nullptr for it.
-    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, const FormatSettings & settings, bool json_strings);
+    DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, const FormatSettings & settings, JSONInferenceInfo * inference_info);
 
     bool nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl(ReadBuffer & buf);
 
@@ -76,7 +78,8 @@ namespace JSONUtils
         WriteBuffer & out,
         const std::optional<String> & name = std::nullopt,
         size_t indent = 0,
-        const char * title_after_delimiter = " ");
+        const char * title_after_delimiter = " ",
+        bool pretty_json = false);
 
     void writeColumns(
         const Columns & columns,
@@ -102,15 +105,20 @@ namespace JSONUtils
         size_t rows,
         size_t rows_before_limit,
         bool applied_limit,
+        size_t rows_before_aggregation,
+        bool applied_aggregation,
         const Stopwatch & watch,
         const Progress & progress,
         bool write_statistics,
         WriteBuffer & out);
 
+    void writeException(const String & exception_message, WriteBuffer & out, const FormatSettings & settings, size_t indent = 0);
+
     void skipColon(ReadBuffer & in);
     void skipComma(ReadBuffer & in);
+    bool checkAndSkipComma(ReadBuffer & in);
 
-    String readFieldName(ReadBuffer & in);
+    String readFieldName(ReadBuffer & in, const FormatSettings::JSON & settings);
 
     void skipArrayStart(ReadBuffer & in);
     void skipArrayEnd(ReadBuffer & in);
@@ -119,13 +127,26 @@ namespace JSONUtils
 
     void skipObjectStart(ReadBuffer & in);
     void skipObjectEnd(ReadBuffer & in);
+    bool checkAndSkipObjectStart(ReadBuffer & in);
     bool checkAndSkipObjectEnd(ReadBuffer & in);
 
-    NamesAndTypesList readMetadata(ReadBuffer & in);
-    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header);
+    NamesAndTypesList readMetadata(ReadBuffer & in, const FormatSettings::JSON & settings);
+    bool tryReadMetadata(ReadBuffer & in, NamesAndTypesList & names_and_types, const FormatSettings::JSON & settings);
+    NamesAndTypesList readMetadataAndValidateHeader(ReadBuffer & in, const Block & header, const FormatSettings::JSON & settings);
+    void validateMetadataByHeader(const NamesAndTypesList & names_and_types_from_metadata, const Block & header);
 
-    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name);
-    void skipTheRestOfObject(ReadBuffer & in);
+    bool skipUntilFieldInObject(ReadBuffer & in, const String & desired_field_name, const FormatSettings::JSON & settings);
+    void skipTheRestOfObject(ReadBuffer & in, const FormatSettings::JSON & settings);
+
+    template <typename ReturnType>
+    using NestedDeserialize = std::function<ReturnType(IColumn &, ReadBuffer &)>;
+
+    template <typename ReturnType, bool default_column_return_value = true>
+    ReturnType deserializeEmpyStringAsDefaultOrNested(IColumn & column, ReadBuffer & istr, const NestedDeserialize<ReturnType> & deserialize_nested);
+
+    extern template void deserializeEmpyStringAsDefaultOrNested<void, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<void> & deserialize_nested);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, true>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
+    extern template bool deserializeEmpyStringAsDefaultOrNested<bool, false>(IColumn & column, ReadBuffer & istr, const NestedDeserialize<bool> & deserialize_nested);
 }
 
 }

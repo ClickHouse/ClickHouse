@@ -1,113 +1,173 @@
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Common/quoteString.h>
+#include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
-#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
 {
 
+const char * toString(ColumnDefaultSpecifier kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultSpecifier::Empty: return "";
+        case ColumnDefaultSpecifier::Default: return "DEFAULT";
+        case ColumnDefaultSpecifier::Materialized: return "MATERIALIZED";
+        case ColumnDefaultSpecifier::Alias: return "ALIAS";
+        case ColumnDefaultSpecifier::Ephemeral: return "EPHEMERAL";
+        case ColumnDefaultSpecifier::AutoIncrement: return "AUTO_INCREMENT";
+    }
+}
+
+ColumnDefaultSpecifier columnDefaultSpecifierFromString(std::string_view str)
+{
+    if (str.empty()) return ColumnDefaultSpecifier::Empty;
+    if (str == "DEFAULT") return ColumnDefaultSpecifier::Default;
+    if (str == "MATERIALIZED") return ColumnDefaultSpecifier::Materialized;
+    if (str == "ALIAS") return ColumnDefaultSpecifier::Alias;
+    if (str == "EPHEMERAL") return ColumnDefaultSpecifier::Ephemeral;
+    if (str == "AUTO_INCREMENT") return ColumnDefaultSpecifier::AutoIncrement;
+    return ColumnDefaultSpecifier::Empty;
+}
+
+ColumnDefaultSpecifier toColumnDefaultSpecifier(ColumnDefaultKind kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default: return ColumnDefaultSpecifier::Default;
+        case ColumnDefaultKind::Materialized: return ColumnDefaultSpecifier::Materialized;
+        case ColumnDefaultKind::Alias: return ColumnDefaultSpecifier::Alias;
+        case ColumnDefaultKind::Ephemeral: return ColumnDefaultSpecifier::Ephemeral;
+    }
+}
+
+ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier)
+{
+    switch (specifier)
+    {
+        case ColumnDefaultSpecifier::Empty:
+        case ColumnDefaultSpecifier::Default:
+        case ColumnDefaultSpecifier::AutoIncrement:
+            return ColumnDefaultKind::Default;
+        case ColumnDefaultSpecifier::Materialized: return ColumnDefaultKind::Materialized;
+        case ColumnDefaultSpecifier::Alias: return ColumnDefaultKind::Alias;
+        case ColumnDefaultSpecifier::Ephemeral: return ColumnDefaultKind::Ephemeral;
+    }
+}
+
 ASTPtr ASTColumnDeclaration::clone() const
 {
-    const auto res = std::make_shared<ASTColumnDeclaration>(*this);
+    const auto res = make_intrusive<ASTColumnDeclaration>(*this);
     res->children.clear();
+    res->packed_indices = kAllNotSet;
 
-    if (type)
-    {
-        // Type may be an ASTFunction (e.g. `create table t (a Decimal(9,0))`),
-        // so we have to clone it properly as well.
-        res->type = type->clone();
-        res->children.push_back(res->type);
-    }
-
-    if (default_expression)
-    {
-        res->default_expression = default_expression->clone();
-        res->children.push_back(res->default_expression);
-    }
-
-    if (comment)
-    {
-        res->comment = comment->clone();
-        res->children.push_back(res->comment);
-    }
-
-    if (codec)
-    {
-        res->codec = codec->clone();
-        res->children.push_back(res->codec);
-    }
-
-    if (ttl)
-    {
-        res->ttl = ttl->clone();
-        res->children.push_back(res->ttl);
-    }
-    if (collation)
-    {
-        res->collation = collation->clone();
-        res->children.push_back(res->collation);
-    }
+    if (auto node = getType())
+        res->setType(node->clone());
+    if (auto node = getDefaultExpression())
+        res->setDefaultExpression(node->clone());
+    if (auto node = getComment())
+        res->setComment(node->clone());
+    if (auto node = getCodec())
+        res->setCodec(node->clone());
+    if (auto node = getStatisticsDesc())
+        res->setStatisticsDesc(node->clone());
+    if (auto node = getTTL())
+        res->setTTL(node->clone());
+    if (auto node = getCollation())
+        res->setCollation(node->clone());
+    if (auto node = getSettings())
+        res->setSettings(node->clone());
 
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
-    settings.ostr << backQuote(name);
+    format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
-    if (type)
+    if (auto type = getType())
     {
-        settings.ostr << ' ';
-
-        FormatStateStacked type_frame = frame;
-        type_frame.indent = 0;
-
-        type->formatImpl(settings, state, type_frame);
+        ostr << ' ';
+        type->format(ostr, format_settings, state, frame);
     }
 
     if (null_modifier)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "")
-                      << (*null_modifier ? "" : "NOT ") << "NULL" << (settings.hilite ? hilite_none : "");
+        ostr << ' '
+                      << (*null_modifier ? "" : "NOT ") << "NULL" ;
     }
 
-    if (default_expression)
+    if (auto default_expression = getDefaultExpression())
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "");
-        if (default_specifier != "EPHEMERAL" || !default_expression->as<ASTLiteral>()->value.isNull())
+        ostr << ' ' << toString(default_specifier);
+        if (!ephemeral_default)
         {
-            settings.ostr << ' ';
-            default_expression->formatImpl(settings, state, frame);
+            ostr << ' ';
+            auto nested_frame = frame;
+            if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(default_expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+                nested_frame.need_parens = true;
+            default_expression->format(ostr, format_settings, state, nested_frame);
         }
     }
 
-    if (comment)
+    if (auto comment = getComment())
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
-        comment->formatImpl(settings, state, frame);
+        ostr << ' '  << "COMMENT"  << ' ';
+        comment->format(ostr, format_settings, state, frame);
     }
 
-    if (codec)
+    if (auto codec = getCodec())
     {
-        settings.ostr << ' ';
-        codec->formatImpl(settings, state, frame);
+        ostr << ' ';
+        codec->format(ostr, format_settings, state, frame);
     }
 
-    if (ttl)
+    if (auto statistics_desc = getStatisticsDesc())
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "TTL" << (settings.hilite ? hilite_none : "") << ' ';
-        ttl->formatImpl(settings, state, frame);
+        ostr << ' ';
+        statistics_desc->format(ostr, format_settings, state, frame);
     }
 
-    if (collation)
+    if (auto ttl = getTTL())
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COLLATE" << (settings.hilite ? hilite_none : "") << ' ';
-        collation->formatImpl(settings, state, frame);
+        ostr << ' '  << "TTL"  << ' ';
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        ttl->format(ostr, format_settings, state, nested_frame);
+    }
+
+    if (auto collation = getCollation())
+    {
+        ostr << ' '  << "COLLATE"  << ' ';
+        collation->format(ostr, format_settings, state, frame);
+    }
+
+    if (auto settings = getSettings())
+    {
+        ostr << ' '  << "SETTINGS"  << ' ' << '(';
+        settings->format(ostr, format_settings, state, frame);
+        ostr << ')';
     }
 }
 
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    auto callIfSet = [&](IndexSlot slot)
+    {
+        UInt8 idx = getIndex(slot);
+        if (idx != kNotSet)
+            f(nullptr, &children[idx]);
+    };
+    callIfSet(TYPE);
+    callIfSet(DEFAULT_EXPR);
+    callIfSet(COMMENT);
+    callIfSet(CODEC);
+    callIfSet(STATS);
+    callIfSet(TTL);
+    callIfSet(COLLATION);
+    callIfSet(SETTINGS);
+}
 }

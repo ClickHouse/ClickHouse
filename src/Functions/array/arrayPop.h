@@ -34,8 +34,9 @@ public:
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be an array but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         return arguments[0];
     }
@@ -56,7 +57,7 @@ public:
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             source = GatherUtils::createArraySource(*argument_column_array, false, size);
         else
-            throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
 
         ColumnArray::MutablePtr sink;
 

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/AlterConversions.h>
 
 
 namespace DB
@@ -17,12 +17,22 @@ class QueryPlan;
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+struct IsStorageTouched
+{
+    bool any_rows_affected = false;
+    bool all_rows_affected = false;
+};
+
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
 /// Return false if the data isn't going to be changed by mutations.
-bool isStorageTouchedByMutations(
-    const StoragePtr & storage,
+IsStorageTouched isStorageTouchedByMutations(
+    MergeTreeData::DataPartPtr source_part,
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextMutablePtr context_copy
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -35,20 +45,48 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 /// to this data.
 class MutationsInterpreter
 {
+private:
+    struct Stage;
 public:
+    struct Settings
+    {
+        explicit Settings(bool can_execute_) : can_execute(can_execute_) {}
+
+        /// If false only analyze mutation expressions.
+        bool can_execute = false;
+        /// Whether all columns should be returned, not just updated
+        bool return_all_columns = false;
+        /// Whether we should return mutated or all existing rows
+        bool return_mutated_rows = false;
+        /// Whether we should filter deleted rows by lightweight DELETE.
+        bool apply_deleted_mask = true;
+        /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
+        bool recalculate_dependencies_of_updated_columns = true;
+        /// Number of threads for resulting pipeline.
+        size_t max_threads = 1;
+    };
+
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
     MutationsInterpreter(
         StoragePtr storage_,
-        const StorageMetadataPtr & metadata_snapshot_,
+        StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
         ContextPtr context_,
-        bool can_execute_,
-        bool return_all_columns_ = false,
-        bool return_deleted_rows_ = false);
+        Settings settings_);
+
+    /// Special case for *MergeTree
+    MutationsInterpreter(
+        MergeTreeData & storage_,
+        MergeTreeData::DataPartPtr source_part_,
+        AlterConversionsPtr alter_conversions_,
+        StorageMetadataPtr metadata_snapshot_,
+        MutationCommands commands_,
+        Names available_columns_,
+        ContextPtr context_,
+        Settings settings_);
 
     void validate();
-
     size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
@@ -64,6 +102,10 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
+    NameSet grabDroppedIndices() { return std::move(dropped_indices); }
+
+    NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
+
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
 
     struct MutationKind
@@ -71,7 +113,7 @@ public:
         enum MutationKindEnum
         {
             MUTATE_UNKNOWN,
-            MUTATE_INDEX_PROJECTION,
+            MUTATE_INDEX_STATISTICS_PROJECTION,
             MUTATE_OTHER,
         } mutation_kind = MUTATE_UNKNOWN;
 
@@ -80,34 +122,85 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
-    void setApplyDeletedMask(bool apply) { apply_deleted_mask = apply; }
+    /// Returns a chain of actions that can be
+    /// applied to block to execute mutation commands.
+    std::vector<MutationActions> getMutationActions() const;
+
+    /// Internal class which represents a data part for MergeTree
+    /// or just storage for other storages.
+    /// The main idea is to create a dedicated reading from MergeTree part.
+    /// Additionally we propagate some storage properties.
+    struct Source
+    {
+        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
+
+        StoragePtr getStorage() const;
+        const MergeTreeData * getMergeTreeData() const;
+        AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
+        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        bool isMutatingDataPart() const;
+
+        bool supportsLightweightDelete() const;
+        bool materializeTTLRecalculateOnly() const;
+        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
+        bool hasProjection(const String & name) const;
+        bool hasBrokenProjection(const String & name) const;
+        bool isCompactPart() const;
+
+        void read(
+            Stage & first_stage,
+            QueryPlan & plan,
+            const StorageMetadataPtr & snapshot_,
+            const ContextPtr & context_,
+            const Settings & mutation_settings) const;
+
+        explicit Source(StoragePtr storage_);
+        Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
+
+    private:
+        StoragePtr storage;
+
+        /// Special case for *MergeTree.
+        MergeTreeData * data = nullptr;
+        MergeTreeData::DataPartPtr part;
+        AlterConversionsPtr alter_conversions;
+    };
 
 private:
-    ASTPtr prepare(bool dry_run);
+    MutationsInterpreter(
+        Source source_,
+        StorageMetadataPtr metadata_snapshot_,
+        MutationCommands commands_,
+        Names available_columns_,
+        ContextPtr context_,
+        Settings settings_);
 
-    struct Stage;
+    void prepare(bool dry_run);
+    void addStageIfNeeded(std::optional<UInt64> mutation_version, bool is_filter_stage);
 
-    ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
+    void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
+    void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
     ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
 
-    StoragePtr storage;
+    Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
+
+    /// List of columns in table or in data part that can be updated by mutation.
+    /// If mutation affects all columns (e.g. DELETE), all of this columns
+    /// must be returned by pipeline created in MutationsInterpreter.
+    Names available_columns;
+
     ContextPtr context;
-    bool can_execute;
+    Settings settings;
     SelectQueryOptions select_limits;
 
-    bool apply_deleted_mask = true;
+    LoggerPtr logger;
 
-    ASTPtr mutation_ast;
-
-    /// We have to store interpreter because it use own copy of context
-    /// and some streams from execute method may use it.
-    std::unique_ptr<InterpreterSelectQuery> select_interpreter;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
@@ -143,6 +236,13 @@ private:
         ExpressionActionsChain expressions_chain;
         Names filter_column_names;
 
+        bool affects_all_columns = false;
+        std::optional<UInt64> mutation_version;
+
+        /// True if columns in column_to_updated are not changed, but they need
+        /// to be read (for example to materialize projection).
+        bool is_readonly = false;
+
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
     };
@@ -150,20 +250,17 @@ private:
     std::unique_ptr<Block> updated_header;
     std::vector<Stage> stages;
     bool is_prepared = false; /// Has the sequence of stages been prepared.
+    bool deleted_mask_updated = false;
 
     NameSet materialized_indices;
     NameSet materialized_projections;
+    NameSet materialized_statistics;
+    NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 
     /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
     ColumnDependencies dependencies;
-
-    // whether all columns should be returned, not just updated
-    bool return_all_columns;
-
-    // whether we should return deleted or nondeleted rows on DELETE mutation
-    bool return_deleted_rows;
 };
 
 }

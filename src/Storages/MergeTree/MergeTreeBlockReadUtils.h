@@ -1,94 +1,55 @@
 #pragma once
 
-#include <optional>
 #include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+
+#include <algorithm>
 
 
 namespace DB
 {
 
-class MergeTreeData;
-struct MergeTreeReadTask;
-struct MergeTreeBlockSizePredictor;
+struct MergeTreeReaderSettings;
 class IMergeTreeDataPartInfoForReader;
 
-using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
-using MergeTreeBlockSizePredictorPtr = std::shared_ptr<MergeTreeBlockSizePredictor>;
-
-
-/** If some of the requested columns are not in the part,
-  * then find out which columns may need to be read further,
-  * so that you can calculate the DEFAULT expression for these columns.
-  * Adds them to the `columns`.
-  */
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns);
 
+PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column);
 
-struct MergeTreeReadTaskColumns
-{
-    /// column names to read during WHERE
-    NamesAndTypesList columns;
-    /// column names to read during each PREWHERE step
-    std::vector<NamesAndTypesList> pre_columns;
-
-    std::string dump() const;
-};
-
-/// A batch of work for MergeTreeThreadSelectProcessor
-struct MergeTreeReadTask
-{
-    /// data part which should be read while performing this task
-    MergeTreeData::DataPartPtr data_part;
-    /// Ranges to read from `data_part`.
-    MarkRanges mark_ranges;
-    /// for virtual `part_index` virtual column
-    size_t part_index_in_query;
-    /// ordered list of column names used in this query, allows returning blocks with consistent ordering
-    const Names & ordered_names;
-    /// used to determine whether column should be filtered during PREWHERE or WHERE
-    const NameSet & column_name_set;
-    /// column names to read during PREWHERE and WHERE
-    const MergeTreeReadTaskColumns & task_columns;
-    /// should PREWHERE column be returned to requesting side?
-    const bool remove_prewhere_column;
-    /// Used to satistfy preferred_block_size_bytes limitation
-    MergeTreeBlockSizePredictorPtr size_predictor;
-    /// Used to save current range processing status
-    MergeTreeRangeReader range_reader;
-    /// Range readers for multiple filtering steps: row level security, PREWHERE etc.
-    /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but noit a vector
-    std::deque<MergeTreeRangeReader> pre_range_readers;
-
-    bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
-
-    MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part_,
-        const MarkRanges & mark_ranges_,
-        size_t part_index_in_query_,
-        const Names & ordered_names_,
-        const NameSet & column_name_set_,
-        const MergeTreeReadTaskColumns & task_columns_,
-        bool remove_prewhere_column_,
-        MergeTreeBlockSizePredictorPtr && size_predictor_);
-};
+void addPatchPartsColumns(
+    MergeTreeReadTaskColumns & result,
+    const StorageSnapshotPtr & storage_snapshot,
+    const GetColumnsOptions & options,
+    const PatchPartsForReader & patch_parts,
+    const Names & all_columns_to_read,
+    bool has_lightweight_delete);
 
 MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const Names & system_columns,
+    const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
+    const PrewhereExprSteps & mutation_steps,
+    const IndexReadTasks & index_read_tasks,
+    const ExpressionActionsSettings & actions_settings,
+    const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns);
+
+MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & required_columns,
+    const PrewhereExprSteps & mutation_steps);
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -97,33 +58,40 @@ struct MergeTreeBlockSizePredictor
     void update(const Block & sample_block, const Columns & columns, size_t num_rows, double decay = calculateDecay());
 
     /// Return current block size (after update())
-    inline size_t getBlockSize() const
+    size_t getBlockSize() const
     {
         return block_size_bytes;
     }
 
-
     /// Predicts what number of rows should be read to exhaust byte quota per column
-    inline size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
+    size_t estimateNumRowsForMaxSizeColumn(size_t bytes_quota) const
     {
-        double max_size_per_row = std::max<double>(std::max<size_t>(max_size_per_row_fixed, 1), max_size_per_row_dynamic);
-        return (bytes_quota > block_size_rows * max_size_per_row)
-            ? static_cast<size_t>(bytes_quota / max_size_per_row) - block_size_rows
+        /// Below we calculate the following expression: `bytes_quota / max_size_per_row` and then cast its result to size_t.
+        /// The problem is that the conversion to double (`max_size_per_row` is double) can overflow size_t if `bytes_quota` is close to `SIZE_MAX`
+        /// and an attempt to convert this value back to size_t will result in undefined behavior.
+        /// ATST, if `bytes_quota` is close to `SIZE_MAX`, we can safely ignore it and assume that no limit was set.
+        if (static_cast<double>(bytes_quota) >= static_cast<double>(std::numeric_limits<size_t>::max()))
+            return 0;
+
+        double max_size_per_row
+            = std::max<double>({max_size_per_row_fixed, static_cast<double>(static_cast<UInt64>(1)), max_size_per_row_dynamic});
+        return (static_cast<double>(bytes_quota) > static_cast<double>(block_size_rows) * max_size_per_row)
+            ? static_cast<size_t>(static_cast<double>(bytes_quota) / max_size_per_row) - block_size_rows
             : 0;
     }
 
     /// Predicts what number of rows should be read to exhaust byte quota per block
-    inline size_t estimateNumRows(size_t bytes_quota) const
+    size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
             ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, static_cast<size_t>(bytes_per_row_current)))
             : 0;
     }
 
-    inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
+    void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = calculateDecay())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
-        double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
+        double current_ration = static_cast<double>(rows_was_filtered) / std::max(1.0, static_cast<double>(rows_was_read));
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;
@@ -136,8 +104,7 @@ struct MergeTreeBlockSizePredictor
     static double calculateDecay() { return 1. - std::pow(TARGET_WEIGHT, 1. / NUM_UPDATES_TO_TARGET_WEIGHT); }
 
 protected:
-
-    MergeTreeData::DataPartPtr data_part;
+    DataPartPtr data_part;
 
     struct ColumnInfo
     {
@@ -145,17 +112,22 @@ protected:
         double bytes_per_row_global = 0;
         double bytes_per_row = 0;
         size_t size_bytes = 0;
+        /// For subcolumns, the output column may be much smaller than the data actually
+        /// read from disk (e.g. a Map subcolumn extracts one key but reads the whole Map).
+        /// When set, `bytes_per_row` will not drop below `bytes_per_row_global`.
+        bool is_subcolumn = false;
     };
 
     std::vector<ColumnInfo> dynamic_columns_infos;
     size_t fixed_columns_bytes_per_row = 0;
 
-    size_t max_size_per_row_fixed = 0;
+    double max_size_per_row_fixed = 0;
     double max_size_per_row_dynamic = 0;
 
     size_t number_of_rows_in_part;
 
     bool is_initialized_in_update = false;
+    bool allow_subcolumns_sizes_calculation = false;
 
     void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 

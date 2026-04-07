@@ -6,20 +6,30 @@
 # pylint: disable=broad-except
 
 import contextlib
+import logging
+import os
+import sys
+import time
+from pathlib import Path
+
 import grpc
 import psycopg2
 import pymysql.connections
 import pymysql.err
 import pytest
-import sys
-import time
-import logging
-from helpers.cluster import ClickHouseCluster, run_and_check
-from helpers.client import Client, QueryRuntimeException
 from kazoo.exceptions import NodeExistsError
-from pathlib import Path
 from requests.exceptions import ConnectionError
 from urllib3.util.retry import Retry
+
+from helpers.client import Client, QueryRuntimeException
+from helpers.cluster import ClickHouseCluster, run_and_check
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -33,26 +43,14 @@ instance = cluster.add_instance(
     ],
     user_configs=["configs/default_passwd.xml"],
     with_zookeeper=True,
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
+    },
 )
 
 
 LOADS_QUERY = "SELECT value FROM system.events WHERE event = 'MainConfigLoads'"
-
-
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-
-proto_dir = Path(__file__).parent / "protos"
-gen_dir = Path(__file__).parent / "_gen"
-gen_dir.mkdir(exist_ok=True)
-run_and_check(
-    f"python3 -m grpc_tools.protoc -I{proto_dir!s} --python_out={gen_dir!s} --grpc_python_out={gen_dir!s} \
-    {proto_dir!s}/clickhouse_grpc.proto",
-    shell=True,
-)
-
-sys.path.append(str(gen_dir))
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
 
 
 @pytest.fixture(name="cluster", scope="module")
@@ -112,11 +110,15 @@ def get_pgsql_client(cluster, port):
             time.sleep(0.1)
 
 
+@contextlib.contextmanager
 def get_grpc_channel(cluster, port):
     host_port = cluster.get_instance_ip("instance") + f":{port}"
     channel = grpc.insecure_channel(host_port)
     grpc.channel_ready_future(channel).result(timeout=10)
-    return channel
+    try:
+        yield channel
+    finally:
+        channel.close()
 
 
 def grpc_query(channel, query_text):
@@ -146,7 +148,7 @@ def configure_from_zk(zk, querier=None):
             zk.create(path=path, value=value, makepath=True)
             has_changed = True
         except NodeExistsError:
-            if zk.get(path) != value:
+            if zk.get(path)[0] != value:
                 zk.set(path=path, value=value)
                 has_changed = True
         if has_changed and querier is not None:
@@ -156,7 +158,7 @@ def configure_from_zk(zk, querier=None):
 @contextlib.contextmanager
 def sync_loaded_config(querier):
     # Depending on whether we test a change on tcp or http
-    # we monitor canges using the other, untouched, protocol
+    # we monitor changes using the other, untouched, protocol
     loads_before = querier(LOADS_QUERY)
     yield
     wait_loaded_config_changed(loads_before, querier)
@@ -165,7 +167,7 @@ def sync_loaded_config(querier):
 def wait_loaded_config_changed(loads_before, querier):
     loads_after = None
     start_time = time.monotonic()
-    while time.monotonic() - start_time < 10:
+    while time.monotonic() - start_time < 60:
         try:
             loads_after = querier(LOADS_QUERY)
             if loads_after != loads_before:
@@ -238,16 +240,17 @@ def test_change_postgresql_port(cluster, zk):
 
 def test_change_grpc_port(cluster, zk):
     with default_client(cluster, zk) as client:
-        grpc_channel = get_grpc_channel(cluster, port=9100)
-        assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
-        with sync_loaded_config(client.query):
-            zk.set("/clickhouse/ports/grpc", b"9090")
-        with pytest.raises(
-            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
-        ):
-            grpc_query(grpc_channel, "SELECT 1")
-        grpc_channel_on_new_port = get_grpc_channel(cluster, port=9090)
-        assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
+        with get_grpc_channel(cluster, port=9100) as grpc_channel:
+            assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
+            with sync_loaded_config(client.query):
+                zk.set("/clickhouse/ports/grpc", b"9090")
+            with pytest.raises(
+                grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+            ):
+                grpc_query(grpc_channel, "SELECT 1")
+
+        with get_grpc_channel(cluster, port=9090) as grpc_channel_on_new_port:
+            assert grpc_query(grpc_channel_on_new_port, "SELECT 1") == "1\n"
 
 
 def test_remove_tcp_port(cluster, zk):
@@ -292,14 +295,14 @@ def test_remove_postgresql_port(cluster, zk):
 
 def test_remove_grpc_port(cluster, zk):
     with default_client(cluster, zk) as client:
-        grpc_channel = get_grpc_channel(cluster, port=9100)
-        assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
-        with sync_loaded_config(client.query):
-            zk.delete("/clickhouse/ports/grpc")
-        with pytest.raises(
-            grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
-        ):
-            grpc_query(grpc_channel, "SELECT 1")
+        with get_grpc_channel(cluster, port=9100) as grpc_channel:
+            assert grpc_query(grpc_channel, "SELECT 1") == "1\n"
+            with sync_loaded_config(client.query):
+                zk.delete("/clickhouse/ports/grpc")
+            with pytest.raises(
+                grpc._channel._InactiveRpcError, match="StatusCode.UNAVAILABLE"
+            ):
+                grpc_query(grpc_channel, "SELECT 1")
 
 
 def test_change_listen_host(cluster, zk):
@@ -320,8 +323,7 @@ def test_change_listen_host(cluster, zk):
             client.query("SELECT 1")
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
-        with sync_loaded_config(localhost_client.query):
-            configure_from_zk(zk)
+        configure_from_zk(zk, localhost_client.query)
 
 
 # This is a regression test for the case when the clickhouse-server was waiting
@@ -343,13 +345,14 @@ def test_reload_via_client(cluster, zk):
         instance.docker_id,
     ] + localhost_client.command
 
-    # NOTE: reload via zookeeper is too fast, but 100 iterations was enough, even for debug build.
-    for i in range(0, 100):
+    listen_config = "/etc/clickhouse-server/config.d/99-listen.yaml"
+    # NOTE: this test cannot use ZooKeeper since it uses watches to subscribe to changes and they are very fast
+    for i in range(0, 10):
         try:
-            client = get_client(cluster, port=9000)
-            zk.set("/clickhouse/listen_hosts", b"<listen_host>127.0.0.1</listen_host>")
+            instance.replace_config(listen_config, "listen_host: 127.0.0.1")
+
             query_id = f"reload_config_{i}"
-            client.query("SYSTEM RELOAD CONFIG", query_id=query_id)
+            instance.query("SYSTEM RELOAD CONFIG", query_id=query_id)
             assert int(localhost_client.query("SELECT 1")) == 1
             localhost_client.query("SYSTEM FLUSH LOGS")
             MainConfigLoads = int(
@@ -369,14 +372,21 @@ def test_reload_via_client(cluster, zk):
             logging.exception("Retry %s", i)
             exception = e
         finally:
-            while True:
+            instance.replace_config(listen_config, "")
+
+            reset_config_exception = None
+            for i in range(1, 10):
                 try:
-                    with sync_loaded_config(localhost_client.query):
-                        configure_from_zk(zk)
+                    instance.query("SYSTEM RELOAD CONFIG")
+                    reset_config_exception = None
                     break
-                except QueryRuntimeException:
-                    logging.exception("The new socket is not binded yet")
+                except QueryRuntimeException as e:
+                    logging.exception("The new socket is not bound yet")
                     time.sleep(0.1)
+                    reset_config_exception = e
+
+            if reset_config_exception is not None:
+                raise reset_config_exception
 
     if exception:
         raise exception

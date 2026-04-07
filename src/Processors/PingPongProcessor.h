@@ -3,10 +3,11 @@
 #include <Processors/IProcessor.h>
 #include <base/unit.h>
 #include <Processors/Chunk.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+class Block;
 
 /*
  * Processor with N inputs and N outputs. Moves data from i-th input to i-th output as is.
@@ -55,7 +56,7 @@ protected:
     };
 
     bool sendPing();
-    bool recievePing();
+    bool receivePing();
     bool canSend() const;
 
     bool isPairsFinished() const;
@@ -91,11 +92,7 @@ public:
 
     String getName() const override { return "ReadHeadBalancedProcessor"; }
 
-    bool consume(const Chunk & chunk) override
-    {
-        data_consumed += chunk.getNumRows();
-        return data_consumed > size_to_wait;
-    }
+    bool consume(const Chunk & chunk) override;
 
 private:
     size_t data_consumed;

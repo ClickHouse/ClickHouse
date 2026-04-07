@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/TypeName.h>
 #include <Core/TypeId.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -7,9 +8,6 @@
 
 namespace DB
 {
-
-template <typename T>
-class ColumnVector;
 
 /** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */
@@ -32,6 +30,7 @@ public:
     Field getDefault() const override;
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     bool isParametric() const override { return false; }
     bool haveSubtypes() const override { return false; }
@@ -53,7 +52,9 @@ public:
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
     bool canBeInsideLowCardinality() const override { return true; }
 
-    SerializationPtr doGetDefaultSerialization() const override { return std::make_shared<SerializationNumber<T>>(); }
+    void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationNumber<T>::create(); }
 };
 
 /// Prevent implicit template instantiation of DataTypeNumberBase for common numeric types
@@ -70,6 +71,7 @@ extern template class DataTypeNumberBase<Int32>;
 extern template class DataTypeNumberBase<Int64>;
 extern template class DataTypeNumberBase<Int128>;
 extern template class DataTypeNumberBase<Int256>;
+extern template class DataTypeNumberBase<BFloat16>;
 extern template class DataTypeNumberBase<Float32>;
 extern template class DataTypeNumberBase<Float64>;
 

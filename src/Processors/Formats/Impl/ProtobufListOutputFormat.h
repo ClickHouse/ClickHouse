@@ -4,10 +4,11 @@
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
+#    include <Formats/FormatSchemaInfo.h>
+#    include <Formats/ProtobufSchemas.h>
 
 namespace DB
 {
-class FormatSchemaInfo;
 class ProtobufWriter;
 class ProtobufSerializer;
 
@@ -25,22 +26,22 @@ class ProtobufListOutputFormat final : public IRowOutputFormat
 public:
     ProtobufListOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
-        const RowOutputFormatParams & params_,
-        const FormatSchemaInfo & schema_info_,
-        bool defaults_for_nullable_google_wrappers_);
+        SharedHeader header_,
+        const ProtobufSchemaInfo & schema_info_,
+        bool defaults_for_nullable_google_wrappers_,
+        const String & google_protos_path);
 
-    String getName() const override { return "ProtobufListOutputFormat"; }
-
-    String getContentType() const override { return "application/octet-stream"; }
+    String getName() const override { return "ProtobufList"; }
 
 private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
 
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     std::unique_ptr<ProtobufWriter> writer;
+    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 

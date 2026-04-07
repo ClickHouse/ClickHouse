@@ -2,7 +2,6 @@
 
 #include <sys/types.h>
 #include <unistd.h>
-#include <iostream>
 #include <memory>
 #include <functional>
 #include <optional>
@@ -15,14 +14,14 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
-#include <Poco/Version.h>
 #include <base/types.h>
-#include <Common/logger_useful.h>
 #include <base/getThreadId.h>
 #include <Daemon/GraphiteWriter.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/StatusFile.h>
 #include <Loggers/Loggers.h>
+
+class SignalListener;
 
 
 /// \brief Base class for applications that can run as daemons.
@@ -43,15 +42,13 @@ class BaseDaemon : public Poco::Util::ServerApplication, public Loggers
     friend class SignalListener;
 
 public:
-    static inline constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
+    static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
     ~BaseDaemon() override;
 
     /// Load configuration, prepare loggers, etc.
     void initialize(Poco::Util::Application &) override;
-
-    void reloadConfiguration();
 
     /// Process command line parameters
     void defineOptions(Poco::Util::OptionSet & new_options) override;
@@ -106,7 +103,7 @@ public:
 
     GraphiteWriter * getGraphiteWriter(const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME)
     {
-        if (graphite_writers.count(config_name))
+        if (graphite_writers.contains(config_name))
             return graphite_writers[config_name].get();
         return nullptr;
     }
@@ -124,11 +121,15 @@ public:
     /// Hash of the binary for integrity checks.
     String getStoredBinaryHash() const;
 
+    /// The working directory at the time the daemon was started, before any chdir calls.
+    const std::string & getOriginalWorkingDirectory() const { return original_working_directory; }
+
 protected:
+    void loadConfiguration();
+
     virtual void logRevision() const;
 
-    /// thread safe
-    virtual void handleSignal(int signal_id);
+    void onTerminateRequestSignal();
 
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
@@ -136,13 +137,7 @@ protected:
     /// fork the main process and watch if it was killed
     void setupWatchdog();
 
-    void waitForTerminationRequest()
-#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
-    override
-#endif
-    ;
-    /// thread safe
-    virtual void onInterruptSignals(int signal_id);
+    void waitForTerminationRequest() override;
 
     template <class Daemon>
     static std::optional<std::reference_wrapper<Daemon>> tryGetInstance();
@@ -159,24 +154,20 @@ protected:
 
     /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
-    std::unique_ptr<Poco::Runnable> signal_listener;
+    std::unique_ptr<SignalListener> signal_listener;
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
-    std::mutex signal_handler_mutex;
-    std::condition_variable signal_event;
-    std::atomic_size_t terminate_signals_counter{0};
-    std::atomic_size_t sigint_signals_counter{0};
-
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;
-    Poco::Util::AbstractConfiguration * last_configuration = nullptr;
+
+    /// The working directory at the time the daemon object was constructed,
+    /// before Poco's beDaemon/chdir or any other directory changes.
+    /// Used to resolve relative config paths correctly.
+    std::string original_working_directory;
 
     String build_id;
-    String git_hash;
     String stored_binary_hash;
-
-    std::vector<int> handled_signals;
 
     bool should_setup_watchdog = false;
     char * argv0 = nullptr;
@@ -191,13 +182,18 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
     {
         ptr = dynamic_cast<Daemon *>(&Poco::Util::Application::instance());
     }
-    catch (const Poco::NullPointerException &)
+    catch (const Poco::NullPointerException &) /// NOLINT(bugprone-empty-catch)
     {
         /// if daemon doesn't exist than instance() throw NullPointerException
     }
 
     if (ptr)
         return std::optional<std::reference_wrapper<Daemon>>(*ptr);
-    else
-        return {};
+    return {};
 }
+
+#if defined(OS_LINUX)
+/// Sends notification (e.g. "server is ready") to systemd, analogous to sd_notify from libsystemd.
+/// See https://www.freedesktop.org/software/systemd/man/sd_notify.html for more information on the supported notifications.
+void systemdNotify(const std::string_view & command);
+#endif

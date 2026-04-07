@@ -1,16 +1,33 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Chunk.h>
+#include <Common/ThreadStatus.h>
+#include <Common/Logger.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/SettingsChanges.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Core/Settings.h>
-#include <Poco/Logger.h>
+#include <Common/StringWithMemoryTracking.h>
+#include <Interpreters/AsynchronousInsertQueueDataKind.h>
+#include <Interpreters/StorageID.h>
 
-#include <atomic>
-#include <unordered_map>
-
+#include <future>
+#include <variant>
 
 namespace DB
 {
+
+struct Settings;
+
+/// Statistics of a successfully flushed async insert entry,
+/// communicated back to the waiting client via the future.
+struct AsyncInsertProgress
+{
+    size_t rows = 0;
+    size_t bytes = 0;
+};
 
 /// A queue, that stores data for insert queries and periodically flushes it to tables.
 /// The data is grouped by table, format and settings of insert query.
@@ -18,26 +35,114 @@ class AsynchronousInsertQueue : public WithContext
 {
 public:
     using Milliseconds = std::chrono::milliseconds;
+    using ResultProgress = AsyncInsertProgress;
 
-    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size, Milliseconds cleanup_timeout);
+    AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_);
     ~AsynchronousInsertQueue();
 
-    void push(ASTPtr query, ContextPtr query_context);
-    void waitForProcessingQuery(const String & query_id, const Milliseconds & timeout);
+    struct PushResult
+    {
+        enum Status
+        {
+            OK,
+            TOO_MUCH_DATA,
+        };
 
-private:
+        Status status;
+
+        /// Future that allows to wait until the query is flushed.
+        /// On success, returns the number of rows/bytes actually written.
+        std::future<ResultProgress> future{};
+
+        /// Read buffer that contains extracted
+        /// from query data in case of too much data.
+        std::unique_ptr<ReadBuffer> insert_data_buffer{};
+
+        /// Block that contains received by Native
+        /// protocol data in case of too much data.
+        Block insert_block{};
+    };
+
+    static void validateSettings(const Settings & settings, LoggerPtr log);
+
+    /// Force flush the whole queue.
+    void flushAll();
+    void flush(const std::vector<StorageID> & tables);
+
+    PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
+    PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
+    size_t getPoolSize() const { return pool_size; }
+
+    /// This method should be called manually because it's not flushed automatically in dtor
+    /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
+    void flushAndShutdown();
 
     struct InsertQuery
     {
+    public:
         ASTPtr query;
-        Settings settings;
+        String query_str;
+        std::optional<UUID> user_id;
+        std::vector<UUID> current_roles;
+        std::unique_ptr<Settings> settings;
 
-        InsertQuery(const ASTPtr & query_, const Settings & settings_);
+        AsynchronousInsertQueueDataKind data_kind;
+        UInt128 hash;
+
+        InsertQuery(
+            const ASTPtr & query_,
+            const std::optional<UUID> & user_id_,
+            const std::vector<UUID> & current_roles_,
+            const Settings & settings_,
+            AsynchronousInsertQueueDataKind data_kind_);
+
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
-
         bool operator==(const InsertQuery & other) const;
-        struct Hash { UInt64 operator()(const InsertQuery & insert_query) const; };
+        StorageID getStorageID() const;
+
+    private:
+        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
+
+        std::vector<SettingChange> setting_changes;
+    };
+
+private:
+    struct DataChunk : public std::variant<StringWithMemoryTracking, Block>
+    {
+        using std::variant<StringWithMemoryTracking, Block>::variant;
+
+        size_t byteSize() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.bytes();
+                else
+                    return arg.size();
+            }, *this);
+        }
+
+        AsynchronousInsertQueueDataKind getDataKind() const
+        {
+            if (std::holds_alternative<Block>(*this))
+                return AsynchronousInsertQueueDataKind::Preprocessed;
+            return AsynchronousInsertQueueDataKind::Parsed;
+        }
+
+        bool empty() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.rows() == 0;
+                else
+                    return arg.empty();
+            }, *this);
+        }
+
+        const StringWithMemoryTracking * asString() const { return std::get_if<StringWithMemoryTracking>(this); }
+        const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
     struct InsertData
@@ -45,111 +150,181 @@ private:
         struct Entry
         {
         public:
-            const String bytes;
+            DataChunk chunk;
             const String query_id;
-            std::chrono::time_point<std::chrono::system_clock> create_time;
+            const String async_dedup_token;
+            const String format;
+            MemoryTracker * const user_memory_tracker;
+            const std::chrono::time_point<std::chrono::system_clock> create_time;
+            NameToNameMap query_parameters;
 
-            Entry(String && bytes_, String && query_id_);
+            Entry(
+                DataChunk && chunk_,
+                String && query_id_,
+                const String & async_dedup_token_,
+                const String & format_,
+                MemoryTracker * user_memory_tracker_);
 
-            void finish(std::exception_ptr exception_ = nullptr);
-            bool wait(const Milliseconds & timeout) const;
-            bool isFinished() const;
-            std::exception_ptr getException() const;
+            void resetChunk();
+            void finish(ResultProgress result = {});
+            void finish(std::exception_ptr exception_);
+
+            std::future<ResultProgress> getFuture() { return promise.get_future(); }
+            bool isFinished() const { return finished; }
 
         private:
-            mutable std::mutex mutex;
-            mutable std::condition_variable cv;
-
-            bool finished = false;
-            std::exception_ptr exception;
+            std::promise<ResultProgress> promise;
+            std::atomic_bool finished = false;
         };
 
-        explicit InsertData(std::chrono::steady_clock::time_point now)
-            : first_update(now)
-        {}
+        InsertData()
+            : ready_future(ready_promise.get_future().share())
+        { }
+
+        explicit InsertData(Milliseconds timeout_ms_)
+            : ready_future(ready_promise.get_future().share())
+            , timeout_ms(timeout_ms_)
+        { }
+
+        ~InsertData()
+        {
+            auto it = entries.begin();
+            // Entries must be destroyed in context of user who runs async insert.
+            // Each entry in the list may correspond to a different user,
+            // so we need to switch current thread's MemoryTracker parent on each iteration.
+            while (it != entries.end())
+            {
+                MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
+                it = entries.erase(it);
+            }
+
+            ready_promise.set_value();
+        }
 
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
-        size_t size = 0;
-
-        /// Timestamp of the first insert into queue, or after the last queue dump.
-        /// Used to detect for how long the queue is active, so we can dump it by timer.
-        std::chrono::time_point<std::chrono::steady_clock> first_update;
+        std::promise<void>  ready_promise;
+        std::shared_future<void> ready_future;
+        size_t size_in_bytes = 0;
+        Milliseconds timeout_ms = Milliseconds::zero();
     };
 
     using InsertDataPtr = std::unique_ptr<InsertData>;
 
-    /// A separate container, that holds a data and a mutex for it.
-    /// When it's needed to process current chunk of data, it can be moved for processing
-    /// and new data can be recreated without holding a lock during processing.
     struct Container
     {
-        std::mutex mutex;
+        InsertQuery key;
         InsertDataPtr data;
     };
 
-    using Queue = std::unordered_map<InsertQuery, std::shared_ptr<Container>, InsertQuery::Hash>;
-    using QueueIterator = Queue::iterator;
     /// Ordered container
-    using DeadlineQueue = std::map<std::chrono::steady_clock::time_point, QueueIterator>;
+    /// Key is a timestamp of the first insert into batch.
+    /// Used to detect for how long the batch is active, so we can dump it by timer.
+    using Queue = std::map<std::chrono::steady_clock::time_point, Container>;
+    using QueueIterator = Queue::iterator;
+    using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
+    using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
 
-    mutable std::shared_mutex rwlock;
-    Queue queue;
+    struct QueueShard
+    {
+        mutable std::mutex mutex;
+        mutable std::condition_variable are_tasks_available;
 
-    /// This is needed only for using inside cleanup() function and correct signaling about shutdown
-    mutable std::mutex cleanup_mutex;
-    mutable std::condition_variable cleanup_can_run;
+        Queue queue;
+        QueueIteratorByKey iterators;
 
-    mutable std::mutex deadline_mutex;
-    mutable std::condition_variable are_tasks_available;
-    DeadlineQueue deadline_queue;
+        OptionalTimePoint last_insert_time;
+        std::chrono::milliseconds busy_timeout_ms;
+    };
 
-    using QueryIdToEntry = std::unordered_map<String, InsertData::EntryPtr>;
-    mutable std::mutex currently_processing_mutex;
-    QueryIdToEntry currently_processing_queries;
+    /// Times of the two most recent queue flushes.
+    /// Used to calculate adaptive timeout.
+    struct QueueShardFlushTimeHistory
+    {
+    public:
+        using TimePoints = std::pair<OptionalTimePoint, OptionalTimePoint>;
+        TimePoints getRecentTimePoints() const;
+        void updateWithCurrentTime();
+
+    private:
+        mutable SharedMutex mutex;
+        TimePoints time_points;
+    };
+
+    const size_t pool_size;
+    const bool flush_on_shutdown;
+
+    std::vector<QueueShard> queue_shards;
+    std::vector<QueueShardFlushTimeHistory> flush_time_history_per_queue_shard;
 
     /// Logic and events behind queue are as follows:
-    ///  - busy_timeout:   if queue is active for too long and there are a lot of rapid inserts, then we dump the data, so it doesn't
-    ///                    grow for a long period of time and users will be able to select new data in deterministic manner.
-    ///  - stale_timeout:  if queue is stale for too long, then we dump the data too, so that users will be able to select the last
-    ///                    piece of inserted data.
+    ///  - async_insert_busy_timeout_ms:
+    ///   if queue is active for too long and there are a lot of rapid inserts, then we dump the data, so it doesn't
+    ///   grow for a long period of time and users will be able to select new data in deterministic manner.
     ///
-    /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached (async_insert_max_data_size setting)
-    /// If so, then again we dump the data.
-
-    const Milliseconds cleanup_timeout;
+    /// During processing incoming INSERT queries we can also check whether the maximum size of data in buffer is reached
+    /// (async_insert_max_data_size setting). If so, then again we dump the data.
 
     std::atomic<bool> shutdown{false};
+    std::atomic<bool> flush_stopped{false};
 
-    ThreadPool pool;  /// dump the data only inside this pool.
-    ThreadFromGlobalPool dump_by_first_update_thread;  /// uses busy_timeout and busyCheck()
-    ThreadFromGlobalPool cleanup_thread;               /// uses busy_timeout and cleanup()
+    /// A mutex that prevents concurrent forced flushes of queue.
+    mutable std::mutex flush_mutex;
 
-    Poco::Logger * log = &Poco::Logger::get("AsynchronousInsertQueue");
+    /// Dump the data only inside this pool.
+    ThreadPool pool;
 
-    void busyCheck();
-    void cleanup();
+    /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
+    std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
-    /// Should be called with shared or exclusively locked 'rwlock'.
-    void pushImpl(InsertData::EntryPtr entry, QueueIterator it);
+    LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
-    static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
+    PushResult pushDataChunk(ASTPtr query, DataChunk && chunk, ContextPtr query_context);
+
+    Milliseconds getBusyWaitTimeoutMs(
+        const Settings & settings,
+        const QueueShard & shard,
+        const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
+        std::chrono::steady_clock::time_point now) const;
+
+    void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
+
+    void processBatchDeadlines(size_t shard_num);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
+
+    static void processData(
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+
+    template <typename LogFunc>
+    static Chunk processEntriesWithParsing(
+        const InsertQuery & key,
+        const InsertDataPtr & data,
+        const Block & header,
+        const ContextPtr & insert_context,
+        LoggerPtr logger,
+        LogFunc && add_to_async_insert_log);
+
+    template <typename LogFunc>
+    static Chunk processPreprocessedEntries(
+        const InsertDataPtr & data,
+        const Block & header,
+        const ContextPtr & context_,
+        LoggerPtr logger,
+        LogFunc && add_to_async_insert_log);
 
     template <typename E>
     static void finishWithException(const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception);
 
-    /// @param timeout - time to wait
-    /// @return true if shutdown requested
-    bool waitForShutdown(const Milliseconds & timeout);
+    static std::vector<std::string> getInsertQueryIds(InsertData & data);
 
 public:
-    auto getQueueLocked() const
+    auto getQueueLocked(size_t shard_num) const
     {
-        std::shared_lock lock(rwlock);
-        return std::make_pair(std::ref(queue), std::move(lock));
+        const auto & shard = queue_shards[shard_num];
+        std::unique_lock lock(shard.mutex);
+        return std::make_pair(std::ref(shard.queue), std::move(lock));
     }
 };
 

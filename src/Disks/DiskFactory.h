@@ -15,7 +15,7 @@
 namespace DB
 {
 
-using DisksMap = std::map<String, DiskPtr>;
+using DisksMap = std::map<String, DiskPtr, std::less<>>;
 /**
  * Disk factory. Responsible for creating new disk objects.
  */
@@ -27,7 +27,9 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map)>;
+        const DisksMap & map,
+        bool attach,
+        bool custom_disk)>;
 
     static DiskFactory & instance();
 
@@ -38,7 +40,12 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap & map) const;
+        const DisksMap & map,
+        bool attach = false,
+        bool custom_disk = false,
+        const std::unordered_set<String> & skip_types = {}) const;
+
+    void clearRegistry();
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

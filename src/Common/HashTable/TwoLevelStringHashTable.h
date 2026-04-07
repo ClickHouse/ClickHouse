@@ -10,7 +10,7 @@ protected:
     using Self = TwoLevelStringHashTable;
 
 public:
-    using Key = StringRef;
+    using Key = std::string_view;
     using Impl = ImplTable;
 
     static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
@@ -38,6 +38,7 @@ public:
     Impl impls[NUM_BUCKETS];
 
     TwoLevelStringHashTable() = default;
+    TwoLevelStringHashTable(size_t ) {} /// NOLINT
 
     template <typename Source>
     explicit TwoLevelStringHashTable(const Source & src)
@@ -77,15 +78,15 @@ public:
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
         StringHashTableHash hash;
-        const StringRef & x = keyHolderGetKey(key_holder);
-        const size_t sz = x.size;
+        const std::string_view & x = keyHolderGetKey(key_holder);
+        const size_t sz = x.size();
         if (sz == 0)
         {
             keyHolderDiscardKey(key_holder);
             return func(self.impls[0].m0, VoidKey{}, 0);
         }
 
-        if (x.data[x.size - 1] == 0)
+        if (x[x.size() - 1] == 0)
         {
             // Strings with trailing zeros are not representable as fixed-size
             // string keys. Put them to the generic table.
@@ -95,7 +96,7 @@ public:
                 res);
         }
 
-        const char * p = x.data;
+        const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
         union
@@ -113,13 +114,19 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    n[0] &= -1ULL >> s;
+                    if constexpr (std::endian::native == std::endian::little)
+                        n[0] &= -1ULL >> s;
+                    else
+                        n[0] &= -1ULL << s;
                 }
                 else
                 {
-                    const char * lp = x.data + x.size - 8;
+                    const char * lp = x.data() + x.size() - 8;
                     memcpy(&n[0], lp, 8);
-                    n[0] >>= s;
+                    if constexpr (std::endian::native == std::endian::little)
+                        n[0] >>= s;
+                    else
+                        n[0] <<= s;
                 }
                 auto res = hash(k8);
                 auto buck = getBucketFromHash(res);
@@ -129,9 +136,12 @@ public:
             case 1:
             {
                 memcpy(&n[0], p, 8);
-                const char * lp = x.data + x.size - 8;
+                const char * lp = x.data() + x.size() - 8;
                 memcpy(&n[1], lp, 8);
-                n[1] >>= s;
+                if constexpr (std::endian::native == std::endian::little)
+                    n[1] >>= s;
+                else
+                    n[1] <<= s;
                 auto res = hash(k16);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);
@@ -140,9 +150,12 @@ public:
             case 2:
             {
                 memcpy(&n[0], p, 16);
-                const char * lp = x.data + x.size - 8;
+                const char * lp = x.data() + x.size() - 8;
                 memcpy(&n[2], lp, 8);
-                n[2] >>= s;
+                if constexpr (std::endian::native == std::endian::little)
+                    n[2] >>= s;
+                else
+                    n[2] <<= s;
                 auto res = hash(k24);
                 auto buck = getBucketFromHash(res);
                 keyHolderDiscardKey(key_holder);

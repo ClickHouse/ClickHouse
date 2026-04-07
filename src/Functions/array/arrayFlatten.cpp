@@ -29,9 +29,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isArray(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName() +
-                            ", expected Array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected Array",
+                            arguments[0]->getName(), getName());
 
         DataTypePtr nested_type = arguments[0];
         while (isArray(nested_type))
@@ -83,8 +82,8 @@ result: Row 1: [1, 2, 3], Row2: [4]
         const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
 
         if (!src_col)
-            throw Exception("Illegal column " + arguments[0].column->getName() + " in argument of function 'arrayFlatten'",
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} in argument of function 'arrayFlatten'",
+                arguments[0].column->getName());
 
         const IColumn::Offsets & src_offsets = src_col->getOffsets();
 
@@ -110,7 +109,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
 
         return ColumnArray::create(
             prev_data->getPtr(),
-            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());
+            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());  /// NOLINT(performance-move-const-arg)
     }
 
 private:
@@ -123,8 +122,28 @@ private:
 
 REGISTER_FUNCTION(ArrayFlatten)
 {
-    factory.registerFunction<ArrayFlatten>();
-    factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = R"(
+Converts an array of arrays to a flat array.
+
+Function:
+
+- Applies to any depth of nested arrays.
+- Does not change arrays that are already flat.
+
+The flattened array contains all the elements from all source arrays.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayFlatten(arr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "A multidimensional array.", {"Array(Array(T))"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a flattened array from the multidimensional array", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayFlatten([[[1]], [[2], [3]]]);", "[1, 2, 3]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<ArrayFlatten>(documentation);
+    factory.registerAlias("flatten", "arrayFlatten", FunctionFactory::Case::Insensitive);
 }
 
 }

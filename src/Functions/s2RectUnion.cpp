@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 #include <base/range.h>
 
-#include "s2_fwd.h"
+#include <Functions/s2_fwd.h>
 
 namespace DB
 {
@@ -126,14 +126,14 @@ public:
             const auto lo2 = S2CellId(data_lo2[row]);
             const auto hi2 = S2CellId(data_hi2[row]);
 
-            if (!lo1.is_valid() || !hi1.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "First rectangle is not valid");
-
-            if (!lo2.is_valid() || !hi2.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second rectangle is not valid");
-
             S2LatLngRect rect1(lo1.ToLatLng(), hi1.ToLatLng());
             S2LatLngRect rect2(lo2.ToLatLng(), hi2.ToLatLng());
+
+            if (!rect1.is_valid() || !rect2.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed "
+                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value. "
+                    "Also, if either the latitude or longitude bound is empty then both must be. ");
 
             S2LatLngRect rect_union = rect1.Union(rect2);
 
@@ -150,7 +150,23 @@ public:
 
 REGISTER_FUNCTION(S2RectUnion)
 {
-    factory.registerFunction<FunctionS2RectUnion>();
+    FunctionDocumentation::Description description = R"(
+Returns the smallest S2 latitude-longitude rectangle that contains the union of two input rectangles. Each rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectUnion(s2Rect1Low, s2Rect1High, s2Rect2Low, s2Rect2High)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2Rect1Low", "S2 cell identifier of the low vertex of the first rectangle.", {"UInt64"}},
+        {"s2Rect1High", "S2 cell identifier of the high vertex of the first rectangle.", {"UInt64"}},
+        {"s2Rect2Low", "S2 cell identifier of the low vertex of the second rectangle.", {"UInt64"}},
+        {"s2Rect2High", "S2 cell identifier of the high vertex of the second rectangle.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the union rectangle.", {"Tuple(UInt64, UInt64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectUnion(5765131099823669248, 5765131099956887552, 5765131100074868736, 5765131100088901632)", ""}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectUnion>(documentation);
 }
 
 

@@ -1,16 +1,19 @@
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTCreateRoleQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
@@ -20,8 +23,9 @@
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
+#include <Access/MaskingPolicy.h>
 #include <Columns/ColumnString.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -35,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -45,9 +50,8 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateUserQuery>();
-        query->names = std::make_shared<ASTUserNamesWithHost>();
-        query->names->push_back(user.getName());
+        auto query = make_intrusive<ASTCreateUserQuery>();
+        query->names = make_intrusive<ASTUserNamesWithHost>(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -61,18 +65,20 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*access_control);
         }
 
-        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
+        for (const auto & authentication_method : user.authentication_methods)
         {
-            query->auth_data = user.auth_data;
-            query->show_password = attach_mode; /// We don't show password unless it's an ATTACH statement.
+            query->authentication_methods.push_back(authentication_method.toAST());
         }
 
         if (!user.settings.empty())
         {
+            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query->settings = user.settings.toAST();
+                query_settings = user.settings.toAST();
             else
-                query->settings = user.settings.toASTWithNames(*access_control);
+                query_settings = user.settings.toASTWithNames(*access_control);
+            if (!query_settings->empty())
+                query->settings = query_settings;
         }
 
         if (user.grantees != RolesOrUsersSet::AllTag{})
@@ -86,7 +92,7 @@ namespace
 
         if (!user.default_database.empty())
         {
-            auto ast = std::make_shared<ASTDatabaseOrNone>();
+            auto ast = make_intrusive<ASTDatabaseOrNone>();
             ast->database_name = user.default_database;
             query->default_database = ast;
         }
@@ -97,16 +103,19 @@ namespace
 
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateRoleQuery>();
+        auto query = make_intrusive<ASTCreateRoleQuery>();
         query->names.emplace_back(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())
         {
+            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query->settings = role.settings.toAST();
+                query_settings = role.settings.toAST();
             else
-                query->settings = role.settings.toASTWithNames(*access_control);
+                query_settings = role.settings.toASTWithNames(*access_control);
+            if (!query_settings->empty())
+                query->settings = query_settings;
         }
 
         return query;
@@ -115,18 +124,22 @@ namespace
 
     ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControl * access_control, bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
+        auto query = make_intrusive<ASTCreateSettingsProfileQuery>();
         query->names.emplace_back(profile.getName());
         query->attach = attach_mode;
 
         if (!profile.elements.empty())
         {
+            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
-                query->settings = profile.elements.toAST();
+                query_settings = profile.elements.toAST();
             else
-                query->settings = profile.elements.toASTWithNames(*access_control);
-            if (query->settings)
-                query->settings->setUseInheritKeyword(true);
+                query_settings = profile.elements.toASTWithNames(*access_control);
+            if (!query_settings->empty())
+            {
+                query_settings->setUseInheritKeyword(true);
+                query->settings = query_settings;
+            }
         }
 
         if (!profile.to_roles.empty())
@@ -146,7 +159,7 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateQuotaQuery>();
+        auto query = make_intrusive<ASTCreateQuotaQuery>();
         query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
 
@@ -185,8 +198,8 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateRowPolicyQuery>();
-        query->names = std::make_shared<ASTRowPolicyNames>();
+        auto query = make_intrusive<ASTCreateRowPolicyQuery>();
+        query->names = make_intrusive<ASTRowPolicyNames>();
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 
@@ -199,7 +212,7 @@ namespace
             if (!filter.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 query->filters.emplace_back(type, std::move(expr));
             }
         }
@@ -230,7 +243,7 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
-        throw Exception(entity.formatTypeWithName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", entity.formatTypeWithName());
     }
 }
 
@@ -256,24 +269,17 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Build the result column.
     MutableColumnPtr column = ColumnString::create();
-    WriteBufferFromOwnString create_query_buf;
     for (const auto & create_query : create_queries)
-    {
-        formatAST(*create_query, create_query_buf, false, true);
-        column->insert(create_query_buf.str());
-        create_query_buf.restart();
-    }
+        column->insert(format({getContext(), *create_query}));
 
     /// Prepare description of the result column.
-    WriteBufferFromOwnString desc_buf;
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    formatAST(show_query, desc_buf, false, true);
-    String desc = desc_buf.str();
+    String desc = show_query.formatWithSecretsOneLine();
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}})));
 }
 
 
@@ -333,6 +339,10 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
                 entities.push_back(policy);
             }
         }
+    }
+    else if (show_query.type == AccessEntityType::MASKING_POLICY)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
     }
     else
     {
@@ -416,9 +426,24 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
             res.emplace_back(AccessType::SHOW_QUOTAS);
             return res;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            res.emplace_back(AccessType::SHOW_MASKING_POLICIES);
+            return res;
+        }
         case AccessEntityType::MAX:
             break;
     }
-    throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by SHOW CREATE query", toString(show_query.type));
 }
+
+void registerInterpreterShowCreateAccessEntityQuery(InterpreterFactory & factory)
+{
+    auto create_fn = [] (const InterpreterFactory::Arguments & args)
+    {
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(args.query, args.context);
+    };
+    factory.registerInterpreter("InterpreterShowCreateAccessEntityQuery", create_fn);
+}
+
 }

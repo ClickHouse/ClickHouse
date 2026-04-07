@@ -1,5 +1,5 @@
 set (ENABLE_KRB5_DEFAULT ${ENABLE_LIBRARIES})
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
     set (ENABLE_KRB5_DEFAULT 0)
 endif ()
@@ -132,16 +132,18 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/ser_sctx.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5sealv3.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/acquire_cred.c"
-    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5unseal.c"
+    # "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5unseal.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/rel_cred.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/util_cksum.c"
+    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/verify_mic.c"
+    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/unwrap.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/disp_com_err_status.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/gssapi_generic.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/rel_oid_set.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/oid_ops.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_buffer.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_buffer_set.c"
-    "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_set.c"
+    # "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_set.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_token.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/disp_major_status.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_seqstate.c"
@@ -156,6 +158,13 @@ set(ALL_SRCS
 
     # "${KRB5_SOURCE_DIR}/lib/gssapi/spnego/negoex_trace.c"
 
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/kdf.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/cmac.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/des/des_keys.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/des/f_parity.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/enc_provider/rc4.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/hash_provider/hash_md4.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/md4/md4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/enc_dk_cmac.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/krb/crc32.c"
@@ -179,7 +188,6 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/block_size.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/string_to_key.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/krb/crypto_libinit.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/derive.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/random_to_key.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/verify_checksum_iov.c"
@@ -213,22 +221,20 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/valid_cksumtype.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/nfold.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/krb/prng_fortuna.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/encrypt_length.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/krb/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/keyblocks.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_pbkdf2.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c"
-    #"${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/cmac.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/sha256.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hmac.c"
+    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/kdf.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/pbkdf2.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/init.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/stubs.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_crc32.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/hash_provider/hash_evp.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/des/des_keys.c"
@@ -308,7 +314,6 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/allow_weak.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/mk_rep.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/mk_priv.c"
-    "${KRB5_SOURCE_DIR}/lib/krb5/krb/s4u_authdata.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/preauth_otp.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/init_keyblock.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/krb/ser_addr.c"
@@ -412,6 +417,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/os/realm_dom.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/dnssrv.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/mk_faddr.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/os/addr.c"
     # "${KRB5_SOURCE_DIR}/lib/krb5/os/dnsglue.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/sendto_kdc.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/hostrealm_registry.c"
@@ -569,20 +575,30 @@ endfunction()
 generate_error_tables()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h" "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
-        COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I"${KRB5_SOURCE_DIR}/lib/krb5/ccache" "${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs"
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
-    )
-
+    if (NOT CMAKE_CROSSCOMPILING)
+        add_custom_command(
+            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h" "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
+            COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I"${KRB5_SOURCE_DIR}/lib/krb5/ccache" "${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
+        )
+    else ()
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.cin"
+            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
+        )
+        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.hin"
+            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
+        )
+        file(RENAME
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.cin"
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
+        )
+        file(RENAME
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.hin"
+            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h"
+        )
+    endif()
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c")
 endif()
-
-if (ENABLE_EXTERNAL_OPENSSL)
-    list(REMOVE_ITEM ALL_SRCS "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c")
-    list(APPEND ALL_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/aes.c")
-endif ()
-
 
 target_sources(_krb5 PRIVATE
     ${ALL_SRCS}
@@ -677,6 +693,7 @@ target_include_directories(_krb5 PRIVATE
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5"
     "${KRB5_SOURCE_DIR}/lib/gssapi/spnego"
     "${KRB5_SOURCE_DIR}/util/et"
+    "${KRB5_SOURCE_DIR}/lib/crypto/builtin/md4"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb"
     "${KRB5_SOURCE_DIR}/util/profile"
@@ -690,6 +707,7 @@ target_include_directories(_krb5 PRIVATE
 
 target_compile_definitions(_krb5 PRIVATE
     KRB5_PRIVATE
+    CRYPTO_OPENSSL
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
     LOCALEDIR="/usr/local/share/locale"

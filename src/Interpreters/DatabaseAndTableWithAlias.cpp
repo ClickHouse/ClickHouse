@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
 
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <Parsers/IAST.h>
@@ -16,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_IDENTIFIER;
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & identifier, const String & current_database)
@@ -28,13 +30,29 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableIdentifier & 
         database = current_database;
 }
 
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
+{
+    alias = identifier.tryGetAlias();
+
+    if (identifier.name_parts.size() == 2)
+        std::tie(database, table) = std::tie(identifier.name_parts[0], identifier.name_parts[1]);
+    else if (identifier.name_parts.size() == 1)
+        table = identifier.name_parts[0];
+    else
+        throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Invalid identifier {}", backQuote(identifier.name()));
+
+    if (database.empty())
+        database = current_database;
+}
+
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
 {
-    const auto * identifier = node->as<ASTTableIdentifier>();
-    if (!identifier)
-        throw Exception("Logical error: table identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-    *this = DatabaseAndTableWithAlias(*identifier, current_database);
+    if (const auto * table_identifier = node->as<ASTTableIdentifier>())
+        *this = DatabaseAndTableWithAlias(*table_identifier, current_database);
+    else if (const auto * identifier = node->as<ASTIdentifier>())
+        *this = DatabaseAndTableWithAlias(*identifier, current_database);
+    else
+        throw Exception(ErrorCodes::INVALID_IDENTIFIER, "Identifier or table identifier expected");
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database)
@@ -54,7 +72,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
         alias = table_expression.subquery->tryGetAlias();
     }
     else
-        throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No known elements in ASTTableExpression");
 }
 
 bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias) const

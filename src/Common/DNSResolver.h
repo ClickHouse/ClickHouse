@@ -5,11 +5,15 @@
 #include <base/types.h>
 #include <Core/Names.h>
 #include <boost/noncopyable.hpp>
-#include <Common/logger_useful.h>
+#include <Common/LoggingFormatStringHelpers.h>
 
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
+
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /// A singleton implementing DNS names resolving with optional DNS cache
 /// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater)
@@ -18,7 +22,11 @@ class DNSResolver : private boost::noncopyable
 {
 public:
     using IPAddresses = std::vector<Poco::Net::IPAddress>;
-    using IPAddressesPtr = std::shared_ptr<IPAddresses>;
+    using CacheEntry = struct
+    {
+        IPAddresses addresses;
+        std::chrono::system_clock::time_point cached_at;
+    };
 
     static DNSResolver & instance();
 
@@ -28,6 +36,9 @@ public:
     Poco::Net::IPAddress resolveHost(const std::string & host);
 
     /// Accepts host names like 'example.com' or '127.0.0.1' or '::1' and resolves all its IPs
+    /// resolveHostAllInOriginOrder returns addresses with the same order as system call returns it
+    IPAddresses resolveHostAllInOriginOrder(const std::string & host);
+    /// resolveHostAll returns addresses in random order
     IPAddresses resolveHostAll(const std::string & host);
 
     /// Accepts host names like 'example.com:port' or '127.0.0.1:port' or '[::1]:port' and resolves its IP and port
@@ -42,9 +53,15 @@ public:
 
     /// Get this server host name
     String getHostName();
+    /// Updates host name and its IPs
+    /// Returns true if IPs of the host name have been changed
+    bool updateHostNameAndAddresses();
 
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
+
+    /// Set a limit of entries in cache
+    void setCacheMaxEntries(UInt64 cache_max_entries);
 
     /// Drops all caches
     void dropCache();
@@ -53,26 +70,36 @@ public:
     void removeHostFromCache(const std::string & host);
 
     /// Updates all known hosts in cache.
-    /// Returns true if IP of any host has been changed or an element was dropped (too many failures)
-    bool updateCache(UInt32 max_consecutive_failures);
+    void updateCache(UInt32 max_consecutive_failures);
+
+    void setFilterSettings(bool dns_allow_resolve_names_to_ipv4, bool dns_allow_resolve_names_to_ipv6);
+
+    bool getFilterIPv4() const;
+    bool getFilterIPv6() const;
+
+    /// Returns a copy of cache entries
+    std::vector<std::pair<std::string, CacheEntry>> cacheEntries() const;
 
     ~DNSResolver();
 
 private:
     template <typename UpdateF, typename ElemsT>
-
-    bool updateCacheImpl(
+    void updateCacheImpl(
         UpdateF && update_func,
         ElemsT && elems,
         UInt32 max_consecutive_failures,
-        const String & notfound_log_msg,
-        const String & dropped_log_msg);
+        FormatStringHelper<String> notfound_log_msg,
+        FormatStringHelper<String> dropped_log_msg);
 
     DNSResolver();
 
     struct Impl;
     std::unique_ptr<Impl> impl;
-    Poco::Logger * log;
+
+    struct AddressFilter;
+    std::unique_ptr<AddressFilter> addressFilter;
+
+    LoggerPtr log;
 
     /// Updates cached value and returns true it has been changed.
     bool updateHost(const String & host);
@@ -80,6 +107,10 @@ private:
 
     void addToNewHosts(const String & host);
     void addToNewAddresses(const Poco::Net::IPAddress & address);
+
+    IPAddresses resolveIPAddressWithCache(const std::string & host);
+    IPAddresses getResolvedIPAddressesWithFiltering(const std::string & host);
+    std::unordered_set<String> reverseResolveWithCache(const Poco::Net::IPAddress & address);
 };
 
 }

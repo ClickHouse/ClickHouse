@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <base/getThreadId.h>
@@ -13,18 +14,18 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_CLOCK_GETTIME;
-    }
+namespace ErrorCodes
+{
+    extern const int CANNOT_CLOCK_GETTIME;
+}
 }
 
 
-DB::UInt64 randomSeed()
+UInt64 randomSeed()
 {
     struct timespec times;
     if (clock_gettime(CLOCK_MONOTONIC, &times))
-        DB::throwFromErrno("Cannot clock_gettime.", DB::ErrorCodes::CANNOT_CLOCK_GETTIME);
+        throw DB::ErrnoException(DB::ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
     /// Not cryptographically secure as time, pid and stack address can be predictable.
 
@@ -39,7 +40,7 @@ DB::UInt64 randomSeed()
 #if defined(__linux__)
     struct utsname sysinfo;
     if (uname(&sysinfo) == 0)
-        hash.update(sysinfo);
+        hash.update<std::identity>(sysinfo);
 #endif
 
     return hash.get64();

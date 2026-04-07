@@ -10,7 +10,7 @@ system stop distributed sends dist_01670;
 insert into dist_01670 select * from numbers(1) settings prefer_localhost_replica=0;
 -- second will fail, because of bytes_to_throw_insert=1
 -- (previous block definitelly takes more, since it has header)
-insert into dist_01670 select * from numbers(1) settings prefer_localhost_replica=0; -- { serverError 574 }
+insert into dist_01670 select * from numbers(1) settings prefer_localhost_replica=0; -- { serverError DISTRIBUTED_TOO_MANY_PENDING_BYTES }
 system flush distributed dist_01670;
 drop table dist_01670;
 drop table data_01670;

@@ -7,12 +7,11 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <Functions/likePatternToRegexp.h>
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
+#include <Common/likePatternToRegexp.h>
 #include <base/defines.h>
-#include <base/StringRef.h>
 #include <boost/container_hash/hash.hpp>
 
 #include "config.h"
@@ -23,7 +22,11 @@
 
 namespace ProfileEvents
 {
-extern const Event RegexpCreated;
+    extern const Event RegexpWithMultipleNeedlesCreated;
+    extern const Event RegexpWithMultipleNeedlesGlobalCacheHit;
+    extern const Event RegexpWithMultipleNeedlesGlobalCacheMiss;
+    extern const Event RegexpLocalCacheHit;
+    extern const Event RegexpLocalCacheMiss;
 }
 
 
@@ -38,11 +41,11 @@ namespace ErrorCodes
 
 namespace Regexps
 {
-using Regexp = OptimizedRegularExpressionSingleThreaded;
-using RegexpPtr = std::shared_ptr<Regexp>;
+
+using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
 template <bool like, bool no_capture, bool case_insensitive>
-inline Regexp createRegexp(const String & pattern)
+inline OptimizedRegularExpression createRegexp(const String & pattern)
 {
     int flags = OptimizedRegularExpression::RE_DOT_NL;
     if constexpr (no_capture)
@@ -64,7 +67,7 @@ inline Regexp createRegexp(const String & pattern)
 class LocalCacheTable
 {
 public:
-    using RegexpPtr = std::shared_ptr<Regexp>;
+    using RegexpPtr = std::shared_ptr<OptimizedRegularExpression>;
 
     template <bool like, bool no_capture, bool case_insensitive>
     RegexpPtr getOrSet(const String & pattern)
@@ -72,18 +75,28 @@ public:
         Bucket & bucket = known_regexps[hasher(pattern) % CACHE_SIZE];
 
         if (bucket.regexp == nullptr) [[unlikely]]
+        {
             /// insert new entry
-            bucket = {pattern, std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+            ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
+            bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+        }
         else
+        {
             if (pattern != bucket.pattern)
+            {
                 /// replace existing entry
-                bucket = {pattern, std::make_shared<Regexp>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheMiss);
+                bucket = {pattern, std::make_shared<OptimizedRegularExpression>(createRegexp<like, no_capture, case_insensitive>(pattern))};
+            }
+            else
+                ProfileEvents::increment(ProfileEvents::RegexpLocalCacheHit);
+        }
 
         return bucket.regexp;
     }
 
 private:
-    constexpr static size_t CACHE_SIZE = 100; /// collision probability
+    constexpr static size_t CACHE_SIZE = 1'000; /// collision probability
 
     std::hash<String> hasher;
     struct Bucket
@@ -112,11 +125,11 @@ struct HyperscanDeleter
 };
 
 /// Helper unique pointers to correctly delete the allocated space when hyperscan cannot compile something and we throw an exception.
-using CompilerError = std::unique_ptr<hs_compile_error_t, HyperscanDeleter<decltype(&hs_free_compile_error), &hs_free_compile_error>>;
+using CompilerErrorPtr = std::unique_ptr<hs_compile_error_t, HyperscanDeleter<decltype(&hs_free_compile_error), &hs_free_compile_error>>;
 using ScratchPtr = std::unique_ptr<hs_scratch_t, HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
 using DataBasePtr = std::unique_ptr<hs_database_t, HyperscanDeleter<decltype(&hs_free_database), &hs_free_database>>;
 
-/// Database is thread safe across multiple threads and Scratch is not but we can copy it whenever we use it in the searcher.
+/// Database is immutable/thread-safe across multiple threads. Scratch is not but we can copy it whenever we use it in the searcher.
 class Regexps
 {
 public:
@@ -154,7 +167,7 @@ private:
 
 using DeferredConstructedRegexpsPtr = std::shared_ptr<DeferredConstructedRegexps>;
 
-template <bool save_indices, bool WithEditDistance>
+template <bool save_indices, bool with_edit_distance>
 inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[maybe_unused]] std::optional<UInt32> edit_distance)
 {
     /// Common pointers
@@ -168,7 +181,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     patterns.reserve(str_patterns.size());
     flags.reserve(str_patterns.size());
 
-    if constexpr (WithEditDistance)
+    if constexpr (with_edit_distance)
     {
         ext_exprs.reserve(str_patterns.size());
         ext_exprs_ptrs.reserve(str_patterns.size());
@@ -186,7 +199,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
          * as it is said in the Hyperscan documentation. https://intel.github.io/hyperscan/dev-reference/performance.html#single-match-flag
          */
         flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH | HS_FLAG_ALLOWEMPTY | HS_FLAG_UTF8);
-        if constexpr (WithEditDistance)
+        if constexpr (with_edit_distance)
         {
             /// Hyperscan currently does not support UTF8 matching with edit distance.
             flags.back() &= ~HS_FLAG_UTF8;
@@ -211,7 +224,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     }
 
     hs_error_t err;
-    if constexpr (!WithEditDistance)
+    if constexpr (!with_edit_distance)
         err = hs_compile_multi(
             patterns.data(),
             flags.data(),
@@ -236,15 +249,15 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
     if (err != HS_SUCCESS)
     {
         /// CompilerError is a unique_ptr, so correct memory free after the exception is thrown.
-        CompilerError error(compile_error);
+        CompilerErrorPtr error(compile_error);
 
         if (error->expression < 0)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, String(error->message));
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
+            throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", str_patterns[error->expression], String(error->message));
     }
 
-    ProfileEvents::increment(ProfileEvents::RegexpCreated);
+    ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesCreated);
 
     /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
     /// function which is faster than allocating scratch space each time in each thread.
@@ -253,7 +266,7 @@ inline Regexps constructRegexps(const std::vector<String> & str_patterns, [[mayb
 
     /// If not HS_SUCCESS, it is guaranteed that the memory would not be allocated for scratch.
     if (err != HS_SUCCESS)
-        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for hyperscan");
+        throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Could not allocate scratch space for vectorscan");
 
     return {db, scratch};
 }
@@ -288,9 +301,9 @@ struct GlobalCacheTable
     }
 };
 
-/// If WithEditDistance is False, edit_distance must be nullopt. Also, we use templates here because each instantiation of function template
+/// If with_edit_distance is False, edit_distance must be nullopt. Also, we use templates here because each instantiation of function template
 /// has its own copy of local static variables which must not be the same for different hyperscan compilations.
-template <bool save_indices, bool WithEditDistance>
+template <bool save_indices, bool with_edit_distance>
 inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view> & patterns, std::optional<UInt32> edit_distance)
 {
     static GlobalCacheTable pool; /// Different variables for different pattern parameters, thread-safe in C++11
@@ -320,21 +333,27 @@ inline DeferredConstructedRegexpsPtr getOrSet(const std::vector<std::string_view
         auto deferred_constructed_regexps = std::make_shared<DeferredConstructedRegexps>(
                 [str_patterns, edit_distance]()
                 {
-                    return constructRegexps<save_indices, WithEditDistance>(str_patterns, edit_distance);
+                    return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                 });
+        ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
         bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
     }
     else
+    {
         if (bucket.patterns != str_patterns || bucket.edit_distance != edit_distance)
         {
             /// replace existing entry
             auto deferred_constructed_regexps = std::make_shared<DeferredConstructedRegexps>(
                     [str_patterns, edit_distance]()
                     {
-                        return constructRegexps<save_indices, WithEditDistance>(str_patterns, edit_distance);
+                        return constructRegexps<save_indices, with_edit_distance>(str_patterns, edit_distance);
                     });
+            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheMiss);
             bucket = {std::move(str_patterns), edit_distance, deferred_constructed_regexps};
         }
+        else
+            ProfileEvents::increment(ProfileEvents::RegexpWithMultipleNeedlesGlobalCacheHit);
+    }
 
     return bucket.regexps;
 }

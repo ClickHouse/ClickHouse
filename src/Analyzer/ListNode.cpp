@@ -38,13 +38,13 @@ void ListNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     }
 }
 
-bool ListNode::isEqualImpl(const IQueryTreeNode &) const
+bool ListNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
 {
     /// No state
     return true;
 }
 
-void ListNode::updateTreeHashImpl(HashState &) const
+void ListNode::updateTreeHashImpl(HashState &, CompareOptions) const
 {
     /// No state
 }
@@ -54,15 +54,15 @@ QueryTreeNodePtr ListNode::cloneImpl() const
     return std::make_shared<ListNode>();
 }
 
-ASTPtr ListNode::toASTImpl() const
+ASTPtr ListNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto expression_list_ast = std::make_shared<ASTExpressionList>();
+    auto expression_list_ast = make_intrusive<ASTExpressionList>();
 
     size_t children_size = children.size();
     expression_list_ast->children.resize(children_size);
 
     for (size_t i = 0; i < children_size; ++i)
-        expression_list_ast->children[i] = children[i]->toAST();
+        expression_list_ast->children[i] = children[i]->toAST(options);
 
     return expression_list_ast;
 }

@@ -1,43 +1,64 @@
 #include <Common/StackTrace.h>
 
-#include <Common/Dwarf.h>
-#include <Common/Elf.h>
-#include <Common/SymbolIndex.h>
-#include <Common/MemorySanitizer.h>
+#include <base/FnTraits.h>
+#include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
+#include <base/MemorySanitizer.h>
+#include <Common/Dwarf.h>
+#include <Common/Elf.h>
+#include <Common/SharedMutex.h>
+#include <Common/SymbolIndex.h>
+#include <Common/scope_guard_safe.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
 #include <atomic>
-#include <cstring>
 #include <filesystem>
-#include <mutex>
-#include <sstream>
-#include <unordered_map>
 #include <map>
+#include <mutex>
+#include <shared_mutex>
+#include <unordered_map>
+#include <libunwind.h>
+#include <fmt/format.h>
 
-#include "config.h"
+#include <boost/algorithm/string/split.hpp>
 
-#if USE_UNWIND
-#    include <libunwind.h>
+#if defined(OS_DARWIN)
+/// This header contains functions like `backtrace` and `backtrace_symbols`
+/// Which will be used for stack unwinding on Mac.
+/// Read: https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/backtrace.3.html
+#include <execinfo.h>
 #endif
-
 
 namespace
 {
-    /// Currently this variable is set up once on server startup.
-    /// But we use atomic just in case, so it is possible to be modified at runtime.
-    std::atomic<bool> show_addresses = true;
+/// Currently this variable is set up once on server startup.
+/// But we use atomic just in case, so it is possible to be modified at runtime.
+std::atomic<bool> show_addresses = true;
 
-    bool shouldShowAddress(const void * addr)
-    {
-        /// If the address is less than 4096, most likely it is a nullptr dereference with offset,
-        /// and showing this offset is secure nevertheless.
-        /// NOTE: 4096 is the page size on x86 and it can be different on other systems,
-        /// but for the purpose of this branch, it does not matter.
-        if (reinterpret_cast<uintptr_t>(addr) < 4096)
-            return true;
+bool shouldShowAddress(const void * addr)
+{
+    /// Likely inline frame
+    if (!addr)
+        return false;
 
-        return show_addresses.load(std::memory_order_relaxed);
-    }
+    /// If the address is less than 4096, most likely it is a nullptr dereference with offset,
+    /// and showing this offset is secure nevertheless.
+    /// NOTE: 4096 is the page size on x86 and it can be different on other systems,
+    /// but for the purpose of this branch, it does not matter.
+    if (reinterpret_cast<uintptr_t>(addr) < 4096)
+        return true;
+
+    return show_addresses.load(std::memory_order_relaxed);
+}
+}
+
+StackTrace::StackTrace()
+{
+    tryCapture();
 }
 
 void StackTrace::setShowAddresses(bool show)
@@ -45,155 +66,218 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
-    std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    error.exceptions(std::ios::failbit);
+    std::string message = getSignalCodeDescription(sig, info.si_code);
+
+    if (sig == SIGSEGV || sig == SIGBUS)
+    {
+        using namespace std::string_literals;
+
+        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
+        std::string access = getFaultMemoryAccessType(sig, context);
+        if (access.empty())
+            access = "<not available>";
+        return fmt::format("Address: {}. Access: {}. {}", address, access, message);
+    }
+
+    if (sig == SIGTSTP)
+        return "This is a signal used for debugging purposes by the user.";
+
+    return message;
+}
+
+std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
+{
+    /// Only these signals have meaningful fault addresses
+    if (sig != SIGSEGV && sig != SIGBUS && sig != SIGILL && sig != SIGFPE)
+        return std::nullopt;
+
+    if (info.si_addr == nullptr)
+        return 0;
+
+    if (shouldShowAddress(info.si_addr))
+        return reinterpret_cast<UInt64>(info.si_addr);
+
+    return std::nullopt;
+}
+
+std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
+{
+    /// Only SIGSEGV and SIGBUS have meaningful memory access types
+    if (sig != SIGSEGV && sig != SIGBUS)
+        return "";
+
+#if defined(__x86_64__) && !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+    return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#else
+    return "";  // Not available on this platform
+#endif
+}
+
+std::string getSignalCodeDescription(int sig, int si_code)
+{
+    /// Signal codes that apply to all signals
+    switch (si_code)
+    {
+        case SI_USER:
+            return "Sent by kill, sigsend.";
+        case SI_QUEUE:
+            return "Sent by sigqueue.";
+        case SI_TIMER:
+            return "Sent by timer expiration.";
+        case SI_MESGQ:
+            return "Sent by real time mesq state change.";
+        case SI_ASYNCIO:
+            return "Sent by AIO completion.";
+#if defined(SI_KERNEL)
+        case SI_KERNEL:
+            return "Sent by the kernel.";
+#endif
+#if defined(SI_SIGIO)
+        case SI_SIGIO:
+            return "Sent by queued SIGIO.";
+#endif
+#if defined(SI_TKILL)
+        case SI_TKILL:
+            return "Sent by tkill.";
+#endif
+#if defined(SI_ASYNCNL)
+        case SI_ASYNCNL:
+            return "Sent by asynch name lookup completion.";
+#endif
+        default:
+            break;
+    }
+
+    /// Signal-specific codes
     switch (sig)
     {
         case SIGSEGV:
         {
-            /// Print info about address and reason.
-            if (nullptr == info.si_addr)
-                error << "Address: NULL pointer.";
-            else if (shouldShowAddress(info.si_addr))
-                error << "Address: " << info.si_addr;
-
-#if defined(__x86_64__) && !defined(OS_FREEBSD) && !defined(OS_DARWIN) && !defined(__arm__) && !defined(__powerpc__)
-            auto err_mask = context.uc_mcontext.gregs[REG_ERR];
-            if ((err_mask & 0x02))
-                error << " Access: write.";
-            else
-                error << " Access: read.";
-#endif
-
-            switch (info.si_code)
+            switch (si_code)
             {
                 case SEGV_ACCERR:
-                    error << " Attempted access has violated the permissions assigned to the memory area.";
-                    break;
+                    return "Attempted access has violated the permissions assigned to the memory area.";
                 case SEGV_MAPERR:
-                    error << " Address not mapped to object.";
-                    break;
+                    return "Address not mapped to object.";
+#if defined(SEGV_BNDERR)
+                case SEGV_BNDERR:
+                    return "Failed address bound checks (Intel MPX).";
+#endif
+#if defined(SEGV_ACCADI)
+                case SEGV_ACCADI:
+                    return "ADI not enabled for mapped object (SPARC).";
+#endif
+#if defined(SEGV_ADIDERR)
+                case SEGV_ADIDERR:
+                    return "Disrupting MCD error (SPARC).";
+#endif
+#if defined(SEGV_ADIPERR)
+                case SEGV_ADIPERR:
+                    return "Precise MCD exception (SPARC).";
+#endif
+#if defined(SEGV_MTEAERR)
+                case SEGV_MTEAERR:
+                    return "Asynchronous ARM MTE error.";
+#endif
+#if defined(SEGV_MTESERR)
+                case SEGV_MTESERR:
+                    return "Synchronous ARM MTE exception.";
+#endif
+#if defined(SEGV_CPERR)
+                case SEGV_CPERR:
+                    return "Control protection fault (Intel CET).";
+#endif
                 default:
-                    error << " Unknown si_code.";
-                    break;
+                    return fmt::format("Unknown si_code: {}", si_code);
             }
-            break;
         }
-
         case SIGBUS:
         {
-            switch (info.si_code)
+            switch (si_code)
             {
                 case BUS_ADRALN:
-                    error << "Invalid address alignment.";
-                    break;
+                    return "Invalid address alignment.";
                 case BUS_ADRERR:
-                    error << "Non-existent physical address.";
-                    break;
+                    return "Non-existent physical address.";
                 case BUS_OBJERR:
-                    error << "Object specific hardware error.";
-                    break;
-
-                    // Linux specific
+                    return "Object specific hardware error.";
 #if defined(BUS_MCEERR_AR)
                 case BUS_MCEERR_AR:
-                    error << "Hardware memory error: action required.";
-                    break;
+                    return "Hardware memory error consumed on a machine check; action required.";
 #endif
 #if defined(BUS_MCEERR_AO)
                 case BUS_MCEERR_AO:
-                    error << "Hardware memory error: action optional.";
-                    break;
+                    return "Hardware memory error detected in process but not consumed; action optional.";
 #endif
-
                 default:
-                    error << "Unknown si_code.";
-                    break;
+                    return fmt::format("Unknown si_code: {}", si_code);
             }
-            break;
         }
-
         case SIGILL:
         {
-            switch (info.si_code)
+            switch (si_code)
             {
                 case ILL_ILLOPC:
-                    error << "Illegal opcode.";
-                    break;
+                    return "Illegal opcode.";
                 case ILL_ILLOPN:
-                    error << "Illegal operand.";
-                    break;
+                    return "Illegal operand.";
                 case ILL_ILLADR:
-                    error << "Illegal addressing mode.";
-                    break;
+                    return "Illegal addressing mode.";
                 case ILL_ILLTRP:
-                    error << "Illegal trap.";
-                    break;
+                    return "Illegal trap.";
                 case ILL_PRVOPC:
-                    error << "Privileged opcode.";
-                    break;
+                    return "Privileged opcode.";
                 case ILL_PRVREG:
-                    error << "Privileged register.";
-                    break;
+                    return "Privileged register.";
                 case ILL_COPROC:
-                    error << "Coprocessor error.";
-                    break;
+                    return "Coprocessor error.";
                 case ILL_BADSTK:
-                    error << "Internal stack error.";
-                    break;
+                    return "Internal stack error.";
+#if defined(ILL_BADIADDR)
+                case ILL_BADIADDR:
+                    return "Unimplemented instruction address.";
+#endif
                 default:
-                    error << "Unknown si_code.";
-                    break;
+                    return fmt::format("Unknown si_code: {}", si_code);
             }
-            break;
         }
-
         case SIGFPE:
         {
-            switch (info.si_code)
+            switch (si_code)
             {
                 case FPE_INTDIV:
-                    error << "Integer divide by zero.";
-                    break;
+                    return "Integer divide by zero.";
                 case FPE_INTOVF:
-                    error << "Integer overflow.";
-                    break;
+                    return "Integer overflow.";
                 case FPE_FLTDIV:
-                    error << "Floating point divide by zero.";
-                    break;
+                    return "Floating point divide by zero.";
                 case FPE_FLTOVF:
-                    error << "Floating point overflow.";
-                    break;
+                    return "Floating point overflow.";
                 case FPE_FLTUND:
-                    error << "Floating point underflow.";
-                    break;
+                    return "Floating point underflow.";
                 case FPE_FLTRES:
-                    error << "Floating point inexact result.";
-                    break;
+                    return "Floating point inexact result.";
                 case FPE_FLTINV:
-                    error << "Floating point invalid operation.";
-                    break;
+                    return "Floating point invalid operation.";
                 case FPE_FLTSUB:
-                    error << "Subscript out of range.";
-                    break;
+                    return "Subscript out of range.";
+#if defined(FPE_FLTUNK)
+                case FPE_FLTUNK:
+                    return "Undiagnosed floating-point exception.";
+#endif
+#if defined(FPE_CONDTRAP)
+                case FPE_CONDTRAP:
+                    return "Trap on condition.";
+#endif
                 default:
-                    error << "Unknown si_code.";
-                    break;
+                    return fmt::format("Unknown si_code: {}", si_code);
             }
-            break;
         }
-
-        case SIGTSTP:
-        {
-            error << "This is a signal used for debugging purposes by the user.";
-            break;
-        }
+        default:
+            return "";
     }
-
-    return error.str();
 }
 
 static void * getCallerAddress(const ucontext_t & context)
@@ -207,41 +291,47 @@ static void * getCallerAddress(const ucontext_t & context)
 #    else
     return reinterpret_cast<void *>(context.uc_mcontext.gregs[REG_RIP]);
 #    endif
-
 #elif defined(OS_DARWIN) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext->__ss.__pc);
-
 #elif defined(OS_FREEBSD) && defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.mc_gpregs.gp_elr);
 #elif defined(__aarch64__)
     return reinterpret_cast<void *>(context.uc_mcontext.pc);
-#elif defined(__powerpc64__)
+#elif defined(__powerpc64__) && defined(__linux__)
     return reinterpret_cast<void *>(context.uc_mcontext.gp_regs[PT_NIP]);
+#elif defined(__powerpc64__) && defined(__FreeBSD__)
+    return reinterpret_cast<void *>(context.uc_mcontext.mc_srr0);
 #elif defined(__riscv)
     return reinterpret_cast<void *>(context.uc_mcontext.__gregs[REG_PC]);
+#elif defined(__s390x__)
+    return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
+#elif defined(__loongarch64)
+    return reinterpret_cast<void *>(context.uc_mcontext.__pc);
+#elif defined(__e2k__)
+    return reinterpret_cast<void *>(context.uc_mcontext.cr0_hi);
 #else
     return nullptr;
 #endif
 }
 
-void StackTrace::symbolize(
-    const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
-    size_t size, StackTrace::Frames & frames)
+void StackTrace::forEachFrame(
+    const FramePointers & frame_pointers,
+    size_t offset,
+    size_t size,
+    std::function<void(const Frame &)> callback,
+    bool fatal)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
     std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    for (size_t i = 0; i < offset; ++i)
-    {
-        frames[i].virtual_addr = frame_pointers[i];
-    }
+    using enum DB::Dwarf::LocationInfoMode;
+    const auto mode = fatal ? FULL_WITH_INLINE : FAST;
 
     for (size_t i = offset; i < size; ++i)
     {
-        StackTrace::Frame & current_frame = frames[i];
+        StackTrace::Frame current_frame;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         const auto * object = symbol_index.findObject(current_frame.virtual_addr);
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
@@ -250,47 +340,131 @@ void StackTrace::symbolize(
         if (object)
         {
             current_frame.object = object->name;
-            if (std::filesystem::exists(current_frame.object.value()))
+            if (std::error_code ec; std::filesystem::exists(current_frame.object.value(), ec) && !ec)
             {
                 auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
 
                 DB::Dwarf::LocationInfo location;
-                std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
-                if (dwarf_it->second.findAddress(
-                        uintptr_t(current_frame.physical_addr), location, DB::Dwarf::LocationInfoMode::FAST, inline_frames))
+                uintptr_t adjusted_addr = uintptr_t(current_frame.physical_addr);
+                if (i > 0)
+                {
+                    /// For non-innermost stack frames, the address points to the *next* instruction
+                    /// after the `call` instruction. But we want the line number and inline function
+                    /// information for the `call` instruction. So subtract 1 from the address.
+                    /// Caveats:
+                    ///  * The `call` instruction can be longer than 1 byte, so addr-1 is in the middle
+                    ///    of the instruction. That's ok for debug info lookup: address ranges in debug
+                    ///    info cover the whole instruction.
+                    ///  * If the stack trace unwound out of a signal handler, the stack frame just
+                    ///    outside the signal didn't do a function call. It was interrupted by signal.
+                    ///    There's no `call` instruction, and decrementing the address is incorrect.
+                    ///    We may get incorrect line number and inlined functions in this case.
+                    ///    Unfortunate.
+                    ///    Note that libunwind, when producing this stack trace, knows whether this
+                    ///    frame is interrupted by signal or not. We could propagate this information
+                    ///    from libunwind to here and avoid subtracting 1 in this case, but currently
+                    ///    we don't do this.
+                    ///    But we don't do the decrement for findSymbol below (because `call` is
+                    ///    ~never the last instruction of a function), so the function name should be
+                    ///    correct for both pre-signal frames and regular frames.
+                    adjusted_addr -= 1;
+                }
+                if (dwarf_it->second.findAddress(adjusted_addr, location, mode, inline_frames))
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
+                    current_frame.column = location.column;
                 }
             }
         }
-        else
+
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
+            current_frame.symbol = demangle(symbol->name);
+
+        for (const auto & frame : inline_frames)
         {
-            current_frame.object = "?";
+            StackTrace::Frame current_inline_frame;
+            const String file_for_inline_frame = frame.location.file.toString();
+
+            current_inline_frame.file = "inlined from " + file_for_inline_frame;
+            current_inline_frame.line = frame.location.line;
+            current_inline_frame.column = frame.location.column;
+            current_inline_frame.symbol = demangle(frame.name);
+
+            callback(current_inline_frame);
         }
 
-        const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr);
-        if (symbol)
+        callback(current_frame);
+    }
+#elif defined(OS_DARWIN)
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
+
+    using enum DB::Dwarf::LocationInfoMode;
+    const auto mode = fatal ? FULL_WITH_INLINE : FAST;
+
+    for (size_t i = offset; i < size; ++i)
+    {
+        StackTrace::Frame current_frame;
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
+        current_frame.virtual_addr = frame_pointers[i];
+        current_frame.physical_addr = frame_pointers[i];
+
+        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
+        if (object)
         {
-            int status = 0;
-            current_frame.symbol = demangle(symbol->name, status);
+            current_frame.object = object->name;
+
+            /// If this object has a dSYM, use it for file/line resolution.
+            if (object->dsym)
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
+
+                DB::Dwarf::LocationInfo location;
+                /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
+                uintptr_t dwarf_addr = uintptr_t(current_frame.virtual_addr) - object->slide;
+                /// The first frame (at index `offset`) is the instruction pointer, not a return address.
+                /// Only subtract 1 for subsequent frames to get back into the call instruction.
+                if (i > offset)
+                    dwarf_addr -= 1;
+
+                if (dwarf_it->second.findAddress(dwarf_addr, location, mode, inline_frames))
+                {
+                    current_frame.file = location.file.toString();
+                    current_frame.line = location.line;
+                    current_frame.column = location.column;
+                }
+            }
         }
-        else
+
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
+            current_frame.symbol = demangle(symbol->name);
+
+        for (const auto & frame : inline_frames)
         {
-            current_frame.symbol = "?";
+            StackTrace::Frame current_inline_frame;
+            const String file_for_inline_frame = frame.location.file.toString();
+
+            current_inline_frame.file = "inlined from " + file_for_inline_frame;
+            current_inline_frame.line = frame.location.line;
+            current_inline_frame.column = frame.location.column;
+            current_inline_frame.symbol = demangle(frame.name);
+
+            callback(current_inline_frame);
         }
+
+        callback(current_frame);
     }
 #else
-    for (size_t i = 0; i < size; ++i)
+    UNUSED(fatal);
+
+    for (size_t i = offset; i < size; ++i)
     {
-        frames[i].virtual_addr = frame_pointers[i];
+        StackTrace::Frame current_frame;
+        current_frame.virtual_addr = frame_pointers[i];
+        callback(current_frame);
     }
 #endif
-}
-
-StackTrace::StackTrace()
-{
-    tryCapture();
 }
 
 StackTrace::StackTrace(const ucontext_t & signal_context)
@@ -312,7 +486,10 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         /// Skip excessive stack frames that we have created while finding stack trace.
         for (size_t i = 0; i < size; ++i)
         {
-            if (frame_pointers[i] == caller_address)
+            if (frame_pointers[i] == caller_address ||
+                /// This compensates for a hack in libunwind, see the "+ 1" in
+                /// UnwindCursor<A, R>::stepThroughSigReturn.
+                frame_pointers[i] == reinterpret_cast<void *>(reinterpret_cast<char *>(caller_address) + 1))
             {
                 offset = i;
                 break;
@@ -321,178 +498,253 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
 }
 
-StackTrace::StackTrace(NoCapture)
-{
-}
+StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
+    : size(size_)
+    , offset(offset_)
+    , frame_pointers(std::move(frame_pointers_))
+{}
 
 void StackTrace::tryCapture()
 {
-    size = 0;
-#if USE_UNWIND
-    size = unw_backtrace(frame_pointers.data(), capacity);
-    __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
+#if defined(OS_DARWIN)
+    size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
+#else
+    size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #endif
+    __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
-size_t StackTrace::getSize() const
+/// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
+constexpr std::pair<std::string_view, std::string_view> replacements[]
+    = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
+
+// Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
+// information but pollute stack traces).
+// Replace parts from @c replacements with shorter aliases
+String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
-    return size;
+    if (symbol_name.empty())
+        return "?";
+
+    if (file.has_value())
+    {
+        std::string_view file_copy = file.value();
+        if (auto trim_pos = file_copy.find_last_of('/'); trim_pos != std::string_view::npos)
+            file_copy.remove_suffix(file_copy.size() - trim_pos);
+        if (file_copy.ends_with("functional"))
+            return "?";
+    }
+
+    // TODO myrrc surely there is a written version already for better in place search&replace
+    for (auto [needle, to] : replacements)
+    {
+        size_t pos = 0;
+        while ((pos = symbol_name.find(needle, pos)) != std::string::npos)
+        {
+            symbol_name.replace(pos, needle.length(), to);
+            pos += to.length();
+        }
+    }
+
+    return symbol_name;
 }
 
-size_t StackTrace::getOffset() const
+struct StackTraceRefTriple
 {
-    return offset;
+    const FramePointers & pointers;
+    size_t offset;
+    size_t size;
+};
+
+struct StackTraceTriple
+{
+    FramePointers pointers;
+    size_t offset;
+    size_t size;
+};
+
+template <class T>
+concept MaybeRef = std::is_same_v<T, StackTraceTriple> || std::is_same_v<T, StackTraceRefTriple>;
+
+static constexpr bool operator<(const MaybeRef auto & left, const MaybeRef auto & right)
+{
+    return std::tuple{left.pointers, left.size, left.offset} < std::tuple{right.pointers, right.size, right.offset};
 }
 
-const StackTrace::FramePointers & StackTrace::getFramePointers() const
+static void
+toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & stack_trace, Fn<void(std::string_view)> auto && callback)
 {
-    return frame_pointers;
-}
-
-static void toStringEveryLineImpl(
-    [[maybe_unused]] bool fatal,
-    const StackTrace::FramePointers & frame_pointers,
-    size_t offset,
-    size_t size,
-    std::function<void(const std::string &)> callback)
-{
-    if (size == 0)
+    if (stack_trace.size == 0)
         return callback("<Empty trace>");
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    auto symbol_index_ptr = DB::SymbolIndex::instance();
-    const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
-    std::unordered_map<std::string, DB::Dwarf> dwarfs;
-
-    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
-
-    for (size_t i = offset; i < size; ++i)
+    size_t frame_index = stack_trace.offset;
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    size_t inline_frame_index = 0;
+    auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
-        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
-        const void * virtual_addr = frame_pointers[i];
-        const auto * object = symbol_index.findObject(virtual_addr);
-        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-        const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
+        DB::WriteBufferFromOwnString out;
 
-        out << i << ". ";
-
-        if (object)
+        /// Inline frame
+        if (!frame.virtual_addr)
         {
-            if (std::filesystem::exists(object->name))
-            {
-                auto dwarf_it = dwarfs.try_emplace(object->name, object->elf).first;
-
-                DB::Dwarf::LocationInfo location;
-                auto mode = fatal ? DB::Dwarf::LocationInfoMode::FULL_WITH_INLINE : DB::Dwarf::LocationInfoMode::FAST;
-                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, mode, inline_frames))
-                    out << location.file.toString() << ":" << location.line << ": ";
-            }
+            out << frame_index << "." << inline_frame_index++ << ". ";
+        }
+        else
+        {
+            out << frame_index++ << ". ";
+            inline_frame_index = 0;
         }
 
-        const auto * symbol = symbol_index.findSymbol(virtual_addr);
-        if (symbol)
+        if (frame.file.has_value() && frame.line.has_value())
         {
-            int status = 0;
-            out << demangle(symbol->name, status);
+            out << *frame.file << ':' << *frame.line;
+            if (frame.column.has_value() && *frame.column > 0)
+                out << ':' << *frame.column;
+            out << ": ";
         }
+
+        if (frame.symbol.has_value())
+            out << collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
-        if (shouldShowAddress(physical_addr))
-            out << " @ " << physical_addr;
-
-        out << " in " << (object ? object->name : "?");
-
-        for (size_t j = 0; j < inline_frames.size(); ++j)
+        if (shouldShowAddress(frame.physical_addr))
         {
-            const auto & frame = inline_frames[j];
-            int status = 0;
-            callback(fmt::format("{}.{}. inlined from {}:{}: {}",
-                     i, j+1, frame.location.file.toString(), frame.location.line, demangle(frame.name, status)));
+            out << " @ ";
+            DB::writePointerHex(frame.physical_addr, out);
         }
 
         callback(out.str());
-        out.str({});
-    }
+    };
 #else
-    std::stringstream out;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
-
-    for (size_t i = offset; i < size; ++i)
+    auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
-        const void * addr = frame_pointers[i];
-        if (shouldShowAddress(addr))
-        {
-            out << i << ". " << addr;
-
-            callback(out.str());
-            out.str({});
-        }
-    }
+        if (frame.virtual_addr && shouldShowAddress(frame.virtual_addr))
+            callback(fmt::format("{}. {}", frame_index++, frame.virtual_addr));
+    };
 #endif
+
+    StackTrace::forEachFrame(stack_trace.pointers, stack_trace.offset, stack_trace.size, callback_wrapper, fatal);
 }
 
-static std::string toStringImpl(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
+void StackTrace::toStringEveryLine(std::function<void(std::string_view)> callback) const
 {
-    std::stringstream out;      // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    out.exceptions(std::ios::failbit);
-    toStringEveryLineImpl(false, frame_pointers, offset, size, [&](const std::string & str) { out << str << '\n'; });
-    return out.str();
+    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
 }
 
-void StackTrace::toStringEveryLine(std::function<void(const std::string &)> callback) const
+void StackTrace::toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback)
 {
-    toStringEveryLineImpl(true, frame_pointers, offset, size, std::move(callback));
+    toStringEveryLineImpl(true, {frame_pointers, 0, static_cast<size_t>(std::ranges::find(frame_pointers, nullptr) - frame_pointers.begin())}, std::move(callback));
 }
 
+void StackTrace::toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback)
+{
+    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
+
+    FramePointers frame_pointers{};
+    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
+
+    toStringEveryLineImpl(true, {frame_pointers, offset, size}, std::move(callback));
+}
+
+struct CacheEntry
+{
+    std::mutex mutex;
+    std::optional<String> stacktrace_string;
+};
+
+using CacheEntryPtr = std::shared_ptr<CacheEntry>;
+
+static constinit bool can_use_cache = false;
+
+using StackTraceCacheBase = std::map<StackTraceTriple, CacheEntryPtr, std::less<>>;
+
+struct StackTraceCache : public StackTraceCacheBase
+{
+    StackTraceCache()
+        : StackTraceCacheBase()
+    {
+        can_use_cache = true;
+    }
+
+    ~StackTraceCache()
+    {
+        can_use_cache = false;
+    }
+};
+
+static StackTraceCache cache;
+
+static DB::SharedMutex stacktrace_cache_mutex;
+
+static String toStringCached(const FramePointers & pointers, size_t offset, size_t size)
+{
+    const StackTraceRefTriple key{pointers, offset, size};
+
+    if (!can_use_cache)
+    {
+        DB::WriteBufferFromOwnString out;
+        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
+        return out.str();
+    }
+
+    /// Calculation of stack trace text is extremely slow.
+    /// We use cache because otherwise the server could be overloaded by trash queries.
+    /// Note that this cache can grow unconditionally, but practically it should be small.
+    CacheEntryPtr cache_entry;
+
+    // Optimistic try for cache hit to avoid any contention whatsoever, should be the main hot code route
+    {
+        std::shared_lock read_lock{stacktrace_cache_mutex};
+        if (auto it = cache.find(key); it != cache.end())
+            cache_entry = it->second;
+    }
+
+    // Create a new entry in case of a cache miss
+    if (!cache_entry)
+    {
+        std::unique_lock write_lock{stacktrace_cache_mutex};
+
+        // We should recheck because `shared_lock` was released before we acquired `write_lock`
+        if (auto it = cache.find(key); it != cache.end())
+            cache_entry = it->second; // Another thread managed to created this entry before us
+        else
+            cache_entry = cache.emplace(StackTraceTriple{pointers, offset, size}, std::make_shared<CacheEntry>()).first->second;
+    }
+
+    // Do not hold `stacktrace_cache_mutex` while running possibly slow calculation of stack trace text
+    std::scoped_lock lock(cache_entry->mutex);
+    if (!cache_entry->stacktrace_string.has_value())
+    {
+        DB::WriteBufferFromOwnString out;
+        toStringEveryLineImpl(false, key, [&](std::string_view str) { out << str << '\n'; });
+        cache_entry->stacktrace_string = out.str();
+    }
+
+    return *cache_entry->stacktrace_string;
+}
 
 std::string StackTrace::toString() const
 {
-    return toStringStatic(frame_pointers, offset, size);
+    return toStringCached(frame_pointers, offset, size);
 }
 
-std::string StackTrace::toString(void ** frame_pointers_, size_t offset, size_t size)
+std::string StackTrace::toString(void * const * frame_pointers_raw, size_t offset, size_t size)
 {
-    __msan_unpoison(frame_pointers_, size * sizeof(*frame_pointers_));
+    __msan_unpoison(frame_pointers_raw, size * sizeof(*frame_pointers_raw));
 
-    StackTrace::FramePointers frame_pointers_copy{};
-    for (size_t i = 0; i < size; ++i)
-        frame_pointers_copy[i] = frame_pointers_[i];
+    FramePointers frame_pointers{};
+    std::copy_n(frame_pointers_raw, size, frame_pointers.begin());
 
-    return toStringStatic(frame_pointers_copy, offset, size);
-}
-
-using StackTraceRepresentation = std::tuple<StackTrace::FramePointers, size_t, size_t>;
-using StackTraceCache = std::map<StackTraceRepresentation, std::string>;
-
-static StackTraceCache & cacheInstance()
-{
-    static StackTraceCache cache;
-    return cache;
-}
-
-static std::mutex stacktrace_cache_mutex;
-
-std::string StackTrace::toStringStatic(const StackTrace::FramePointers & frame_pointers, size_t offset, size_t size)
-{
-    /// Calculation of stack trace text is extremely slow.
-    /// We use simple cache because otherwise the server could be overloaded by trash queries.
-    /// Note that this cache can grow unconditionally, but practically it should be small.
-    std::lock_guard lock{stacktrace_cache_mutex};
-
-    StackTraceRepresentation key{frame_pointers, offset, size};
-    auto & cache = cacheInstance();
-    if (cache.contains(key))
-        return cache[key];
-
-    auto result = toStringImpl(frame_pointers, offset, size);
-    cache[key] = result;
-    return result;
+    return toStringCached(frame_pointers, offset, size);
 }
 
 void StackTrace::dropCache()
 {
     std::lock_guard lock{stacktrace_cache_mutex};
-    cacheInstance().clear();
+    cache.clear();
 }
+
+
+thread_local bool asynchronous_stack_unwinding = false;
+thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;

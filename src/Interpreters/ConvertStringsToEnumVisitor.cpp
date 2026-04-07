@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-/// @note We place strings in ascending order here under the assumption it colud speed up String to Enum conversion.
+/// @note We place strings in ascending order here under the assumption it could speed up String to Enum conversion.
 String makeStringsEnum(const std::set<String> & values)
 {
     String enum_string = "Enum8(";
@@ -33,15 +33,15 @@ String makeStringsEnum(const std::set<String> & values)
 
 void changeIfArguments(ASTPtr & first, ASTPtr & second)
 {
-    String first_value = first->as<ASTLiteral>()->value.get<String>();
-    String second_value = second->as<ASTLiteral>()->value.get<String>();
+    String first_value = first->as<ASTLiteral>()->value.safeGet<String>();
+    String second_value = second->as<ASTLiteral>()->value.safeGet<String>();
 
     std::set<String> values;
     values.insert(first_value);
     values.insert(second_value);
 
     String enum_string = makeStringsEnum(values);
-    auto enum_literal = std::make_shared<ASTLiteral>(enum_string);
+    auto enum_literal = make_intrusive<ASTLiteral>(enum_string);
 
     auto first_cast = makeASTFunction("_CAST");
     first_cast->arguments->children.push_back(first);
@@ -59,20 +59,20 @@ void changeTransformArguments(ASTPtr & array_to, ASTPtr & other)
 {
     std::set<String> values;
 
-    for (const auto & item : array_to->as<ASTLiteral>()->value.get<Array>())
-        values.insert(item.get<String>());
-    values.insert(other->as<ASTLiteral>()->value.get<String>());
+    for (const auto & item : array_to->as<ASTLiteral>()->value.safeGet<Array>())
+        values.insert(item.safeGet<String>());
+    values.insert(other->as<ASTLiteral>()->value.safeGet<String>());
 
     String enum_string = makeStringsEnum(values);
 
     auto array_cast = makeASTFunction("_CAST");
     array_cast->arguments->children.push_back(array_to);
-    array_cast->arguments->children.push_back(std::make_shared<ASTLiteral>("Array(" + enum_string + ")"));
+    array_cast->arguments->children.push_back(make_intrusive<ASTLiteral>("Array(" + enum_string + ")"));
     array_to = array_cast;
 
     auto other_cast = makeASTFunction("_CAST");
     other_cast->arguments->children.push_back(other);
-    other_cast->arguments->children.push_back(std::make_shared<ASTLiteral>(enum_string));
+    other_cast->arguments->children.push_back(make_intrusive<ASTLiteral>(enum_string));
     other = other_cast;
 }
 
@@ -141,7 +141,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
 
     if (function_node.name == "if")
     {
-        if (function_node.arguments->children.size() != 2)
+        if (function_node.arguments->children.size() != 3)
             return;
 
         const ASTLiteral * literal1 = function_node.arguments->children[1]->as<ASTLiteral>();
@@ -168,7 +168,7 @@ void ConvertStringsToEnumMatcher::visit(ASTFunction & function_node, Data & data
         if (literal_to->value.getTypeName() != "Array" || literal_other->value.getTypeName() != "String")
             return;
 
-        Array array_to = literal_to->value.get<Array>();
+        Array array_to = literal_to->value.safeGet<Array>();
         if (array_to.empty())
             return;
 

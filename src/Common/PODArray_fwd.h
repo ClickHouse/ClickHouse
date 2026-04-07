@@ -11,7 +11,7 @@
 namespace DB
 {
 
-inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
+constexpr size_t integerRoundUp(size_t value, size_t dividend)
 {
     return ((value + dividend - 1) / dividend) * dividend;
 }

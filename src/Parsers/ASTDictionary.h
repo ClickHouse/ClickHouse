@@ -25,7 +25,8 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 /// AST for external dictionary layout. Has name and contain single parameter
@@ -46,7 +47,13 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
+    {
+        f(reinterpret_cast<IAST **>(&parameters), nullptr);
+    }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -63,7 +70,8 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 class ASTDictionarySettings : public IAST
@@ -75,7 +83,8 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -102,7 +111,8 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

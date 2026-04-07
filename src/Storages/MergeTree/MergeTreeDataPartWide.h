@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
@@ -17,58 +18,40 @@ class MergeTreeDataPartWide : public IMergeTreeDataPart
 public:
     MergeTreeDataPartWide(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
-        const DataPartStoragePtr & data_part_storage_,
+        const MutableDataPartStoragePtr & data_part_storage_,
         const IMergeTreeDataPart * parent_part_ = nullptr);
 
-    MergeTreeDataPartWide(
-        MergeTreeData & storage_,
-        const String & name_,
-        const DataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr);
-
-    MergeTreeReaderPtr getReader(
-        const NamesAndTypesList & columns,
-        const StorageMetadataPtr & metadata_snapshot,
-        const MarkRanges & mark_ranges,
-        UncompressedCache * uncompressed_cache,
-        MarkCache * mark_cache,
-        const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
-
-    MergeTreeWriterPtr getWriter(
-        DataPartStorageBuilderPtr data_part_storage_builder,
-        const NamesAndTypesList & columns_list,
-        const StorageMetadataPtr & metadata_snapshot,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const CompressionCodecPtr & default_codec_,
-        const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity) const override;
-
-    bool isStoredOnDisk() const override { return true; }
+    bool isStoredOnReadonlyDisk() const override;
 
     bool isStoredOnRemoteDisk() const override;
 
     bool isStoredOnRemoteDiskWithZeroCopySupport() const override;
 
-    bool supportsVerticalMerge() const override { return true; }
-
-    String getFileNameForColumn(const NameAndTypePair & column) const override;
+    std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const override;
 
     ~MergeTreeDataPartWide() override;
 
     bool hasColumnFiles(const NameAndTypePair & column) const override;
 
+    std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
+
+    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
+    void removeMarksFromCache(MarkCache * mark_cache) const override;
+
 protected:
     static void loadIndexGranularityImpl(
-        MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const DataPartStoragePtr & data_part_storage_, const std::string & any_column_file_name);
+        MergeTreeIndexGranularityPtr & index_granularity_ptr,
+        MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const IDataPartStorage & data_part_storage_,
+        const std::string & any_column_file_name,
+        const MergeTreeSettings & storage_settings);
+
+    void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
-    void checkConsistency(bool require_part_metadata) const override;
-
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
@@ -76,6 +59,11 @@ private:
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
+    ColumnSize calculateSubcolumnSize(const String & subcolumn_name) const override;
+
+    void addStreamToColumnSize(const String & stream_name, ColumnSize & size) const;
+
+    std::vector<String> getListOfStreamsForColumn(const NameAndTypePair & column) const;
 };
 
 }

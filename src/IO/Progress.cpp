@@ -1,4 +1,4 @@
-#include "Progress.h"
+#include <IO/Progress.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -9,11 +9,42 @@
 
 namespace DB
 {
+
+namespace
+{
+    UInt64 getApproxTotalRowsToRead(UInt64 read_rows, UInt64 read_bytes, UInt64 total_bytes_to_read)
+    {
+        if (!read_rows || !read_bytes)
+            return 0;
+
+        auto bytes_per_row = std::ceil(static_cast<double>(read_bytes) / static_cast<double>(read_rows));
+        return static_cast<UInt64>(std::ceil(static_cast<double>(total_bytes_to_read) / bytes_per_row));
+    }
+}
+
+
+bool Progress::empty() const
+{
+    return read_rows == 0
+        && read_bytes == 0
+        && written_rows == 0
+        && written_bytes == 0
+        && total_rows_to_read == 0
+        && result_rows == 0
+        && result_bytes == 0;
+    /// We deliberately don't include "elapsed_ns" and "memory_usage" as a volatile value.
+}
+
+
 void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 {
     readVarUInt(read_rows, in);
     readVarUInt(read_bytes, in);
     readVarUInt(total_rows_to_read, in);
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS)
+    {
+        readVarUInt(total_bytes_to_read, in);
+    }
     if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
         readVarUInt(written_rows, in);
@@ -30,7 +61,17 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
 {
     writeVarUInt(read_rows, out);
     writeVarUInt(read_bytes, out);
-    writeVarUInt(total_rows_to_read, out);
+    /// In new TCP protocol we can send total_bytes_to_read without total_rows_to_read.
+    /// If client doesn't support total_bytes_to_read, send approx total_rows_to_read
+    /// to indicate at least approx progress.
+    if (client_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS && total_bytes_to_read && !total_rows_to_read)
+        writeVarUInt(getApproxTotalRowsToRead(read_rows, read_bytes, total_bytes_to_read), out);
+    else
+        writeVarUInt(total_rows_to_read, out);
+    if (client_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TOTAL_BYTES_IN_PROGRESS)
+    {
+        writeVarUInt(total_bytes_to_read, out);
+    }
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
         writeVarUInt(written_rows, out);
@@ -42,26 +83,37 @@ void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
     }
 }
 
-void ProgressValues::writeJSON(WriteBuffer & out) const
+void ProgressValues::writeJSON(WriteBuffer & out, bool write_zero_values) const
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
 
-    writeCString("{\"read_rows\":\"", out);
-    writeText(read_rows, out);
-    writeCString("\",\"read_bytes\":\"", out);
-    writeText(read_bytes, out);
-    writeCString("\",\"written_rows\":\"", out);
-    writeText(written_rows, out);
-    writeCString("\",\"written_bytes\":\"", out);
-    writeText(written_bytes, out);
-    writeCString("\",\"total_rows_to_read\":\"", out);
-    writeText(total_rows_to_read, out);
-    writeCString("\",\"result_rows\":\"", out);
-    writeText(result_rows, out);
-    writeCString("\",\"result_bytes\":\"", out);
-    writeText(result_bytes, out);
-    writeCString("\"}", out);
+    bool has_value = false;
+
+    auto write = [&](const char * name, UInt64 value)
+    {
+        if (!value && !write_zero_values)
+            return;
+        if (has_value)
+            writeChar(',', out);
+        writeCString(name, out);
+        writeCString(":\"", out);
+        writeIntText(value, out);
+        writeChar('"', out);
+        has_value = true;
+    };
+
+    writeCString("{", out);
+    write("\"read_rows\"", read_rows);
+    write("\"read_bytes\"", read_bytes);
+    write("\"written_rows\"", written_rows);
+    write("\"written_bytes\"", written_bytes);
+    write("\"total_rows_to_read\"", total_rows_to_read);
+    write("\"result_rows\"", result_rows);
+    write("\"result_bytes\"", result_bytes);
+    write("\"elapsed_ns\"", elapsed_ns);
+    write("\"memory_usage\"", memory_usage);
+    writeCString("}", out);
 }
 
 bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
@@ -79,6 +131,8 @@ bool Progress::incrementPiecewiseAtomically(const Progress & rhs)
     result_bytes += rhs.result_bytes;
 
     elapsed_ns += rhs.elapsed_ns;
+
+    memory_usage += rhs.memory_usage;
 
     return rhs.read_rows || rhs.written_rows;
 }
@@ -98,6 +152,8 @@ void Progress::reset()
     result_bytes = 0;
 
     elapsed_ns = 0;
+
+    memory_usage = 0;
 }
 
 ProgressValues Progress::getValues() const
@@ -117,6 +173,8 @@ ProgressValues Progress::getValues() const
     res.result_bytes = result_bytes.load(std::memory_order_relaxed);
 
     res.elapsed_ns = elapsed_ns.load(std::memory_order_relaxed);
+
+    res.memory_usage = memory_usage.load(std::memory_order_relaxed);
 
     return res;
 }
@@ -139,6 +197,8 @@ ProgressValues Progress::fetchValuesAndResetPiecewiseAtomically()
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
 
+    res.memory_usage = memory_usage.fetch_and(0);
+
     return res;
 }
 
@@ -160,6 +220,8 @@ Progress Progress::fetchAndResetPiecewiseAtomically()
 
     res.elapsed_ns = elapsed_ns.fetch_and(0);
 
+    res.memory_usage = memory_usage.fetch_and(0);
+
     return res;
 }
 
@@ -179,6 +241,8 @@ Progress & Progress::operator=(Progress && other) noexcept
 
     elapsed_ns = other.elapsed_ns.load(std::memory_order_relaxed);
 
+    memory_usage = other.memory_usage.load(std::memory_order_relaxed);
+
     return *this;
 }
 
@@ -190,11 +254,14 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
     read_rows.store(values.read_rows, std::memory_order_relaxed);
     read_bytes.store(values.read_bytes, std::memory_order_relaxed);
     total_rows_to_read.store(values.total_rows_to_read, std::memory_order_relaxed);
+    total_bytes_to_read.store(values.total_bytes_to_read, std::memory_order_relaxed);
 
     written_rows.store(values.written_rows, std::memory_order_relaxed);
     written_bytes.store(values.written_bytes, std::memory_order_relaxed);
 
     elapsed_ns.store(values.elapsed_ns, std::memory_order_relaxed);
+
+    memory_usage.store(values.memory_usage, std::memory_order_relaxed);
 }
 
 void Progress::write(WriteBuffer & out, UInt64 client_revision) const
@@ -202,9 +269,14 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
     getValues().write(out, client_revision);
 }
 
-void Progress::writeJSON(WriteBuffer & out) const
+void Progress::writeJSON(WriteBuffer & out, DisplayMode mode) const
 {
-    getValues().writeJSON(out);
+    getValues().writeJSON(out, mode == DisplayMode::Verbose);
+}
+
+void Progress::incrementElapsedNs(UInt64 elapsed_ns_)
+{
+    elapsed_ns.fetch_add(elapsed_ns_, std::memory_order_relaxed);
 }
 
 }

@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_ROW_POLICY;
     extern const int UNKNOWN_QUOTA;
     extern const int THERE_IS_NO_PROFILE;
+    extern const int UNKNOWN_MASKING_POLICY;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -81,9 +82,14 @@ const AccessEntityTypeInfo & AccessEntityTypeInfo::get(AccessEntityType type_)
             static const auto info = make_info("QUOTA", "QUOTAS", 'Q', ErrorCodes::UNKNOWN_QUOTA);
             return info;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            static const auto info = make_info("MASKING_POLICY", "MASKING_POLICIES", 'M', ErrorCodes::UNKNOWN_MASKING_POLICY);
+            return info;
+        }
         case AccessEntityType::MAX: break;
     }
-    throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", static_cast<size_t>(type_));
 }
 
 AccessEntityType AccessEntityTypeInfo::parseType(const String & name_)

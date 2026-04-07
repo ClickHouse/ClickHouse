@@ -1,6 +1,7 @@
 #include <Disks/LocalDirectorySyncGuard.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Disks/IDisk.h>
 #include <Common/Stopwatch.h>
 #include <fcntl.h> // O_RDWR
@@ -31,8 +32,8 @@ LocalDirectorySyncGuard::LocalDirectorySyncGuard(const String & full_path)
     : fd(::open(full_path.c_str(), O_DIRECTORY))
 {
     if (-1 == fd)
-        throwFromErrnoWithPath("Cannot open file " + full_path, full_path,
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE, full_path, "Cannot open file {}", full_path);
 }
 
 LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
@@ -45,13 +46,13 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 
 #if defined(OS_DARWIN)
         if (fcntl(fd, F_FULLFSYNC, 0))
-            throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
+            throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot fcntl(F_FULLFSYNC)");
 #else
         if (-1 == ::fdatasync(fd))
-            throw Exception("Cannot fdatasync", ErrorCodes::CANNOT_FSYNC);
+            throw Exception(ErrorCodes::CANNOT_FSYNC, "Cannot fdatasync");
 #endif
         if (-1 == ::close(fd))
-            throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
+            throw Exception(ErrorCodes::CANNOT_CLOSE_FILE, "Cannot close file");
 
         ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
     }

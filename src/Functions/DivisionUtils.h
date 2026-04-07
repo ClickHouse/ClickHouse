@@ -6,8 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#include "config.h"
-
 
 namespace DB
 {
@@ -17,30 +15,38 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
 template <typename A, typename B>
 inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
     /// Is it better to use siglongjmp instead of checks?
 
-    if (unlikely(b == 0))
-        throw Exception("Division by zero", ErrorCodes::ILLEGAL_DIVISION);
+    if (b == 0) [[unlikely]]
+        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        throw Exception("Division of minimal signed number by minus one", ErrorCodes::ILLEGAL_DIVISION);
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
+    }
 }
 
+}
+
+
+namespace DB
+{
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    if (unlikely(b == 0))
+    if (b == 0) [[unlikely]]
         return true;
 
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        return true;
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
+            return true;
+    }
 
     return false;
 }
@@ -50,10 +56,10 @@ inline auto checkedDivision(A a, B b)
 {
     throwIfDivisionLeadsToFPE(a, b);
 
-    if constexpr (is_big_int_v<A> && std::is_floating_point_v<B>)
-        return static_cast<B>(a) / b;
-    else if constexpr (is_big_int_v<B> && std::is_floating_point_v<A>)
+    if constexpr (is_floating_point<A> && !is_floating_point<B>)
         return a / static_cast<A>(b);
+    else if constexpr (!is_floating_point<A> && is_floating_point<B>)
+        return static_cast<B>(a) / b;
     else if constexpr (is_big_int_v<A> && is_big_int_v<B>)
         return static_cast<A>(a / b);
     else if constexpr (!is_big_int_v<A> && is_big_int_v<B>)
@@ -63,8 +69,6 @@ inline auto checkedDivision(A a, B b)
 }
 
 
-#pragma GCC diagnostic pop
-
 template <typename A, typename B>
 struct DivideIntegralImpl
 {
@@ -73,7 +77,7 @@ struct DivideIntegralImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         using CastA = std::conditional_t<is_big_int_v<B> && std::is_same_v<A, UInt8>, uint8_t, A>;
         using CastB = std::conditional_t<is_big_int_v<A> && std::is_same_v<B, UInt8>, uint8_t, B>;
@@ -89,24 +93,21 @@ struct DivideIntegralImpl
         }
         else
         {
-            /// Comparisons are not strict to avoid rounding issues when operand is implicitly casted to float.
+            /// Comparisons are not strict to avoid rounding issues when operand is implicitly cast to float.
 
-            if constexpr (std::is_floating_point_v<A>)
+            if constexpr (is_floating_point<A>)
                 if (isNaN(a) || a >= std::numeric_limits<CastA>::max() || a <= std::numeric_limits<CastA>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
-            if constexpr (std::is_floating_point_v<B>)
+            if constexpr (is_floating_point<B>)
                 if (isNaN(b) || b >= std::numeric_limits<CastB>::max() || b <= std::numeric_limits<CastB>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             auto res = checkedDivision(CastA(a), CastB(b));
 
-            if constexpr (std::is_floating_point_v<decltype(res)>)
+            if constexpr (is_floating_point<decltype(res)>)
                 if (isNaN(res) || res >= static_cast<double>(std::numeric_limits<Result>::max()) || res <= std::numeric_limits<Result>::lowest())
-                    throw Exception("Cannot perform integer division, because it will produce infinite or too large number",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division, because it will produce infinite or too large number");
 
             return static_cast<Result>(res);
         }
@@ -115,6 +116,21 @@ struct DivideIntegralImpl
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
 #endif
+};
+
+template <typename A, typename B>
+struct DivideIntegralOrNullImpl : DivideIntegralImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
+
+    template<typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if (unlikely(divisionLeadsToFPE(a, b)))
+            return 0;
+        else
+            return DivideIntegralImpl<A, B>::apply(a, b);
+    }
 };
 
 template <typename A, typename B>
@@ -128,24 +144,22 @@ struct ModuloImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
-        if constexpr (std::is_floating_point_v<ResultType>)
+        if constexpr (is_floating_point<ResultType>)
         {
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return static_cast<ResultType>(a) - trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
         }
         else
         {
-            if constexpr (std::is_floating_point_v<A>)
+            if constexpr (is_floating_point<A>)
                 if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
-            if constexpr (std::is_floating_point_v<B>)
+            if constexpr (is_floating_point<B>)
                 if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
-                    throw Exception("Cannot perform integer division on infinite or too large floating point numbers",
-                        ErrorCodes::ILLEGAL_DIVISION);
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
@@ -168,7 +182,7 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -176,6 +190,86 @@ template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
+#endif
+};
+
+template <typename A, typename B>
+struct ModuloOrNullImpl : ModuloImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if (unlikely(divisionLeadsToFPE(a, b)))
+            return 0;
+        else
+            return ModuloImpl<A, B>::apply(a, b);
+    }
+};
+
+template <typename A, typename B>
+struct PositiveModuloImpl : ModuloImpl<A, B>
+{
+    using OriginResultType = typename ModuloImpl<A, B>::ResultType;
+    using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        auto res = ModuloImpl<A, B>::template apply<OriginResultType>(a, b);
+        if constexpr (is_signed_v<A>)
+        {
+            if (res < 0)
+            {
+                if constexpr (is_unsigned_v<B>)
+                {
+                    if constexpr (is_integer<OriginResultType>)
+                    {
+                        /// Perform the addition in unsigned arithmetic to avoid
+                        /// undefined behavior when b does not fit in the signed OriginResultType.
+                        /// This is correct because mathematically 0 <= res + b < b.
+                        return static_cast<ResultType>(
+                            static_cast<make_unsigned_t<OriginResultType>>(res) + static_cast<make_unsigned_t<OriginResultType>>(b));
+                    }
+                    else
+                    {
+                        return static_cast<ResultType>(res + static_cast<OriginResultType>(b));
+                    }
+                }
+                else
+                {
+                    if (b == std::numeric_limits<B>::lowest())
+                        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by the most negative number");
+                    return static_cast<ResultType>(
+                        res + (b >= 0 ? static_cast<OriginResultType>(b) : static_cast<OriginResultType>(-b)));
+                }
+            }
+        }
+        return static_cast<ResultType>(res);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
+};
+
+template <typename A, typename B>
+struct PositiveModuloOrNullImpl : PositiveModuloImpl<A, B>
+{
+    using ResultType = typename NumberTraits::ResultOfPositiveModulo<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if (unlikely(divisionLeadsToFPE(a, b)))
+            return 0;
+        else
+            return PositiveModuloImpl<A, B>::apply(a, b);
+    }
 };
 
 }

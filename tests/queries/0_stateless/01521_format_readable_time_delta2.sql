@@ -5,7 +5,7 @@ SELECT formatReadableTimeDelta(-(1 + 60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86
 SELECT formatReadableTimeDelta(-(1 + 60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400), 'hours');
 SELECT formatReadableTimeDelta(-(1 + 60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400), 'minutes');
 SELECT formatReadableTimeDelta(-(1 + 60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400), 'seconds');
-SELECT formatReadableTimeDelta(-(1 + 60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400), 'second'); -- { serverError 36 }
+SELECT formatReadableTimeDelta(-(1 + 60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400), 'second'); -- { serverError BAD_ARGUMENTS }
 
 SELECT formatReadableTimeDelta(-(60 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400));
 SELECT formatReadableTimeDelta(-(1 + 3600 + 86400 + 30.5 * 86400 + 365 * 86400));

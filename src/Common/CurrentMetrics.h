@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 #include <atomic>
+#include <cassert>
 #include <base/types.h>
+#include <base/strong_typedef.h>
 
 /** Allows to count number of simultaneously happening processes or current value of some metric.
   *  - for high-level profiling.
@@ -15,19 +16,19 @@
   *  or just current value of some metric - for example, replica delay in seconds.
   *
   * CurrentMetrics are updated instantly and are correct for any point in time.
-  * For periodically (asynchronously) updated metrics, see AsynchronousMetrics.h
+  * For periodically (asynchronously) updated metrics, see .h
   */
 
 namespace CurrentMetrics
 {
     /// Metric identifier (index in array).
-    using Metric = size_t;
-    using Value = DB::Int64;
+    using Metric = StrongTypedef<size_t, struct MetricTag>;
+    using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
-    const char * getName(Metric event);
+    const std::string_view & getName(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
-    const char * getDocumentation(Metric event);
+    const std::string_view & getDocumentation(Metric event);
 
     /// Metric identifier -> current value of metric.
     extern std::atomic<Value> values[];
@@ -58,6 +59,16 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
+    inline bool cas(Metric metric, Value expected, Value desired)
+    {
+        return values[metric].compare_exchange_strong(expected, desired, std::memory_order_relaxed);
+    }
+
+    inline void max(Metric metric, Value value)
+    {
+        __atomic_fetch_max(reinterpret_cast<Value *>(&values[metric]), value, __ATOMIC_RELAXED);
+    }
+
     /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {
@@ -73,7 +84,15 @@ namespace CurrentMetrics
 
     public:
         explicit Increment(Metric metric, Value amount_ = 1)
-            : Increment(&values[metric], amount_) {}
+            : Increment(&values[metric], amount_)
+        {
+            // in src/Core/tests/gtest_BackgroundSchedulePool.cpp we create pool as
+            // auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+            // which leads as to creation of Increment with metric == CurrentMetrics::end()
+            // actually this is not a real metric, however it is presented in CurrentMetrics::values array
+            // so we are able to increment it and we should not assert here when metric == CurrentMetrics::end()
+            assert(metric <= CurrentMetrics::end());
+        }
 
         ~Increment()
         {

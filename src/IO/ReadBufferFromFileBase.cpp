@@ -1,12 +1,9 @@
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/Progress.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_FILE_SIZE;
-}
 
 ReadBufferFromFileBase::ReadBufferFromFileBase() : BufferWithOwnMemory<SeekableReadBuffer>(0)
 {
@@ -24,11 +21,22 @@ ReadBufferFromFileBase::ReadBufferFromFileBase(
 
 ReadBufferFromFileBase::~ReadBufferFromFileBase() = default;
 
-size_t ReadBufferFromFileBase::getFileSize()
+std::optional<size_t> ReadBufferFromFileBase::tryGetFileSize()
 {
-    if (file_size)
-        return *file_size;
-    throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out file size for read buffer");
+    return file_size;
+}
+
+void ReadBufferFromFileBase::setProgressCallback(ContextPtr context)
+{
+    auto file_progress_callback = context->getFileProgressCallback();
+
+    if (!file_progress_callback)
+        return;
+
+    setProfileCallback([file_progress_callback](const ProfileInfo & progress)
+    {
+       file_progress_callback(FileProgress(progress.bytes_read));
+    });
 }
 
 }

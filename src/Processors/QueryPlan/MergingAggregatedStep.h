@@ -14,33 +14,55 @@ class MergingAggregatedStep : public ITransformingStep
 {
 public:
     MergingAggregatedStep(
-        const DataStream & input_stream_,
+        const SharedHeader & input_header_,
         Aggregator::Params params_,
+        GroupingSetsParamsList grouping_sets_params_,
         bool final_,
         bool memory_efficient_aggregation_,
-        size_t max_threads_,
         size_t memory_efficient_merge_threads_,
-        bool should_produce_results_in_order_of_bucket_number_);
+        bool should_produce_results_in_order_of_bucket_number_,
+        size_t max_block_size_,
+        size_t memory_bound_merging_max_block_bytes_,
+        bool memory_bound_merging_of_aggregation_results_enabled_);
 
     String getName() const override { return "MergingAggregated"; }
+    const Aggregator::Params & getParams() const { return params; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    void applyOrder(SortDescription input_sort_description);
+    const SortDescription & getSortDescription() const override;
+    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
+
+    bool memoryBoundMergingWillBeUsed() const;
+
+    bool isGroupingSets() const { return !grouping_sets_params.empty(); }
+    const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
 private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override;
 
     Aggregator::Params params;
+    GroupingSetsParamsList grouping_sets_params;
     bool final;
-    bool memory_efficient_aggregation;
+    const bool memory_efficient_aggregation;
     size_t max_threads;
     size_t memory_efficient_merge_threads;
+    const size_t max_block_size;
+    const size_t memory_bound_merging_max_block_bytes;
+    SortDescription group_by_sort_description;
 
-    /// It determines if we should resize pipeline to 1 at the end.
-    /// Needed in case of distributed memory efficient aggregation over distributed table.
+    /// These settings are used to determine if we should resize pipeline to 1 at the end.
     const bool should_produce_results_in_order_of_bucket_number;
+    const bool memory_bound_merging_of_aggregation_results_enabled;
 };
 
 }

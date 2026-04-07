@@ -1,6 +1,7 @@
 #include <Interpreters/InterserverCredentials.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -14,10 +15,11 @@ std::unique_ptr<InterserverCredentials>
 InterserverCredentials::make(const Poco::Util::AbstractConfiguration & config, const std::string & root_tag)
 {
     if (config.has("user") && !config.has("password"))
-        throw Exception("Configuration parameter interserver_http_credentials.password can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Configuration parameter interserver_http_credentials.password can't be empty");
 
     if (!config.has("user") && config.has("password"))
-        throw Exception("Configuration parameter interserver_http_credentials.user can't be empty if user specified", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                        "Configuration parameter interserver_http_credentials.user can't be empty if user specified");
 
     /// They both can be empty
     auto user = config.getString(root_tag + ".user", "");
@@ -34,7 +36,7 @@ InterserverCredentials::CurrentCredentials InterserverCredentials::parseCredenti
     const Poco::Util::AbstractConfiguration & config,
     const std::string & root_tag)
 {
-    auto * log = &Poco::Logger::get("InterserverCredentials");
+    auto log = getLogger("InterserverCredentials");
     CurrentCredentials store;
     store.emplace_back(current_user_, current_password_);
     if (config.getBool(root_tag + ".allow_empty", false))

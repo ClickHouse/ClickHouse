@@ -82,11 +82,11 @@ TEST(MergeTreeSetIndex, checkInRangeTuple)
     std::vector<Range> ranges = {Range(1), Range("a", true, "c", true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(1), Range('a', true, 'c', true)";
 
-    ranges = {Range(1, false, 3, false), Range()};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(1, false, 3, false), Range()";
+    ranges = {Range(1, false, 3, false), Range::createWholeUniverseWithoutNull()};
+    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(1, false, 3, false), Range::createWholeUniverseWithoutNull()";
 
-    ranges = {Range(2, false, 5, false), Range()};
-    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(2, false, 5, false), Range()";
+    ranges = {Range(2, false, 5, false), Range::createWholeUniverseWithoutNull()};
+    ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(2, false, 5, false), Range::createWholeUniverseWithoutNull()";
 
     ranges = {Range(3), Range::createLeftBounded("a", true)};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(3), Range::createLeftBounded('a', true)";
@@ -106,7 +106,7 @@ TEST(MergeTreeSetIndex, checkInRangeTuple)
     ranges = {Range(1), Range("c")};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, false) << "Range(1), Range('c')";
 
-    ranges = {Range(2, true, 3, true), Range()};
+    ranges = {Range(2, true, 3, true), Range::createWholeUniverseWithoutNull()};
     ASSERT_EQ(set->checkInRange(ranges, types).can_be_true, true) << "Range(2, true, 3, true), Range('x', true, 'z', true)";
 
     ranges = {Range(2), Range("a", true, "z", true)};

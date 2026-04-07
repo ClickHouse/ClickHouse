@@ -1,18 +1,19 @@
 #pragma once
 
-#include <optional>
-#include <string>
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
-#include "OwnSplitChannel.h"
 
-#ifndef WITHOUT_TEXT_LOG
+#include <optional>
+#include <string>
+
 namespace DB
 {
-    class TextLog;
+class OwnSplitChannelBase;
+
+using AsyncLogQueueSize = std::pair<std::string, size_t>;
+using AsyncLogQueueSizes = std::vector<AsyncLogQueueSize>;
 }
-#endif
 
 namespace Poco::Util
 {
@@ -29,9 +30,15 @@ public:
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
 
-#ifndef WITHOUT_TEXT_LOG
-    void setTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
-#endif
+    DB::AsyncLogQueueSizes getAsynchronousMetricsFromAsyncLogs();
+    void flushTextLogs();
+
+    virtual ~Loggers() = default;
+
+    void stopLogging();
+
+protected:
+    virtual bool allowTextLog() const { return true; }
 
 private:
     Poco::AutoPtr<Poco::FileChannel> log_file;
@@ -39,12 +46,10 @@ private:
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
-    std::string config_logger;
+    std::optional<std::string> config_logger;
 
-#ifndef WITHOUT_TEXT_LOG
-    std::weak_ptr<DB::TextLog> text_log;
-    int text_log_max_priority = -1;
-#endif
-
-    Poco::AutoPtr<DB::OwnSplitChannel> split;
+    Poco::AutoPtr<DB::OwnSplitChannelBase> split;
 };
+
+class OwnPatternFormatter;
+Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfiguration & config, const std::string & channel, bool color = false);

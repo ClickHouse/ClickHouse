@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <limits>
@@ -12,7 +11,7 @@ namespace DB
 class RowInputFormatWithDiagnosticInfo : public IRowInputFormat
 {
 public:
-    RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_);
+    RowInputFormatWithDiagnosticInfo(SharedHeader header_, ReadBuffer & in_, const Params & params_);
 
     std::pair<String, String> getDiagnosticAndRawDataImpl(bool is_errors_record);
     String getDiagnosticInfo() override;
@@ -28,9 +27,6 @@ protected:
     virtual bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) = 0;
     virtual void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) = 0;
     virtual bool isGarbageAfterField(size_t after_input_pos_idx, ReadBuffer::Position pos) = 0;
-
-    /// For convenient diagnostics in case of an error.
-    size_t row_num = 0;
 
 private:
     /// How many bytes were read, not counting those still in the buffer.

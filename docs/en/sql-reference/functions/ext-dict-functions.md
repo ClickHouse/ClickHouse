@@ -1,173 +1,167 @@
 ---
-slug: /en/sql-reference/functions/ext-dict-functions
-sidebar_position: 58
-sidebar_label: External Dictionaries
+description: 'Documentation for Functions for Working with Dictionaries'
+sidebar_label: 'Dictionaries'
+slug: /sql-reference/functions/ext-dict-functions
+title: 'Functions for Working with Dictionaries'
+doc_type: 'reference'
 ---
 
-:::note    
-For dictionaries created with [DDL queries](../../sql-reference/statements/create/dictionary.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
+# Functions for Working with Dictionaries
+
+:::note
+For dictionaries created with [DDL queries](../statements/create/dictionary/overview.md), the `dict_name` parameter must be fully specified, like `<database>.<dict_name>`. Otherwise, the current database is used.
 :::
 
-# Functions for Working with External Dictionaries
+For information on connecting and configuring dictionaries, see [Dictionaries](../statements/create/dictionary/overview.md).
 
-For information on connecting and configuring external dictionaries, see [External dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+## Example dictionaries {#example-dictionary}
 
-## dictGet, dictGetOrDefault, dictGetOrNull
+The examples in this section make use of the following dictionaries. You can create them in ClickHouse 
+to run the examples for the functions described below.
 
-Retrieves values from an external dictionary.
+<details>
+<summary>Example dictionary for dictGet\<T\> and dictGet\<T\>OrDefault functions</summary>
 
-``` sql
-dictGet('dict_name', attr_names, id_expr)
-dictGetOrDefault('dict_name', attr_names, id_expr, default_value_expr)
-dictGetOrNull('dict_name', attr_name, id_expr)
+```sql
+-- Create table with all the required data types
+CREATE TABLE all_types_test (
+    `id` UInt32,
+    
+    -- String type
+    `String_value` String,
+    
+    -- Unsigned integer types
+    `UInt8_value` UInt8,
+    `UInt16_value` UInt16,
+    `UInt32_value` UInt32,
+    `UInt64_value` UInt64,
+    
+    -- Signed integer types
+    `Int8_value` Int8,
+    `Int16_value` Int16,
+    `Int32_value` Int32,
+    `Int64_value` Int64,
+    
+    -- Floating point types
+    `Float32_value` Float32,
+    `Float64_value` Float64,
+    
+    -- Date/time types
+    `Date_value` Date,
+    `DateTime_value` DateTime,
+    
+    -- Network types
+    `IPv4_value` IPv4,
+    `IPv6_value` IPv6,
+    
+    -- UUID type
+    `UUID_value` UUID
+) ENGINE = MergeTree() 
+ORDER BY id;
+```
+```sql
+-- Insert test data
+INSERT INTO all_types_test VALUES
+(
+    1,                              -- id
+    'ClickHouse',                   -- String
+    100,                            -- UInt8
+    5000,                           -- UInt16
+    1000000,                        -- UInt32
+    9223372036854775807,            -- UInt64
+    -100,                           -- Int8
+    -5000,                          -- Int16
+    -1000000,                       -- Int32
+    -9223372036854775808,           -- Int64
+    123.45,                         -- Float32
+    987654.123456,                  -- Float64
+    '2024-01-15',                   -- Date
+    '2024-01-15 10:30:00',          -- DateTime
+    '192.168.1.1',                  -- IPv4
+    '2001:db8::1',                  -- IPv6
+    '550e8400-e29b-41d4-a716-446655440000' -- UUID
+)
 ```
 
-**Arguments**
+```sql
+-- Create dictionary
+CREATE DICTIONARY all_types_dict
+(
+    id UInt32,
+    String_value String,
+    UInt8_value UInt8,
+    UInt16_value UInt16,
+    UInt32_value UInt32,
+    UInt64_value UInt64,
+    Int8_value Int8,
+    Int16_value Int16,
+    Int32_value Int32,
+    Int64_value Int64,
+    Float32_value Float32,
+    Float64_value Float64,
+    Date_value Date,
+    DateTime_value DateTime,
+    IPv4_value IPv4,
+    IPv6_value IPv6,
+    UUID_value UUID
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'all_types_test' DB 'default'))
+LAYOUT(HASHED())
+LIFETIME(MIN 300 MAX 600);
+```
+</details>
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+<details>
+<summary>Example dictionary for dictGetAll</summary>
 
-**Returned value**
+Create a table to store the data for the regexp tree dictionary:
 
--   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
-
--   If there is no the key, corresponding to `id_expr`, in the dictionary, then:
-
-        - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
-        - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
-        - `dictGetOrNull` returns `NULL` in case key was not found in dictionary.
-
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-
-**Example for simple key dictionary**
-
-Create a text file `ext-dict-test.csv` containing the following:
-
-``` text
-1,1
-2,2
+```sql
+CREATE TABLE regexp_os(
+    id UInt64,
+    parent_id UInt64,
+    regexp String,
+    keys Array(String),
+    values Array(String)
+)
+ENGINE = Memory;
 ```
 
-The first column is `id`, the second column is `c1`.
+Insert data into the table:
 
-Configure the external dictionary:
-
-``` xml
-<clickhouse>
-    <dictionary>
-        <name>ext-dict-test</name>
-        <source>
-            <file>
-                <path>/path-to/ext-dict-test.csv</path>
-                <format>CSV</format>
-            </file>
-        </source>
-        <layout>
-            <flat />
-        </layout>
-        <structure>
-            <id>
-                <name>id</name>
-            </id>
-            <attribute>
-                <name>c1</name>
-                <type>UInt32</type>
-                <null_value></null_value>
-            </attribute>
-        </structure>
-        <lifetime>0</lifetime>
-    </dictionary>
-</clickhouse>
+```sql
+INSERT INTO regexp_os 
+SELECT *
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/' ||
+    'user_agent_regex/regexp_os.csv'
+);
 ```
 
-Perform the query:
+Create the regexp tree dictionary:
 
-``` sql
-SELECT
-    dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
-    toTypeName(val) AS type
-FROM system.numbers
-LIMIT 3;
+```sql
+CREATE DICTIONARY regexp_tree
+(
+    regexp String,
+    os_replacement String DEFAULT 'Other',
+    os_v1_replacement String DEFAULT '0',
+    os_v2_replacement String DEFAULT '0',
+    os_v3_replacement String DEFAULT '0',
+    os_v4_replacement String DEFAULT '0'
+)
+PRIMARY KEY regexp
+SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(REGEXP_TREE);
 ```
+</details>
 
-``` text
-┌─val─┬─type───┐
-│   1 │ UInt32 │
-│   2 │ UInt32 │
-│  20 │ UInt32 │
-└─────┴────────┘
-```
+<details>
+<summary>Example range key dictionary</summary>
 
-**Example for complex key dictionary**
-
-Create a text file `ext-dict-mult.csv` containing the following:
-
-``` text
-1,1,'1'
-2,2,'2'
-3,3,'3'
-```
-
-The first column is `id`, the second is `c1`, the third is `c2`.
-
-Configure the external dictionary:
-
-``` xml
-<clickhouse>
-    <dictionary>
-        <name>ext-dict-mult</name>
-        <source>
-            <file>
-                <path>/path-to/ext-dict-mult.csv</path>
-                <format>CSV</format>
-            </file>
-        </source>
-        <layout>
-            <flat />
-        </layout>
-        <structure>
-            <id>
-                <name>id</name>
-            </id>
-            <attribute>
-                <name>c1</name>
-                <type>UInt32</type>
-                <null_value></null_value>
-            </attribute>
-            <attribute>
-                <name>c2</name>
-                <type>String</type>
-                <null_value></null_value>
-            </attribute>
-        </structure>
-        <lifetime>0</lifetime>
-    </dictionary>
-</clickhouse>
-```
-
-Perform the query:
-
-``` sql
-SELECT
-    dictGet('ext-dict-mult', ('c1','c2'), number) AS val,
-    toTypeName(val) AS type
-FROM system.numbers
-LIMIT 3;
-```
-
-``` text
-┌─val─────┬─type──────────────────┐
-│ (1,'1') │ Tuple(UInt8, String)  │
-│ (2,'2') │ Tuple(UInt8, String)  │
-│ (3,'3') │ Tuple(UInt8, String)  │
-└─────────┴───────────────────────┘
-```
-
-**Example for range key dictionary**
-
-Input table:
+Create the input table:
 
 ```sql
 CREATE TABLE range_key_dictionary_source_table
@@ -179,13 +173,17 @@ CREATE TABLE range_key_dictionary_source_table
     value_nullable Nullable(String)
 )
 ENGINE = TinyLog();
+```
 
+Insert the data into the input table:
+
+```sql
 INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
 INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
 INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
 ```
 
-Create the external dictionary:
+Create the dictionary:
 
 ```sql
 CREATE DICTIONARY range_key_dictionary
@@ -202,244 +200,103 @@ LIFETIME(MIN 1 MAX 1000)
 LAYOUT(RANGE_HASHED())
 RANGE(MIN start_date MAX end_date);
 ```
+</details>
 
-Perform the query:
+<details>
+<summary>Example complex key dictionary</summary>
 
-``` sql
-SELECT
-    (number, toDate('2019-05-20')),
-    dictHas('range_key_dictionary', number, toDate('2019-05-20')),
-    dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
-    dictGetOrNull('range_key_dictionary', 'value_nullable', number, toDate('2019-05-20')),
-    dictGetOrNull('range_key_dictionary', ('value', 'value_nullable'), number, toDate('2019-05-20'))
-FROM system.numbers LIMIT 5 FORMAT TabSeparated;
-```
-Result:
+Create the source table: 
 
-``` text
-(0,'2019-05-20')        0       \N      \N      (NULL,NULL)
-(1,'2019-05-20')        1       First   First   ('First','First')
-(2,'2019-05-20')        1       Second  \N      ('Second',NULL)
-(3,'2019-05-20')        1       Third   Third   ('Third','Third')
-(4,'2019-05-20')        0       \N      \N      (NULL,NULL)
+```sql
+CREATE TABLE dict_mult_source
+(
+id UInt32,
+c1 UInt32,
+c2 String
+) ENGINE = Memory;
 ```
 
-**See Also**
+Insert the data into the source table:
 
--   [External Dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md)
-
-## dictHas
-
-Checks whether a key is present in a dictionary.
-
-``` sql
-dictHas('dict_name', id_expr)
+```sql
+INSERT INTO dict_mult_source VALUES
+(1, 1, '1'),
+(2, 2, '2'),
+(3, 3, '3');
 ```
 
-**Arguments**
+Create the dictionary:
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+```sql
+CREATE DICTIONARY ext_dict_mult
+(
+    id UInt32,
+    c1 UInt32,
+    c2 String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dict_mult_source' DB 'default'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 0);
+```
+</details>
 
-**Returned value**
+<details>
+<summary>Example hierarchical dictionary</summary>
 
--   0, if there is no key.
--   1, if there is a key.
+Create the source table:
 
-Type: `UInt8`.
-
-## dictGetHierarchy
-
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-hierarchical.md).
-
-**Syntax**
-
-``` sql
-dictGetHierarchy('dict_name', key)
+```sql
+CREATE TABLE hierarchy_source
+(
+  id UInt64,
+  parent_id UInt64,
+  name String
+) ENGINE = Memory;
 ```
 
-**Arguments**
+Insert the data into the source table:
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
+```sql
+INSERT INTO hierarchy_source VALUES
+(0, 0, 'Root'),
+(1, 0, 'Level 1 - Node 1'),
+(2, 1, 'Level 2 - Node 2'),
+(3, 1, 'Level 2 - Node 3'),
+(4, 2, 'Level 3 - Node 4'),
+(5, 2, 'Level 3 - Node 5'),
+(6, 3, 'Level 3 - Node 6');
 
-**Returned value**
-
--   Parents for the key.
-
-Type: [Array(UInt64)](../../sql-reference/data-types/array.md).
-
-## dictIsIn
-
-Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
-
-``` sql
-dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
 ```
 
-**Arguments**
+Create the dictionary:
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `child_id_expr` — Key to be checked. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
--   `ancestor_id_expr` — Alleged ancestor of the `child_id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
-
-**Returned value**
-
--   0, if `child_id_expr` is not a child of `ancestor_id_expr`.
--   1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`.
-
-Type: `UInt8`.
-
-## dictGetChildren
-
-Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
-
-**Syntax**
-
-``` sql
-dictGetChildren(dict_name, key)
+```sql
+CREATE DICTIONARY hierarchical_dictionary
+(
+    id UInt64,
+    parent_id UInt64 HIERARCHICAL,
+    name String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'hierarchy_source' DB 'default'))
+LAYOUT(HASHED())
+LIFETIME(MIN 300 MAX 600);
 ```
+</details>
 
-**Arguments**
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
-
-**Returned values**
-
--   First-level descendants for the key.
-
-Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
-
-**Example**
-
-Consider the hierarchic dictionary:
-
-``` text
-┌─id─┬─parent_id─┐
-│  1 │         0 │
-│  2 │         1 │
-│  3 │         1 │
-│  4 │         2 │
-└────┴───────────┘
-```
-
-First-level children:
-
-``` sql
-SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
-```
-
-``` text
-┌─dictGetChildren('hierarchy_flat_dictionary', number)─┐
-│ [1]                                                  │
-│ [2,3]                                                │
-│ [4]                                                  │
-│ []                                                   │
-└──────────────────────────────────────────────────────┘
-```
-
-## dictGetDescendant
-
-Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.
-
-**Syntax**
-
-``` sql
-dictGetDescendants(dict_name, key, level)
-```
-
-**Arguments**
-
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
--   `level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Returned values**
-
--   Descendants for the key.
-
-Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md)).
-
-**Example**
-
-Consider the hierarchic dictionary:
-
-``` text
-┌─id─┬─parent_id─┐
-│  1 │         0 │
-│  2 │         1 │
-│  3 │         1 │
-│  4 │         2 │
-└────┴───────────┘
-```
-All descendants:
-
-``` sql
-SELECT dictGetDescendants('hierarchy_flat_dictionary', number) FROM system.numbers LIMIT 4;
-```
-
-``` text
-┌─dictGetDescendants('hierarchy_flat_dictionary', number)─┐
-│ [1,2,3,4]                                               │
-│ [2,3,4]                                                 │
-│ [4]                                                     │
-│ []                                                      │
-└─────────────────────────────────────────────────────────┘
-```
-
-First-level descendants:
-
-``` sql
-SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.numbers LIMIT 4;
-```
-
-``` text
-┌─dictGetDescendants('hierarchy_flat_dictionary', number, 1)─┐
-│ [1]                                                        │
-│ [2,3]                                                      │
-│ [4]                                                        │
-│ []                                                         │
-└────────────────────────────────────────────────────────────┘
-```
-
-## Other Functions
-
-ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
-
-Functions:
-
--   `dictGetInt8`, `dictGetInt16`, `dictGetInt32`, `dictGetInt64`
--   `dictGetUInt8`, `dictGetUInt16`, `dictGetUInt32`, `dictGetUInt64`
--   `dictGetFloat32`, `dictGetFloat64`
--   `dictGetDate`
--   `dictGetDateTime`
--   `dictGetUUID`
--   `dictGetString`
-
-All these functions have the `OrDefault` modification. For example, `dictGetDateOrDefault`.
-
-Syntax:
-
-``` sql
-dictGet[Type]('dict_name', 'attr_name', id_expr)
-dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
-```
-
-**Arguments**
-
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `attr_name` — Name of the column of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
--   `default_value_expr` — Value returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning the value in the data type configured for the `attr_name` attribute.
-
-**Returned value**
-
--   If ClickHouse parses the attribute successfully in the [attribute’s data type](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md#ext_dict_structure-attributes), functions return the value of the dictionary attribute that corresponds to `id_expr`.
-
--   If there is no requested `id_expr` in the dictionary then:
-
-        - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
-        - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.
-
-ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

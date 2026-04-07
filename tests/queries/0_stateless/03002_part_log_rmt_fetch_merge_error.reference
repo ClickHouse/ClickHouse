@@ -1,0 +1,12 @@
+before
+rmt_master	NewPart	0	1
+rmt_master	MergeParts	0	1
+rmt_master	MergePartsStart	0	1
+rmt_slave	MergeParts	1	0
+rmt_slave	DownloadPart	0	1
+after
+rmt_master	NewPart	0	1
+rmt_master	MergeParts	0	1
+rmt_master	MergePartsStart	0	1
+rmt_slave	MergeParts	1	0
+rmt_slave	DownloadPart	0	2

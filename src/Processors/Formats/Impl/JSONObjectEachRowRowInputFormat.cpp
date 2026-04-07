@@ -1,7 +1,9 @@
+#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONObjectEachRowRowInputFormat.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 
 namespace DB
@@ -33,8 +35,8 @@ std::optional<size_t> getColumnIndexForJSONObjectEachRowObjectName(const Block &
     return index;
 }
 
-JSONObjectEachRowInputFormat::JSONObjectEachRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(header_, format_settings_))
+JSONObjectEachRowInputFormat::JSONObjectEachRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
+    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(*header_, format_settings_))
 {
 }
 
@@ -45,13 +47,18 @@ void JSONObjectEachRowInputFormat::readPrefix()
 
 void JSONObjectEachRowInputFormat::readRowStart(MutableColumns & columns)
 {
-    auto object_name = JSONUtils::readFieldName(*in);
+    auto object_name = JSONUtils::readFieldName(*in, format_settings.json);
     if (field_index_for_object_name)
     {
         columns[*field_index_for_object_name]->insertData(object_name.data(), object_name.size());
         seen_columns[*field_index_for_object_name] = true;
         read_columns[*field_index_for_object_name] = true;
     }
+}
+
+void JSONObjectEachRowInputFormat::skipRowStart()
+{
+    JSONUtils::readFieldName(*in, format_settings.json);
 }
 
 bool JSONObjectEachRowInputFormat::checkEndOfData(bool is_first_row)
@@ -84,16 +91,26 @@ NamesAndTypesList JSONObjectEachRowSchemaReader::readRowAndGetNamesAndDataTypes(
     else
         JSONUtils::skipComma(in);
 
-    JSONUtils::readFieldName(in);
-    auto names_and_types = JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, false);
+    JSONUtils::readFieldName(in, format_settings.json);
+    return JSONUtils::readRowAndGetNamesAndDataTypesForJSONEachRow(in, format_settings, &inference_info);
+}
+
+NamesAndTypesList JSONObjectEachRowSchemaReader::getStaticNamesAndTypes()
+{
     if (!format_settings.json_object_each_row.column_for_object_name.empty())
-        names_and_types.emplace_front(format_settings.json_object_each_row.column_for_object_name, std::make_shared<DataTypeString>());
-    return names_and_types;
+        return {{format_settings.json_object_each_row.column_for_object_name, std::make_shared<DataTypeString>()}};
+
+    return {};
 }
 
 void JSONObjectEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
 {
-    transformInferredJSONTypesIfNeeded(type, new_type, format_settings);
+    transformInferredJSONTypesIfNeeded(type, new_type, format_settings, &inference_info);
+}
+
+void JSONObjectEachRowSchemaReader::transformFinalTypeIfNeeded(DataTypePtr & type)
+{
+    transformFinalInferredJSONTypeIfNeeded(type, format_settings, &inference_info);
 }
 
 void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
@@ -104,7 +121,7 @@ void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
     {
-        return std::make_shared<JSONObjectEachRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<JSONObjectEachRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("JSONObjectEachRow");

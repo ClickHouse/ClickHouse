@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
+#include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
 
 namespace DB
@@ -18,41 +19,47 @@ public:
             ContextPtr context_,
             const Names & columns,
             size_t max_block_size_,
-            bool ack_in_suffix = false);
+            UInt64 max_execution_time_,
+            StreamingHandleErrorMode handle_error_mode_,
+            bool nack_broken_messages_,
+            bool ack_in_suffix,
+            LoggerPtr log_);
 
     ~RabbitMQSource() override;
 
     String getName() const override { return storage.getName(); }
-    ConsumerBufferPtr getBuffer() { return buffer; }
+    void updateChannel(RabbitMQConnection & connection) { consumer->updateChannel(connection); }
+    String getChannelID() const { return consumer->getChannelID(); }
 
     Chunk generate() override;
 
-    bool queueEmpty() const { return !buffer || buffer->queueEmpty(); }
+    bool hasPendingMessages() const { return consumer && consumer->hasPendingMessages(); }
     bool needChannelUpdate();
     void updateChannel();
     bool sendAck();
-
-
-    void setTimeLimit(Poco::Timespan max_execution_time_) { max_execution_time = max_execution_time_; }
+    bool sendNack();
 
 private:
     StorageRabbitMQ & storage;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
-    Names column_names;
+    const Names column_names;
     const size_t max_block_size;
-    bool ack_in_suffix;
+    const StreamingHandleErrorMode handle_error_mode;
+    const bool ack_in_suffix;
+    const bool nack_broken_messages;
 
     bool is_finished = false;
     const Block non_virtual_header;
     const Block virtual_header;
 
-    ConsumerBufferPtr buffer;
+    LoggerPtr log;
+    RabbitMQConsumerPtr consumer;
 
-    Poco::Timespan max_execution_time = 0;
+    uint64_t max_execution_time_ms = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
-    bool checkTimeLimit() const;
+    RabbitMQConsumer::CommitInfo commit_info;
 
     RabbitMQSource(
         StorageRabbitMQ & storage_,
@@ -61,7 +68,11 @@ private:
         ContextPtr context_,
         const Names & columns,
         size_t max_block_size_,
-        bool ack_in_suffix);
+        UInt64 max_execution_time_,
+        StreamingHandleErrorMode handle_error_mode_,
+        bool nack_broken_messages_,
+        bool ack_in_suffix,
+        LoggerPtr log_);
 
     Chunk generateImpl();
 };

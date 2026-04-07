@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/Impl/JSONEachRowRowOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
@@ -22,8 +20,7 @@ class JSONObjectEachRowRowOutputFormat : public JSONEachRowRowOutputFormat
 public:
     JSONObjectEachRowRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_,
-        const RowOutputFormatParams & params_,
+        SharedHeader header_,
         const FormatSettings & settings_);
 
     String getName() const override { return "JSONObjectEachRowRowOutputFormat"; }
@@ -41,6 +38,7 @@ private:
 
     std::optional<size_t> field_index_for_object_name;
     String object_name;
+    size_t rows = 0;
 };
 
 }

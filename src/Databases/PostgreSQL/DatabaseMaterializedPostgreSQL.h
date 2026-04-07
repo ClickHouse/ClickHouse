@@ -5,19 +5,21 @@
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
-#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #include <Databases/DatabasesCommon.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseAtomic.h>
 
+#include <atomic>
+
 
 namespace DB
 {
 
+struct MaterializedPostgreSQLSettings;
 class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
@@ -40,10 +42,12 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
-    void startupTables(ThreadPool & thread_pool, LoadingStrictnessLevel mode) override;
+    LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
+    void waitDatabaseStarted() const override;
+    void stopLoading() override;
 
     DatabaseTablesIteratorPtr
-    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
+    getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
@@ -73,6 +77,7 @@ protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
 private:
+    void tryStartSynchronization();
     void startSynchronization();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
@@ -89,8 +94,10 @@ private:
     mutable std::mutex tables_mutex;
     mutable std::mutex handler_mutex;
 
-    BackgroundSchedulePool::TaskHolder startup_task;
-    bool shutdown_called = false;
+    BackgroundSchedulePoolTaskHolder startup_task;
+    std::atomic<bool> shutdown_called = false;
+
+    LoadTaskPtr startup_postgresql_database_task TSA_GUARDED_BY(mutex);
 };
 
 }

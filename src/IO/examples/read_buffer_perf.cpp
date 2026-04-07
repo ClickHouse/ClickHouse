@@ -13,9 +13,10 @@ int main(int, char **)
     {
         DB::ReadBufferFromFile in("test");
 
-        DB::Int64 a = 0;
-        DB::Float64 b = 0;
-        DB::String c, d;
+        Int64 a = 0;
+        Float64 b = 0;
+        String c;
+        String d;
 
         size_t i = 0;
         while (!in.eof())

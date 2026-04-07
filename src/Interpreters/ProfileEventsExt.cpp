@@ -1,14 +1,23 @@
-#include "ProfileEventsExt.h"
+#include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace ProfileEvents
 {
@@ -21,26 +30,27 @@ std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
 void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
 {
-    auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
-    if (!column_map)
+    if (!column)
         return;
 
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    auto & column_map = typeid_cast<DB::ColumnMap &>(*column);
+
+    auto & offsets = column_map.getNestedColumn().getOffsets();
+    auto & tuple_column = column_map.getNestedData();
+    auto & key_column = typeid_cast<DB::ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & value_column = typeid_cast<DB::ColumnUInt64 &>(tuple_column.getColumn(1));
 
     size_t size = 0;
-    for (Event event = 0; event < Counters::num_counters; ++event)
+    for (Event event = Event(0); event < Counters::num_counters; ++event)
     {
         UInt64 value = counters[event];
 
         if (nonzero_only && 0 == value)
             continue;
 
-        const char * desc = getName(event);
-        key_column.insertData(desc, strlen(desc));
-        value_column.insert(value);
+        std::string_view desc = getName(event);
+        key_column.insertData(desc.data(), desc.size());
+        value_column.getData().push_back(value);
         size++;
     }
 
@@ -53,15 +63,15 @@ static void dumpProfileEvents(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     size_t rows = 0;
     auto & name_column = columns[NAME_COLUMN_INDEX];
     auto & value_column = columns[VALUE_COLUMN_INDEX];
-    for (Event event = 0; event < Counters::num_counters; ++event)
+    for (Event event = Event(0); event < Counters::num_counters; ++event)
     {
         Int64 value = snapshot.counters[event];
 
         if (value == 0)
             continue;
 
-        const char * desc = getName(event);
-        name_column->insertData(desc, strlen(desc));
+        std::string_view desc = getName(event);
+        name_column->insertData(desc);
         value_column->insert(value);
         rows++;
     }
@@ -84,16 +94,19 @@ static void dumpMemoryTracker(ProfileEventsSnapshot const & snapshot, DB::Mutabl
     columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
     columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
     columns[i++]->insert(Type::GAUGE);
-
     columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-    columns[i++]->insert(snapshot.memory_usage);
+    columns[i]->insert(snapshot.memory_usage);
+
+    i = 0;
+    columns[i++]->insertData(host_name.data(), host_name.size());
+    columns[i++]->insert(static_cast<UInt64>(snapshot.current_time));
+    columns[i++]->insert(static_cast<UInt64>(snapshot.thread_id));
+    columns[i++]->insert(Type::GAUGE);
+    columns[i++]->insertData(MemoryTracker::PEAK_USAGE_EVENT_NAME, strlen(MemoryTracker::PEAK_USAGE_EVENT_NAME));
+    columns[i]->insert(snapshot.peak_memory_usage);
 }
 
-void getProfileEvents(
-    const String & server_display_name,
-    DB::InternalProfileEventsQueuePtr profile_queue,
-    DB::Block & block,
-    ThreadIdToCountersSnapshot & last_sent_snapshots)
+DB::Block getSampleBlock()
 {
     using namespace DB;
     static const NamesAndTypesList column_names_and_types = {
@@ -109,61 +122,53 @@ void getProfileEvents(
     for (auto const & name_and_type : column_names_and_types)
         temp_columns.emplace_back(name_and_type.type, name_and_type.name);
 
-    block = std::move(temp_columns);
-    MutableColumns columns = block.mutateColumns();
+    return Block(std::move(temp_columns));
+}
+
+DB::Block getProfileEvents(
+    const String & host_name,
+    DB::InternalProfileEventsQueuePtr profile_queue,
+    ThreadIdToCountersSnapshot & last_sent_snapshots)
+{
+    using namespace DB;
+
+    if (!CurrentThread::isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CurrentThread is not initialized");
+
     auto thread_group = CurrentThread::getGroup();
-    auto const current_thread_id = CurrentThread::get().thread_id;
-    std::vector<ProfileEventsSnapshot> snapshots;
+
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Current thread is not attached to any thread group");
+
     ThreadIdToCountersSnapshot new_snapshots;
+
     ProfileEventsSnapshot group_snapshot;
     {
-        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
-        snapshots.reserve(stats.size());
-
-        for (auto & stat : stats)
-        {
-            auto const thread_id = stat.thread_id;
-            if (thread_id == current_thread_id)
-                continue;
-            auto current_time = time(nullptr);
-            auto previous_snapshot = last_sent_snapshots.find(thread_id);
-            auto increment =
-                previous_snapshot != last_sent_snapshots.end()
-                ? CountersIncrement(stat.counters, previous_snapshot->second)
-                : CountersIncrement(stat.counters);
-            snapshots.push_back(ProfileEventsSnapshot{
-                thread_id,
-                std::move(increment),
-                stat.memory_usage,
-                current_time
-            });
-            new_snapshots[thread_id] = std::move(stat.counters);
-        }
-
-        group_snapshot.thread_id    = 0;
+        group_snapshot.thread_id = 0;
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
-        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-        auto prev_group_snapshot    = last_sent_snapshots.find(0);
-        group_snapshot.counters     =
+        group_snapshot.peak_memory_usage = thread_group->memory_tracker.getPeak();
+        auto group_counters = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        auto prev_group_snapshot = last_sent_snapshots.find(0);
+        group_snapshot.counters =
             prev_group_snapshot != last_sent_snapshots.end()
             ? CountersIncrement(group_counters, prev_group_snapshot->second)
             : CountersIncrement(group_counters);
-        new_snapshots[0]            = std::move(group_counters);
+        new_snapshots[0] = std::move(group_counters);
     }
     last_sent_snapshots = std::move(new_snapshots);
 
-    for (auto & snapshot : snapshots)
-    {
-        dumpProfileEvents(snapshot, columns, server_display_name);
-        dumpMemoryTracker(snapshot, columns, server_display_name);
-    }
-    dumpProfileEvents(group_snapshot, columns, server_display_name);
-    dumpMemoryTracker(group_snapshot, columns, server_display_name);
+    auto block = getSampleBlock();
+    MutableColumns columns = block.mutateColumns();
+
+    dumpProfileEvents(group_snapshot, columns, host_name);
+    dumpMemoryTracker(group_snapshot, columns, host_name);
 
     Block curr_block;
 
-    while (profile_queue->tryPop(curr_block))
+    /// profile_queue may be null if send_profile_events was enabled via SQL SETTINGS clause
+    /// after the queue creation decision was already made during connection setup.
+    while (profile_queue && profile_queue->tryPop(curr_block))
     {
         auto curr_columns = curr_block.getColumns();
         for (size_t j = 0; j < curr_columns.size(); ++j)
@@ -173,6 +178,8 @@ void getProfileEvents(
     bool empty = columns[0]->empty();
     if (!empty)
         block.setColumns(std::move(columns));
+
+    return block;
 }
 
 }

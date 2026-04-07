@@ -1,0 +1,1 @@
+MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1

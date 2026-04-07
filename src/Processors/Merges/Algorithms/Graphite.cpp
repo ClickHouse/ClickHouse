@@ -1,16 +1,20 @@
-#include <base/find_symbols.h>
-#include <Interpreters/Context.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Processors/Merges/Algorithms/Graphite.h>
+#include <base/find_symbols.h>
+#include <base/sort.h>
+#include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 
 #include <string_view>
 #include <vector>
 #include <unordered_map>
 
 #include <fmt/format.h>
-#include <base/sort.h>
+#include <fmt/ranges.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -43,7 +47,7 @@ const String & ruleTypeStr(RuleType rule_type)
     }
     catch (...)
     {
-        throw Exception("invalid rule type: " + std::to_string(rule_type), DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", std::to_string(rule_type));
     }
 }
 
@@ -51,14 +55,30 @@ RuleType ruleType(const String & s)
 {
     if (s == "all")
         return RuleTypeAll;
-    else if (s == "plain")
+    if (s == "plain")
         return RuleTypePlain;
-    else if (s == "tagged")
+    if (s == "tagged")
         return RuleTypeTagged;
-    else if (s == "tag_list")
+    if (s == "tag_list")
         return RuleTypeTagList;
-    else
-        throw Exception("invalid rule type: " + s, DB::ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "invalid rule type: {}", s);
+}
+
+void Pattern::updateHash(SipHash & hash) const
+{
+    hash.update(rule_type);
+    hash.update(regexp_str);
+    if (function)
+    {
+        hash.update(function->getName());
+        for (const auto & p : function->getParameters())
+            hash.update(fieldToString(p));
+    }
+    for (const auto & r : retentions)
+    {
+        hash.update(r.age);
+        hash.update(r.precision);
+    }
 }
 
 static const Graphite::Pattern undef_pattern =
@@ -68,7 +88,7 @@ static const Graphite::Pattern undef_pattern =
         .regexp_str = "",
         .function = nullptr,
         .retentions = Graphite::Retentions(),
-        .type = undef_pattern.TypeUndef,
+        .type = Graphite::Pattern::TypeUndef,
 };
 
 inline static const Patterns & selectPatternsForMetricType(const Graphite::Params & params, std::string_view path)
@@ -76,15 +96,12 @@ inline static const Patterns & selectPatternsForMetricType(const Graphite::Param
     if (params.patterns_typed)
     {
         std::string_view path_view = path;
-        if (path_view.find("?"sv) == path_view.npos)
+        if (!path_view.contains("?"sv))
             return params.patterns_plain;
-        else
-            return params.patterns_tagged;
+        return params.patterns_tagged;
     }
-    else
-    {
-        return params.patterns;
-    }
+
+    return params.patterns;
 }
 
 Graphite::RollupRule selectPatternForPath(
@@ -100,18 +117,18 @@ Graphite::RollupRule selectPatternForPath(
         if (!pattern.regexp)
         {
             /// Default pattern
-            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
+            if (first_match->type == Graphite::Pattern::TypeUndef && pattern.type == Graphite::Pattern::TypeAll)
             {
                 /// There is only default pattern for both retention and aggregation
                 return {&pattern, &pattern};
             }
             if (pattern.type != first_match->type)
             {
-                if (first_match->type == first_match->TypeRetention)
+                if (first_match->type == Graphite::Pattern::TypeRetention)
                 {
                     return {first_match, &pattern};
                 }
-                if (first_match->type == first_match->TypeAggregation)
+                if (first_match->type == Graphite::Pattern::TypeAggregation)
                 {
                     return {&pattern, first_match};
                 }
@@ -122,23 +139,23 @@ Graphite::RollupRule selectPatternForPath(
             if (pattern.regexp->match(path.data(), path.size()))
             {
                 /// General pattern with matched path
-                if (pattern.type == pattern.TypeAll)
+                if (pattern.type == Graphite::Pattern::TypeAll)
                 {
                     /// Only for not default patterns with both function and retention parameters
                     return {&pattern, &pattern};
                 }
-                if (first_match->type == first_match->TypeUndef)
+                if (first_match->type == Graphite::Pattern::TypeUndef)
                 {
                     first_match = &pattern;
                     continue;
                 }
                 if (pattern.type != first_match->type)
                 {
-                    if (first_match->type == first_match->TypeRetention)
+                    if (first_match->type == Graphite::Pattern::TypeRetention)
                     {
                         return {first_match, &pattern};
                     }
-                    if (first_match->type == first_match->TypeAggregation)
+                    if (first_match->type == Graphite::Pattern::TypeAggregation)
                     {
                         return {&pattern, first_match};
                     }
@@ -159,16 +176,12 @@ static bool compareRetentions(const Retention & a, const Retention & b)
     {
         return true;
     }
-    else if (a.age < b.age && a.precision < b.precision)
+    if (a.age < b.age && a.precision < b.precision)
     {
         return false;
     }
-    String error_msg = "age and precision should only grow up: "
-        + std::to_string(a.age) + ":" + std::to_string(a.precision) + " vs "
-        + std::to_string(b.age) + ":" + std::to_string(b.precision);
-    throw Exception(
-        error_msg,
-        DB::ErrorCodes::BAD_ARGUMENTS);
+    throw Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Age and precision should only grow up: {}:{} vs {}:{}",
+                    a.age, a.precision, b.age, b.precision);
 }
 
 bool operator==(const Retention & a, const Retention & b)
@@ -277,7 +290,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     /* remove empty elements */
     using namespace std::string_literals;
     std::erase(tags, ""s);
-    if (tags[0].find('=') == tags[0].npos)
+    if (tags[0].find('=') == tags[0].npos)  /// NOLINT(readability-static-accessed-through-instance)
     {
         if (tags.size() == 1) /* only name */
             return "^" + tags[0] + "\\?";
@@ -332,8 +345,7 @@ std::string buildTaggedRegex(std::string regexp_str)
   *     </default>
   * </graphite_rollup>
   */
-static const Pattern &
-appendGraphitePattern(
+static const Pattern & appendGraphitePattern(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_element, Patterns & patterns,
     bool default_rule,
@@ -359,9 +371,10 @@ appendGraphitePattern(
                 aggregate_function_name_with_params, aggregate_function_name, params_row, "GraphiteMergeTree storage initialization", context);
 
             /// TODO Not only Float64
+            auto action = NullsAction::EMPTY;
             AggregateFunctionProperties properties;
             pattern.function = AggregateFunctionFactory::instance().get(
-                aggregate_function_name, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
+                aggregate_function_name, action, {std::make_shared<DataTypeFloat64>()}, params_row, properties);
         }
         else if (key == "rule_type")
         {
@@ -375,7 +388,7 @@ appendGraphitePattern(
                 .precision = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
-            throw Exception("Unknown element in config: " + key, DB::ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(DB::ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
     if (!pattern.regexp_str.empty())
@@ -390,37 +403,35 @@ appendGraphitePattern(
     }
 
     if (!pattern.function && pattern.retentions.empty())
-        throw Exception(
-            "At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree",
-            DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+            "At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree");
 
     if (default_rule && pattern.rule_type != RuleTypeAll)
     {
-        throw Exception(
-            "Default must have rule_type all for rollup patterns in GraphiteMergeTree",
-            DB::ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+            "Default must have rule_type all for rollup patterns in GraphiteMergeTree");
     }
 
     if (!pattern.function)
     {
-        pattern.type = pattern.TypeRetention;
+        pattern.type = Graphite::Pattern::TypeRetention;
     }
     else if (pattern.retentions.empty())
     {
-        pattern.type = pattern.TypeAggregation;
+        pattern.type = Graphite::Pattern::TypeAggregation;
     }
     else
     {
-        pattern.type = pattern.TypeAll;
+        pattern.type = Graphite::Pattern::TypeAll;
     }
 
-    if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
+    if (pattern.type & Graphite::Pattern::TypeAggregation) /// TypeAggregation or TypeAll
         if (pattern.function->allocatesMemoryInArena())
-            throw Exception(
-                "Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree", DB::ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(DB::ErrorCodes::NOT_IMPLEMENTED,
+                            "Aggregate function {} isn't supported in GraphiteMergeTree", pattern.function->getName());
 
     /// retention should be in descending order of age.
-    if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
+    if (pattern.type & Graphite::Pattern::TypeRetention) /// TypeRetention or TypeAll
         ::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
@@ -432,7 +443,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
     const auto & config = context->getConfigRef();
 
     if (!config.has(config_element))
-        throw Exception("No '" + config_element + "' element in configuration file", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No '{}' element in configuration file", config_element);
 
     params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
@@ -461,7 +472,7 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
             /// See above.
         }
         else
-            throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
     }
 
     if (config.has(config_element + ".default"))
@@ -487,9 +498,25 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
         }
         else
         {
-            throw Exception("Unhandled rule_type in config: " + ruleTypeStr(pattern.rule_type), ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unhandled rule_type in config: {}", ruleTypeStr(pattern.rule_type));
         }
     }
+}
+
+void Params::updateHash(SipHash & hash) const
+{
+    hash.update(path_column_name);
+    hash.update(time_column_name);
+    hash.update(value_column_name);
+    hash.update(value_column_name);
+    hash.update(version_column_name);
+    hash.update(patterns_typed);
+    for (const auto & p : patterns)
+        p.updateHash(hash);
+    for (const auto & p : patterns_plain)
+        p.updateHash(hash);
+    for (const auto & p : patterns_tagged)
+        p.updateHash(hash);
 }
 
 }

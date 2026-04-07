@@ -16,7 +16,7 @@ class ProxyV1HandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::string conf_name;
 
     class DummyTCPHandler : public Poco::Net::TCPServerConnection
@@ -28,17 +28,17 @@ private:
 
 public:
     explicit ProxyV1HandlerFactory(IServer & server_, const std::string & conf_name_)
-        : server(server_), log(&Poco::Logger::get("ProxyV1HandlerFactory")), conf_name(conf_name_)
+        : server(server_), log(getLogger("ProxyV1HandlerFactory")), conf_name(conf_name_)
     {
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override
     {
         TCPProtocolStackData stack_data;
         return createConnection(socket, tcp_server, stack_data);
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/, TCPProtocolStackData & stack_data) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer &/* tcp_server*/, TCPProtocolStackData & stack_data) override
     {
         try
         {

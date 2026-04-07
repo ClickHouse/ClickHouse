@@ -1,6 +1,7 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <base/types.h>
+#include <base/simd.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
@@ -8,9 +9,7 @@
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 namespace DB
@@ -55,7 +54,7 @@ inline void WriteBufferValidUTF8::putReplacement()
 }
 
 
-inline void WriteBufferValidUTF8::putValid(char *data, size_t len)
+inline void WriteBufferValidUTF8::putValid(const char *data, size_t len)
 {
     if (len == 0)
         return;
@@ -86,16 +85,13 @@ void WriteBufferValidUTF8::nextImpl()
         /// Fast skip of ASCII for aarch64.
         static constexpr size_t SIMD_BYTES = 16;
         const char * simd_end = p + (pos - p) / SIMD_BYTES * SIMD_BYTES;
-        /// Returns a 64 bit mask of nibbles (4 bits for each byte).
-        auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
-        { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
         /// Other options include
         /// vmaxvq_u8(input) < 0b10000000;
         /// Used by SIMDJSON, has latency 3 for M1, 6 for everything else
         /// SIMDJSON uses it for 64 byte masks, so it's a little different.
         /// vmaxvq_u32(vandq_u32(input, vdupq_n_u32(0x80808080))) // u32 version has latency 3
         /// shrn version has universally <=3 cycles, on servers 2 cycles.
-        while (p < simd_end && get_nibble_mask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80))) == 0)
+        while (p < simd_end && getNibbleMask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80))) == 0)
             p += SIMD_BYTES;
 
         if (!(p < pos))
@@ -145,7 +141,17 @@ void WriteBufferValidUTF8::nextImpl()
 
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
-    finalize();
+    if (!canceled)
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 void WriteBufferValidUTF8::finalizeImpl()
@@ -153,9 +159,34 @@ void WriteBufferValidUTF8::finalizeImpl()
     /// Write all complete sequences from buffer.
     nextImpl();
 
-    /// If unfinished sequence at end, then write replacement.
+    /// Handle remaining bytes if we have an incomplete sequence
     if (working_buffer.begin() != memory.data())
-        putReplacement();
+    {
+        const char * p = memory.data();
+
+        while (p < pos)
+        {
+            UInt8 len = length_of_utf8_sequence[static_cast<const unsigned char>(*p)];
+            if (p + len > pos)
+            {
+                /// Incomplete sequence. Skip one byte.
+                putReplacement();
+                ++p;
+            }
+            else if (Poco::UTF8Encoding::isLegal(reinterpret_cast<const unsigned char *>(p), len))
+            {
+                /// Valid sequence
+                putValid(p, len);
+                p += len;
+            }
+            else
+            {
+                /// Invalid sequence, skip first byte.
+                putReplacement();
+                ++p;
+            }
+        }
+    }
 }
 
 }

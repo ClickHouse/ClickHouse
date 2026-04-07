@@ -1,138 +1,88 @@
 #pragma once
 
-#include <iostream>
 #include <base/types.h>
+#include <base/defines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-
 namespace DB
 {
-namespace ErrorCodes
+
+/// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
+
+[[noreturn]] void throwReadAfterEOF();
+
+
+inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
 {
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    while (x > 0x7F)
+    {
+        uint8_t byte = 0x80 | (x & 0x7F);
+
+        ostr.nextIfAtEnd();
+        *ostr.position() = byte;
+        ++ostr.position();
+
+        x >>= 7;
+    }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+
+    ostr.nextIfAtEnd();
+    *ostr.position() = final_byte;
+    ++ostr.position();
 }
 
-
-/** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */
-void writeVarUInt(UInt64 x, std::ostream & ostr);
-void writeVarUInt(UInt64 x, WriteBuffer & ostr);
-char * writeVarUInt(UInt64 x, char * ostr);
-
-
-/** Read UInt64, written in variable length format (base128) */
-void readVarUInt(UInt64 & x, std::istream & istr);
-void readVarUInt(UInt64 & x, ReadBuffer & istr);
-const char * readVarUInt(UInt64 & x, const char * istr, size_t size);
-
-
-/** Get the length of UInt64 in VarUInt format */
-size_t getLengthOfVarUInt(UInt64 x);
-
-/** Get the Int64 length in VarInt format */
-size_t getLengthOfVarInt(Int64 x);
-
-
-/** Write Int64 in variable length format (base128) */
-template <typename OUT>
-inline void writeVarInt(Int64 x, OUT & ostr)
+inline char * writeVarUInt(UInt64 x, char * ostr)
 {
-    writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
+    while (x > 0x7F)
+    {
+        uint8_t byte = 0x80 | (x & 0x7F);
+
+        *ostr = byte;
+        ++ostr;
+
+        x >>= 7;
+    }
+
+    uint8_t final_byte = static_cast<uint8_t>(x);
+
+    *ostr = final_byte;
+    ++ostr;
+
+    return ostr;
+}
+
+inline UInt64 encodeZigZag(Int64 value)
+{
+    return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63);
+}
+
+template <typename OutBuf>
+inline void writeVarInt(Int64 x, OutBuf & ostr)
+{
+    writeVarUInt(encodeZigZag(x), ostr);
 }
 
 inline char * writeVarInt(Int64 x, char * ostr)
 {
-    return writeVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)), ostr);
+    return writeVarUInt(encodeZigZag(x), ostr);
 }
 
-
-/** Read Int64, written in variable length format (base128) */
-template <typename IN>
-inline void readVarInt(Int64 & x, IN & istr)
+namespace varint_impl
 {
-    readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
-    x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
-}
 
-inline const char * readVarInt(Int64 & x, const char * istr, size_t size)
-{
-    const char * res = readVarUInt(*reinterpret_cast<UInt64*>(&x), istr, size);
-    x = (static_cast<UInt64>(x) >> 1) ^ -(x & 1);
-    return res;
-}
-
-
-inline void writeVarT(UInt64 x, std::ostream & ostr) { writeVarUInt(x, ostr); }
-inline void writeVarT(Int64 x, std::ostream & ostr) { writeVarInt(x, ostr); }
-inline void writeVarT(UInt64 x, WriteBuffer & ostr) { writeVarUInt(x, ostr); }
-inline void writeVarT(Int64 x, WriteBuffer & ostr) { writeVarInt(x, ostr); }
-inline char * writeVarT(UInt64 x, char * & ostr) { return writeVarUInt(x, ostr); }
-inline char * writeVarT(Int64 x, char * & ostr) { return writeVarInt(x, ostr); }
-
-inline void readVarT(UInt64 & x, std::istream & istr) { readVarUInt(x, istr); }
-inline void readVarT(Int64 & x, std::istream & istr) { readVarInt(x, istr); }
-inline void readVarT(UInt64 & x, ReadBuffer & istr) { readVarUInt(x, istr); }
-inline void readVarT(Int64 & x, ReadBuffer & istr) { readVarInt(x, istr); }
-inline const char * readVarT(UInt64 & x, const char * istr, size_t size) { return readVarUInt(x, istr, size); }
-inline const char * readVarT(Int64 & x, const char * istr, size_t size) { return readVarInt(x, istr, size); }
-
-
-/// For [U]Int32, [U]Int16, size_t.
-
-inline void readVarUInt(UInt32 & x, ReadBuffer & istr)
-{
-    UInt64 tmp;
-    readVarUInt(tmp, istr);
-    x = static_cast<UInt32>(tmp);
-}
-
-inline void readVarInt(Int32 & x, ReadBuffer & istr)
-{
-    Int64 tmp;
-    readVarInt(tmp, istr);
-    x = static_cast<Int32>(tmp);
-}
-
-inline void readVarUInt(UInt16 & x, ReadBuffer & istr)
-{
-    UInt64 tmp;
-    readVarUInt(tmp, istr);
-    x = tmp;
-}
-
-inline void readVarInt(Int16 & x, ReadBuffer & istr)
-{
-    Int64 tmp;
-    readVarInt(tmp, istr);
-    x = tmp;
-}
-
-template <typename T>
-requires (!std::is_same_v<T, UInt64>)
-inline void readVarUInt(T & x, ReadBuffer & istr)
-{
-    UInt64 tmp;
-    readVarUInt(tmp, istr);
-    x = tmp;
-}
-
-
-[[noreturn]] inline void throwReadAfterEOF()
-{
-    throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
-}
-
-template <bool fast>
-inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
+template <bool check_eof>
+inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 0; i < 10; ++i)
     {
-        if constexpr (!fast)
-            if (istr.eof())
+        if constexpr (check_eof)
+            if (istr.eof()) [[unlikely]]
                 throwReadAfterEOF();
 
-        UInt64 byte = *istr.position(); /// NOLINT
+        UInt64 byte = static_cast<unsigned char>(*istr.position());
         ++istr.position();
         x |= (byte & 0x7F) << (7 * i);
 
@@ -141,38 +91,53 @@ inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
     }
 }
 
-inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+template <bool check_eof>
+inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
 {
-    if (istr.buffer().end() - istr.position() >= 9)
-        return readVarUIntImpl<true>(x, istr);
-    return readVarUIntImpl<false>(x, istr);
-}
-
-
-inline void readVarUInt(UInt64 & x, std::istream & istr)
-{
-    x = 0;
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 0; i < 10; ++i)
     {
-        UInt64 byte = istr.get();
-        x |= (byte & 0x7F) << (7 * i);
+        if constexpr (check_eof)
+            if (istr.eof()) [[unlikely]]
+                throwReadAfterEOF();
+
+        UInt64 byte = static_cast<unsigned char>(*istr.position());
+        ++istr.position();
 
         if (!(byte & 0x80))
             return;
     }
 }
 
-inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
+}
+
+inline void ALWAYS_INLINE readVarUInt(UInt64 & x, ReadBuffer & istr)
+{
+    if (istr.buffer().end() - istr.position() >= 10)
+        varint_impl::readVarUInt<false>(x, istr);
+    else
+        varint_impl::readVarUInt<true>(x, istr);
+}
+
+/// Advances past a VarUInt without decoding it.
+inline void ALWAYS_INLINE ignoreVarUInt(ReadBuffer & istr)
+{
+    if (istr.buffer().end() - istr.position() >= 10)
+        varint_impl::ignoreVarUInt<false>(istr);
+    else
+        varint_impl::ignoreVarUInt<true>(istr);
+}
+
+inline const char * ALWAYS_INLINE readVarUInt(UInt64 & x, const char * istr, size_t size)
 {
     const char * end = istr + size;
 
     x = 0;
-    for (size_t i = 0; i < 9; ++i)
+    for (size_t i = 0; i < 10; ++i)
     {
-        if (istr == end)
+        if (istr == end) [[unlikely]]
             throwReadAfterEOF();
 
-        UInt64 byte = *istr; /// NOLINT
+        UInt64 byte = static_cast<unsigned char>(*istr);
         ++istr;
         x |= (byte & 0x7F) << (7 * i);
 
@@ -183,62 +148,61 @@ inline const char * readVarUInt(UInt64 & x, const char * istr, size_t size)
     return istr;
 }
 
-
-inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
+inline Int64 decodeZigZag(UInt64 n)
 {
-    for (size_t i = 0; i < 9; ++i)
-    {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
-        ostr.nextIfAtEnd();
-        *ostr.position() = byte;
-        ++ostr.position();
-
-        x >>= 7;
-        if (!x)
-            return;
-    }
+    return static_cast<Int64>((n >> 1) ^ -(n & 1));
 }
 
-
-inline void writeVarUInt(UInt64 x, std::ostream & ostr)
+template <typename InBuf>
+inline void ALWAYS_INLINE readVarInt(Int64 & x, InBuf & istr)
 {
-    for (size_t i = 0; i < 9; ++i)
-    {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
-        ostr.put(byte);
-
-        x >>= 7;
-        if (!x)
-            return;
-    }
+    readVarUInt(*reinterpret_cast<UInt64*>(&x), istr);
+    x = decodeZigZag(static_cast<UInt64>(x));
 }
 
-
-inline char * writeVarUInt(UInt64 x, char * ostr)
+inline const char * ALWAYS_INLINE readVarInt(Int64 & x, const char * istr, size_t size)
 {
-    for (size_t i = 0; i < 9; ++i)
-    {
-        uint8_t byte = x & 0x7F;
-        if (x > 0x7F)
-            byte |= 0x80;
-
-        *ostr = byte;
-        ++ostr;
-
-        x >>= 7;
-        if (!x)
-            return ostr;
-    }
-
-    return ostr;
+    const char * res = readVarUInt(*reinterpret_cast<UInt64*>(&x), istr, size);
+    x = decodeZigZag(static_cast<UInt64>(x));
+    return res;
 }
 
+inline void ALWAYS_INLINE readVarUInt(UInt32 & x, ReadBuffer & istr)
+{
+    UInt64 tmp;
+    readVarUInt(tmp, istr);
+    x = static_cast<UInt32>(tmp);
+}
+
+inline void ALWAYS_INLINE readVarInt(Int32 & x, ReadBuffer & istr)
+{
+    Int64 tmp;
+    readVarInt(tmp, istr);
+    x = static_cast<Int32>(tmp);
+}
+
+inline void ALWAYS_INLINE readVarUInt(UInt16 & x, ReadBuffer & istr)
+{
+    UInt64 tmp;
+    readVarUInt(tmp, istr);
+    x = static_cast<UInt16>(tmp);
+}
+
+inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
+{
+    Int64 tmp;
+    readVarInt(tmp, istr);
+    x = static_cast<Int16>(tmp);
+}
+
+template <typename T>
+requires(!std::is_same_v<T, UInt64>)
+inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
+{
+    UInt64 tmp;
+    readVarUInt(tmp, istr);
+    x = static_cast<T>(tmp);
+}
 
 inline size_t getLengthOfVarUInt(UInt64 x)
 {
@@ -250,13 +214,14 @@ inline size_t getLengthOfVarUInt(UInt64 x)
         : (x < (1ULL << 42) ? 6
         : (x < (1ULL << 49) ? 7
         : (x < (1ULL << 56) ? 8
-        : 9)))))));
+        : (x < (1ULL << 63) ? 9
+        : 10))))))));
 }
 
 
 inline size_t getLengthOfVarInt(Int64 x)
 {
-    return getLengthOfVarUInt(static_cast<UInt64>((x << 1) ^ (x >> 63)));
+    return getLengthOfVarUInt(encodeZigZag(x));
 }
 
 }

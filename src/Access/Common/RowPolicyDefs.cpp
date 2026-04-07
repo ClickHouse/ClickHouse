@@ -22,7 +22,7 @@ String RowPolicyName::toString() const
         name += backQuoteIfNeed(database);
         name += '.';
     }
-    name += backQuoteIfNeed(table_name);
+    name += (table_name == RowPolicyName::ANY_TABLE_MARK ? "*" : backQuoteIfNeed(table_name));
     return name;
 }
 
@@ -33,7 +33,7 @@ String toString(RowPolicyFilterType type)
 
 const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType type_)
 {
-    static constexpr auto make_info = [](const char * raw_name_)
+    static constexpr auto make_info = [](const char * raw_name_, const String & comment_)
     {
         String init_name = raw_name_;
         boost::to_lower(init_name);
@@ -41,14 +41,17 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
         String init_command = init_name.substr(0, underscore_pos);
         boost::to_upper(init_command);
         bool init_is_check = (std::string_view{init_name}.substr(underscore_pos + 1) == "check");
-        return RowPolicyFilterTypeInfo{raw_name_, std::move(init_name), std::move(init_command), init_is_check};
+        return RowPolicyFilterTypeInfo{raw_name_, std::move(init_name), std::move(init_command), comment_, init_is_check};
     };
 
     switch (type_)
     {
         case RowPolicyFilterType::SELECT_FILTER:
         {
-            static const auto info = make_info("SELECT_FILTER");
+            static const auto info = make_info(
+                "SELECT_FILTER",
+                "Expression which is used for filtering in SELECT queries."
+            );
             return info;
         }
 #if 0 /// Row-level security for INSERT, UPDATE, DELETE is not implemented yet.
@@ -75,7 +78,7 @@ const RowPolicyFilterTypeInfo & RowPolicyFilterTypeInfo::get(RowPolicyFilterType
 #endif
         case RowPolicyFilterType::MAX: break;
     }
-    throw Exception("Unknown type: " + std::to_string(static_cast<size_t>(type_)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", static_cast<size_t>(type_));
 }
 
 }

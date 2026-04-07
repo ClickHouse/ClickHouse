@@ -1,4 +1,4 @@
-#include "addTypeConversionToAST.h"
+#include <Interpreters/addTypeConversionToAST.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -20,12 +20,12 @@ namespace ErrorCodes
 
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name)
 {
-    auto func = makeASTFunction("_CAST", ast, std::make_shared<ASTLiteral>(type_name));
+    auto func = makeASTFunction("_CAST", ast, make_intrusive<ASTLiteral>(type_name));
 
     if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
         func->alias = ast_with_alias->alias;
-        func->prefer_alias_to_column_name = ast_with_alias->prefer_alias_to_column_name;
+        func->setPreferAliasToColumnName(ast_with_alias->preferAliasToColumnName());
         ast_with_alias->alias.clear();
     }
 
@@ -41,7 +41,7 @@ ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const Nam
 
     for (const auto & action : actions->getActions())
         if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            throw Exception("Unsupported default value that requires ARRAY JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+            throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
     auto block = actions->getSampleBlock();
 

@@ -4,6 +4,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
+#include <Common/FunctionDocumentation.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
 #include <string>
@@ -37,7 +39,7 @@ class Context;
 class ITableFunction : public std::enable_shared_from_this<ITableFunction>
 {
 public:
-    static inline std::string getDatabaseName() { return "_table_function"; }
+    static std::string getDatabaseName() { return "_table_function"; }
 
     /// Get the main function name.
     virtual std::string getName() const = 0;
@@ -48,36 +50,97 @@ public:
     /// Returns false if storage returned by table function supports type conversion (e.g. StorageDistributed)
     virtual bool needStructureConversion() const { return true; }
 
+    /** Return array of table function arguments indexes for which query tree analysis must be skipped.
+      * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
+      */
+    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
+
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
     /// Returns actual table structure probably requested from remote server, may fail
-    virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/) const = 0;
+    virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;
 
     /// Check if table function needs a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
+    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// It's used for schema inference.
     virtual bool needStructureHint() const { return false; }
 
     /// Set a structure hint from SELECT query in case of
-    /// INSERT INTO FUNCTION ... SELECT ...
+    /// INSERT INTO FUNCTION ... SELECT ... and INSERT INTO ... SELECT ... FROM table_function(...)
     /// This hint could be used not to repeat schema in function arguments.
     virtual void setStructureHint(const ColumnsDescription &) {}
 
+    /// Used for table functions that can use structure hint during INSERT INTO ... SELECT ... FROM table_function(...)
+    /// It returns possible virtual column names of corresponding storage. If select query contains
+    /// one of these columns, the structure from insertion table won't be used as a structure hint,
+    /// because we cannot determine which column from table correspond to this virtual column.
+    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
+
+    virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
+
+    virtual bool canBeUsedToCreateTable() const { return true; }
+
+    // INSERT INTO TABLE FUNCTION ... PARTITION BY
+    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
+    virtual void setPartitionBy(const ASTPtr &) {}
+
     /// Create storage according to the query.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
+
+    /// Returns actual table structure after enforcing source access checks.
+    /// Use this instead of getActualTableStructure() from outside execute().
+    ColumnsDescription getActualTableStructureWithAccess(ContextPtr context, bool is_insert_query) const;
+
+    /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
+    void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
     virtual ~ITableFunction() = default;
 
 protected:
-    virtual AccessType getSourceAccessType() const;
+    virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
 
 private:
     virtual StoragePtr executeImpl(
-        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const = 0;
+        const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const = 0;
 
-    virtual const char * getStorageTypeName() const = 0;
+    /// The name which is used in ENGINE section of the CREATE query.
+    /// This name is registered in the storage factory and used
+    /// to check privileges.
+    virtual const char * getStorageEngineName() const = 0;
+    virtual bool isClusterFunction() const { return false; }
+    /// The database storage name is used to check privileges.
+    /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
+    /// privileges as if it was S3.
+    virtual const char * getNonClusteredStorageEngineName() const;
+
+protected:
+    /// The URI of function for permission checking. Can be empty string if not applicable.
+    /// For example for url('https://foo.bar') URI would be 'https://foo.bar'.
+    virtual const String & getFunctionURI() const
+    {
+        static const String empty;
+        return empty;
+    }
+
+    String getFunctionURINormalized() const;
 };
+
+/// Properties of table function that are independent of argument types and parameters.
+struct TableFunctionProperties
+{
+    /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
+      *
+      * If users can make a request to an arbitrary hostname, they can get the info from the internal network
+      * or manipulate internal APIs (say - put some data into Memcached, which is available only in the corporate network).
+      * This is named "SSRF attack".
+      * Or a user can use an open ClickHouse server to amplify DoS attacks.
+      *
+      * In those cases, the table function should not be allowed in readonly mode.
+      */
+    bool allow_readonly = false;
+};
+
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 

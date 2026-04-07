@@ -1,8 +1,6 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <Disks/IDisk.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Poco/File.h>
-#include <Common/filesystemHelpers.h>
 
 
 namespace DB
@@ -11,37 +9,56 @@ namespace DB
 BackupEntryFromImmutableFile::BackupEntryFromImmutableFile(
     const DiskPtr & disk_,
     const String & file_path_,
+    bool copy_encrypted_,
     const std::optional<UInt64> & file_size_,
     const std::optional<UInt128> & checksum_,
-    const std::shared_ptr<TemporaryFileOnDisk> & temporary_file_)
-    : disk(disk_), file_path(file_path_), file_size(file_size_), checksum(checksum_), temporary_file_on_disk(temporary_file_)
+    bool allow_checksum_from_remote_path_)
+    : disk(disk_)
+    , file_path(file_path_)
+    , data_source_description(disk->getDataSourceDescription())
+    , copy_encrypted(copy_encrypted_ && data_source_description.is_encrypted)
+    , passed_file_size(file_size_)
+    , passed_checksum(checksum_)
+    , allow_checksum_from_remote_path(allow_checksum_from_remote_path_)
 {
 }
 
 BackupEntryFromImmutableFile::~BackupEntryFromImmutableFile() = default;
 
+std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer(const ReadSettings & read_settings) const
+{
+    if (copy_encrypted)
+        return disk->readEncryptedFile(file_path, read_settings);
+    return disk->readFile(file_path, read_settings);
+}
+
 UInt64 BackupEntryFromImmutableFile::getSize() const
 {
-    std::lock_guard lock{get_file_size_mutex};
-    if (!file_size)
-        file_size = disk->getFileSize(file_path);
-    return *file_size;
+    {
+        std::lock_guard lock{mutex};
+        if (calculated_size)
+            return *calculated_size;
+    }
+
+    UInt64 size = calculateSize();
+
+    {
+        std::lock_guard lock{mutex};
+        calculated_size = size;
+    }
+
+    return size;
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
+UInt64 BackupEntryFromImmutableFile::calculateSize() const
 {
-    return disk->readFile(file_path);
-}
+    if (copy_encrypted)
+        return passed_file_size ? disk->getEncryptedFileSize(*passed_file_size) : disk->getEncryptedFileSize(file_path);
 
+    if (passed_file_size)
+        return *passed_file_size;
 
-DataSourceDescription BackupEntryFromImmutableFile::getDataSourceDescription() const
-{
-    return disk->getDataSourceDescription();
-}
-
-String BackupEntryFromImmutableFile::getFilePath() const
-{
-    return file_path;
+    return disk->getFileSize(file_path);
 }
 
 }

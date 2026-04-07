@@ -32,9 +32,8 @@ namespace
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
             if (!isString(arguments[0]))
-                throw Exception(
-                    "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                    arguments[0]->getName(), getName());
             return std::make_shared<DataTypeUInt8>();
         }
 
@@ -42,12 +41,12 @@ namespace
         {
             String message;
             if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
-                message = col->getDataAt(0).data;
+                message = col->getDataAt(0);
             else
-                throw Exception(
-                    "First argument for function " + getName() + " must be Constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be Constant string",
+                    getName());
 
-            static auto * log = &Poco::Logger::get("FunctionLogTrace");
+            static auto log = getLogger("FunctionLogTrace");
             LOG_TRACE(log, fmt::runtime(message));
 
             return DataTypeUInt8().createColumnConst(input_rows_count, 0);
@@ -58,7 +57,32 @@ namespace
 
 REGISTER_FUNCTION(LogTrace)
 {
-    factory.registerFunction<FunctionLogTrace>();
+    FunctionDocumentation::Description description = R"(
+Emits a trace log message to the server log for each [Block](/development/architecture/#block).
+    )";
+    FunctionDocumentation::Syntax syntax = "logTrace(message)";
+    FunctionDocumentation::Arguments arguments = {
+        {"message", "Message that is emitted to the server log.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` always.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic example",
+        R"(
+SELECT logTrace('logTrace message');
+        )",
+        R"(
+┌─logTrace('logTrace message')─┐
+│                            0 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionLogTrace>(documentation);
 }
 
 }

@@ -8,10 +8,8 @@
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <Compression/CompressedReadBuffer.h>
-#include <base/types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -69,7 +67,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()
-              << ", elapsed: " << watch.elapsedSeconds() << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.)"
+              << ", elapsed: " << watch.elapsedSeconds() << " (" << static_cast<double>(data.size()) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
               << ", collisions: " << map.getCollisions()
 #endif
@@ -77,7 +75,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 }
 
 template <typename Map>
-void insert(Map & map, StringRef & k)
+void insert(Map & map, std::string_view & k)
 {
     bool inserted;
     typename Map::LookupResult it;
@@ -113,7 +111,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2) << "Vector. Size: " << n << ", elapsed: " << watch.elapsedSeconds() << " ("
-                  << n / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
+                  << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
     }
 
     using OldLookup = HashMap<UInt16, UInt8, TrivialHash, HashTableFixedGrower<16>>;

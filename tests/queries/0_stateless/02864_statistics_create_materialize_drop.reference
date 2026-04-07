@@ -1,0 +1,5 @@
+Test create statistics:
+CREATE TABLE default.tab\n(\n    `a` LowCardinality(Int64) STATISTICS(tdigest, uniq, countmin, minmax),\n    `b` LowCardinality(Nullable(String)) STATISTICS(uniq, countmin),\n    `c` LowCardinality(Nullable(Int64)) STATISTICS(tdigest, uniq, countmin, minmax),\n    `d` DateTime STATISTICS(tdigest, uniq, countmin, minmax),\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS index_granularity = 8192
+Test materialize and drop statistics:
+CREATE TABLE default.tab\n(\n    `a` LowCardinality(Int64),\n    `b` LowCardinality(Nullable(String)) STATISTICS(uniq, countmin),\n    `c` LowCardinality(Nullable(Int64)),\n    `d` DateTime,\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS index_granularity = 8192
+CREATE TABLE default.tab\n(\n    `a` LowCardinality(Int64),\n    `b` LowCardinality(Nullable(String)),\n    `c` LowCardinality(Nullable(Int64)),\n    `d` DateTime,\n    `pk` String\n)\nENGINE = MergeTree\nORDER BY pk\nSETTINGS index_granularity = 8192

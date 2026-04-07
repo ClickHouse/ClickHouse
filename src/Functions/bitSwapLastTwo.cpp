@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 
 namespace DB
@@ -19,15 +20,14 @@ template <typename A>
 struct BitSwapLastTwoImpl
 {
     using ResultType = UInt8;
-    static constexpr const bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
+    static constexpr const bool allow_string_or_fixed_string = false;
 
-    static inline ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
+    static ResultType NO_SANITIZE_UNDEFINED apply([[maybe_unused]] A a)
     {
         if constexpr (!std::is_same_v<A, ResultType>)
             // Should be a logical error, but this function is callable from SQL.
             // Need to investigate this.
-            throw DB::Exception("It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.", ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "It's a bug! Only UInt8 type is supported by __bitSwapLastTwo.");
 
         auto little_bits = littleBits<A>(a);
         return static_cast<ResultType>(((little_bits & 1) << 1) | ((little_bits >> 1) & 1));
@@ -36,10 +36,10 @@ struct BitSwapLastTwoImpl
 #if USE_EMBEDDED_COMPILER
 static constexpr bool compilable = true;
 
-static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
 {
     if (!arg->getType()->isIntegerTy())
-        throw Exception("__bitSwapLastTwo expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "__bitSwapLastTwo expected an integral type");
     return b.CreateOr(
             b.CreateShl(b.CreateAnd(arg, 1), 1),
             b.CreateAnd(b.CreateLShr(arg, 1), 1)
@@ -49,14 +49,27 @@ static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bo
 };
 
 struct NameBitSwapLastTwo { static constexpr auto name = "__bitSwapLastTwo"; };
-using FunctionBitSwapLastTwo = FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, true>;
+
+/// The result of this function is always UInt8 regardless of the argument type.
+/// Override `getReturnTypeForDefaultImplementationForDynamic` so that Dynamic arguments
+/// produce Nullable(UInt8) instead of Dynamic.
+class FunctionBitSwapLastTwo : public FunctionUnaryArithmetic<BitSwapLastTwoImpl, NameBitSwapLastTwo, false>
+{
+public:
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionBitSwapLastTwo>(); }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+};
 
 }
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }
@@ -64,7 +77,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameBitSwapLastTwo>
 
 REGISTER_FUNCTION(BitSwapLastTwo)
 {
-    factory.registerFunction<FunctionBitSwapLastTwo>();
+    factory.registerFunction<FunctionBitSwapLastTwo>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

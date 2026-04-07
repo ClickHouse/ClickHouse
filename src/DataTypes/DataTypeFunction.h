@@ -37,6 +37,10 @@ public:
     }
 
     bool equals(const IDataType & rhs) const override;
+
+    bool supportsSparseSerialization() const override { return false; }
+
+    void updateHashImpl(SipHash & hash) const override;
 };
 
 }

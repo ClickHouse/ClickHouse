@@ -27,6 +27,8 @@ public:
 
     ~ZipArchiveReader() override;
 
+    const std::string & getPath() const override;
+
     /// Returns true if there is a specified file in the archive.
     bool fileExists(const String & filename) override;
 
@@ -39,11 +41,16 @@ public:
     /// Starts reading a file from the archive. The function returns a read buffer,
     /// you can read that buffer to extract uncompressed data from the archive.
     /// Several read buffers can be used at the same time in parallel.
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & filename, bool throw_on_not_found) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(NameFilter filter, bool throw_on_not_found) override;
 
     /// It's possible to convert a file enumerator to a read buffer and vice versa.
     std::unique_ptr<ReadBufferFromFileBase> readFile(std::unique_ptr<FileEnumerator> enumerator) override;
     std::unique_ptr<FileEnumerator> nextFile(std::unique_ptr<ReadBuffer> read_buffer) override;
+    std::unique_ptr<FileEnumerator> currentFile(std::unique_ptr<ReadBuffer> read_buffer) override;
+
+    std::vector<std::string> getAllFiles() override;
+    std::vector<std::string> getAllFiles(NameFilter filter) override;
 
     /// Sets password used to decrypt the contents of the files in the archive.
     void setPassword(const String & password_) override;
@@ -62,8 +69,18 @@ private:
     };
 
     HandleHolder acquireHandle();
-    RawHandle acquireRawHandle();
-    void releaseRawHandle(RawHandle handle_);
+
+    /// The stream pointer is opaque here (StreamFromReadBuffer* in the .cpp file).
+    /// It's non-null when reading from a buffer via archive_read_function,
+    /// null when reading from a file path.
+    struct RawHandleWithStream
+    {
+        RawHandle handle = nullptr;
+        void * stream = nullptr;
+    };
+
+    RawHandleWithStream acquireRawHandle();
+    void releaseRawHandle(RawHandleWithStream handle_info);
 
     void checkResult(int code) const;
     [[noreturn]] void showError(const String & message) const;
@@ -72,7 +89,7 @@ private:
     const ReadArchiveFunction archive_read_function;
     const UInt64 archive_size = 0;
     String password;
-    std::vector<RawHandle> free_handles;
+    std::vector<RawHandleWithStream> free_handles;
     mutable std::mutex mutex;
 };
 

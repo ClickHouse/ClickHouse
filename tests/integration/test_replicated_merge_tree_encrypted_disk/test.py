@@ -1,8 +1,9 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
 import os
 
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
@@ -10,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
     macros={"replica": "node1"},
     with_zookeeper=True,
 )
@@ -18,7 +19,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
     macros={"replica": "node2"},
     with_zookeeper=True,
 )
@@ -42,7 +43,7 @@ def copy_keys(instance, keys_file_name):
 
 
 def create_table():
-    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' NO DELAY")
+    node1.query("DROP TABLE IF EXISTS tbl ON CLUSTER 'cluster' SYNC")
     node1.query(
         """
         CREATE TABLE tbl ON CLUSTER 'cluster' (
@@ -67,10 +68,12 @@ def optimize_table():
 
 def check_table():
     expected = [[1, "str1"], [2, "str2"]]
+    node1.query("SYSTEM SYNC REPLICA tbl LIGHTWEIGHT")
+    node2.query("SYSTEM SYNC REPLICA tbl LIGHTWEIGHT")
     assert node1.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
     assert node2.query("SELECT * FROM tbl ORDER BY id") == TSV(expected)
-    assert node1.query("CHECK TABLE tbl") == "1\n"
-    assert node2.query("CHECK TABLE tbl") == "1\n"
+    assert node1.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
+    assert node2.query("CHECK TABLE tbl SETTINGS check_query_single_value_result = 1") == "1\n"
 
 
 # Actual tests:

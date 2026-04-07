@@ -11,29 +11,29 @@ INSERT INTO t1 (x, y) VALUES (0, 0);
 SET join_algorithm = 'partial_merge';
 
 SELECT 't join none using';
-SELECT * FROM t1 ANY RIGHT JOIN t0 USING (x) ORDER BY x; -- { serverError 48 }
-SELECT * FROM t1 ANY FULL JOIN t0 USING (x) ORDER BY x; -- { serverError 48 }
+SELECT * FROM t1 ANY RIGHT JOIN t0 USING (x) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t1 ANY FULL JOIN t0 USING (x) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t1 RIGHT JOIN t0 USING (x) ORDER BY x;
 SELECT '-';
 SELECT * FROM t1 FULL JOIN t0 USING (x) ORDER BY x;
 SELECT 't join none on';
-SELECT * FROM t1 ANY RIGHT JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError 48 }
-SELECT * FROM t1 ANY FULL JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError 48 }
+SELECT * FROM t1 ANY RIGHT JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t1 ANY FULL JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t1 RIGHT JOIN t0 ON t1.x = t0.x ORDER BY x;
 SELECT '-';
 SELECT * FROM t1 FULL JOIN t0 ON t1.x = t0.x ORDER BY x;
 SELECT 'none join t using';
-SELECT * FROM t0 ANY RIGHT JOIN t1 USING (x); -- { serverError 48 }
-SELECT * FROM t0 ANY FULL JOIN t1 USING (x); -- { serverError 48 }
+SELECT * FROM t0 ANY RIGHT JOIN t1 USING (x); -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t0 ANY FULL JOIN t1 USING (x); -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t0 RIGHT JOIN t1 USING (x);
 SELECT '-';
 SELECT * FROM t0 FULL JOIN t1 USING (x);
 SELECT 'none join t on';
-SELECT * FROM t0 ANY RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
-SELECT * FROM t0 ANY FULL JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
+SELECT * FROM t0 ANY RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t0 ANY FULL JOIN t1 ON t1.x = t0.x; -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t0 RIGHT JOIN t1 ON t1.x = t0.x;
 SELECT '-';
@@ -43,29 +43,29 @@ SELECT '/none';
 SET join_use_nulls = 1;
 
 SELECT 't join none using';
-SELECT * FROM t1 ANY RIGHT JOIN t0 USING (x) ORDER BY x; -- { serverError 48 }
-SELECT * FROM t1 ANY FULL JOIN t0 USING (x) ORDER BY x; -- { serverError 48 }
+SELECT * FROM t1 ANY RIGHT JOIN t0 USING (x) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t1 ANY FULL JOIN t0 USING (x) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t1 RIGHT JOIN t0 USING (x) ORDER BY x;
 SELECT '-';
 SELECT * FROM t1 FULL JOIN t0 USING (x) ORDER BY x;
 SELECT 't join none on';
-SELECT * FROM t1 ANY RIGHT JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError 48 }
-SELECT * FROM t1 ANY FULL JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError 48 }
+SELECT * FROM t1 ANY RIGHT JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t1 ANY FULL JOIN t0 ON t1.x = t0.x ORDER BY x; -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t1 RIGHT JOIN t0 ON t1.x = t0.x ORDER BY x;
 SELECT '-';
 SELECT * FROM t1 FULL JOIN t0 ON t1.x = t0.x ORDER BY x;
 SELECT 'none join t using';
-SELECT * FROM t0 ANY RIGHT JOIN t1 USING (x); -- { serverError 48 }
-SELECT * FROM t0 ANY FULL JOIN t1 USING (x); -- { serverError 48 }
+SELECT * FROM t0 ANY RIGHT JOIN t1 USING (x); -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t0 ANY FULL JOIN t1 USING (x); -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t0 RIGHT JOIN t1 USING (x);
 SELECT '-';
 SELECT * FROM t0 FULL JOIN t1 USING (x);
 SELECT 'none join t on';
-SELECT * FROM t0 ANY RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
-SELECT * FROM t0 ANY FULL JOIN t1 ON t1.x = t0.x; -- { serverError 48 }
+SELECT * FROM t0 ANY RIGHT JOIN t1 ON t1.x = t0.x; -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM t0 ANY FULL JOIN t1 ON t1.x = t0.x; -- { serverError NOT_IMPLEMENTED }
 SELECT '-';
 SELECT * FROM t0 RIGHT JOIN t1 ON t1.x = t0.x;
 SELECT '-';

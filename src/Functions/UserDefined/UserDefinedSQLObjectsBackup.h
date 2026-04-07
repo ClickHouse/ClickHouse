@@ -3,12 +3,14 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/types.h>
 
+#include <vector>
+
 
 namespace DB
 {
 class BackupEntriesCollector;
 class RestorerFromBackup;
-enum class UserDefinedSQLObjectType;
+enum class UserDefinedSQLObjectType : uint8_t;
 class IBackupEntry;
 using BackupEntryPtr = std::shared_ptr<const IBackupEntry>;
 

@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
-#include "SnappyReadBuffer.h"
+#include <IO/SnappyReadBuffer.h>
 
 namespace DB
 {
@@ -31,13 +31,15 @@ bool SnappyReadBuffer::nextImpl()
 {
     if (compress_buffer.empty() && uncompress_buffer.empty())
     {
-        WriteBufferFromString wb(compress_buffer);
-        copyData(*in, wb);
+        {
+            WriteBufferFromString wb(compress_buffer);
+            copyData(*in, wb);
+        }
 
-        bool success = snappy::Uncompress(compress_buffer.data(), wb.count(), &uncompress_buffer);
+        bool success = snappy::Uncompress(compress_buffer.data(), compress_buffer.size(), &uncompress_buffer);
         if (!success)
         {
-            throw Exception("snappy uncomress failed: ", ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
+            throw Exception(ErrorCodes::SNAPPY_UNCOMPRESS_FAILED, "snappy uncompress failed: ");
         }
         BufferBase::set(const_cast<char *>(uncompress_buffer.data()), uncompress_buffer.size(), 0);
         return true;
@@ -55,14 +57,13 @@ off_t SnappyReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_pos = count() + off;
     else
-        throw Exception("Only SEEK_SET and SEEK_CUR seek modes allowed.", ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Only SEEK_SET and SEEK_CUR seek modes allowed.");
 
     working_buffer = internal_buffer;
     if (new_pos < 0 || new_pos > off_t(working_buffer.size()))
-        throw Exception(
-            String("Cannot seek through buffer") + " because seek position (" + toString(new_pos) + ") is out of bounds [0, "
-                + toString(working_buffer.size()) + "]",
-            ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND,
+                        "Cannot seek through buffer because seek position ({}) is out of bounds [0, {}]",
+                        new_pos, working_buffer.size());
     position() = working_buffer.begin() + new_pos;
     return new_pos;
 }

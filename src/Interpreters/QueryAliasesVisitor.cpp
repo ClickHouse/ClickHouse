@@ -3,7 +3,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/quoteString.h>
 
@@ -20,15 +19,10 @@ namespace
 
     constexpr auto dummy_subquery_name_prefix = "_subquery";
 
-    String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
+    PreformattedMessage wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
     {
-        WriteBufferFromOwnString message;
-        message << "Different expressions with the same alias " << backQuoteIfNeed(alias) << ":\n";
-        formatAST(*ast, message, false, true);
-        message << "\nand\n";
-        formatAST(*prev_ast, message, false, true);
-        message << '\n';
-        return message.str();
+        return PreformattedMessage::create("Different expressions with the same alias {}:\n{}\nand\n{}\n",
+                                           backQuoteIfNeed(alias), ast->formatForErrorMessage(), prev_ast->formatForErrorMessage());
     }
 
 }
@@ -69,7 +63,7 @@ void QueryAliasesMatcher<T>::visit(const ASTSelectQuery & select, const ASTPtr &
 
     for (auto & child : with->children)
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
-            ast_with_alias->prefer_alias_to_column_name = true;
+            ast_with_alias->setPreferAliasToColumnName(true);
 }
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
@@ -116,7 +110,7 @@ void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const AST
     else
         visitOther(ast, aliases);
 
-    subquery.prefer_alias_to_column_name = true;
+    subquery.setPreferAliasToColumnName(true);
 }
 
 template <typename T>
@@ -126,8 +120,8 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
-        if (aliases.contains(alias) && ast->getTreeHash() != aliases[alias]->getTreeHash())
-            throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
+        if (aliases.contains(alias) && ast->getTreeHash(/*ignore_aliases=*/ true) != aliases[alias]->getTreeHash(/*ignore_aliases=*/ true))
+                throw Exception(wrongAliasMessage(ast, aliases[alias], alias), ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
     }
@@ -145,7 +139,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
         information for our ast node with query string. And this alias will be dropped because prefer_alias_to_column_name for ASTWIthAlias
         by default is false.
 
-        It is imporant that subquery can be converted to literal during ExecuteScalarSubqueriesVisitor.
+        It is important that subquery can be converted to literal during ExecuteScalarSubqueriesVisitor.
         And code below check if we previously set for subquery alias as _subquery, and if it is true
         then set prefer_alias_to_column_name = true for node that was optimized during ExecuteScalarSubqueriesVisitor.
      */
@@ -153,7 +147,7 @@ void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(ast.get()))
     {
         if (startsWith(alias, dummy_subquery_name_prefix))
-            ast_with_alias->prefer_alias_to_column_name = true;
+            ast_with_alias->setPreferAliasToColumnName(true);
     }
 }
 

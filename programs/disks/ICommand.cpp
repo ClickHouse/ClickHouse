@@ -1,4 +1,6 @@
-#include "ICommand.h"
+#include <ICommand.h>
+#include <DisksClient.h>
+
 
 namespace DB
 {
@@ -8,41 +10,41 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void ICommand::printHelpMessage() const
+CommandLineOptions ICommand::processCommandLineArguments(const Strings & arguments)
 {
-    std::cout << "Command: " << command_name << '\n';
-    std::cout << "Description: " << description << '\n';
-    std::cout << "Usage: " << usage << '\n';
+    CommandLineOptions options;
+    auto parser = po::command_line_parser(arguments);
+    parser.options(options_description).positional(positional_options_description);
 
-    if (command_option_description)
+    po::parsed_options parsed = parser.run();
+    po::store(parsed, options);
+
+    return options;
+}
+
+void ICommand::execute(const Strings & arguments, DisksClient & client)
+{
+    CommandLineOptions options = [this, &arguments]()
     {
-        auto options = *command_option_description;
-        if (!options.options().empty())
-            std::cout << options << '\n';
-    }
+        try
+        {
+            return processCommandLineArguments(arguments);
+        }
+        catch (std::exception & exc)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", exc.what());
+        }
+    }();
+    executeImpl(options, client);
 }
 
-void ICommand::addOptions(ProgramOptionsDescription & options_description)
+DiskWithPath & ICommand::getDiskWithPath(DisksClient & client, const CommandLineOptions & options, const String & name)
 {
-    if (!command_option_description || command_option_description->options().empty())
-        return;
+    auto disk_name = getValueFromCommandLineOptionsWithOptional<String>(options, name);
+    if (disk_name.has_value())
+        return client.getDiskWithPathLazyInitialization(disk_name.value());
 
-    options_description.add(*command_option_description);
-}
-
-String ICommand::fullPathWithValidate(const DiskPtr & disk, const String & path)
-{
-    if (fs::path(path).lexically_normal().string() != path)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Path {} is not normalized", path);
-
-    String disk_path = fs::canonical(fs::path(disk->getPath())) / "";
-    String full_path = (fs::absolute(disk_path) / path).lexically_normal();
-
-    if (!full_path.starts_with(disk_path))
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS, "Path {} must be inside disk path {}", full_path, disk_path);
-
-    return path;
+    return client.getCurrentDiskWithPath();
 }
 
 }

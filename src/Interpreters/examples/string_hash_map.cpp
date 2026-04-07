@@ -10,28 +10,28 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 
 /**
 
+#include <Common/randomSeed.h>
 #include <fstream>
 #include <random>
+#include <pcg_random.hpp>
 
 using namespace std;
 
 int main()
 {
     std::string s;
-    std::random_device dev;
-    std::mt19937 rng(dev());
-    std::uniform_int_distribution<std::mt19937::result_type> dist(0, 25);
-    std::binomial_distribution<std::mt19937::result_type> binomial1(100, 0.01);
-    std::binomial_distribution<std::mt19937::result_type> binomial2(100, 0.02);
-    std::binomial_distribution<std::mt19937::result_type> binomial4(100, 0.04);
-    std::binomial_distribution<std::mt19937::result_type> binomial8(100, 0.08);
-    std::binomial_distribution<std::mt19937::result_type> binomial16(100, 0.16);
-    std::binomial_distribution<std::mt19937::result_type> binomial24(100, 0.24);
-    std::binomial_distribution<std::mt19937::result_type> binomial48(100, 0.48);
+    pcg64_fast rng{randomSeed()};
+    std::uniform_int_distribution<pcg64_fast::result_type> dist(0, 25);
+    std::binomial_distribution<pcg64_fast::result_type> binomial1(100, 0.01);
+    std::binomial_distribution<pcg64_fast::result_type> binomial2(100, 0.02);
+    std::binomial_distribution<pcg64_fast::result_type> binomial4(100, 0.04);
+    std::binomial_distribution<pcg64_fast::result_type> binomial8(100, 0.08);
+    std::binomial_distribution<pcg64_fast::result_type> binomial16(100, 0.16);
+    std::binomial_distribution<pcg64_fast::result_type> binomial24(100, 0.24);
+    std::binomial_distribution<pcg64_fast::result_type> binomial48(100, 0.48);
     // 11GB
     std::ofstream f("/tmp/terms.csv");
     size_t l1, l2, l4, l8, l16, l24, l48;
@@ -118,7 +118,7 @@ Best: 1 - 593010342                 Best: 1 - 503062152                 Best: 1 
 using Value = uint64_t;
 
 template <typename Map>
-void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena &, const char * name)
+void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena &, const char * name)
 {
     // warm up
     /*
@@ -156,7 +156,7 @@ void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena &, const cha
         }
         watch.stop();
 
-        std::cerr << "arena-memory " << pool.size() + map.getBufferSizeInBytes() << std::endl;
+        std::cerr << "arena-memory " << pool.allocatedBytes() + map.getBufferSizeInBytes() << std::endl;
         std::cerr << "single-run " << std::setprecision(3)
                   << watch.elapsedSeconds() << std::endl;
     }
@@ -215,9 +215,9 @@ int main(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool(128 * 1024 * 1024);
-    std::vector<StringRef> data(n);
+    std::vector<std::string_view> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(StringRef) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(std::string_view) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
     {
         Stopwatch watch;
@@ -228,19 +228,19 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2) << "Vector. Size: " << n << ", elapsed: " << watch.elapsedSeconds() << " ("
-                  << n / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
+                  << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
     }
 
     if (!m || m == 1)
         bench<StringHashMap<Value>>(data, pool, "StringHashMap");
     if (!m || m == 2)
-        bench<HashMapWithSavedHash<StringRef, Value>>(data, pool, "HashMapWithSavedHash");
+        bench<HashMapWithSavedHash<std::string_view, Value>>(data, pool, "HashMapWithSavedHash");
     if (!m || m == 3)
-        bench<HashMap<StringRef, Value>>(data, pool, "HashMap");
+        bench<HashMap<std::string_view, Value>>(data, pool, "HashMap");
     return 0;
 }

@@ -13,7 +13,7 @@ namespace MySQLParser
 
 ASTPtr ASTDeclareConstraint::clone() const
 {
-    auto res = std::make_shared<ASTDeclareConstraint>(*this);
+    auto res = make_intrusive<ASTDeclareConstraint>(*this);
     res->children.clear();
 
     if (check_expression)
@@ -32,22 +32,22 @@ bool ParserDeclareConstraint::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     ASTPtr index_check_expression;
     ParserExpression p_expression;
 
-    if (ParserKeyword("CONSTRAINT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::CONSTRAINT).ignore(pos, expected))
     {
-        if (!ParserKeyword("CHECK").checkWithoutMoving(pos, expected))
+        if (!ParserKeyword(Keyword::CHECK).checkWithoutMoving(pos, expected))
             ParserIdentifier().parse(pos, constraint_symbol, expected);
     }
 
 
-    if (!ParserKeyword("CHECK").ignore(pos, expected))
+    if (!ParserKeyword(Keyword::CHECK).ignore(pos, expected))
         return false;
 
     if (!p_expression.parse(pos, index_check_expression, expected))
         return false;
 
-    if (ParserKeyword("NOT").ignore(pos, expected))
+    if (ParserKeyword(Keyword::NOT).ignore(pos, expected))
     {
-        if (!ParserKeyword("ENFORCED").ignore(pos, expected))
+        if (!ParserKeyword(Keyword::ENFORCED).ignore(pos, expected))
             return false;
 
         enforced = false;
@@ -55,10 +55,10 @@ bool ParserDeclareConstraint::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     else
     {
         enforced = true;
-        ParserKeyword("ENFORCED").ignore(pos, expected);
+        ParserKeyword(Keyword::ENFORCED).ignore(pos, expected);
     }
 
-    auto declare_constraint = std::make_shared<ASTDeclareConstraint>();
+    auto declare_constraint = make_intrusive<ASTDeclareConstraint>();
     declare_constraint->enforced = enforced;
     declare_constraint->check_expression = index_check_expression;
 

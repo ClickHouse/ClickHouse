@@ -1,44 +1,29 @@
+#include <Functions/array/arrayMap.h>
 #include <Functions/FunctionFactory.h>
-
-#include "FunctionArrayMapped.h"
-
 
 namespace DB
 {
 
-/** arrayMap(x1, ..., xn -> expression, array1, ..., arrayn) - apply the expression to each element of the array (or set of parallel arrays).
-  */
-struct ArrayMapImpl
-{
-    using column_type = ColumnArray;
-    using data_type = DataTypeArray;
-
-    /// true if the expression (for an overload of f(expression, arrays)) or an array (for f(array)) should be boolean.
-    static bool needBoolean() { return false; }
-    /// true if the f(array) overload is unavailable.
-    static bool needExpression() { return true; }
-    /// true if the array must be exactly one.
-    static bool needOneArray() { return false; }
-
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
-    {
-        return std::make_shared<DataTypeArray>(expression_return);
-    }
-
-    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
-    {
-        return ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr());
-    }
-};
-
-struct NameArrayMap { static constexpr auto name = "arrayMap"; };
-using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
-
 REGISTER_FUNCTION(ArrayMap)
 {
-    factory.registerFunction<FunctionArrayMap>();
+    FunctionDocumentation::Description description = R"(
+Returns an array obtained from the original arrays by applying a lambda function to each element.
+)";
+    FunctionDocumentation::Syntax syntax = "arrayMap(func, arr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"func", "A lambda function which operates on elements of the source array (`x`) and condition arrays (`y`).", {"Lambda function"}},
+        {"arr", "N arrays to process.", {"Array(T)"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array from the lambda results", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT arrayMap(x -> (x + 2), [1, 2, 3]) as res;", "[3, 4, 5]"},
+        {"Creating a tuple of elements from different arrays", "SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res", "[(1, 4),(2, 5),(3, 6)]"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayMap>(documentation);
 }
 
 }
-
-

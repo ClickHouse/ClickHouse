@@ -14,7 +14,6 @@
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
-#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
@@ -122,9 +121,8 @@ struct IdentityDictionaryGetter
     static Dst & get(Src & src, const std::string & key)
     {
         if (key.empty())
-            return src;
-        else
-            throw Exception("Dictionary doesn't support 'point of view' keys.", ErrorCodes::BAD_ARGUMENTS);
+            return src;  /// NOLINT(bugprone-return-const-ref-from-parameter)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary doesn't support 'point of view' keys.");
     }
 };
 
@@ -141,11 +139,11 @@ private:
     const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-    FunctionTransformWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
+    explicit FunctionTransformWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED, "Embedded dictionaries were not loaded. You need to check configuration file.");
     }
 
     String getName() const override
@@ -160,19 +158,18 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<T>)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-                + " (must be " + String(TypeName<T>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {} (must be {})",
+                arguments[0]->getName(), getName(), TypeName<T>);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>)
-            throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<T>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments.size() == 2 && arguments[1]->getName() != "String")
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the second ('point of view') argument of function {} (must be String)",
+                            arguments[1]->getName(), getName());
 
         return arguments[0];
     }
@@ -182,7 +179,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -192,10 +189,8 @@ public:
             const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + arguments[1].column->getName()
-                    + " of second ('point of view') argument of function " + name
-                    + ". Must be constant string.",
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second ('point of view') argument of function {}. "
+                    "Must be constant string.", arguments[1].column->getName(), name);
 
             dict_key = key_col->getValue<String>();
         }
@@ -208,18 +203,15 @@ public:
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             typename ColumnVector<T>::Container & vec_to = col_to->getData();
-            size_t size = vec_from.size();
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
 
             return col_to;
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of first argument of function " + name,
-                ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), name);
     }
 };
 
@@ -236,11 +228,11 @@ private:
     const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-    FunctionIsInWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
+    explicit FunctionIsInWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED, "Embedded dictionaries were not loaded. You need to check configuration file.");
     }
 
     String getName() const override
@@ -255,31 +247,29 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2 or 3.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3.",
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<T>)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + " (must be " + String(TypeName<T>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {} (must be {})",
+                arguments[0]->getName(), getName(), TypeName<T>);
 
         if (arguments[1]->getName() != TypeName<T>)
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + " (must be " + String(TypeName<T>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {} (must be {})",
+                arguments[1]->getName(), getName(), TypeName<T>);
 
-        if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>)
-            throw Exception("Illegal type " + arguments[2]->getName() + " of the third ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<String>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments.size() == 3 && arguments[2]->getName() != "String")
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the third ('point of view') argument of function {} (must be String)",
+                            arguments[2]->getName(), getName());
 
         return std::make_shared<DataTypeUInt8>();
     }
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -289,10 +279,8 @@ public:
             const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(arguments[2].column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + arguments[2].column->getName()
-                + " of third ('point of view') argument of function " + name
-                + ". Must be constant string.",
-                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of third ('point of view') argument of function {}. "
+                "Must be constant string.", arguments[2].column->getName(), name);
 
             dict_key = key_col->getValue<String>();
         }
@@ -311,54 +299,53 @@ public:
             const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
             typename ColumnUInt8::Container & vec_to = col_to->getData();
-            size_t size = vec_from1.size();
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], vec_from2[i], dict);
 
             return col_to;
         }
-        else if (col_vec1 && col_const2)
+        if (col_vec1 && col_const2)
         {
             auto col_to = ColumnUInt8::create();
 
             const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const T const_from2 = col_const2->template getValue<T>();
             typename ColumnUInt8::Container & vec_to = col_to->getData();
-            size_t size = vec_from1.size();
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = Transform::apply(vec_from1[i], const_from2, dict);
 
             return col_to;
         }
-        else if (col_const1 && col_vec2)
+        if (col_const1 && col_vec2)
         {
             auto col_to = ColumnUInt8::create();
 
             const T const_from1 = col_const1->template getValue<T>();
             const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
             typename ColumnUInt8::Container & vec_to = col_to->getData();
-            size_t size = vec_from2.size();
-            vec_to.resize(size);
+            vec_to.resize(input_rows_count);
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
                 vec_to[i] = Transform::apply(const_from1, vec_from2[i], dict);
 
             return col_to;
         }
-        else if (col_const1 && col_const2)
+        if (col_const1 && col_const2)
         {
-            return DataTypeUInt8().createColumnConst(col_const1->size(),
+            return DataTypeUInt8().createColumnConst(
+                col_const1->size(),
                 toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
-        else
-            throw Exception("Illegal columns " + arguments[0].column->getName()
-                    + " and " + arguments[1].column->getName()
-                    + " of arguments of function " + name,
-                ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal columns {} and {} of arguments of function {}",
+            arguments[0].column->getName(),
+            arguments[1].column->getName(),
+            name);
     }
 };
 
@@ -375,11 +362,11 @@ private:
     const std::shared_ptr<typename DictGetter::Src> owned_dict;
 
 public:
-    FunctionHierarchyWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
+    explicit FunctionHierarchyWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
     : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED, "Embedded dictionaries were not loaded. You need to check configuration file.");
     }
 
     String getName() const override
@@ -394,19 +381,18 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+                getName(), arguments.size());
 
         if (arguments[0]->getName() != TypeName<T>)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-            + " (must be " + String(TypeName<T>) + ")",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {} (must be {})",
+            arguments[0]->getName(), getName(), TypeName<T>);
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>)
-            throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<String>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments.size() == 2 && arguments[1]->getName() != "String")
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the second ('point of view') argument of function {} (must be String)",
+                            arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
@@ -416,7 +402,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -426,10 +412,8 @@ public:
             const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + arguments[1].column->getName()
-                + " of second ('point of view') argument of function " + name
-                + ". Must be constant string.",
-                ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of second ('point of view') argument of function {}. "
+                "Must be constant string.", arguments[1].column->getName(), name);
 
             dict_key = key_col->getValue<String>();
         }
@@ -445,11 +429,10 @@ public:
             auto & res_values = col_values->getData();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
-            size_t size = vec_from.size();
-            res_offsets.resize(size);
-            res_values.reserve(size * 4);
+            res_offsets.resize(input_rows_count);
+            res_values.reserve(input_rows_count * 4);
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 T cur = vec_from[i];
                 for (size_t depth = 0; cur && depth < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++depth)
@@ -462,10 +445,8 @@ public:
 
             return ColumnArray::create(std::move(col_values), std::move(col_offsets));
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                + " of first argument of function " + name,
-                ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), name);
     }
 };
 
@@ -577,11 +558,11 @@ private:
     const MultiVersion<RegionsNames>::Version owned_dict;
 
 public:
-    FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
+    explicit FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception(ErrorCodes::DICTIONARIES_WAS_NOT_LOADED, "Embedded dictionaries were not loaded. You need to check configuration file.");
     }
 
     String getName() const override
@@ -601,20 +582,25 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2.",
+                getName(), arguments.size());
 
-        if (arguments[0]->getName() != TypeName<UInt32>)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
-                + " (must be " + String(TypeName<UInt32>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments[0]->getName() != "UInt32")
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the first argument of function {} (must be UInt32)",
+                            arguments[0]->getName(), getName());
 
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
-                + " (must be " + String(TypeName<String>) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments.size() == 2 && arguments[1]->getName() != "String")
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Illegal type {} of the second argument of function {} (must be String)",
+                            arguments[0]->getName(), getName());
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -633,9 +619,8 @@ public:
             if (const ColumnConst * col_language = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
                 language = RegionsNames::getLanguageEnum(col_language->getValue<String>());
             else
-                throw Exception("Illegal column " + arguments[1].column->getName()
-                        + " of the second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of the second argument of function {}",
+                        arguments[1].column->getName(), getName());
         }
 
         const RegionsNames & dict = *owned_dict;
@@ -648,16 +633,17 @@ public:
 
             for (unsigned int region_id : region_ids)
             {
-                const StringRef & name_ref = dict.getRegionName(region_id, language);
-                col_to->insertData(name_ref.data, name_ref.size);
+                std::string_view name_ref = dict.getRegionName(region_id, language);
+                col_to->insertData(name_ref.data(), name_ref.size());
             }
 
             return col_to;
         }
-        else
-            throw Exception("Illegal column " + arguments[0].column->getName()
-                    + " of the first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of the first argument of function {}",
+            arguments[0].column->getName(),
+            getName());
     }
 };
 

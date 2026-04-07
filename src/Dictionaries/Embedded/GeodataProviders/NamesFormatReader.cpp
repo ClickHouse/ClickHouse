@@ -1,7 +1,9 @@
-#include "NamesFormatReader.h"
+#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
 
 #include <IO/ReadHelpers.h>
 
+namespace DB
+{
 
 bool LanguageRegionsNamesFormatReader::readNext(RegionNameEntry & entry)
 {
@@ -10,10 +12,10 @@ bool LanguageRegionsNamesFormatReader::readNext(RegionNameEntry & entry)
         Int32 read_region_id;
         std::string region_name;
 
-        DB::readIntText(read_region_id, *input);
-        DB::assertChar('\t', *input);
-        DB::readString(region_name, *input);
-        DB::assertChar('\n', *input);
+        readIntText(read_region_id, *input);
+        assertChar('\t', *input);
+        readString(region_name, *input);
+        assertChar('\n', *input);
 
         if (read_region_id <= 0)
             continue;
@@ -24,4 +26,6 @@ bool LanguageRegionsNamesFormatReader::readNext(RegionNameEntry & entry)
     }
 
     return false;
+}
+
 }

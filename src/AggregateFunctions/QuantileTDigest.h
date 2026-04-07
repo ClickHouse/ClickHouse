@@ -43,6 +43,7 @@ namespace ErrorCodes
 template <typename T>
 class QuantileTDigest
 {
+    friend class TDigestStatistic;
     using Value = Float32;
     using Count = Float32;
     using BetterFloat = Float64; // For intermediate results and sum(Count). Must have better precision, than Count
@@ -118,7 +119,6 @@ class QuantileTDigest
         static constexpr size_t PART_SIZE_BITS = 8;
 
         using Transform = RadixSortFloatTransform<KeyBits>;
-        using Allocator = RadixSortAllocator;
 
         /// The function to get the key from an array element.
         static Key & extractKey(Element & elem) { return elem.mean; }
@@ -137,7 +137,7 @@ class QuantileTDigest
             compress();
     }
 
-    inline bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
+    bool canBeMerged(const BetterFloat & l_mean, const Value & r_mean)
     {
         return l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
     }
@@ -233,8 +233,7 @@ public:
                 BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
 
-                if (err > err2)
-                    err = err2;
+                err = std::min(err, err2);
 
                 BetterFloat k = count_epsilon_4 * err;
 
@@ -309,19 +308,19 @@ public:
         readVarUInt(size, buf);
 
         if (size > max_centroids_deserialize)
-            throw Exception("Too large t-digest centroids size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large t-digest centroids size");
 
         count = 0;
         unmerged = 0;
 
         centroids.resize(size);
         // From now, TDigest will be in invalid state if exception is thrown.
-        buf.read(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
+        buf.readStrict(reinterpret_cast<char *>(centroids.data()), size * sizeof(centroids[0]));
 
         for (const auto & c : centroids)
         {
             if (c.count <= 0 || std::isnan(c.count)) // invalid count breaks compress()
-                throw Exception("Invalid centroid " + std::to_string(c.count) + ":" + std::to_string(c.mean), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid centroid {}:{}", c.count, std::to_string(c.mean));
             if (!std::isnan(c.mean))
             {
                 count += c.count;
@@ -334,6 +333,56 @@ public:
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 
+    Float64 getCountEqual(Float64 value) const
+    {
+        Float64 result = 0;
+        for (const auto & c : centroids)
+        {
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            if (value == c.mean)
+                result += c.count;
+        }
+        return result;
+    }
+
+    Float64 getCountLessThan(Float64 value) const
+    {
+        bool first = true;
+        Count sum = 0;
+        Count prev_count = 0;
+        Float64 prev_x = 0;
+        Value prev_mean = 0;
+
+        for (const auto & c : centroids)
+        {
+            /// std::cerr << "c "<< c.mean << " "<< c.count << std::endl;
+            Float64 current_x = sum + c.count * 0.5;
+            if (c.mean >= value)
+            {
+                /// value is smaller than any value.
+                if (first)
+                    return 0;
+
+                Float64 left = prev_x + 0.5 * (prev_count == 1);
+                Float64 right = current_x - 0.5 * (c.count == 1);
+                Float64 result = checkOverflow<Float64>(interpolate(
+                    static_cast<Value>(value),
+                    prev_mean,
+                    static_cast<Value>(left),
+                    c.mean,
+                    static_cast<Value>(right)));
+                return result;
+            }
+            sum += c.count;
+            prev_mean = c.mean;
+            prev_count = c.count;
+            prev_x = current_x;
+            first = false;
+        }
+        /// count is larger than any value.
+        return count;
+    }
+
     /** Calculates the quantile q [0, 1] based on the digest.
       * For an empty digest returns NaN.
       */
@@ -341,7 +390,7 @@ public:
     ResultType getImpl(Float64 level)
     {
         if (centroids.empty())
-            return std::is_floating_point_v<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
+            return is_floating_point<ResultType> ? std::numeric_limits<ResultType>::quiet_NaN() : 0;
 
         compress();
 
@@ -366,15 +415,10 @@ public:
 
                 if (x <= left)
                     return checkOverflow<ResultType>(prev_mean);
-                else if (x >= right)
+                if (x >= right)
                     return checkOverflow<ResultType>(c.mean);
-                else
-                    return checkOverflow<ResultType>(interpolate(
-                        static_cast<Value>(x),
-                        static_cast<Value>(left),
-                        prev_mean,
-                        static_cast<Value>(right),
-                        c.mean));
+                return checkOverflow<ResultType>(
+                    interpolate(static_cast<Value>(x), static_cast<Value>(left), prev_mean, static_cast<Value>(right), c.mean));
             }
 
             sum += c.count;
@@ -397,7 +441,12 @@ public:
         if (centroids.empty())
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-                result[result_num] = std::is_floating_point_v<ResultType> ? NAN : 0;
+            {
+                if constexpr (std::is_floating_point_v<ResultType>)
+                    result[result_num] = NAN;
+                else
+                    result[result_num] = 0;
+            }
             return;
         }
 
@@ -483,7 +532,7 @@ private:
         ResultType result;
         if (accurate::convertNumeric(val, result))
             return result;
-        throw DB::Exception("Numeric overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 };
 

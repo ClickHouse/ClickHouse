@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_AGGREGATION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class GetAggregatesMatcher
@@ -23,11 +24,9 @@ public:
     {
         const char * assert_no_aggregates = nullptr;
         const char * assert_no_windows = nullptr;
-        // Explicit empty initializers are needed to make designated initializers
-        // work on GCC 10.
         std::unordered_set<String> uniq_names {};
-        std::vector<const ASTFunction *> aggregates {};
-        std::vector<const ASTFunction *> window_functions {};
+        ASTs aggregates{};
+        ASTs window_functions{};
     };
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -61,33 +60,40 @@ public:
     }
 
 private:
-    static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
+    static void visit(const ASTFunction & node, const ASTPtr & ast, Data & data)
     {
         if (isAggregateFunction(node))
         {
             if (data.assert_no_aggregates)
-                throw Exception("Aggregate function " + node.getColumnName()  + " is found " + String(data.assert_no_aggregates) + " in query",
-                                ErrorCodes::ILLEGAL_AGGREGATION);
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Aggregate function {} is found {} in query",
+                                node.getColumnName(), String(data.assert_no_aggregates));
 
             String column_name = node.getColumnName();
-            if (data.uniq_names.count(column_name))
+            if (data.uniq_names.contains(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
-            data.aggregates.push_back(&node);
+            data.aggregates.push_back(ast);
         }
-        else if (node.is_window_function)
+        else if (node.isWindowFunction())
         {
             if (data.assert_no_windows)
-                throw Exception("Window function " + node.getColumnName()  + " is found " + String(data.assert_no_windows) + " in query",
-                                ErrorCodes::ILLEGAL_AGGREGATION);
+                throw Exception(ErrorCodes::ILLEGAL_AGGREGATION, "Window function {} is found {} in query",
+                                node.getColumnName(), String(data.assert_no_windows));
+
+            if (node.name == "lag" || node.name == "lead")
+            {
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Window function '{}' is supported only with enabled analyzer",
+                    node.formatForErrorMessage());
+            }
 
             String column_name = node.getColumnName();
-            if (data.uniq_names.count(column_name))
+            if (data.uniq_names.contains(column_name))
                 return;
 
             data.uniq_names.insert(column_name);
-            data.window_functions.push_back(&node);
+            data.window_functions.push_back(ast);
         }
     }
 
@@ -95,7 +101,7 @@ private:
     {
         // Aggregate functions can also be calculated as window functions, but
         // here we are interested in aggregate functions calculated in GROUP BY.
-        return !node.is_window_function && AggregateUtils::isAggregateFunction(node);
+        return !node.isWindowFunction() && AggregateUtils::isAggregateFunction(node);
     }
 };
 
@@ -114,6 +120,6 @@ inline void assertNoAggregates(const ASTPtr & ast, const char * description)
     GetAggregatesVisitor(data).visit(ast);
 }
 
-std::vector<const ASTFunction *> getExpressionsWithWindowFunctions(ASTPtr & ast);
+ASTs getExpressionsWithWindowFunctions(ASTPtr & ast);
 
 }

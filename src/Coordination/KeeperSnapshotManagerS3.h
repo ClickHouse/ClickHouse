@@ -3,13 +3,15 @@
 #include "config.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/MultiVersion.h>
+#include <Common/Macros.h>
+
+#include <Coordination/KeeperSnapshotManager.h>
 
 #if USE_AWS_S3
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
-#include <Common/logger_useful.h>
 
-#include <string>
 #endif
 
 namespace DB
@@ -21,13 +23,15 @@ class KeeperSnapshotManagerS3
 public:
     KeeperSnapshotManagerS3();
 
-    void updateS3Configuration(const Poco::Util::AbstractConfiguration & config);
-    void uploadSnapshot(const std::string & path, bool async_upload = true);
+    /// 'macros' are used to substitute macros in endpoint of disks
+    void updateS3Configuration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
+    void uploadSnapshot(const SnapshotFileInfoPtr & file_info, bool async_upload = true);
 
-    void startup(const Poco::Util::AbstractConfiguration & config);
+    /// 'macros' are used to substitute macros in endpoint of disks
+    void startup(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void shutdown();
 private:
-    using SnapshotS3Queue = ConcurrentBoundedQueue<std::string>;
+    using SnapshotS3Queue = ConcurrentBoundedQueue<SnapshotFileInfoPtr>;
     SnapshotS3Queue snapshots_s3_queue;
 
     /// Upload new snapshots to S3
@@ -39,13 +43,13 @@ private:
 
     std::atomic<bool> shutdown_called{false};
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     UUID uuid;
 
     std::shared_ptr<S3Configuration> getSnapshotS3Client() const;
 
-    void uploadSnapshotImpl(const std::string & snapshot_path);
+    void uploadSnapshotImpl(const SnapshotFileInfo & snapshot_file_info);
 
     /// Thread upload snapshots to S3 in the background
     void snapshotS3Thread();
@@ -56,10 +60,10 @@ class KeeperSnapshotManagerS3
 public:
     KeeperSnapshotManagerS3() = default;
 
-    void updateS3Configuration(const Poco::Util::AbstractConfiguration &) {}
-    void uploadSnapshot(const std::string &, [[maybe_unused]] bool async_upload = true) {}
+    void updateS3Configuration(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
+    void uploadSnapshot(const SnapshotFileInfoPtr &, [[maybe_unused]] bool async_upload = true) {}
 
-    void startup(const Poco::Util::AbstractConfiguration &) {}
+    void startup(const Poco::Util::AbstractConfiguration &, const MultiVersion<Macros>::Version &) {}
 
     void shutdown() {}
 };

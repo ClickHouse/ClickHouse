@@ -26,10 +26,10 @@ public:
     bool exists(const std::string & definition_entity_name) override;
 
     /// Return xml-file modification time via stat call
-    Poco::Timestamp getUpdateTime(const std::string & definition_entity_name) override;
+    std::optional<Poco::Timestamp> getUpdateTime(const std::string & definition_entity_name) override;
 
     /// May contain definition about several entities (several dictionaries in one .xml file)
-    LoadablesConfigurationPtr load(const std::string & config_file) override;
+    LoadablesConfigurationPtr load(const std::string & config_file_path) override;
 
     void updatePatterns(const std::unordered_set<std::string> & patterns_);
 

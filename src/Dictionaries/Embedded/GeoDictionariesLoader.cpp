@@ -1,8 +1,11 @@
-#include "GeoDictionariesLoader.h"
+#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "GeodataProviders/HierarchiesProvider.h"
-#include "GeodataProviders/NamesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
+#include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
+
+namespace DB
+{
 
 std::unique_ptr<RegionsHierarchies> GeoDictionariesLoader::reloadRegionsHierarchies(const Poco::Util::AbstractConfiguration & config)
 {
@@ -26,4 +29,6 @@ std::unique_ptr<RegionsNames> GeoDictionariesLoader::reloadRegionsNames(const Po
     const auto directory = config.getString(config_key);
     auto data_provider = std::make_unique<RegionsNamesDataProvider>(directory);
     return std::make_unique<RegionsNames>(std::move(data_provider));
+}
+
 }

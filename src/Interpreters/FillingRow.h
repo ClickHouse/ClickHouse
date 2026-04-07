@@ -1,8 +1,6 @@
 #pragma once
-#include <Core/SortDescription.h>
-#include <Core/InterpolateDescription.h>
-#include <Columns/IColumn.h>
 
+#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -17,30 +15,49 @@ bool equals(const Field & lhs, const Field & rhs);
  */
 class FillingRow
 {
+    /// finds last value <= to
+    Field doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
+
+    bool hasSomeConstraints(size_t pos) const;
+    bool isConstraintsSatisfied(size_t pos) const;
+
 public:
     explicit FillingRow(const SortDescription & sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
-    bool next(const FillingRow & to_row);
+    /// Returns true if filling values should be inserted into result set
+    bool next(const FillingRow & next_original_row, bool& value_changed);
 
-    void initFromDefaults(size_t from_pos = 0);
+    /// Returns true if need to generate some prefix for to_row
+    bool shift(const FillingRow & next_original_row, bool& value_changed);
+
+    bool hasSomeConstraints() const;
+    bool isConstraintsSatisfied() const;
+
+    void initUsingFrom(size_t from_pos = 0);
+    void initUsingTo(size_t from_pos = 0);
+    void updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind);
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
     size_t size() const { return row.size(); }
     bool operator<(const FillingRow & other) const;
     bool operator==(const FillingRow & other) const;
+    bool operator>=(const FillingRow & other) const;
+    bool isNull() const;
 
     int getDirection(size_t index) const { return sort_description[index].direction; }
     FillColumnDescription & getFillDescription(size_t index) { return sort_description[index].fill_description; }
+    const FillColumnDescription & getFillDescription(size_t index) const { return sort_description[index].fill_description; }
+
+    String dump() const;
 
 private:
     Row row;
+    Row constraints;
     SortDescription sort_description;
 };
 
-void insertFromFillingRow(MutableColumns & filling_columns, MutableColumns & interpolate_columns, MutableColumns & other_columns,
-    const FillingRow & filling_row, const Block & interpolate_block);
-void copyRowFromColumns(MutableColumns & dest, const Columns & source, size_t row_num);
+WriteBuffer & operator<<(WriteBuffer & out, const FillingRow & row);
 
 }

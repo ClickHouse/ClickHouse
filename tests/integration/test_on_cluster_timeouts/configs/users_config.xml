@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <mutations_sync>2</mutations_sync>
+            <function_sleep_max_microseconds_per_block>0</function_sleep_max_microseconds_per_block>
         </default>
     </profiles>
 

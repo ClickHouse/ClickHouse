@@ -1,15 +1,21 @@
-#include <Core/SettingsFields.h>
-
+#include <Columns/IColumn.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Field.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/logger_useful.h>
+#include <Core/SettingsFields.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/logger_useful.h>
+
 #include <boost/algorithm/string/predicate.hpp>
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
+#include <cctz/time_zone.h>
+#pragma clang diagnostic pop
 
 #include <cmath>
 
@@ -21,40 +27,107 @@ namespace ErrorCodes
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int BAD_ARGUMENTS;
 }
 
+bool stringToBool(const String & str)
+{
+    if (str == "0")
+        return false;
+    if (str == "1")
+        return true;
+    if (boost::iequals(str, "false"))
+        return false;
+    if (boost::iequals(str, "true"))
+        return true;
+    throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
+}
 
 namespace
 {
+    template<typename T>
+    void validateFloatingPointSettingValue(T value)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!std::isfinite(value))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                    "Float setting value must be finite, got {}", value);
+        }
+    }
+
     template <typename T>
     T stringToNumber(const String & str)
     {
         if constexpr (std::is_same_v<T, bool>)
         {
-            if (str == "0")
-                return false;
-            if (str == "1")
-                return true;
-            if (boost::iequals(str, "false"))
-                return false;
-            if (boost::iequals(str, "true"))
-                return true;
-            throw Exception("Cannot parse bool from string '" + str + "'", ErrorCodes::CANNOT_PARSE_BOOL);
+            return stringToBool(str);
         }
         else
-            return parseWithSizeSuffix<T>(str);
+        {
+            T value = parseWithSizeSuffix<T>(str);
+            validateFloatingPointSettingValue(value);
+            return value;
+        }
     }
 
     template <typename T>
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToNumber<T>(f.get<const String &>());
+        {
+            return stringToNumber<T>(f.safeGet<String>());
+        }
+        if (f.getType() == Field::Types::UInt64)
+        {
+            T result;
+            if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
+            return result;
+        }
+        if (f.getType() == Field::Types::Int64)
+        {
+            T result;
+            if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
+            return result;
+        }
+        if (f.getType() == Field::Types::Bool)
+        {
+            return T(f.safeGet<bool>());
+        }
+        if (f.getType() == Field::Types::Float64)
+        {
+            Float64 x = f.safeGet<Float64>();
+            validateFloatingPointSettingValue(x);
+            if constexpr (std::is_floating_point_v<T>)
+            {
+                return T(x);
+            }
+            else
+            {
+                if (!isFinite(x))
+                {
+                    /// Conversion of infinite values to integer is undefined.
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
+                }
+                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                }
+                return T(x);
+            }
+        }
         else
-            return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
+            throw Exception(
+                ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }
 
-#ifndef KEEPER_STANDALONE_BUILD
     Map stringToMap(const String & str)
     {
         /// Allow empty string as an empty map
@@ -63,7 +136,7 @@ namespace
 
         auto type_string = std::make_shared<DataTypeString>();
         DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+        auto serialization = type_map.getDefaultSerialization();
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -71,19 +144,34 @@ namespace
         return (*column)[0].safeGet<Map>();
     }
 
-    Map fieldToMap(const Field & f)
+    [[maybe_unused]] Map fieldToMap(const Field & f)
     {
         if (f.getType() == Field::Types::String)
         {
             /// Allow to parse Map from string field. For the convenience.
-            const auto & str = f.get<const String &>();
+            const auto & str = f.safeGet<String>();
             return stringToMap(str);
         }
 
-        return f.safeGet<const Map &>();
+        return f.safeGet<Map>();
     }
-#endif
 
+}
+
+template <typename T>
+SettingFieldNumber<T>::SettingFieldNumber(Type x)
+{
+    validateFloatingPointSettingValue(x);
+    value = x;
+};
+
+template <typename T>
+SettingFieldNumber<T> & SettingFieldNumber<T>::operator=(Type x)
+{
+    validateFloatingPointSettingValue(x);
+    value = x;
+    changed = true;
+    return *this;
 }
 
 template <typename T>
@@ -152,16 +240,22 @@ template struct SettingFieldNumber<UInt64>;
 template struct SettingFieldNumber<Int64>;
 template struct SettingFieldNumber<float>;
 template struct SettingFieldNumber<bool>;
+template struct SettingFieldNumber<Int32>;
+template struct SettingFieldNumber<UInt32>;
+template struct SettingFieldNumber<double>;
 
 template struct SettingAutoWrapper<SettingFieldNumber<UInt64>>;
 template struct SettingAutoWrapper<SettingFieldNumber<Int64>>;
 template struct SettingAutoWrapper<SettingFieldNumber<float>>;
+template struct SettingAutoWrapper<SettingFieldNumber<UInt32>>;
+template struct SettingAutoWrapper<SettingFieldNumber<Int32>>;
+template struct SettingAutoWrapper<SettingFieldNumber<double>>;
 
 namespace
 {
     UInt64 stringToMaxThreads(const String & str)
     {
-        if (startsWith(str, "auto"))
+        if (startsWith(str, "auto") || startsWith(str, "'auto"))
             return 0;
         return parseFromString<UInt64>(str);
     }
@@ -169,9 +263,8 @@ namespace
     UInt64 fieldToMaxThreads(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.get<const String &>());
-        else
-            return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), f);
+            return stringToMaxThreads(f.safeGet<String>());
+        return fieldToNumber<UInt64>(f);
     }
 }
 
@@ -188,9 +281,9 @@ SettingFieldMaxThreads & SettingFieldMaxThreads::operator=(const Field & f)
 String SettingFieldMaxThreads::toString() const
 {
     if (is_auto)
+        /// Removing quotes here will introduce an incompatibility between replicas with different versions.
         return "'auto(" + ::DB::toString(value) + ")'";
-    else
-        return ::DB::toString(value);
+    return ::DB::toString(value);
 }
 
 void SettingFieldMaxThreads::parseFromString(const String & str)
@@ -212,7 +305,7 @@ void SettingFieldMaxThreads::readBinary(ReadBuffer & in)
 
 UInt64 SettingFieldMaxThreads::getAuto()
 {
-    return getNumberOfPhysicalCPUCores();
+    return getNumberOfCPUCoresToUse();
 }
 
 namespace
@@ -222,6 +315,13 @@ namespace
         if (d != 0.0 && !std::isnormal(d))
             throw Exception(
                 ErrorCodes::CANNOT_PARSE_NUMBER, "A setting's value in seconds must be a normal floating point number or zero. Got {}", d);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-const-int-float-conversion"
+        if (d * 1000000 > std::numeric_limits<Poco::Timespan::TimeDiff>::max() || d * 1000000 < std::numeric_limits<Poco::Timespan::TimeDiff>::min())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Cannot convert seconds to microseconds: the setting's value in seconds is too big: {}", d);
+#pragma clang diagnostic pop
+
         return static_cast<Poco::Timespan::TimeDiff>(d * 1000000);
     }
 
@@ -327,15 +427,13 @@ void SettingFieldString::readBinary(ReadBuffer & in)
     *this = std::move(str);
 }
 
-#ifndef KEEPER_STANDALONE_BUILD
-
 SettingFieldMap::SettingFieldMap(const Field & f) : value(fieldToMap(f)) {}
 
 String SettingFieldMap::toString() const
 {
     auto type_string = std::make_shared<DataTypeString>();
     DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+    auto serialization = type_map.getDefaultSerialization();
     auto column = type_map.createColumn();
     column->insert(value);
 
@@ -368,14 +466,12 @@ void SettingFieldMap::readBinary(ReadBuffer & in)
     *this = map;
 }
 
-#endif
-
 namespace
 {
     char stringToChar(const String & str)
     {
         if (str.size() > 1)
-            throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH, "A setting's value string has to be an exactly one character long");
         if (str.empty())
             return '\0';
         return str[0];
@@ -383,7 +479,7 @@ namespace
 
     char fieldToChar(const Field & f)
     {
-        return stringToChar(f.safeGet<const String &>());
+        return stringToChar(f.safeGet<String>());
     }
 }
 
@@ -440,6 +536,24 @@ String SettingFieldEnumHelpers::readBinary(ReadBuffer & in)
     return str;
 }
 
+void SettingFieldTimezone::writeBinary(WriteBuffer & out) const
+{
+    writeStringBinary(value, out);
+}
+
+void SettingFieldTimezone::readBinary(ReadBuffer & in)
+{
+    String str;
+    readStringBinary(str, in);
+    *this = std::move(str);
+}
+
+void SettingFieldTimezone::validateTimezone(const std::string & tz_str)
+{
+    cctz::time_zone validated_tz;
+    if (!tz_str.empty() && !cctz::load_time_zone(tz_str, &validated_tz))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid time zone: {}", tz_str);
+}
 
 String SettingFieldCustom::toString() const
 {
@@ -461,6 +575,42 @@ void SettingFieldCustom::readBinary(ReadBuffer & in)
     String str;
     readStringBinary(str, in);
     parseFromString(str);
+}
+
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(UInt64 x) : SettingFieldUInt64(x)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt64::SettingFieldNonZeroUInt64(const DB::Field & f) : SettingFieldUInt64(f)
+{
+    checkValueNonZero();
+}
+
+SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(UInt64 x)
+{
+    SettingFieldUInt64::operator=(x);
+    checkValueNonZero();
+    return *this;
+}
+
+SettingFieldNonZeroUInt64 & SettingFieldNonZeroUInt64::operator=(const DB::Field & f)
+{
+    SettingFieldUInt64::operator=(f);
+    checkValueNonZero();
+    return *this;
+}
+
+void SettingFieldNonZeroUInt64::parseFromString(const String & str)
+{
+    SettingFieldUInt64::parseFromString(str);
+    checkValueNonZero();
+}
+
+void SettingFieldNonZeroUInt64::checkValueNonZero() const
+{
+    if (value == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A setting's value has to be greater than 0");
 }
 
 }

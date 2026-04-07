@@ -1,42 +1,37 @@
-#include <Functions/IFunction.h>
+#include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
-
+#include <Common/FunctionDocumentation.h>
 
 namespace DB
 {
-namespace
-{
-
-class FunctionIdentity : public IFunction
-{
-public:
-    static constexpr auto name = "identity";
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionIdentity>();
-    }
-
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isSuitableForConstantFolding() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return arguments.front();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
-    {
-        return arguments.front().column;
-    }
-};
-
-}
 
 REGISTER_FUNCTION(Identity)
 {
-    factory.registerFunction<FunctionIdentity>();
+    FunctionDocumentation::Description description = R"(
+This function returns the argument you pass to it, which is useful for debugging and testing. It lets you bypass index usage to see full scan performance instead. The query analyzer ignores anything inside identity functions when looking for indexes to use, and it also disables constant folding.
+)";
+    FunctionDocumentation::Syntax syntax = "identity(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Input value.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the input value unchanged.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT identity(42)", "42"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction("identity", [](ContextPtr){ return FunctionIdentityBase::create({}, "identity", true); }, documentation);
+}
+
+REGISTER_FUNCTION(ScalarSubqueryResult)
+{
+    factory.registerFunction("__scalarSubqueryResult", [](ContextPtr){ return FunctionIdentityBase::create({}, "__scalarSubqueryResult", false); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+}
+
+REGISTER_FUNCTION(ActionName)
+{
+    factory.registerFunction("__actionName", [](ContextPtr){ return FunctionActionName::create({}); }, FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 }

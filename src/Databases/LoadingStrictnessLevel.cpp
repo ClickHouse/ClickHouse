@@ -4,7 +4,7 @@
 namespace DB
 {
 
-LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore)
+LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach, bool force_restore, bool secondary)
 {
     if (force_restore)
     {
@@ -21,6 +21,9 @@ LoadingStrictnessLevel getLoadingStrictnessLevel(bool attach, bool force_attach,
 
     if (attach)
         return LoadingStrictnessLevel::ATTACH;
+
+    if (secondary)
+        return LoadingStrictnessLevel::SECONDARY_CREATE;
 
     return LoadingStrictnessLevel::CREATE;
 }

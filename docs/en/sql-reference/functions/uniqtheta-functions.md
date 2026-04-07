@@ -1,89 +1,93 @@
 ---
-slug: /en/sql-reference/functions/uniqtheta-functions
+description: 'Documentation for uniqTheta Functions'
+sidebar_label: 'uniqTheta'
+slug: /sql-reference/functions/uniqtheta-functions
+title: 'uniqTheta Functions'
+doc_type: 'reference'
 ---
 
-# uniqTheta Functions
+# uniqTheta functions
 
 uniqTheta functions work for two uniqThetaSketch objects to do set operation calculations such as  ∪ / ∩ / × (union/intersect/not), it is to return a new uniqThetaSketch object contain the result.
 
 A uniqThetaSketch object is to be constructed by aggregation function uniqTheta with -State.
 
 UniqThetaSketch is a data structure storage of approximate values set.
-For more information on RoaringBitmap, see: [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
+For more information, see: [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketches.html#theta-sketch-framework).
 
-## uniqThetaUnion
+## uniqThetaUnion {#uniqthetaunion}
 
 Two uniqThetaSketch objects to do union calculation(set operation ∪), the result is a new uniqThetaSketch.
 
-``` sql
+```sql
 uniqThetaUnion(uniqThetaSketch,uniqThetaSketch)
 ```
 
 **Arguments**
 
--   `uniqThetaSketch` – uniqThetaSketch object.
+- `uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
-``` sql
-select finalizeAggregation(uniqThetaUnion(a, b)) as a_union_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
-from
-(select arrayReduce('uniqThetaState',[1,2]) as a, arrayReduce('uniqThetaState',[2,3,4]) as b );
+```sql
+SELECT finalizeAggregation(uniqThetaUnion(a, b)) AS a_union_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
+FROM
+(SELECT arrayReduce('uniqThetaState',[1,2]) AS a, arrayReduce('uniqThetaState',[2,3,4]) AS b );
 ```
 
-``` text
+```text
 ┌─a_union_b─┬─a_cardinality─┬─b_cardinality─┐
 │         4 │             2 │             3 │
 └───────────┴───────────────┴───────────────┘
 ```
 
-## uniqThetaIntersect
+## uniqThetaIntersect {#uniqthetaintersect}
 
 Two uniqThetaSketch objects to do intersect calculation(set operation ∩), the result is a new uniqThetaSketch.
 
-``` sql
+```sql
 uniqThetaIntersect(uniqThetaSketch,uniqThetaSketch)
 ```
 
 **Arguments**
 
--   `uniqThetaSketch` – uniqThetaSketch object.
+- `uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
-``` sql
-select finalizeAggregation(uniqThetaIntersect(a, b)) as a_intersect_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
-from
-(select arrayReduce('uniqThetaState',[1,2]) as a, arrayReduce('uniqThetaState',[2,3,4]) as b );
+```sql
+SELECT finalizeAggregation(uniqThetaIntersect(a, b)) AS a_intersect_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
+FROM
+(SELECT arrayReduce('uniqThetaState',[1,2]) AS a, arrayReduce('uniqThetaState',[2,3,4]) AS b );
 ```
 
-``` text
+```text
 ┌─a_intersect_b─┬─a_cardinality─┬─b_cardinality─┐
 │             1 │             2 │             3 │
 └───────────────┴───────────────┴───────────────┘
 ```
 
-## uniqThetaNot
+## uniqThetaNot {#uniqthetanot}
 
 Two uniqThetaSketch objects to do a_not_b calculation(set operation ×), the result is a new uniqThetaSketch.
 
-``` sql
+```sql
 uniqThetaNot(uniqThetaSketch,uniqThetaSketch)
 ```
 
 **Arguments**
 
--   `uniqThetaSketch` – uniqThetaSketch object.
+- `uniqThetaSketch` – uniqThetaSketch object.
 
 **Example**
 
-``` sql
-select finalizeAggregation(uniqThetaNot(a, b)) as a_not_b, finalizeAggregation(a) as a_cardinality, finalizeAggregation(b) as b_cardinality
-from
-(select arrayReduce('uniqThetaState',[2,3,4]) as a, arrayReduce('uniqThetaState',[1,2]) as b );
+```sql
+SELECT finalizeAggregation(uniqThetaNot(a, b)) AS a_not_b, finalizeAggregation(a) AS a_cardinality, finalizeAggregation(b) AS b_cardinality
+FROM
+(SELECT arrayReduce('uniqThetaState',[2,3,4]) AS a, arrayReduce('uniqThetaState',[1,2]) AS b );
 ```
 
-``` text
+```text
 ┌─a_not_b─┬─a_cardinality─┬─b_cardinality─┐
 │       2 │             3 │             2 │
 └─────────┴───────────────┴───────────────┘
@@ -91,4 +95,13 @@ from
 
 **See Also**
 
--   [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+
+<!-- 
+The inner content of the tags below are replaced at doc framework build time with 
+docs generated from system.functions. Please do not modify or remove the tags.
+See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+-->
+
+<!--AUTOGENERATED_START-->
+<!--AUTOGENERATED_END-->

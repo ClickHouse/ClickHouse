@@ -51,6 +51,11 @@ public:
         return std::make_shared<DataTypeFloat64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
@@ -78,11 +83,12 @@ public:
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
-            Float64 res = getHexagonEdgeLengthAvgKm(resolution);
+            double res = 0;
+            getHexagonEdgeLengthAvgKm(resolution, &res);
             dst_data[row] = res;
         }
 
@@ -94,7 +100,32 @@ public:
 
 REGISTER_FUNCTION(H3EdgeLengthKm)
 {
-    factory.registerFunction<FunctionH3EdgeLengthKm>();
+    FunctionDocumentation::Description description = R"(
+Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3Indexing/) hexagon edge in kilometers.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3EdgeLengthKm(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average length of an [H3](#h3-index) hexagon edge in kilometers.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get edge length for maximum resolution",
+            "SELECT h3EdgeLengthKm(15) AS edgeLengthKm",
+            R"(
+┌─edgeLengthKm─┐
+│  0.000509713 │
+└──────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3EdgeLengthKm>(documentation);
 }
 
 }

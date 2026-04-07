@@ -27,7 +27,7 @@ CREATE DICTIONARY database_for_dict.dict1
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+LIFETIME(0)
 LAYOUT(FLAT());
 
 SELECT count(*) from database_for_dict.dict1;
@@ -41,14 +41,16 @@ CREATE DICTIONARY database_for_dict.dict2
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict1' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+LIFETIME(0)
 LAYOUT(HASHED());
 
 SELECT count(*) FROM database_for_dict.dict2;
 
 INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(100, 100);
 
-SYSTEM RELOAD DICTIONARIES;
+-- Reload dictionaries in dependency order: table -> dict1 -> dict2
+SYSTEM RELOAD DICTIONARY database_for_dict.dict1;
+SYSTEM RELOAD DICTIONARY database_for_dict.dict2;
 
 SELECT count(*) from database_for_dict.dict2;
 SELECT count(*) from database_for_dict.dict1;
@@ -62,14 +64,17 @@ CREATE DICTIONARY database_for_dict.dict3
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict2' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+LIFETIME(0)
 LAYOUT(HASHED());
 
 SELECT count(*) FROM database_for_dict.dict3;
 
 INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(200, 100);
 
-SYSTEM RELOAD DICTIONARIES;
+-- Reload dictionaries in dependency order: table -> dict1 -> dict2 -> dict3
+SYSTEM RELOAD DICTIONARY database_for_dict.dict1;
+SYSTEM RELOAD DICTIONARY database_for_dict.dict2;
+SYSTEM RELOAD DICTIONARY database_for_dict.dict3;
 
 SELECT count(*) from database_for_dict.dict3;
 SELECT count(*) from database_for_dict.dict2;
@@ -85,16 +90,16 @@ CREATE DICTIONARY database_for_dict.dict4
 )
 PRIMARY KEY key_column
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'non_existing_table' DB 'database_for_dict'))
-LIFETIME(MIN 1 MAX 10)
+LIFETIME(0)
 LAYOUT(HASHED());
 
-SELECT count(*) FROM database_for_dict.dict4; -- {serverError 60}
+SELECT count(*) FROM database_for_dict.dict4; -- {serverError UNKNOWN_TABLE}
 
 SELECT name from system.tables WHERE database = 'database_for_dict' ORDER BY name;
 SELECT name from system.dictionaries WHERE database = 'database_for_dict' ORDER BY name;
 
 DROP DATABASE IF EXISTS database_for_dict;
 
-SELECT count(*) from database_for_dict.dict3; --{serverError 81}
-SELECT count(*) from database_for_dict.dict2; --{serverError 81}
-SELECT count(*) from database_for_dict.dict1; --{serverError 81}
+SELECT count(*) from database_for_dict.dict3; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from database_for_dict.dict2; --{serverError UNKNOWN_DATABASE}
+SELECT count(*) from database_for_dict.dict1; --{serverError UNKNOWN_DATABASE}

@@ -20,17 +20,28 @@ public:
         StorageReplicatedMergeTree & storage_,
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(
-            &Poco::Logger::get(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + "(MutateFromLogEntryTask)"),
+            getLogger(storage_.getStorageID().getShortName() + "::" + selected_entry_->log_entry->new_part_name + " (MutateFromLogEntryTask)"),
             storage_,
             selected_entry_,
             task_result_callback_)
         {}
 
 
-    UInt64 getPriority() override { return priority; }
+    Priority getPriority() const override { return priority; }
+
+    void cancel() noexcept override
+    {
+        if (mutate_task)
+            mutate_task->cancel();
+
+        if (new_part)
+            new_part->removeIfNeeded();
+    }
 
 private:
+
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;
+
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
 
     bool executeInnerTask() override
@@ -38,13 +49,14 @@ private:
         return mutate_task->execute();
     }
 
-    UInt64 priority{0};
+    Priority priority;
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};
 
     MergeTreePartInfo new_part_info;
     MutationCommandsConstPtr commands;
+    Strings mutation_ids_for_log;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;
@@ -53,7 +65,6 @@ private:
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
-    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 

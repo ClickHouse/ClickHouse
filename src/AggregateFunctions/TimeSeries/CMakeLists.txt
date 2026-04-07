@@ -1,0 +1,4 @@
+include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
+add_headers_and_sources(clickhouse_functions_time_series .)
+add_library(clickhouse_functions_time_series OBJECT ${clickhouse_functions_time_series_sources} ${clickhouse_functions_time_series_headers})
+target_link_libraries(clickhouse_functions_time_series PRIVATE dbms)

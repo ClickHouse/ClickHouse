@@ -1,28 +1,31 @@
 #include <Backups/RestoreCoordinationLocal.h>
 
+#include <Parsers/ASTCreateQuery.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
 
-RestoreCoordinationLocal::RestoreCoordinationLocal() = default;
+RestoreCoordinationLocal::RestoreCoordinationLocal(
+    bool allow_concurrent_restore_, BackupConcurrencyCounters & concurrency_counters_)
+    : log(getLogger("RestoreCoordinationLocal"))
+    , concurrency_check(/* is_restore = */ true, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_restore_, concurrency_counters_)
+{
+}
+
 RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 
-void RestoreCoordinationLocal::setStage(const String &, const String &, const String &)
-{
-}
-
-void RestoreCoordinationLocal::setError(const String &, const Exception &)
-{
-}
-
-Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &)
+ZooKeeperRetriesInfo RestoreCoordinationLocal::getOnClusterInitializationKeeperRetriesInfo() const
 {
     return {};
 }
 
-Strings RestoreCoordinationLocal::waitForStage(const Strings &, const String &, std::chrono::milliseconds)
+bool RestoreCoordinationLocal::acquireCreatingSharedDatabase(const String & database_name)
 {
-    return {};
+    std::lock_guard lock{mutex};
+    return acquired_shared_databases.emplace(database_name).second;
 }
 
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -40,6 +43,49 @@ bool RestoreCoordinationLocal::acquireInsertingDataIntoReplicatedTable(const Str
 bool RestoreCoordinationLocal::acquireReplicatedAccessStorage(const String &)
 {
     return true;
+}
+
+bool RestoreCoordinationLocal::acquireReplicatedSQLObjects(const String &, UserDefinedSQLObjectType)
+{
+    return true;
+}
+
+bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & /*table_unique_id*/)
+{
+    std::lock_guard lock{mutex};
+    return acquired_data_in_keeper_map_tables.emplace(root_zk_path).second;
+}
+
+void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
+{
+    String query_str = create_query.formatWithSecretsOneLine();
+
+    auto find_in_map = [&]() TSA_REQUIRES(mutex)
+    {
+        auto it = create_query_uuids.find(query_str);
+        if (it != create_query_uuids.end())
+        {
+            it->second.copyToQuery(create_query);
+            return true;
+        }
+        return false;
+    };
+
+    {
+        std::lock_guard lock{mutex};
+        if (find_in_map())
+            return;
+    }
+
+    CreateQueryUUIDs new_uuids{create_query, /* generate_random= */ true, /* force_random= */ true};
+    new_uuids.copyToQuery(create_query);
+
+    {
+        std::lock_guard lock{mutex};
+        if (find_in_map())
+            return;
+        create_query_uuids[query_str] = new_uuids;
+    }
 }
 
 }

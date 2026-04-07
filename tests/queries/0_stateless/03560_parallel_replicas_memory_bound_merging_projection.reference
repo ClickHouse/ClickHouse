@@ -1,0 +1,36 @@
+-- { echoOn } --
+set optimize_aggregation_in_order = 0;
+SELECT trimLeft(*) FROM (explain select sum(b) from pr_t group by a order by a limit 5 offset 500) WHERE explain LIKE '%ReadFromMergeTree%';
+ReadFromMergeTree (p_agg)
+set optimize_aggregation_in_order = 1;
+explain pipeline select sum(b) from pr_t group by a order by a limit 5 offset 500;
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    MergingSortedTransform 4 → 1
+      MergeSortingTransform × 4
+        LimitsCheckingTransform × 4
+          PartialSortingTransform × 4
+            (Expression)
+            ExpressionTransform × 4
+              (MergingAggregated)
+              MergingAggregatedBucketTransform × 4
+                Resize 1 → 4
+                  FinishAggregatingInOrderTransform 3 → 1
+                    (Union)
+                      (Aggregating)
+                      FinalizeAggregatedTransform
+                        AggregatingInOrderTransform
+                          (Expression)
+                          ExpressionTransform
+                            (ReadFromMergeTree)
+                            MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
+                      (ReadFromRemoteParallelReplicas)
+select sum(b) from pr_t group by a order by a limit 5 offset 500;
+500000
+501000
+502000
+503000
+504000

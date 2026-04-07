@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-enum class ConvertToFixedStringExceptionMode
+enum class ConvertToFixedStringExceptionMode : uint8_t
 {
     Throw,
     Null
@@ -34,7 +34,6 @@ class FunctionToFixedString : public IFunction
 public:
     static constexpr auto name = "toFixedString";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToFixedString>(); }
-    static FunctionPtr create() { return std::make_shared<FunctionToFixedString>(); }
 
     String getName() const override
     {
@@ -47,12 +46,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isUnsignedInteger(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
+        if (!isUInt(arguments[1].type))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be unsigned integer", getName());
         if (!arguments[1].column)
-            throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());
         if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for types String and FixedString", getName());
 
         const size_t n = arguments[1].column->getUInt(0);
         return std::make_shared<DataTypeFixedString>(n);
@@ -93,13 +92,12 @@ public:
             for (size_t i = 0; i < in_offsets.size(); ++i)
             {
                 const size_t off = i ? in_offsets[i - 1] : 0;
-                const size_t len = in_offsets[i] - off - 1;
+                const size_t len = in_offsets[i] - off;
                 if (len > n)
                 {
                     if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
                     {
-                        throw Exception("String too long for type FixedString(" + toString(n) + ")",
-                            ErrorCodes::TOO_LARGE_STRING_SIZE);
+                        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String too long for type FixedString({})", toString(n));
                     }
                     else
                     {
@@ -118,11 +116,14 @@ public:
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
+            if (src_n == n)
+                return column_fixed_string->cloneResized(column_fixed_string->size());
+
             if (src_n > n)
             {
                 if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
                 {
-                    throw Exception{"String too long for type FixedString(" + toString(n) + ")", ErrorCodes::TOO_LARGE_STRING_SIZE};
+                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String too long for type FixedString({})", toString(n));
                 }
                 else
                 {
@@ -147,7 +148,7 @@ public:
         else
         {
             if constexpr (exception_mode == ConvertToFixedStringExceptionMode::Throw)
-                throw Exception("Unexpected column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column: {}", column->getName());
             else
             {
                 auto column_fixed = ColumnFixedString::create(n);
@@ -159,4 +160,3 @@ public:
 };
 
 }
-

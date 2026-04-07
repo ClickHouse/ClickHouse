@@ -1,12 +1,18 @@
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <string>
 
-#include <Compression/ICompressionCodec.h>
+#include <Common/Arena.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Compression/ICompressionCodec.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <Interpreters/Context.h>
 #include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
@@ -14,11 +20,26 @@
 #include <Poco/NumericString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include "Common/Exception.h"
 
 inline DB::CompressionCodecPtr getCompressionCodecEncrypted(DB::EncryptionMethod Method)
 {
     return std::make_shared<DB::CompressionCodecEncrypted>(Method);
+}
+
+using namespace DB;
+ContextMutablePtr context;
+extern "C" int LLVMFuzzerInitialize(int *, char ***)
+{
+    if (context)
+        return true;
+
+    static SharedContextHolder shared_context = Context::createShared();
+    context = Context::createGlobal(shared_context.get());
+    context->makeGlobalContext();
+
+    MainThreadStatus::getInstance();
+
+    return 0;
 }
 
 namespace
@@ -272,33 +293,41 @@ void XMLGenerator::generate()
 
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
-try
 {
-    XMLGenerator generator(data, size);
+    try
+    {
+        total_memory_tracker.resetCounters();
+        total_memory_tracker.setHardLimit(1_GiB);
+        CurrentThread::get().memory_tracker.resetCounters();
+        CurrentThread::get().memory_tracker.setHardLimit(1_GiB);
 
-    generator.generate();
-    if (generator.hasError())
-        return 0;
+        XMLGenerator generator(data, size);
 
-    auto config = generator.getResult();
-    auto codec_128 = getCompressionCodecEncrypted(DB::AES_128_GCM_SIV);
-    auto codec_256 = getCompressionCodecEncrypted(DB::AES_256_GCM_SIV);
-    DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
+        generator.generate();
+        if (generator.hasError())
+            return 0;
 
-    size_t data_size = size - generator.keySize();
+        auto config = generator.getResult();
+        auto codec_128 = getCompressionCodecEncrypted(DB::AES_128_GCM_SIV);
+        auto codec_256 = getCompressionCodecEncrypted(DB::AES_256_GCM_SIV);
+        DB::CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "");
 
-    std::string input = std::string(reinterpret_cast<const char*>(data), data_size);
-    fmt::print(stderr, "Using input {} of size {}, output size is {}. \n", input, data_size, input.size() - 31);
+        size_t data_size = size - generator.keySize();
 
-    DB::Memory<> memory;
-    memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
-    codec_128->doDecompressData(input.data(), input.size(), memory.data(), input.size() - 31);
+        std::string input = std::string(reinterpret_cast<const char*>(data), data_size);
+        fmt::print(stderr, "Using input {} of size {}, output size is {}. \n", input, data_size, input.size() - 31);
 
-    memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
-    codec_256->doDecompressData(input.data(), input.size(), memory.data(), input.size() - 31);
+        DB::Memory<> memory;
+        memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
+        codec_128->doDecompressData(input.data(), static_cast<UInt32>(input.size()), memory.data(), static_cast<UInt32>(input.size()) - 31);
+
+        memory.resize(input.size() + codec_128->getAdditionalSizeAtTheEndOfBuffer());
+        codec_256->doDecompressData(input.data(), static_cast<UInt32>(input.size()), memory.data(), static_cast<UInt32>(input.size()) - 31);
+    }
+    catch (...)
+    {
+        // Ok
+    }
+
     return 0;
-}
-catch (...)
-{
-    return 1;
 }

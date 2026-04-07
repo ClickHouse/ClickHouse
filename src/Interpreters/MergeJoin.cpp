@@ -2,9 +2,10 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
-
+#include <Common/CurrentMetrics.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/IJoin.h>
 #include <Core/SortCursor.h>
-#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
@@ -17,6 +18,12 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeJoinBlocksCacheBytes;
+    extern const Metric MergeJoinBlocksCacheCount;
+}
 
 namespace DB
 {
@@ -36,8 +43,7 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 {
     if (block_side == JoinTableSide::Left)
         return "--pmj_cond_left_" + name;
-    else
-        return "--pmj_cond_right_" + name;
+    return "--pmj_cond_right_" + name;
 }
 
 /*
@@ -49,13 +55,13 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const String & src_column_name, JoinTableSide block_side)
 {
     size_t res_size = block.rows();
-    auto data_col = ColumnUInt8::create(res_size, 0);
-    auto null_map = ColumnUInt8::create(res_size, 0);
+    auto data_col = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
+    auto null_map = ColumnUInt8::create(res_size, static_cast<UInt8>(0));
 
     if (!src_column_name.empty())
     {
         auto join_mask = JoinCommon::getColumnAsMask(block, src_column_name);
-        if (!join_mask.isConstant())
+        if (join_mask.hasData())
         {
             for (size_t i = 0; i < res_size; ++i)
                 null_map->getData()[i] = join_mask.isRowFiltered(i);
@@ -72,15 +78,15 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
     return {res_col, res_col_type, res_name};
 }
 
-template <bool has_left_nulls, bool has_right_nulls>
-int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
+template <bool has_left_nulls, bool has_right_nulls, bool track = false>
+Int64 nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
 
     if constexpr (has_left_nulls && has_right_nulls)
     {
-        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
-        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column);
 
         if (left_nullable && right_nullable)
         {
@@ -98,7 +104,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls)
     {
-        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
         {
             if (left_column.isNullAt(lhs_pos))
                 return null_direction_hint;
@@ -108,7 +114,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_right_nulls)
     {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
         {
             if (right_column.isNullAt(rhs_pos))
                 return -null_direction_hint;
@@ -116,14 +122,17 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
         }
     }
 
-    return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    if constexpr (track)
+        return left_column.compareTrackAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    else
+        return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
 /// Get first and last row from sorted block
 Block extractMinMax(const Block & block, const Block & keys)
 {
     if (block.rows() == 0)
-        throw Exception("Unexpected empty block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty block");
 
     Block min_max = keys.cloneEmpty();
     MutableColumns columns = min_max.mutateColumns();
@@ -137,6 +146,9 @@ Block extractMinMax(const Block & block, const Block & keys)
     }
 
     min_max.setColumns(std::move(columns));
+
+    for (auto & column : min_max)
+        column.column = column.column->convertToFullColumnIfLowCardinality();
     return min_max;
 }
 
@@ -216,8 +228,6 @@ struct MergeJoinEqualRange
     bool empty() const { return !left_length && !right_length; }
 };
 
-using Range = MergeJoinEqualRange;
-
 
 class MergeJoinCursor
 {
@@ -225,14 +235,28 @@ public:
     MergeJoinCursor(const Block & block, const SortDescription & desc_)
         : impl(block, desc_)
     {
+        for (auto *& column : impl.sort_columns)
+        {
+            const auto * lowcard_column = typeid_cast<const ColumnLowCardinality *>(column);
+            if (lowcard_column)
+            {
+                auto & new_col = column_holder.emplace_back(lowcard_column->convertToFullColumn());
+                column = new_col.get();
+            }
+        }
+
         /// SortCursorImpl can work with permutation, but MergeJoinCursor can't.
         if (impl.permutation)
-            throw Exception("Logical error: MergeJoinCursor doesn't support permutation", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinCursor doesn't support permutation");
+
+        if (impl.sort_columns_size == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoinCursor requires sort_columns size greater then 0");
     }
 
-    size_t position() const { return impl.getRow(); }
+    size_t position() const { return impl.getPos(); }
     size_t end() const { return impl.rows; }
-    bool atEnd() const { return impl.getRow() >= impl.rows; }
+    bool atEnd() const { return impl.getPos() >= impl.rows; }
+    void next() { ++impl.getPosRef(); }
     void nextN(size_t num) { impl.getPosRef() += num; }
 
     void setCompareNullability(const MergeJoinCursor & rhs)
@@ -247,13 +271,13 @@ public:
         }
     }
 
-    Range getNextEqualRange(MergeJoinCursor & rhs)
+    MergeJoinEqualRange getNextEqualRange(MergeJoinCursor & rhs)
     {
         if (has_left_nullable && has_right_nullable)
             return getNextEqualRangeImpl<true, true>(rhs);
-        else if (has_left_nullable)
+        if (has_left_nullable)
             return getNextEqualRangeImpl<true, false>(rhs);
-        else if (has_right_nullable)
+        if (has_right_nullable)
             return getNextEqualRangeImpl<false, true>(rhs);
         return getNextEqualRangeImpl<false, false>(rhs);
     }
@@ -261,11 +285,11 @@ public:
     int intersect(const Block & min_max, const Names & key_names)
     {
         if (end() == 0 || min_max.rows() != 2)
-            throw Exception("Unexpected block size", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected block size");
 
         size_t last_position = end() - 1;
-        int first_vs_max = 0;
-        int last_vs_min = 0;
+        Int64 first_vs_max = 0;
+        Int64 last_vs_min = 0;
 
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
@@ -288,58 +312,67 @@ public:
 
 private:
     SortCursorImpl impl;
+    Columns column_holder;
     bool has_left_nullable = false;
     bool has_right_nullable = false;
 
     template <bool left_nulls, bool right_nulls>
-    Range getNextEqualRangeImpl(MergeJoinCursor & rhs)
+    MergeJoinEqualRange getNextEqualRangeImpl(MergeJoinCursor & rhs)
     {
-        while (!atEnd() && !rhs.atEnd())
+        if (atEnd() || rhs.atEnd())
+            return MergeJoinEqualRange{position(), rhs.position(), 0, 0};
+
+        while (true)
         {
-            int cmp = compareAtCursor<left_nulls, right_nulls>(rhs);
+            Int64 cmp = nullableCompareAt<left_nulls, right_nulls, true>(
+                *impl.sort_columns[0], *rhs.impl.sort_columns[0], position(), rhs.position());
+
+            for (size_t i = 1; (!cmp) && i < impl.sort_columns_size; ++i)
+            {
+                const auto * left_column = impl.sort_columns[i];
+                const auto * right_column = rhs.impl.sort_columns[i];
+
+                cmp = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, position(), rhs.position());
+            }
+
             if (cmp < 0)
-                impl.next();
+            {
+                nextN(-cmp);
+                if (atEnd())
+                    break;
+            }
             else if (cmp > 0)
-                rhs.impl.next();
-            else if (!cmp)
-                return Range{impl.getRow(), rhs.impl.getRow(), getEqualLength(), rhs.getEqualLength()};
+            {
+                rhs.nextN(cmp);
+                if (rhs.atEnd())
+                    break;
+            }
+            else
+                return MergeJoinEqualRange{position(), rhs.position(), getEqualLength(), rhs.getEqualLength()};
         }
 
-        return Range{impl.getRow(), rhs.impl.getRow(), 0, 0};
-    }
-
-    template <bool left_nulls, bool right_nulls>
-    int ALWAYS_INLINE compareAtCursor(const MergeJoinCursor & rhs) const
-    {
-        for (size_t i = 0; i < impl.sort_columns_size; ++i)
-        {
-            const auto * left_column = impl.sort_columns[i];
-            const auto * right_column = rhs.impl.sort_columns[i];
-
-            int res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, impl.getRow(), rhs.impl.getRow());
-            if (res)
-                return res;
-        }
-        return 0;
+        return MergeJoinEqualRange{position(), rhs.position(), 0, 0};
     }
 
     /// Expects !atEnd()
     size_t getEqualLength()
     {
-        size_t pos = impl.getRow() + 1;
+        const size_t base_pos = impl.getPos();
+        size_t pos = base_pos + 1;
         for (; pos < impl.rows; ++pos)
-            if (!samePrev(pos))
+            if (cmpPrev(base_pos, pos))
                 break;
-        return pos - impl.getRow();
+        return pos - base_pos;
     }
 
-    /// Expects lhs_pos > 0
-    bool ALWAYS_INLINE samePrev(size_t lhs_pos) const
+    int ALWAYS_INLINE cmpPrev(size_t base_pos, size_t pos) const
     {
-        for (size_t i = 0; i < impl.sort_columns_size; ++i)
-            if (impl.sort_columns[i]->compareAt(lhs_pos - 1, lhs_pos, *(impl.sort_columns[i]), 1) != 0)
-                return false;
-        return true;
+        int res = impl.sort_columns[0]->compareAt(base_pos, pos, *(impl.sort_columns[0]), 1);
+
+        for (size_t i = 1; (!res) && i < impl.sort_columns_size; ++i)
+            res = impl.sort_columns[i]->compareAt(base_pos, pos, *(impl.sort_columns[i]), 1);
+
+        return res;
     }
 };
 
@@ -403,14 +436,14 @@ void copyRightRange(const Block & right_block, const Block & right_columns_to_ad
     }
 }
 
-void joinEqualsAnyLeft(const Block & right_block, const Block & right_columns_to_add, MutableColumns & right_columns, const Range & range)
+void joinEqualsAnyLeft(const Block & right_block, const Block & right_columns_to_add, MutableColumns & right_columns, const MergeJoinEqualRange & range)
 {
     copyRightRange(right_block, right_columns_to_add, right_columns, range.right_start, range.left_length);
 }
 
 template <bool is_all>
 bool joinEquals(const Block & left_block, const Block & right_block, const Block & right_columns_to_add,
-                MutableColumns & left_columns, MutableColumns & right_columns, Range & range, size_t max_rows [[maybe_unused]])
+                MutableColumns & left_columns, MutableColumns & right_columns, MergeJoinEqualRange & range, size_t max_rows [[maybe_unused]])
 {
     bool one_more = true;
 
@@ -465,10 +498,10 @@ void joinInequalsLeft(const Block & left_block, MutableColumns & left_columns,
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block_)
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
-    , right_sample_block(right_sample_block_)
+    , right_sample_block(*right_sample_block_)
     , is_any_join(table_join->strictness() == JoinStrictness::Any)
     , is_all_join(table_join->strictness() == JoinStrictness::All)
     , is_semi_join(table_join->strictness() == JoinStrictness::Semi)
@@ -479,7 +512,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
-    , log(&Poco::Logger::get("MergeJoin"))
+    , log(getLogger("MergeJoin"))
 {
     switch (table_join->strictness())
     {
@@ -488,25 +521,24 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         case JoinStrictness::Any:
         case JoinStrictness::Semi:
             if (!is_left && !is_inner)
-                throw Exception("Not supported. MergeJoin supports SEMI and ANY variants only for LEFT and INNER JOINs.",
-                                ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. MergeJoin supports SEMI and ANY variants only for LEFT and INNER JOINs.");
             break;
         default:
-            throw Exception("Not supported. MergeJoin supports ALL, ANY and SEMI JOINs variants.", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not supported. MergeJoin supports ALL, ANY and SEMI JOINs variants.");
     }
 
     if (!max_rows_in_right_block)
-        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "partial_merge_join_rows_in_right_blocks cannot be zero");
 
     if (max_files_to_merge < 2)
-        throw Exception("max_files_to_merge cannot be less than 2", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "max_files_to_merge cannot be less than 2");
 
     if (!size_limits.hasLimits())
     {
         size_limits.max_bytes = table_join->defaultMaxBytes();
         if (!size_limits.max_bytes)
-            throw Exception("No limit for MergeJoin (max_rows_in_join, max_bytes_in_join or default_max_bytes_in_join have to be set)",
-                            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+            throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                            "No limit for MergeJoin (max_rows_in_join or max_bytes_in_join settings must be set)");
     }
 
     if (!table_join->oneDisjunct())
@@ -531,16 +563,13 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     addConditionJoinColumn(right_sample_block, JoinTableSide::Right);
     JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, right_columns_to_add);
 
+    const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & right_key : key_names_right)
     {
-        if (right_sample_block.getByName(right_key).type->lowCardinality())
+        if (required_right_keys.contains(right_key) && right_table_keys.getByName(right_key).type->lowCardinality())
             lowcard_right_keys.push_back(right_key);
     }
 
-    JoinCommon::convertToFullColumnsInplace(right_table_keys);
-    JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
-
-    const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
         if (required_right_keys.contains(column.name))
             right_columns_to_add.insert(ColumnWithTypeAndName{nullptr, column.type, column.name});
@@ -594,7 +623,18 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, false, 0, 0, 0, nullptr, 0));
+        builder.getSharedHeader(),
+        right_sort_description,
+        max_rows_in_right_block,
+        /*max_block_bytes=*/0,
+        /*limit_=*/0,
+        /*increase_sort_description_compile_attempts=*/false,
+        /*max_bytes_before_remerge_*/0,
+        /*remerge_lowered_memory_bytes_ratio_*/0,
+        /*max_bytes_in_block_before_external_sort_*/0,
+        /*max_bytes_in_query_before_external_sort_*/0,
+        /*tmp_data_*/nullptr,
+        /*min_free_disk_space_*/0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
@@ -632,7 +672,7 @@ void MergeJoin::mergeFlushedRightBlocks()
     if (!memory_limit && rows_limit)
         memory_limit = right_blocks.bytes * rows_limit / right_blocks.row_count;
 
-    cached_right_blocks = std::make_unique<Cache>(memory_limit);
+    cached_right_blocks = std::make_unique<Cache>(CurrentMetrics::MergeJoinBlocksCacheBytes, CurrentMetrics::MergeJoinBlocksCacheCount, memory_limit);
 }
 
 bool MergeJoin::saveRightBlock(Block && block)
@@ -663,12 +703,10 @@ bool MergeJoin::saveRightBlock(Block && block)
 
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
-    Block block = materializeBlock(src_block);
-    JoinCommon::convertToFullColumnsInplace(block, table_join->getOnlyClause().key_names_right);
-    return block;
+    return materializeBlock(src_block);
 }
 
-bool MergeJoin::addJoinedBlock(const Block & src_block, bool)
+bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
 {
     Block block = modifyRightBlock(src_block);
 
@@ -684,16 +722,47 @@ void MergeJoin::checkTypesOfKeys(const Block & block) const
     JoinCommon::checkTypesOfKeys(block, onexpr.key_names_left, right_table_keys, onexpr.key_names_right);
 }
 
-void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
+class MergeJoinResult : public IJoinResult
+{
+    Block block;
+    std::optional<MergeJoin::NotProcessed> not_processed;
+    MergeJoin & merge_join;
+
+public:
+    MergeJoinResult(Block block_, MergeJoin & merge_join_)
+        : block(std::move(block_)), merge_join(merge_join_) {}
+
+    JoinResultBlock next() override
+    {
+        if (!not_processed)
+        {
+            merge_join.joinBlock(block, not_processed);
+            return {std::move(block), nullptr, !not_processed.has_value()};
+        }
+
+        block = not_processed->block;
+        merge_join.joinBlock(block, not_processed);
+        return {std::move(block), nullptr, !not_processed.has_value()};
+    }
+};
+
+JoinResultPtr MergeJoin::joinBlock(Block block)
+{
+    return std::make_unique<MergeJoinResult>(std::move(block), *this);
+}
+
+void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed)
 {
     Names lowcard_keys = lowcard_right_keys;
-    if (block)
+    if (!block.empty())
     {
         /// We need to check type of masks before `addConditionJoinColumn`, because it assumes that types is correct
         JoinCommon::checkTypesOfMasks(block, mask_column_name_left, right_sample_block, mask_column_name_right);
 
-        /// Add auxiliary column, will be removed after joining
-        addConditionJoinColumn(block, JoinTableSide::Left);
+        if (!not_processed)
+            /// Add an auxiliary column, which will be removed after joining
+            /// We do not need to add it twice when we are continuing to process the block from the previous iteration
+            addConditionJoinColumn(block, JoinTableSide::Left);
 
         /// Types of keys can be checked only after `checkTypesOfKeys`
         JoinCommon::checkTypesOfKeys(block, key_names_left, right_table_keys, key_names_right);
@@ -706,16 +775,14 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
                 lowcard_keys.push_back(column_name);
         }
 
-        JoinCommon::convertToFullColumnsInplace(block, key_names_left, false);
-
         sortBlock(block, left_sort_description);
     }
 
     if (!not_processed && left_blocks_buffer)
     {
-        if (!block || block.rows())
+        if (block.empty() || block.rows())
             block = left_blocks_buffer->exchange(std::move(block));
-        if (!block)
+        if (block.empty())
             return;
     }
 
@@ -736,16 +803,14 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 
     /// Back thread even with no data. We have some unfinished data in buffer.
     if (!not_processed && left_blocks_buffer)
-        not_processed = std::make_shared<NotProcessed>(NotProcessed{{}, 0, 0, 0, 0});
+        not_processed = NotProcessed{{}, 0, 0, 0, 0};
 
     if (needConditionJoinColumn())
         block.erase(deriveTempName(mask_column_name_left, JoinTableSide::Left));
-
-    JoinCommon::restoreLowCardinalityInplace(block, lowcard_keys);
 }
 
 template <bool in_memory, bool is_all>
-void MergeJoin::joinSortedBlock(Block & block, ExtraBlockPtr & not_processed)
+void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not_processed)
 {
     size_t rows_to_reserve = is_left ? block.rows() : 0;
     MutableColumns left_columns = makeMutableColumns(block, (is_all ? rows_to_reserve : 0));
@@ -875,7 +940,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
         size_t left_unequal_position = left_cursor.position() + left_key_tail;
         left_key_tail = 0;
 
-        Range range = left_cursor.getNextEqualRange(right_cursor);
+        MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
 
         joinInequalsLeft<is_all>(left_block, left_columns, right_columns_to_add, right_columns, left_unequal_position, range.left_start);
 
@@ -929,7 +994,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        Range range = left_cursor.getNextEqualRange(right_cursor);
+        MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
         if (range.empty())
             break;
 
@@ -967,7 +1032,7 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
-        Range range = left_cursor.getNextEqualRange(right_cursor);
+        MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
         if (range.empty())
             break;
 
@@ -998,16 +1063,15 @@ void MergeJoin::addRightColumns(Block & block, MutableColumns && right_columns)
 
 /// Split block into processed (result) and not processed. Not processed block would be joined next time.
 template <bool is_all>
-ExtraBlockPtr MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+std::optional<MergeJoin::NotProcessed> MergeJoin::extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                                     size_t left_position [[maybe_unused]], size_t left_key_tail [[maybe_unused]],
                                     size_t right_position [[maybe_unused]], size_t right_block_number [[maybe_unused]])
 {
-    ExtraBlockPtr not_processed;
+    std::optional<NotProcessed> not_processed;
 
     if constexpr (is_all)
     {
-        not_processed = std::make_shared<NotProcessed>(
-            NotProcessed{{processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number});
+        not_processed = NotProcessed{{processed.cloneEmpty()}, left_position, left_key_tail, right_position, right_block_number};
         not_processed->block.swap(processed);
 
         changeLeftColumns(processed, std::move(left_columns));
@@ -1033,8 +1097,14 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getPath(), materializeBlock(right_sample_block));
-            return std::make_shared<Block>(input.block_in->read());
+            auto input = flushed_right_blocks[pos].getReadStream();
+            auto result = std::make_shared<Block>(input->read());
+            if (Block eof_block = input->read(); !eof_block.empty())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block per file, got block {} in file {}",
+                    eof_block.dumpStructure(), flushed_right_blocks[pos].getHolder()->describeFilePath());
+            }
+            return result;
         };
 
         return cached_right_blocks->getOrSet(pos, load_func).first;
@@ -1045,9 +1115,8 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
-                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
-                    table_join->temporaryFilesCodec());
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTempDataOnDisk(),
+                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge);
     disk_writer->addBlocks(right_blocks);
     right_blocks.clear();
 }
@@ -1114,15 +1183,15 @@ private:
 };
 
 
-std::shared_ptr<NotJoinedBlocks> MergeJoin::getNonJoinedBlocks(
+IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
     const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     if (table_join->strictness() == JoinStrictness::All && (is_right || is_full))
     {
         size_t left_columns_count = left_sample_block.columns();
-        assert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
+        chassert(left_columns_count == result_sample_block.columns() - right_columns_to_add.columns());
         auto non_joined = std::make_unique<NotJoinedMerge>(*this, max_block_size);
-        return std::make_shared<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, table_join->leftToRightKeyRemap());
+        return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
     }
     return nullptr;
 }
@@ -1145,9 +1214,11 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
 
 bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
-    auto kind = table_join->kind();
-    auto strictness = table_join->strictness();
+    return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
+}
 
+bool MergeJoin::isSupported(JoinKind kind, JoinStrictness strictness)
+{
     bool is_any = (strictness == JoinStrictness::Any);
     bool is_all = (strictness == JoinStrictness::All);
     bool is_semi = (strictness == JoinStrictness::Semi);
@@ -1155,7 +1226,7 @@ bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
     bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
     bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
 
-    return (all_join || special_left) && table_join->oneDisjunct();
+    return all_join || special_left;
 }
 
 MergeJoin::RightBlockInfo::RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number_, size_t & skip_, RowBitmaps * bitmaps_)

@@ -3,7 +3,9 @@
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
+#include <Interpreters/SetWithState.h>
 #include <Common/JSONBuilder.h>
+#include <Common/logger_useful.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
@@ -40,7 +42,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = true,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = true,
@@ -62,7 +63,7 @@ public:
     {
         assert(!rhs_ports.first->isConnected() && !rhs_ports.second->isConnected());
 
-        std::lock_guard<std::mutex> lock(mux);
+        std::lock_guard lock(mux);
         if (input_port || output_port)
         {
             assert(input_port && output_port);
@@ -97,15 +98,15 @@ CreateSetAndFilterOnTheFlyStep::CrosswiseConnectionPtr CreateSetAndFilterOnTheFl
 }
 
 CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
-    const DataStream & input_stream_,
+    const SharedHeader & input_header_,
     const Names & column_names_,
     size_t max_rows_in_set_,
     CrosswiseConnectionPtr crosswise_connection_,
     JoinTableSide position_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , column_names(column_names_)
     , max_rows_in_set(max_rows_in_set_)
-    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), false, true))
+    , own_set(std::make_shared<SetWithState>(SizeLimits(max_rows_in_set, 0, OverflowMode::BREAK), 0, true))
     , filtering_set(nullptr)
     , crosswise_connection(crosswise_connection_)
     , position(position_)
@@ -113,21 +114,21 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     if (crosswise_connection == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Crosswise connection is not initialized");
 
-    if (input_streams.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_streams.size());
+    if (input_headers.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step requires exactly one input stream, got {}", input_headers.size());
 
-    own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
+    own_set->setHeader(getColumnSubset(*input_headers[0], column_names));
 }
 
 void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     size_t num_streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([this, num_streams](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([this, num_streams](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
         auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, num_streams, own_set);
-        res->setDescription(this->getStepDescription());
+        res->setDescription(std::string(this->getStepDescription()));
         return res;
     });
 
@@ -141,7 +142,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         /// Add balancing transform
         auto idx = position == JoinTableSide::Left ? PingPongProcessor::First : PingPongProcessor::Second;
         auto stream_balancer = std::make_shared<ReadHeadBalancedProcessor>(input_header, num_ports, max_rows_in_set, idx);
-        stream_balancer->setDescription(getStepDescription());
+        stream_balancer->setDescription("Reads rows from two streams evenly");
 
         /// Regular inputs just bypass data for respective ports
         connectAllInputs(ports, stream_balancer->getInputs(), num_ports);
@@ -162,8 +163,8 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         for (size_t i = 0; i < outputs.size() - 1; ++i)
         {
             auto & port = *output_it++;
-            auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getHeader(), column_names, filtering_set);
-            transform->setDescription(this->getStepDescription());
+            auto transform = std::make_shared<FilterBySetOnTheFlyTransform>(port.getSharedHeader(), column_names, filtering_set);
+            transform->setDescription("Filter rows using other join table side's set");
             connect(port, transform->getInputPort());
             result_transforms.emplace_back(std::move(transform));
         }
@@ -185,21 +186,25 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map)
 
 void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << getName();
 
     settings.out << '\n';
 }
 
-void CreateSetAndFilterOnTheFlyStep::updateOutputStream()
+void CreateSetAndFilterOnTheFlyStep::updateOutputHeader()
 {
-    if (input_streams.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_streams.size());
+    if (input_headers.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "{} requires exactly one input stream, got {}", getName(), input_headers.size());
 
-    own_set->setHeader(getColumnSubset(input_streams[0].header, column_names));
+    own_set->setHeader(getColumnSubset(*input_headers[0], column_names));
 
-    output_stream = input_streams[0];
+    output_header = input_headers.front();
 }
 
+bool CreateSetAndFilterOnTheFlyStep::isColumnPartOfSetKey(const String & column_name) const
+{
+    return std::find(column_names.begin(), column_names.end(), column_name) != column_names.end();
+}
 
 }

@@ -20,7 +20,7 @@ public:
 
     String getDescription() override { return "Optimize count(literal), sum(1) into count()."; }
 
-    void run(QueryTreeNodePtr query_tree_node, ContextPtr context) override;
+    void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
 };
 

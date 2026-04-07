@@ -1,39 +1,50 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageLogSettings.h>
 
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Parsers/ASTCheckQuery.h>
+
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
-#include "StorageLogSettings.h"
-#include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sources/NullSource.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
+
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/IDiskTransaction.h>
 
 #include <cassert>
 #include <chrono>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
@@ -42,6 +53,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -52,6 +69,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -72,16 +91,16 @@ public:
     LogSource(
         size_t block_size_,
         const NamesAndTypesList & columns_,
-        const StorageLog & storage_,
+        std::shared_ptr<const StorageLog> storage_,
         size_t rows_limit_,
         const std::vector<size_t> & offsets_,
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : ISource(getHeader(columns_))
+        : ISource(std::make_shared<const Block>(getHeader(columns_)))
         , block_size(block_size_)
         , columns(columns_)
-        , storage(storage_)
+        , storage(std::move(storage_))
         , rows_limit(rows_limit_)
         , offsets(offsets_)
         , file_sizes(file_sizes_)
@@ -96,9 +115,17 @@ protected:
     Chunk generate() override;
 
 private:
+    NameAndTypePair getColumnOnDisk(const NameAndTypePair & column) const;
+
+    /// Returns the cache key for the SubstreamsCache and DeserializeStatesCache.
+    /// All columns from the same Nested group must share the same cache
+    /// so that shared substreams (like Nested array offsets) are read only once
+    /// from the underlying file stream.
+    String getCacheKey(const NameAndTypePair & name_and_type_on_disk) const;
+
     const size_t block_size;
     const NamesAndTypesList columns;
-    const StorageLog & storage;
+    const std::shared_ptr<const StorageLog> storage;
     const size_t rows_limit;      /// The maximum number of rows that can be read
     size_t rows_read = 0;
     bool is_finished = false;
@@ -113,12 +140,17 @@ private:
         {
             plain = disk->readFile(data_path, read_settings_.adjustBufferSize(file_size));
 
+            /// Limit reads to the file size that was snapshotted under the read lock.
+            /// The file may have grown since (due to concurrent inserts after lock release),
+            /// but we must not read beyond the snapshotted range.
+            plain->setReadUntilPosition(file_size);
+
             if (offset)
                 plain->seek(offset, SEEK_SET);
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, false);
+                limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
                 compressed.emplace(*limited);
             }
             else
@@ -137,10 +169,41 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
+    void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     bool isFinished();
 };
 
+NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
+{
+    const auto & storage_columns = storage->columns_with_collected_nested;
+
+    /// A special case when we read subcolumn of shared offsets of Nested.
+    /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
+    auto name_in_storage = column.getNameInStorage();
+    if (column.getSubcolumnName() == "size0" && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
+    {
+        auto nested_name_in_storage = Nested::splitName(name_in_storage).first;
+        auto new_name = Nested::concatenateName(nested_name_in_storage, column.getSubcolumnName());
+        return storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, new_name);
+    }
+
+    return column;
+}
+
+String LogSource::getCacheKey(const NameAndTypePair & name_and_type_on_disk) const
+{
+    auto name_in_storage = name_and_type_on_disk.getNameInStorage();
+
+    /// If this column is part of a Nested group, use the Nested name as the cache key.
+    /// This ensures that all subcolumns of the same Nested (e.g. "c1.c2.64" and "c1.size0")
+    /// share the same SubstreamsCache, so that shared substreams like Nested array offsets
+    /// are read only once from the underlying file stream.
+    if (Nested::isSubcolumnOfNested(name_in_storage, storage->columns_with_collected_nested))
+        return Nested::splitName(name_in_storage).first;
+
+    return name_in_storage;
+}
 
 Chunk LogSource::generate()
 {
@@ -156,30 +219,42 @@ Chunk LogSource::generate()
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+    std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     Block res;
 
+    /// First, read prefixes for all columns/subcolumns.
+    for (const auto & name_and_type : columns)
+    {
+        auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
+        auto cache_key = getCacheKey(name_and_type_on_disk);
+        readPrefix(name_and_type_on_disk, caches[cache_key], deserialize_states_caches[cache_key]);
+    }
+
+    /// Second, read the data of all columns/subcolumns.
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
+        auto name_type_on_disk = getColumnOnDisk(name_type);
+
         try
         {
-            column = name_type.type->createColumn();
-            readData(name_type, column, max_rows_to_read, caches[name_type.getNameInStorage()]);
+            column = name_type_on_disk.type->createColumn();
+            readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
         {
-            e.addMessage("while reading column " + name_type.name + " at " + fullPath(storage.disk, storage.table_path));
+            e.addMessage("while reading column " + name_type_on_disk.name + " at " + fullPath(storage->disk, storage->table_path));
             throw;
         }
 
         if (!column->empty())
-            res.insert(ColumnWithTypeAndName(column, name_type.type, name_type.name));
+            res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
     }
 
-    if (res)
+    if (!res.empty())
         rows_read += res.rows();
 
-    if (!res)
+    if (res.empty())
         is_finished = true;
 
     if (isFinished())
@@ -194,6 +269,35 @@ Chunk LogSource::generate()
     return Chunk(res.getColumns(), num_rows);
 }
 
+void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache)
+{
+    if (deserialize_states.contains(name_and_type.name))
+        return;
+
+    auto serialization = IDataType::getSerialization(name_and_type);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+            return nullptr;
+
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+
+        const auto & data_file_it = storage->data_files_by_names.find(data_file_name);
+        if (data_file_it == storage->data_files_by_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
+        const auto & data_file = *data_file_it->second;
+
+        size_t offset = 0;
+        size_t file_size = file_sizes[data_file.index];
+
+        auto it = streams.try_emplace(data_file_name, storage->disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        return &it->second.compressed.value();
+    };
+
+    serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
+}
 
 void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
@@ -202,36 +306,34 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     const auto & [name, type] = name_and_type;
     auto serialization = IDataType::getSerialization(name_and_type);
 
-    auto create_stream_getter = [&](bool stream_for_prefix)
+    settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer * //-V1047
-        {
-            if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
-                return nullptr;
+        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+            return nullptr;
 
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
 
-            const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
-            if (data_file_it == storage.data_files_by_names.end())
-                throw Exception("Logical error: no information about file " + data_file_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
-            const auto & data_file = *data_file_it->second;
+        const auto & data_file_it = storage->data_files_by_names.find(data_file_name);
+        if (data_file_it == storage->data_files_by_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
+        const auto & data_file = *data_file_it->second;
 
-            size_t offset = stream_for_prefix ? 0 : offsets[data_file.index];
-            size_t file_size = file_sizes[data_file.index];
+        size_t offset = offsets[data_file.index];
+        size_t file_size = file_sizes[data_file.index];
 
-            auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
-            return &it->second.compressed.value();
-        };
+        auto it = streams.try_emplace(data_file_name, storage->disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        return &it->second.compressed.value();
     };
 
-    if (!deserialize_states.contains(name))
-    {
-        settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
-    }
-
-    settings.getter = create_stream_getter(false);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    if (column->getDataType() != name_and_type.type->getColumnType())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected return type when reading column '{}' from {}. Expected {}. Got {}",
+            name_and_type.name,
+            storage->getStorageID().getFullTableName(),
+            name_and_type.type->getColumnType(),
+            column->getDataType());
 }
 
 bool LogSource::isFinished()
@@ -268,13 +370,14 @@ public:
 
     explicit LogSink(
         StorageLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , storage_snapshot(std::make_shared<StorageSnapshot>(storage, metadata_snapshot))
         , lock(std::move(lock_))
     {
         if (!lock)
-            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
         /// Ensure that marks are loaded because we're going to update them.
         storage.loadMarks(lock);
@@ -294,6 +397,10 @@ public:
                 /// Rollback partial writes.
 
                 /// No more writing.
+                for (auto & [_, stream] : streams)
+                {
+                    stream.cancel();
+                }
                 streams.clear();
 
                 /// Truncate files to the older sizes.
@@ -309,12 +416,13 @@ public:
         }
     }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
     StorageLog & storage;
     StorageMetadataPtr metadata_snapshot;
+    StorageSnapshotPtr storage_snapshot;
     WriteLock lock;
     bool done = false;
 
@@ -339,7 +447,16 @@ private:
         void finalize()
         {
             compressed.next();
+            compressed.finalize();
+
             plain->next();
+            plain->finalize();
+        }
+
+        void cancel()
+        {
+            compressed.cancel();
+            plain->cancel();
         }
     };
 
@@ -352,13 +469,16 @@ private:
 
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & name_and_type);
 
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+
     void writeData(const NameAndTypePair & name_and_type, const IColumn & column);
 };
 
 
-void LogSink::consume(Chunk chunk)
+void LogSink::consume(Chunk & chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.getColumns());
     metadata_snapshot->check(block, true);
 
     for (auto & stream : streams | boost::adaptors::map_values)
@@ -414,11 +534,10 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
         if (it == streams.end())
-            throw Exception("Logical error: stream was not created when writing data in LogSink",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream was not created when writing data in LogSink");
 
         Stream & stream = it->second;
         if (stream.written)
@@ -426,6 +545,32 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 
         return &stream.compressed;
     };
+}
+
+
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    auto get_codec_or_default = [&default_codec](const auto & column_desc)
+    {
+        return column_desc.codec
+            ? CompressionCodecFactory::instance().get(column_desc.codec, column_desc.type, default_codec)
+            : default_codec;
+    };
+
+    const auto & columns = metadata_snapshot->getColumns();
+    if (const auto * column_desc = columns.tryGet(column_name))
+        return get_codec_or_default(*column_desc);
+
+    const auto & virtual_columns = storage.getVirtualsPtr();
+    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+        return get_codec_or_default(*virtual_desc);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
+}
+
+CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name) const
+{
+    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
 }
 
 
@@ -437,21 +582,20 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto it = streams.find(data_file_name);
         if (it == streams.end())
         {
             const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
             if (data_file_it == storage.data_files_by_names.end())
-                throw Exception("Logical error: no information about file " + data_file_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
 
             const auto & data_file = *data_file_it->second;
-            const auto & columns = metadata_snapshot->getColumns();
+            auto compression = getCodecOrDefault(name_and_type.name);
 
             it = streams.try_emplace(data_file.name, storage.disk, data_file.path,
                                      storage.file_checker.getFileSize(data_file.path),
-                                     columns.getCodecOrDefault(name_and_type.name),
-                                     storage.max_compress_block_size).first;
+                                     compression, storage.max_compress_block_size).first;
         }
 
         auto & stream = it->second;
@@ -462,13 +606,13 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     settings.getter = createStreamGetter(name_and_type);
 
     if (!serialize_states.contains(name))
-         serialization->serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+         serialization->serializeBinaryBulkStatePrefix(column, settings, serialize_states[name]);
 
     if (storage.use_marks_file)
     {
         serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
             const auto & stream = streams.at(data_file_name);
             if (stream.written)
                 return;
@@ -486,7 +630,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
         auto & stream = streams.at(data_file_name);
         if (stream.written)
             return;
@@ -499,15 +643,15 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
 void StorageLog::Mark::write(WriteBuffer & out) const
 {
-    writeIntBinary(rows, out);
-    writeIntBinary(offset, out);
+    writeBinaryLittleEndian(rows, out);
+    writeBinaryLittleEndian(offset, out);
 }
 
 
 void StorageLog::Mark::read(ReadBuffer & in)
 {
-    readIntBinary(rows, in);
-    readIntBinary(offset, in);
+    readBinaryLittleEndian(rows, in);
+    readBinaryLittleEndian(offset, in);
 }
 
 
@@ -521,6 +665,23 @@ namespace
     /// So for Array data type, first stream is array sizes; and number of array sizes is the number of arrays.
     /// Thus we assume we can always get the real number of rows from the first column.
     constexpr size_t INDEX_WITH_REAL_ROW_COUNT = 0;
+
+    void checkSupportedDataTypes(const ColumnsDescription & columns, const String & storage_name)
+    {
+        for (const auto & column : columns.getAll())
+        {
+            auto callback = [&](const IDataType & type)
+            {
+                /// Variant type requires writing prefix in the discriminators stream. In Log engine
+                /// we write prefix before each insert but read it only once before reading the whole file.
+                /// To support such cases we need to reimplement serialization/deserialization in the Log engine.
+                if (isVariant(type))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
+            };
+            callback(*column.type);
+            column.type->forEachChild(callback);
+        }
+    }
 }
 
 
@@ -534,7 +695,7 @@ StorageLog::StorageLog(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    bool attach,
+    LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
     : IStorage(table_id_)
     , WithMutableContext(context_)
@@ -544,8 +705,9 @@ StorageLog::StorageLog(
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
+    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
 {
+    checkSupportedDataTypes(columns_, getName());
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -553,7 +715,7 @@ StorageLog::StorageLog(
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
-        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Storage {} requires data path", getName());
 
     /// Enumerate data files.
     for (const auto & column : storage_metadata.getColumns().getAllPhysical())
@@ -568,7 +730,7 @@ StorageLog::StorageLog(
             file_checker.setEmpty(marks_file_path);
     }
 
-    if (!attach)
+    if (mode < LoadingStrictnessLevel::ATTACH)
     {
         /// create directories if they do not exist
         disk->createDirectories(table_path);
@@ -585,6 +747,7 @@ StorageLog::StorageLog(
         }
     }
 
+    columns_with_collected_nested = ColumnsDescription{Nested::collect(columns_.getAll())};
     total_bytes = file_checker.getTotalSize();
 }
 
@@ -592,12 +755,12 @@ StorageLog::StorageLog(
 void StorageLog::addDataFiles(const NameAndTypePair & column)
 {
     if (data_files_by_names.contains(column.name))
-        throw Exception("Duplicate column with name " + column.name + " in constructor of StorageLog.",
-            ErrorCodes::DUPLICATE_COLUMN);
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Duplicate column with name {} in constructor of StorageLog.",
+            column.name);
 
     ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
+        String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
         if (!data_files_by_names.contains(data_file_name))
         {
             DataFile & data_file = data_files.emplace_back();
@@ -624,7 +787,7 @@ void StorageLog::loadMarks(std::chrono::seconds lock_timeout)
     /// a data race between two threads trying to load marks simultaneously.
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     loadMarks(lock);
 }
@@ -635,18 +798,18 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         return;
 
     size_t num_marks = 0;
-    if (disk->exists(marks_file_path))
+    if (disk->existsFile(marks_file_path))
     {
         size_t file_size = disk->getFileSize(marks_file_path);
         if (file_size % (num_data_files * sizeof(Mark)) != 0)
-            throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
+            throw Exception(ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT, "Size of marks file is inconsistent");
 
         num_marks = file_size / (num_data_files * sizeof(Mark));
 
         for (auto & data_file : data_files)
             data_file.marks.resize(num_marks);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, ReadSettings().adjustBufferSize(32768));
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, getReadSettings().adjustBufferSize(32768));
         for (size_t i = 0; i != num_marks; ++i)
         {
             for (auto & data_file : data_files)
@@ -677,7 +840,7 @@ void StorageLog::saveMarks(const WriteLock & /* already locked for writing */)
     for (const auto & data_file : data_files)
     {
         if (data_file.marks.size() != num_marks)
-            throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of marks generated from block. Makes no sense.");
     }
 
     size_t start = num_marks_saved;
@@ -746,19 +909,34 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
+    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
+    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
+        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
+}
+
+void StorageLog::drop()
+{
+    disk->removeRecursive(table_path);
 }
 
 void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    disk->clearDirectory(table_path);
+    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
+    auto clear_tx = disk->createTransaction();
+
+    for (auto & data_file : data_files)
+        clear_tx->removeFileIfExists(data_file.path);
+
+    if (use_marks_file)
+        clear_tx->removeFileIfExists(marks_file_path);
+
+    clear_tx->removeFileIfExists(file_checker.getPath());
+    clear_tx->commit();
 
     for (auto & data_file : data_files)
     {
@@ -771,41 +949,34 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
 
     marks_loaded = true;
     num_marks_saved = 0;
-    getContext()->dropMMappedFileCache();
+    total_rows = 0;
+    total_bytes = 0;
+    getContext()->clearMMappedFileCache();
 }
 
-
-Pipe StorageLog::read(
+Pipe StorageLog::createReadingPipe(
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
     ContextPtr local_context,
-    QueryProcessingStage::Enum /*processed_stage*/,
+    const StorageSnapshotPtr & storage_snapshot,
     size_t max_block_size,
-    size_t num_streams)
+    size_t num_streams
+)
 {
-    storage_snapshot->check(column_names);
-
     auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
-        return Pipe(std::make_shared<NullSource>(storage_snapshot->getSampleBlockForColumns(column_names)));
+        return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
 
     const Marks & marks_with_real_row_count = data_files[INDEX_WITH_REAL_ROW_COUNT].marks;
     size_t num_marks = marks_with_real_row_count.size();
 
     size_t max_streams = use_marks_file ? num_marks : 1;
-    if (num_streams > max_streams)
-        num_streams = max_streams;
-
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
+    num_streams = std::min(num_streams, max_streams);
 
     std::vector<size_t> offsets;
     offsets.resize(num_data_files, 0);
@@ -823,6 +994,12 @@ Pipe StorageLog::read(
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
 
+    /// Converting to subcolumns of Nested is needed for
+    /// correct reading of parts of Nested with shared offsets.
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
+    all_columns = Nested::convertToSubcolumns(all_columns);
+
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
         if (use_marks_file)
@@ -839,7 +1016,7 @@ Pipe StorageLog::read(
         pipes.emplace_back(std::make_shared<LogSource>(
             max_block_size,
             all_columns,
-            *this,
+            std::static_pointer_cast<const StorageLog>(shared_from_this()),
             row_limit,
             offsets,
             file_sizes,
@@ -851,30 +1028,59 @@ Pipe StorageLog::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+void StorageLog::read(
+    QueryPlan & plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & /*query_info*/,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    storage_snapshot->check(column_names);
+
+    plan.addStep(std::make_unique<ReadFromStorageLogStep>(
+        column_names,
+        local_context,
+        std::static_pointer_cast<StorageLog>(shared_from_this()),
+        storage_snapshot,
+        max_block_size,
+        num_streams));
+}
+
+SinkToStoragePtr StorageLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
     WriteLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     return std::make_shared<LogSink>(*this, metadata_snapshot, std::move(lock));
 }
 
-CheckResults StorageLog::checkData(const ASTPtr & /* query */, ContextPtr local_context)
+IStorage::DataValidationTasksPtr StorageLog::getCheckTaskList(
+    const std::variant<std::monostate, ASTPtr, String> & check_task_filter, ContextPtr local_context)
 {
+    if (!std::holds_alternative<std::monostate>(check_task_filter))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CHECK PART/PARTITION are not supported for {}", getName());
+
     ReadLock lock{rwlock, getLockTimeout(local_context)};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    return file_checker.check();
+    return std::make_unique<DataValidationTasks>(file_checker.getDataValidationTasks(), std::move(lock));
 }
 
+std::optional<CheckResult> StorageLog::checkDataNext(DataValidationTasksPtr & check_task_list)
+{
+    return file_checker.checkNextEntry(assert_cast<DataValidationTasks *>(check_task_list.get())->file_checker_tasks);
+}
 
 IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 {
     ReadLock lock{rwlock, std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC)};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     ColumnSizeByName column_sizes;
 
@@ -882,7 +1088,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
+            String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
             auto it = data_files_by_names.find(data_file_name);
             if (it != data_files_by_names.end())
             {
@@ -909,7 +1115,7 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
-std::optional<UInt64> StorageLog::totalRows(const Settings &) const
+std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
         return total_rows;
@@ -920,7 +1126,7 @@ std::optional<UInt64> StorageLog::totalRows(const Settings &) const
     return {};
 }
 
-std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
+std::optional<UInt64> StorageLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
 }
@@ -928,19 +1134,25 @@ std::optional<UInt64> StorageLog::totalBytes(const Settings &) const
 void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto lock_timeout = getLockTimeout(backup_entries_collector.getContext());
+
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/");
-    fs::path temp_dir = temp_dir_owner->getPath();
+    fs::path temp_dir = temp_dir_owner->getRelativePath();
     disk->createDirectories(temp_dir);
+
+    const auto & read_settings = backup_entries_collector.getReadSettings();
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     /// *.bin
     for (const auto & data_file : data_files)
@@ -949,10 +1161,10 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String data_file_name = fileName(data_file.path);
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
-        backup_entries_collector.addBackupEntry(
-            data_path_in_backup_fs / data_file_name,
-            std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
+        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
 
     /// __marks.mrk
@@ -962,16 +1174,16 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String marks_file_name = fileName(marks_file_path);
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
-        backup_entries_collector.addBackupEntry(
-            data_path_in_backup_fs / marks_file_name,
-            std::make_unique<BackupEntryFromAppendOnlyFile>(
-                disk, hardlink_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
+        BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
+        backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
+        backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }
 
     /// sizes.json
     String files_info_path = file_checker.getPath();
     backup_entries_collector.addBackupEntry(
-        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
+        data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
     backup_entries_collector.addBackupEntry(
@@ -1009,7 +1221,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 {
     WriteLock lock{rwlock, lock_timeout};
     if (!lock)
-        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
     /// Load the marks if not loaded yet. We have to do that now because we're going to update these marks.
     loadMarks(lock);
@@ -1028,10 +1240,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             if (!backup->fileExists(file_path_in_backup))
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", file_path_in_backup);
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto in = backup_entry->getReadBuffer();
-            auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
-            copyData(*in, *out);
+            backup->copyFileToDisk(file_path_in_backup, disk, data_file.path, WriteMode::Append);
         }
 
         if (use_marks_file)
@@ -1044,7 +1253,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 
             size_t file_size = backup->getFileSize(file_path_in_backup);
             if (file_size % (num_data_files * sizeof(Mark)) != 0)
-                throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
+                throw Exception(ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT, "Size of marks file is inconsistent");
 
             num_extra_marks = file_size / (num_data_files * sizeof(Mark));
 
@@ -1062,8 +1271,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
                 old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
             }
 
-            auto backup_entry = backup->readFile(file_path_in_backup);
-            auto marks_rb = backup_entry->getReadBuffer();
+            auto marks_rb = backup->readFile(file_path_in_backup);
 
             for (size_t i = 0; i != num_extra_marks; ++i)
             {
@@ -1092,20 +1300,61 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     }
 }
 
+namespace
+{
+
+SharedHeader getHeader(
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot
+)
+{
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
+    all_columns = Nested::convertToSubcolumns(all_columns);
+
+    return std::make_shared<const Block>(LogSource::getHeader(all_columns));
+}
+
+}
+
+ReadFromStorageLogStep::ReadFromStorageLogStep(
+        const Names & column_names_,
+        ContextPtr local_context_,
+        std::shared_ptr<StorageLog> storage_,
+        const StorageSnapshotPtr & storage_snapshot_,
+        size_t max_block_size_,
+        size_t num_streams_
+)
+    : ISourceStep(getHeader(column_names_, storage_snapshot_))
+    , column_names(column_names_)
+    , local_context(local_context_)
+    , storage(std::move(storage_))
+    , storage_snapshot(storage_snapshot_)
+    , max_block_size(max_block_size_)
+    , num_streams(num_streams_)
+{
+}
+
+void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
+{
+    auto pipe = storage->createReadingPipe(column_names, local_context, storage_snapshot, max_block_size, num_streams);
+    pipeline.init(std::move(pipe));
+}
+
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true
+        .supports_settings = true,
+        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
         if (!args.engine_args.empty())
-            throw Exception(
-                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
+                args.engine_name, args.engine_args.size());
 
-        String disk_name = getDiskName(*args.storage_def);
+        String disk_name = getDiskName(*args.storage_def, args.getContext());
         DiskPtr disk = args.getContext()->getDisk(disk_name);
 
         return std::make_shared<StorageLog>(
@@ -1116,7 +1365,7 @@ void registerStorageLog(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.comment,
-            args.attach,
+            args.mode,
             args.getContext());
     };
 

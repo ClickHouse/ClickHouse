@@ -7,22 +7,18 @@ namespace DB
 
 void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
 {
-    const auto & qualifier = children.at(0);
     qualifier->appendColumnName(ostr);
     writeCString(".*", ostr);
 }
 
-void ASTQualifiedAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTQualifiedAsterisk::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    const auto & qualifier = children.at(0);
-    qualifier->formatImpl(settings, state, frame);
-    settings.ostr << ".*";
+    qualifier->format(ostr, settings, state, frame);
+    ostr << ".*";
 
-    /// Format column transformers
-    for (ASTs::const_iterator it = children.begin() + 1; it != children.end(); ++it)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        (*it)->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 

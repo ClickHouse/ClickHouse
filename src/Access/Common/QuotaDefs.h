@@ -9,18 +9,20 @@ namespace DB
 using QuotaValue = UInt64;
 
 /// Kinds of resource what we wish to quota.
-enum class QuotaType
+enum class QuotaType : uint8_t
 {
-    QUERIES,        /// Number of queries.
-    QUERY_SELECTS,  /// Number of select queries.
-    QUERY_INSERTS,  /// Number of insert queries.
-    ERRORS,         /// Number of queries with exceptions.
-    RESULT_ROWS,    /// Number of rows returned as result.
-    RESULT_BYTES,   /// Number of bytes returned as result.
-    READ_ROWS,      /// Number of rows read from tables.
-    READ_BYTES,     /// Number of bytes read from tables.
-    EXECUTION_TIME, /// Total amount of query execution time in nanoseconds.
-    WRITTEN_BYTES,  /// Number of bytes written to tables.
+    QUERIES,                                /// Number of queries.
+    QUERY_SELECTS,                          /// Number of select queries.
+    QUERY_INSERTS,                          /// Number of insert queries.
+    ERRORS,                                 /// Number of queries with exceptions.
+    RESULT_ROWS,                            /// Number of rows returned as result.
+    RESULT_BYTES,                           /// Number of bytes returned as result.
+    READ_ROWS,                              /// Number of rows read from tables.
+    READ_BYTES,                             /// Number of bytes read from tables.
+    EXECUTION_TIME,                         /// Total amount of query execution time in nanoseconds.
+    WRITTEN_BYTES,                          /// Number of bytes written to tables.
+    FAILED_SEQUENTIAL_AUTHENTICATIONS,      /// Number of recent failed authentications.
+    QUERIES_PER_NORMALIZED_HASH,            /// Max executions of any single normalized query.
 
     MAX
 };
@@ -32,6 +34,8 @@ struct QuotaTypeInfo
     const char * const raw_name = "";
     const String name;    /// Lowercased with underscores, e.g. "result_rows".
     const String keyword; /// Uppercased with spaces, e.g. "RESULT ROWS".
+    const String current_usage_description;
+    const String max_allowed_usage_description;
     const bool output_as_float = false;
     const UInt64 output_denominator = 1;
     String valueToString(QuotaValue value) const;
@@ -42,7 +46,7 @@ struct QuotaTypeInfo
 
 /// Key to share quota consumption.
 /// Users with the same key share the same amount of resource.
-enum class QuotaKeyType
+enum class QuotaKeyType : uint8_t
 {
     NONE,       /// All users share the same quota.
     USER_NAME,  /// Connections with the same user name share the same quota.
@@ -51,6 +55,7 @@ enum class QuotaKeyType
     CLIENT_KEY, /// Client should explicitly supply a key to use.
     CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
     CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
+    NORMALIZED_QUERY_HASH,    /// Each distinct normalized query gets its own quota bucket.
 
     MAX
 };

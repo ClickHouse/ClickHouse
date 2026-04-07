@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
@@ -66,7 +67,7 @@ struct ReverseIndexHash
     template <typename T>
     size_t operator()(T) const
     {
-        throw Exception("operator()(key) is not implemented for ReverseIndexHash.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "operator()(key) is not implemented for ReverseIndexHash.");
     }
 };
 
@@ -86,13 +87,13 @@ struct ReverseIndexHashTableCell
     {
         /// Careful: apparently this uses SFINAE to redefine isZero for all types
         /// except the IndexType, for which the default ZeroTraits::isZero is used.
-        static_assert(!std::is_same_v<typename std::decay<T>::type, typename std::decay<IndexType>::type>);
+        static_assert(!std::is_same_v<typename std::decay_t<T>, typename std::decay_t<IndexType>>);
         return false;
     }
 
     /// Special case when we want to compare with something not in index_column.
     /// When we compare something inside column default keyEquals checks only that row numbers are equal.
-    bool keyEquals(StringRef object, size_t hash_ [[maybe_unused]], const State & state) const
+    bool keyEquals(std::string_view object, size_t hash_ [[maybe_unused]], const State & state) const
     {
         auto index = key;
         if constexpr (has_base_index)
@@ -119,7 +120,7 @@ struct ReverseIndexHashTableCell
         else
         {
             using ValueType = typename ColumnType::ValueType;
-            ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data);
+            ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data());
             return DefaultHash<ValueType>()(value);
         }
     }
@@ -322,10 +323,10 @@ public:
     static constexpr bool is_numeric_column = isNumericColumn(static_cast<ColumnType *>(nullptr));
     static constexpr bool use_saved_hash = !is_numeric_column;
 
-    UInt64 insert(StringRef data);
+    UInt64 insert(std::string_view data);
 
     /// Returns the found data's index in the dictionary. If index is not built, builds it.
-    UInt64 getInsertionPoint(StringRef data)
+    UInt64 getInsertionPoint(std::string_view data)
     {
         if (!index)
             buildIndex();
@@ -333,7 +334,7 @@ public:
     }
 
     /// Returns the found data's index in the dictionary if the #index is built, otherwise, returns a std::nullopt.
-    std::optional<UInt64> getIndex(StringRef data) const
+    std::optional<UInt64> getIndex(std::string_view data) const
     {
         if (!index)
             return {};
@@ -383,21 +384,21 @@ private:
 
     void buildIndex();
 
-    UInt64 getHash(StringRef ref) const
+    UInt64 getHash(std::string_view ref) const
     {
         if constexpr (is_numeric_column)
         {
             using ValueType = typename ColumnType::ValueType;
-            ValueType value = unalignedLoad<ValueType>(ref.data);
+            ValueType value = unalignedLoad<ValueType>(ref.data());
             return DefaultHash<ValueType>()(value);
         }
         else
-            return StringRefHash()(ref);
+            return StringViewHash()(ref);
     }
 
     ColumnUInt64::MutablePtr calcHashes() const;
 
-    UInt64 getIndexImpl(StringRef data) const;
+    UInt64 getIndexImpl(std::string_view data) const;
 };
 
 
@@ -417,7 +418,7 @@ template <typename IndexType, typename ColumnType>
 size_t ReverseIndex<IndexType, ColumnType>::size() const
 {
     if (!column)
-        throw Exception("ReverseIndex has not size because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex has not size because index column wasn't set.");
 
     return column->size();
 }
@@ -429,7 +430,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         return;
 
     if (!column)
-        throw Exception("ReverseIndex can't build index because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't build index because index column wasn't set.");
 
     auto size = column->size();
     index = std::make_unique<IndexMapType>(size);
@@ -458,7 +459,7 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
         index->reverseIndexEmplace(row + base_index, iterator, inserted, hash, column->getDataAt(row));
 
         if (!inserted)
-            throw Exception("Duplicating keys found in ReverseIndex.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicating keys found in ReverseIndex.");
     }
 }
 
@@ -466,7 +467,7 @@ template <typename IndexType, typename ColumnType>
 ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
 {
     if (!column)
-        throw Exception("ReverseIndex can't build index because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReverseIndex can't build index because index column wasn't set.");
 
     auto size = column->size();
     auto hash = ColumnUInt64::create(size);
@@ -478,7 +479,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
 }
 
 template <typename IndexType, typename ColumnType>
-UInt64 ReverseIndex<IndexType, ColumnType>::insert(StringRef data)
+UInt64 ReverseIndex<IndexType, ColumnType>::insert(std::string_view data)
 {
     if (!index)
         buildIndex();
@@ -498,14 +499,14 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(StringRef data)
         column_data[num_rows] = hash;
     }
     else
-        column->insertData(data.data, data.size);
+        column->insertData(data.data(), data.size());
 
     index->reverseIndexEmplace(num_rows + base_index, iterator, inserted, hash, data);
 
     if constexpr (use_saved_hash)
     {
         if (inserted)
-            column->insertData(data.data, data.size);
+            column->insertData(data.data(), data.size());
     }
     else
     {
@@ -517,7 +518,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(StringRef data)
 }
 
 template <typename IndexType, typename ColumnType>
-UInt64 ReverseIndex<IndexType, ColumnType>::getIndexImpl(StringRef data) const
+UInt64 ReverseIndex<IndexType, ColumnType>::getIndexImpl(std::string_view data) const
 {
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;

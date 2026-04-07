@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/copyData.h>
+#include <iostream>
 
 /** This example shows how we can proxy stdin to ShellCommand and obtain stdout in streaming fashion. */
 
@@ -35,7 +36,10 @@ try
     });
 
     copyData(command->out, out);
+    out.finalize();
+
     copyData(command->err, err);
+    err.finalize();
 
     thread.join();
     return 0;

@@ -13,12 +13,15 @@ for _ in $(seq 1 10); do
     sleep 0.1
 done
 
-${CLICKHOUSE_CLIENT} --query "select count() > 1 as ok from (select * from odbc('DSN={ClickHouse DSN (Unicode)}','system','tables'))"
+# ODBC will do HEAD request because of progress bar
+# in normal situation, 501 will be returned and no Error is logged
+# but sometimes we get I/O broken pipe producing an Error log but it doesn't affect the run of the test
+${CLICKHOUSE_CLIENT} --query "select count() > 1 as ok from (select * from odbc('DSN={ClickHouse DSN (Unicode)}','system','tables'))" 2> >(grep -Fv "Failed to make HTTP_HEAD request")
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t (x UInt8, y Float32, z String) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t VALUES (1,0.1,'a я'),(2,0.2,'b ą'),(3,0.3,'c d')"
 
-${CLICKHOUSE_CLIENT} --query "SELECT x, y, z FROM odbc('DSN={ClickHouse DSN (ANSI)}','$CLICKHOUSE_DATABASE','t') ORDER BY x"
-${CLICKHOUSE_CLIENT} --query "SELECT x, y, z FROM odbc('DSN={ClickHouse DSN (Unicode)}','$CLICKHOUSE_DATABASE','t') ORDER BY x"
+${CLICKHOUSE_CLIENT} --query "SELECT x, y, z FROM odbc('DSN={ClickHouse DSN (ANSI)}','$CLICKHOUSE_DATABASE','t') ORDER BY x" 2> >(grep -Fv "Failed to make HTTP_HEAD request")
+${CLICKHOUSE_CLIENT} --query "SELECT x, y, z FROM odbc('DSN={ClickHouse DSN (Unicode)}','$CLICKHOUSE_DATABASE','t') ORDER BY x" 2> >(grep -Fv "Failed to make HTTP_HEAD request")
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"

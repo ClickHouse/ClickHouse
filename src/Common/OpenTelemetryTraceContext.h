@@ -1,74 +1,163 @@
 #pragma once
 
+#include <Common/OpenTelemetryTracingContext.h>
+#include <base/types.h>
+#include <IO/WriteHelpers.h>
 #include <Core/Field.h>
+
+#include <chrono>
+#include <exception>
+#include <string_view>
+#include <variant>
+
 
 namespace DB
 {
 
+class Exception;
 struct Settings;
 class OpenTelemetrySpanLog;
 class WriteBuffer;
 class ReadBuffer;
+struct ExecutionStatus;
 
 namespace OpenTelemetry
 {
 
+class SpanAttribute
+{
+private:
+    String key;
+    std::variant<
+        String,
+        int64_t,
+        uint64_t,
+        double,
+        int,
+        bool>
+        value;
+
+public:
+    template <typename V>
+    requires (!std::is_constructible_v<String, std::decay_t<V>>)
+    SpanAttribute(std::string_view k, V v)
+        : key(k)
+        , value(std::forward<V>(v))
+    {
+    }
+
+    template <typename V>
+    requires std::is_constructible_v<String, std::decay_t<V>>
+    SpanAttribute(std::string_view k, V && v)
+        : key(k)
+        , value(String(std::forward<V>(v)))
+    {
+    }
+
+    const String & getKey() const
+    {
+        return key;
+    }
+
+    String getValue() const
+    {
+        return std::visit([]<typename T>(T && v)
+        {
+            if constexpr (std::is_convertible_v<std::decay_t<T>, String>)
+                return v;
+            return toString(v);
+        }, value);
+    }
+};
+
+/// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
+enum class SpanKind : uint8_t
+{
+    /// Default value. Indicates that the span represents an internal operation within an application,
+    /// as opposed to an operations with remote parents or children.
+    INTERNAL = 0,
+
+    /// Indicates that the span covers server-side handling of a synchronous RPC or other remote request.
+    /// This span is often the child of a remote CLIENT span that was expected to wait for a response.
+    SERVER   = 1,
+
+    /// Indicates that the span describes a request to some remote service.
+    /// This span is usually the parent of a remote SERVER span and does not end until the response is received.
+    CLIENT   = 2,
+
+    /// Indicates that the span describes the initiators of an asynchronous request. This parent span will often end before the corresponding child CONSUMER span, possibly even before the child span starts.
+    /// In messaging scenarios with batching, tracing individual messages requires a new PRODUCER span per message to be created.
+    PRODUCER = 3,
+
+    /// Indicates that the span describes a child of an asynchronous PRODUCER request
+    CONSUMER = 4
+};
+
+enum class SpanStatus : uint8_t
+{
+    UNSET = 0,
+    OK = 1,
+    ERROR = 2
+};
+
 struct Span
 {
-    UUID trace_id{};
+    UUID trace_id = {};
     UInt64 span_id = 0;
     UInt64 parent_span_id = 0;
     String operation_name;
     UInt64 start_time_us = 0;
     UInt64 finish_time_us = 0;
-    Map attributes;
+    SpanKind kind = SpanKind::INTERNAL;
+    SpanStatus status_code = SpanStatus::UNSET;
+    String status_message = {};
+    std::vector<SpanAttribute> attributes = {};
 
-    void addAttribute(std::string_view name, UInt64 value);
-    void addAttributeIfNotZero(std::string_view name, UInt64 value);
-    void addAttribute(std::string_view name, std::string_view value);
-    void addAttributeIfNotEmpty(std::string_view name, std::string_view value);
-    void addAttribute(std::string_view name, std::function<String()> value_supplier);
-
-    /// Following two methods are declared as noexcept to make sure they're exception safe
-    /// This is because they're usually called in exception handler
-    void addAttribute(const Exception & e) noexcept;
-    void addAttribute(std::exception_ptr e) noexcept;
-
-    bool isTraceEnabled() const
-    {
-        return trace_id != UUID();
-    }
-};
-
-/// See https://www.w3.org/TR/trace-context/ for trace_flags definition
-enum TraceFlags : UInt8
-{
-    TRACE_FLAG_NONE = 0,
-    TRACE_FLAG_SAMPLED = 1,
-};
-
-/// The runtime info we need to create new OpenTelemetry spans.
-struct TracingContext
-{
-    UUID trace_id{};
-    UInt64 span_id = 0;
-    // The incoming tracestate header and the trace flags, we just pass them
-    // downstream. See https://www.w3.org/TR/trace-context/
-    String tracestate;
-    UInt8 trace_flags = TRACE_FLAG_NONE;
-
-    // Parse/compose OpenTelemetry traceparent header.
-    bool parseTraceparentHeader(std::string_view traceparent, String & error);
-    String composeTraceparentHeader() const;
+    /// Following methods are declared as noexcept to make sure they're exception safe.
+    /// This is because sometimes they will be called in exception handlers/dtor.
+    /// Returns true if attribute is successfully added and false otherwise.
+    bool addAttribute(std::string_view name, UInt64 value) noexcept;
+    bool addAttributeIfNotZero(std::string_view name, UInt64 value) noexcept;
+    bool addAttribute(std::string_view name, std::string_view value) noexcept;
+    bool addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept;
+    bool addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept;
+    bool addAttribute(const Exception & e) noexcept;
+    bool addAttribute(std::exception_ptr e) noexcept;
+    bool addAttribute(const ExecutionStatus & e) noexcept;
 
     bool isTraceEnabled() const
     {
         return trace_id != UUID();
     }
 
-    void deserialize(ReadBuffer & buf);
-    void serialize(WriteBuffer & buf) const;
+    void start()
+    {
+        start_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    void finish()
+    {
+        finish_time_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+private:
+    template <class T>
+    bool addAttributeImpl(std::string_view name, T value) noexcept
+    {
+        try
+        {
+            attributes.emplace_back(name, value);
+        }
+        catch (...) // Ok: noexcept, allocation failure
+        {
+            return false;
+        }
+        return true;
+    }
 };
+
 
 /// Tracing context kept on each thread
 struct TracingContextOnThread : TracingContext
@@ -88,6 +177,8 @@ struct TracingContextOnThread : TracingContext
 
 /// Get tracing context on current thread
 const TracingContextOnThread& CurrentContext();
+
+void SetTraceFlagInCurrentContext(UInt8 flag, bool enable);
 
 /// Holder of tracing context.
 /// It should be initialized at the beginning of each thread execution.
@@ -149,15 +240,27 @@ private:
 using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 
 /// A span holder that creates span automatically in a (function) scope if tracing is enabled.
-/// Once it's created or destructed, it automatically maitains the tracing context on the thread that it lives.
+/// Once it's created or destructed, it automatically maintains the tracing context on the thread that it lives.
 struct SpanHolder : public Span
 {
-    SpanHolder(std::string_view);
+    explicit SpanHolder(std::string_view _operation_name,
+                        SpanKind _kind = SpanKind::INTERNAL,
+                        bool create_trace_if_not_exists = false);
+
+    SpanHolder(std::string_view _operation_name,
+               SpanKind _kind,
+               std::vector<SpanAttribute> _attributes,
+               bool create_trace_if_not_exists = false);
+
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.
     /// It's safe to call it multiple times
-    void finish() noexcept;
+    void finish(std::chrono::system_clock::time_point time) noexcept;
+
+    bool trace_created = false;
+    /// All changes made to the current tracing context while the scope is active need to be restored.
+    UInt8 old_trace_flags;
 };
 
 }

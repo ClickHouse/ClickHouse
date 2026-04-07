@@ -1,0 +1,14 @@
+<clickhouse>
+    <allow_experimental_transactions>42</allow_experimental_transactions>
+
+    <merge_tree>
+        <old_parts_lifetime>100500</old_parts_lifetime>
+        <remove_rolled_back_parts_immediately>0</remove_rolled_back_parts_immediately>
+    </merge_tree>
+
+    <transactions_info_log>
+        <database>system</database>
+        <table>transactions_info_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </transactions_info_log>
+</clickhouse>

@@ -3,11 +3,12 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
 
-JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_) : JSONColumnsReaderBase(in_)
+JSONColumnsReader::JSONColumnsReader(ReadBuffer & in_, const FormatSettings & format_settings_) : JSONColumnsReaderBase(in_), format_settings(format_settings_)
 {
 }
 
@@ -18,7 +19,7 @@ void JSONColumnsReader::readChunkStart()
 
 std::optional<String> JSONColumnsReader::readColumnStart()
 {
-    auto name = JSONUtils::readFieldName(*in);
+    auto name = JSONUtils::readFieldName(*in, format_settings.json);
     JSONUtils::skipArrayStart(*in);
     return name;
 }
@@ -38,7 +39,7 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsReader>(buf));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONColumnsReader>(buf, settings));
         }
     );
     factory.markFormatSupportsSubsetOfColumns("JSONColumns");
@@ -50,12 +51,12 @@ void registerJSONColumnsSchemaReader(FormatFactory & factory)
         "JSONColumns",
         [](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf));
+            return std::make_shared<JSONColumnsSchemaReaderBase>(buf, settings, std::make_unique<JSONColumnsReader>(buf, settings));
         }
     );
     factory.registerAdditionalInfoForSchemaCacheGetter("JSONColumns", [](const FormatSettings & settings)
     {
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
+        return getAdditionalFormatInfoForAllRowBasedFormats(settings) + getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::JSON);
     });
 }
 

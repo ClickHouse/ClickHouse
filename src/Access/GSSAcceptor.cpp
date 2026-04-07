@@ -6,6 +6,7 @@
 
 #include <mutex>
 #include <tuple>
+#include <filesystem>
 
 
 namespace DB
@@ -89,7 +90,7 @@ String bufferToString(const gss_buffer_desc & buf)
 
 String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, const gss_OID & mech_type)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     String messages;
     OM_uint32 message_context = 0;
@@ -134,7 +135,7 @@ String extractSpecificStatusMessages(OM_uint32 status_code, int status_type, con
 
 String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status_code, const gss_OID & mech_type)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     const auto gss_messages = extractSpecificStatusMessages(major_status_code, GSS_C_GSS_CODE, mech_type);
     const auto mech_messages = extractSpecificStatusMessages(minor_status_code, GSS_C_MECH_CODE, mech_type);
@@ -157,7 +158,7 @@ String extractStatusMessages(OM_uint32 major_status_code, OM_uint32 minor_status
 
 std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     gss_buffer_desc name_buf;
     name_buf.length = 0;
@@ -185,7 +186,7 @@ std::pair<String, String> extractNameAndRealm(const gss_name_t & name)
 
 bool equalMechanisms(const String & left_str, const gss_OID & right_oid)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     gss_buffer_desc left_buf;
     left_buf.length = left_str.size();
@@ -231,7 +232,7 @@ void GSSAcceptorContext::reset()
 
 void GSSAcceptorContext::resetHandles() noexcept
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     if (acceptor_credentials_handle != GSS_C_NO_CREDENTIAL)
     {
@@ -257,14 +258,23 @@ void GSSAcceptorContext::resetHandles() noexcept
 
 void GSSAcceptorContext::initHandles()
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     resetHandles();
+
+    if (!params.keytab.empty())
+    {
+        if (!std::filesystem::exists(params.keytab))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Keytab file not found");
+
+        if (krb5_gss_register_acceptor_identity(params.keytab.c_str()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to register keytab file");
+    }
 
     if (!params.principal.empty())
     {
         if (!params.realm.empty())
-            throw Exception("Realm and principal name cannot be specified simultaneously", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Realm and principal name cannot be specified simultaneously");
 
         gss_buffer_desc acceptor_name_buf;
         acceptor_name_buf.length = params.principal.size();
@@ -295,7 +305,7 @@ void GSSAcceptorContext::initHandles()
         if (GSS_ERROR(major_status))
         {
             const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
-            throw Exception("gss_import_name() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_import_name() failed{}", (messages.empty() ? "" : ": " + messages));
         }
 
         minor_status = 0;
@@ -313,14 +323,14 @@ void GSSAcceptorContext::initHandles()
         if (GSS_ERROR(major_status))
         {
             const auto messages = extractStatusMessages(major_status, minor_status, GSS_C_NO_OID);
-            throw Exception("gss_acquire_cred() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_acquire_cred() failed{}", (messages.empty() ? "" : ": " + messages));
         }
     }
 }
 
-String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger * log)
+String GSSAcceptorContext::processToken(const String & input_token, LoggerPtr log)
 {
-    std::scoped_lock lock(gss_global_mutex);
+    std::lock_guard lock(gss_global_mutex);
 
     String output_token;
 
@@ -377,21 +387,26 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         if (major_status == GSS_S_COMPLETE)
         {
             if (!params.mechanism.empty() && !equalMechanisms(params.mechanism, mech_type))
-                throw Exception("gss_accept_sec_context() succeeded, but: the authentication mechanism is not what was expected", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR,
+                                "gss_accept_sec_context() succeeded, but: "
+                                "the authentication mechanism is not what was expected");
 
             if (flags & GSS_C_ANON_FLAG)
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator does not wish to be authenticated");
 
             std::tie(user_name, realm) = extractNameAndRealm(initiator_name);
 
             if (user_name.empty())
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator name cannot be extracted");
 
             if (realm.empty())
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() succeeded, but: the initiator realm cannot be extracted");
 
             if (!params.realm.empty() && params.realm != realm)
-                throw Exception("gss_accept_sec_context() succeeded, but: the initiator realm is not what was expected (expected: " + params.realm + ", actual: " + realm + ")", ErrorCodes::KERBEROS_ERROR);
+                throw Exception(ErrorCodes::KERBEROS_ERROR,
+                                "gss_accept_sec_context() succeeded, but: "
+                                "the initiator realm is not what was expected (expected: {}, actual: {})",
+                                params.realm, realm);
 
             output_token = bufferToString(output_token_buf);
 
@@ -410,7 +425,7 @@ String GSSAcceptorContext::processToken(const String & input_token, Poco::Logger
         else
         {
             const auto messages = extractStatusMessages(major_status, minor_status, mech_type);
-            throw Exception("gss_accept_sec_context() failed" + (messages.empty() ? "" : ": " + messages), ErrorCodes::KERBEROS_ERROR);
+            throw Exception(ErrorCodes::KERBEROS_ERROR, "gss_accept_sec_context() failed{}", (messages.empty() ? "" : ": " + messages));
         }
     }
     catch (...)
@@ -440,9 +455,9 @@ void GSSAcceptorContext::initHandles()
 {
 }
 
-String GSSAcceptorContext::processToken(const String &, Poco::Logger *)
+String GSSAcceptorContext::processToken(const String &, LoggerPtr)
 {
-    throw Exception("ClickHouse was built without GSS-API/Kerberos support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+    throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "ClickHouse was built without GSS-API/Kerberos support");
 }
 
 #endif // USE_KRB5

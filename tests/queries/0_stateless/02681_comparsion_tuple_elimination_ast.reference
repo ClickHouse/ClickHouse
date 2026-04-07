@@ -1,0 +1,3 @@
+SELECT *
+FROM t1
+WHERE (((a, b) = _CAST((1, 2), \'Tuple(UInt8, UInt8)\')) AND ((c, d, a) = _CAST((3, 4, 5), \'Tuple(UInt8, UInt8, UInt8)\'))) OR ((a, b, 1000) = (c, 10, d)) OR (((a, b), 1000) = ((c, 10), d))

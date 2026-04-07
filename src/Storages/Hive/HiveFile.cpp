@@ -4,7 +4,6 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <arrow/io/memory.h>
-#include <arrow/io/api.h>
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
@@ -12,16 +11,22 @@
 #include <orc/Statistics.hh>
 
 #include <fmt/core.h>
-#include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/KeyCondition.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace HiveSetting
+{
+    extern const HiveSettingsBool enable_orc_file_minmax_index;
+    extern const HiveSettingsBool enable_orc_stripe_minmax_index;
+    extern const HiveSettingsBool enable_parquet_rowgroup_minmax_index;
+}
 
 namespace ErrorCodes
 {
@@ -32,7 +37,7 @@ namespace ErrorCodes
     do                                                                 \
     {                                                                  \
         if (const ::arrow::Status & _s = (status); !_s.ok())                   \
-            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
 
@@ -44,18 +49,16 @@ Range createRangeFromOrcStatistics(const StatisticsType * stats)
     {
         return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
     }
-    else if (stats->hasMinimum())
+    if (stats->hasMinimum())
     {
         return Range::createLeftBounded(FieldType(stats->getMinimum()), true);
     }
-    else if (stats->hasMaximum())
+    if (stats->hasMaximum())
     {
         return Range::createRightBounded(FieldType(stats->getMaximum()), true);
     }
-    else
-    {
-        return Range();
-    }
+
+    return Range::createWholeUniverseWithoutNull();
 }
 
 template <class FieldType, class StatisticsType>
@@ -64,14 +67,14 @@ Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
     /// We must check if there are minimum or maximum values in statistics in case of
     /// null values or NaN/Inf values of double type.
     if (!stats->HasMinMax())
-        return Range();
+        return Range::createWholeUniverseWithoutNull();
     return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
 }
 
 Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
 {
     if (!stats->HasMinMax())
-        return Range();
+        return Range::createWholeUniverseWithoutNull();
     String min_val(reinterpret_cast<const char *>(stats->min().ptr), stats->min().len);
     String max_val(reinterpret_cast<const char *>(stats->max().ptr), stats->max().len);
     return Range(min_val, true, max_val, true);
@@ -116,21 +119,21 @@ void IHiveFile::loadSplitMinMaxIndexes()
 Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
 {
     if (!col_stats || col_stats->hasNull())
-        return {};
+        return Range::createWholeUniverseWithoutNull();
 
     if (const auto * int_stats = dynamic_cast<const orc::IntegerColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<Int64>(int_stats);
     }
-    else if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
+    if (const auto * double_stats = dynamic_cast<const orc::DoubleColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<Float64>(double_stats);
     }
-    else if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
+    if (const auto * string_stats = dynamic_cast<const orc::StringColumnStatistics *>(col_stats))
     {
         return createRangeFromOrcStatistics<String>(string_stats);
     }
-    else if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
+    if (const auto * bool_stats = dynamic_cast<const orc::BooleanColumnStatistics *>(col_stats))
     {
         auto false_cnt = bool_stats->getFalseCount();
         auto true_cnt = bool_stats->getTrueCount();
@@ -138,11 +141,11 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
         {
             return Range(UInt8(0), true, UInt8(1), true);
         }
-        else if (false_cnt)
+        if (false_cnt)
         {
             return Range::createLeftBounded(UInt8(0), true);
         }
-        else if (true_cnt)
+        if (true_cnt)
         {
             return Range::createRightBounded(UInt8(1), true);
         }
@@ -155,7 +158,7 @@ Range HiveORCFile::buildRange(const orc::ColumnStatistics * col_stats)
     {
         return createRangeFromOrcStatistics<UInt16>(date_stats);
     }
-    return {};
+    return Range::createWholeUniverseWithoutNull();
 }
 
 void HiveORCFile::prepareReader()
@@ -183,7 +186,7 @@ void HiveORCFile::prepareColumnMapping()
 
 bool HiveORCFile::useFileMinMaxIndex() const
 {
-    return storage_settings->enable_orc_file_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_orc_file_minmax_index];
 }
 
 
@@ -194,7 +197,7 @@ std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveORCFile::buildMinMaxIndex(c
 
     size_t range_num = index_names_and_types.size();
     auto idx = std::make_unique<IMergeTreeDataPart::MinMaxIndex>();
-    idx->hyperrectangle.resize(range_num);
+    idx->hyperrectangle.resize(range_num, Range::createWholeUniverseWithoutNull());
 
     size_t i = 0;
     for (const auto & name_type : index_names_and_types)
@@ -233,7 +236,7 @@ void HiveORCFile::loadFileMinMaxIndexImpl()
 
 bool HiveORCFile::useSplitMinMaxIndex() const
 {
-    return storage_settings->enable_orc_stripe_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_orc_stripe_minmax_index];
 }
 
 
@@ -249,9 +252,8 @@ void HiveORCFile::loadSplitMinMaxIndexesImpl()
     auto stripe_num = raw_reader->getNumberOfStripes();
     auto stripe_stats_num = raw_reader->getNumberOfStripeStatistics();
     if (stripe_num != stripe_stats_num)
-        throw Exception(
-            fmt::format("orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num),
-            ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "orc file:{} has different strip num {} and strip statistics num {}", path, stripe_num, stripe_stats_num);
 
     split_minmax_idxes.resize(stripe_num);
     for (size_t i = 0; i < stripe_num; ++i)
@@ -275,7 +277,7 @@ std::optional<size_t> HiveORCFile::getRowsImpl()
 
 bool HiveParquetFile::useSplitMinMaxIndex() const
 {
-    return storage_settings->enable_parquet_rowgroup_minmax_index;
+    return (*storage_settings)[HiveSetting::enable_parquet_rowgroup_minmax_index];
 }
 
 void HiveParquetFile::prepareReader()
@@ -283,7 +285,9 @@ void HiveParquetFile::prepareReader()
     in = std::make_unique<ReadBufferFromHDFS>(namenode_url, path, getContext()->getGlobalContext()->getConfigRef(), getContext()->getReadSettings());
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool(), &reader));
+    auto open_file_res = parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), arrow::default_memory_pool());
+    THROW_ARROW_NOT_OK(open_file_res.status());
+    reader = *std::move(open_file_res);
 }
 
 void HiveParquetFile::loadSplitMinMaxIndexesImpl()
@@ -308,7 +312,7 @@ void HiveParquetFile::loadSplitMinMaxIndexesImpl()
     {
         auto row_group_meta = meta->RowGroup(static_cast<int>(i));
         split_minmax_idxes[i] = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        split_minmax_idxes[i]->hyperrectangle.resize(num_cols);
+        split_minmax_idxes[i]->hyperrectangle.resize(num_cols, Range::createWholeUniverseWithoutNull());
 
         size_t j = 0;
         auto it = index_names_and_types.begin();

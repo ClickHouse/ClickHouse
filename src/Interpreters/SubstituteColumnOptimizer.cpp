@@ -13,10 +13,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 namespace
 {
@@ -32,13 +28,13 @@ public:
 
     struct Data
     {
-        const ComparisonGraph & graph;
+        const ComparisonGraph<ASTPtr> & graph;
         std::set<UInt64> & components;
         std::unordered_map<String, String> & old_name;
         std::unordered_map<String, UInt64> & component;
         UInt64 & current_id;
 
-        Data(const ComparisonGraph & graph_,
+        Data(const ComparisonGraph<ASTPtr> & graph_,
              std::set<UInt64> & components_,
              std::unordered_map<String, String> & old_name_,
              std::unordered_map<String, UInt64> & component_,
@@ -60,7 +56,7 @@ public:
             data.old_name[name] = ast->getAliasOrColumnName();
             data.component[name] = *id;
             data.components.insert(*id);
-            ast = std::make_shared<ASTIdentifier>(name);
+            ast = make_intrusive<ASTIdentifier>(name);
         }
     }
 
@@ -165,7 +161,7 @@ ColumnPrice calculatePrice(
 /// price of all columns on which ast depends.
 /// TODO: branch-and-bound
 void bruteforce(
-    const ComparisonGraph & graph,
+    const ComparisonGraph<ASTPtr> & graph,
     const std::vector<UInt64> & components,
     size_t current_component,
     const ColumnPriceByName & column_prices,
@@ -237,16 +233,8 @@ void SubstituteColumnOptimizer::perform()
 
     const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
 
-    // Fill aliases
-    if (select_query->select())
-    {
-        auto * list = select_query->refSelect()->as<ASTExpressionList>();
-        if (!list)
-            throw Exception("List of selected columns must be ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
-
-        for (ASTPtr & ast : list->children)
-            ast->setAlias(ast->getAliasOrColumnName());
-    }
+    if (compare_graph.getNumOfComponents() == 0)
+        return;
 
     auto run_for_all = [&](const auto func)
     {

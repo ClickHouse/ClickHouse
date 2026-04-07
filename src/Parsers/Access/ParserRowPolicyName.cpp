@@ -16,7 +16,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 
@@ -25,17 +25,25 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            String res_database, res_table_name;
-            if (!parseDatabaseAndTableName(pos, expected, res_database, res_table_name))
+            String res_database;
+            String res_table_name;
+
+            bool wildcard = false;
+            bool default_database = false;
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database)
+                || (res_database.empty() && res_table_name.empty() && !default_database))
                 return false;
 
-            /// If table is specified without DB it cannot be followed by "ON"
-            /// (but can be followed by "ON CLUSTER").
+            if (res_table_name.empty())
+                res_table_name = RowPolicyName::ANY_TABLE_MARK;
+
+            /// If table is specified without DB it cannot be followed by Keyword::ON
+            /// (but can be followed by Keyword::ON CLUSTER).
             /// The following code is necessary to figure out while parsing something like
             /// policy1 ON table1, policy2 ON table2
             /// that policy2 is another policy, not another table.
             auto end_pos = pos;
-            if (res_database.empty() && ParserKeyword{"ON"}.ignore(pos, expected))
+            if (res_database.empty() && ParserKeyword{Keyword::ON}.ignore(pos, expected))
             {
                 String unused;
                 if (ASTQueryWithOnCluster::parse(pos, unused, expected))
@@ -55,7 +63,7 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected) && parseDBAndTableName(pos, expected, database, table_name);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected) && parseDBAndTableName(pos, expected, database, table_name);
         });
     }
 
@@ -64,14 +72,15 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"ON"}.ignore(pos, expected))
+            if (!ParserKeyword{Keyword::ON}.ignore(pos, expected))
                 return false;
 
             std::vector<std::pair<String, String>> res;
 
             auto parse_db_and_table_name = [&]
             {
-                String database, table_name;
+                String database;
+                String table_name;
                 if (!parseDBAndTableName(pos, expected, database, table_name))
                     return false;
                 res.emplace_back(std::move(database), std::move(table_name));
@@ -120,7 +129,8 @@ namespace
             }
             else
             {
-                String database, table_name;
+                String database;
+                String table_name;
                 if (!parseOnDBAndTableName(pos, expected, database, table_name))
                     return false;
                 database_and_table_names.emplace_back(std::move(database), std::move(table_name));
@@ -152,7 +162,7 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         return false;
 
     assert(full_names.size() == 1);
-    auto result = std::make_shared<ASTRowPolicyName>();
+    auto result = make_intrusive<ASTRowPolicyName>();
     result->full_name = std::move(full_names.front());
     result->cluster = std::move(cluster);
     node = result;
@@ -186,7 +196,7 @@ bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
         return false;
 
-    auto result = std::make_shared<ASTRowPolicyNames>();
+    auto result = make_intrusive<ASTRowPolicyNames>();
     result->full_names = std::move(full_names);
     result->cluster = std::move(cluster);
     node = result;

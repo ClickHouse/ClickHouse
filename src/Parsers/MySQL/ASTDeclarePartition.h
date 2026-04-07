@@ -28,9 +28,9 @@ public:
     String getID(char /*delimiter*/) const override { return "partition declaration"; }
 
 protected:
-    void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
+    void formatImpl(WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const override
     {
-        throw Exception("Method formatImpl is not supported by MySQLParser::ASTDeclarePartition.", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported by MySQLParser::ASTDeclarePartition.");
     }
 };
 

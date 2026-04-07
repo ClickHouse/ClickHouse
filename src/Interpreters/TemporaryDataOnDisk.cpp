@@ -1,121 +1,312 @@
+#include <memory>
+#include <mutex>
+
+#include <IO/EmptyReadBuffer.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Formats/NativeWriter.h>
-#include <Formats/NativeReader.h>
-#include <Core/ProtocolDefines.h>
+#include <Compression/CompressionFactory.h>
 
-#include <Common/logger_useful.h>
+#include <Core/Defines.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/UUID.h>
+
+#include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
+#include <Disks/IO/WriteBufferFromTemporaryFile.h>
+#include <Disks/SingleDiskVolume.h>
+
+#include <Formats/NativeWriter.h>
+
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromEmptyFile.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/WriteBufferToFileSegment.h>
+#include <Interpreters/Context.h>
+
+#include <Common/Exception.h>
+#include <Common/NaNUtils.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/formatReadable.h>
+#include <Common/CurrentThread.h>
+
+#if ENABLE_DISTRIBUTED_CACHE
+#include <Core/DistributedCacheProtocol.h>
+#include <Disks/IO/ReadBufferFromDistributedCache.h>
+#include <Disks/IO/WriteBufferFromDistributedCache.h>
+#include <DistributedCache/DistributedCacheRegistry.h>
+#include <Server/DistributedCache/DistributedCacheServerInstance.h>
+#endif
+
+namespace ProfileEvents
+{
+    extern const Event ExternalProcessingFilesTotal;
+    extern const Event ExternalProcessingCompressedBytesTotal;
+    extern const Event ExternalProcessingUncompressedBytesTotal;
+
+#if ENABLE_DISTRIBUTED_CACHE
+    extern const Event DistrCacheTemporaryFilesCreated;
+    extern const Event DistrCacheTemporaryFilesBytesWritten;
+#endif
+}
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int TOO_MANY_ROWS_OR_BYTES;
 }
 
-void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
+namespace
 {
-    if (parent)
-        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
 
+inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings)
+{
+    if (settings.compression_codec.empty())
+        return CompressionCodecFactory::instance().get("LZ4");
 
-    /// check that we don't go negative
-    if ((compressed_delta < 0 && stat.compressed_size < static_cast<size_t>(-compressed_delta)) ||
-        (uncompressed_delta < 0 && stat.uncompressed_size < static_cast<size_t>(-uncompressed_delta)))
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
-    }
-
-    size_t new_consumprion = stat.compressed_size + compressed_delta;
-    if (compressed_delta > 0 && limit && new_consumprion > limit)
-        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES, "Limit for temporary files size exceeded");
-
-    stat.compressed_size += compressed_delta;
-    stat.uncompressed_size += uncompressed_delta;
+    return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
-TemporaryFileStream & TemporaryDataOnDisk::createStream(const Block & header, size_t max_file_size, bool infinite_read_)
+}
+
+TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
+    : metric_increment(metrics.current_metric)
 {
-    DiskPtr disk;
-    if (max_file_size > 0)
-    {
-        auto reservation = volume->reserve(max_file_size);
-        if (!reservation)
-            throw Exception("Not enough space on temporary disk", ErrorCodes::NOT_ENOUGH_SPACE);
-        disk = reservation->getDisk();
-    }
-    else
-    {
-        disk = volume->getDisk();
-    }
-
-    auto tmp_file = std::make_unique<TemporaryFileOnDisk>(disk, current_metric_scope);
-
-    std::lock_guard lock(mutex);
-    TemporaryFileStreamPtr & tmp_stream = streams.emplace_back(std::make_unique<TemporaryFileStream>(std::move(tmp_file), header, this, infinite_read_));
-    return *tmp_stream;
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
+    if (metrics.num_files)
+        ProfileEvents::increment(metrics.num_files.value());
 }
 
 
-std::vector<TemporaryFileStream *> TemporaryDataOnDisk::getStreams() const
+class TemporaryFileInLocalCache : public TemporaryFileHolder
 {
-    std::vector<TemporaryFileStream *> res;
-    std::lock_guard lock(mutex);
-    res.reserve(streams.size());
-    for (const auto & stream : streams)
-        res.push_back(stream.get());
-    return res;
-}
-
-bool TemporaryDataOnDisk::empty() const
-{
-    std::lock_guard lock(mutex);
-    return streams.empty();
-}
-
-struct TemporaryFileStream::OutputWriter
-{
-    OutputWriter(const String & path, const Block & header_)
-        : out_file_buf(path)
-        , out_compressed_buf(out_file_buf)
-        , out_writer(out_compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header_)
+public:
+    explicit TemporaryFileInLocalCache(FileCache & file_cache,
+                                       size_t reserve_size,
+                                       const TemporaryDataOnDiskSettings & settings)
+        : TemporaryFileHolder(settings.metrics)
+        , buffer_size(settings.buffer_size)
     {
+        const auto key = FileSegment::Key::random();
+        LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
+        segment_holder = file_cache.set(
+            key, 0, std::max<size_t>(1, reserve_size),
+            CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
+
+        chassert(segment_holder->size() == 1);
+        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
     }
 
-    void write(const Block & block)
+    std::unique_ptr<WriteBuffer> write() override
     {
-        if (finalized)
-            throw Exception("Cannot write to finalized stream", ErrorCodes::LOGICAL_ERROR);
-        out_writer.write(block);
-        num_rows += block.rows();
+        return std::make_unique<WriteBufferToFileSegment>(&segment_holder->front(), /* buffer_size = */ buffer_size);
     }
 
-    void finalize()
+    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
     {
-        if (finalized)
-            return;
-
-        /// if we called finalize() explicitly, and got an exception,
-        /// we don't want to get it again in the destructor, so set finalized flag first
-        finalized = true;
-
-        out_writer.flush();
-        out_compressed_buf.finalize();
-        out_file_buf.finalize();
+        return std::make_unique<ReadBufferFromFile>(segment_holder->front().getPath(), /* buf_size = */ buffer_size_);
     }
 
-    ~OutputWriter()
+    String describeFilePath() const override
+    {
+        return fmt::format("fscache://{}", segment_holder->front().getPath());
+    }
+
+private:
+    FileSegmentsHolderPtr segment_holder;
+    size_t buffer_size;
+};
+
+#if ENABLE_DISTRIBUTED_CACHE
+class TemporaryFileInDistributedCache final : public TemporaryFileHolder
+{
+public:
+    explicit TemporaryFileInDistributedCache(const TemporaryDataOnDiskSettings & settings)
+        : TemporaryFileHolder(settings.metrics)
+        , file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
+        , buffer_size(settings.buffer_size)
+        , log(getLogger("TemporaryFileInDistributedCache"))
+    {
+        LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
+
+        auto context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            context = Context::getGlobalContextInstance();
+        read_settings = context->getReadSettings();
+        write_settings = context->getWriteSettings();
+        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
+        receive_throttler = context->getDistributedCacheReadThrottler();
+        send_throttler = context->getDistributedCacheWriteThrottler();
+        distributed_cache_log = context->getDistributedCacheLog();
+
+        SipHash hash;
+        hash.update(file_key);
+        distributed_cache_server = DistributedCache::Registry::instance()
+                                       .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
+                                       .chooseServer(hash.get128());
+    }
+
+    ~TemporaryFileInDistributedCache() override
     {
         try
         {
-            finalize();
+            if (cache_client)
+                cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    }
+
+    std::unique_ptr<WriteBuffer> write() override
+    {
+        ProfileEvents::increment(ProfileEvents::DistrCacheTemporaryFilesCreated);
+        return std::make_unique<WriteBufferFromDistributedCache>(
+            file_key,
+            write_settings,
+            timeouts,
+            receive_throttler,
+            send_throttler,
+            distributed_cache_server,
+            distributed_cache_log,
+            buffer_size);
+    }
+
+    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
+    {
+        if (!cache_client)
+            return std::make_unique<EmptyReadBuffer>();
+
+        if (buffer_size_ == 0)
+            buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE;
+
+        auto local_read_settings = read_settings;
+        local_read_settings.remote_fs_buffer_size = buffer_size_;
+        return std::make_unique<ReadBufferFromDistributedCache>(
+            file_key,
+            bytes_written,
+            local_read_settings,
+            timeouts,
+            receive_throttler,
+            send_throttler,
+            distributed_cache_server,
+            distributed_cache_log);
+    }
+
+    void releaseWriteBuffer(std::unique_ptr<WriteBuffer> write_buffer) override
+    {
+        auto & distr_cache_buffer = dynamic_cast<WriteBufferFromDistributedCache &>(*write_buffer);
+        cache_client = distr_cache_buffer.releaseClient();
+        bytes_written = distr_cache_buffer.getBytesWritten();
+        ProfileEvents::increment(ProfileEvents::DistrCacheTemporaryFilesBytesWritten, bytes_written);
+    }
+
+    String describeFilePath() const override
+    {
+        return fmt::format("distrcache://{}", file_key);
+    }
+private:
+    String file_key;
+    DistributedCache::RegisteredServerPtr distributed_cache_server;
+    ReadSettings read_settings;
+    WriteSettings write_settings;
+    ConnectionTimeouts timeouts;
+    ThrottlerPtr receive_throttler;
+    ThrottlerPtr send_throttler;
+    size_t bytes_written = 0;
+    std::shared_ptr<DistributedCacheLog> distributed_cache_log;
+    size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+
+    /// we need to keep it alive after write because the lifetime of cached file is
+    /// connected to the connection lifetime
+    DistributedCache::ClientPtr cache_client;
+
+    LoggerPtr log;
+};
+#endif
+
+class TemporaryFileOnLocalDisk : public TemporaryFileHolder
+{
+public:
+    explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, const TemporaryDataOnDiskSettings & settings = {})
+        : TemporaryFileHolder(settings.metrics)
+        , path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
+        , buffer_size(settings.buffer_size)
+    {
+        LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
+        if (reserve_size > 0)
+        {
+            auto reservation = volume->reserve(reserve_size);
+            if (!reservation)
+            {
+                auto disks = volume->getDisks();
+                Strings disks_info;
+                for (const auto & d : disks)
+                {
+                    auto to_double = [](auto x) { return static_cast<double>(x); };
+                    disks_info.push_back(fmt::format("{}: available: {} unreserved: {}, total: {}, keeping: {}",
+                        d->getName(),
+                        ReadableSize(d->getAvailableSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getUnreservedSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getTotalSpace().transform(to_double).value_or(NaNOrZero<double>())),
+                        ReadableSize(d->getKeepingFreeSpace())));
+                }
+
+                throw Exception(ErrorCodes::NOT_ENOUGH_SPACE,
+                    "Not enough space on temporary disk, cannot reserve {} bytes on [{}]",
+                    reserve_size, fmt::join(disks_info, ", "));
+            }
+            disk = reservation->getDisk();
+        }
+        else
+        {
+            disk = volume->getDisk();
+        }
+        chassert(disk);
+    }
+
+    std::unique_ptr<WriteBuffer> write() override
+    {
+        return disk->writeFile(path_to_file, buffer_size);
+    }
+
+    std::unique_ptr<SeekableReadBuffer> read(size_t buffer_size_) const override
+    {
+        ReadSettings settings;
+        settings.local_fs_buffer_size = buffer_size_;
+        settings.remote_fs_buffer_size = buffer_size_;
+        settings.prefetch_buffer_size = buffer_size_;
+
+        return disk->readFile(path_to_file, settings);
+    }
+
+    String describeFilePath() const override
+    {
+        return fmt::format("disk({})://{}/{}", disk->getName(), disk->getPath(), path_to_file);
+    }
+
+    ~TemporaryFileOnLocalDisk() override
+    {
+        try
+        {
+            if (disk->existsFile(path_to_file))
+            {
+                LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Removing temporary file '{}'", path_to_file);
+                disk->removeFile(path_to_file);
+            }
+            else
+            {
+                LOG_WARNING(getLogger("TemporaryFileOnLocalDisk"), "Temporary path '{}' does not exist in '{}' on disk {}", path_to_file, disk->getPath(), disk->getName());
+            }
         }
         catch (...)
         {
@@ -123,166 +314,256 @@ struct TemporaryFileStream::OutputWriter
         }
     }
 
-    WriteBufferFromFile out_file_buf;
-    CompressedWriteBuffer out_compressed_buf;
-    NativeWriter out_writer;
-
-    std::atomic_size_t num_rows = 0;
-
-    bool finalized = false;
+private:
+    DiskPtr disk;
+    String path_to_file;
+    size_t buffer_size;
 };
 
-struct TemporaryFileStream::InputReader
+TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume)
 {
-    InputReader(const String & path, const Block & header_, bool infinite_ = false)
-        : in_file_buf(path)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, header_, DBMS_TCP_PROTOCOL_VERSION)
-        , infinite(infinite_)
+    if (!volume)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Volume is not initialized");
+    return [volume](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
     {
-    }
-
-    explicit InputReader(const String & path)
-        : in_file_buf(path)
-        , in_compressed_buf(in_file_buf)
-        , in_reader(in_compressed_buf, DBMS_TCP_PROTOCOL_VERSION)
-    {
-    }
-
-    Block read()
-    {
-        Block block = in_reader.read();
-
-        if (!block && infinite)
-            in_file_buf.rewind();
-
-        return block;
-    }
-
-    ReadBufferFromFile in_file_buf;
-    CompressedReadBuffer in_compressed_buf;
-    NativeReader in_reader;
-
-    bool infinite;
-};
-
-TemporaryFileStream::TemporaryFileStream(TemporaryFileOnDiskHolder file_, const Block & header_, TemporaryDataOnDisk * parent_, bool infinite_read_)
-    : parent(parent_)
-    , header(header_)
-    , file(std::move(file_))
-    , out_writer(std::make_unique<OutputWriter>(file->getPath(), header))
-    , infinite_read(infinite_read_)
-{
+        return std::make_unique<TemporaryFileOnLocalDisk>(volume, max_size, settings);
+    };
 }
 
-void TemporaryFileStream::write(const Block & block)
+TemporaryFileProvider createTemporaryFileProvider(FileCache * file_cache)
 {
-    if (!out_writer)
-        throw Exception("Writing has been finished", ErrorCodes::LOGICAL_ERROR);
+    if (!file_cache || !file_cache->isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File cache is not initialized");
+    return [file_cache](const TemporaryDataOnDiskSettings & settings, size_t max_size) -> std::unique_ptr<TemporaryFileHolder>
+    {
+        return std::make_unique<TemporaryFileInLocalCache>(*file_cache, max_size, settings);
+    };
+}
+
+#if ENABLE_DISTRIBUTED_CACHE
+TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
+{
+    return [](const TemporaryDataOnDiskSettings & settings, size_t /*max_size*/) -> std::unique_ptr<TemporaryFileHolder>
+    {
+        auto global_context = Context::getGlobalContextInstance();
+        auto read_settings = global_context->getReadSettings();
+        if (!DistributedCache::Registry::instance().isReady(read_settings.distributed_cache_settings.read_only_from_current_az))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache is not ready yet");
+
+        return std::make_unique<TemporaryFileInDistributedCache>(settings);
+    };
+}
+#endif
+
+TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
+{
+    TemporaryDataOnDiskSettings child_settings = settings;
+    child_settings.metrics = metrics_;
+    if (buffer_size_)
+        child_settings.buffer_size = buffer_size_;
+    if (!compression_codec_.empty())
+        child_settings.compression_codec = compression_codec_;
+    return std::make_shared<TemporaryDataOnDiskScope>(shared_from_this(), child_settings);
+}
+
+TemporaryDataReadBuffer::TemporaryDataReadBuffer(std::unique_ptr<ReadBuffer> in_)
+    : ReadBuffer(nullptr, 0)
+    , compressed_buf(std::move(in_))
+{
+    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+}
+
+bool TemporaryDataReadBuffer::nextImpl()
+{
+    compressed_buf->position() = position();
+    if (!compressed_buf->next())
+    {
+        set(compressed_buf->position(), 0);
+        return false;
+    }
+    BufferBase::set(compressed_buf->buffer().begin(), compressed_buf->buffer().size(), compressed_buf->offset());
+    return true;
+}
+
+TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
+    : WriteBuffer(nullptr, 0)
+    , parent(parent_)
+    , file_holder(parent->file_provider(parent->getSettings(), reserve_size))
+    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
+    , metrics(parent->getSettings().metrics)
+{
+    WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
+}
+
+void TemporaryDataBuffer::nextImpl()
+{
+    if (!out_compressed_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file buffer writing has been finished");
+
+    out_compressed_buf->position() = position();
+    out_compressed_buf->next();
+    BufferBase::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size(), out_compressed_buf->offset());
+    updateAllocAndCheck();
+}
+
+String TemporaryDataBuffer::describeFilePath() const
+{
+    return file_holder->describeFilePath();
+}
+
+void TemporaryDataBuffer::cancelImpl() noexcept
+{
+    if (out_compressed_buf)
+    {
+        /// CompressedWriteBuffer doesn't call cancel/finalize for wrapped buffer
+        out_compressed_buf->cancel();
+        out_compressed_buf.getHolder()->cancel();
+    }
+}
+
+void TemporaryDataBuffer::finalizeImpl()
+{
+    if (!out_compressed_buf)
+        return;
+
+    /// CompressedWriteBuffer doesn't call cancel/finalize for wrapped buffer
+    out_compressed_buf->finalize();
+    out_compressed_buf.getHolder()->finalize();
 
     updateAllocAndCheck();
-    out_writer->write(block);
+    file_holder->releaseWriteBuffer(out_compressed_buf.releaseHolder());
+    out_compressed_buf.reset();
 }
 
-TemporaryFileStream::Stat TemporaryFileStream::finishWriting()
+TemporaryDataBuffer::Stat TemporaryDataBuffer::finishWriting()
 {
-    if (isWriteFinished())
-        return stat;
-
-    if (out_writer)
+    /// TemporaryDataBuffer::read can be called from multiple threads
+    std::call_once(write_finished, [this]
     {
-        out_writer->finalize();
-        /// The amount of written data can be changed after finalization, some buffers can be flushed
-        /// Need to update the stat
-        updateAllocAndCheck();
-        out_writer.reset();
-
-        /// reader will be created at the first read call, not to consume memory before it is needed
-    }
+        if (canceled)
+            throw Exception(ErrorCodes::INVALID_STATE, "Writing to temporary file buffer was not successful");
+        next();
+        finalize();
+    });
     return stat;
 }
 
-bool TemporaryFileStream::isWriteFinished() const
+TemporaryDataBuffer::Stat TemporaryDataBuffer::getStat() const
 {
-    assert(in_reader == nullptr || out_writer == nullptr);
-    return out_writer == nullptr;
+    return stat;
 }
 
-Block TemporaryFileStream::read()
+std::unique_ptr<ReadBuffer> TemporaryDataBuffer::read()
 {
-    if (!isWriteFinished())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Writing has been not finished");
-
-    if (isEof())
-        return {};
-
-    if (!in_reader)
-    {
-        in_reader = std::make_unique<InputReader>(file->getPath(), header, infinite_read);
-    }
-
-    Block block = in_reader->read();
-    if (!block && !infinite_read)
-    {
-        /// finalize earlier to release resources, do not wait for the destructor
-        this->release();
-    }
-    return block;
+    return std::make_unique<TemporaryDataReadBuffer>(readRaw());
 }
 
-void TemporaryFileStream::updateAllocAndCheck()
+std::unique_ptr<SeekableReadBuffer> TemporaryDataBuffer::readRaw()
 {
-    assert(out_writer);
-    size_t new_compressed_size = out_writer->out_compressed_buf.getCompressedBytes();
-    size_t new_uncompressed_size = out_writer->out_compressed_buf.getUncompressedBytes();
+    finishWriting();
+
+    if (stat.compressed_size == 0 && stat.uncompressed_size == 0)
+        return std::make_unique<ReadBufferFromEmptyFile>();
+
+    /// Keep buffer size less that file size, to avoid memory overhead for large amounts of small files
+    size_t buffer_size = std::min<size_t>(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE);
+    return file_holder->read(buffer_size);
+}
+
+CompressedWriteBuffer & TemporaryDataBuffer::getCompressedWriteBuffer()
+{
+    return *out_compressed_buf;
+}
+
+void TemporaryDataBuffer::updateAllocAndCheck()
+{
+    if (!out_compressed_buf)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary file buffer writing has been finished");
+
+    size_t new_compressed_size = out_compressed_buf->getCompressedBytes();
+    size_t new_uncompressed_size = out_compressed_buf->getUncompressedBytes();
 
     if (unlikely(new_compressed_size < stat.compressed_size || new_uncompressed_size < stat.uncompressed_size))
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Temporary file {} size decreased after write: compressed: {} -> {}, uncompressed: {} -> {}",
-            file->getPath(), new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
+            file_holder ? file_holder->describeFilePath() : "NULL",
+            new_compressed_size, stat.compressed_size, new_uncompressed_size, stat.uncompressed_size);
     }
 
-    parent->deltaAllocAndCheck(new_compressed_size - stat.compressed_size, new_uncompressed_size - stat.uncompressed_size);
+    ssize_t compressed_delta = new_compressed_size - stat.compressed_size;
+    ssize_t uncompressed_delta = new_uncompressed_size - stat.uncompressed_size;
+    parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
     stat.compressed_size = new_compressed_size;
     stat.uncompressed_size = new_uncompressed_size;
-    stat.num_rows = out_writer->num_rows;
+
+    if (metrics.bytes_compressed)
+        ProfileEvents::increment(metrics.bytes_compressed.value(), compressed_delta);
+    if (metrics.bytes_uncompressed)
+        ProfileEvents::increment(metrics.bytes_uncompressed.value(), uncompressed_delta);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, compressed_delta);
+    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, uncompressed_delta);
 }
 
-bool TemporaryFileStream::isEof() const
-{
-    return file == nullptr;
-}
 
-void TemporaryFileStream::release()
+void TemporaryDataBuffer::freeAlloc()
 {
-    if (file)
-    {
-        file.reset();
+    if (parent)
         parent->deltaAllocAndCheck(-stat.compressed_size, -stat.uncompressed_size);
-    }
-
-    if (in_reader)
-        in_reader.reset();
-
-    if (out_writer)
-    {
-        out_writer->finalize();
-        out_writer.reset();
-    }
+    stat.compressed_size = 0;
+    stat.uncompressed_size = 0;
 }
 
-TemporaryFileStream::~TemporaryFileStream()
+void TemporaryDataOnDiskScope::deltaAllocAndCheck(ssize_t compressed_delta, ssize_t uncompressed_delta)
 {
-    try
+    if (parent)
+        parent->deltaAllocAndCheck(compressed_delta, uncompressed_delta);
+
+    /// check that we don't go negative
+    if ((compressed_delta < 0 && stat.compressed_size < -static_cast<size_t>(compressed_delta)) ||
+        (uncompressed_delta < 0 && stat.uncompressed_size < -static_cast<size_t>(uncompressed_delta)))
     {
-        release();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Negative temporary data size");
     }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-        assert(false); /// deltaAllocAndCheck with negative can't throw exception
-    }
+
+    size_t new_consumption = stat.compressed_size + compressed_delta;
+    if (compressed_delta > 0 && settings.max_size_on_disk && new_consumption > settings.max_size_on_disk)
+        throw Exception(ErrorCodes::TOO_MANY_ROWS_OR_BYTES,
+            "Limit for temporary files size exceeded (would consume {} / {} bytes)", new_consumption, settings.max_size_on_disk);
+
+    stat.compressed_size += compressed_delta;
+    stat.uncompressed_size += uncompressed_delta;
 }
 
+TemporaryBlockStreamHolder::TemporaryBlockStreamHolder(SharedHeader header_, std::shared_ptr<TemporaryDataOnDiskScope> parent_, size_t reserve_size)
+    : WrapperGuard(std::make_unique<TemporaryDataBuffer>(parent_, reserve_size), DBMS_TCP_PROTOCOL_VERSION, header_)
+{
+    /// Constant columns must be avoided since they are not supported in (de/)serialization, but we have to keep lazy columns
+    /// to make sure NativeReader can deserialize them correctly. See NativeReader::read for more details about how lazy columns are handled.
+    for (const auto & column : *header_)
+        header.insert(ColumnWithTypeAndName{column.column->cloneEmpty()->convertToFullColumnIfConst(), column.type, column.name});
+}
+
+TemporaryDataBuffer::Stat TemporaryBlockStreamHolder::finishWriting() const
+{
+    if (!holder)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary block stream is not initialized");
+
+    impl->flush();
+    return holder->finishWriting();
+}
+
+TemporaryBlockStreamReaderHolder TemporaryBlockStreamHolder::getReadStream() const
+{
+    if (!holder)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary block stream is not initialized");
+    return TemporaryBlockStreamReaderHolder(holder->read(), header, DBMS_TCP_PROTOCOL_VERSION);
+}
+
+TemporaryDataBuffer::~TemporaryDataBuffer()
+{
+    if (!finalized)
+        cancel();
+    freeAlloc();
+}
 }

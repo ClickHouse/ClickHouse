@@ -30,7 +30,6 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 }
 
 
-#include <sys/select.h>
 #include <stdlib.h>
 #include <features.h>
 
@@ -195,7 +194,6 @@ long splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, un
 #include <sys/stat.h>
 #include <stdint.h>
 
-#if !defined(__aarch64__)
 struct statx {
 	uint32_t stx_mask;
 	uint32_t stx_blksize;
@@ -220,7 +218,6 @@ struct statx {
 	uint32_t stx_dev_minor;
 	uint64_t spare[14];
 };
-#endif
 
 int statx(int fd, const char *restrict path, int flag,
                  unsigned int mask, struct statx *restrict statxbuf)
@@ -237,6 +234,17 @@ ssize_t getrandom(void *buf, size_t buflen, unsigned flags)
     return syscall(SYS_getrandom, buf, buflen, flags);
 }
 
+/* Structure for scatter/gather I/O.  */
+struct iovec
+{
+    void *iov_base;    /* Pointer to data.  */
+    size_t iov_len;    /* Length of data.  */
+};
+
+ssize_t preadv(int __fd, const struct iovec *__iovec, int __count, __off_t __offset)
+{
+    return syscall(SYS_preadv, __fd, __iovec, __count, (long)(__offset), (long)(__offset>>32));
+}
 
 #include <errno.h>
 #include <limits.h>
@@ -417,6 +425,14 @@ int posix_spawn_file_actions_destroy(posix_spawn_file_actions_t *fa) {
 		op = next;
 	}
 	return 0;
+}
+
+/// gettid was added in glibc 2.30. Use the raw syscall for compatibility with older systems.
+/// Rust's standard library (since ~nightly-2026) references gettid as a weak symbol;
+/// providing it here prevents pulling in GLIBC_2.30.
+pid_t gettid(void)
+{
+    return syscall(__NR_gettid);
 }
 
 #if defined (__cplusplus)

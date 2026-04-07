@@ -1,7 +1,7 @@
 do not print any ProfileEvents packets
 0
 print only last (and also number of rows to provide more info in case of failures)
-[ 0 ] SelectedRows: 131010 (increment)
+[ 0 ] SelectedRows: 100000 (increment)
 regression test for incorrect filtering out snapshots
 0
 regression test for overlap profile events snapshots between queries

@@ -1,0 +1,479 @@
+{% for join_algorithm in ['hash', 'partial_merge', 'auto', 'full_sorting_merge', 'grace_hash'] -%}
+-- { echoOn }
+
+SET join_algorithm = '{{ join_algorithm }}';
+SELECT a, b, t2.b FROM t1 FULL JOIN t2 USING (a) ORDER BY (a); 
+-4	0	196
+-3	0	197
+-2	0	198
+-1	0	199
+0	0	200
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+6	106	\N
+7	107	\N
+8	108	\N
+9	109	\N
+10	110	\N
+SELECT a, b, t2.b FROM t1 LEFT JOIN t2 USING (a) ORDER BY (a);
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+6	106	\N
+7	107	\N
+8	108	\N
+9	109	\N
+10	110	\N
+SELECT a, b, t2.b FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (a); 
+-4	0	196
+-3	0	197
+-2	0	198
+-1	0	199
+0	0	200
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+SELECT a, b, t2.b FROM t1 INNER JOIN t2 USING (a) ORDER BY (a);
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+SELECT a, t1.a, t2.a FROM t1 FULL JOIN t2 USING (a) ORDER BY (t1.a, t2.a); 
+-4	0	-4
+-3	0	-3
+-2	0	-2
+-1	0	-1
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+6	6	0
+7	7	0
+8	8	0
+9	9	0
+10	10	0
+SELECT a, t1.a, t2.a FROM t1 LEFT JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+6	6	0
+7	7	0
+8	8	0
+9	9	0
+10	10	0
+SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a) SETTINGS enable_analyzer = 0; 
+0	0	-4
+0	0	-3
+0	0	-2
+0	0	-1
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a) SETTINGS enable_analyzer = 1; 
+-4	0	-4
+-3	0	-3
+-2	0	-2
+-1	0	-1
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+SELECT a, t1.a, t2.a FROM t1 INNER JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+SELECT a, b, t2.a, t2.b FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a); 
+0	0	-4	196
+0	0	-3	197
+0	0	-2	198
+0	0	-1	199
+0	0	0	200
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	0	\N
+7	107	0	\N
+8	108	0	\N
+9	109	0	\N
+10	110	0	\N
+SELECT a, b, t2.a, t2.b FROM t1 LEFT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	0	\N
+7	107	0	\N
+8	108	0	\N
+9	109	0	\N
+10	110	0	\N
+SELECT a, b, t2.a, t2.b FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a); 
+0	0	-4	196
+0	0	-3	197
+0	0	-2	198
+0	0	-1	199
+0	0	0	200
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+SELECT a, b, t2.a, t2.b FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a); 
+0	0	-4	196
+0	0	-3	197
+0	0	-2	198
+0	0	-1	199
+0	0	0	200
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	0	\N
+7	107	0	\N
+8	108	0	\N
+9	109	0	\N
+10	110	0	\N
+SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	0	\N
+7	107	0	\N
+8	108	0	\N
+9	109	0	\N
+10	110	0	\N
+SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a); 
+0	0	-4	196
+0	0	-3	197
+0	0	-2	198
+0	0	-1	199
+0	0	0	200
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+-- Int64 and UInt64 has no supertype
+SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204; 
+1
+SELECT sum(a) == 7 FROM t1 INNER JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
+1
+SELECT sum(b) = 103 FROM t1 LEFT JOIN t2 USING (a) WHERE b > 102 AND t2.b < 204;
+1
+SELECT sum(t2.b) = 203 FROM t1 RIGHT JOIN t2 USING (a) WHERE b > 102 AND t2.b < 204; 
+1
+SELECT sum(a) == 2 + 3 + 4 FROM t1 FULL JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) WHERE t1.b < 105 AND t2.b > 201; 
+1
+SELECT sum(a) == 55 FROM t1 FULL JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) WHERE 1; 
+1
+SELECT a > 0, sum(a), sum(b) FROM t1 FULL JOIN t2 USING (a) GROUP BY (a > 0) ORDER BY a > 0; 
+0	-10	0
+1	55	1055
+SELECT a > 0, sum(a), sum(t2.a), sum(b), sum(t2.b) FROM t1 FULL JOIN t2 ON (t1.a == t2.a) GROUP BY (a > 0) ORDER BY a > 0; 
+0	0	-10	0	990
+1	55	15	1055	1015
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a); 
+1
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 LEFT JOIN t2 USING (a);
+1
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 RIGHT JOIN t2 USING (a); 
+1
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 INNER JOIN t2 USING (a);
+1
+SELECT toTypeName(any(a)) == 'Int32' AND toTypeName(any(t2.a)) == 'Int32' FROM t1 FULL JOIN t2 USING (a); 
+1
+SELECT min(toTypeName(a) == 'Int32' AND toTypeName(t2.a) == 'Int32') FROM t1 FULL JOIN t2 USING (a); 
+1
+SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 FULL JOIN t2 ON (t1.a == t2.a); 
+1
+SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 LEFT JOIN t2 ON (t1.a == t2.a);
+1
+SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a); 
+1
+SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 INNER JOIN t2 ON (t1.a == t2.a);
+1
+SELECT toTypeName(any(a)) == 'UInt16' AND toTypeName(any(t2.a)) == 'Int16' FROM t1 FULL JOIN t2 ON (t1.a == t2.a); 
+1
+{% if join_algorithm not in ['full_sorting_merge'] -%}
+SELECT '=== join use nulls ===';
+=== join use nulls ===
+SET join_use_nulls = 1;
+SELECT a, b, t2.b FROM t1 FULL JOIN t2 USING (a) ORDER BY (a); 
+-4	\N	196
+-3	\N	197
+-2	\N	198
+-1	\N	199
+0	\N	200
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+6	106	\N
+7	107	\N
+8	108	\N
+9	109	\N
+10	110	\N
+SELECT a, b, t2.b FROM t1 LEFT JOIN t2 USING (a) ORDER BY (a);
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+6	106	\N
+7	107	\N
+8	108	\N
+9	109	\N
+10	110	\N
+SELECT a, b, t2.b FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (a); 
+-4	\N	196
+-3	\N	197
+-2	\N	198
+-1	\N	199
+0	\N	200
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+SELECT a, b, t2.b FROM t1 INNER JOIN t2 USING (a) ORDER BY (a);
+1	101	201
+2	102	202
+3	103	203
+4	104	204
+5	105	205
+SELECT a, t1.a, t2.a FROM t1 FULL JOIN t2 USING (a) ORDER BY (t1.a, t2.a); 
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+6	6	\N
+7	7	\N
+8	8	\N
+9	9	\N
+10	10	\N
+-4	\N	-4
+-3	\N	-3
+-2	\N	-2
+-1	\N	-1
+0	\N	0
+SELECT a, t1.a, t2.a FROM t1 LEFT JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+6	6	\N
+7	7	\N
+8	8	\N
+9	9	\N
+10	10	\N
+SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a) SETTINGS enable_analyzer = 0; 
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+\N	\N	-4
+\N	\N	-3
+\N	\N	-2
+\N	\N	-1
+\N	\N	0
+SELECT a, t1.a, t2.a FROM t1 RIGHT JOIN t2 USING (a) ORDER BY (t1.a, t2.a) SETTINGS enable_analyzer = 1; 
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+-4	\N	-4
+-3	\N	-3
+-2	\N	-2
+-1	\N	-1
+0	\N	0
+SELECT a, t1.a, t2.a FROM t1 INNER JOIN t2 USING (a) ORDER BY (t1.a, t2.a);
+1	1	1
+2	2	2
+3	3	3
+4	4	4
+5	5	5
+SELECT a, b, t2.a, t2.b FROM t1 FULL JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a); 
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	\N	\N
+7	107	\N	\N
+8	108	\N	\N
+9	109	\N	\N
+10	110	\N	\N
+\N	\N	-4	196
+\N	\N	-3	197
+\N	\N	-2	198
+\N	\N	-1	199
+\N	\N	0	200
+SELECT a, b, t2.a, t2.b FROM t1 LEFT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	\N	\N
+7	107	\N	\N
+8	108	\N	\N
+9	109	\N	\N
+10	110	\N	\N
+SELECT a, b, t2.a, t2.b FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a); 
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+\N	\N	-4	196
+\N	\N	-3	197
+\N	\N	-2	198
+\N	\N	-1	199
+\N	\N	0	200
+SELECT a, b, t2.a, t2.b FROM t1 INNER JOIN t2 ON (t1.a == t2.a) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a); 
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	\N	\N
+7	107	\N	\N
+8	108	\N	\N
+9	109	\N	\N
+10	110	\N	\N
+\N	\N	-4	196
+\N	\N	-3	197
+\N	\N	-2	198
+\N	\N	-1	199
+\N	\N	0	200
+SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+6	106	\N	\N
+7	107	\N	\N
+8	108	\N	\N
+9	109	\N	\N
+10	110	\N	\N
+SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a); 
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+\N	\N	-4	196
+\N	\N	-3	197
+\N	\N	-2	198
+\N	\N	-1	199
+\N	\N	0	200
+SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) ORDER BY (t1.a, t2.a);
+1	101	1	201
+2	102	2	202
+3	103	3	203
+4	104	4	204
+5	105	5	205
+-- Int64 and UInt64 has no supertype
+SELECT * FROM t1 FULL JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT * FROM t1 LEFT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT * FROM t1 RIGHT JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT * FROM t1 INNER JOIN t2 ON (t1.a + t1.b + 100 = t2.a + t2.b) ORDER BY (t1.a, t2.a); -- { serverError TYPE_MISMATCH, NO_COMMON_TYPE }
+SELECT sum(a) == 7 FROM t1 FULL JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204; 
+1
+SELECT sum(a) == 7 FROM t1 INNER JOIN t2 USING (a) WHERE b > 102 AND t2.b <= 204;
+1
+SELECT sum(b) = 103 FROM t1 LEFT JOIN t2 USING (a) WHERE b > 102 AND t2.b < 204;
+1
+SELECT sum(t2.b) = 203 FROM t1 RIGHT JOIN t2 USING (a) WHERE b > 102 AND t2.b < 204; 
+1
+SELECT sum(a) == 2 + 3 + 4 FROM t1 FULL JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) WHERE t1.b < 105 AND t2.b > 201; 
+1
+SELECT sum(a) == 55 FROM t1 FULL JOIN t2 ON (t1.a + t1.b = t2.a + t2.b - 100) WHERE 1; 
+1
+SELECT a > 0, sum(a), sum(b) FROM t1 FULL JOIN t2 USING (a) GROUP BY (a > 0) ORDER BY a > 0; 
+0	-10	\N
+1	55	1055
+SELECT a > 0, sum(a), sum(t2.a), sum(b), sum(t2.b) FROM t1 FULL JOIN t2 ON (t1.a == t2.a) GROUP BY (a > 0) ORDER BY a > 0; 
+1	55	15	1055	1015
+\N	\N	-10	\N	990
+SELECT any(toTypeName(a)) == 'Nullable(Int32)' AND any(toTypeName(t2.a)) == 'Nullable(Int32)' FROM t1 FULL JOIN t2 USING (a); 
+1
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Nullable(Int32)' FROM t1 LEFT JOIN t2 USING (a);
+1
+SELECT any(toTypeName(a)) == 'Nullable(Int32)' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 RIGHT JOIN t2 USING (a) SETTINGS enable_analyzer = 0; 
+1
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 RIGHT JOIN t2 USING (a) SETTINGS enable_analyzer = 1; 
+1
+SELECT any(toTypeName(a)) == 'Int32' AND any(toTypeName(t2.a)) == 'Int32' FROM t1 INNER JOIN t2 USING (a);
+1
+SELECT toTypeName(any(a)) == 'Nullable(Int32)' AND toTypeName(any(t2.a)) == 'Nullable(Int32)' FROM t1 FULL JOIN t2 USING (a); 
+1
+SELECT min(toTypeName(a) == 'Nullable(Int32)' AND toTypeName(t2.a) == 'Nullable(Int32)') FROM t1 FULL JOIN t2 USING (a); 
+1
+SELECT any(toTypeName(a)) == 'Nullable(UInt16)' AND any(toTypeName(t2.a)) == 'Nullable(Int16)' FROM t1 FULL JOIN t2 ON (t1.a == t2.a); 
+1
+SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Nullable(Int16)' FROM t1 LEFT JOIN t2 ON (t1.a == t2.a);
+1
+SELECT any(toTypeName(a)) == 'Nullable(UInt16)' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 RIGHT JOIN t2 ON (t1.a == t2.a); 
+1
+SELECT any(toTypeName(a)) == 'UInt16' AND any(toTypeName(t2.a)) == 'Int16' FROM t1 INNER JOIN t2 ON (t1.a == t2.a);
+1
+SELECT toTypeName(any(a)) == 'Nullable(UInt16)' AND toTypeName(any(t2.a)) == 'Nullable(Int16)' FROM t1 FULL JOIN t2 ON (t1.a == t2.a); 
+1
+SET join_use_nulls = 0;
+{% endif -%}
+{% endfor -%}
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;

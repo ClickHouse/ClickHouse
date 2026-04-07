@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <query_log replace="replace">
+        <database>system</database>
+        <table>query_log</table>
+        <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
+    </query_log>
+</clickhouse>

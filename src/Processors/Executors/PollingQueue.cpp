@@ -3,6 +3,8 @@
 #if defined(OS_LINUX)
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <base/defines.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -24,25 +26,28 @@ namespace ErrorCodes
 PollingQueue::PollingQueue()
 {
     if (-1 == pipe2(pipe_fd, O_NONBLOCK))
-        throwFromErrno("Cannot create pipe", ErrorCodes::CANNOT_OPEN_FILE);
+        throw ErrnoException(ErrorCodes::CANNOT_OPEN_FILE, "Cannot create pipe");
 
     epoll.add(pipe_fd[0], pipe_fd);
 }
 
 PollingQueue::~PollingQueue()
 {
-    close(pipe_fd[0]);
-    close(pipe_fd[1]);
+    int err;
+    err = close(pipe_fd[0]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    chassert(!err || errno == EINTR);
+    err = close(pipe_fd[1]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    chassert(!err || errno == EINTR);
 }
 
-void PollingQueue::addTask(size_t thread_number, void * data, int fd)
+void PollingQueue::addTask(size_t thread_number, void * data, int fd, uint32_t events)
 {
     std::uintptr_t key = reinterpret_cast<uintptr_t>(data);
     if (tasks.contains(key))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Task {} was already added to task queue", key);
 
     tasks[key] = TaskData{thread_number, data, fd};
-    epoll.add(fd, data);
+    epoll.add(fd, data, events);
 }
 
 static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQueue::TaskData> & tasks)
@@ -61,7 +66,7 @@ static std::string dumpTasks(const std::unordered_map<std::uintptr_t, PollingQue
     return res.str();
 }
 
-PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
+PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock, int timeout)
 {
     if (is_finished)
         return {};
@@ -70,9 +75,12 @@ PollingQueue::TaskData PollingQueue::wait(std::unique_lock<std::mutex> & lock)
 
     epoll_event event;
     event.data.ptr = nullptr;
-    epoll.getManyReady(1, &event, true);
+    size_t num_events = epoll.getManyReady(1, &event, timeout);
 
     lock.lock();
+
+    if (num_events == 0)
+        return {};
 
     if (event.data.ptr == pipe_fd)
         return {};
@@ -104,7 +112,7 @@ void PollingQueue::finish()
             break;
 
         if (errno != EINTR)
-            throwFromErrno("Cannot write to pipe", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+            throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_SOCKET, "Cannot write to pipe");
     }
 }
 

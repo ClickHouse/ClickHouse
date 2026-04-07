@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=trace
+
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 file_name="${CLICKHOUSE_TMP}/res_${CLICKHOUSE_DATABASE}.log"
-CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
 # Run query via expect to make isatty() return true
 function run()
@@ -20,8 +21,7 @@ spawn bash -c "$command"
 expect 1
 EOF
 
-    file "$file_name" | grep -o "ASCII text"
-    file "$file_name" | grep -o "with escape sequences"
+    grep -F $'\x1b' "$file_name" && cat "$file_name" || echo "ASCII text"
 }
 
 run "$CLICKHOUSE_CLIENT -q 'SELECT 1' 2>$file_name"

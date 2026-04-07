@@ -11,7 +11,7 @@
 #include <Common/NaNUtils.h>
 #include <base/range.h>
 
-#include "s2_fwd.h"
+#include <Functions/s2_fwd.h>
 
 namespace DB
 {
@@ -82,6 +82,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt8>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto non_const_arguments = arguments;
@@ -131,16 +136,16 @@ public:
             const auto point = S2CellId(data_point[row]);
 
             if (isNaN(degrees))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be nan in function {}", getName());
 
             if (std::isinf(degrees))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite");
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Radius of the cap must not be infinite in function {}", getName());
 
             if (!center.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Center is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Center (id {}) is not valid in function {}", data_center[row], getName());
 
             if (!point.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point (id {}) is not valid in function {}", data_point[row], getName());
 
             S1Angle angle = S1Angle::Degrees(degrees);
             S2Cap cap(center.ToPoint(), angle);
@@ -156,7 +161,22 @@ public:
 
 REGISTER_FUNCTION(S2CapContains)
 {
-    factory.registerFunction<FunctionS2CapContains>();
+    FunctionDocumentation::Description description = R"(
+Determines if an S2 cap contains an S2 point. A cap represents a portion of the sphere that has been cut off by a plane. It is defined by a center point and a radius in degrees.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2CapContains(center, degrees, point)";
+    FunctionDocumentation::Arguments arguments = {
+        {"center", "S2 cell identifier of the cap center point.", {"UInt64"}},
+        {"degrees", "Radius of the cap in degrees.", {"Float64"}},
+        {"point", "S2 cell identifier of the point to test.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the cap contains the point and 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2CapContains>(documentation);
 }
 
 

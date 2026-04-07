@@ -1,7 +1,13 @@
 ---
-slug: /en/operations/system-tables/tables
+description: 'System table containing metadata of each table that the server knows
+  about.'
+keywords: ['system table', 'tables']
+slug: /operations/system-tables/tables
+title: 'system.tables'
+doc_type: 'reference'
 ---
-# tables
+
+# system.tables
 
 Contains metadata of each table that the server knows about.
 
@@ -11,67 +17,73 @@ Contains metadata of each table that the server knows about.
 
 Columns:
 
--   `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
+- `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 
--   `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+- `name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 
--   `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid (Atomic database).
+- `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — Table uuid (Atomic database).
 
--   `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters).
+- `engine` ([String](../../sql-reference/data-types/string.md)) — Table engine name (without parameters).
 
--   `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
+- `is_temporary` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table is temporary.
 
--   `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
+- `data_paths` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Paths to the table data in the file systems.
 
--   `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
+- `metadata_path` ([String](../../sql-reference/data-types/string.md)) - Path to the table metadata in the file system.
 
--   `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Time of latest modification of the table metadata.
+- `metadata_modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) - Time of latest modification of the table metadata.
 
--   `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
+- `metadata_version` ([Int32](../../sql-reference/data-types/int-uint.md)) - Metadata version for ReplicatedMergeTree table, 0 for non ReplicatedMergeTree table.
 
--   `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([MaterializedView](../../engines/table-engines/special/materializedview.md) tables based on the current table).
+- `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
--   `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
+- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](/sql-reference/statements/create/view#materialized-view) the current table).
 
--   `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
+- `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 
--   `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
+- `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
 
--   `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
+- `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
 
--   `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
+- `parameterized_view_parameters` ([Array](../../sql-reference/data-types/array.md) of [Tuple](../../sql-reference/data-types/tuple.md)) — Parameters of parameterized view.
 
--   `primary_key` ([String](../../sql-reference/data-types/string.md)) - The primary key expression specified in the table.
+- `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 
--   `sampling_key` ([String](../../sql-reference/data-types/string.md)) - The sampling key expression specified in the table.
+- `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
 
--   `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
+- `primary_key` ([String](../../sql-reference/data-types/string.md)) - The primary key expression specified in the table.
 
-    -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+- `sampling_key` ([String](../../sql-reference/data-types/string.md)) - The sampling key expression specified in the table.
 
--   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underying `Buffer` table).
+- `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
--   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
+  - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
+  - [Distributed](/engines/table-engines/special/distributed)
 
-    -   If the table stores data on disk, returns used space on disk (i.e. compressed).
-    -   If the table stores data in memory, returns approximated number of used bytes in memory.
+- `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underlying `Buffer` table).
 
--   `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables).
+- `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes (including indices and projections), if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
 
--   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
+  - If the table stores data on disk, returns used space on disk (i.e. compressed).
+  - If the table stores data in memory, returns approximated number of used bytes in memory.
 
--   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
+- `total_bytes_uncompressed` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of uncompressed bytes (including indices and projections), if it's possible to quickly determine the exact number of bytes from the part checksums for the table on storage, otherwise `NULL` (does not take underlying storage (if any) into account).
 
--   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
+- `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows INSERTed since server start (only for `Buffer` tables).
 
--   `loading_dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database  loading dependencies (list of objects which should be loaded before the current object).
+- `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes INSERTed since server start (only for `Buffer` tables).
 
--   `loading_dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table loading dependencies (list of objects which should be loaded before the current object).
+- `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
 
--   `loading_dependent_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading database.
+- `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
 
--   `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading table.
+- `loading_dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database  loading dependencies (list of objects which should be loaded before the current object).
+
+- `loading_dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table loading dependencies (list of objects which should be loaded before the current object).
+
+- `loading_dependent_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading database.
+
+- `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading table.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
@@ -94,8 +106,8 @@ metadata_path:              /var/lib/clickhouse/store/461/461cf698-fd0b-406d-8c0
 metadata_modification_time: 2021-01-25 19:14:32
 dependencies_database:      []
 dependencies_table:         []
-create_table_query:         CREATE TABLE base.t1 (`n` UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 8192
-engine_full:                MergeTree ORDER BY n SETTINGS index_granularity = 8192
+create_table_query:         CREATE TABLE base.t1 (`n` UInt64) ENGINE = MergeTree ORDER BY n
+engine_full:                MergeTree ORDER BY n
 as_select:                  SELECT database AS table_catalog
 partition_key:
 sorting_key:                n
@@ -125,8 +137,8 @@ metadata_path:              /var/lib/clickhouse/metadata/default/53r93yleapyears
 metadata_modification_time: 2020-09-23 09:05:36
 dependencies_database:      []
 dependencies_table:         []
-create_table_query:         CREATE TABLE default.`53r93yleapyears` (`id` Int8, `febdays` Int8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192
-engine_full:                MergeTree ORDER BY id SETTINGS index_granularity = 8192
+create_table_query:         CREATE TABLE default.`53r93yleapyears` (`id` Int8, `febdays` Int8) ENGINE = MergeTree ORDER BY id
+engine_full:                MergeTree ORDER BY id
 as_select:                  SELECT name AS catalog_name
 partition_key:
 sorting_key:                id

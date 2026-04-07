@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ValueSourceVisitor.h"
+#include <Functions/GatherUtils/ValueSourceVisitor.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -20,18 +20,15 @@ struct IValueSource
 
     virtual void accept(ValueSourceVisitor &)
     {
-        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
     }
 
     virtual bool isConst() const { return false; }
 };
 
-#pragma GCC visibility push(hidden)
-
 template <typename Derived>
-class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};
+class ValueSourceImpl : public Visitable<Derived, IValueSource, ValueSourceVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
-#pragma GCC visibility pop
 }
 
 }

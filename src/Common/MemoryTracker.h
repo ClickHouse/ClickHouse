@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
+#include <Common/AllocationTrace.h>
 
 #if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
@@ -40,6 +42,11 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 struct OvercommitRatio;
 struct OvercommitTracker;
 
+namespace DB
+{
+    class PageCache;
+}
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -56,15 +63,24 @@ private:
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
 
-    static std::atomic<Int64> free_memory_in_allocator_arenas;
+    std::atomic<Int64> rss{0};
 
     Int64 profiler_step = 0;
 
     /// To test exception safety of calling code, memory tracker throws an exception on each memory allocation with specified probability.
-    double fault_probability = 0;
+    std::atomic<double> fault_probability = 0;
 
     /// To randomly sample allocations and deallocations in trace_log.
-    double sample_probability = 0;
+    double sample_probability = -1;
+
+    /// Randomly sample allocations only larger or equal to this size
+    UInt64 min_allocation_size_bytes = 0;
+
+    /// Randomly sample allocations only smaller or equal to this size
+    UInt64 max_allocation_size_bytes = 0;
+
+    UInt64 jemalloc_flush_profile_interval_bytes = 0;
+    bool jemalloc_flush_profile_on_memory_exceeded = false;
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
@@ -80,6 +96,8 @@ private:
 
     std::atomic<OvercommitTracker *> overcommit_tracker = nullptr;
 
+    std::atomic<DB::PageCache *> page_cache = nullptr;
+
     bool log_peak_memory_usage_in_destructor = true;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
@@ -87,16 +105,26 @@ private:
 
     void setOrRaiseProfilerLimit(Int64 value);
 
+    bool isSizeOkForSampling(UInt64 size) const;
+
+    /// helper fields for analyzing MemoryTracker
+    /// amount which is not corrected by external source like RSS
+    int64_t uncorrected_amount = 0;
+    /// last corrected amount we set to memory tracker
+    int64_t last_corrected_amount = 0;
+
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
-    void allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr);
-    void free(Int64 size);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
     static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+    static constexpr auto PEAK_USAGE_EVENT_NAME = "MemoryTrackerPeakUsage";
 
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_, bool log_peak_memory_usage_in_destructor_);
 
     ~MemoryTracker();
 
@@ -108,6 +136,18 @@ public:
     {
         return amount.load(std::memory_order_relaxed);
     }
+
+    Int64 getRSS() const
+    {
+        return rss.load(std::memory_order_relaxed);
+    }
+
+    // Merges and mutations may pass memory ownership to other threads thus in the end of execution
+    // MemoryTracker for background task may have a non-zero counter.
+    // This method is intended to fix the counter inside of background_memory_tracker.
+    // NOTE: We can't use alloc/free methods to do it, because they also will change the value inside
+    // of total_memory_tracker.
+    void adjustOnBackgroundTaskEnd(const MemoryTracker * child);
 
     Int64 getPeak() const
     {
@@ -133,12 +173,38 @@ public:
 
     void setFaultProbability(double value)
     {
-        fault_probability = value;
+        /// Cap to 0.5 to avoid infinite loops where every allocation fails
+        /// and operations that retry on memory errors can never make progress.
+        fault_probability.store(std::min(value, 0.5), std::memory_order_relaxed);
     }
+
+    void injectFault() const;
 
     void setSampleProbability(double value)
     {
         sample_probability = value;
+    }
+
+    double getSampleProbability(UInt64 size);
+
+    void setSampleMinAllocationSize(UInt64 value)
+    {
+        min_allocation_size_bytes = value;
+    }
+
+    void setJemallocFlushProfileInterval(UInt64 interval)
+    {
+        jemalloc_flush_profile_interval_bytes = interval;
+    }
+
+    void setJemallocFlushProfileOnMemoryExceeded(bool flush)
+    {
+        jemalloc_flush_profile_on_memory_exceeded = flush;
+    }
+
+    void setSampleMaxAllocationSize(UInt64 value)
+    {
+        max_allocation_size_bytes = value;
     }
 
     void setProfilerStep(Int64 value)
@@ -149,10 +215,7 @@ public:
 
     /// next should be changed only once: from nullptr to some value.
     /// NOTE: It is not true in MergeListElement
-    void setParent(MemoryTracker * elem)
-    {
-        parent.store(elem, std::memory_order_relaxed);
-    }
+    void setParent(MemoryTracker * elem);
 
     MemoryTracker * getParent()
     {
@@ -195,19 +258,32 @@ public:
         overcommit_tracker.store(nullptr, std::memory_order_relaxed);
     }
 
+    void setPageCache(DB::PageCache * cache) noexcept
+    {
+        page_cache.store(cache);
+    }
+
+    void resetPageCache() noexcept
+    {
+        page_cache.store(nullptr);
+    }
+
     /// Reset the accumulated data
     void resetCounters();
 
     /// Reset the accumulated data.
     void reset();
 
-    /// Reset current counter to an RSS value.
-    /// Jemalloc may have pre-allocated arenas, they are accounted in RSS.
-    /// We can free this arenas in case of exception to avoid OOM.
-    static void setRSS(Int64 rss_, Int64 free_memory_in_allocator_arenas_);
+    /// update values based on external information (e.g. jemalloc's stat)
+    static void updateRSS(Int64 rss_);
+    static void updateAllocated(Int64 allocated_, bool log_change);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
 };
 
 extern MemoryTracker total_memory_tracker;
+extern MemoryTracker background_memory_tracker;
+bool isTotalMemoryTrackerInitialized();
+
+bool canEnqueueBackgroundTask();

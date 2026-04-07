@@ -1,0 +1,360 @@
+-- test String Functions --
+-- Customers |where Education contains \'degree\'
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+
+-- Customers |where Education !contains \'degree\'
+\N	why	Professional	Partial College	38
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers |where Education contains \'Degree\'
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+
+-- Customers |where Education !contains \'Degree\'
+\N	why	Professional	Partial College	38
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where FirstName endswith \'RE\'
+Theodore	Diaz	Skilled Manual	Bachelors	28
+
+-- Customers | where ! FirstName endswith \'RE\'
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+--Customers | where FirstName endswith_cs \'re\'
+Theodore	Diaz	Skilled Manual	Bachelors	28
+
+-- Customers | where FirstName !endswith_cs \'re\'
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation == \'Skilled Manual\'
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation != \'Skilled Manual\'
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers | where Occupation has \'skilled\'
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation !has \'skilled\'
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers | where Occupation has \'Skilled\'
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation !has \'Skilled\'
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers | where Occupation hasprefix_cs \'Ab\'
+
+-- Customers | where Occupation !hasprefix_cs \'Ab\'
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation hasprefix_cs \'ab\'
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers | where Occupation !hasprefix_cs \'ab\'
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation hassuffix \'Ent\'
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers | where Occupation !hassuffix \'Ent\'
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Occupation hassuffix \'ent\'
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers | where Occupation hassuffix \'ent\'
+Stephanie	Cox	Management abcd defg	Bachelors	33
+
+-- Customers |where Education in (\'Bachelors\',\'High School\')
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where Education !in (\'Bachelors\',\'High School\')
+\N	why	Professional	Partial College	38
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+
+-- Customers | where FirstName matches regex \'P.*r\'
+Peter	Nara	Skilled Manual	Graduate Degree	26
+
+-- Customers | where FirstName startswith \'pet\'
+Peter	Nara	Skilled Manual	Graduate Degree	26
+
+-- Customers | where FirstName !startswith \'pet\'
+Latoya	Shen	Professional	Graduate Degree	25
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where FirstName startswith_cs \'pet\'
+
+-- Customers | where FirstName !startswith_cs \'pet\'
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where isempty(LastName)
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where isnotempty(LastName)
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Latoya	Shen	Professional	Graduate Degree	25
+\N	why	Professional	Partial College	38
+
+-- Customers | where isnotnull(FirstName)
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Apple		Skilled Manual	Bachelors	28
+
+-- Customers | where isnull(FirstName)
+\N	why	Professional	Partial College	38
+
+-- Customers | project url_decode(\'https%3A%2F%2Fwww.test.com%2Fhello%20word\') | take 1
+https://www.test.com/hello word
+
+-- Customers | project url_encode(\'https://www.test.com/hello word\') | take 1
+https%3A%2F%2Fwww.test.com%2Fhello%20word
+
+-- Customers | project name_abbr = strcat(substring(FirstName,0,3), \' \', substring(LastName,2))
+\N
+Lat en
+Pet ra
+The az
+Ste x
+App 
+
+-- Customers | project name = strcat(FirstName, \' \', LastName)
+\N
+Latoya Shen
+Peter Nara
+Theodore Diaz
+Stephanie Cox
+Apple 
+
+-- Customers | project FirstName, strlen(FirstName)
+\N	\N
+Latoya	6
+Peter	5
+Theodore	8
+Stephanie	9
+Apple	5
+
+-- Customers | project strrep(FirstName,2,\'_\')
+\N
+Latoya_Latoya
+Peter_Peter
+Theodore_Theodore
+Stephanie_Stephanie
+Apple_Apple
+
+-- Customers | project toupper(FirstName)
+\N
+LATOYA
+PETER
+THEODORE
+STEPHANIE
+APPLE
+
+-- Customers | project tolower(FirstName)
+\N
+latoya
+peter
+theodore
+stephanie
+apple
+
+-- support subquery for in orerator (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/in-cs-operator) (subquery need to be wraped with bracket inside bracket); TODO: case-insensitive not supported yet
+Latoya	Shen	Professional	Graduate Degree	25
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- has_all (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/has-all-operator); TODO: subquery not supported yet
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Apple		Skilled Manual	Bachelors	28
+
+-- has_any (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/has-anyoperator); TODO: subquery not supported yet
+Theodore	Diaz	Skilled Manual	Bachelors	28
+Stephanie	Cox	Management abcd defg	Bachelors	33
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Apple		Skilled Manual	Bachelors	28
+
+-- countof (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/countoffunction)
+3
+3
+1
+
+-- extract ( https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractfunction)
+PINEAPPLE ice cream is 20
+PINEAPPLE
+20
+
+20
+\N
+\N
+\N
+\N
+\N
+45.6
+45.6
+
+-- extract_all (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/extractallfunction); TODO: captureGroups not supported yet
+[['T','h','e'],['p','ric','e'],['P','INEAPPL','E'],['i','c','e'],['c','rea','m']]
+
+-- extract_json (https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query/extractjsonfunction)
+
+
+John
+iPhone
+\N
+26
+26
+26
+26
+\N
+
+-- split (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/splitfunction)
+['aa','bb']
+['bbb']
+['']
+['a','','b']
+['aa','cc']
+['aabbcc']
+['aaa','bbb','ccc']
+[NULL]
+
+-- strcat_delim (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/strcat-delimfunction); TODO: only support string now.
+1-2-Ab
+
+-- indexof (https://docs.microsoft.com/en-us/azure/data-explorer/kusto/query/indexoffunction); TODO: length and occurrence not supported yet
+2
+2
+-1
+-- base64_encode_fromguid()
+8jMxriJurkmwahbmqbIS6w==
+-- base64_decode_toarray()
+[]
+[75,117,115,116,111]
+-- base64_decode_toguid()
+10e99626-bc2b-4c75-bb3e-fe606de25700
+1
+-- base64_encode_tostring
+
+S3VzdG8x
+-- base64_decode_tostring
+
+Kusto1
+-- parse_url()
+{"Scheme":"scheme","Host":"","Port":"0","Path":"/this/is/a/path","Username":"username","Password":"password","Query Parameters":{"k1":"v1","k2":"v2"},"Fragment":"fragment"}
+-- parse_urlquery()
+{"Query Parameters":{"k1":"v1","k2":"v2","k3":"v3"}}
+-- strcmp()
+0	1	-1	1
+-- substring()
+CD
+-- translate()
+kusto		xxx
+-- trim()
+https://www.ibm.com
+Te st1
+ asd 
+asd
+sd
+-- trim_start()
+www.ibm.com
+Te st1// $
+asdw
+
+asd
+-- trim_end()
+https
+- Te st1
+wasd
+
+asd
+-- trim, trim_start, trim_end all at once
+--https://bing.com--	--	https://bing.com--	--https://bing.com	https://bing.com
+-- replace_regex
+Number was: 1
+-- has_any_index()
+0	1	-1	-1
+-- parse_version()
+1000000020000000300000040
+1000000020000000000000000
+1000000020000000000000000
+\N
+\N
+\N
+\N
+1000000020000000300000004
+1000000020000000000000000
+1000000020000000300000000
+1000000000000000000000000
+-- parse_json()
+[1,2,3]
+[{"a":123.5,"b":"{\\"c\\":456}"}]
+-- parse_command_line()
+[NULL]
+[NULL]
+-- reverse()
+321
+43.321
+
+dsa
+][
+]3,2,1[
+]\'redaV\',\'htraD\'[
+000000000.00:00:21 51-01-7102
+Peter	Nara	Skilled Manual	Graduate Degree	26
+Latoya	Shen	Professional	Graduate Degree	25
+-- parse_csv()
+['']
+['aaa']
+['aa','b','cc']
+['record1','a','b','c']

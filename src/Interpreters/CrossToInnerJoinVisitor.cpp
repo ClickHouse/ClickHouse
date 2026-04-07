@@ -1,13 +1,7 @@
 #include <Common/typeid_cast.h>
-#include <Parsers/queryToString.h>
-#include <Functions/FunctionsComparison.h>
-#include <Functions/FunctionsLogical.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -15,10 +9,10 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -48,14 +42,14 @@ struct JoinedElement
     void checkTableName(const DatabaseAndTableWithAlias & table, const String & current_database) const
     {
         if (!element.table_expression)
-            throw Exception("Not a table expression in JOIN (ARRAY JOIN?)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not a table expression in JOIN (ARRAY JOIN?)");
 
         ASTTableExpression * table_expression = element.table_expression->as<ASTTableExpression>();
         if (!table_expression)
-            throw Exception("Wrong table expression in JOIN", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong table expression in JOIN");
 
         if (!table.same(DatabaseAndTableWithAlias(*table_expression, current_database)))
-            throw Exception("Inconsistent table names", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent table names");
     }
 
     void rewriteCommaToCross()
@@ -75,7 +69,7 @@ struct JoinedElement
         join->strictness = JoinStrictness::All;
 
         join->on_expression = on_expression;
-        join->children.push_back(join->on_expression);
+        join->children = {join->on_expression};
         return true;
     }
 
@@ -117,7 +111,7 @@ std::map<size_t, std::vector<ASTPtr>> moveExpressionToJoinOn(
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
     for (const auto & node : splitConjunctionsAst(ast))
     {
-        if (const auto * func = node->as<ASTFunction>(); func && func->name == NameEquals::name)
+        if (const auto * func = node->as<ASTFunction>(); func && func->name == "equals")
         {
             if (!func->arguments || func->arguments->children.size() != 2)
                 return {};
@@ -149,12 +143,12 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     if (expressions.size() == 1)
         return expressions[0]->clone();
 
-    std::vector<ASTPtr> arguments;
+    ASTs arguments;
     arguments.reserve(expressions.size());
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
 
-    return makeASTFunction(NameAnd::name, std::move(arguments));
+    return makeASTOperator("and", std::move(arguments));
 }
 
 std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
@@ -178,7 +172,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
     {
         const auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
-            throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "TablesInSelectQueryElement expected");
 
         JoinedElement & t = joined_tables.emplace_back(*table_element);
         t.rewriteCommaToCross();
@@ -189,7 +183,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
         if (t.hasUsing())
         {
             if (has_using)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multiple USING statements are not supported");
             has_using = true;
         }
 
@@ -198,7 +192,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
             if (!join->children.empty())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "CROSS JOIN has {} expressions: [{}, ...]",
-                    join->children.size(), queryToString(join->children[0]));
+                    join->children.size(), join->children[0]->formatWithSecretsOneLine());
         }
     }
 
@@ -210,7 +204,17 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    return !node->as<ASTSubquery>();
+    if (node->as<ASTSubquery>())
+        return false;
+
+    /// Do not descend into table expressions — they may contain
+    /// table functions like view(SELECT ... JOIN ...) whose inner
+    /// ASTSelectQuery has a different set of tables and must not be
+    /// processed by this visitor.
+    if (node->as<ASTTableExpression>())
+        return false;
+
+    return true;
 }
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
@@ -229,7 +233,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     {
         if (joined_tables.size() != data.tables_with_columns.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Logical error: inconsistent number of tables: {} != {}",
+                            "Inconsistent number of tables: {} != {}",
                             joined_tables.size(), data.tables_with_columns.size());
 
         for (size_t i = 0; i < joined_tables.size(); ++i)
@@ -246,7 +250,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
             if (joined.tableJoin()->kind != JoinKind::Cross)
                 continue;
 
-            String query_before = queryToString(*joined.tableJoin());
+            String query_before = joined.tableJoin()->formatWithSecretsOneLine();
             bool rewritten = false;
             const auto & expr_it = asts_to_join_on.find(i);
             if (expr_it != asts_to_join_on.end())
@@ -254,7 +258,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 ASTPtr on_expr = makeOnExpression(expr_it->second);
                 if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
                 {
-                    LOG_DEBUG(&Poco::Logger::get("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, queryToString(*joined.tableJoin()));
+                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, joined.tableJoin()->formatForLogging());
                 }
             }
 
@@ -268,7 +272,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                     "Please, try to simplify WHERE section "
                     "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
                     "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
-                    query_before, queryToString(select.where()));
+                    query_before, select.where()->formatForErrorMessage());
             }
         }
     }

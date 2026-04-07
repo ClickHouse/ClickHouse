@@ -1,8 +1,13 @@
 import time
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-
+from helpers.wait_for_helpers import (
+    wait_for_delete_empty_parts,
+    wait_for_delete_inactive_parts,
+)
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -20,8 +25,10 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_event_time_microseconds_field(started_cluster):
+def test_numbers_of_detached_parts(started_cluster):
     cluster.start()
+    node1.query("DROP TABLE IF EXISTS t SYNC")
+
     query_create = """
     CREATE TABLE t
     (
@@ -68,6 +75,7 @@ def test_event_time_microseconds_field(started_cluster):
 
     # detach some parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION '20220901';")
+    wait_for_delete_empty_parts(node1, "t")
 
     assert 2 == int(node1.query(query_count_detached_parts))
     assert 1 == int(node1.query(query_count_active_parts))
@@ -81,6 +89,7 @@ def test_event_time_microseconds_field(started_cluster):
 
     # detach the rest parts and wait until asynchronous metrics notice it
     node1.query("ALTER TABLE t DETACH PARTITION ALL")
+    wait_for_delete_empty_parts(node1, "t")
 
     assert 3 == int(node1.query(query_count_detached_parts))
     assert 0 == int(node1.query(query_count_active_parts))
@@ -93,11 +102,14 @@ def test_event_time_microseconds_field(started_cluster):
     assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # inject some data directly and wait until asynchronous metrics notice it
+    data_path = node1.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='t'"
+    ).strip()
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/t/detached/unexpected_all_0_0_0",
+            f"mkdir {data_path}/detached/unexpected_all_0_0_0",
         ]
     )
 
@@ -116,9 +128,7 @@ def test_event_time_microseconds_field(started_cluster):
         [
             "bash",
             "-c",
-            "rm -rf /var/lib/clickhouse/data/default/t/detached/{}".format(
-                partition_name
-            ),
+            f"rm -rf {data_path}/detached/{partition_name}",
         ]
     )
 
@@ -131,3 +141,5 @@ def test_event_time_microseconds_field(started_cluster):
         "3\n",
     )
     assert 2 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
+
+    node1.query("DROP TABLE t SYNC")

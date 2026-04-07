@@ -2,13 +2,16 @@
 
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 
-#include <Common/logger_useful.h>
+#include <Common/Logger_fwd.h>
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+#include <vector>
 
 namespace DB
 {
+class Exception;
 class StorageFileLog;
 
 class FileLogDirectoryWatcher
@@ -66,7 +69,7 @@ private:
     /// accessed in thread created by dw.
     Events events;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     std::mutex mutex;
 

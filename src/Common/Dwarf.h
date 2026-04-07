@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 /*
  * Copyright 2012-present Facebook, Inc.
@@ -35,6 +35,9 @@ namespace DB
 {
 
 class Elf;
+#if defined(OS_DARWIN)
+class MachO;
+#endif
 
 /**
  * DWARF record parser.
@@ -46,8 +49,8 @@ class Elf;
  * can parse Debug Information Entries (DIEs), abbreviations, attributes (of
  * all forms), and we can interpret bytecode for the line number VM.
  *
- * We can interpret DWARF records of version 2, 3, or 4, although we don't
- * actually support many of the version 4 features (such as VLIW, multiple
+ * We can interpret DWARF records of version 2, 3, 4, or 5, although we don't
+ * actually support many of the features of versions 4 and 5 (such as VLIW, multiple
  * operations per instruction)
  *
  * Note that the DWARF record parser does not allocate heap memory at all.
@@ -67,6 +70,11 @@ class Dwarf final
 public:
     /** Create a DWARF parser around an ELF file. */
     explicit Dwarf(const std::shared_ptr<Elf> & elf);
+
+#if defined(OS_DARWIN)
+    /** Create a DWARF parser around a Mach-O file (typically from a dSYM bundle). */
+    explicit Dwarf(const std::shared_ptr<MachO> & macho);
+#endif
 
     /**
      * More than one location info may exist if current frame is an inline
@@ -126,7 +134,7 @@ public:
         std::string_view name;
     };
 
-    enum class LocationInfoMode
+    enum class LocationInfoMode : uint8_t
     {
         // Don't resolve location info.
         DISABLED,
@@ -147,6 +155,7 @@ public:
         bool has_file_and_line = false;
         Path file;
         uint64_t line = 0;
+        uint64_t column = 0;
     };
 
     /**
@@ -173,6 +182,9 @@ private:
     static bool findDebugInfoOffset(uintptr_t address, std::string_view aranges, uint64_t & offset);
 
     std::shared_ptr<const Elf> elf_; /// NOLINT
+#if defined(OS_DARWIN)
+    std::shared_ptr<const MachO> macho_; /// NOLINT
+#endif
 
     // DWARF section made up of chunks, each prefixed with a length header.
     // The length indicates whether the chunk is DWARF-32 or DWARF-64, which
@@ -266,7 +278,7 @@ private:
         // The beginning of the offsets table (immediately following the
         // header) of the CU's contribution to .debug_rnglists
         std::optional<uint64_t> rnglists_base; // DW_AT_rnglists_base (DWARF 5)
-        // Points to the first string offset of the compilation unit’s
+        // Points to the first string offset of the compilation unit's
         // contribution to the .debug_str_offsets (or .debug_str_offsets.dwo) section.
         std::optional<uint64_t> str_offsets_base; // DW_AT_str_offsets_base (DWARF 5)
 
@@ -283,7 +295,8 @@ private:
         LocationInfoMode mode,
         CompilationUnit & cu,
         LocationInfo & info,
-        std::vector<SymbolizedFrame> & inline_frames) const;
+        std::vector<SymbolizedFrame> & inline_frames,
+        bool assume_in_cu_range) const;
 
     /**
      * Finds a subprogram debugging info entry that contains a given address among
@@ -302,7 +315,7 @@ private:
             std::string_view debugStr,
             std::string_view debugLineStr);
 
-        bool findAddress(uintptr_t target, Path & file, uint64_t & line);
+        bool findAddress(uintptr_t target, Path & file, uint64_t & line, uint64_t & column);
 
         /** Gets full file name at given index including directory. */
         Path getFullFileName(uint64_t index) const;
@@ -453,22 +466,11 @@ private:
     // Finds the Compilation Unit starting at offset.
     CompilationUnit findCompilationUnit(uint64_t targetOffset) const;
 
-
-    template <class T>
-    std::optional<T> getAttribute(const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
-    {
-        std::optional<T> result;
-        forEachAttribute(cu, die, [&](const Attribute & attr)
-        {
-            if (attr.spec.name == attr_name)
-            {
-                result = std::get<T>(attr.attr_value);
-                return false;
-            }
-            return true;
-        });
-        return result;
-    }
+    // Parses an attribute of "reference" form class, i.e. a reference to another DIE.
+    // Returns the unit containing the target DIE (nullopt if it's in the same unit as the source DIE)
+    // and the offset of the target DIE (relative to .debug_info, not to unit).
+    std::optional<std::pair<std::optional<CompilationUnit>, uint64_t>> getReferenceAttribute(
+        const CompilationUnit & cu, const Die & die, uint64_t attr_name) const;
 
     // Check if the given address is in the range list at the given offset in .debug_ranges.
     bool isAddrInRangeList(

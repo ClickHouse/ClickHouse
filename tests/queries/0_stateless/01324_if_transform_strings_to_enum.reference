@@ -8,7 +8,7 @@ yahoo
 other
 other
 other
-SELECT transform(number, [2, 4, 6], _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4))\'), _CAST(\'other\', \'Enum8(\\\'censor.net\\\' = 1, \\\'google\\\' = 2, \\\'other\\\' = 3, \\\'yahoo\\\' = 4)\'))
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
 FROM system.numbers
 LIMIT 10
 google
@@ -34,7 +34,7 @@ yahoo
 other
 other
 other
-SELECT transform(number, [2, 4, 6], [\'google\', \'censor.net\', \'yahoo\'], \'other\')
+SELECT transform(number, _CAST([2, 4, 6], \'Array(UInt8)\'), _CAST([\'google\', \'censor.net\', \'yahoo\'], \'Array(String)\'), \'other\')
 FROM system.numbers
 LIMIT 10
 google

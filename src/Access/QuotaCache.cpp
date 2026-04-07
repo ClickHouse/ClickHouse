@@ -30,7 +30,7 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 }
 
 
-String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
+String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
     switch (quota->key_type)
@@ -55,9 +55,14 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            throw Exception(
-                "Quota " + quota->getName() + " (for user " + params.user_name + ") requires a client supplied key.",
-                ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY);
+
+            if (throw_if_client_key_empty)
+                throw Exception(
+                    ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY,
+                    "Quota {} (for user {}) requires a client supplied key.",
+                    quota->getName(),
+                    params.user_name);
+            return ""; // Authentication quota has no client key at time of authentication.
         }
         case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {
@@ -71,9 +76,15 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
                 return params.client_key;
             return params.client_address.toString();
         }
+        case QuotaKeyType::NORMALIZED_QUERY_HASH:
+        {
+            /// For NORMALIZED_QUERY_HASH, the key is resolved per-query via IntervalResolver.
+            /// Return a placeholder key for the shared session-level intervals.
+            return params.user_name;
+        }
         case QuotaKeyType::MAX: break;
     }
-    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected quota key type: {}", static_cast<int>(quota->key_type));
 }
 
 
@@ -166,7 +177,14 @@ QuotaCache::QuotaCache(const AccessControl & access_control_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & forwarded_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
+    const UUID & user_id,
+    const String & user_name,
+    const boost::container::flat_set<UUID> & enabled_roles,
+    const std::shared_ptr<Poco::Net::IPAddress> & client_address,
+    const String & forwarded_address,
+    const String & client_key,
+    bool throw_if_client_key_empty)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -175,7 +193,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & use
     params.user_id = user_id;
     params.user_name = user_name;
     params.enabled_roles = enabled_roles;
-    params.client_address = client_address;
+    params.client_address = *client_address;
     params.forwarded_address = forwarded_address;
     params.client_key = client_key;
     auto it = enabled_quotas.find(params);
@@ -189,10 +207,9 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & use
 
     auto res = std::shared_ptr<EnabledQuota>(new EnabledQuota(params));
     enabled_quotas.emplace(std::move(params), res);
-    chooseQuotaToConsumeFor(*res);
+    chooseQuotaToConsumeFor(*res, throw_if_client_key_empty);
     return res;
 }
-
 
 void QuotaCache::ensureAllQuotasRead()
 {
@@ -258,13 +275,13 @@ void QuotaCache::chooseQuotaToConsume()
             i = enabled_quotas.erase(i);
         else
         {
-            chooseQuotaToConsumeFor(*elem);
+            chooseQuotaToConsumeFor(*elem, true);
             ++i;
         }
     }
 }
 
-void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
+void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
 {
     /// `mutex` is already locked.
     boost::shared_ptr<const Intervals> intervals;
@@ -272,16 +289,52 @@ void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
     {
         if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
         {
-            String key = info.calculateKey(enabled);
+            String key = info.calculateKey(enabled, throw_if_client_key_empty);
             intervals = info.getOrBuildIntervals(key);
+
+            /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
+            /// so that EnabledQuota can lazily resolve intervals per query hash.
+            /// Both interval_resolver and resolved_intervals_cache are protected
+            /// by resolved_intervals_mutex to avoid data races with concurrent readers.
+            {
+                std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
+                if (info.quota->key_type == QuotaKeyType::NORMALIZED_QUERY_HASH)
+                {
+                    UUID found_quota_id = info.quota_id;
+                    enabled.interval_resolver = [this, found_quota_id](const String & hash_key) -> boost::shared_ptr<const Intervals>
+                    {
+                        std::lock_guard lock(mutex);
+                        auto it = all_quotas.find(found_quota_id);
+                        if (it == all_quotas.end())
+                            return nullptr;
+                        return it->second.getOrBuildIntervals(hash_key);
+                    };
+                }
+                else
+                {
+                    enabled.interval_resolver = nullptr;
+                }
+                enabled.resolved_intervals_cache.clear();
+            }
+
             break;
         }
     }
 
     if (!intervals)
-        intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
-
-    enabled.intervals.store(intervals);
+    {
+        enabled.empty = true;
+        enabled.intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
+        {
+            std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
+            enabled.interval_resolver = nullptr;
+        }
+    }
+    else
+    {
+        enabled.intervals.store(intervals);
+        enabled.empty = false;
+    }
 }
 
 

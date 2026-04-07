@@ -35,9 +35,9 @@ int main(int, char **)
         watch.stop();
         rows = strings.size();
         std::cerr << std::fixed << std::setprecision(2)
-            << "Read " << rows << " rows, " << bytes / 1000000.0 << " MB"
+            << "Read " << rows << " rows, " << static_cast<double>(bytes) / 1000000.0 << " MB"
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
+            << " (" << static_cast<double>(rows) / watch.elapsedSeconds() << " rows/sec., " << static_cast<double>(bytes) / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
             << std::endl;
     }
 
@@ -58,7 +58,7 @@ int main(int, char **)
         std::cerr << std::fixed << std::setprecision(2)
             << "CityHash64 (check = " << check << ")"
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
+            << " (" << static_cast<double>(rows) / watch.elapsedSeconds() << " rows/sec., " << static_cast<double>(bytes) / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
             << std::endl;
     }
 
@@ -94,7 +94,8 @@ int main(int, char **)
         {
             SipHash hash;
             hash.update(strings[i].data(), strings[i].size());
-            hash.get128(&hashes[i * 16]);
+            const auto hashed_value = getSipHash128AsArray(hash);
+            memcpy(&hashes[i * 16], hashed_value.data(), hashed_value.size());
         }
 
         watch.stop();
@@ -104,7 +105,7 @@ int main(int, char **)
         std::cerr << std::fixed << std::setprecision(2)
             << "SipHash, stream (check = " << check << ")"
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
+            << " (" << static_cast<double>(rows) / watch.elapsedSeconds() << " rows/sec., " << static_cast<double>(bytes) / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
             << std::endl;
     }
 
@@ -127,7 +128,7 @@ int main(int, char **)
         std::cerr << std::fixed << std::setprecision(2)
             << "MD5 (check = " << check << ")"
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
+            << " (" << static_cast<double>(rows) / watch.elapsedSeconds() << " rows/sec., " << static_cast<double>(bytes) / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
             << std::endl;
     }
 #endif

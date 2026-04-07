@@ -1,21 +1,19 @@
 #pragma once
 
+#include <Common/PODArray_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
-#include <Common/Arena.h>
 
 namespace DB
 {
 
-class Arena;
-using ArenaPtr = std::shared_ptr<Arena>;
-
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 class ActionsDAG;
 
-enum class TotalsMode;
+enum class TotalsMode : uint8_t;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.
@@ -42,6 +40,8 @@ public:
     Status prepare() override;
     void work() override;
 
+    bool hasFilter() const { return !filter_column_name.empty(); }
+
     static Block transformHeader(Block block, const ActionsDAG * expression, const std::string & filter_column_name, bool remove_filter, bool final, const ColumnsMask & aggregates_mask);
 
 protected:
@@ -52,7 +52,7 @@ protected:
     Chunk totals;
 
 private:
-    void addToTotals(const Chunk & chunk, const IColumn::Filter * filter);
+    void addToTotals(const Chunk & chunk, const IColumnFilter * filter);
     void prepareTotals();
 
     /// Params

@@ -21,7 +21,7 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingTransform::FinishSortingTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
     size_t max_merged_block_size_,
@@ -31,18 +31,33 @@ FinishSortingTransform::FinishSortingTransform(
 {
     /// Check for sanity non-modified descriptions
     if (!isPrefix(description_sorted_, description_to_sort_))
-        throw Exception("Can't finish sorting. SortDescription of already sorted stream is not prefix of "
-            "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Can't finish sorting. SortDescription "
+                        "of already sorted stream is not prefix of SortDescription needed to sort");
 
+    /// Remove constants from description_sorted_.
+    SortDescription description_sorted_without_constants;
+    description_sorted_without_constants.reserve(description_sorted_.size());
+    size_t num_columns = const_columns_to_remove.size();
+    for (const auto & column_description : description_sorted_)
+    {
+        auto pos = header->getPositionByName(column_description.column_name);
+
+        if (pos < num_columns && !const_columns_to_remove[pos])
+            description_sorted_without_constants.push_back(column_description);
+    }
     /// The target description is modified in SortingTransform constructor.
     /// To avoid doing the same actions with description_sorted just copy it from prefix of target description.
-    for (const auto & column_sort_desc : description_sorted_)
+    for (const auto & column_sort_desc : description_sorted_without_constants)
         description_with_positions.emplace_back(column_sort_desc, header_without_constants.getPositionByName(column_sort_desc.column_name));
 }
 
 void FinishSortingTransform::consume(Chunk chunk)
 {
     generated_prefix = false;
+
+    if (chunk.getNumRows() == 0)
+        return;
 
     // If there were only const columns in sort description, then there is no need to sort.
     // Return the chunks as is.
@@ -104,10 +119,11 @@ void FinishSortingTransform::generate()
     if (!merge_sorter)
     {
         merge_sorter
-            = std::make_unique<MergeSorter>(header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            = std::make_unique<MergeSorter>(std::make_shared<const Block>(header_without_constants), std::move(chunks), description, max_merged_block_size, limit);
         generated_prefix = true;
     }
 
+    // TODO: Here we should also consider LIMIT optimization.
     generated_chunk = merge_sorter->read();
 
     if (!generated_chunk)

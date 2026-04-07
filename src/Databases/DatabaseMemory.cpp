@@ -1,16 +1,16 @@
-#include <base/scope_guard.h>
-#include <Common/logger_useful.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DDLDependencyVisitor.h>
+#include <Disks/IDisk.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/quoteString.h>
 #include <Storages/IStorage.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -19,13 +19,18 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
-    extern const int INCONSISTENT_METADATA_FOR_BACKUP;
 }
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
-{}
+    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseMemory::DatabaseMemory");
+    /// Temporary database should not have any data at the moment of its creation.
+    /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
+    if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
+        removeDataPath(context_);
+}
 
 void DatabaseMemory::createTable(
     ContextPtr /*context*/,
@@ -43,7 +48,7 @@ void DatabaseMemory::createTable(
         query_to_store = query->clone();
         auto * create = query_to_store->as<ASTCreateQuery>();
         if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 
@@ -62,24 +67,20 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since:
+        /// Remove table without lock since
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to
-        ///   resolve tables (like StorageLiveView)
+        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
         table->drop();
 
         if (table->storesDataOnDisk())
         {
-            assert(getDatabaseName() != DatabaseCatalog::TEMPORARY_DATABASE);
-            fs::path table_data_dir{getTableDataPath(table_name)};
-            if (fs::exists(table_data_dir))
-                fs::remove_all(table_data_dir);
+            auto metdata_disk = getDisk();
+            metdata_disk->removeRecursive(getTableDataPath(table_name));
         }
     }
     catch (...)
     {
         std::lock_guard lock{mutex};
-        assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
         attachTableUnlocked(table_name, table);
         throw;
     }
@@ -87,22 +88,23 @@ void DatabaseMemory::dropTable(
     std::lock_guard lock{mutex};
     table->is_dropped = true;
     create_queries.erase(table_name);
+    snapshot_detached_tables.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
+ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 {
-    auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
-    create_query->set(create_query->storage, std::make_shared<ASTStorage>());
+    auto create_query = make_intrusive<ASTCreateQuery>();
+    create_query->setDatabase(database_name);
+    create_query->set(create_query->storage, make_intrusive<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
-    engine->no_empty_args = true;
+    engine->setNoEmptyArgs(true);
     create_query->storage->set(create_query->storage->engine, engine);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -115,8 +117,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
-        else
-            return {};
+        return {};
     }
     return it->second->clone();
 }
@@ -128,22 +129,54 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
+void DatabaseMemory::removeDataPath(ContextPtr)
+{
+    /// This method is called in two cases:
+    /// 1. During startup for the temporary database (_temporary_and_external_tables) to clean up
+    ///    stale directories from previous server sessions (e.g., after crash or Ctrl+C).
+    ///    Temporary tables with disk-based engines (like MergeTree) may leave behind files that
+    ///    need to be removed.
+    /// 2. On explicit DROP DATABASE to remove all data.
+    ///
+    /// We must use removeRecursive() instead of removeDirectoryIfExists() because the directory
+    /// may contain files from temporary tables. Using removeDirectoryIfExists()
+    /// would fail or throw an exception if the directory is not empty.
+    auto db_disk = getDisk();
+    db_disk->removeRecursive(data_path);
+}
+
 void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
-    std::filesystem::remove_all(local_context->getPath() + data_path);
+    removeDataPath(local_context);
 }
 
-void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    std::lock_guard lock{mutex};
-    auto it = create_queries.find(table_id.table_name);
-    if (it == create_queries.end() || !it->second)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+    /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
+    ASTPtr create_query;
+    {
+        std::lock_guard lock{mutex};
+        auto it = tables.find(table_id.table_name);
+        if (it == tables.end() || (table_id.uuid != UUIDHelpers::Nil && it->second->getStorageID().uuid != table_id.uuid))
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
 
-    applyMetadataChangesToCreateQuery(it->second, metadata);
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
-    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
+        auto it_query = create_queries.find(table_id.table_name);
+        if (it_query == create_queries.end() || !it_query->second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+
+        create_query = it_query->second;
+    }
+
+    /// Apply metadata changes without holding a lock to avoid possible deadlock
+    /// (i.e. when ALTER contains IN (table))
+    applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
+
+    /// The create query of the table has been just changed, we need to update dependencies too.
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
@@ -165,23 +198,48 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
 
         auto storage_id = local_context->tryResolveStorageID(StorageID{"", table_name}, Context::ResolveExternal);
         if (!storage_id)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't resolve the name of temporary table {}", backQuoteIfNeed(table_name));
+        {
+            LOG_WARNING(log, "Couldn't resolve the name of temporary table {}", backQuoteIfNeed(table_name));
+            continue;
+        }
 
         /// Here `storage_id.table_name` looks like looks like "_tmp_ab9b15a3-fb43-4670-abec-14a0e9eb70f1"
         /// it's not the real name of the table.
         auto create_table_query = tryGetCreateTableQuery(storage_id.table_name, local_context);
         if (!create_table_query)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Couldn't get a create query for temporary table {}", backQuoteIfNeed(table_name));
+        {
+            LOG_WARNING(log, "Couldn't get a create query for temporary table {}", backQuoteIfNeed(table_name));
+            continue;
+        }
 
-        const auto & create = create_table_query->as<const ASTCreateQuery &>();
-        if (create.getTable() != table_name)
-            throw Exception(ErrorCodes::INCONSISTENT_METADATA_FOR_BACKUP, "Got a create query with unexpected name {} for temporary table {}", backQuoteIfNeed(create.getTable()), backQuoteIfNeed(table_name));
+        auto * create = create_table_query->as<ASTCreateQuery>();
+        if (create->getTable() != table_name)
+        {
+            /// Probably the database has been just renamed. Use the older name for backup to keep the backup consistent.
+            LOG_WARNING(log, "Got a create query with unexpected name {} for temporary table {}",
+                        backQuoteIfNeed(create->getTable()), backQuoteIfNeed(table_name));
+            create_table_query = create_table_query->clone();
+            create = create_table_query->as<ASTCreateQuery>();
+            create->setTable(table_name);
+        }
 
-        storage->adjustCreateQueryForBackup(create_table_query);
+        chassert(storage);
+        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 
     return res;
+}
+
+void registerDatabaseMemory(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        return make_shared<DatabaseMemory>(
+            args.database_name,
+            args.context);
+    };
+    factory.registerDatabase("Memory", create_fn);
 }
 
 }

@@ -1,13 +1,13 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
+#include <base/TypeName.h>
 
 #include <Columns/ColumnVector.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -18,11 +18,19 @@ namespace ErrorCodes
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
 {
     UInt32 unread_scale = scale;
-    if (!tryReadDecimalText(istr, x, precision, unread_scale))
-        return false;
+    if (csv)
+    {
+        if (!tryReadCSVDecimalText(istr, x, precision, unread_scale))
+            return false;
+    }
+    else
+    {
+        if (!tryReadDecimalText(istr, x, precision, unread_scale))
+            return false;
+    }
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
         return false;
@@ -40,7 +48,7 @@ void SerializationDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precisio
         readDecimalText(istr, x, precision, unread_scale);
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
-        throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 }
 
 template <typename T>
@@ -62,11 +70,31 @@ void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & ist
 }
 
 template <typename T>
+bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const
+{
+    T x;
+    if (!tryReadText(x, istr) || (whole && !istr.eof()))
+        return false;
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
+}
+
+template <typename T>
 void SerializationDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
     readText(x, istr, true);
     assert_cast<ColumnType &>(column).getData().push_back(x);
+}
+
+template <typename T>
+bool SerializationDecimal<T>::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x;
+    if (!tryReadText(x, istr, true))
+        return false;
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
 }
 
 template <typename T>
@@ -90,6 +118,35 @@ void SerializationDecimal<T>::deserializeTextJSON(IColumn & column, ReadBuffer &
         assertChar('"', istr);
 }
 
+template <typename T>
+bool SerializationDecimal<T>::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    bool have_quotes = checkChar('"', istr);
+    T x;
+    if (!tryReadText(x, istr) || (have_quotes && !checkChar('"', istr)))
+        return false;
+
+    assert_cast<ColumnType &>(column).getData().push_back(x);
+    return true;
+}
+
+
+template <typename T>
+UInt128 SerializationDecimal<T>::getHash(UInt32 precision_, UInt32 scale_)
+{
+    SipHash hash;
+    hash.update("Decimal");
+    hash.update(TypeName<T>);
+    hash.update(precision_);
+    hash.update(scale_);
+    return hash.get128();
+}
+
+template <typename T>
+SerializationPtr SerializationDecimal<T>::create(UInt32 precision_, UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(precision_, scale_), [=] { return new SerializationDecimal(precision_, scale_); });
+}
 
 template class SerializationDecimal<Decimal32>;
 template class SerializationDecimal<Decimal64>;

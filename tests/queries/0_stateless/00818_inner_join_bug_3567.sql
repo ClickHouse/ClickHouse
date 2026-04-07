@@ -1,3 +1,6 @@
+SET output_format_pretty_color = 1;
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS table1;
 DROP TABLE IF EXISTS table2;
 

@@ -1,25 +1,23 @@
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ODBCDriver2BlockOutputFormat.h>
+#include <Processors/Port.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-
-
-#include <Core/iostream_debug_helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
 {
 ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_.getSerializations())
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings(format_settings_), serializations(header_->getSerializations())
 {
 }
 
 static void writeODBCString(WriteBuffer & out, const std::string & str)
 {
-    writeIntBinary(Int32(str.size()), out);
+    writeBinaryLittleEndian(Int32(str.size()), out);
     out.write(str.data(), str.size());
 }
 
@@ -33,7 +31,7 @@ void ODBCDriver2BlockOutputFormat::writeRow(const Columns & columns, size_t row_
 
         if (column->isNullAt(row_idx))
         {
-            writeIntBinary(Int32(-1), out);
+            writeBinaryLittleEndian(Int32(-1), out);
         }
         else
         {
@@ -72,11 +70,11 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     const size_t columns = header.columns();
 
     /// Number of header rows.
-    writeIntBinary(Int32(2), out);
+    writeBinaryLittleEndian(Int32(2), out);
 
     /// Names of columns.
     /// Number of columns + 1 for first name column.
-    writeIntBinary(Int32(columns + 1), out);
+    writeBinaryLittleEndian(Int32(columns + 1), out);
     writeODBCString(out, "name");
     for (size_t i = 0; i < columns; ++i)
     {
@@ -85,7 +83,7 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
     }
 
     /// Types of columns.
-    writeIntBinary(Int32(columns + 1), out);
+    writeBinaryLittleEndian(Int32(columns + 1), out);
     writeODBCString(out, "type");
     for (size_t i = 0; i < columns; ++i)
     {
@@ -100,10 +98,12 @@ void ODBCDriver2BlockOutputFormat::writePrefix()
 void registerOutputFormatODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const RowOutputFormatParams &, const FormatSettings & format_settings)
+        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings, FormatFilterInfoPtr /*format_filter_info*/)
         {
-            return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, sample, format_settings);
+            return std::make_shared<ODBCDriver2BlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
         });
+    factory.markOutputFormatNotTTYFriendly("ODBCDriver2");
+    factory.setContentType("ODBCDriver2", "application/octet-stream");
 }
 
 }

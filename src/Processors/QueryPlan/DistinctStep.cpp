@@ -1,5 +1,8 @@
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/Transforms/DistinctSortedChunkTransform.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -10,29 +13,28 @@
 namespace DB
 {
 
-static bool checkColumnsAlreadyDistinct(const Names & columns, const NameSet & distinct_names)
+namespace QueryPlanSerializationSetting
 {
-    if (distinct_names.empty())
-        return false;
-
-    /// Now we need to check that distinct_names is a subset of columns.
-    std::unordered_set<std::string_view> columns_set(columns.begin(), columns.end());
-    for (const auto & name : distinct_names)
-        if (!columns_set.contains(name))
-            return false;
-
-    return true;
+    extern const QueryPlanSerializationSettingsOverflowMode distinct_overflow_mode;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_distinct;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_in_distinct;
 }
 
-static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_distinct_columns)
+namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+}
+
+static ITransformingStep::Traits getTraits(bool pre_distinct)
+{
+    const bool preserves_number_of_streams = pre_distinct;
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = already_distinct_columns, /// Will be calculated separately otherwise
-            .returns_single_stream = !pre_distinct && !already_distinct_columns,
-            .preserves_number_of_streams = pre_distinct || already_distinct_columns,
-            .preserves_sorting = true, /// Sorting is preserved indeed because of implementation.
+            .returns_single_stream = !pre_distinct,
+            .preserves_number_of_streams = preserves_number_of_streams,
+            .preserves_sorting = preserves_number_of_streams,
         },
         {
             .preserves_number_of_rows = false,
@@ -40,113 +42,98 @@ static ITransformingStep::Traits getTraits(bool pre_distinct, bool already_disti
     };
 }
 
-static SortDescription getSortDescription(const SortDescription & input_sort_desc, const Names& columns)
-{
-    SortDescription distinct_sort_desc;
-    for (const auto & sort_column_desc : input_sort_desc)
-    {
-        if (std::find(begin(columns), end(columns), sort_column_desc.column_name) == columns.end())
-            break;
-        distinct_sort_desc.emplace_back(sort_column_desc);
-    }
-    return distinct_sort_desc;
-}
-
 DistinctStep::DistinctStep(
-    const DataStream & input_stream_,
+    const SharedHeader & input_header_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_,
-    bool optimize_distinct_in_order_)
+    bool pre_distinct_)
     : ITransformingStep(
-            input_stream_,
-            input_stream_.header,
-            getTraits(pre_distinct_, checkColumnsAlreadyDistinct(columns_, input_stream_.distinct_columns)))
+            input_header_,
+            input_header_,
+            getTraits(pre_distinct_))
     , set_size_limits(set_size_limits_)
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
-    , optimize_distinct_in_order(optimize_distinct_in_order_)
 {
-    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
-        && (!pre_distinct /// Main distinct
-            || input_stream_.has_single_port)) /// pre_distinct for single port works as usual one
-    {
-        /// Build distinct set.
-        for (const auto & name : columns)
-            output_stream->distinct_columns.insert(name);
-    }
+}
+
+void DistinctStep::updateLimitHint(UInt64 hint)
+{
+    if (hint && limit_hint)
+        /// Both limits are set - take the min
+        limit_hint = std::min(hint, limit_hint);
+    else
+        /// Some limit is not set - take the other one
+        limit_hint = std::max(hint, limit_hint);
 }
 
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    const auto & input_stream = input_streams.back();
-    if (checkColumnsAlreadyDistinct(columns, input_stream.distinct_columns))
-        return;
-
     if (!pre_distinct)
         pipeline.resize(1);
 
-    if (optimize_distinct_in_order)
     {
-        const SortDescription distinct_sort_desc = getSortDescription(input_stream.sort_description, columns);
         if (!distinct_sort_desc.empty())
         {
             /// pre-distinct for sorted chunks
             if (pre_distinct)
             {
                 pipeline.addSimpleTransform(
-                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                     {
                         if (stream_type != QueryPipelineBuilder::StreamType::Main)
                             return nullptr;
 
-                        return std::make_shared<DistinctSortedChunkTransform>(
-                            header, set_size_limits, limit_hint, distinct_sort_desc, columns, false);
+                        return std::make_shared<DistinctSortedStreamTransform>(
+                            header,
+                            set_size_limits,
+                            limit_hint,
+                            distinct_sort_desc,
+                            columns);
                     });
                 return;
             }
+
             /// final distinct for sorted stream (sorting inside and among chunks)
-            if (input_stream.sort_scope == DataStream::SortScope::Global)
+            if (pipeline.getNumStreams() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctStep with in-order expects single input");
+
+            if (distinct_sort_desc.size() < columns.size())
             {
-                assert(input_stream.has_single_port);
-
-                if (distinct_sort_desc.size() < columns.size())
-                {
-                    if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
-                    {
-                        pipeline.addSimpleTransform(
-                            [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-                            {
-                                if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                                    return nullptr;
-
-                                return std::make_shared<DistinctSortedTransform>(
-                                    header, distinct_sort_desc, set_size_limits, limit_hint, columns);
-                            });
-                        return;
-                    }
-                }
-                else
+                if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
                 {
                     pipeline.addSimpleTransform(
-                        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                         {
                             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                                 return nullptr;
 
-                            return std::make_shared<DistinctSortedChunkTransform>(
-                                header, set_size_limits, limit_hint, distinct_sort_desc, columns, true);
+                            return std::make_shared<DistinctSortedTransform>(
+                                header, distinct_sort_desc, set_size_limits, limit_hint, columns);
                         });
                     return;
                 }
+            }
+            else
+            {
+                pipeline.addSimpleTransform(
+                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    {
+                        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                            return nullptr;
+
+                        return std::make_shared<DistinctSortedStreamTransform>(
+                            header, set_size_limits, limit_hint, distinct_sort_desc, columns);
+                    });
+                return;
             }
         }
     }
 
     pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
@@ -157,7 +144,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
 void DistinctStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Columns: ";
 
     if (columns.empty())
@@ -187,21 +174,63 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
 }
 
-void DistinctStep::updateOutputStream()
+void DistinctStep::updateOutputHeader()
 {
-    output_stream = createOutputStream(
-        input_streams.front(),
-        input_streams.front().header,
-        getTraits(pre_distinct, checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns)).data_stream_traits);
+    output_header = input_headers.front();
+}
 
-    if (!output_stream->distinct_columns.empty() /// Columns already distinct, do nothing
-        && (!pre_distinct /// Main distinct
-            || input_streams.front().has_single_port)) /// pre_distinct for single port works as usual one
-    {
-        /// Build distinct set.
-        for (const auto & name : columns)
-            output_stream->distinct_columns.insert(name);
-    }
+void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
+    settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
+    settings[QueryPlanSerializationSetting::distinct_overflow_mode] = set_size_limits.overflow_mode;
+}
+
+void DistinctStep::serialize(Serialization & ctx) const
+{
+    /// Let's not serialize limit_hint.
+    /// Ideally, we can get if from a query plan optimization on the follower.
+
+    writeVarUInt(columns.size(), ctx.out);
+    for (const auto & column : columns)
+        writeStringBinary(column, ctx.out);
+}
+
+QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
+
+    size_t columns_size;
+    readVarUInt(columns_size, ctx.in);
+    Names column_names(columns_size);
+    for (size_t i = 0; i < columns_size; ++i)
+        readStringBinary(column_names[i], ctx.in);
+
+    SizeLimits size_limits;
+    size_limits.max_rows = ctx.settings[QueryPlanSerializationSetting::max_rows_in_distinct];
+    size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
+    size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
+
+    return std::make_unique<DistinctStep>(
+        ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
+}
+
+QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
+{
+    return DistinctStep::deserialize(ctx, false);
+}
+QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
+{
+    return DistinctStep::deserialize(ctx, true);
+}
+
+void registerDistinctStep(QueryPlanStepRegistry & registry)
+{
+    /// Preliminary distinct probably can be a query plan optimization.
+    /// It's easier to serialize it using different names, so that pre-distinct can be potentially removed later.
+    registry.registerStep("Distinct", DistinctStep::deserializeNormal);
+    registry.registerStep("PreDistinct", DistinctStep::deserializePre);
 }
 
 }

@@ -25,8 +25,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.name.c_str()}.ignore(pos, expected)
-                || (!type_info.alias.empty() && ParserKeyword{type_info.alias.c_str()}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.name).ignore(pos, expected)
+                || (!type_info.alias.empty() && ParserKeyword::createDeprecated(type_info.alias).ignore(pos, expected)))
             {
                 type = i;
                 plural = false;
@@ -37,8 +37,8 @@ namespace
         for (auto i : collections::range(AccessEntityType::MAX))
         {
             const auto & type_info = AccessEntityTypeInfo::get(i);
-            if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)
-                || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias.c_str()}.ignore(pos, expected)))
+            if (ParserKeyword::createDeprecated(type_info.plural_name).ignore(pos, expected)
+                || (!type_info.plural_alias.empty() && ParserKeyword::createDeprecated(type_info.plural_alias).ignore(pos, expected)))
             {
                 type = i;
                 plural = true;
@@ -49,12 +49,12 @@ namespace
         return false;
     }
 
-    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, bool & any_database, String & table, bool & any_table)
+    bool parseOnDBAndTableName(IParserBase::Pos & pos, Expected & expected, String & database, String & table, bool & wildcard, bool & default_database)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword{"ON"}.ignore(pos, expected)
-                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, any_database, table, any_table);
+            return ParserKeyword{Keyword::ON}.ignore(pos, expected)
+                && parseDatabaseAndTableNameOrAsterisks(pos, expected, database, table, wildcard, default_database);
         });
     }
 }
@@ -62,7 +62,7 @@ namespace
 
 bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (!ParserKeyword{"SHOW CREATE"}.ignore(pos, expected))
+    if (!ParserKeyword{Keyword::SHOW_CREATE}.ignore(pos, expected))
         return false;
 
     AccessEntityType type;
@@ -71,7 +71,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         return false;
 
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     bool all = false;
     bool current_quota = false;
     bool current_user = false;
@@ -84,7 +84,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         {
             if (parseCurrentUserTag(pos, expected))
                 current_user = true;
-            else if (parseUserNames(pos, expected, names))
+            else if (parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
             {
             }
             else if (plural)
@@ -107,13 +107,15 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         case AccessEntityType::ROW_POLICY:
         {
             ASTPtr ast;
-            String database, table_name;
-            bool any_database, any_table;
+            String database;
+            String table_name;
+            bool wildcard = false;
+            bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))
-                row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
-            else if (parseOnDBAndTableName(pos, expected, database, any_database, table_name, any_table))
+                row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(ast);
+            else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
             {
-                if (any_database)
+                if (database.empty() && !default_database)
                     all = true;
                 else
                     database_and_table_name.emplace(database, table_name);
@@ -149,11 +151,42 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
                 current_quota = true;
             break;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            String database;
+            String table_name;
+            bool wildcard = false;
+            bool default_database = false;
+            if (parseIdentifierOrStringLiteral(pos, expected, short_name)
+                && parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
+            {
+                database_and_table_name.emplace(database, table_name);
+            }
+            else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
+            {
+                if (database.empty() && !default_database)
+                    all = true;
+                else
+                    database_and_table_name.emplace(database, table_name);
+            }
+            else if (!short_name.empty())
+            {
+                // Already parsed short_name in the first condition
+            }
+            else if (parseIdentifiersOrStringLiterals(pos, expected, names))
+            {
+            }
+            else if (plural)
+                all = true;
+            else
+                return false;
+            break;
+        }
         case AccessEntityType::MAX:
-            throw Exception("Type " + toString(type) + " is not implemented in SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type {} is not implemented in SHOW CREATE query", toString(type));
     }
 
-    auto query = std::make_shared<ASTShowCreateAccessEntityQuery>();
+    auto query = make_intrusive<ASTShowCreateAccessEntityQuery>();
     node = query;
 
     query->type = type;

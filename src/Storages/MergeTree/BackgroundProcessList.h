@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Common code for background processes lists, like system.merges and system.replicated_fetches
-/// Look at examples in MergeList and ReplicatedFetchList
+/// Look at examples in MergeList, MovesList and ReplicatedFetchList
 
 template <typename ListElement, typename Info>
 class BackgroundProcessList;
@@ -87,7 +87,7 @@ public:
 
     virtual void onEntryCreate(const Entry & /* entry */) {}
     virtual void onEntryDestroy(const Entry & /* entry */) {}
-    virtual inline ~BackgroundProcessList() = default;
+    virtual ~BackgroundProcessList() = default;
 };
 
 }

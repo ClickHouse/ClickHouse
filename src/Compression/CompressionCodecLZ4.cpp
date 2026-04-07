@@ -13,7 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wold-style-cast"
 
 
 namespace DB
@@ -35,14 +35,14 @@ protected:
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
+    String getDescription() const override { return "Extremely fast; good compression; balanced speed and efficiency."; }
 
 private:
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
-    ASTPtr codec_desc;
 };
 
 
@@ -53,6 +53,11 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+    std::string getDescription() const override
+    {
+        return "LZ4 High Compression algorithm with configurable level; slower but better compression than LZ4, but decompression is still fast.";
+    }
+
 
 private:
     const int level;
@@ -79,7 +84,7 @@ uint8_t CompressionCodecLZ4::getMethodByte() const
 
 void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -92,12 +97,15 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
     return LZ4_compress_default(source, dest, source_size, LZ4_COMPRESSBOUND(source_size));
 }
 
-void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     bool success = LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 
     if (!success)
-        throw Exception("Cannot decompress", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress LZ4-encoded data");
+
+    /// LZ4::decompress only returns true when the dest buffer has been fully written (uncompressed_size)
+    return uncompressed_size;
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
@@ -113,7 +121,7 @@ UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_
     auto success = LZ4_compress_HC(source, dest, source_size, LZ4_COMPRESSBOUND(source_size), level);
 
     if (!success)
-        throw Exception("Cannot LZ4_compress_HC", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with LZ4 codec");
 
     return success;
 }
@@ -127,12 +135,12 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception("LZ4HC codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "LZ4HC codec must have 1 parameter, given {}", arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
             if (!literal)
-                throw Exception("LZ4HC codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "LZ4HC codec argument must be integer");
 
             level = static_cast<int>(literal->value.safeGet<UInt64>());
         }
@@ -144,7 +152,9 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
-    setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
+    ASTs arguments;
+    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
+    setCodecDescription("LZ4HC", arguments);
 }
 
 

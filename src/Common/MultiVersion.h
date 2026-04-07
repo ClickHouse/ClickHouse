@@ -1,7 +1,8 @@
 #pragma once
 
-#include <mutex>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <base/defines.h>
 
 
@@ -20,6 +21,9 @@
   * }   // now we finish own current version; if the version is outdated and no one else is using it - it will be destroyed.
   *
   * All methods are thread-safe.
+  *
+  * Standard library does not have atomic_shared_ptr, and we do not use std::atomic* operations on shared_ptr,
+  * because standard library implementation uses fixed table of mutexes, and it is better to avoid contention here.
   */
 template <typename T>
 class MultiVersion
@@ -32,26 +36,47 @@ public:
     MultiVersion() = default;
 
     explicit MultiVersion(std::unique_ptr<const T> && value)
+        : current_version(std::move(value))
     {
-        set(std::move(value));
+    }
+
+    /// There is no copy constructor because only one MultiVersion should own the same object.
+    MultiVersion(MultiVersion && src) { *this = std::move(src); } /// NOLINT
+
+    MultiVersion & operator=(MultiVersion && src) /// NOLINT
+    {
+        if (this != &src)
+        {
+            Version version;
+
+            {
+                std::lock_guard<std::mutex> lock(src.mutex);
+                src.current_version.swap(version);
+            }
+
+            std::lock_guard<std::mutex> lock(mutex);
+            current_version = std::move(version);
+        }
+
+        return *this;
     }
 
     /// Obtain current version for read-only usage. Returns shared_ptr, that manages lifetime of version.
     Version get() const
     {
-        /// NOTE: is it possible to lock-free replace of shared_ptr?
-        std::lock_guard lock(mutex);
+        std::lock_guard<std::mutex> lock(mutex);
         return current_version;
     }
 
     /// Update an object with new version.
     void set(std::unique_ptr<const T> && value)
     {
-        std::lock_guard lock(mutex);
-        current_version = std::move(value);
+        Version version{std::move(value)};
+        std::lock_guard<std::mutex> lock(mutex);
+        current_version = std::move(version);
     }
 
 private:
-    Version current_version TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
+    Version current_version;
 };

@@ -1,10 +1,13 @@
 ---
-slug: /en/interfaces/third-party/proxy
+description: 'Describes available third-party proxy solutions for ClickHouse'
+sidebar_label: 'Proxies'
 sidebar_position: 29
-sidebar_label: Proxies
+slug: /interfaces/third-party/proxy
+title: 'Proxy Servers from Third-party Developers'
+doc_type: 'reference'
 ---
 
-# Proxy Servers from Third-party Developers
+# Proxy servers from third-party developers
 
 ## chproxy {#chproxy}
 
@@ -12,21 +15,21 @@ sidebar_label: Proxies
 
 Features:
 
--   Per-user routing and response caching.
--   Flexible limits.
--   Automatic SSL certificate renewal.
+- Per-user routing and response caching.
+- Flexible limits.
+- Automatic SSL certificate renewal.
 
 Implemented in Go.
 
 ## KittenHouse {#kittenhouse}
 
-[KittenHouse](https://github.com/VKCOM/kittenhouse) is designed to be a local proxy between ClickHouse and application server in case it’s impossible or inconvenient to buffer INSERT data on your application side.
+[KittenHouse](https://github.com/VKCOM/kittenhouse) is designed to be a local proxy between ClickHouse and application server in case it's impossible or inconvenient to buffer INSERT data on your application side.
 
 Features:
 
--   In-memory and on-disk data buffering.
--   Per-table routing.
--   Load-balancing and health checking.
+- In-memory and on-disk data buffering.
+- Per-table routing.
+- Load-balancing and health checking.
 
 Implemented in Go.
 
@@ -36,10 +39,8 @@ Implemented in Go.
 
 Features:
 
--   Group requests and send by threshold or interval.
--   Multiple remote servers.
--   Basic authentication.
+- Group requests and send by threshold or interval.
+- Multiple remote servers.
+- Basic authentication.
 
 Implemented in Go.
-
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/proxy/) <!--hide-->

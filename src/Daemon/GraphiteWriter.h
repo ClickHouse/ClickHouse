@@ -15,7 +15,7 @@
 class GraphiteWriter
 {
 public:
-    GraphiteWriter(const std::string & config_name, const std::string & sub_path = "");
+    explicit GraphiteWriter(const std::string & config_name, const std::string & sub_path = "");
 
     template <typename T> using KeyValuePair = std::pair<std::string, T>;
     template <typename T> using KeyValueVector = std::vector<KeyValuePair<T>>;
@@ -41,7 +41,7 @@ private:
 
         try
         {
-            Poco::Net::SocketAddress socket_address(host, port);
+            Poco::Net::SocketAddress socket_address(host, static_cast<Poco::UInt16>(port));
             Poco::Net::StreamSocket socket(socket_address);
             socket.setSendTimeout(Poco::Timespan(static_cast<Poco::Int64>(timeout * 1000000)));
             Poco::Net::SocketStream str(socket);

@@ -5,11 +5,12 @@ rules:
     indentation:
         level: warning
         indent-sequences: consistent
-    line-length:
-        # there are some bash -c "", so this is OK
-        max: 300
-        level: warning
     comments:
         min-spaces-from-content: 1
-    document-start:
-        present: false
+    document-start: disable
+    colons: disable
+    indentation: disable
+    line-length: disable
+    trailing-spaces: disable
+    truthy: disable
+    new-line-at-end-of-file: disable

@@ -1,11 +1,11 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <DataTypes/IDataType.h>
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -22,15 +22,22 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
+    bool isDeltaCompression() const override { return true; }
+
+    String getDescription() const override
+    {
+        return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.";
+    }
+
 
 private:
-    UInt8 delta_bytes_size;
+    const UInt8 delta_bytes_size;
 };
 
 
@@ -41,12 +48,13 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
-    setCodecDescription("Delta", {std::make_shared<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
+    setCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const
@@ -56,7 +64,7 @@ uint8_t CompressionCodecDelta::getMethodByte() const
 
 void CompressionCodecDelta::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash);
+    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 namespace
@@ -66,14 +74,14 @@ template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot delta compress, data size {}  is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with Delta codec, data size {} is not aligned to {}", source_size, sizeof(T));
 
-    T prev_src{};
-    const char * source_end = source + source_size;
+    T prev_src = 0;
+    const char * const source_end = source + source_size;
     while (source < source_end)
     {
-        T curr_src = unalignedLoad<T>(source);
-        unalignedStore<T>(dest, curr_src - prev_src);
+        T curr_src = unalignedLoadLittleEndian<T>(source);
+        unalignedStoreLittleEndian<T>(dest, curr_src - prev_src);
         prev_src = curr_src;
 
         source += sizeof(T);
@@ -82,25 +90,28 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename T>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
+UInt32 decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
-    const char * output_end = dest + output_size;
+    const char * const original_dest = dest;
+    const char * const output_end = dest + output_size;
 
     if (source_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot delta decompress, data size {}  is not aligned to {}", source_size, sizeof(T));
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Delta-encoded data, data size {} is not aligned to {}", source_size, sizeof(T));
 
     T accumulator{};
-    const char * source_end = source + source_size;
+    const char * const source_end = source + source_size;
     while (source < source_end)
     {
-        accumulator += unalignedLoad<T>(source);
-        if (dest + sizeof(accumulator) > output_end)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
-        unalignedStore<T>(dest, accumulator);
+        accumulator += unalignedLoadLittleEndian<T>(source);
+        if (dest + sizeof(accumulator) > output_end) [[unlikely]]
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data");
+        unalignedStoreLittleEndian<T>(dest, accumulator);
 
         source += sizeof(T);
         dest += sizeof(T);
     }
+
+    return static_cast<UInt32>(dest - original_dest);
 }
 
 }
@@ -126,42 +137,46 @@ UInt32 CompressionCodecDelta::doCompressData(const char * source, UInt32 source_
     case 8:
         compressDataForType<UInt64>(&source[bytes_to_skip], source_size - bytes_to_skip, &dest[start_pos]);
         break;
+    default:
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot compress to delta-encoded data. Invalid byte size {}", UInt32{delta_bytes_size});
     }
     return 1 + 1 + source_size;
 }
 
-void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < 2)
-        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
+
+    if (uncompressed_size == 0)
+        return 0;
 
     UInt8 bytes_size = source[0];
 
-    if (bytes_size == 0)
-        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+    if (!(bytes_size == 1 || bytes_size == 2 || bytes_size == 4 || bytes_size == 8))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (static_cast<UInt32>(2 + bytes_to_skip) > source_size)
-        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress delta-encoded data. File has wrong header");
 
     memcpy(dest, &source[2], bytes_to_skip);
     UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
-        break;
+        return bytes_to_skip + decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
+    default:
+        /// This should be unreachable due to the check above
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decompress delta-encoded data. File has unknown byte size {}", UInt32{bytes_size});
     }
 }
 
@@ -177,9 +192,10 @@ UInt8 getDeltaBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-            column_type->getName());
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+        column_type->getName());
 }
 
 }
@@ -187,23 +203,24 @@ UInt8 getDeltaBytesSize(const IDataType * column_type)
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = static_cast<UInt8>(CompressionMethodByte::Delta);
-    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
+    auto codec_builder = [&](const ASTPtr & arguments, const IDataType * column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = 0;
+        /// Default bytes size is 1.
+        UInt8 delta_bytes_size = 1;
 
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
-                throw Exception("Delta codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+                throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE, "Delta codec must have 1 parameter, given {}", arguments->children.size());
 
             const auto children = arguments->children;
             const auto * literal = children[0]->as<ASTLiteral>();
-            if (!literal)
-                throw Exception("Delta codec argument must be integer", ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+            if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta codec argument must be unsigned integer");
 
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
-                throw Exception("Delta value for delta codec can be 1, 2, 4 or 8, given " + toString(user_bytes_size), ErrorCodes::ILLEGAL_CODEC_PARAMETER);
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Delta value for delta codec can be 1, 2, 4 or 8, given {}", user_bytes_size);
             delta_bytes_size = static_cast<UInt8>(user_bytes_size);
         }
         else if (column_type)
@@ -212,7 +229,8 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
-    });
+    };
+    factory.registerCompressionCodecWithType("Delta", method_code, codec_builder);
 }
 
 CompressionCodecPtr getCompressionCodecDelta(UInt8 delta_bytes_size)

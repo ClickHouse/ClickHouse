@@ -1,24 +1,31 @@
 #pragma once
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_deprecated_error_prone_window_functions;
+}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int DEPRECATED_FUNCTION;
 }
 
 
@@ -38,13 +45,13 @@ struct FunctionRunningDifferenceName<false>
 };
 
 /** Calculate difference of consecutive values in columns.
-  * So, result of function depends on partition of data to columnss and on order of data in columns.
+  * So, result of function depends on partition of data to columns and on order of data in columns.
   */
 template <bool is_first_line_zero>
 class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
-    /// It is possible to track value from previous columns, to calculate continuously across all columnss. Not implemented.
+    /// It is possible to track value from previous columns, to calculate continuously across all columns. Not implemented.
 
     template <typename Src, typename Dst>
     static NO_SANITIZE_UNDEFINED void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
@@ -70,7 +77,7 @@ private:
 
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? 0 : src[i];
+                dst[i] = is_first_line_zero ? static_cast<Dst>(0) : static_cast<Dst>(src[i]);
                 prev = src[i];
                 has_prev_value = true;
             }
@@ -102,6 +109,10 @@ private:
             f(UInt32());
         else if (which.isUInt64())
             f(UInt64());
+        else if (which.isUInt128())
+            f(UInt128());
+        else if (which.isUInt256())
+            f(UInt256());
         else if (which.isInt8())
             f(Int8());
         else if (which.isInt16())
@@ -110,6 +121,10 @@ private:
             f(Int32());
         else if (which.isInt64())
             f(Int64());
+        else if (which.isInt128())
+            f(Int128());
+        else if (which.isInt256())
+            f(Int256());
         else if (which.isFloat32())
             f(Float32());
         else if (which.isFloat64())
@@ -121,14 +136,21 @@ private:
         else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
-            throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must have numeric type.", getName());
     }
 
 public:
     static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
+        if (!context->getSettingsRef()[Setting::allow_deprecated_error_prone_window_functions])
+            throw Exception(
+                ErrorCodes::DEPRECATED_FUNCTION,
+                "Function {} is deprecated since its usage is error-prone (see docs)."
+                "Please use proper window function or set `allow_deprecated_error_prone_window_functions` setting to enable it",
+                name);
+
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
 
@@ -147,7 +169,11 @@ public:
         return 1;
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override
+    {
+        return false;
+    }
+
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;
@@ -200,8 +226,7 @@ public:
 
         if (null_map_column)
             return ColumnNullable::create(std::move(res_column), null_map_column);
-        else
-            return res_column;
+        return res_column;
     }
 };
 

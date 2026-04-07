@@ -1,5 +1,5 @@
 #pragma once
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <Common/Dwarf.h>
 #include <Common/SymbolIndex.h>
@@ -13,9 +13,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
-#include <IO/WriteHelpers.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/Context.h>
 
 #include <mutex>
 #include <filesystem>
@@ -44,16 +42,14 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
-            throw Exception(
-                "Function " + getName() + " needs exactly one argument; passed " + toString(arguments.size()) + ".",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
+                getName(), arguments.size());
 
         const auto & type = arguments[0].type;
 
         if (!WhichDataType(type.get()).isUInt64())
-            throw Exception(
-                "The only argument for function " + getName() + " must be UInt64. Found " + type->getName() + " instead.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be UInt64. "
+                "Found {} instead.", getName(), type->getName());
 
         return getDataType();
     }
@@ -66,8 +62,8 @@ public:
         const ColumnUInt64 * column_concrete = checkAndGetColumn<ColumnUInt64>(column.get());
 
         if (!column_concrete)
-            throw Exception(
-                "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                column->getName(), getName());
 
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         return getResultColumn(data, input_rows_count);
@@ -92,28 +88,34 @@ protected:
 
     ResultT impl(uintptr_t addr) const
     {
-        auto symbol_index_ptr = SymbolIndex::instance();
-        const SymbolIndex & symbol_index = *symbol_index_ptr;
+        const SymbolIndex & symbol_index = SymbolIndex::instance();
 
-        if (const auto * object = symbol_index.findObject(reinterpret_cast<const void *>(addr)))
+        if (const auto * object = symbol_index.thisObject())
         {
+#if defined(OS_DARWIN)
+            if (!object->dsym)
+                return {object->name};
+            auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->dsym).first;
+            /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
+            uintptr_t dwarf_addr = addr - object->slide;
+#else
             auto dwarf_it = cache.dwarfs.try_emplace(object->name, object->elf).first;
             if (!std::filesystem::exists(object->name))
                 return {};
+            uintptr_t dwarf_addr = addr;
+#endif
 
             Dwarf::LocationInfo location;
             std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
             ResultT result;
-            if (dwarf_it->second.findAddress(addr - uintptr_t(object->address_begin), location, locationInfoMode, frames))
+            if (dwarf_it->second.findAddress(dwarf_addr, location, locationInfoMode, frames))
             {
                 setResult(result, location, frames);
                 return result;
             }
-            else
-                return {object->name};
+            return {object->name};
         }
-        else
-            return {};
+        return {};
     }
 
     ResultT implCached(uintptr_t addr) const

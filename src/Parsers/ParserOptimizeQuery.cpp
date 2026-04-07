@@ -3,6 +3,7 @@
 #include <Parsers/CommonParsers.h>
 
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 
 
@@ -24,11 +25,15 @@ bool ParserOptimizeQueryColumnsSpecification::parseImpl(Pos & pos, ASTPtr & node
 
 bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_optimize_table("OPTIMIZE TABLE");
-    ParserKeyword s_partition("PARTITION");
-    ParserKeyword s_final("FINAL");
-    ParserKeyword s_deduplicate("DEDUPLICATE");
-    ParserKeyword s_by("BY");
+    ParserKeyword s_optimize_table(Keyword::OPTIMIZE_TABLE);
+    ParserKeyword s_partition(Keyword::PARTITION);
+    ParserKeyword s_dry_run(Keyword::DRY_RUN);
+    ParserKeyword s_parts(Keyword::PARTS);
+    ParserKeyword s_final(Keyword::FINAL);
+    ParserKeyword s_force(Keyword::FORCE);
+    ParserKeyword s_deduplicate(Keyword::DEDUPLICATE);
+    ParserKeyword s_cleanup(Keyword::CLEANUP);
+    ParserKeyword s_by(Keyword::BY);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
     ParserPartition partition_p;
@@ -36,8 +41,11 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ASTPtr database;
     ASTPtr table;
     ASTPtr partition;
+    ASTPtr parts_list;
+    bool dry_run = false;
     bool final = false;
     bool deduplicate = false;
+    bool cleanup = false;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -53,7 +61,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    if (ParserKeyword{"ON"}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
         return false;
 
     if (s_partition.ignore(pos, expected))
@@ -62,11 +70,25 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    if (s_final.ignore(pos, expected))
+    if (s_dry_run.ignore(pos, expected))
+    {
+        dry_run = true;
+        if (!s_parts.ignore(pos, expected))
+            return false;
+
+        ParserList parser_list(std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+        if (!parser_list.parse(pos, parts_list, expected))
+            return false;
+    }
+
+    if (s_final.ignore(pos, expected) || s_force.ignore(pos, expected))
         final = true;
 
     if (s_deduplicate.ignore(pos, expected))
         deduplicate = true;
+
+    if (s_cleanup.ignore(pos, expected))
+        cleanup = true;
 
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
@@ -76,15 +98,19 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    auto query = std::make_shared<ASTOptimizeQuery>();
+    auto query = make_intrusive<ASTOptimizeQuery>();
     node = query;
 
     query->cluster = cluster_str;
     if ((query->partition = partition))
         query->children.push_back(partition);
+    if ((query->parts_list = parts_list))
+        query->children.push_back(parts_list);
+    query->dry_run = dry_run;
     query->final = final;
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
+    query->cleanup = cleanup;
     query->database = database;
     query->table = table;
 

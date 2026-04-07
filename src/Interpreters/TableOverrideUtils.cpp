@@ -95,18 +95,20 @@ void TableOverrideAnalyzer::analyze(const StorageInMemoryMetadata & metadata, Re
         for (const auto & column_ast : override->columns->columns->children)
         {
             auto * override_column = column_ast->as<ASTColumnDeclaration>();
-            auto override_type = DataTypeFactory::instance().get(override_column->type);
+            auto override_type = DataTypeFactory::instance().get(override_column->getType());
             auto found = metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, override_column->name);
             std::optional<ColumnDefaultKind> override_default_kind;
-            if (!override_column->default_specifier.empty())
-                override_default_kind = columnDefaultKindFromString(override_column->default_specifier);
+            if (override_column->default_specifier != ColumnDefaultSpecifier::Empty)
+                override_default_kind = toColumnDefaultKind(override_column->default_specifier);
             if (found)
             {
                 std::optional<ColumnDefaultKind> existing_default_kind;
                 if (auto col_default = metadata.columns.getDefault(found->name))
                     existing_default_kind = col_default->kind;
                 if (existing_default_kind != override_default_kind)
-                    throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE, "column {}: modifying default specifier is not allowed", backQuote(override_column->name));
+                    throw Exception(ErrorCodes::INVALID_TABLE_OVERRIDE,
+                                    "column {}: modifying default specifier is not allowed",
+                                    backQuote(override_column->name));
                 result.modified_columns.push_back({found->name, override_type});
                 /// TODO: validate that the original type can be converted to the overridden type
             }

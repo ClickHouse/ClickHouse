@@ -5,6 +5,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_nlp_functions;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -31,8 +37,10 @@ public:
     static constexpr auto name = "synonyms";
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef().allow_experimental_nlp_functions)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+        if (!context->getSettingsRef()[Setting::allow_experimental_nlp_functions])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Natural language processing function '{}' is experimental. "
+                            "Set `allow_experimental_nlp_functions` setting to enable it", name);
 
         return std::make_shared<FunctionSynonyms>(context->getSynonymsExtensions());
     }
@@ -53,11 +61,11 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0]->getName(), getName());
         if (!isString(arguments[1]))
-            throw Exception(
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[1]->getName(), getName());
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
@@ -74,13 +82,11 @@ public:
         const ColumnString * word_col = checkAndGetColumn<ColumnString>(strcolumn.get());
 
         if (!ext_col)
-            throw Exception(
-                "Illegal column " + arguments[0].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
         if (!word_col)
-            throw Exception(
-                "Illegal column " + arguments[1].column->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[1].column->getName(), getName());
 
         String ext_name = ext_col->getValue<String>();
         auto extension = extensions.getExtension(ext_name);
@@ -100,7 +106,7 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1] - 1);
+            std::string_view word(reinterpret_cast<const char *>(data.data() + offsets[i - 1]), offsets[i] - offsets[i - 1]);
 
             const auto * synset = extension->getSynonyms(word);
 
@@ -120,7 +126,33 @@ public:
 
 REGISTER_FUNCTION(Synonyms)
 {
-    factory.registerFunction<FunctionSynonyms>({}, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = R"(
+Finds synonyms of a given word.
+
+There are two types of synonym extensions:
+- `plain`
+- `wordnet`
+
+With the `plain` extension type you need to provide a path to a simple text file, where each line corresponds to a certain synonym set.
+Words in this line must be separated with space or tab characters.
+
+With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
+The thesaurus must contain a WordNet sense index.
+)";
+    FunctionDocumentation::Syntax syntax = "synonyms(ext_name, word)";
+    FunctionDocumentation::Arguments arguments = {
+        {"ext_name", "Name of the extension in which search will be performed.", {"String"}},
+        {"word", "Word that will be searched in extension.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns array of synonyms for the given word.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+        {"Find synonyms", "SELECT synonyms('list', 'important')", "['important','big','critical','crucial']"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionSynonyms>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

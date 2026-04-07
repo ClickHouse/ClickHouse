@@ -1,0 +1,15 @@
+prefer_localhost_replica=1, remote query with a lot of union all
+77
+ok
+prefer_localhost_replica=0, remote query with a lot of union all
+77
+ok
+prefer_localhost_replica=1, async_socket_for_remote=0, remote query with a lot of union all (lot of threads)
+77
+ok
+prepare test schema
+95
+prefer_localhost_replica=1, remote query with read in order
+ok
+prefer_localhost_replica=1 + async_socket_for_remote=0, remote query with read in order (lot of threads)
+ok

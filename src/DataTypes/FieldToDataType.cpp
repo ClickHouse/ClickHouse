@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
@@ -19,7 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EMPTY_DATA_PASSED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <LeastSupertypeOnError on_error>
@@ -34,6 +35,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UInt64 & x) const
     if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
+    if (x <= std::numeric_limits<Int64>::max()) return std::make_shared<DataTypeUInt64>(/*unsigned_can_be_signed=*/true);
     return std::make_shared<DataTypeUInt64>();
 }
 
@@ -83,6 +85,18 @@ DataTypePtr FieldToDataType<on_error>::operator() (const UUID &) const
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const IPv4 &) const
+{
+    return std::make_shared<DataTypeIPv4>();
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const IPv6 &) const
+{
+    return std::make_shared<DataTypeIPv6>();
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const String &) const
 {
     return std::make_shared<DataTypeString>();
@@ -117,6 +131,34 @@ DataTypePtr FieldToDataType<on_error>::operator() (const DecimalField<Decimal256
 }
 
 template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal32 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal32>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal64 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal64>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal128 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal128>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const Decimal256 &, UInt32 scale) const
+{
+    using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), scale);
+}
+
+template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 {
     DataTypes element_types;
@@ -131,9 +173,6 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Array & x) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
 {
-    if (tuple.empty())
-        throw Exception("Cannot infer type of an empty tuple", ErrorCodes::EMPTY_DATA_PASSED);
-
     DataTypes element_types;
     element_types.reserve(tuple.size());
 
@@ -153,7 +192,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<const Tuple &>();
+        const auto & tuple = elem.safeGet<Tuple>();
         assert(tuple.size() == 2);
         key_types.push_back(applyVisitor(*this, tuple[0]));
         value_types.push_back(applyVisitor(*this, tuple[1]));
@@ -167,15 +206,19 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const Object &) const
 {
-    /// TODO: Do we need different parameters for type Object?
-    return std::make_shared<DataTypeObject>("json", false);
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 template <LeastSupertypeOnError on_error>
 DataTypePtr FieldToDataType<on_error>::operator() (const AggregateFunctionStateData & x) const
 {
-    const auto & name = static_cast<const AggregateFunctionStateData &>(x).name;
-    return DataTypeFactory::instance().get(name);
+    return DataTypeFactory::instance().get(x.name);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator() (const CustomType &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 template <LeastSupertypeOnError on_error>
@@ -187,5 +230,6 @@ DataTypePtr FieldToDataType<on_error>::operator()(const bool &) const
 template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
+template class FieldToDataType<LeastSupertypeOnError::Variant>;
 
 }

@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <query_plan_remove_redundant_sorting>0</query_plan_remove_redundant_sorting>
+    </settings>
+
     <create_query>CREATE TABLE rand_unlimited_10m_8 (key UInt8) Engine = Memory</create_query>
 
     <create_query>CREATE TABLE rand_1k_10m_16 (key UInt16) Engine = Memory</create_query>

@@ -48,24 +48,25 @@ public:
         const size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
+                            getName(), number_of_arguments);
 
         if (arguments[0]->onlyNull())
             return arguments[0];
 
         const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "First argument for function {} must be an array but it has type {}.",
+                            getName(), arguments[0]->getName());
 
         for (size_t i = 1; i < number_of_arguments; ++i)
         {
             if (!isInteger(removeNullable(arguments[i])) && !arguments[i]->onlyNull())
-                throw Exception(
-                        "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
-                        + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be integer but it has type {}.",
+                                i, getName(), arguments[i]->getName());
         }
 
         return arguments[0];
@@ -94,7 +95,7 @@ public:
         if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
-            throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
 
         ColumnArray::MutablePtr sink;
 
@@ -104,11 +105,11 @@ public:
             {
                 return arguments[0].column;
             }
-            else if (isColumnConst(*length_column))
+            if (isColumnConst(*length_column))
                 sink = GatherUtils::sliceFromLeftConstantOffsetBounded(*source, 0, length_column->getInt(0));
             else
             {
-                auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, 1), size);
+                auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, static_cast<Int8>(1)), size);
                 sink = GatherUtils::sliceDynamicOffsetBounded(*source, *const_offset_column, *length_column);
             }
         }
@@ -152,7 +153,20 @@ public:
 
 REGISTER_FUNCTION(ArraySlice)
 {
-    factory.registerFunction<FunctionArraySlice>();
+    FunctionDocumentation::Description description = "Returns a slice of the array, with `NULL` elements included.";
+    FunctionDocumentation::Syntax syntax = "arraySlice(arr, offset [, length])";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "Array to slice.", {"Array(T)"}},
+        {"offset", "Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with `1`.", {"(U)Int*"}},
+        {"length", "The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length]`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.", {"(U)Int*"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a slice of the array with `length` elements from the specified `offset`", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res;", "[2, NULL, 4]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArraySlice>(documentation);
 }
 
 

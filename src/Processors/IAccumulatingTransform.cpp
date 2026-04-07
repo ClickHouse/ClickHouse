@@ -1,5 +1,6 @@
 #include <Processors/IAccumulatingTransform.h>
-#include <iostream>
+
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -8,18 +9,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_header)
-    : IProcessor({std::move(input_header)}, {std::move(output_header)}),
-    input(inputs.front()), output(outputs.front())
+IAccumulatingTransform::IAccumulatingTransform(SharedHeader input_header, SharedHeader output_header)
+    : IProcessor({std::move(input_header)}, {std::move(output_header)})
+    , input(inputs.front())
+    , output(outputs.front())
 {
-}
-
-InputPort * IAccumulatingTransform::addTotalsPort()
-{
-    if (inputs.size() > 1)
-        throw Exception("Totals port was already added to IAccumulatingTransform", ErrorCodes::LOGICAL_ERROR);
-
-    return &inputs.emplace_back(getInputPort().getHeader(), this);
 }
 
 IAccumulatingTransform::Status IAccumulatingTransform::prepare()
@@ -108,8 +102,9 @@ void IAccumulatingTransform::work()
 void IAccumulatingTransform::setReadyChunk(Chunk chunk)
 {
     if (current_output_chunk)
-        throw Exception("IAccumulatingTransform already has input. Cannot set another chunk. "
-                        "Probably, setReadyChunk method was called twice per consume().", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "IAccumulatingTransform already has input. "
+                        "Cannot set another chunk. Probably, setReadyChunk method was called twice per consume().");
 
     current_output_chunk = std::move(chunk);
 }

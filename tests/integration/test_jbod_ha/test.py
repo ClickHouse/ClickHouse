@@ -7,6 +7,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
@@ -19,7 +20,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
+    tmpfs=["/test_jbod_ha_jbod1:size=100M", "/test_jbod_ha_jbod2:size=100M", "/test_jbod_ha_jbod3:size=100M"],
     macros={"shard": 0, "replica": 1},
 )
 
@@ -29,7 +30,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.d/storage_configuration.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/jbod3:size=100M"],
+    tmpfs=["/test_jbod_ha_jbod1:size=100M", "/test_jbod_ha_jbod2:size=100M", "/test_jbod_ha_jbod3:size=100M"],
     macros={"shard": 0, "replica": 2},
 )
 
@@ -58,6 +59,7 @@ def test_jbod_ha(start_cluster):
                     old_parts_lifetime = 1,
                     cleanup_delay_period = 1,
                     cleanup_delay_period_random_add = 2,
+                    cleanup_thread_preferred_points_per_iteration=0,
                     max_bytes_to_merge_at_max_space_in_pool = 4096
             """.format(
                     i
@@ -72,9 +74,21 @@ def test_jbod_ha(start_cluster):
 
         node2.query("SYSTEM SYNC REPLICA tbl", timeout=10)
 
-        # mimic disk failure
+        # Mimic disk failure
+        #
+        # NOTE: you cannot do one of the following:
+        # - chmod 000 - this will not block access to the owner of the namespace,
+        #   and running clickhouse from non-root user is very tricky in this
+        #   sandbox.
+        # - unmount it, to replace with something else because in this case you
+        #   will loose tmpfs and besides clickhouse works from root, so it will
+        #   still be able to write/read from/to it.
+        #
+        # So it simply mounts over tmpfs, proc, and this will throw exception
+        # for read, because there is no such file and does not allows writes
+        # either.
         node1.exec_in_container(
-            ["bash", "-c", "chmod -R 000 /jbod1"], privileged=True, user="root"
+            ["bash", "-c", "mount -t proc proc /test_jbod_ha_jbod1"], privileged=True, user="root"
         )
 
         time.sleep(3)
@@ -91,14 +105,16 @@ def test_jbod_ha(start_cluster):
 
         assert int(node1.query("select count(p) from tbl")) == 2500
 
-        # mimic disk recovery
+        # Mimic disk recovery
+        #
+        # NOTE: this will unmount only proc from /test_jbod_ha_jbod1 and leave tmpfs
         node1.exec_in_container(
-            ["bash", "-c", "chmod -R 755 /jbod1"],
+            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
             privileged=True,
             user="root",
         )
-        node1.query("system restart disk jbod1")
 
+        node1.restart_clickhouse()
         time.sleep(5)
 
         assert (
@@ -111,3 +127,47 @@ def test_jbod_ha(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS tbl SYNC")
+
+
+def test_jbod_ha_fetch_partition(start_cluster):
+    try:
+        for i, node in enumerate([node1, node2]):
+            node.query(
+                """
+                CREATE TABLE tbl (p UInt8, d String)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tbl_{}', '{}')
+                PARTITION BY p
+                ORDER BY tuple()""".format(
+                    i + 1, i
+                )
+            )
+
+        node1.query(
+            "insert into tbl select 0, 'foo' from numbers(10)"
+        )
+
+        # Mimic disk failure
+        node2.exec_in_container(
+            ["bash", "-c", "mount -t proc proc /test_jbod_ha_jbod1"], privileged=True, user="root"
+        )
+        time.sleep(5)
+
+        # FETCH PARTITION will check for detached parts with same name in all disks
+        # It will throw exception if the check doesn't handle broken disk properly
+        node2.query("ALTER TABLE tbl FETCH PARTITION 0 FROM '/clickhouse/tbl_1'")
+        node2.query("ALTER TABLE tbl ATTACH PARTITION 0")
+
+        assert int(node2.query("select count(p) from tbl")) == 10
+
+        # Mimic disk recovery, just in case we add more tests later
+        node2.exec_in_container(
+            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
+            privileged=True,
+            user="root",
+        )
+
+        node2.restart_clickhouse()
+
+    finally:
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS tbl SYNC".format(i + 1))

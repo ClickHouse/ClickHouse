@@ -1,10 +1,10 @@
 #pragma once
 
+#include <memory>
+#include <time.h>
 #include <Compression/CompressedReadBufferBase.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadSettings.h>
-#include <time.h>
-#include <memory>
+#include <Common/LoggingHelpers.h>
 
 
 namespace DB
@@ -14,7 +14,7 @@ class MMappedFileCache;
 
 
 /// Unlike CompressedReadBuffer, it can do seek.
-class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
+class CompressedReadBufferFromFile final : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
       /** At any time, one of two things is true:
@@ -27,6 +27,8 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
     size_t size_compressed = 0;
+
+    LogSeriesLimiter log;
 
     /// This field inherited from ReadBuffer. It's used to perform "lazy" seek, so in seek() call we:
     /// 1) actually seek only underlying compressed file_in to offset_in_compressed_file;
@@ -43,7 +45,7 @@ private:
 
     bool nextImpl() override;
 
-    void prefetch() override;
+    void prefetch(Priority priority) override;
 
 public:
     explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
@@ -53,7 +55,9 @@ public:
     /// we store this offset inside nextimpl_working_buffer_offset.
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block) override;
 
-    size_t readBig(char * to, size_t n) override;
+    off_t getPosition() const override;
+
+    [[nodiscard]] size_t readBig(char * to, size_t n) override;
 
     void setProfileCallback(const ReadBufferFromFileBase::ProfileCallback & profile_callback_, clockid_t clock_type_ = CLOCK_MONOTONIC_COARSE)
     {

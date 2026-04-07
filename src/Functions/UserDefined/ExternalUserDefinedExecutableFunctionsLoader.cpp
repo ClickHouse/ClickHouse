@@ -1,7 +1,10 @@
-#include "ExternalUserDefinedExecutableFunctionsLoader.h"
+#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -13,6 +16,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -49,7 +56,7 @@ namespace
             auto semicolon_pos = command_value.find(':', start_parameter_pos);
             if (semicolon_pos == std::string::npos)
                 break;
-            else if (semicolon_pos > end_parameter_pos)
+            if (semicolon_pos > end_parameter_pos)
                 continue;
 
             std::string parameter_name(command_value.data() + start_parameter_pos + 1, command_value.data() + semicolon_pos);
@@ -95,12 +102,13 @@ namespace
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunctionsLoader(ContextPtr global_context_)
-    : ExternalLoader("external user defined function", &Poco::Logger::get("ExternalUserDefinedExecutableFunctionsLoader"))
+    : ExternalLoader("external user defined function", getLogger("ExternalUserDefinedExecutableFunctionsLoader"))
     , WithContext(global_context_)
 {
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
-    enablePeriodicUpdates(true);
+    if (getContext()->getApplicationType() == Context::ApplicationType::SERVER)
+        enablePeriodicUpdates(true);
     enableAlwaysLoadEverything(true);
 }
 
@@ -119,7 +127,7 @@ void ExternalUserDefinedExecutableFunctionsLoader::reloadFunction(const std::str
     loadOrReload(user_defined_function_name);
 }
 
-ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create(const std::string & name,
+ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader::createObject(const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & key_in_config,
     const std::string &) const
@@ -151,7 +159,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     if (!execute_direct && !parameters.empty())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Parameters are not supported if executable user defined function is not direct");
 
-    std::vector<String> command_arguments;
+    VectorWithMemoryTracking<String> command_arguments;
 
     if (execute_direct)
     {
@@ -167,10 +175,15 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     if (config.has(key_in_config + ".return_name"))
         result_name = config.getString(key_in_config + ".return_name");
 
+    bool is_deterministic = config.getBool(key_in_config + ".deterministic", false);
+
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
     size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
     size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
     size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
+    ExternalCommandStderrReaction stderr_reaction
+        = parseExternalCommandStderrReaction(config.getString(key_in_config + ".stderr_reaction", "log_last"));
+    bool check_exit_code = config.getBool(key_in_config + ".check_exit_code", true);
 
     size_t pool_size = 0;
     size_t max_command_execution_time = 0;
@@ -180,7 +193,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         pool_size = config.getUInt64(key_in_config + ".pool_size", 16);
         max_command_execution_time = config.getUInt64(key_in_config + ".max_command_execution_time", 10);
 
-        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettings().max_execution_time.totalSeconds());
+        size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
     }
@@ -230,6 +243,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .parameters = std::move(parameters),
         .result_type = std::move(result_type),
         .result_name = std::move(result_name),
+        .is_deterministic = is_deterministic
     };
 
     ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
@@ -238,6 +252,8 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .command_termination_timeout_seconds = command_termination_timeout_seconds,
         .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
         .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
+        .stderr_reaction = stderr_reaction,
+        .check_exit_code = check_exit_code,
         .pool_size = pool_size,
         .max_command_execution_time_seconds = max_command_execution_time,
         .is_executable_pool = is_executable_pool,

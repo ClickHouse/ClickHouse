@@ -1,0 +1,24 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>group_scale</name>
+            <values>
+                <value>1000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+<query>select argMin(Title, EventTime) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select argMinIf(Title, EventTime, Title != '') from hits_100m_single group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select argMinIf(Title::Nullable(String), EventTime::Nullable(DateTime), Title::Nullable(String) != '') from hits_100m_single group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+
+<query>select argMin(RegionID, EventTime) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select argMin((Title, RegionID), EventTime) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select argMinIf(Title, EventTime, Title != '') from hits_100m_single group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+
+<query>select argMax(WatchID, Age) from hits_100m_single FORMAT Null</query>
+<query>select argMax(WatchID, Age::Nullable(UInt8)) from hits_100m_single FORMAT Null</query>
+<query>select argMax(WatchID, (EventDate, EventTime)) from hits_100m_single where Title != '' group by intHash32(UserID) % {group_scale} FORMAT Null</query>
+<query>select argMax(MobilePhone, MobilePhoneModel) from hits_100m_single</query>
+
+</test>

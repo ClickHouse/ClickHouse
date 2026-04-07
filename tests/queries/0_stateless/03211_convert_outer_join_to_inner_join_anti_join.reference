@@ -1,0 +1,19 @@
+DATA
+   ┏━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━┓
+   ┃        c0 ┃        c1 ┃ c2 ┃
+   ┡━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━┩
+1. │ 826636805 │         0 │    │
+   ├───────────┼───────────┼────┤
+2. │         0 │ 150808457 │    │
+   └───────────┴───────────┴────┘
+NUMBER OF ROWS IN FIRST SHOULD BE EQUAL TO SECOND
+FISRT
+
+SECOND
+1
+TO DEBUG I TOOK JUST A SUBQUERY AND IT HAS 1 ROW
+THIRD
+1
+AND I ADDED SINGLE CONDITION THAT CONDITION <>0 THAT IS 1 IN THIRD QUERY AND IT HAS NO RESULT!!!
+FOURTH
+1

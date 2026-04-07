@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Glob.h>
@@ -24,7 +24,7 @@ ExternalLoaderXMLConfigRepository::ExternalLoaderXMLConfigRepository(
 {
 }
 
-Poco::Timestamp ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
+std::optional<Poco::Timestamp> ExternalLoaderXMLConfigRepository::getUpdateTime(const std::string & definition_entity_name)
 {
     return FS::getModificationTimestamp(definition_entity_name);
 }
@@ -34,7 +34,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
     std::unordered_set<std::string> patterns_copy;
 
     {
-        std::lock_guard<std::mutex> lock(patterns_mutex);
+        std::lock_guard lock(patterns_mutex);
         patterns_copy = patterns;
     }
 
@@ -71,7 +71,7 @@ std::set<std::string> ExternalLoaderXMLConfigRepository::getAllLoadablesDefiniti
 
 void ExternalLoaderXMLConfigRepository::updatePatterns(const std::unordered_set<std::string> & patterns_)
 {
-    std::lock_guard<std::mutex> lock(patterns_mutex);
+    std::lock_guard lock(patterns_mutex);
 
     if (patterns == patterns_)
         return;
@@ -85,9 +85,9 @@ bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_en
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
-    const std::string & config_file)
+    const std::string & config_file_path)
 {
-    ConfigProcessor config_processor{config_file};
+    ConfigProcessor config_processor{config_file_path};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
     config_processor.savePreprocessedConfig(preprocessed, app_path);
     return preprocessed.configuration;

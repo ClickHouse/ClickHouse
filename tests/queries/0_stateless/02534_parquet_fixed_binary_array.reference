@@ -1,0 +1,41 @@
+Parquet
+fixed	String					
+0
+1
+2
+3
+4
+fixed	FixedString(1)					
+0
+1
+2
+3
+4
+\N
+1
+\N
+3
+\N
+5
+\N
+7
+\N
+9
+Arrow
+fixed	String					
+0
+1
+2
+3
+4
+fixed	FixedString(1)					
+0
+1
+2
+3
+4
+\N
+1
+\N
+3
+\N

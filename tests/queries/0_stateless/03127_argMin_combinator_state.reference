@@ -1,0 +1,12 @@
+AggregateFunction(sumArgMin, UInt64, UInt64)
+54
+0	45
+1	46
+2	47
+3	48
+4	49
+5	50
+6	51
+7	52
+8	53
+9	54

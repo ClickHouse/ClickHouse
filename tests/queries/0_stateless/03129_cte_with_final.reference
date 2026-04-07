@@ -1,0 +1,24 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    key Int64
+    someCol String
+    eventTime DateTime
+  PROJECTION
+    LIST id: 1, nodes: 3
+      COLUMN id: 2, column_name: key, result_type: Int64, source_id: 3
+      COLUMN id: 4, column_name: someCol, result_type: String, source_id: 3
+      COLUMN id: 5, column_name: eventTime, result_type: DateTime, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1, is_cte: 1, cte_name: merged_test
+      PROJECTION COLUMNS
+        key Int64
+        someCol String
+        eventTime DateTime
+      PROJECTION
+        LIST id: 6, nodes: 3
+          COLUMN id: 7, column_name: key, result_type: Int64, source_id: 8
+          COLUMN id: 9, column_name: someCol, result_type: String, source_id: 8
+          COLUMN id: 10, column_name: eventTime, result_type: DateTime, source_id: 8
+      JOIN TREE
+        TABLE id: 8, alias: __table2, table_name: default.t, final: 1
+1	first	2024-04-19 01:01:01

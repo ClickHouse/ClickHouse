@@ -1,0 +1,28 @@
+<test>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() > 42949673, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() < 3865470566, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() < 2147483647, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() < 42949673, zero + 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() < 42949673, zero + 1, 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() < 42949673, 1, zero + 2)) ]]></query>
+    <query><![CDATA[ SELECT count() FROM zeros(1000000000) WHERE NOT ignore(if(rand32() < 42949673, 1, 2)) ]]></query>
+    
+    <!-- Tests when branches are both not constant -->
+    <query>with rand32() % 2 as x select if(x, materialize(1.234), materialize(2.456)) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1.234::Decimal64(3) as a, 2.456::Decimal64(3) as b select if(x, materialize(a), materialize(b)) from numbers(100000000) format Null</query>
+
+    <!-- Tests when branches are both constant -->
+    <query>with rand32() % 2 as x, 1::Int8 as a, -1::Int8 as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Int64 as a, -1::Int64 as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Int32 as a, -1::Int32 as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Decimal32(3) as a, -1::Decimal32(3) as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Decimal64(3) as a, -1::Decimal64(3) as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Decimal128(3) as a, -1::Decimal128(3) as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Decimal256(3) as a, -1::Decimal256(3) as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Int128 as a, -1::Int128 as b select if(x, a, b) from numbers(100000000) format Null</query>
+    <query>with rand32() % 2 as x, 1::Int256 as a, -1::Int256 as b select if(x, a, b) from numbers(100000000) format Null</query>
+
+    <!-- Tests when branches are maps -->
+    <query>with rand32() % 2 as x select if(x, map(1,2,3,4), map(3,4,5,6)) from numbers(1000000) format Null</query>
+    <query>with rand32() % 2 as x select if(x, materialize(map(1,2,3,4)), materialize(map(3,4,5,6))) from numbers(1000000) format Null</query>
+</test>

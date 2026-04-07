@@ -1,16 +1,14 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
-#include <Columns/IColumn.h>
-#include <Core/SortCursor.h>
-#include <Common/StackTrace.h>
-#include <Common/logger_useful.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
-namespace DB::ErrorCodes
+namespace DB
 {
-    extern const int LOGICAL_ERROR;
+struct SortCursorImpl;
+struct SortCursor;
 }
 
 namespace DB::detail
@@ -28,6 +26,9 @@ struct SharedChunk : Chunk
 {
     ColumnRawPtrs all_columns;
     ColumnRawPtrs sort_columns;
+
+    /// Used in ReplacingSortedAlgorithm when using skipping final
+    MutableColumnPtr replace_final_selection;
 
     using Chunk::Chunk;
     using Chunk::operator=;
@@ -63,50 +64,15 @@ public:
             free_chunks.push_back(i);
     }
 
-    SharedChunkPtr alloc(Chunk & chunk)
-    {
-        if (free_chunks.empty())
-            throw Exception("Not enough space in SharedChunkAllocator. "
-                            "Chunks allocated: " + std::to_string(chunks.size()), ErrorCodes::LOGICAL_ERROR);
+    SharedChunkPtr alloc(Chunk & chunk);
 
-        auto pos = free_chunks.back();
-        free_chunks.pop_back();
-
-        chunks[pos].swap(chunk);
-        chunks[pos].position = pos;
-        chunks[pos].allocator = this;
-
-        return SharedChunkPtr(&chunks[pos]);
-    }
-
-    ~SharedChunkAllocator()
-    {
-        if (free_chunks.size() != chunks.size())
-        {
-            LOG_ERROR(&Poco::Logger::get("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
-
-            return;
-        }
-    }
+    ~SharedChunkAllocator();
 
 private:
     std::vector<SharedChunk> chunks;
     std::vector<size_t> free_chunks;
 
-    void release(SharedChunk * ptr) noexcept
-    {
-        if (chunks.empty())
-        {
-            /// This may happen if allocator was removed before chunks.
-            /// Log message and exit, because we don't want to throw exception in destructor.
-
-            LOG_ERROR(&Poco::Logger::get("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
-
-            return;
-        }
-
-        free_chunks.push_back(ptr->position);
-    }
+    void release(SharedChunk * ptr) noexcept;
 
     friend void intrusive_ptr_release(SharedChunk * ptr);
 };
@@ -129,28 +95,20 @@ struct RowRef
     size_t num_columns = 0;
     UInt64 row_num = 0;
 
+    UInt64 source_stream_index = 0;
+
     bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
-    void set(SortCursor & cursor)
+    void set(SortCursor & cursor);
+
+    static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
+
+    static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
+
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
     {
-        sort_columns = cursor.impl->sort_columns.data();
-        num_columns = cursor.impl->sort_columns.size();
-        row_num = cursor.impl->getRow();
-    }
-
-    static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
-    {
-        for (size_t col_number = 0; col_number < size; ++col_number)
-        {
-            auto & cur_column = lhs[col_number];
-            auto & other_column = rhs[col_number];
-
-            if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
-                return false;
-        }
-
-        return true;
+        return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 
     bool hasEqualSortColumnsWith(const RowRef & other) const
@@ -171,12 +129,18 @@ struct RowRefWithOwnedChunk
     ColumnRawPtrs * sort_columns = nullptr;
     UInt64 row_num = 0;
 
-    void swap(RowRefWithOwnedChunk & other)
+    const SortCursorImpl * current_cursor = nullptr;
+
+    UInt64 source_stream_index = 0;
+
+    void swap(RowRefWithOwnedChunk & other) /// NOLINT(performance-noexcept-swap)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
         std::swap(sort_columns, other.sort_columns);
         std::swap(row_num, other.row_num);
+        std::swap(current_cursor, other.current_cursor);
+        std::swap(source_stream_index, other.source_stream_index);
     }
 
     bool empty() const { return owned_chunk == nullptr; }
@@ -187,14 +151,16 @@ struct RowRefWithOwnedChunk
         all_columns = nullptr;
         sort_columns = nullptr;
         row_num = 0;
+        current_cursor = nullptr;
+        source_stream_index = 0;
     }
 
-    void set(SortCursor & cursor, SharedChunkPtr chunk)
+    void set(SortCursor & cursor, SharedChunkPtr chunk);
+
+
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
     {
-        owned_chunk = std::move(chunk);
-        row_num = cursor.impl->getRow();
-        all_columns = &owned_chunk->all_columns;
-        sort_columns = &owned_chunk->sort_columns;
+        return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const

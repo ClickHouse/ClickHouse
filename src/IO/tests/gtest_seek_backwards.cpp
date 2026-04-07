@@ -18,6 +18,7 @@ TEST(ReadBufferFromFile, seekBackwards)
         WriteBufferFromFile out(tmp_file->path());
         for (size_t i = 0; i < N; ++i)
             writeIntBinary(i, out);
+        out.finalize();
     }
 
     ReadBufferFromFile in(tmp_file->path(), BUF_SIZE);

@@ -7,15 +7,15 @@
 
 #include <string_view>
 
+#include <base/simd.h>
+
 #ifdef __SSE2__
 #    include <emmintrin.h>
 #endif
 
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
-#    ifdef HAS_RESERVED_IDENTIFIER
-#        pragma clang diagnostic ignored "-Wreserved-identifier"
-#    endif
+#      pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
 namespace DB
@@ -75,16 +75,13 @@ struct ToValidUTF8Impl
             /// Fast skip of ASCII for aarch64.
             static constexpr size_t SIMD_BYTES = 16;
             const char * simd_end = p + (end - p) / SIMD_BYTES * SIMD_BYTES;
-            /// Returns a 64 bit mask of nibbles (4 bits for each byte).
-            auto get_nibble_mask = [](uint8x16_t input) -> uint64_t
-            { return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(input), 4)), 0); };
             /// Other options include
             /// vmaxvq_u8(input) < 0b10000000;
             /// Used by SIMDJSON, has latency 3 for M1, 6 for everything else
             /// SIMDJSON uses it for 64 byte masks, so it's a little different.
             /// vmaxvq_u32(vandq_u32(input, vdupq_n_u32(0x80808080))) // u32 version has latency 3
             /// shrn version has universally <=3 cycles, on servers 2 cycles.
-            while (p < simd_end && get_nibble_mask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80))) == 0)
+            while (p < simd_end && getNibbleMask(vcgeq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(p)), vdupq_n_u8(0x80))) == 0)
                 p += SIMD_BYTES;
 
             if (!(p < end))
@@ -131,30 +128,29 @@ struct ToValidUTF8Impl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets)
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
     {
-        const size_t offsets_size = offsets.size();
         /// It can be larger than that, but we believe it is unlikely to happen.
         res_data.resize(data.size());
-        res_offsets.resize(offsets_size);
+        res_offsets.resize(input_rows_count);
 
         size_t prev_offset = 0;
         WriteBufferFromVector<ColumnString::Chars> write_buffer(res_data);
-        for (size_t i = 0; i < offsets_size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * haystack_data = reinterpret_cast<const char *>(&data[prev_offset]);
-            const size_t haystack_size = offsets[i] - prev_offset - 1;
+            const size_t haystack_size = offsets[i] - prev_offset;
             toValidUTF8One(haystack_data, haystack_data + haystack_size, write_buffer);
-            writeChar(0, write_buffer);
             res_offsets[i] = write_buffer.count();
             prev_offset = offsets[i];
         }
         write_buffer.finalize();
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
     {
-        throw Exception("Column of type FixedString is not supported by toValidUTF8 function", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by toValidUTF8 function");
     }
 };
 
@@ -168,7 +164,31 @@ using FunctionToValidUTF8 = FunctionStringToString<ToValidUTF8Impl, NameToValidU
 
 REGISTER_FUNCTION(ToValidUTF8)
 {
-    factory.registerFunction<FunctionToValidUTF8>();
+    FunctionDocumentation::Description description = R"(
+Converts a string to valid UTF-8 encoding by replacing any invalid UTF-8 characters with the replacement character `�` (U+FFFD).
+When multiple consecutive invalid characters are found, they are collapsed into a single replacement character.
+)";
+    FunctionDocumentation::Syntax syntax = "toValidUTF8(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Any set of bytes represented as the String data type object.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a valid UTF-8 string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(SELECT toValidUTF8('\\x61\\xF0\\x80\\x80\\x80b'))",
+        R"(c
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionToValidUTF8>(documentation);
 }
 
 }

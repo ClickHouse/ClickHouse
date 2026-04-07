@@ -4,15 +4,15 @@
 #include <AggregateFunctions/Moments.h>
 
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+}
 
 namespace
 {
@@ -60,6 +60,9 @@ struct WelchTTestData : public TTestMoments<Float64>
         Float64 se = getStandardError();
         Float64 t_stat = (mean_x - mean_y) / se;
 
+        if (unlikely(!std::isfinite(t_stat)))
+            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+
         auto students_t_distribution = boost::math::students_t_distribution<Float64>(getDegreesOfFreedom());
         Float64 pvalue = 0;
         if (t_stat > 0)
@@ -77,10 +80,10 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
     assertBinary(name, argument_types);
 
     if (parameters.size() > 1)
-        throw Exception("Aggregate function " + name + " requires zero or one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires zero or one parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception("Aggregate function " + name + " only supports numerical types", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
 
     return std::make_shared<AggregateFunctionTTest<WelchTTestData>>(argument_types, parameters);
 }
@@ -89,7 +92,60 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
 
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("welchTTest", createAggregateFunctionWelchTTest);
+    /// welchTTest documentation
+    FunctionDocumentation::Description description_welchTTest = R"(
+Applies [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test) to samples from two populations.
+
+Values of both samples are in the `sample_data` column.
+If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population.
+Otherwise it belongs to the sample from the second population.
+The null hypothesis is that means of populations are equal.
+Normal distribution is assumed.
+Populations may have unequal variance.
+    )";
+    FunctionDocumentation::Syntax syntax_welchTTest = R"(
+welchTTest([confidence_level])(sample_data, sample_index)
+    )";
+    FunctionDocumentation::Parameters parameters_welchTTest = {
+        {"confidence_level", "Optional. Confidence level in order to calculate confidence intervals.", {"Float"}}
+    };
+    FunctionDocumentation::Arguments arguments_welchTTest = {
+        {"sample_data", "Sample data.", {"Int*", "UInt*", "Float*", "Decimal*"}},
+        {"sample_index", "Sample index.", {"Int*", "UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_welchTTest = {"Returns a Tuple with two or four elements (if the optional `confidence_level` is specified): calculated t-statistic, calculated p-value, and optionally calculated confidence-interval-low and confidence-interval-high.", {"Tuple(Float64, Float64)", "Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples_welchTTest = {
+    {
+        "Basic Welch's t-test",
+        R"(
+CREATE TABLE welch_ttest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
+INSERT INTO welch_ttest VALUES (20.3, 0), (22.1, 0), (21.9, 0), (18.9, 1), (20.3, 1), (19, 1);
+
+SELECT welchTTest(sample_data, sample_index) FROM welch_ttest;
+        )",
+        R"(
+┌─welchTTest(sample_data, sample_index)──────┐
+│ (2.7988719532211235, 0.051807360348581945) │
+└────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With confidence level",
+        R"(
+SELECT welchTTest(0.95)(sample_data, sample_index) FROM welch_ttest;
+        )",
+        R"(
+┌─welchTTest(0.95)(sample_data, sample_index)─────────────────────────────────────────┐
+│ (2.7988719532211235, 0.05180736034858519, -0.026294346671631885, 4.092961013338302) │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_welchTTest = {21, 1};
+    FunctionDocumentation::Category category_welchTTest = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_welchTTest = {description_welchTTest, syntax_welchTTest, arguments_welchTTest, parameters_welchTTest, returned_value_welchTTest, examples_welchTTest, introduced_in_welchTTest, category_welchTTest};
+
+    factory.registerFunction("welchTTest", {createAggregateFunctionWelchTTest, documentation_welchTTest});
 }
 
 }

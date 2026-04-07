@@ -8,17 +8,26 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.d/remote_servers.xml"],
-    user_configs=["configs/users.d/allow_introspection_functions.xml"],
+    user_configs=[
+        "configs/users.d/allow_introspection_functions.xml",
+        "configs/users.d/users.xml",
+    ],
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.d/remote_servers.xml"],
-    user_configs=["configs/users.d/allow_introspection_functions.xml"],
+    user_configs=[
+        "configs/users.d/allow_introspection_functions.xml",
+        "configs/users.d/users.xml",
+    ],
 )
 distributed = cluster.add_instance(
     "distributed",
     main_configs=["configs/config.d/remote_servers.xml"],
-    user_configs=["configs/users.d/allow_introspection_functions.xml"],
+    user_configs=[
+        "configs/users.d/allow_introspection_functions.xml",
+        "configs/users.d/users.xml",
+    ],
     stay_alive=True,
 )
 
@@ -58,6 +67,9 @@ def test_select_clamps_settings():
         )
         node.query("INSERT INTO sometable_select VALUES (toDate('2010-01-10'), 1, 1)")
 
+    distributed.query(
+        "CREATE TABLE sometable_select (date Date, id UInt32, value Int32) ENGINE = MergeTree() ORDER BY id;"
+    )
     distributed.query(
         "CREATE TABLE proxy_select (date Date, id UInt32, value Int32) ENGINE = Distributed(test_cluster, default, sometable_select, toUInt64(date));"
     )
@@ -175,4 +187,5 @@ def test_insert_clamps_settings():
         settings={"max_memory_usage": 5000000},
     )
     distributed.query("SYSTEM FLUSH DISTRIBUTED proxy_insert")
-    assert_eq_with_retry(distributed, "SELECT COUNT() FROM proxy_insert", "4")
+    # settings serialize_query_plan=0 because default.sometable_insert does not exist on distributed node.
+    assert_eq_with_retry(distributed, "SELECT COUNT() FROM proxy_insert settings serialize_query_plan=0", "4")

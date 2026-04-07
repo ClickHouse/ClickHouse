@@ -1,6 +1,6 @@
-#include "VolumeJBOD.h"
+#include <Disks/VolumeJBOD.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
@@ -21,15 +21,16 @@ VolumeJBOD::VolumeJBOD(
     : IVolume(name_, config, config_prefix, disk_selector)
     , disks_by_size(disks.begin(), disks.end())
 {
-    Poco::Logger * logger = &Poco::Logger::get("StorageConfiguration");
+    LoggerPtr logger = getLogger("StorageConfiguration");
+
+    volume_priority = config.getUInt64(config_prefix + ".volume_priority", std::numeric_limits<UInt64>::max());
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
     if (has_max_bytes && has_max_ratio)
     {
-        throw Exception(
-            "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                        "Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified.");
     }
 
     if (has_max_bytes)
@@ -40,21 +41,29 @@ VolumeJBOD::VolumeJBOD(
     {
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
         if (ratio < 0)
-            throw Exception("'max_data_part_size_ratio' have to be not less then 0.", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG, "'max_data_part_size_ratio' have to be not less then 0.");
+
         UInt64 sum_size = 0;
         std::vector<UInt64> sizes;
         for (const auto & disk : disks)
         {
-            sizes.push_back(disk->getTotalSpace());
-            sum_size += sizes.back();
+            auto size = disk->getTotalSpace();
+            if (size)
+                sum_size += *size;
+            else
+                break;
+            sizes.push_back(*size);
         }
-        max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
-        for (size_t i = 0; i < disks.size(); ++i)
+        if (sizes.size() == disks.size())
         {
-            if (sizes[i] < max_data_part_size)
+            max_data_part_size = static_cast<UInt64>(static_cast<double>(sum_size) * ratio / static_cast<double>(disks.size()));
+            for (size_t i = 0; i < disks.size(); ++i)
             {
-                LOG_WARNING(logger, "Disk {} on volume {} have not enough space ({}) for containing part the size of max_data_part_size ({})",
-                    backQuote(disks[i]->getName()), backQuote(config_prefix), ReadableSize(sizes[i]), ReadableSize(max_data_part_size));
+                if (sizes[i] < max_data_part_size)
+                {
+                    LOG_WARNING(logger, "Disk {} on volume {} have not enough space ({}) for containing part the size of max_data_part_size ({})",
+                        backQuote(disks[i]->getName()), backQuote(config_prefix), ReadableSize(sizes[i]), ReadableSize(max_data_part_size));
+                }
             }
         }
     }
@@ -69,6 +78,7 @@ VolumeJBOD::VolumeJBOD(
     perform_ttl_move_on_insert = config.getBool(config_prefix + ".perform_ttl_move_on_insert", true);
 
     are_merges_avoided = config.getBool(config_prefix + ".prefer_not_to_merge", false);
+    least_used_ttl_ms = config.getUInt64(config_prefix + ".least_used_ttl_ms", 60'000);
 }
 
 VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
@@ -77,7 +87,7 @@ VolumeJBOD::VolumeJBOD(const VolumeJBOD & volume_jbod,
         DiskSelectorPtr disk_selector)
     : VolumeJBOD(volume_jbod.name, config, config_prefix, disk_selector)
 {
-    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load(std::memory_order_relaxed);
+    are_merges_avoided_user_override = volume_jbod.are_merges_avoided_user_override.load();
     last_used = volume_jbod.last_used.load(std::memory_order_relaxed);
 }
 
@@ -94,31 +104,54 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
         case VolumeLoadBalancing::LEAST_USED:
         {
             std::lock_guard lock(mutex);
+            if (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms)
+            {
+                disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                least_used_update_watch.restart();
+            }
             return disks_by_size.top().disk;
         }
     }
-    UNREACHABLE();
 }
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
+{
+    return reserveImpl(bytes, std::nullopt);
+}
+
+ReservationPtr VolumeJBOD::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    return reserveImpl(bytes, constraints);
+}
+
+ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
 {
     /// This volume can not store data which size is greater than `max_data_part_size`
     /// to ensure that parts of size greater than that go to another volume(s).
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
 
+    auto try_reserve = [&bytes, &constraints](const DiskPtr & disk) -> ReservationPtr
+    {
+        if (disk->isReadOnly())
+            return {};
+
+        return constraints.has_value()
+            ? disk->reserve(bytes, *constraints)
+            : disk->reserve(bytes);
+    };
+
     switch (load_balancing)
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
             size_t disks_num = disks.size();
             for (size_t i = 0; i < disks_num; ++i)
             {
-                size_t index = (start_from + i) % disks_num;
+                size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
+                size_t index = start_from % disks_num;
 
-                auto reservation = disks[index]->reserve(bytes);
-
+                ReservationPtr reservation = try_reserve(disks[index]);
                 if (reservation)
                     return reservation;
             }
@@ -128,16 +161,30 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
         {
             std::lock_guard lock(mutex);
 
-            DiskWithSize disk = disks_by_size.top();
-            disks_by_size.pop();
+            ReservationPtr reservation;
+            for (size_t i = 0; i < disks.size() && !reservation; ++i)
+            {
+                if (i == 0 && (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms))
+                {
+                    disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                    least_used_update_watch.restart();
 
-            ReservationPtr reservation = disk.reserve(bytes);
-            disks_by_size.push(disk);
+                    DiskWithSize disk = disks_by_size.top();
+                    reservation = try_reserve(disk.disk);
+                }
+                else
+                {
+                    DiskWithSize disk = disks_by_size.top();
+                    disks_by_size.pop();
+
+                    reservation = try_reserve(disk.disk);
+                    disks_by_size.push(disk);
+                }
+            }
 
             return reservation;
         }
     }
-    UNREACHABLE();
 }
 
 bool VolumeJBOD::areMergesAvoided() const
@@ -145,8 +192,7 @@ bool VolumeJBOD::areMergesAvoided() const
     auto are_merges_avoided_user_override_value = are_merges_avoided_user_override.load(std::memory_order_acquire);
     if (are_merges_avoided_user_override_value)
         return *are_merges_avoided_user_override_value;
-    else
-        return are_merges_avoided;
+    return are_merges_avoided;
 }
 
 void VolumeJBOD::setAvoidMergesUserOverride(bool avoid)

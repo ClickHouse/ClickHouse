@@ -10,8 +10,6 @@
 namespace DB
 {
 
-class ASTIdentifier;
-
 class RedundantFunctionsInOrderByMatcher
 {
 public:
@@ -61,7 +59,7 @@ public:
 
             /// Allow known identifiers: they are present in ORDER BY before current item
             if (auto * identifier = arg->as<ASTIdentifier>())
-                if (data.keys.count(getIdentifierName(identifier)))
+                if (data.keys.contains(getIdentifierName(identifier)))
                     continue;
 
             /// Reject erase others

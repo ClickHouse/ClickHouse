@@ -1,16 +1,19 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
 #include <queue>
+#include <Processors/IProcessor.h>
+#include <Processors/Port.h>
 
 
 namespace DB
 {
 
+class Block;
+
 /** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
-  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever is is not full).
+  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
   * Doesn't do any heavy calculations.
   * Doesn't preserve an order of data.
   *
@@ -18,16 +21,10 @@ namespace DB
   * - union data from multiple inputs to single output - to serialize data that was processed in parallel.
   * - split data from single input to multiple outputs - to allow further parallel processing.
   */
-class ResizeProcessor : public IProcessor
+class ResizeProcessor final : public IProcessor
 {
 public:
-    /// TODO Check that there is non zero number of inputs and outputs.
-    ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
-        : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
-        , current_input(inputs.begin())
-        , current_output(outputs.begin())
-    {
-    }
+    ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override { return "Resize"; }
 
@@ -43,15 +40,16 @@ private:
     std::queue<UInt64> waiting_outputs;
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
+    bool is_reading_started = false;
 
-    enum class OutputStatus
+    enum class OutputStatus : uint8_t
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    enum class InputStatus
+    enum class InputStatus : uint8_t
     {
         NotActive,
         HasData,
@@ -74,11 +72,14 @@ private:
     std::vector<OutputPortWithStatus> output_ports;
 };
 
+/// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
+/// This is an attempt to keep thread locality of data, but support rebalance when some inputs are finished earlier.
+/// Usually, it's N to N mapping. Probably, we can simplify the implementation because of it.
 class StrictResizeProcessor : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.
-    StrictResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
+    StrictResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs)
         : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
         , current_input(inputs.begin())
         , current_output(outputs.begin())
@@ -106,14 +107,14 @@ private:
     std::queue<UInt64> waiting_outputs;
     bool initialized = false;
 
-    enum class OutputStatus
+    enum class OutputStatus : uint8_t
     {
         NotActive,
         NeedData,
         Finished,
     };
 
-    enum class InputStatus
+    enum class InputStatus : uint8_t
     {
         NotActive,
         NeedData,

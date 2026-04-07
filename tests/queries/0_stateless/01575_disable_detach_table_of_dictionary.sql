@@ -13,11 +13,11 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_fo
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
-DETACH TABLE database_for_dict.dict1; -- { serverError 520 }
+DETACH TABLE database_for_dict.dict1; -- { serverError CANNOT_DETACH_DICTIONARY_AS_TABLE }
 
 DETACH DICTIONARY database_for_dict.dict1;
 
-ATTACH TABLE database_for_dict.dict1; -- { serverError 80 }
+ATTACH TABLE database_for_dict.dict1; -- { serverError INCORRECT_QUERY }
 
 ATTACH DICTIONARY database_for_dict.dict1;
 

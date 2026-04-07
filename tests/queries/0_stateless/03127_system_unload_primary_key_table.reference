@@ -1,0 +1,23 @@
+10000000	10000000
+10000000	10000000
+10000000	10000000
+0	0
+10000000	10000000
+0	0
+0	0
+Query that does not use index for table `test`
+1
+0	0
+0	0
+Query that uses index in for table `test`
+1
+10000000	10000000
+0	0
+Query that does not use index for table `test2`
+1
+10000000	10000000
+0	0
+Query that uses index for table `test2`
+1
+10000000	10000000
+10000000	10000000

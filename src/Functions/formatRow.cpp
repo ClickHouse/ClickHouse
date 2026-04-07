@@ -1,15 +1,18 @@
-#include <memory>
 #include <Columns/ColumnString.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <base/map.h>
+
+#include <memory>
+#include <ranges>
 
 
 namespace DB
@@ -18,7 +21,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNKNOWN_FORMAT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -29,20 +31,26 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-
-template <bool no_newline>
 class FunctionFormatRow : public IFunction
 {
 public:
-    static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-
-    FunctionFormatRow(const String & format_name_, ContextPtr context_) : format_name(format_name_), context(context_)
+    FunctionFormatRow(const char * name_, bool no_newline_, String format_name_, Names arguments_column_names_, ContextPtr context_)
+        : function_name(name_)
+        , no_newline(no_newline_)
+        , format_name(std::move(format_name_))
+        , arguments_column_names(std::move(arguments_column_names_))
+        , context(std::move(context_))
+        , format_settings(getFormatSettings(context))
     {
-        if (!FormatFactory::instance().getAllFormats().contains(format_name))
-            throw Exception("Unknown format " + format_name, ErrorCodes::UNKNOWN_FORMAT);
+        FormatFactory::instance().checkFormatName(format_name);
+
+        /// We don't need handling exceptions while formatting as a row.
+        /// But it can be enabled in query sent via http interface.
+        format_settings.json.valid_output_on_exception = false;
+        format_settings.xml.valid_output_on_exception = false;
     }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -53,49 +61,70 @@ public:
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & vec = col_str->getChars();
-        WriteBufferFromVector buffer(vec);
+        WriteBufferFromVector<ColumnString::Chars> buffer(vec);
         ColumnString::Offsets & offsets = col_str->getOffsets();
         offsets.resize(input_rows_count);
+
         Block arg_columns;
-        for (auto i = 1u; i < arguments.size(); ++i)
-            arg_columns.insert(arguments[i]);
-        materializeBlockInplace(arg_columns);
-        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, [&](const Columns &, size_t row)
+
+        size_t arguments_size = arguments.size();
+        for (size_t i = 1; i < arguments_size; ++i)
         {
-            if constexpr (no_newline)
-            {
-                // replace '\n' with '\0'
-                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
-                    buffer.position()[-1] = '\0';
-            }
-            else
-                writeChar('\0', buffer);
-            offsets[row] = buffer.count();
-        });
+            auto argument_column = arguments[i];
+            argument_column.name = arguments_column_names[i];
+            arg_columns.insert(std::move(argument_column));
+        }
+
+        materializeBlockInplace(arg_columns);
+        auto out = FormatFactory::instance().getOutputFormat(format_name, buffer, arg_columns, context, format_settings);
 
         /// This function make sense only for row output formats.
-        if (!dynamic_cast<IRowOutputFormat *>(out.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
+        auto * row_output_format = dynamic_cast<IRowOutputFormat *>(out.get());
+        if (!row_output_format)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot turn rows into a {} format strings. {} function supports only row output formats",
+                            format_name, getName());
 
-        /// Don't write prefix if any.
-        out->doNotWritePrefix();
-        out->write(arg_columns);
+        auto columns = arg_columns.getColumns();
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            row_output_format->writePrefixIfNeeded();
+            row_output_format->writeRow(columns, i);
+            row_output_format->finalize();
+            if (no_newline)
+            {
+                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
+                    --buffer.position();
+            }
+
+            offsets[i] = buffer.count();
+            row_output_format->resetFormatter();
+        }
+
         return col_str;
     }
 
 private:
+    const char * function_name;
+    bool no_newline;
     String format_name;
+    Names arguments_column_names;
     ContextPtr context;
+    FormatSettings format_settings;
 };
 
-template <bool no_newline>
 class FormatRowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = no_newline ? "formatRowNoNewline" : "formatRow";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<FormatRowOverloadResolver>(context); }
-    explicit FormatRowOverloadResolver(ContextPtr context_) : context(context_) { }
-    String getName() const override { return name; }
+    FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)
+        : function_name(name_), no_newline(no_newline_), context(context_) {}
+
+    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context)
+    {
+        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context));
+    }
+
+    String getName() const override { return function_name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -104,22 +133,27 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (arguments.size() < 2)
-            throw Exception(
-                "Function " + getName() + " requires at least two arguments: the format name and its output expression(s)",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least two arguments: the format name and its output expression(s)", getName());
+
+        Names arguments_column_names;
+        arguments_column_names.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            arguments_column_names.push_back(argument.name);
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow<no_newline>>(name_col->getValue<String>(), context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), context),
+                DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
-        else
-            throw Exception("First argument to " + getName() + " must be a format name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeString>(); }
 
 private:
+    const char * function_name;
+    bool no_newline;
     ContextPtr context;
 };
 
@@ -127,8 +161,107 @@ private:
 
 REGISTER_FUNCTION(FormatRow)
 {
-    factory.registerFunction<FormatRowOverloadResolver<true>>();
-    factory.registerFunction<FormatRowOverloadResolver<false>>();
+    /// formatRow documentation
+    FunctionDocumentation::Description formatRow_description = R"(
+Converts arbitrary expressions into a string via given format.
+
+:::note
+If the format contains a suffix/prefix, it will be written in each row.
+Only row-based formats are supported in this function.
+:::
+    )";
+    FunctionDocumentation::Syntax formatRow_syntax = "formatRow(format, x, y, ...)";
+    FunctionDocumentation::Arguments formatRow_arguments =
+    {
+        {"format", "Text format. For example, CSV, TSV.", {"String"}},
+        {"x, y, ...", "Expressions.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue formatRow_returned_value = {"A formatted string. (for text formats it's usually terminated with the new line character).", {"String"}};
+    FunctionDocumentation::Examples formatRow_examples =
+    {
+    {
+        "Basic usage",
+        R"(
+SELECT formatRow('CSV', number, 'good')
+FROM numbers(3)
+        )",
+        R"(
+┌─formatRow('CSV', number, 'good')─┐
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
+└──────────────────────────────────┘
+        )"
+    },
+    {
+        "With custom format",
+        R"(
+SELECT formatRow('CustomSeparated', number, 'good')
+FROM numbers(3)
+SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
+        )",
+        R"(
+┌─formatRow('CustomSeparated', number, 'good')─┐
+│ <prefix>
+0    good
+<suffix>                   │
+│ <prefix>
+1    good
+<suffix>                   │
+│ <prefix>
+2    good
+<suffix>                   │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn formatRow_introduced_in = {20, 7};
+    FunctionDocumentation::Category formatRow_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation formatRow_documentation = {formatRow_description, formatRow_syntax, formatRow_arguments, {}, formatRow_returned_value, formatRow_examples, formatRow_introduced_in, formatRow_category};
+
+    /// formatRowNoNewline documentation
+    FunctionDocumentation::Description formatRowNoNewline_description = R"(
+Same as [`formatRow`](#formatRow), but trims the newline character of each row.
+
+Converts arbitrary expressions into a string via given format, but removes any trailing newline characters from the result.
+    )";
+    FunctionDocumentation::Syntax formatRowNoNewline_syntax = "formatRowNoNewline(format, x, y, ...)";
+    FunctionDocumentation::Arguments formatRowNoNewline_arguments =
+    {
+        {"format", "Text format. For example, CSV, TSV.", {"String"}},
+        {"x, y, ...", "Expressions.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue formatRowNoNewline_returned_value = {"Returns a formatted string with newlines removed.", {"String"}};
+    FunctionDocumentation::Examples formatRowNoNewline_examples =
+    {
+    {
+        "Basic usage",
+        R"(
+SELECT formatRowNoNewline('CSV', number, 'good')
+FROM numbers(3)
+        )",
+        R"(
+┌─formatRowNoNewline('CSV', number, 'good')─┐
+│ 0,"good"                                  │
+│ 1,"good"                                  │
+│ 2,"good"                                  │
+└───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn formatRowNoNewline_introduced_in = {20, 7};
+    FunctionDocumentation::Category formatRowNoNewline_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation formatRowNoNewline_documentation = {formatRowNoNewline_description, formatRowNoNewline_syntax, formatRowNoNewline_arguments, {}, formatRowNoNewline_returned_value, formatRowNoNewline_examples, formatRowNoNewline_introduced_in, formatRowNoNewline_category};
+
+    factory.registerFunction("formatRow",
+        [](ContextPtr ctx){ return FormatRowOverloadResolver::create("formatRow", false, std::move(ctx)); },
+        formatRow_documentation);
+    factory.registerFunction("formatRowNoNewline",
+        [](ContextPtr ctx){ return FormatRowOverloadResolver::create("formatRowNoNewline", true, std::move(ctx)); },
+        formatRowNoNewline_documentation);
 }
 
 }

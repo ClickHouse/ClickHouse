@@ -1,14 +1,18 @@
+#include <memory>
 #include <mutex>
+#include <Common/OSThreadNiceValue.h>
+#include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
-#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/queryNormalization.h>
+#include <Common/MemoryTracker.h>
+#include <Common/VariableContext.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -18,11 +22,12 @@
 #include <Common/setThreadName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/DateLUT.h>
+#include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <base/errnoToString.h>
+#include <Core/ServerSettings.h>
 
 #if defined(OS_LINUX)
-#   include <Common/hasLinuxCapability.h>
-
 #   include <sys/time.h>
 #   include <sys/resource.h>
 #endif
@@ -33,126 +38,489 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool calculate_text_stack_trace;
+    extern const SettingsBool enable_job_stack_trace;
+    extern const SettingsBool log_queries;
+    extern const SettingsMilliseconds log_queries_min_query_duration_ms;
+    extern const SettingsBool log_profile_events;
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsBool log_query_threads;
+    extern const SettingsUInt64 max_untracked_memory;
+    extern const SettingsUInt64 memory_overcommit_ratio_denominator;
+    extern const SettingsFloat memory_profiler_sample_probability;
+    extern const SettingsUInt64 memory_profiler_sample_min_allocation_size;
+    extern const SettingsUInt64 memory_profiler_sample_max_allocation_size;
+    extern const SettingsUInt64 memory_profiler_step;
+    extern const SettingsFloat memory_tracker_fault_probability;
+    extern const SettingsBool metrics_perf_events_enabled;
+    extern const SettingsString metrics_perf_events_list;
+    extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
+    extern const SettingsUInt64 query_profiler_real_time_period_ns;
+    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
+    extern const SettingsBool jemalloc_enable_profiler;
+    extern const SettingsBool jemalloc_collect_profile_samples_in_trace_log;
+    extern const SettingsInt32 os_threads_nice_value_query;
+    extern const SettingsInt32 os_threads_nice_value_materialized_view;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInt32 os_threads_nice_value_merge_mutate;
+}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_SET_THREAD_PRIORITY;
+}
+
+ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , query_context(query_context_)
+    , global_context(query_context_->getGlobalContext())
+    , fatal_error_callback(fatal_error_callback_)
+    , os_threads_nice_value(os_threads_nice_value_)
+    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler]))
+{
+    shared_data.query_is_canceled_predicate = [this] () -> bool {
+            if (auto context_locked = query_context.lock())
+            {
+                return context_locked->isCurrentQueryKilled();
+            }
+            return false;
+    };
+}
+
+// c-tor for method createForMaterializedView
+ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
+    : master_thread_id(parent->master_thread_id)
+    , query_context(parent->query_context)
+    , global_context(parent->global_context)
+    , fatal_error_callback(parent->fatal_error_callback)
+    , os_threads_nice_value(parent->os_threads_nice_value)
+    , memory_spill_scheduler(parent->memory_spill_scheduler)
+    , performance_counters(VariableContext::Process, &parent->performance_counters)
+    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , shared_data(parent->getSharedData())
+{
+}
+
+// c-tor for method createForFlushAsyncInsertQueue
+ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
+    : master_thread_id(CurrentThread::get().thread_id)
+    , query_context(query_context_)
+    , global_context(query_context_->getGlobalContext())
+    , fatal_error_callback(parent->fatal_error_callback)
+    , os_threads_nice_value(parent->os_threads_nice_value)
+    , memory_spill_scheduler(parent->memory_spill_scheduler)
+    , performance_counters(VariableContext::Process, &parent->performance_counters)
+    , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+{
+    shared_data.query_is_canceled_predicate = [this] () -> bool {
+        if (auto context_locked = query_context.lock())
+        {
+            return context_locked->isCurrentQueryKilled();
+        }
+        return false;
+    };
+}
+
+std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
+{
+    std::vector<UInt64> res;
+
+    {
+        std::lock_guard lock(mutex);
+        res.assign(thread_ids.begin(), thread_ids.end());
+    }
+
+    return res;
+}
+
+size_t ThreadGroup::getPeakThreadsUsage() const
+{
+    std::lock_guard lock(mutex);
+    return peak_threads_usage;
+}
+
+UInt64 ThreadGroup::getGroupElapsedMs() const
+{
+    std::lock_guard lock(mutex);
+    return elapsed_group_ms;
+}
+
+void ThreadGroup::linkThread(UInt64 thread_id)
+{
+    std::lock_guard lock(mutex);
+    thread_ids.insert(thread_id);
+
+    if (active_thread_count == 0)
+        effective_group_stopwatch.restart();
+
+    ++active_thread_count;
+    peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
+}
+
+void ThreadGroup::unlinkThread()
+{
+    std::lock_guard lock(mutex);
+    chassert(active_thread_count > 0);
+    --active_thread_count;
+
+    if (active_thread_count == 0)
+        elapsed_group_ms += effective_group_stopwatch.elapsedMilliseconds();
+}
+
+ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
+{
+    const Int32 os_threads_nice_value = query_context_->getSettingsRef()[Setting::os_threads_nice_value_query];
+    auto group = std::make_shared<ThreadGroup>(query_context_, os_threads_nice_value, std::move(fatal_error_callback_));
+    group->memory_tracker.setDescription("Query");
+    return group;
+}
+
+ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_value)
+{
+    auto group = std::make_shared<ThreadGroup>(context, os_threads_nice_value);
+
+    /// However settings from storage context have to be applied
+    const Settings & settings = context->getSettingsRef();
+    group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
+    group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+    group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
+    group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
+    group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
+    if (settings[Setting::memory_tracker_fault_probability] > 0.0)
+        group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+
+    return group;
+}
+
+ThreadGroupPtr ThreadGroup::createForMergeMutate(ContextPtr storage_context)
+{
+    const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
+    auto group = create(storage_context, os_threads_nice_value);
+    group->memory_tracker.setDescription("Background process (mutate/merge)");
+    group->memory_tracker.setParent(&background_memory_tracker);
+    return group;
+}
+
+ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
+{
+    ThreadGroupPtr res_group;
+    if (auto current_group = CurrentThread::getGroup())
+    {
+        res_group = std::make_shared<ThreadGroup>(current_group);
+    }
+    else
+    {
+        const Int32 os_threads_nice_value = context->getSettingsRef()[Setting::os_threads_nice_value_materialized_view];
+        res_group = create(context, os_threads_nice_value);
+    }
+    res_group->memory_tracker.setDescription("MaterializeView");
+    return res_group;
+}
+
+ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
+{
+    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
+    return res_group;
+}
+
+void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_hash)
+{
+    auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
+
+    std::lock_guard lock(mutex);
+    shared_data.query_for_logs = query_;
+    shared_data.normalized_query_hash = hash;
+}
+
+void ThreadStatus::attachQueryForLog(const String & query_)
+{
+    local_data.query_for_logs = query_;
+    local_data.normalized_query_hash = normalizedQueryHash(query_, false);
+
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
+
+    thread_group->attachQueryForLog(local_data.query_for_logs, local_data.normalized_query_hash);
+}
+
+void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
+{
+    std::lock_guard lock(mutex);
+    shared_data.profile_queue_ptr = profile_queue;
+}
+
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
+    : thread_group(std::move(thread_group_))
+{
+    try
+    {
+        if (!thread_group)
+            return;
+
+        prev_thread = current_thread;
+        prev_thread_group = CurrentThread::getGroup();
+        if (prev_thread_group)
+        {
+            if (prev_thread_group == thread_group)
+            {
+                thread_group = nullptr;
+                prev_thread_group = nullptr;
+                return;
+            }
+            else if (!allow_existing_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
+            else
+                CurrentThread::detachFromGroupIfNotDetached();
+        }
+
+        if (!prev_thread)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Tried to attach thread ({}) to a group, but the ThreadStatus is not initialized", thread_name);
+
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+        CurrentThread::attachToGroup(thread_group);
+        setThreadName(thread_name);
+    }
+    catch (...)
+    {
+        /// Unexpected. For caller's convenience avoid throwing exceptions.
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        thread_group = nullptr;
+        prev_thread_group = nullptr;
+    }
+}
+
+ThreadGroupSwitcher::~ThreadGroupSwitcher()
+{
+    if (!thread_group)
+        return;
+
+    try
+    {
+        ThreadStatus * cur_thread = current_thread;
+        ThreadGroupPtr cur_thread_group = CurrentThread::getGroup();
+        if (cur_thread != prev_thread)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread changed between scope start ({}) and end ({})", prev_thread ? std::to_string(prev_thread->thread_id) : "nullptr", cur_thread ? std::to_string(cur_thread->thread_id) : "nullptr");
+        if (cur_thread_group != thread_group)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ThreadGroupSwitcher-s are not properly nested: current thread group changed between scope start (master_thread_id {}) and end ({})", thread_group->master_thread_id, cur_thread_group ? "master_thread_id " + std::to_string(cur_thread_group->master_thread_id) : "nullptr");
+        thread_group.reset();
+
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        if (prev_thread_group)
+        {
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            CurrentThread::attachToGroup(prev_thread_group);
+        }
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
+{
+    if (!thread_group)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No thread group attached to the thread {}", thread_id);
+
+    local_data.profile_queue_ptr = profile_queue;
+    thread_group->attachInternalProfileEventsQueue(profile_queue);
+}
+
+void CurrentThread::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->attachInternalProfileEventsQueue(queue);
+}
+
+void CurrentThread::attachQueryForLog(const String & query_)
+{
+    if (unlikely(!current_thread))
+        return;
+    current_thread->attachQueryForLog(query_);
+}
+
+void ThreadStatus::applyGlobalSettings()
+{
+    auto global_context_ptr = global_context.lock();
+    if (!global_context_ptr)
+        return;
+
+    const Settings & settings = global_context_ptr->getSettingsRef();
+
+    DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 }
 
 void ThreadStatus::applyQuerySettings()
 {
     auto query_context_ptr = query_context.lock();
-    assert(query_context_ptr);
+    if (!query_context_ptr)
+        return;
+
     const Settings & settings = query_context_ptr->getSettingsRef();
+
+    DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
     query_id = query_context_ptr->getCurrentQueryId();
     initQueryProfiler();
 
-    untracked_memory_limit = settings.max_untracked_memory;
-    if (settings.memory_profiler_step && settings.memory_profiler_step < static_cast<UInt64>(untracked_memory_limit))
-        untracked_memory_limit = settings.memory_profiler_step;
+    untracked_memory_limit = settings[Setting::max_untracked_memory];
+    if (settings[Setting::memory_profiler_step] && settings[Setting::memory_profiler_step] < static_cast<UInt64>(untracked_memory_limit))
+        untracked_memory_limit = settings[Setting::memory_profiler_step];
 
-#if defined(OS_LINUX)
-    /// Set "nice" value if required.
-    Int32 new_os_thread_priority = static_cast<Int32>(settings.os_thread_priority);
-    if (new_os_thread_priority && hasLinuxCapability(CAP_SYS_NICE))
+#if USE_JEMALLOC
+    if (settings[Setting::jemalloc_enable_profiler])
     {
-        LOG_TRACE(log, "Setting nice to {}", new_os_thread_priority);
-
-        if (0 != setpriority(PRIO_PROCESS, static_cast<unsigned>(thread_id), new_os_thread_priority))
-            throwFromErrno("Cannot 'setpriority'", ErrorCodes::CANNOT_SET_THREAD_PRIORITY);
-
-        os_thread_priority = new_os_thread_priority;
+        jemalloc_profiler_enabled = true;
+        Jemalloc::getThreadProfileActiveMib().setValue(true);
     }
+
+    if (settings[Setting::jemalloc_collect_profile_samples_in_trace_log])
+        Jemalloc::setCollectLocalProfileSamplesInTraceLog(true);
 #endif
 }
 
-
-void ThreadStatus::attachQueryContext(ContextPtr query_context_)
+void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 {
-    query_context = query_context_;
-
-    if (global_context.expired())
-        global_context = query_context_->getGlobalContext();
-
-    if (thread_group)
-    {
-        std::lock_guard lock(thread_group->mutex);
-
-        thread_group->query_context = query_context;
-        if (thread_group->global_context.expired())
-            thread_group->global_context = global_context;
-    }
-
-    applyQuerySettings();
-}
-
-void CurrentThread::defaultThreadDeleter()
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->detachQuery(true, true);
-}
-
-void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
-{
-    assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
+    thread_attach_time.setUp();
 
     /// Attach or init current thread to thread group and copy useful information from it
     thread_group = thread_group_;
+    thread_group->linkThread(thread_id);
 
     performance_counters.setParent(&thread_group->performance_counters);
     memory_tracker.setParent(&thread_group->memory_tracker);
 
-    {
-        std::lock_guard lock(thread_group->mutex);
+    query_context = thread_group->query_context;
+    global_context = thread_group->global_context;
 
-        /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_ids.insert(thread_id);
-        thread_group->threads.insert(this);
+    fatal_error_callback = thread_group->fatal_error_callback;
 
-        logs_queue_ptr = thread_group->logs_queue_ptr;
-        fatal_error_callback = thread_group->fatal_error_callback;
-        query_context = thread_group->query_context;
-        profile_queue_ptr = thread_group->profile_queue_ptr;
+    local_data = thread_group->getSharedData();
 
-        if (global_context.expired())
-            global_context = thread_group->global_context;
-    }
-
-    if (auto query_context_ptr = query_context.lock())
-    {
-        applyQuerySettings();
-    }
-
+    applyGlobalSettings();
+    applyQuerySettings();
     initPerformanceCounters();
 
-    thread_state = ThreadState::AttachedToQuery;
-}
-
-void ThreadStatus::initializeQuery()
-{
-    setupState(std::make_shared<ThreadGroupStatus>());
-
-    /// No need to lock on mutex here
-    thread_group->memory_tracker.setDescription("(for query)");
-    thread_group->master_thread_id = thread_id;
-}
-
-void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
-{
-    if (thread_state == ThreadState::AttachedToQuery)
+    if (thread_group->os_threads_nice_value != 0)
     {
-        if (check_detached)
-            throw Exception("Can't attach query to the thread, it is already attached", ErrorCodes::LOGICAL_ERROR);
+        OSThreadNiceValue::set(thread_group->os_threads_nice_value);
+    }
+}
+
+void ThreadStatus::detachFromGroup()
+{
+    if (!thread_group)
         return;
+
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
+    /// flush untracked memory before resetting memory_tracker parent
+    flushUntrackedMemory();
+
+    finalizeQueryProfiler();
+    finalizePerformanceCounters();
+
+    performance_counters.setParent(&ProfileEvents::global_counters);
+
+    memory_tracker.reset();
+    /// Extract MemoryTracker out from query and user context
+    memory_tracker.setParent(&total_memory_tracker);
+
+    thread_group->unlinkThread();
+
+    if (thread_group->os_threads_nice_value != 0)
+    {
+        OSThreadNiceValue::set(0);
     }
 
-    if (!thread_group_)
-        throw Exception("Attempt to attach to nullptr thread group", ErrorCodes::LOGICAL_ERROR);
+    thread_group.reset();
 
-    setupState(thread_group_);
+#if USE_JEMALLOC
+    if (std::exchange(jemalloc_profiler_enabled, false))
+        Jemalloc::getThreadProfileActiveMib().setValue(Jemalloc::getThreadProfileInitMib().getValue());
+    Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
+#endif
+
+    query_id.clear();
+    query_context.reset();
+
+    local_data = {};
+
+    fatal_error_callback = {};
+
+}
+
+void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
+{
+    if (thread_group && check_detached)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't attach query to the thread, it is already attached");
+
+    if (!thread_group_)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to attach to nullptr thread group");
+
+    if (thread_group)
+        return;
+
+    deleter = [this] () { detachFromGroup(); };
+    attachToGroupImpl(thread_group_);
+}
+
+ProfileEvents::Counters * ThreadStatus::attachProfileCountersScope(ProfileEvents::Counters * performance_counters_scope)
+{
+    ProfileEvents::Counters * prev_counters = current_performance_counters;
+
+    if (current_performance_counters == performance_counters_scope)
+        /// Allow to attach the same scope multiple times
+        return prev_counters;
+
+    /// Avoid cycles when exiting local scope and attaching back to current thread counters
+    if (performance_counters_scope != &performance_counters)
+        performance_counters_scope->setParent(&performance_counters);
+
+    current_performance_counters = performance_counters_scope;
+
+    return prev_counters;
+}
+
+void ThreadStatus::TimePoint::setUp()
+{
+    point = std::chrono::system_clock::now();
+}
+
+UInt64 ThreadStatus::TimePoint::nanoseconds() const
+{
+    return timeInNanoseconds(point);
+}
+
+UInt64 ThreadStatus::TimePoint::microseconds() const
+{
+    return timeInMicroseconds(point);
+}
+
+UInt64 ThreadStatus::TimePoint::seconds() const
+{
+    return timeInSeconds(point);
+}
+
+UInt64 ThreadStatus::TimePoint::elapsedMilliseconds() const
+{
+    TimePoint now;
+    now.setUp();
+    return elapsedMilliseconds(now);
+}
+
+UInt64 ThreadStatus::TimePoint::elapsedMilliseconds(const TimePoint & current) const
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(current.point - point).count();
 }
 
 void ThreadStatus::initPerformanceCounters()
@@ -163,29 +531,19 @@ void ThreadStatus::initPerformanceCounters()
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
-    memory_tracker.setDescription("(for thread)");
+    memory_tracker.setDescription("Thread");
 
-    // query_start_time_{microseconds, nanoseconds} are all constructed from the same time point
-    // to ensure that they are all equal up to the precision of a second.
-    const auto now = std::chrono::system_clock::now();
-
-    query_start_time_nanoseconds = timeInNanoseconds(now);
-    query_start_time = timeInSeconds(now);
-    query_start_time_microseconds = timeInMicroseconds(now);
-    ++queries_started;
-
-    // query_start_time_nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
+    // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
 
     if (auto query_context_ptr = query_context.lock())
     {
         const Settings & settings = query_context_ptr->getSettingsRef();
-        if (settings.metrics_perf_events_enabled)
+        if (settings[Setting::metrics_perf_events_enabled])
         {
             try
             {
-                current_thread_counters.initializeProfileEvents(
-                    settings.metrics_perf_events_list);
+                current_thread_counters.initializeProfileEvents(settings[Setting::metrics_perf_events_list]);
             }
             catch (...)
             {
@@ -206,7 +564,7 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
     if (taskstats)
-        taskstats->reset();
+        (*taskstats).reset();
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -214,16 +572,17 @@ void ThreadStatus::finalizePerformanceCounters()
     if (performance_counters_finalized)
         return;
 
+    if (last_rusage->thread_id == 0)
+        return; // Performance counters are not initialized
+
     performance_counters_finalized = true;
     updatePerformanceCounters();
 
     // We want to close perf file descriptors if the perf events were enabled for
-    // one query. What this code does in practice is less clear -- e.g., if I run
-    // 'select 1 settings metrics_perf_events_enabled = 1', I still get
-    // query_context->getSettingsRef().metrics_perf_events_enabled == 0 *shrug*.
+    // one query.
     bool close_perf_descriptors = true;
-    if (auto query_context_ptr = query_context.lock())
-        close_perf_descriptors = !query_context_ptr->getSettingsRef().metrics_perf_events_enabled;
+    if (auto global_context_ptr = global_context.lock())
+        close_perf_descriptors = !global_context_ptr->getSettingsRef()[Setting::metrics_perf_events_enabled];
 
     try
     {
@@ -243,14 +602,13 @@ void ThreadStatus::finalizePerformanceCounters()
         if (global_context_ptr && query_context_ptr)
         {
             const auto & settings = query_context_ptr->getSettingsRef();
-            if (settings.log_queries && settings.log_query_threads)
+            if (settings[Setting::log_queries] && settings[Setting::log_query_threads])
             {
-                const auto now = std::chrono::system_clock::now();
-                Int64 query_duration_ms = (timeInMicroseconds(now) - query_start_time_microseconds) / 1000;
-                if (query_duration_ms >= settings.log_queries_min_query_duration_ms.totalMilliseconds())
+                Int64 query_duration_ms = thread_attach_time.elapsedMilliseconds();
+                if (query_duration_ms >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
                 {
                     if (auto thread_log = global_context_ptr->getQueryThreadLog())
-                        logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase(), now);
+                        logToQueryThreadLog(*thread_log, query_context_ptr->getCurrentDatabase());
                 }
             }
         }
@@ -265,14 +623,37 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 {
     *last_rusage = RUsageCounters::current();
     if (taskstats)
-        taskstats->reset();
+        (*taskstats).reset();
+}
+
+void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
+{
+#if !defined(SANITIZER) && defined(SIGEV_THREAD_ID)
+    /// profilers are useless without trace collector
+    auto context = Context::getGlobalContextInstance();
+    if (!context->hasTraceCollector())
+        return;
+
+    try
+    {
+        if (global_profiler_real_time_period > 0)
+            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
+                /* period= */ global_profiler_real_time_period);
+
+        if (global_profiler_cpu_time_period > 0)
+            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
+                /* period= */ global_profiler_cpu_time_period);
+    }
+    catch (...)
+    {
+        /// GlobalProfiler is optional.
+        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize GlobalProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
+    }
+#endif
 }
 
 void ThreadStatus::initQueryProfiler()
 {
-    if (!query_profiler_enabled)
-        return;
-
     /// query profilers are useless without trace collector
     auto global_context_ptr = global_context.lock();
     if (!global_context_ptr || !global_context_ptr->hasTraceCollector())
@@ -284,18 +665,30 @@ void ThreadStatus::initQueryProfiler()
 
     try
     {
-        if (settings.query_profiler_real_time_period_ns > 0)
-            query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+        if (settings[Setting::query_profiler_real_time_period_ns] > 0)
+        {
+            if (!query_profiler_real)
+                query_profiler_real = std::make_unique<QueryProfilerReal>(
+                    thread_id,
+                    /* period= */ settings[Setting::query_profiler_real_time_period_ns]);
+            else
+                query_profiler_real->setPeriod(settings[Setting::query_profiler_real_time_period_ns]);
+        }
 
-        if (settings.query_profiler_cpu_time_period_ns > 0)
-            query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+        if (settings[Setting::query_profiler_cpu_time_period_ns] > 0)
+        {
+            if (!query_profiler_cpu)
+                query_profiler_cpu = std::make_unique<QueryProfilerCPU>(
+                    thread_id,
+                    /* period= */ settings[Setting::query_profiler_cpu_time_period_ns]);
+            else
+                query_profiler_cpu->setPeriod(settings[Setting::query_profiler_cpu_time_period_ns]);
+        }
     }
     catch (...)
     {
         /// QueryProfiler is optional.
-        tryLogCurrentException("ThreadStatus", "Cannot initialize QueryProfiler");
+        tryLogCurrentException(LogFrequencyLimiter(log, 10), "Cannot initialize QueryProfiler. This usually happens when RLIMIT_SIGPENDING is too low. You may tune it via pending_signals in config.", LogsLevel::warning);
     }
 }
 
@@ -305,72 +698,20 @@ void ThreadStatus::finalizeQueryProfiler()
     query_profiler_cpu.reset();
 }
 
-void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
-{
-    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-    if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
-    {
-        thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
-        return;
-    }
-
-    assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
-
-    finalizeQueryProfiler();
-    finalizePerformanceCounters();
-
-    /// Detach from thread group
-    {
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->threads.erase(this);
-    }
-    performance_counters.setParent(&ProfileEvents::global_counters);
-    memory_tracker.reset();
-
-    memory_tracker.setParent(thread_group->memory_tracker.getParent());
-
-    query_id.clear();
-    query_context.reset();
-
-    /// Avoid leaking of ThreadGroupStatus::finished_threads_counters_memory
-    /// (this is in case someone uses system thread but did not call getProfileEventsCountersAndMemoryForThreads())
-    {
-        std::lock_guard guard(thread_group->mutex);
-        auto stats = std::move(thread_group->finished_threads_counters_memory);
-    }
-
-    thread_group.reset();
-
-    thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
-
-#if defined(OS_LINUX)
-    if (os_thread_priority)
-    {
-        LOG_TRACE(log, "Resetting nice");
-
-        if (0 != setpriority(PRIO_PROCESS, static_cast<int>(thread_id), 0))
-            LOG_ERROR(log, "Cannot 'setpriority' back to zero: {}", errnoToString());
-
-        os_thread_priority = 0;
-    }
-#endif
-}
-
-void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now)
+void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database)
 {
     QueryThreadLogElement elem;
 
     // construct current_time and current_time_microseconds using the same time point
     // so that the two times will always be equal up to a precision of a second.
-    auto current_time = timeInSeconds(now);
-    auto current_time_microseconds = timeInMicroseconds(now);
+    TimePoint current_time;
+    current_time.setUp();
 
-    elem.event_time = current_time;
-    elem.event_time_microseconds = current_time_microseconds;
-    elem.query_start_time = query_start_time;
-    elem.query_start_time_microseconds = query_start_time_microseconds;
-    elem.query_duration_ms = (timeInNanoseconds(now) - query_start_time_nanoseconds) / 1000000U;
+    elem.event_time = current_time.seconds();
+    elem.event_time_microseconds = current_time.microseconds();
+    elem.query_start_time = thread_attach_time.seconds();
+    elem.query_start_time_microseconds = thread_attach_time.microseconds();
+    elem.query_duration_ms = thread_attach_time.elapsedMilliseconds(current_time);
 
     elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
@@ -386,13 +727,9 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     elem.current_database = current_database;
     if (thread_group)
     {
-        {
-            std::lock_guard lock(thread_group->mutex);
-
-            elem.master_thread_id = thread_group->master_thread_id;
-            elem.query = thread_group->query;
-            elem.normalized_query_hash = thread_group->normalized_query_hash;
-        }
+        elem.master_thread_id = thread_group->master_thread_id;
+        elem.query = local_data.query_for_logs;
+        elem.normalized_query_hash = local_data.normalized_query_hash;
     }
 
     auto query_context_ptr = query_context.lock();
@@ -400,103 +737,28 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
     {
         elem.client_info = query_context_ptr->getClientInfo();
 
-        if (query_context_ptr->getSettingsRef().log_profile_events != 0)
+        if (query_context_ptr->getSettingsRef()[Setting::log_profile_events] != 0)
         {
             /// NOTE: Here we are in the same thread, so we can make memcpy()
             elem.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
         }
     }
 
-    thread_log.add(elem);
+    thread_log.add(std::move(elem));
 }
 
-static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
-{
-    String res = serializeAST(*q, true);
-    if (auto * masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
-
-    res = res.substr(0, context->getSettingsRef().log_queries_cut_to_length);
-
-    return res;
-}
-
-void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
-{
-    auto query_context_ptr = query_context.lock();
-    if (!query_context_ptr)
-        return;
-    auto views_log = query_context_ptr->getQueryViewsLog();
-    if (!views_log)
-        return;
-
-    QueryViewsLogElement element;
-
-    element.event_time = timeInSeconds(vinfo.runtime_stats->event_time);
-    element.event_time_microseconds = timeInMicroseconds(vinfo.runtime_stats->event_time);
-    element.view_duration_ms = vinfo.runtime_stats->elapsed_ms;
-
-    element.initial_query_id = query_id;
-    element.view_name = vinfo.table_id.getFullTableName();
-    element.view_uuid = vinfo.table_id.uuid;
-    element.view_type = vinfo.runtime_stats->type;
-    if (vinfo.query)
-        element.view_query = getCleanQueryAst(vinfo.query, query_context_ptr);
-    element.view_target = vinfo.runtime_stats->target_name;
-
-    auto events = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
-    element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
-    element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
-    element.written_rows = progress_out.written_rows.load(std::memory_order_relaxed);
-    element.written_bytes = progress_out.written_bytes.load(std::memory_order_relaxed);
-    element.peak_memory_usage = memory_tracker.getPeak() > 0 ? memory_tracker.getPeak() : 0;
-    if (query_context_ptr->getSettingsRef().log_profile_events != 0)
-    {
-        element.profile_counters = events;
-    }
-
-    element.status = vinfo.runtime_stats->event_status;
-    element.exception_code = 0;
-    if (vinfo.exception)
-    {
-        element.exception_code = getExceptionErrorCode(vinfo.exception);
-        element.exception = getExceptionMessage(vinfo.exception, false);
-        if (query_context_ptr->getSettingsRef().calculate_text_stack_trace)
-            element.stack_trace = getExceptionStackTraceString(vinfo.exception);
-    }
-
-    views_log->add(element);
-}
-
-void CurrentThread::initializeQuery()
+void CurrentThread::attachToGroup(const ThreadGroupPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->initializeQuery();
-    current_thread->deleter = CurrentThread::defaultThreadDeleter;
+    current_thread->attachToGroup(thread_group, true);
 }
 
-void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
+void CurrentThread::attachToGroupIfDetached(const ThreadGroupPtr & thread_group)
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->attachQuery(thread_group, true);
-    current_thread->deleter = CurrentThread::defaultThreadDeleter;
-}
-
-void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->attachQuery(thread_group, false);
-    current_thread->deleter = CurrentThread::defaultThreadDeleter;
-}
-
-void CurrentThread::attachQueryContext(ContextPtr query_context)
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->attachQueryContext(query_context);
+    current_thread->attachToGroup(thread_group, false);
 }
 
 void CurrentThread::finalizePerformanceCounters()
@@ -506,62 +768,11 @@ void CurrentThread::finalizePerformanceCounters()
     current_thread->finalizePerformanceCounters();
 }
 
-void CurrentThread::detachQuery()
+void CurrentThread::detachFromGroupIfNotDetached()
 {
     if (unlikely(!current_thread))
         return;
-    current_thread->detachQuery(false);
-}
-
-void CurrentThread::detachQueryIfNotDetached()
-{
-    if (unlikely(!current_thread))
-        return;
-    current_thread->detachQuery(true);
-}
-
-
-CurrentThread::QueryScope::QueryScope(ContextMutablePtr query_context)
-{
-    CurrentThread::initializeQuery();
-    CurrentThread::attachQueryContext(query_context);
-    if (!query_context->hasQueryContext())
-        query_context->makeQueryContext();
-}
-
-CurrentThread::QueryScope::QueryScope(ContextPtr query_context)
-{
-    if (!query_context->hasQueryContext())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot initialize query scope without query context");
-
-    CurrentThread::initializeQuery();
-    CurrentThread::attachQueryContext(query_context);
-}
-
-void CurrentThread::QueryScope::logPeakMemoryUsage()
-{
-    auto group = CurrentThread::getGroup();
-    if (!group)
-        return;
-
-    log_peak_memory_usage_in_destructor = false;
-    group->memory_tracker.logPeakMemoryUsage();
-}
-
-CurrentThread::QueryScope::~QueryScope()
-{
-    try
-    {
-        if (log_peak_memory_usage_in_destructor)
-            logPeakMemoryUsage();
-
-        CurrentThread::detachQueryIfNotDetached();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("CurrentThread", __PRETTY_FUNCTION__);
-    }
+    current_thread->detachFromGroup();
 }
 
 }

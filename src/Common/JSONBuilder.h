@@ -2,8 +2,12 @@
 #include <type_traits>
 #include <vector>
 #include <IO/WriteBuffer.h>
-#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
+
+namespace DB
+{
+struct FormatSettings;
+}
 
 namespace DB::JSONBuilder
 {
@@ -13,6 +17,7 @@ struct FormatSettings
     const DB::FormatSettings & settings;
     size_t indent = 2;
     bool print_simple_arrays_in_single_row = true;
+    bool solid = false; // the output will not contain spaces and line breaks
 };
 
 struct FormatContext
@@ -95,7 +100,7 @@ class JSONMap : public IItem
     };
 
 public:
-    void add(std::string key, ItemPtr value) { values.emplace_back(Pair{.key = std::move(key), .value = std::move(value)}); } //-V1030
+    void add(std::string key, ItemPtr value) { values.emplace_back(Pair{.key = std::move(key), .value = std::move(value)}); }
     void add(std::string key, std::string value) { add(std::move(key), std::make_unique<JSONString>(std::move(value))); }
     void add(std::string key, const char * value) { add(std::move(key), std::make_unique<JSONString>(value)); }
     void add(std::string key, std::string_view value) { add(std::move(key), std::make_unique<JSONString>(value)); }
@@ -109,6 +114,12 @@ public:
 
 private:
     std::vector<Pair> values;
+};
+
+class JSONNull : public IItem
+{
+public:
+    void format(const FormatSettings & settings, FormatContext & context) override;
 };
 
 }

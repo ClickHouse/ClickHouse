@@ -35,8 +35,9 @@ DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
         inner_type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
 
     if (!inner_type->canBeInsideLowCardinality())
-        throw Exception("DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got "
-                        + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got {}",
+                        dictionary_type->getName());
 }
 
 namespace
@@ -54,7 +55,7 @@ namespace
         }
 
         template <typename T>
-        void operator()(Id<T>)
+        void operator()(TypeList<T>)
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
                 column = creator(static_cast<ColumnVector<T> *>(nullptr));
@@ -74,31 +75,37 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
 
     if (which.isString())
         return creator(static_cast<ColumnString *>(nullptr));
-    else if (which.isFixedString())
+    if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
-    else if (which.isDate())
+    if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    else if (which.isDate32())
+    if (which.isDate32())
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
-    else if (which.isDateTime())
+    if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    else if (which.isUUID())
+    if (which.isTime())
+        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
+    if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
-    else if (which.isInterval())
+    if (which.isIPv4())
+        return creator(static_cast<ColumnVector<IPv4> *>(nullptr));
+    if (which.isIPv6())
+        return creator(static_cast<ColumnVector<IPv6> *>(nullptr));
+    if (which.isInterval())
         return creator(static_cast<DataTypeInterval::ColumnType *>(nullptr));
-    else if (which.isInt() || which.isUInt() || which.isFloat())
+    if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
+        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector<Creator>(column, *type, creator));
 
         if (!column)
-            throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected numeric type: {}", type->getName());
 
         return column;
     }
 
-    throw Exception("Unexpected dictionary type for DataTypeLowCardinality: " + type->getName(),
-                    ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary type for DataTypeLowCardinality: {}",
+                    type->getName());
 }
 
 
@@ -106,7 +113,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 {
     auto creator = [&](auto x)
     {
-        using ColumnType = typename std::remove_pointer<decltype(x)>::type;
+        using ColumnType = typename std::remove_pointer_t<decltype(x)>;
         return ColumnUnique<ColumnType>::create(keys_type);
     };
     return createColumnUniqueImpl(keys_type, creator);
@@ -116,7 +123,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataTyp
 {
     auto creator = [&](auto x)
     {
-        using ColumnType = typename std::remove_pointer<decltype(x)>::type;
+        using ColumnType = typename std::remove_pointer_t<decltype(x)>;
         return ColumnUnique<ColumnType>::create(std::move(keys), keys_type.isNullable());
     };
     return createColumnUniqueImpl(keys_type, creator);
@@ -126,7 +133,7 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
 {
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
-    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
 }
 
 Field DataTypeLowCardinality::getDefault() const
@@ -143,17 +150,28 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
 }
 
-SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
+void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
 {
-    return std::make_shared<SerializationLowCardinality>(dictionary_type);
+    dictionary_type->updateHash(hash);
+}
+
+SerializationPtr DataTypeLowCardinality::doGetSerialization(const SerializationInfoSettings &) const
+{
+    return SerializationLowCardinality::create(dictionary_type);
+}
+
+void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
+{
+    callback(*dictionary_type);
+    dictionary_type->forEachChild(callback);
 }
 
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception("LowCardinality data type family must have single argument - type of elements",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "LowCardinality data type family must have single argument - type of elements");
 
     return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children[0]));
 }
@@ -171,4 +189,8 @@ DataTypePtr removeLowCardinality(const DataTypePtr & type)
     return type;
 }
 
+DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type)
+{
+    return removeNullable(removeLowCardinality(type));
+};
 }

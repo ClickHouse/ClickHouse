@@ -1,17 +1,17 @@
-#include <Backups/BackupUtils.h>
-#include <Backups/IBackup.h>
-#include <Backups/RestoreSettings.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Backups/BackupUtils.h>
+#include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/setThreadName.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Common/typeid_cast.h>
 
 
-namespace DB
+namespace DB::BackupUtils
 {
 
-DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & elements)
+DDLRenamingMap makeRenamingMap(const ASTBackupQuery::Elements & elements)
 {
     DDLRenamingMap map;
 
@@ -60,140 +60,6 @@ DDLRenamingMap makeRenamingMapFromBackupQuery(const ASTBackupQuery::Elements & e
 }
 
 
-void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, ThreadPool & thread_pool)
-{
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
-
-    bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
-    auto thread_group = CurrentThread::getGroup();
-
-    for (auto & name_and_entry : backup_entries)
-    {
-        auto & name = name_and_entry.first;
-        auto & entry = name_and_entry.second;
-
-        {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
-
-        auto job = [&](bool async)
-        {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-
-            try
-            {
-                if (async && thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                if (async)
-                    setThreadName("BackupWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
-
-                backup->writeFile(name, std::move(entry));
-            }
-            catch (...)
-            {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
-            }
-        };
-
-        if (always_single_threaded || !thread_pool.trySchedule([job] { job(true); }))
-            job(false);
-    }
-
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
-}
-
-
-void restoreTablesData(DataRestoreTasks && tasks, ThreadPool & thread_pool)
-{
-    size_t num_active_jobs = 0;
-    std::mutex mutex;
-    std::condition_variable event;
-    std::exception_ptr exception;
-
-    auto thread_group = CurrentThread::getGroup();
-
-    for (auto & task : tasks)
-    {
-        {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            ++num_active_jobs;
-        }
-
-        auto job = [&](bool async)
-        {
-            SCOPE_EXIT_SAFE(
-                std::lock_guard lock{mutex};
-                if (!--num_active_jobs)
-                    event.notify_all();
-                if (async)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-
-            try
-            {
-                if (async && thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-                if (async)
-                    setThreadName("RestoreWorker");
-
-                {
-                    std::lock_guard lock{mutex};
-                    if (exception)
-                        return;
-                }
-
-                std::move(task)();
-            }
-            catch (...)
-            {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
-            }
-        };
-
-        if (!thread_pool.trySchedule([job] { job(true); }))
-            job(false);
-    }
-
-    {
-        std::unique_lock lock{mutex};
-        event.wait(lock, [&] { return !num_active_jobs; });
-        if (exception)
-            std::rethrow_exception(exception);
-    }
-}
-
-
 /// Returns access required to execute BACKUP query.
 AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & elements)
 {
@@ -232,4 +98,53 @@ AccessRightsElements getRequiredAccessToBackup(const ASTBackupQuery::Elements & 
     return required_access;
 }
 
+bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
+{
+    auto adjust_before_comparison = [&](const IAST & query) -> ASTPtr
+    {
+        auto new_query = query.clone();
+        adjustCreateQueryForBackup(new_query, global_context);
+        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*new_query);
+        create.resetUUIDs();
+        create.if_not_exists = false;
+        return new_query;
+    };
+
+    ASTPtr query1 = adjust_before_comparison(restored_table_create_query);
+    ASTPtr query2 = adjust_before_comparison(create_query_from_backup);
+    return query1->formatWithSecretsOneLine() == query2->formatWithSecretsOneLine();
+}
+
+bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
+{
+    return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
+}
+
+bool isInnerTable(const QualifiedTableName & table_name)
+{
+    return isInnerTable(table_name.database, table_name.table);
+}
+
+bool isInnerTable(const String & /* database_name */, const String & table_name)
+{
+    /// We skip inner tables of materialized views. They're backed up by StorageMaterializedView.
+    return table_name.starts_with(".inner.") || table_name.starts_with(".inner_id.") || table_name.starts_with(".tmp.inner.") || table_name.starts_with(".tmp.inner_id.");
+}
+
+bool isTargetForReplaceRefreshableMaterializedView(const StorageID & storage_id, const ContextPtr & context)
+{
+    auto dependents = DatabaseCatalog::instance().getReferentialDependents(storage_id);
+
+    auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StorageID & target_id) -> bool
+    {
+        auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
+        if (!table || table->getName() != "MaterializedView")
+            return false;
+
+        const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
+        return mv && mv->isRefreshable() && !mv->isAppendRefreshStrategy() && mv->getTargetTableId() == target_id;
+    };
+    return std::any_of(
+        dependents.begin(), dependents.end(), [&](const auto & dependent) { return is_rmv_targeting_table(dependent, storage_id); });
+}
 }

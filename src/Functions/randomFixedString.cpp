@@ -41,11 +41,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isUnsignedInteger(arguments[0].type))
-            throw Exception("First argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isNativeUInt(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be unsigned integer", getName());
 
         if (!arguments[0].column || !isColumnConst(*arguments[0].column))
-            throw Exception("First argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument for function {} must be constant", getName());
 
         const size_t n = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<UInt64>();
         return std::make_shared<DataTypeFixedString>(n);
@@ -66,7 +66,7 @@ public:
 
         size_t total_size;
         if (common::mulOverflow(input_rows_count, n, total_size))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 
         /// Fill random bytes.
         data_to.resize(total_size);
@@ -85,8 +85,8 @@ public:
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomFixedStringImpl<TargetSpecific::AVX2::RandImpl>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomFixedStringImpl<TargetSpecific::x86_64_v3::RandImpl>>();
     #endif
     }
 
@@ -108,7 +108,27 @@ private:
 
 REGISTER_FUNCTION(RandomFixedString)
 {
-    factory.registerFunction<FunctionRandomFixedString>();
+    FunctionDocumentation::Description description = R"(
+Generates a random fixed-size string with the specified number of character.
+The returned characters are not necessarily ASCII characters, i.e. they may not be printable.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomFixedString(length)";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "Length of the string in bytes.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"FixedString"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT randomFixedString(13) AS rnd, toTypeName(rnd)", R"(
+┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
+└──────────┴───────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomFixedString>(documentation);
 }
 
 }

@@ -39,12 +39,21 @@ namespace DB
 class JSONColumnsWithMetadataBlockOutputFormat : public JSONColumnsBlockOutputFormat
 {
 public:
-    JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONCompactColumnsBlockOutputFormat"; }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
-    void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override
+    {
+        statistics.rows_before_limit = rows_before_limit_;
+        statistics.applied_limit = true;
+    }
+
+    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
+    {
+        statistics.rows_before_aggregation = rows_before_aggregation_;
+        statistics.applied_aggregation = true;
+    }
 
 protected:
     void consumeTotals(Chunk chunk) override;
@@ -53,6 +62,7 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
     void finalizeImpl() override;
+    void resetFormatterImpl() override;
 
     void writeChunkStart() override;
     void writeChunkEnd() override;
@@ -60,7 +70,6 @@ protected:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
 
     DataTypes types;
-    Statistics statistics;
     size_t rows;
 };
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/range.h>
-#include <base/map.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -17,6 +16,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -46,10 +46,16 @@ public:
         {
             const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
             if (!array_type)
-                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                                + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Argument {} for function {} must be an array but it has type {}.",
+                                i, getName(), arguments[i]->getName());
         }
 
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -57,7 +63,8 @@ public:
     {
         size_t num_args = arguments.size();
 
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type
+            = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
 
         Columns preprocessed_columns(num_args);
         for (size_t i = 0; i < num_args; ++i)
@@ -78,7 +85,7 @@ public:
             if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, input_rows_count));
             else
-                throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments for function {} must be arrays.", getName());
         }
 
         auto result_column = ColumnUInt8::create(input_rows_count);

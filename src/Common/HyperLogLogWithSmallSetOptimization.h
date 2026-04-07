@@ -113,24 +113,6 @@ public:
             small.read(in);
     }
 
-    void readAndMerge(DB::ReadBuffer & in)
-    {
-        bool is_rhs_large;
-        readBinary(is_rhs_large, in);
-
-        if (!isLarge() && is_rhs_large)
-            toLarge();
-
-        if (!is_rhs_large)
-        {
-            typename Small::Reader reader(in);
-            while (reader.next())
-                insert(reader.get());
-        }
-        else
-            large->readAndMerge(in);
-    }
-
     void write(DB::WriteBuffer & out) const
     {
         writeBinary(isLarge(), out);

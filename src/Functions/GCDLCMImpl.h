@@ -26,7 +26,7 @@ struct GCDLCMImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static Result apply(A a, B b)
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
@@ -41,7 +41,9 @@ struct GCDLCMImpl
             Int min = std::numeric_limits<Int>::lowest();
             Int max = std::numeric_limits<Int>::max();
             if (unlikely((a_s == min || a_s == max) || (b_s == min || b_s == max)))
-                throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Intermediate result overflow (signed a = {}, signed b = {}, min = {}, max = {})", a_s, b_s, min, max);
+                throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                "Intermediate result overflow (signed a = {}, signed b = {}, min = {}, max = {})",
+                                a_s, b_s, min, max);
         }
 
         return Impl::applyImpl(a, b);

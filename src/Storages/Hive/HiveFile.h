@@ -11,10 +11,9 @@
 #include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
-#include <Core/Block.h>
+#include <Common/CacheBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/Hive/HiveSettings.h>
-#include <Storages/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
@@ -24,6 +23,8 @@ class ColumnStatistics;
 
 namespace DB
 {
+struct HiveSettings;
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -35,7 +36,7 @@ public:
     using MinMaxIndex = IMergeTreeDataPart::MinMaxIndex;
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
-    enum class FileFormat
+    enum class FileFormat : uint8_t
     {
         RC_FILE,
         TEXT,
@@ -65,14 +66,14 @@ public:
         {ORC_INPUT_FORMAT, FileFormat::ORC},
     };
 
-    static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.count(format_class) > 0; }
-    static inline FileFormat toFileFormat(const String & format_class)
+    static bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
+    static FileFormat toFileFormat(const String & format_class)
     {
         if (isFormatClass(format_class))
         {
             return VALID_HDFS_FORMATS.find(format_class)->second;
         }
-        throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported hdfs file format {}", format_class);
     }
 
     IHiveFile(
@@ -134,12 +135,12 @@ public:
 protected:
     virtual void loadFileMinMaxIndexImpl()
     {
-        throw Exception("Method loadFileMinMaxIndexImpl is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadFileMinMaxIndexImpl is not supported by hive file:{}", getFormatName());
     }
 
     virtual void loadSplitMinMaxIndexesImpl()
     {
-        throw Exception("Method loadSplitMinMaxIndexesImpl is not supported by hive file:" + getFormatName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadSplitMinMaxIndexesImpl is not supported by hive file:{}", getFormatName());
     }
 
     virtual std::optional<size_t> getRowsImpl() = 0;

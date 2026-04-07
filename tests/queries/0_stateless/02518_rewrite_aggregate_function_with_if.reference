@@ -1,0 +1,412 @@
+-- { echoOn }
+
+set optimize_rewrite_aggregate_function_with_if = false;
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, 0)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), number, 0)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 3
+                  FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 9
+                  CONSTANT id: 12, constant_value: UInt64_0, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, 0, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), 0, number)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: UInt64
+              ARGUMENTS
+                LIST id: 5, nodes: 3
+                  FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  CONSTANT id: 11, constant_value: UInt64_0, constant_value_type: UInt8
+                  COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, null)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), number, NULL)) Nullable(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 3
+                  FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 9
+                  CONSTANT id: 12, constant_value: NULL, constant_value_type: Nullable(Nothing)
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, null, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), NULL, number)) Nullable(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sum, function_type: aggregate, result_type: Nullable(UInt64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 3
+                  FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  CONSTANT id: 11, constant_value: NULL, constant_value_type: Nullable(Nothing)
+                  COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, number, null)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    avg(if(modulo(number, 2), number, NULL)) Nullable(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: avg, function_type: aggregate, result_type: Nullable(Float64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 3
+                  FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 9
+                  CONSTANT id: 12, constant_value: NULL, constant_value_type: Nullable(Nothing)
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, null, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    avg(if(modulo(number, 2), NULL, number)) Nullable(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: avg, function_type: aggregate, result_type: Nullable(Float64)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: if, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 3
+                  FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 7, nodes: 2
+                        COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 9
+                        CONSTANT id: 10, constant_value: UInt64_2, constant_value_type: UInt8
+                  CONSTANT id: 11, constant_value: NULL, constant_value_type: Nullable(Nothing)
+                  COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 9
+  JOIN TREE
+    TABLE_FUNCTION id: 9, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, number, null)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), number, NULL)) Array(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+        PARAMETERS
+          LIST id: 3, nodes: 3
+            CONSTANT id: 4, constant_value: Float64_0.5, constant_value_type: Float64
+            CONSTANT id: 5, constant_value: Float64_0.9, constant_value_type: Float64
+            CONSTANT id: 6, constant_value: Float64_0.99, constant_value_type: Float64
+        ARGUMENTS
+          LIST id: 7, nodes: 1
+            FUNCTION id: 8, function_name: if, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 9, nodes: 3
+                  FUNCTION id: 10, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 13
+                        CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+                  COLUMN id: 15, column_name: number, result_type: UInt64, source_id: 13
+                  CONSTANT id: 16, constant_value: NULL, constant_value_type: Nullable(Nothing)
+  JOIN TREE
+    TABLE_FUNCTION id: 13, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 17, nodes: 1
+          CONSTANT id: 18, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, null, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), NULL, number)) Array(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: quantiles, function_type: aggregate, result_type: Array(Float64)
+        PARAMETERS
+          LIST id: 3, nodes: 3
+            CONSTANT id: 4, constant_value: Float64_0.5, constant_value_type: Float64
+            CONSTANT id: 5, constant_value: Float64_0.9, constant_value_type: Float64
+            CONSTANT id: 6, constant_value: Float64_0.99, constant_value_type: Float64
+        ARGUMENTS
+          LIST id: 7, nodes: 1
+            FUNCTION id: 8, function_name: if, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 9, nodes: 3
+                  FUNCTION id: 10, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 11, nodes: 2
+                        COLUMN id: 12, column_name: number, result_type: UInt64, source_id: 13
+                        CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+                  CONSTANT id: 15, constant_value: NULL, constant_value_type: Nullable(Nothing)
+                  COLUMN id: 16, column_name: number, result_type: UInt64, source_id: 13
+  JOIN TREE
+    TABLE_FUNCTION id: 13, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 17, nodes: 1
+          CONSTANT id: 18, constant_value: UInt64_100, constant_value_type: UInt8
+set optimize_rewrite_aggregate_function_with_if = true;
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, 0)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), number, 0)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+            FUNCTION id: 6, function_name: modulo, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 7, nodes: 2
+                  COLUMN id: 8, column_name: number, result_type: UInt64, source_id: 5
+                  CONSTANT id: 9, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 10, nodes: 1
+          CONSTANT id: 11, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, 0, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), 0, number)) UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: UInt64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: number, result_type: UInt64, source_id: 5
+            FUNCTION id: 6, function_name: not, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 7, nodes: 1
+                  FUNCTION id: 8, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 9, nodes: 2
+                        COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 5
+                        CONSTANT id: 11, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 5, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 12, nodes: 1
+          CONSTANT id: 13, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, number, null)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), number, NULL)) Nullable(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: Nullable(UInt64)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+            FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select sum(if(number % 2, null, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    sum(if(modulo(number, 2), NULL, number)) Nullable(UInt64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: sumIf, function_type: aggregate, result_type: Nullable(UInt64)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+            FUNCTION id: 9, function_name: not, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 10, nodes: 1
+                  FUNCTION id: 11, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 12, nodes: 2
+                        COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 15, nodes: 1
+          CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, number, null)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    avg(if(modulo(number, 2), number, NULL)) Nullable(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: avgIf, function_type: aggregate, result_type: Nullable(Float64)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+            FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 10, nodes: 2
+                  COLUMN id: 11, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 12, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 13, nodes: 1
+          CONSTANT id: 14, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select avg(if(number % 2, null, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    avg(if(modulo(number, 2), NULL, number)) Nullable(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: avgIf, function_type: aggregate, result_type: Nullable(Float64)
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: number, result_type: UInt64, source_id: 7
+                  CONSTANT id: 8, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+            FUNCTION id: 9, function_name: not, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 10, nodes: 1
+                  FUNCTION id: 11, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 12, nodes: 2
+                        COLUMN id: 13, column_name: number, result_type: UInt64, source_id: 7
+                        CONSTANT id: 14, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 7, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 15, nodes: 1
+          CONSTANT id: 16, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, number, null)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), number, NULL)) Array(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: quantilesIf, function_type: aggregate, result_type: Array(Float64)
+        PARAMETERS
+          LIST id: 3, nodes: 3
+            CONSTANT id: 4, constant_value: Float64_0.5, constant_value_type: Float64
+            CONSTANT id: 5, constant_value: Float64_0.9, constant_value_type: Float64
+            CONSTANT id: 6, constant_value: Float64_0.99, constant_value_type: Float64
+        ARGUMENTS
+          LIST id: 7, nodes: 2
+            FUNCTION id: 8, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
+                  CONSTANT id: 12, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+            FUNCTION id: 13, function_name: modulo, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 14, nodes: 2
+                  COLUMN id: 15, column_name: number, result_type: UInt64, source_id: 11
+                  CONSTANT id: 16, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 17, nodes: 1
+          CONSTANT id: 18, constant_value: UInt64_100, constant_value_type: UInt8
+EXPLAIN QUERY TREE run_passes = 1 select quantiles(0.5, 0.9, 0.99)(if(number % 2, null, number)) from numbers(100);
+QUERY id: 0
+  PROJECTION COLUMNS
+    quantiles(0.5, 0.9, 0.99)(if(modulo(number, 2), NULL, number)) Array(Float64)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: quantilesIf, function_type: aggregate, result_type: Array(Float64)
+        PARAMETERS
+          LIST id: 3, nodes: 3
+            CONSTANT id: 4, constant_value: Float64_0.5, constant_value_type: Float64
+            CONSTANT id: 5, constant_value: Float64_0.9, constant_value_type: Float64
+            CONSTANT id: 6, constant_value: Float64_0.99, constant_value_type: Float64
+        ARGUMENTS
+          LIST id: 7, nodes: 2
+            FUNCTION id: 8, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt64)
+              ARGUMENTS
+                LIST id: 9, nodes: 2
+                  COLUMN id: 10, column_name: number, result_type: UInt64, source_id: 11
+                  CONSTANT id: 12, constant_value: \'Nullable(UInt64)\', constant_value_type: String
+            FUNCTION id: 13, function_name: not, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 14, nodes: 1
+                  FUNCTION id: 15, function_name: modulo, function_type: ordinary, result_type: UInt8
+                    ARGUMENTS
+                      LIST id: 16, nodes: 2
+                        COLUMN id: 17, column_name: number, result_type: UInt64, source_id: 11
+                        CONSTANT id: 18, constant_value: UInt64_2, constant_value_type: UInt8
+  JOIN TREE
+    TABLE_FUNCTION id: 11, alias: __table1, table_function_name: numbers
+      ARGUMENTS
+        LIST id: 19, nodes: 1
+          CONSTANT id: 20, constant_value: UInt64_100, constant_value_type: UInt8

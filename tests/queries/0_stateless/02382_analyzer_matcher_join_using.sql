@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS test_table_join_1;
 CREATE TABLE test_table_join_1
@@ -37,7 +37,7 @@ INSERT INTO test_table_join_3 VALUES (4, 'Join_3_Value_4');
 
 SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) ORDER BY id, t1.value;
 
-SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, id, id) ORDER BY id, t1.value; -- { serverError 36 }
+SELECT * FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, id, id) ORDER BY id, t1.value; -- { serverError BAD_ARGUMENTS }
 
 SELECT '--';
 

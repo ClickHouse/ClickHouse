@@ -1,11 +1,14 @@
 #include <Processors/PingPongProcessor.h>
 
+#include <Core/Block.h>
+#include <Processors/Port.h>
+
 namespace DB
 {
 
 /// Create list with `num_ports` of regular ports and 1 auxiliary port with empty header.
 template <typename T> requires std::is_same_v<T, InputPorts> || std::is_same_v<T, OutputPorts>
-static T createPortsWithSpecial(const Block & header, size_t num_ports)
+static T createPortsWithExtra(const Block & header, size_t num_ports)
 {
     T res(num_ports, header);
     res.emplace_back(Block());
@@ -13,8 +16,8 @@ static T createPortsWithSpecial(const Block & header, size_t num_ports)
 }
 
 PingPongProcessor::PingPongProcessor(const Block & header, size_t num_ports, Order order_)
-    : IProcessor(createPortsWithSpecial<InputPorts>(header, num_ports),
-                 createPortsWithSpecial<OutputPorts>(header, num_ports))
+    : IProcessor(createPortsWithExtra<InputPorts>(header, num_ports),
+                 createPortsWithExtra<OutputPorts>(header, num_ports))
     , aux_in_port(inputs.back())
     , aux_out_port(outputs.back())
     , order(order_)
@@ -115,7 +118,7 @@ bool PingPongProcessor::sendPing()
     return false;
 }
 
-bool PingPongProcessor::recievePing()
+bool PingPongProcessor::receivePing()
 {
     if (aux_in_port.hasData())
     {
@@ -144,11 +147,16 @@ IProcessor::Status PingPongProcessor::prepare()
     {
         if (!is_received)
         {
-            bool received = recievePing();
-            if (!received)
-            {
-                return Status::NeedData;
-            }
+            receivePing();
+
+            /// Don't block here before processing regular ports.
+            /// If Order::First blocks waiting for the ping, the downstream
+            /// Y-shaped processor (e.g. MergeJoinTransform) may never consume
+            /// data from Order::Second's side (because it needs data from both
+            /// sides), preventing Second from consuming enough rows to send
+            /// the ping — a circular dependency that deadlocks the pipeline.
+            /// Instead, we let regular ports process data and only block at
+            /// finish time (below) when ping exchange is required for cleanup.
         }
     }
 
@@ -169,7 +177,7 @@ IProcessor::Status PingPongProcessor::prepare()
         {
             if (!is_received)
             {
-                bool received = recievePing();
+                bool received = receivePing();
                 if (!received)
                 {
                     return Status::NeedData;
@@ -193,6 +201,12 @@ IProcessor::Status PingPongProcessor::prepare()
 std::pair<InputPort *, OutputPort *> PingPongProcessor::getAuxPorts()
 {
     return std::make_pair(&aux_in_port, &aux_out_port);
+}
+
+bool ReadHeadBalancedProcessor::consume(const Chunk & chunk)
+{
+    data_consumed += chunk.getNumRows();
+    return data_consumed > size_to_wait;
 }
 
 }

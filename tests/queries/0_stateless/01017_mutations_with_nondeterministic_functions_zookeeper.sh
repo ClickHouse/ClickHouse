@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper
+# Tags: zookeeper, no-shared-merge-tree
+# no-shared-merge-tree: non determenistic is just allowed with shared merge tree
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,7 +10,7 @@ R1=table_1017_1
 R2=table_1017_2
 T1=table_1017_merge
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
     DROP DICTIONARY IF EXISTS dict1;
     DROP TABLE IF EXISTS $R1;
     DROP TABLE IF EXISTS $R2;
@@ -60,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 UPDATE y = y + rand() % 1 WHERE no
 
 # hm... it looks like joinGet condidered determenistic
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = joinGet('${CLICKHOUSE_DATABASE}.lookup_table', 'y_new', y) WHERE x=1" 2>&1 \
-&& echo 'OK' || echo 'FAIL'
+| grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" 2>&1 \
 | grep -F -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
@@ -68,7 +69,7 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" --allow_nondeterministic_mutations=1 2>&1 \
 && echo 'OK' || echo 'FAIL'
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
     DROP DICTIONARY IF EXISTS dict1;
     DROP TABLE IF EXISTS $R2;
     DROP TABLE IF EXISTS $R1;

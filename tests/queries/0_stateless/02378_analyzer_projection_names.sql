@@ -1,4 +1,5 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
+SET single_join_prefer_left_table = 0;
 
 DROP TABLE IF EXISTS test_table;
 CREATE TABLE test_table
@@ -190,6 +191,10 @@ DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_tab
 
 SELECT '--';
 
+DESCRIBE (SELECT arrayMap(x -> tt.* EXCEPT value, [1,2,3]) FROM test_table as tt);
+
+SELECT '--';
+
 DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value APPLY x -> x, [1,2,3]) FROM test_table);
 
 SELECT '--';
@@ -254,7 +259,7 @@ DESCRIBE (WITH x -> x + 1 AS test_lambda SELECT test_lambda(1));
 
 SELECT '--';
 
-DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS value, value FROM test_table);
+DESCRIBE (WITH x -> * AS test_lambda SELECT test_lambda(1) AS lambda_value, lambda_value FROM test_table);
 
 SELECT 'Subquery';
 
@@ -407,6 +412,16 @@ SELECT '--';
 
 DESCRIBE (WITH test_table_in_cte AS (SELECT id FROM test_table) SELECT id IN test_table_in_cte FROM test_table);
 
+SELECT '--';
+
+DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1) SELECT *
+FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
+
+SELECT '--';
+
+DESCRIBE (WITH test_table_in_cte_1 AS (SELECT 1 AS c1), test_table_in_cte_2 AS (SELECT 1 AS c1 UNION ALL SELECT 1 AS c1) SELECT *
+FROM test_table_in_cte_1 INNER JOIN test_table_in_cte_2 as test_table_in_cte_2 ON test_table_in_cte_1.c1 = test_table_in_cte_2.c1);
+
 SELECT 'Joins';
 
 DESCRIBE (SELECT * FROM test_table_join_1, test_table_join_2);
@@ -531,6 +546,9 @@ SELECT '--';
 
 DESCRIBE (SELECT id, value, t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id, value) INNER JOIN test_table_join_3 AS t3 USING (id, value));
+
+SELECT 'Special functions array, tuple';
+DESCRIBE (SELECT [], array(), [1], array(1), [1, 2], array(1, 2), tuple(1), (1, 2), [[], []], [([], [])], ([], []), ([([], []), ([], [])]));
 
 -- { echoOff }
 

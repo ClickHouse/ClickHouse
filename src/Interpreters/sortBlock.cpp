@@ -3,8 +3,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/iota.h>
 
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
 
 namespace DB
 {
@@ -12,12 +18,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_COLLATION;
+#ifndef NDEBUG
+    extern const int LOGICAL_ERROR;
+#endif
 }
 
 /// Column with description for sort
 struct ColumnWithSortDescription
 {
-    const IColumn * column = nullptr;
+    ColumnPtr column = nullptr;
     SortColumnDescription description;
 
     /// It means, that this column is ColumnConst
@@ -98,18 +107,16 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
     {
         const auto & sort_column_description = description[i];
 
-        const IColumn * column = block.getByName(sort_column_description.column_name).column.get();
+        auto column = block.getColumnOrSubcolumnByName(sort_column_description.column_name);
 
         if (isCollationRequired(sort_column_description))
         {
-            if (!column->isCollationSupported())
-                throw Exception(
-                    "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, "
-                    "containing them.",
-                    ErrorCodes::BAD_COLLATION);
+            if (!column.column->isCollationSupported())
+                throw Exception(ErrorCodes::BAD_COLLATION, "Collations could be specified only for String, LowCardinality(String), "
+                                "Nullable(String) or for Array or Tuple, containing them.");
         }
 
-        result.emplace_back(ColumnWithSortDescription{column, sort_column_description, isColumnConst(*column)});
+        result.emplace_back(ColumnWithSortDescription{column.column, sort_column_description, isColumnConst(*column.column)});
     }
 
     return result;
@@ -117,7 +124,7 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
 
 void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation)
 {
-    if (!block)
+    if (block.empty())
         return;
 
     ColumnsWithSortDescriptions columns_with_sort_descriptions = getColumnsWithSortDescription(block, description);
@@ -154,8 +161,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     {
         size_t size = block.rows();
         permutation.resize(size);
-        for (size_t i = 0; i < size; ++i)
-            permutation[i] = i;
+        iota(permutation.data(), size, IColumn::Permutation::value_type(0));
 
         if (limit >= size)
             limit = 0;
@@ -165,7 +171,7 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
         for (const auto & column_with_sort_description : columns_with_sort_descriptions)
         {
-            while (!ranges.empty() && limit && limit <= ranges.back().first)
+            while (!ranges.empty() && limit && limit <= ranges.back().from)
                 ranges.pop_back();
 
             if (ranges.empty())
@@ -194,60 +200,65 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
 
 }
 
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
+bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit)
 {
-    IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation);
+    static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
 
-    if (permutation.empty())
-        return;
-
-    size_t columns = block.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & column_to_sort = block.getByPosition(i).column;
-        column_to_sort = column_to_sort->permute(permutation, limit);
-    }
-}
-
-void stableSortBlock(Block & block, const SortDescription & description)
-{
-    if (!block)
-        return;
-
-    IColumn::Permutation permutation;
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, permutation);
-
-    if (permutation.empty())
-        return;
-
-    size_t columns = block.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & column_to_sort = block.getByPosition(i).column;
-        column_to_sort = column_to_sort->permute(permutation, 0);
-    }
-}
-
-void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)
-{
-    if (!block)
-        return;
-
-    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, out_permutation);
-}
-
-bool isAlreadySorted(const Block & block, const SortDescription & description)
-{
-    if (!block)
+    size_t permutation_size = permutation.size();
+    size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
+    if (size == 0)
         return true;
 
-    size_t rows = block.rows();
+    if (permutation[0] != 0)
+        return false;
 
-    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    size_t i = 0;
 
-    PartialSortingLess less(columns_with_sort_desc);
+#if defined(__SSE2__)
+    if (size >= 8)
+    {
+        static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
 
+        __m128i permutation_add_vector = { 8, 8 };
+        __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
+
+        const size_t * permutation_data = permutation.data();
+
+        static constexpr size_t unroll_count = 8;
+        size_t size_unrolled = (size / unroll_count) * unroll_count;
+
+        for (; i < size_unrolled; i += 8)
+        {
+            UInt64 permutation_equals_vector_mask = compare_all_elements_equal_mask;
+
+            for (size_t j = 0; j < 4; ++j)
+            {
+                __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
+                __m128i permutation_equals_vector = _mm_cmpeq_epi8(permutation_data_vector, permutation_compare_values_vectors[j]);
+                permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
+                permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
+            }
+
+            if (permutation_equals_vector_mask != compare_all_elements_equal_mask)
+                return false;
+        }
+    }
+#endif
+
+    i = std::max(i, static_cast<size_t>(1));
+    for (; i < size; ++i)
+        if (permutation[i] != (permutation[i - 1] + 1))
+            return false;
+
+    return true;
+}
+
+namespace
+{
+
+template <typename Comparator>
+bool isAlreadySortedImpl(size_t rows, Comparator compare)
+{
     /** If the rows are not too few, then let's make a quick attempt to verify that the block is not sorted.
      * Constants - at random.
      */
@@ -259,16 +270,144 @@ bool isAlreadySorted(const Block & block, const SortDescription & description)
             size_t prev_position = rows * (i - 1) / num_rows_to_try;
             size_t curr_position = rows * i / num_rows_to_try;
 
-            if (less(curr_position, prev_position))
+            if (compare(curr_position, prev_position))
                 return false;
         }
     }
 
     for (size_t i = 1; i < rows; ++i)
-        if (less(i, i - 1))
+        if (compare(i, i - 1))
             return false;
 
     return true;
+}
+
+#ifndef NDEBUG
+template <typename Comparator>
+void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limit, const IColumn::Permutation & permutation)
+{
+    if (limit && limit < rows)
+        rows = limit;
+
+    const bool no_permutaiton = permutation.empty();
+
+    for (size_t i = 1; i < rows; ++i)
+    {
+        const size_t current_row = no_permutaiton ? i : permutation[i];
+        const size_t previous_row = no_permutaiton ? (i - 1) : permutation[i - 1];
+
+        if (compare(current_row, previous_row))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Rows are not sorted with permutation, position {}, previous_row index {}, current_row index {}", i, previous_row, current_row);
+    }
+}
+
+void checkSortedWithPermutation(const Block & block, const SortDescription & description, UInt64 limit, const IColumn::Permutation & permutation)
+{
+    if (block.empty())
+        return;
+
+    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    bool is_collation_required = false;
+
+    for (auto & column_with_sort_desc : columns_with_sort_desc)
+    {
+        if (isCollationRequired(column_with_sort_desc.description))
+        {
+            is_collation_required = true;
+            break;
+        }
+    }
+
+    size_t rows = block.rows();
+
+    if (is_collation_required)
+    {
+        PartialSortingLessWithCollation less(columns_with_sort_desc);
+        checkSortedWithPermutationImpl(rows, less, limit, permutation);
+        return;
+    }
+    else
+    {
+        PartialSortingLess less(columns_with_sort_desc);
+        checkSortedWithPermutationImpl(rows, less, limit, permutation);
+        return;
+    }
+}
+#endif
+
+}
+
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)
+{
+    IColumn::Permutation permutation;
+
+#ifndef NDEBUG
+    block.checkNumberOfRows();
+#endif
+    getBlockSortPermutationImpl(block, description, stability, limit, permutation);
+
+#ifndef NDEBUG
+    checkSortedWithPermutation(block, description, limit, permutation);
+#endif
+
+    if (permutation.empty())
+        return;
+
+    bool is_identity_permutation = isIdentityPermutation(permutation, limit);
+    if (is_identity_permutation && limit == 0)
+        return;
+
+    size_t columns = block.columns();
+    for (size_t i = 0; i < columns; ++i)
+    {
+        auto & column_to_sort = block.getByPosition(i).column;
+        if (is_identity_permutation)
+            column_to_sort = column_to_sort->cut(0, std::min(static_cast<size_t>(limit), permutation.size()));
+        else
+            column_to_sort = column_to_sort->permute(permutation, limit);
+    }
+}
+
+void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)
+{
+    if (block.empty())
+        return;
+
+    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, out_permutation);
+
+#ifndef NDEBUG
+    checkSortedWithPermutation(block, description, 0, out_permutation);
+#endif
+}
+
+bool isAlreadySorted(const Block & block, const SortDescription & description)
+{
+    if (block.empty())
+        return true;
+
+    ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    bool is_collation_required = false;
+
+    for (auto & column_with_sort_desc : columns_with_sort_desc)
+    {
+        if (isCollationRequired(column_with_sort_desc.description))
+        {
+            is_collation_required = true;
+            break;
+        }
+    }
+
+    size_t rows = block.rows();
+
+    if (is_collation_required)
+    {
+        PartialSortingLessWithCollation less(columns_with_sort_desc);
+        return isAlreadySortedImpl(rows, less);
+    }
+
+    PartialSortingLess less(columns_with_sort_desc);
+    return isAlreadySortedImpl(rows, less);
 }
 
 }

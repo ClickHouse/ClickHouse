@@ -1,19 +1,21 @@
-#include <Server/HTTPHandlerFactory.h>
-
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/HTTPHandler.h>
+#include <Server/HTTPHandlerFactory.h>
 #include <Server/IServer.h>
-#include <Access/Credentials.h>
-#include <Interpreters/Context.h>
+#include <Server/IndexRequestHandler.h>
+#include <Server/InterserverIOHTTPHandler.h>
+#include <Server/PrometheusMetricsWriter.h>
+#include <Server/PrometheusRequestHandlerFactory.h>
+#include <Server/ReplicasStatusHandler.h>
+#include <Server/StaticRequestHandler.h>
+#include <Server/WebUIRequestHandler.h>
+
+#if USE_SSL
+#include <Server/ACME/RequestHandler.h>
+#include <Server/ACME/Client.h>
+#endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-
-#include "HTTPHandler.h"
-#include "NotFoundHandler.h"
-#include "StaticRequestHandler.h"
-#include "ReplicasStatusHandler.h"
-#include "InterserverIOHTTPHandler.h"
-#include "PrometheusRequestHandler.h"
-#include "WebUIRequestHandler.h"
 
 
 namespace DB
@@ -26,40 +28,94 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server);
+namespace
+{
+
+class RedirectRequestHandler : public HTTPRequestHandler
+{
+private:
+    std::string url;
+    std::unordered_map<String, String> http_response_headers_override;
+
+public:
+    explicit RedirectRequestHandler(std::string url_, std::unordered_map<String, String> http_response_headers_override_ = {})
+        : url(std::move(url_)), http_response_headers_override(http_response_headers_override_)
+    {
+    }
+
+    void handleRequest(HTTPServerRequest &, HTTPServerResponse & response, const ProfileEvents::Event &) override
+    {
+        applyHTTPResponseHeaders(response, http_response_headers_override);
+        response.redirect(url);
+    }
+};
+
+HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & config_prefix,
+    std::unordered_map<String, String> common_headers)
+{
+    std::string url = config.getString(config_prefix + ".handler.location");
+
+    auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, common_headers);
+
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<RedirectRequestHandler>>(
+        [my_url = std::move(url), headers_override = std::move(headers)]()
+        {
+            return std::make_unique<RedirectRequestHandler>(my_url, headers_override);
+        });
+
+    factory->addFiltersFromConfig(config, config_prefix);
+    return factory;
+}
+
+}
+
+
+static void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, const Poco::Util::AbstractConfiguration & config);
+
 static void addDefaultHandlersFactory(
     HTTPRequestHandlerFactoryMain & factory,
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics);
 
-HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
-    : log(&Poco::Logger::get(name_)), name(name_)
+static auto createPingHandlerFactory(IServer & server)
 {
+    auto creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
+    {
+        constexpr auto ping_response_expression = "Ok.\n";
+        return std::make_unique<StaticRequestHandler>(
+            server, ping_response_expression, parseHTTPResponseHeaders("text/html; charset=UTF-8"));
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
 }
 
-std::unique_ptr<HTTPRequestHandler> HTTPRequestHandlerFactoryMain::createRequestHandler(const HTTPServerRequest & request)
+static auto createPingHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                     std::unordered_map<String, String> common_headers)
 {
-    LOG_TRACE(log, "HTTP Request for {}. Method: {}, Address: {}, User-Agent: {}{}, Content Type: {}, Transfer Encoding: {}, X-Forwarded-For: {}",
-        name, request.getMethod(), request.clientAddress().toString(), request.get("User-Agent", "(none)"),
-        (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : ("")),
-        request.getContentType(), request.getTransferEncoding(), request.get("X-Forwarded-For", "(none)"));
-
-    for (auto & handler_factory : child_factories)
+    auto creator = [&server, &config, config_prefix, common_headers]() -> std::unique_ptr<StaticRequestHandler>
     {
-        auto handler = handler_factory->createRequestHandler(request);
-        if (handler)
-            return handler;
-    }
+        constexpr auto ping_response_expression = "Ok.\n";
 
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
-        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
+        auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
+
+        return std::make_unique<StaticRequestHandler>(
+            server, ping_response_expression, headers);
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(creator));
+}
+
+template <typename UIRequestHandler>
+static auto createWebUIHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
+                                      std::unordered_map<String, String> common_headers)
+{
+    auto creator = [&server, &config, config_prefix, common_headers]() -> std::unique_ptr<UIRequestHandler>
     {
-        return std::unique_ptr<HTTPRequestHandler>(new NotFoundHandler);
-    }
-
-    return nullptr;
+        auto headers = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/html; charset=UTF-8", common_headers);
+        return std::make_unique<UIRequestHandler>(server, headers);
+    };
+    return std::make_shared<HandlingRuleHTTPHandlerFactory<UIRequestHandler>>(std::move(creator));
 }
 
 static inline auto createHandlersFactoryFromConfig(
@@ -74,6 +130,19 @@ static inline auto createHandlersFactoryFromConfig(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(prefix, keys);
 
+    std::unordered_map<String, String> common_headers_override;
+
+    if (std::find(keys.begin(), keys.end(), "common_http_response_headers") != keys.end())
+    {
+        auto common_headers_prefix = prefix + ".common_http_response_headers";
+        Poco::Util::AbstractConfiguration::Keys headers_keys;
+        config.keys(common_headers_prefix, headers_keys);
+        for (const auto & header_key : headers_keys)
+        {
+            common_headers_override[header_key] = config.getString(common_headers_prefix + "." + header_key);
+        }
+    }
+
     for (const auto & key : keys)
     {
         if (key == "defaults")
@@ -85,50 +154,131 @@ static inline auto createHandlersFactoryFromConfig(
             const auto & handler_type = config.getString(prefix + "." + key + ".handler.type", "");
 
             if (handler_type.empty())
-                throw Exception("Handler type in config is not specified here: " + prefix + "." + key + ".handler.type",
-                    ErrorCodes::INVALID_CONFIG_PARAMETER);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Handler type in config is not specified here: "
+                    "{}.{}.handler.type", prefix, key);
 
             if (handler_type == "static")
-                main_handler_factory->addHandler(createStaticHandlerFactory(server, config, prefix + "." + key));
+            {
+                main_handler_factory->addHandler(createStaticHandlerFactory(server, config, prefix + "." + key, common_headers_override));
+            }
+            else if (handler_type == "redirect")
+            {
+                main_handler_factory->addHandler(createRedirectHandlerFactory(config, prefix + "." + key, common_headers_override));
+            }
             else if (handler_type == "dynamic_query_handler")
-                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key));
+            {
+                main_handler_factory->addHandler(createDynamicHandlerFactory(server, config, prefix + "." + key, common_headers_override));
+            }
             else if (handler_type == "predefined_query_handler")
-                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key));
+            {
+                main_handler_factory->addHandler(createPredefinedHandlerFactory(server, config, prefix + "." + key, common_headers_override));
+            }
             else if (handler_type == "prometheus")
-                main_handler_factory->addHandler(createPrometheusHandlerFactory(server, config, async_metrics, prefix + "." + key));
+            {
+                main_handler_factory->addHandler(
+                    createPrometheusHandlerFactoryForHTTPRule(server, config, prefix + "." + key, async_metrics, common_headers_override));
+            }
             else if (handler_type == "replicas_status")
-                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, config, prefix + "." + key));
+            {
+                main_handler_factory->addHandler(createReplicasStatusHandlerFactory(server, config, prefix + "." + key, common_headers_override));
+            }
+            else if (handler_type == "ping")
+            {
+                const String config_prefix = prefix + "." + key;
+                auto handler = createPingHandlerFactory(server, config, config_prefix, common_headers_override);
+                handler->addFiltersFromConfig(config, config_prefix);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "index")
+            {
+                const String config_prefix = prefix + "." + key;
+                auto handler = createWebUIHandlerFactory<IndexRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, config_prefix);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "play")
+            {
+                auto handler = createWebUIHandlerFactory<PlayWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "dashboard")
+            {
+                auto handler = createWebUIHandlerFactory<DashboardWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "binary")
+            {
+                auto handler = createWebUIHandlerFactory<BinaryWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "merges")
+            {
+                auto handler = createWebUIHandlerFactory<MergesWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "jemalloc")
+            {
+                auto handler = createWebUIHandlerFactory<JemallocWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+            else if (handler_type == "js")
+            {
+                // NOTE: JavaScriptWebUIRequestHandler only makes sense for paths other then /js/uplot.js, /js/lz-string.js
+                // because these paths are hardcoded in dashboard.html
+                const auto & path = config.getString(prefix + "." + key + ".url", "");
+                if (path != "/js/uplot.js" && path != "/js/lz-string.js")
+                {
+                    throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                                    "Handler type 'js' is only supported for url '/js/'. "
+                                    "Configured path here: {}", path);
+                }
+
+                auto handler = createWebUIHandlerFactory<JavaScriptWebUIRequestHandler>(server, config, prefix + "." + key, common_headers_override);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+#if USE_SSL
+            else if (handler_type == "acme")
+            {
+                auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+                handler->addFiltersFromConfig(config, prefix + "." + key);
+                main_handler_factory->addHandler(std::move(handler));
+            }
+#endif
             else
-                throw Exception("Unknown handler type '" + handler_type + "' in config here: " + prefix + "." + key + ".handler.type",
-                    ErrorCodes::INVALID_CONFIG_PARAMETER);
+                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Unknown handler type '{}' in config here: {}.{}.handler.type",
+                    handler_type, prefix, key);
         }
-        else
-            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'rule' or 'defaults'",
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        else if (key != "common_http_response_headers")
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
+                "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
 
     return main_handler_factory;
 }
 
 static inline HTTPRequestHandlerFactoryPtr
-createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics)
+createHTTPHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const std::string & name, AsynchronousMetrics & async_metrics, const std::string & http_handlers_key = "http_handlers")
 {
-    if (config.has("http_handlers"))
+    if (config.has(http_handlers_key))
     {
-        return createHandlersFactoryFromConfig(server, config, name, "http_handlers", async_metrics);
+        return createHandlersFactoryFromConfig(server, config, name, http_handlers_key, async_metrics);
     }
-    else
-    {
-        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-        addDefaultHandlersFactory(*factory, server, config, async_metrics);
-        return factory;
-    }
+
+    auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
+    addDefaultHandlersFactory(*factory, server, config, async_metrics);
+    return factory;
 }
 
-static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
+static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(IServer & server, const std::string & name, const Poco::Util::AbstractConfiguration & config)
 {
     auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-    addCommonDefaultHandlersFactory(*factory, server);
+    addCommonDefaultHandlersFactory(*factory, server, config);
 
     auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
     main_handler->allowPostAndGetParamsAndOptionsRequest();
@@ -137,60 +287,107 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     return factory;
 }
 
-HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name)
+HTTPRequestHandlerFactoryPtr createHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, AsynchronousMetrics & async_metrics, const std::string & name, const std::string & http_handlers_key)
 {
     if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
-        return createHTTPHandlerFactory(server, config, name, async_metrics);
-    else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
-        return createInterserverHTTPHandlerFactory(server, name);
-    else if (name == "PrometheusHandler-factory")
-    {
-        auto factory = std::make_shared<HTTPRequestHandlerFactoryMain>(name);
-        auto handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-            server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
-        handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
-        handler->allowGetAndHeadRequest();
-        factory->addHandler(handler);
-        return factory;
-    }
+        return createHTTPHandlerFactory(server, config, name, async_metrics, http_handlers_key.empty() ? "http_handlers" : http_handlers_key);
+    if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
+        return createInterserverHTTPHandlerFactory(server, name, config);
+    if (name == "PrometheusHandler-factory")
+        return createPrometheusHandlerFactory(server, config, async_metrics, name);
+    if (name == "KeeperPrometheusHandler-factory")
+        return createKeeperPrometheusHandlerFactory(server, config, async_metrics, name);
 
-    throw Exception("LOGICAL ERROR: Unknown HTTP handler factory name.", ErrorCodes::LOGICAL_ERROR);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown HTTP handler factory name.");
 }
 
-static const auto ping_response_expression = "Ok.\n";
-static const auto root_response_expression = "config://http_server_default_response";
 
-void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server)
+void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer & server, const Poco::Util::AbstractConfiguration & config)
 {
-    auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, root_response_expression);
-    root_handler->attachStrictPath("/");
-    root_handler->allowGetAndHeadRequest();
-    factory.addHandler(root_handler);
+    if (config.has("http_server_default_response"))
+    {
+        auto root_creator = [&server]() -> std::unique_ptr<StaticRequestHandler>
+        {
+            constexpr auto root_response_expression = "config://http_server_default_response";
+            return std::make_unique<StaticRequestHandler>(
+            server, root_response_expression, parseHTTPResponseHeaders("text/html; charset=UTF-8"));
+        };
+        auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(std::move(root_creator));
+        root_handler->attachStrictPath("/");
+        root_handler->allowGetAndHeadRequest();
+        factory.addHandler(root_handler);
+    }
+    else
+    {
+        /// Use the default landing page / ping handler.
+        auto root_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<IndexRequestHandler>>(server);
+        root_handler->attachStrictPath("/");
+        root_handler->allowGetAndHeadRequest();
+        factory.addHandler(root_handler);
+    }
 
-    auto ping_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<StaticRequestHandler>>(server, ping_response_expression);
+    auto ping_handler = createPingHandlerFactory(server);
     ping_handler->attachStrictPath("/ping");
     ping_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/ping");
     factory.addHandler(ping_handler);
 
     auto replicas_status_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     replicas_status_handler->attachNonStrictPath("/replicas_status");
     replicas_status_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/replicas_status");
     factory.addHandler(replicas_status_handler);
 
-    auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    auto play_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PlayWebUIRequestHandler>>(server);
     play_handler->attachNonStrictPath("/play");
     play_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/play");
     factory.addHandler(play_handler);
 
-    auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    auto dashboard_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DashboardWebUIRequestHandler>>(server);
     dashboard_handler->attachNonStrictPath("/dashboard");
     dashboard_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/dashboard");
     factory.addHandler(dashboard_handler);
 
-    auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<WebUIRequestHandler>>(server);
+    auto binary_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<BinaryWebUIRequestHandler>>(server);
+    binary_handler->attachNonStrictPath("/binary");
+    binary_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/binary");
+    factory.addHandler(binary_handler);
+
+    auto merges_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<MergesWebUIRequestHandler>>(server);
+    merges_handler->attachNonStrictPath("/merges");
+    merges_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/merges");
+    factory.addHandler(merges_handler);
+
+    auto jemalloc_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JemallocWebUIRequestHandler>>(server);
+    jemalloc_handler->attachNonStrictPath("/jemalloc");
+    jemalloc_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/jemalloc");
+    factory.addHandler(jemalloc_handler);
+
+    auto js_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<JavaScriptWebUIRequestHandler>>(server);
     js_handler->attachNonStrictPath("/js/");
     js_handler->allowGetAndHeadRequest();
     factory.addHandler(js_handler);
+
+    auto clickstack_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ClickStackUIRequestHandler>>(server);
+    clickstack_handler->attachNonStrictPath("/clickstack");
+    clickstack_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/clickstack");
+    factory.addHandler(clickstack_handler);
+
+#if USE_SSL
+    if (server.config().has("acme"))
+    {
+        auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
+        acme_handler->attachNonStrictPath(ACME::CHALLENGE_HTTP_PATH);
+        acme_handler->allowGetAndHeadRequest();
+        factory.addHandler(acme_handler);
+    }
+#endif
 }
 
 void addDefaultHandlersFactory(
@@ -199,22 +396,35 @@ void addDefaultHandlersFactory(
     const Poco::Util::AbstractConfiguration & config,
     AsynchronousMetrics & async_metrics)
 {
-    addCommonDefaultHandlersFactory(factory, server);
+    addCommonDefaultHandlersFactory(factory, server, config);
 
-    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
-    query_handler->allowPostAndGetParamsAndOptionsRequest();
+    auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
+    };
+    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
+    query_handler->addFilter([](const auto & request)
+        {
+            bool path_matches_get_or_head = startsWith(request.getURI(), "?")
+                            || startsWith(request.getURI(), "/?")
+                            || startsWith(request.getURI(), "/query?");
+            bool is_get_or_head_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+
+            bool path_matches_post_or_options = path_matches_get_or_head
+                             || request.getURI() == "/"
+                             || request.getURI().empty();
+            bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
+        }
+    );
     factory.addHandler(query_handler);
 
-    /// We check that prometheus handler will be served on current (default) port.
-    /// Otherwise it will be created separately, see createHandlerFactory(...).
-    if (config.has("prometheus") && config.getInt("prometheus.port", 0) == 0)
-    {
-        auto prometheus_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<PrometheusRequestHandler>>(
-            server, PrometheusMetricsWriter(config, "prometheus", async_metrics));
-        prometheus_handler->attachStrictPath(config.getString("prometheus.endpoint", "/metrics"));
-        prometheus_handler->allowGetAndHeadRequest();
+    /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
+    if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
         factory.addHandler(prometheus_handler);
-    }
 }
 
 }

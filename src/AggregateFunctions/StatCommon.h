@@ -7,30 +7,27 @@
 #include <base/sort.h>
 
 #include <Common/ArenaAllocator.h>
+#include <Common/iota.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 /// Because ranks are adjusted, we have to store each of them in Float type.
-using RanksArray = std::vector<Float64>;
+using RanksArray = VectorWithMemoryTracking<Float64>;
 
 template <typename Values>
 std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & values)
 {
     const size_t size = values.size();
     /// Save initial positions, than sort indices according to the values.
-    std::vector<size_t> indexes(size);
-    std::iota(indexes.begin(), indexes.end(), 0);
+    VectorWithMemoryTracking<size_t> indexes(size);
+    iota(indexes.data(), indexes.size(), size_t(0));
     std::sort(indexes.begin(), indexes.end(),
         [&] (size_t lhs, size_t rhs) { return values[lhs] < values[rhs]; });
 
@@ -42,19 +39,23 @@ std::pair<RanksArray, Float64> computeRanksAndTieCorrection(const Values & value
         size_t right = left;
         while (right < size && values[indexes[left]] == values[indexes[right]])
             ++right;
-        auto adjusted = (left + right + 1.) / 2.;
+        auto adjusted = (static_cast<Float64>(left) + static_cast<Float64>(right) + 1.) / 2.;
         auto count_equal = right - left;
 
-        /// Scipy implementation throws exception in this case too.
-        if (count_equal == size)
-            throw Exception("All numbers in both samples are identical", ErrorCodes::BAD_ARGUMENTS);
-
-        tie_numenator += std::pow(count_equal, 3) - count_equal;
+        tie_numenator += std::pow(count_equal, 3) - static_cast<Float64>(count_equal);
         for (size_t iter = left; iter < right; ++iter)
             out[indexes[iter]] = adjusted;
         left = right;
     }
-    return {out, 1 - (tie_numenator / (std::pow(size, 3) - size))};
+
+    // Protect against division by zero if all values are identical
+    Float64 tie_correction = 1.0;
+    if (size > 1)
+    {
+        tie_correction = 1 - (tie_numenator / (std::pow(size, 3) - static_cast<Float64>(size)));
+    }
+
+    return {out, tie_correction};
 }
 
 
@@ -112,8 +113,8 @@ struct StatisticalSample
         readVarUInt(size_y, buf);
         x.resize(size_x, arena);
         y.resize(size_y, arena);
-        buf.read(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
-        buf.read(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
+        buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
+        buf.readStrict(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
     }
 };
 

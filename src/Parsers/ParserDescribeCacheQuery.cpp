@@ -9,16 +9,16 @@ namespace DB
 
 bool ParserDescribeCacheQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword p_describe("DESCRIBE");
-    ParserKeyword p_desc("DESC");
-    ParserKeyword p_cache("FILESYSTEM CACHE");
+    ParserKeyword p_describe(Keyword::DESCRIBE);
+    ParserKeyword p_desc(Keyword::DESC);
+    ParserKeyword p_cache(Keyword::FILESYSTEM_CACHE);
     ParserLiteral p_cache_name;
 
     if ((!p_describe.ignore(pos, expected) && !p_desc.ignore(pos, expected))
         || !p_cache.ignore(pos, expected))
         return false;
 
-    auto query = std::make_shared<ASTDescribeCacheQuery>();
+    auto query = make_intrusive<ASTDescribeCacheQuery>();
 
     ASTPtr ast;
     if (!p_cache_name.parse(pos, ast, expected))

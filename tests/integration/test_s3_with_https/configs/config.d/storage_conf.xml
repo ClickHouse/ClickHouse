@@ -5,13 +5,13 @@
                 <type>s3</type>
                 <endpoint>https://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </s3_secure>
             <s3_secure_with_proxy>
                 <type>s3</type>
                 <endpoint>https://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <proxy>
                     <uri>https://proxy1</uri>
                 </proxy>

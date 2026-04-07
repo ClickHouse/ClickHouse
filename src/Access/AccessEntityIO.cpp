@@ -23,9 +23,7 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 namespace DB
@@ -45,15 +43,16 @@ String serializeAccessEntity(const IAccessEntity & entity)
 
     /// Serialize the list of ATTACH queries to a string.
     WriteBufferFromOwnString buf;
+    IAST::FormatSettings format_settings(/*one_line=*/true);
     for (const ASTPtr & query : queries)
     {
-        formatAST(*query, buf, false, true);
+        query->format(buf, format_settings);
         buf.write(";\n", 2);
     }
     return buf.str();
 }
 
-AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
+static AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
 {
     ASTs queries;
     ParserAttachAccessEntity parser;
@@ -62,7 +61,7 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
     const char * end = begin + definition.size();
     while (pos < end)
     {
-        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
+        queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
         while (isWhitespaceASCII(*pos) || *pos == ';')
             ++pos;
     }
@@ -80,53 +79,53 @@ AccessEntityPtr deserializeAccessEntityImpl(const String & definition)
         if (auto * create_user_query = query->as<ASTCreateUserQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = user = std::make_unique<User>();
-            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true);
+            InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query, /* allow_no_password = */ true, /* allow_plaintext_password = */ true, /* max_number_of_authentication_methods = zero is unlimited*/ 0);
         }
         else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = role = std::make_unique<Role>();
             InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
         }
         else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = policy = std::make_unique<RowPolicy>();
             InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
         }
         else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = quota = std::make_unique<Quota>();
             InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
         }
         else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
         {
             if (res)
-                throw Exception("Two access entities attached in the same file", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "Two access entities attached in the same file");
             res = profile = std::make_unique<SettingsProfile>();
             InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
         }
         else if (auto * grant_query = query->as<ASTGrantQuery>())
         {
             if (!user && !role)
-                throw Exception("A user or role should be attached before grant", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "A user or role should be attached before grant");
             if (user)
                 InterpreterGrantQuery::updateUserFromQuery(*user, *grant_query);
             else
                 InterpreterGrantQuery::updateRoleFromQuery(*role, *grant_query);
         }
         else
-            throw Exception("No interpreter found for query " + query->getID(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+            throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "No interpreter found for query {}", query->getID());
     }
 
     if (!res)
-        throw Exception("No access entities attached", ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+        throw Exception(ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION, "No access entities attached");
 
     return res;
 }
@@ -144,8 +143,7 @@ AccessEntityPtr deserializeAccessEntity(const String & definition, const String 
     catch (Exception & e)
     {
         e.addMessage("Could not parse " + file_path);
-        e.rethrow();
-        UNREACHABLE();
+        throw;
     }
 }
 

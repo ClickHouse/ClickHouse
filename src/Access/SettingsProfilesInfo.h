@@ -29,22 +29,18 @@ struct SettingsProfilesInfo
     /// Names of all the profiles in `profiles`.
     std::unordered_map<UUID, String> names_of_profiles;
 
-    explicit SettingsProfilesInfo(const AccessControl & access_control_) : constraints(access_control_), access_control(access_control_) {}
+    explicit SettingsProfilesInfo(const AccessControl & access_control_)
+        : constraints(access_control_), access_control(access_control_)
+    {
+    }
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getConstraintsAndProfileIDs(
         const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & previous = nullptr) const;
 
     friend bool operator ==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs);
     friend bool operator !=(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs) { return !(lhs == rhs); }
 
-    Strings getProfileNames() const
-    {
-        Strings result;
-        result.reserve(profiles.size());
-        for (const auto & profile_id : profiles)
-            result.push_back(names_of_profiles.at(profile_id));
-
-        return result;
-    }
+    Strings getProfileNames() const;
 
 private:
     const AccessControl & access_control;

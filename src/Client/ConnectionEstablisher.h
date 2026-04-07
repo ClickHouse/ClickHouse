@@ -1,10 +1,8 @@
 #pragma once
 
-#include <variant>
-
+#include <Common/AsyncTaskExecutor.h>
 #include <Common/Epoll.h>
 #include <Common/Fiber.h>
-#include <Common/FiberStack.h>
 #include <Common/TimerDescriptor.h>
 #include <Common/PoolWithFailoverBase.h>
 #include <Client/ConnectionPool.h>
@@ -19,30 +17,32 @@ class ConnectionEstablisher
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisher(IConnectionPool * pool_,
+    ConnectionEstablisher(ConnectionPoolPtr pool_,
                           const ConnectionTimeouts * timeouts_,
-                          const Settings * settings_,
-                          Poco::Logger * log,
+                          const Settings & settings_,
+                          LoggerPtr log,
                           const QualifiedTableName * table_to_check = nullptr);
 
     /// Establish connection and save it in result, write possible exception message in fail_message.
-    void run(TryResult & result, std::string & fail_message);
+    /// The connection is returned from connection pool and it can be stale. Use force_connected flag to ensure that connection is working one.
+    /// NOTE: force_connected is false by default due to the following consideration ...
+    ///      When true, it implies sending a Ping packet to another peer and, if it fails - reestablishing the connection.
+    ///      Ping-Pong round trip can be unnecessary in case of connection is still alive.
+    ///      So, the optimistic approach is used by default. In this case, stale connections can be handled by retrying,
+    ///      - see ConnectionPoolWithFailover, as example
+    void run(TryResult & result, std::string & fail_message, bool force_connected = false);
 
     /// Set async callback that will be called when reading from socket blocks.
     void setAsyncCallback(AsyncCallback async_callback_) { async_callback = std::move(async_callback_); }
 
-    bool isFinished() const { return is_finished; }
-
 private:
-    IConnectionPool * pool;
+    ConnectionPoolPtr pool;
     const ConnectionTimeouts * timeouts;
-    const Settings * settings;
-    Poco::Logger * log;
+    const Settings & settings;
+    LoggerPtr log;
     const QualifiedTableName * table_to_check;
 
-    bool is_finished;
     AsyncCallback async_callback = {};
-
 };
 
 #if defined(OS_LINUX)
@@ -53,66 +53,71 @@ private:
 /// When read callback is called, socket and receive timeout are added in epoll
 /// and execution returns to the main program.
 /// So, you can poll this epoll file descriptor to determine when to resume.
-class ConnectionEstablisherAsync
+class ConnectionEstablisherAsync : public AsyncTaskExecutor
 {
 public:
     using TryResult = PoolWithFailoverBase<IConnectionPool>::TryResult;
 
-    ConnectionEstablisherAsync(IConnectionPool * pool_,
-                          const ConnectionTimeouts * timeouts_,
-                          const Settings * settings_,
-                          Poco::Logger * log_,
-                          const QualifiedTableName * table_to_check = nullptr);
+    ConnectionEstablisherAsync(ConnectionPoolPtr pool_,
+                               const ConnectionTimeouts * timeouts_,
+                               const Settings & settings_,
+                               LoggerPtr log_,
+                               const QualifiedTableName * table_to_check_ = nullptr);
 
-    /// Resume establishing connection. If the process was not finished,
-    /// return file descriptor (you can add it in epoll and poll it,
-    /// when this fd become ready, call resume again),
-    /// if the process was failed or finished, return it's result,
-    std::variant<int, TryResult> resume();
+    /// Get file descriptor that can be added in epoll and be polled,
+    /// when this fd becomes ready, you call resume establishing connection.
+    int getFileDescriptor() { return epoll.getFileDescriptor(); }
 
-    /// Cancel establishing connections. Fiber will be destroyed,
-    /// class will be set in initial stage.
-    void cancel();
-
+    /// Check if the process of connection establishing was finished.
+    /// The process is considered finished if connection is ready,
+    /// some exception occurred or timeout exceeded.
+    bool isFinished() const { return is_finished; }
     TryResult getResult() const { return result; }
 
     const std::string & getFailMessage() const { return fail_message; }
 
-private:
-    /// When epoll file descriptor is ready, check if it's an expired timeout.
-    /// Return false if receive timeout expired and socket is not ready, return true otherwise.
-    bool checkReceiveTimeout();
+    void resumeConnectionWithForceOption(bool force_connected_) {force_connected = force_connected_; resume();}
 
-    struct Routine
+private:
+    bool checkBeforeTaskResume() override;
+
+    void afterTaskResume() override;
+
+    void processAsyncEvent(int fd, Poco::Timespan socket_timeout, AsyncEventTimeoutType type, const std::string & description, uint32_t events) override;
+    void clearAsyncEvent() override;
+
+    struct Task : public AsyncTask
     {
+        explicit Task(ConnectionEstablisherAsync & connection_establisher_async_)
+            : connection_establisher_async(connection_establisher_async_)
+        {
+        }
+
         ConnectionEstablisherAsync & connection_establisher_async;
 
-        struct ReadCallback
-        {
-            ConnectionEstablisherAsync & connection_establisher_async;
-            Fiber & fiber;
-
-            void operator()(int fd, Poco::Timespan timeout, const std::string &);
-        };
-
-        Fiber operator()(Fiber && sink);
+        void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
+
+    void cancelAfter() override;
+
+    /// When epoll file descriptor is ready, check if it's an expired timeout.
+    /// Return false if receive timeout expired and socket is not ready, return true otherwise.
+    bool checkTimeout();
 
     void reset();
 
     void resetResult();
 
-    void destroyFiber();
+    bool haveMoreAddressesToConnect();
 
     ConnectionEstablisher connection_establisher;
     TryResult result;
     std::string fail_message;
 
-    Fiber fiber;
-    FiberStack fiber_stack;
-
     /// We use timer descriptor for checking socket receive timeout.
-    TimerDescriptor receive_timeout;
+    TimerDescriptor timeout_descriptor;
+    Poco::Timespan timeout;
+    AsyncEventTimeoutType timeout_type;
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
@@ -120,10 +125,9 @@ private:
     int socket_fd = -1;
     std::string socket_description;
 
-    /// If and exception occurred in fiber resume, we save it and rethrow.
-    std::exception_ptr exception;
-
-    bool fiber_created = false;
+    bool is_finished = false;
+    bool restarted = false;
+    bool force_connected = false;
 };
 
 #endif

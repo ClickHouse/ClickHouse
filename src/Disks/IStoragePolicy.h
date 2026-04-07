@@ -2,9 +2,13 @@
 
 #include <Disks/DiskType.h>
 
+#include <expected>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <base/types.h>
+
+#include <Common/LoggingFormatStringHelpers.h>
 
 namespace DB
 {
@@ -19,6 +23,19 @@ using Disks = std::vector<DiskPtr>;
 class IReservation;
 using ReservationSharedPtr = std::shared_ptr<IReservation>;
 using ReservationPtr = std::unique_ptr<IReservation>;
+struct ReservationError
+{
+    int code;
+    PreformattedMessage message;
+
+    template <typename... Args>
+    ReservationError(int code_, FormatStringHelper<Args...> formatter, Args &&... args)
+        : code(code_)
+        , message(formatter.format(std::forward<Args>(args)...))
+    {
+    }
+};
+using ReservationPtrOrError = std::expected<ReservationPtr, ReservationError>;
 using Reservations = std::vector<ReservationPtr>;
 
 using String = std::string;
@@ -43,10 +60,10 @@ public:
     DiskPtr getDiskByName(const String & disk_name) const;
     /// Get free space from most free disk
     virtual UInt64 getMaxUnreservedFreeSpace() const = 0;
-    /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    virtual ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const = 0;
-    /// Returns valid reservation or nullptr
-    virtual ReservationPtr reserve(UInt64 bytes) const = 0;
+    /// Reserves space on any volume with index > min_volume_index or returns error
+    virtual ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const = 0;
+    /// Returns valid reservation or error
+    virtual ReservationPtrOrError reserve(UInt64 bytes) const = 0;
     /// Reserves space on any volume or throws
     virtual ReservationPtr reserveAndCheck(UInt64 bytes) const = 0;
     /// Reserves 0 bytes on disk with max available space
@@ -55,12 +72,17 @@ public:
     /// Get volume by index.
     virtual VolumePtr getVolume(size_t index) const = 0;
     virtual VolumePtr tryGetVolumeByName(const String & volume_name) const = 0;
-    virtual VolumePtr tryGetVolumeByDisk(const DiskPtr & disk_ptr) const = 0;
     VolumePtr getVolumeByName(const String & volume_name) const;
     /// Checks if storage policy can be replaced by another one.
     virtual void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const = 0;
-    /// Find volume index, which contains disk
-    virtual size_t getVolumeIndexByDisk(const DiskPtr & disk_ptr) const = 0;
+    /// If the policy allows table partition operations (move, replace) with the other storage policy.
+    virtual bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const = 0;
+    /// Finds a volume index, which contains disk
+    virtual std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const = 0;
+    size_t getVolumeIndexByDiskName(const String & disk_name) const;
+    /// Finds a volume which contains a specified disk.
+    VolumePtr tryGetVolumeByDiskName(const String & disk_name) const;
+    VolumePtr getVolumeByDiskName(const String & disk_name) const;
     /// Check if we have any volume with stopped merges
     virtual bool hasAnyVolumeWithDisabledMerges() const = 0;
     virtual bool containsVolume(const String & volume_name) const = 0;

@@ -7,19 +7,13 @@
 #include <base/find_symbols.h>
 #include <base/preciseExp10.h>
 
-#include <iostream>
-
-#define JSON_MAX_DEPTH 100
+constexpr size_t JSON_MAX_DEPTH = 100;
 
 
-#ifdef __clang__
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
-#endif
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
 POCO_IMPLEMENT_EXCEPTION(JSONException, Poco::Exception, "JSONException") // NOLINT(cert-err60-cpp, modernize-use-noexcept, hicpp-use-noexcept)
-#ifdef __clang__
-#  pragma clang diagnostic pop
-#endif
+#pragma clang diagnostic pop
 
 
 /// Read unsigned integer in a simple form from a non-0-terminated string.
@@ -211,8 +205,7 @@ JSON::ElementType JSON::getType() const
             Pos after_string = skipString();
             if (after_string < ptr_end && *after_string == ':')
                 return TYPE_NAME_VALUE_PAIR;
-            else
-                return TYPE_STRING;
+            return TYPE_STRING;
         }
         default:
             throw JSONException(std::string("JSON: unexpected char ") + *ptr_begin + ", expected one of '{[tfn-0123456789\"'");
@@ -466,9 +459,8 @@ JSON::Pos JSON::searchField(const char * data, size_t size) const
     {
         if (!it->hasEscapes())
         {
-            if (static_cast<int>(size) + 2 > it->dataEnd() - it->data())
-                continue;
-            if (!strncmp(data, it->data() + 1, size))
+            const auto current_name = it->getRawName();
+            if (current_name.size() == size && 0 == memcmp(current_name.data(), data, size))
                 break;
         }
         else
@@ -481,8 +473,7 @@ JSON::Pos JSON::searchField(const char * data, size_t size) const
 
     if (it == end())
         return nullptr;
-    else
-        return it->data();
+    return it->data();
 }
 
 
@@ -494,7 +485,7 @@ bool JSON::hasEscapes() const
 
     if (*pos == '"')
         return false;
-    else if (*pos == '\\')
+    if (*pos == '\\')
         return true;
     throw JSONException("JSON: unexpected end of data.");
 }
@@ -510,7 +501,7 @@ bool JSON::hasSpecialChars() const
 
     if (*pos == '"')
         return false;
-    else if (pos < ptr_end)
+    if (pos < ptr_end)
         return true;
     throw JSONException("JSON: unexpected end of data.");
 }
@@ -658,7 +649,9 @@ std::string_view JSON::getRawString() const
     Pos s = ptr_begin;
     if (*s != '"')
         throw JSONException(std::string("JSON: expected \", got ") + *s);
-    while (++s != ptr_end && *s != '"');
+    ++s;
+    while (s != ptr_end && *s != '"')
+        ++s;
     if (s != ptr_end)
         return std::string_view(ptr_begin + 1, s - ptr_begin - 1);
     throw JSONException("JSON: incorrect syntax (expected end of string, found end of JSON).");
@@ -687,10 +680,9 @@ double JSON::toDouble() const
 
     if (type == TYPE_NUMBER)
         return getDouble();
-    else if (type == TYPE_STRING)
+    if (type == TYPE_STRING)
         return JSON(ptr_begin + 1, ptr_end, level + 1).getDouble();
-    else
-        throw JSONException("JSON: cannot convert value to double.");
+    throw JSONException("JSON: cannot convert value to double.");
 }
 
 Int64 JSON::toInt() const
@@ -699,10 +691,9 @@ Int64 JSON::toInt() const
 
     if (type == TYPE_NUMBER)
         return getInt();
-    else if (type == TYPE_STRING)
+    if (type == TYPE_STRING)
         return JSON(ptr_begin + 1, ptr_end, level + 1).getInt();
-    else
-        throw JSONException("JSON: cannot convert value to signed integer.");
+    throw JSONException("JSON: cannot convert value to signed integer.");
 }
 
 UInt64 JSON::toUInt() const
@@ -711,10 +702,9 @@ UInt64 JSON::toUInt() const
 
     if (type == TYPE_NUMBER)
         return getUInt();
-    else if (type == TYPE_STRING)
+    if (type == TYPE_STRING)
         return JSON(ptr_begin + 1, ptr_end, level + 1).getUInt();
-    else
-        throw JSONException("JSON: cannot convert value to unsigned integer.");
+    throw JSONException("JSON: cannot convert value to unsigned integer.");
 }
 
 std::string JSON::toString() const
@@ -723,11 +713,9 @@ std::string JSON::toString() const
 
     if (type == TYPE_STRING)
         return getString();
-    else
-    {
-        Pos pos = skipElement();
-        return std::string(ptr_begin, pos - ptr_begin);
-    }
+
+    Pos pos = skipElement();
+    return std::string(ptr_begin, pos - ptr_begin);
 }
 
 

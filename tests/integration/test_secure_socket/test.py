@@ -2,6 +2,7 @@ import os.path
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -57,6 +58,9 @@ def test(started_cluster):
         "/etc/clickhouse-server/users.d/users.xml",
         config.format(sleep_in_send_data_ms=1000000),
     )
+
+    if NODES["node1"].is_built_with_thread_sanitizer():
+        pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
     attempts = 0
     while attempts < 1000:

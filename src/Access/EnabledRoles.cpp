@@ -26,10 +26,10 @@ scope_guard EnabledRoles::subscribeForChanges(const OnChangeHandler & handler) c
     handlers->list.push_back(handler);
     auto it = std::prev(handlers->list.end());
 
-    return [handlers=handlers, it]
+    return [my_handlers = handlers, it]
     {
-        std::lock_guard lock2{handlers->mutex};
-        handlers->list.erase(it);
+        std::lock_guard lock2{my_handlers->mutex};
+        my_handlers->list.erase(it);
     };
 }
 
@@ -53,10 +53,10 @@ void EnabledRoles::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & 
         }
 
         notifications->join(scope_guard(
-            [info = info, handlers_to_notify = std::move(handlers_to_notify)]
+            [my_info = info, my_handlers_to_notify = std::move(handlers_to_notify)]
             {
-                for (const auto & handler : handlers_to_notify)
-                    handler(info);
+                for (const auto & handler : my_handlers_to_notify)
+                    handler(my_info);
             }));
     }
 }

@@ -1,28 +1,57 @@
 #pragma once
 
+#include <exception>
 #include <Core/Types.h>
-#include <optional>
 
 
 namespace DB
 {
-class Exception;
-enum class AccessEntityType;
+struct BackupFileInfo;
+using BackupFileInfos = std::vector<BackupFileInfo>;
+enum class AccessEntityType : uint8_t;
+enum class UserDefinedSQLObjectType : uint8_t;
+struct ZooKeeperRetriesInfo;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
-/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationRemote.
+/// There are two implementation of this interface: BackupCoordinationLocal and BackupCoordinationOnCluster.
 /// BackupCoordinationLocal is used while executing BACKUP without ON CLUSTER and performs coordination in memory.
-/// BackupCoordinationRemote is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
+/// BackupCoordinationOnCluster is used while executing BACKUP with ON CLUSTER and performs coordination via ZooKeeper.
 class IBackupCoordination
 {
 public:
     virtual ~IBackupCoordination() = default;
 
+    virtual void startup() {}
+
+    /// Sets that the backup query was sent to other hosts.
+    /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
+    virtual void setBackupQueryIsSentToOtherHosts() = 0;
+    virtual bool isBackupQuerySentToOtherHosts() const = 0;
+
     /// Sets the current stage and waits for other hosts to come to this stage too.
-    virtual void setStage(const String & current_host, const String & new_stage, const String & message) = 0;
-    virtual void setError(const String & current_host, const Exception & exception) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait) = 0;
-    virtual Strings waitForStage(const Strings & all_hosts, const String & stage_to_wait, std::chrono::milliseconds timeout) = 0;
+    virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
+
+    /// Lets other hosts know that the current host has encountered an error.
+    virtual void setError(std::exception_ptr exception, bool throw_if_error) = 0;
+
+    /// Returns true if some host (the current host or one of the other hosts) has encountered an error.
+    virtual bool isErrorSet() const = 0;
+
+    /// Waits until all the other hosts finish their work.
+    /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
+    virtual void waitOtherHostsFinish(bool throw_if_error) const = 0;
+
+    /// Lets other hosts know that the current host has finished its work.
+    virtual void finish(bool throw_if_error) = 0;
+
+    /// Returns true if this host finished its work (i.e. finish() was called successfully).
+    virtual bool finished() const = 0;
+
+    /// Returns true if all the hosts finished their work.
+    virtual bool allHostsFinished() const = 0;
+
+    /// Removes temporary nodes in ZooKeeper.
+    virtual void cleanup(bool throw_if_error) = 0;
 
     struct PartNameAndChecksum
     {
@@ -34,13 +63,13 @@ public:
     /// Multiple replicas of the replicated table call this function and then the added part names can be returned by call of the function
     /// getReplicatedPartNames().
     /// Checksums are used only to control that parts under the same names on different replicas are the same.
-    virtual void addReplicatedPartNames(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name,
+    virtual void addReplicatedPartNames(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name,
                                         const std::vector<PartNameAndChecksum> & part_names_and_checksums) = 0;
 
     /// Returns the names of the parts which a specified replica of a replicated table should put to the backup.
     /// This is the same list as it was added by call of the function addReplicatedPartNames() but without duplications and without
     /// parts covered by another parts.
-    virtual Strings getReplicatedPartNames(const String & table_shared_id, const String & replica_name) const = 0;
+    virtual Strings getReplicatedPartNames(const String & table_zk_path, const String & replica_name) const = 0;
 
     struct MutationInfo
     {
@@ -49,72 +78,43 @@ public:
     };
 
     /// Adds information about mutations of a replicated table.
-    virtual void addReplicatedMutations(const String & table_shared_id, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
+    virtual void addReplicatedMutations(const String & table_zk_path, const String & table_name_for_logs, const String & replica_name, const std::vector<MutationInfo> & mutations) = 0;
 
     /// Returns all mutations of a replicated table which are not finished for some data parts added by addReplicatedPartNames().
-    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_shared_id, const String & replica_name) const = 0;
+    virtual std::vector<MutationInfo> getReplicatedMutations(const String & table_zk_path, const String & replica_name) const = 0;
+
+    /// Adds information about KeeperMap tables
+    virtual void addKeeperMapTable(const String & table_zookeeper_root_path, const String & table_id, const String & data_path_in_backup) = 0;
+
+    /// KeeperMap tables use shared storage without local data so only one table should backup the data
+    virtual String getKeeperMapDataPath(const String & table_zookeeper_root_path) const = 0;
 
     /// Adds a data path in backup for a replicated table.
     /// Multiple replicas of the replicated table call this function and then all the added paths can be returned by call of the function
     /// getReplicatedDataPaths().
-    virtual void addReplicatedDataPath(const String & table_shared_id, const String & data_path) = 0;
+    virtual void addReplicatedDataPath(const String & table_zk_path, const String & data_path) = 0;
 
     /// Returns all the data paths in backup added for a replicated table (see also addReplicatedDataPath()).
-    virtual Strings getReplicatedDataPaths(const String & table_shared_id) const = 0;
+    virtual Strings getReplicatedDataPaths(const String & table_zk_path) const = 0;
 
     /// Adds a path to access.txt file keeping access entities of a ReplicatedAccessStorage.
-    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id, const String & file_path) = 0;
-    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type, const String & host_id) const = 0;
+    virtual void addReplicatedAccessFilePath(const String & access_zk_path, AccessEntityType access_entity_type, const String & file_path) = 0;
+    virtual Strings getReplicatedAccessFilePaths(const String & access_zk_path, AccessEntityType access_entity_type) const = 0;
 
-    struct FileInfo
-    {
-        String file_name;
-
-        UInt64 size = 0;
-        UInt128 checksum{0};
-
-        /// for incremental backups
-        UInt64 base_size = 0;
-        UInt128 base_checksum{0};
-
-        /// Name of the data file.
-        String data_file_name;
-
-        /// Suffix of an archive if the backup is stored as a series of archives.
-        String archive_suffix;
-
-        /// Position in the archive.
-        UInt64 pos_in_archive = static_cast<UInt64>(-1);
-    };
+    /// Adds a path to a directory with user-defined SQL objects inside the backup.
+    virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
+    virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
-    virtual void addFileInfo(const FileInfo & file_info, bool & is_data_file_required) = 0;
+    virtual void addFileInfos(BackupFileInfos && file_infos) = 0;
+    virtual BackupFileInfos getFileInfos() const = 0;
+    virtual BackupFileInfos getFileInfosForAllHosts() const = 0;
 
-    void addFileInfo(const FileInfo & file_info)
-    {
-        bool is_data_file_required;
-        addFileInfo(file_info, is_data_file_required);
-    }
+    /// Starts writing a specified file, the function returns false if that file is already being written concurrently.
+    virtual bool startWritingFile(size_t data_file_index) = 0;
 
-    /// Updates some fields (currently only `archive_suffix`) of a stored file's information.
-    virtual void updateFileInfo(const FileInfo & file_info) = 0;
-
-    virtual std::vector<FileInfo> getAllFileInfos() const = 0;
-    virtual Strings listFiles(const String & directory, bool recursive) const = 0;
-    virtual bool hasFiles(const String & directory) const = 0;
-
-    using SizeAndChecksum = std::pair<UInt64, UInt128>;
-
-    virtual std::optional<FileInfo> getFileInfo(const String & file_name) const = 0;
-    virtual std::optional<FileInfo> getFileInfo(const SizeAndChecksum & size_and_checksum) const = 0;
-    virtual std::optional<SizeAndChecksum> getFileSizeAndChecksum(const String & file_name) const = 0;
-
-    /// Generates a new archive suffix, e.g. "001", "002", "003", ...
-    virtual String getNextArchiveSuffix() = 0;
-
-    /// Returns the list of all the archive suffixes which were generated.
-    virtual Strings getAllArchiveSuffixes() const = 0;
+    virtual ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const = 0;
 };
 
 }

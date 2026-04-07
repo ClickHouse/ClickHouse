@@ -19,6 +19,17 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 http_max_fields;
+    extern const SettingsUInt64 http_max_field_name_size;
+    extern const SettingsUInt64 http_max_field_value_size;
+}
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
 
 namespace
 {
@@ -37,9 +48,9 @@ const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
 HTMLForm::HTMLForm(const Settings & settings)
-    : max_fields_number(settings.http_max_fields)
-    , max_field_name_size(settings.http_max_field_name_size)
-    , max_field_value_size(settings.http_max_field_value_size)
+    : max_fields_number(settings[Setting::http_max_fields])
+    , max_field_name_size(settings[Setting::http_max_field_name_size])
+    , max_field_value_size(settings[Setting::http_max_field_value_size])
     , encoding(ENCODING_URL)
 {
 }
@@ -229,6 +240,11 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         if (!in.skipToNextBoundary())
             break;
     }
+
+    /// It's important to check, because we could get "fake" EOF and incomplete request if a client suddenly died in the middle.
+    if (!in.isActualEOF())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected EOF, "
+                        "did not find the last boundary while parsing a multipart HTTP request");
 }
 
 
@@ -244,7 +260,8 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
     if (in.eof())
         return false;
 
-    assert(boundary_hit);
+    chassert(boundary_hit);
+    chassert(!found_last_boundary);
 
     boundary_hit = false;
 
@@ -255,7 +272,8 @@ bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
         {
             set(in.position(), 0);
             next();  /// We need to restrict our buffer to size of next available line.
-            return !startsWith(line, boundary + "--");
+            found_last_boundary = startsWith(line, boundary + "--");
+            return !found_last_boundary;
         }
     }
 

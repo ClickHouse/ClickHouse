@@ -1,9 +1,10 @@
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>
-#include <Common/SipHash.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 #include <consistent_hashing.h>
 
@@ -12,130 +13,170 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_PROTOCOL;
+extern const int UNKNOWN_PROTOCOL;
+extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
-static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t MAX_RANGES_SIZE = DEFAULT_MAX_STRING_SIZE)
+namespace
 {
-    size_t size = 0;
-    readVarUInt(size, buf);
-
-    if (size > MAX_RANGES_SIZE)
-        throw Poco::Exception("Too large ranges size.");
-
-    ranges.resize(size);
-    for (size_t i = 0; i < size; ++i)
-    {
-        readBinary(ranges[i].begin, buf);
-        readBinary(ranges[i].end, buf);
-    }
-}
-
-
-static void writeMarkRangesBinary(const MarkRanges & ranges, WriteBuffer & buf)
+CoordinationMode validateAndGet(uint8_t candidate)
 {
-    writeVarUInt(ranges.size(), buf);
+    if (candidate <= static_cast<uint8_t>(CoordinationMode::MAX))
+        return static_cast<CoordinationMode>(candidate);
 
-    for (const auto & [begin, end] : ranges)
-    {
-        writeBinary(begin, buf);
-        writeBinary(end, buf);
-    }
+    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unknown reading mode: {}", candidate);
+}
 }
 
-
-void PartitionReadRequest::serialize(WriteBuffer & out) const
+void ParallelReadRequest::serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const
 {
-    /// Must be the first
-    writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
+    /// Previously we didn't maintain backward compatibility and every change was breaking.
+    /// Particularly, we had an equality check for the version. To work around that code
+    /// in previous server versions we now have to lie to them about the version.
+    const UInt64 version = initiator_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+    writeIntBinary(version, out);
 
-    writeStringBinary(partition_id, out);
-    writeStringBinary(part_name, out);
-    writeStringBinary(projection_name, out);
-
-    writeVarInt(block_range.begin, out);
-    writeVarInt(block_range.end, out);
-
-    writeMarkRangesBinary(mark_ranges, out);
+    writeIntBinary(mode, out);
+    writeIntBinary(replica_num, out);
+    writeIntBinary(min_marks_per_request, out);
+    description.serialize(out, initiator_pr_protocol_version);
 }
 
-
-void PartitionReadRequest::describe(WriteBuffer & out) const
+String ParallelReadRequest::describe() const
 {
-    String result;
-    result += fmt::format("partition_id: {} \n", partition_id);
-    result += fmt::format("part_name: {} \n", part_name);
-    result += fmt::format("projection_name: {} \n", projection_name);
-    result += fmt::format("block_range: ({}, {}) \n", block_range.begin, block_range.end);
-    result += "mark_ranges: ";
-    for (const auto & range : mark_ranges)
-        result += fmt::format("({}, {}) ", range.begin, range.end);
-    result += '\n';
-    out.write(result.c_str(), result.size());
+    String result = fmt::format("replica_num {}, min_num_of_marks {}, ", replica_num, min_marks_per_request);
+    result += description.describe();
+    return result;
 }
 
-void PartitionReadRequest::deserialize(ReadBuffer & in)
+ParallelReadRequest ParallelReadRequest::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
     UInt64 version;
-    readVarUInt(version, in);
-    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading \
-            from replicas differ. Got: {}, supported version: {}",
-            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+    readIntBinary(version, in);
+    if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Parallel replicas protocol version is too old. Got: {}, min supported version: {}",
+            version,
+            DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    readStringBinary(partition_id, in);
-    readStringBinary(part_name, in);
-    readStringBinary(projection_name, in);
+    CoordinationMode mode;
+    size_t replica_num;
+    size_t min_marks_per_request;
+    RangesInDataPartsDescription description;
 
-    readVarInt(block_range.begin, in);
-    readVarInt(block_range.end, in);
+    uint8_t mode_candidate;
+    readIntBinary(mode_candidate, in);
+    mode = validateAndGet(mode_candidate);
+    readIntBinary(replica_num, in);
+    readIntBinary(min_marks_per_request, in);
+    description.deserialize(in, replica_pr_protocol_version);
 
-    readMarkRangesBinary(mark_ranges, in);
+    return ParallelReadRequest(mode, replica_num, min_marks_per_request, std::move(description));
 }
 
-UInt64 PartitionReadRequest::getConsistentHash(size_t buckets) const
+void ParallelReadRequest::merge(ParallelReadRequest & other)
 {
-    auto hash = SipHash();
-    hash.update(partition_id);
-    hash.update(part_name);
-    hash.update(projection_name);
-
-    hash.update(block_range.begin);
-    hash.update(block_range.end);
-
-    for (const auto & range : mark_ranges)
-    {
-        hash.update(range.begin);
-        hash.update(range.end);
-    }
-
-    return ConsistentHashing(hash.get64(), buckets);
+    assert(mode == other.mode);
+    assert(replica_num == other.replica_num);
+    assert(min_marks_per_request == other.min_marks_per_request);
+    description.merge(other.description);
 }
 
-
-void PartitionReadResponse::serialize(WriteBuffer & out) const
+void ParallelReadResponse::serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const
 {
+    /// Previously we didn't maintain backward compatibility and every change was breaking.
+    /// Particularly, we had an equality check for the version. To work around that code
+    /// in previous server versions we now have to lie to them about the version.
+    UInt64 version = replica_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
     /// Must be the first
-    writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
+    writeIntBinary(version, out);
 
-    writeVarUInt(static_cast<UInt64>(denied), out);
-    writeMarkRangesBinary(mark_ranges, out);
+    writeBoolText(finish, out);
+    description.serialize(out, replica_pr_protocol_version);
 }
 
+String ParallelReadResponse::describe() const
+{
+    return fmt::format("{}. Finish: {}", description.describe(), finish);
+}
 
-void PartitionReadResponse::deserialize(ReadBuffer & in)
+void ParallelReadResponse::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
 {
     UInt64 version;
-    readVarUInt(version, in);
-    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading \
-            from replicas differ. Got: {}, supported version: {}",
-            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+    readIntBinary(version, in);
+    if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Parallel replicas protocol version is too old. Got: {}, min supported version: {}",
+            version,
+            DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
-    UInt64 value;
-    readVarUInt(value, in);
-    denied = static_cast<bool>(value);
-    readMarkRangesBinary(mark_ranges, in);
+    readBoolText(finish, in);
+    description.deserialize(in, replica_pr_protocol_version);
+}
+
+
+void InitialAllRangesAnnouncement::serialize(
+    WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const
+{
+    /// Previously we didn't maintain backward compatibility and every change was breaking.
+    /// Particularly, we had an equality check for the version. To work around that code
+    /// in previous server versions we now have to lie to them about the version.
+    UInt64 version = initiator_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_VERSIONED_PARALLEL_REPLICAS_PROTOCOL
+        ? DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION
+        : DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+    writeIntBinary(version, out);
+
+    writeIntBinary(mode, out);
+    description.serialize(out, initiator_pr_protocol_version);
+    writeIntBinary(replica_num, out);
+    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
+        writeIntBinary(mark_segment_size, out);
+    if (initiator_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
+        writeIntBinary(min_marks_per_request, out);
+}
+
+
+String InitialAllRangesAnnouncement::describe()
+{
+    return fmt::format("replica {}, mode {}, {}", replica_num, mode, description.describe());
+}
+
+InitialAllRangesAnnouncement InitialAllRangesAnnouncement::deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version)
+{
+    UInt64 version;
+    readIntBinary(version, in);
+    if (version < DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Parallel replicas protocol version is too old. Got: {}, min supported version: {}",
+            version,
+            DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+
+    CoordinationMode mode;
+    RangesInDataPartsDescription description;
+    size_t replica_num;
+
+    uint8_t mode_candidate;
+    readIntBinary(mode_candidate, in);
+    mode = validateAndGet(mode_candidate);
+    description.deserialize(in, replica_pr_protocol_version);
+    readIntBinary(replica_num, in);
+
+    size_t mark_segment_size = 128;
+    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD)
+        readIntBinary(mark_segment_size, in);
+
+    size_t min_marks_per_request = 0;
+    if (replica_pr_protocol_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
+        readIntBinary(min_marks_per_request, in);
+
+    return InitialAllRangesAnnouncement{mode, description, replica_num, mark_segment_size, min_marks_per_request};
 }
 
 }

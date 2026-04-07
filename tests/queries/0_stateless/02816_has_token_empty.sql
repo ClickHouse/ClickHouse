@@ -1,0 +1,11 @@
+SELECT hasTokenCaseInsensitive('K(G', '');
+SELECT hasTokenCaseInsensitive('Hello', '');
+SELECT hasTokenCaseInsensitive('', '');
+SELECT hasTokenCaseInsensitive('', 'Hello');
+SELECT hasTokenCaseInsensitiveOrNull('Hello', '');
+SELECT hasTokenCaseInsensitiveOrNull('', '');
+SELECT hasToken('Hello', '');
+SELECT hasToken('', 'Hello');
+SELECT hasToken('', '');
+SELECT hasTokenOrNull('', '');
+SELECT hasTokenOrNull('Hello', '');

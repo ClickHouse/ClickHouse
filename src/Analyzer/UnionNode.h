@@ -3,22 +3,19 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 
-#include <Analyzer/Identifier.h>
+#include <Parsers/SelectUnionMode.h>
+
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-#include <Analyzer/TableExpressionModifiers.h>
+#include <Analyzer/RecursiveCTE.h>
 
-#include <Parsers/SelectUnionMode.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
 /** Union node represents union of queries in query tree.
+  * Union node must be initialized with normalized union mode.
   *
   * Example: (SELECT id FROM test_table) UNION ALL (SELECT id FROM test_table_2);
   * Example: (SELECT id FROM test_table) UNION DISTINCT (SELECT id FROM test_table_2);
@@ -38,10 +35,32 @@ namespace ErrorCodes
 class UnionNode;
 using UnionNodePtr = std::shared_ptr<UnionNode>;
 
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
 class UnionNode final : public IQueryTreeNode
 {
 public:
-    explicit UnionNode();
+    /// Construct union node with context and normalized union mode
+    explicit UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_);
+
+    /// Get context
+    ContextPtr getContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    const ContextMutablePtr & getMutableContext() const
+    {
+        return context;
+    }
+
+    /// Get mutable context
+    ContextMutablePtr & getMutableContext()
+    {
+        return context;
+    }
 
     /// Returns true if union node is subquery, false otherwise
     bool isSubquery() const
@@ -67,6 +86,54 @@ public:
         is_cte = is_cte_value;
     }
 
+    /// Returns true if union node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set union node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
+    }
+
+    /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
+    bool isRecursiveCTE() const
+    {
+        return is_recursive_cte;
+    }
+
+    /// Set union node is recursive CTE value
+    void setIsRecursiveCTE(bool is_recursive_cte_value)
+    {
+        is_recursive_cte = is_recursive_cte_value;
+    }
+
+    /// Returns true if union node has recursive CTE table, false otherwise
+    bool hasRecursiveCTETable() const
+    {
+        return recursive_cte_table.has_value();
+    }
+
+    /// Returns optional recursive CTE table
+    const std::optional<RecursiveCTETable> & getRecursiveCTETable() const
+    {
+        return recursive_cte_table;
+    }
+
+    /// Returns optional recursive CTE table
+    std::optional<RecursiveCTETable> & getRecursiveCTETable()
+    {
+        return recursive_cte_table;
+    }
+
+    /// Set union node recursive CTE table value
+    void setRecursiveCTETable(RecursiveCTETable recursive_cte_table_value)
+    {
+        recursive_cte_table.emplace(std::move(recursive_cte_table_value));
+    }
+
     /// Get union node CTE name
     const std::string & getCTEName() const
     {
@@ -83,25 +150,6 @@ public:
     SelectUnionMode getUnionMode() const
     {
         return union_mode;
-    }
-
-    /// Set union mode value
-    void setUnionMode(SelectUnionMode union_mode_value)
-    {
-        union_mode = union_mode_value;
-    }
-
-    /// Get union modes
-    const SelectUnionModes & getUnionModes() const
-    {
-        return union_modes;
-    }
-
-    /// Set union modes value
-    void setUnionModes(const SelectUnionModes & union_modes_value)
-    {
-        union_modes = union_modes_value;
-        union_modes_set = SelectUnionModesSet(union_modes.begin(), union_modes.end());
     }
 
     /// Get union node queries
@@ -128,74 +176,66 @@ public:
         return children[queries_child_index];
     }
 
-    /// Return true if union node has table expression modifiers, false otherwise
-    bool hasTableExpressionModifiers() const
-    {
-        return table_expression_modifiers.has_value();
-    }
-
-    /// Get table expression modifiers
-    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
-    {
-        return table_expression_modifiers;
-    }
-
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Returns true if union node is resolved, false otherwise
+    bool isResolved() const;
 
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
+
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
+
+    bool isCorrelated() const
+    {
+        return !children[correlated_columns_list_index]->as<ListNode>()->getNodes().empty();
+    }
+
+    QueryTreeNodePtr & getCorrelatedColumnsNode()
+    {
+        return children[correlated_columns_list_index];
+    }
+
+    ListNode & getCorrelatedColumns()
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    const ListNode & getCorrelatedColumns() const
+    {
+        return children[correlated_columns_list_index]->as<ListNode &>();
+    }
+
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
 
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::UNION;
     }
 
-    DataTypePtr getResultType() const override
-    {
-        if (constant_value)
-            return constant_value->getType();
-
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method getResultType is not supported for non scalar union node");
-    }
-
-    /// Perform constant folding for scalar union node
-    void performConstantFolding(ConstantValuePtr constant_folded_value)
-    {
-        constant_value = std::move(constant_folded_value);
-    }
-
-    ConstantValuePtr getConstantValueOrNull() const override
-    {
-        return constant_value;
-    }
-
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(HashState &) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
-    ASTPtr toASTImpl() const override;
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
+    bool is_recursive_cte = false;
+    std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
+    ContextMutablePtr context;
     SelectUnionMode union_mode;
-    SelectUnionModes union_modes;
-    SelectUnionModesSet union_modes_set;
-    ConstantValuePtr constant_value;
-    std::optional<TableExpressionModifiers> table_expression_modifiers;
 
     static constexpr size_t queries_child_index = 0;
-    static constexpr size_t children_size = queries_child_index + 1;
+    static constexpr size_t correlated_columns_list_index = 1;
+    static constexpr size_t children_size = correlated_columns_list_index + 1;
 };
 
 }

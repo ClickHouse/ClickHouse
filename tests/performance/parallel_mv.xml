@@ -11,13 +11,13 @@
     <create_query>create table mt_4 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
 
     <create_query>create materialized view mv_1 to mt_1 as
-        select number, toString(number) from main_table where number % 13 != 0</create_query>
+        select number as n, toString(number) as s from main_table where number % 13 != 0</create_query>
     <create_query>create materialized view mv_2 to mt_2 as
-        select number, toString(number) from main_table where number % 13 != 1</create_query>
+        select number as n, toString(number) as s from main_table where number % 13 != 1</create_query>
     <create_query>create materialized view mv_3 to mt_3 as
-        select number, toString(number) from main_table where number % 13 != 3</create_query>
+        select number as n, toString(number) as s from main_table where number % 13 != 3</create_query>
     <create_query>create materialized view mv_4 to mt_4 as
-        select number, toString(number) from main_table where number % 13 != 4</create_query>
+        select number as n, toString(number) as s from main_table where number % 13 != 4</create_query>
 
     <fill_query>SYSTEM STOP MERGES main_table</fill_query>
     <fill_query>SYSTEM STOP MERGES mt_1</fill_query>

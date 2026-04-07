@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 
 
 namespace DB
@@ -58,9 +59,8 @@ private:
 public:
     InterruptListener() : active(false)
     {
-        if (sigemptyset(&sig_set)
-            || sigaddset(&sig_set, SIGINT))
-            throwFromErrno("Cannot manipulate with signal set.", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGINT))
+            throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot manipulate with signal set");
 
         block();
     }
@@ -81,8 +81,7 @@ public:
         {
             if (errno == EAGAIN)
                 return false;
-            else
-                throwFromErrno("Cannot poll signal (sigtimedwait).", ErrorCodes::CANNOT_WAIT_FOR_SIGNAL);
+            throw ErrnoException(ErrorCodes::CANNOT_WAIT_FOR_SIGNAL, "Cannot poll signal (sigtimedwait)");
         }
 
         return true;
@@ -93,7 +92,7 @@ public:
         if (!active)
         {
             if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-                throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
+                throw ErrnoException(ErrorCodes::CANNOT_BLOCK_SIGNAL, "Cannot block signal");
 
             active = true;
         }
@@ -105,7 +104,7 @@ public:
         if (active)
         {
             if (pthread_sigmask(SIG_UNBLOCK, &sig_set, nullptr))
-                throwFromErrno("Cannot unblock signal.", ErrorCodes::CANNOT_UNBLOCK_SIGNAL);
+                throw ErrnoException(ErrorCodes::CANNOT_UNBLOCK_SIGNAL, "Cannot unblock signal");
 
             active = false;
         }

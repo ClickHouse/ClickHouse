@@ -33,14 +33,6 @@ struct SelectQueryOptions
     bool remove_duplicates = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
-    /// This flag is needed to analyze query ignoring table projections.
-    /// It is needed because we build another one InterpreterSelectQuery while analyzing projections.
-    /// It helps to avoid infinite recursion.
-    bool ignore_projections = false;
-    /// This flag is also used for projection analysis.
-    /// It is needed because lazy normal projections require special planning in FetchColumns stage, such as adding WHERE transform.
-    /// It is also used to avoid adding aggregating step when aggregate projection is chosen.
-    bool is_projection_query = false;
     /// This flag is needed for projection description.
     /// Otherwise, keys for GROUP BY may be removed as constants.
     bool ignore_ast_optimizations = false;
@@ -50,6 +42,18 @@ struct SelectQueryOptions
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
     bool settings_limit_offset_done = false;
     bool is_explain = false; /// The value is true if it's explain statement.
+    bool is_create_parameterized_view = false;
+    /// Bypass setting constraints for some internal queries such as projection ASTs.
+    bool ignore_setting_constraints = false;
+    bool is_create_view = false; /// this select is a part of CREATE [MATERIALIZED] VIEW query
+
+    /// Bypass access check for select query.
+    /// This allows to skip double access check in some specific cases (e.g. insert into table with materialized view)
+    bool ignore_access_check = false;
+
+    /// Check access rights for tables inside subqueries even in only_analyze mode.
+    /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
+    bool check_subquery_table_access = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -57,14 +61,32 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_num;
     std::optional<UInt32> shard_count;
 
-    SelectQueryOptions(
+    bool build_logical_plan = false;
+    bool ignore_rename_columns = false;
+
+    size_t max_step_description_length = 0;
+
+    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
+      * This optimization will break subsequent execution of the same query tree, because table node
+      * will no more have valid snapshot.
+      *
+      * TODO: Implement this functionality in safer way
+      */
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
+
+    bool force_materialize_cte = false;
+
+    SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
-        size_t depth = 0,
+        size_t subquery_depth_ = 0,
         bool is_subquery_ = false,
         bool settings_limit_offset_done_ = false)
-        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_),
-        settings_limit_offset_done(settings_limit_offset_done_)
-    {}
+        : to_stage(stage)
+        , subquery_depth(subquery_depth_)
+        , is_subquery(is_subquery_)
+        , settings_limit_offset_done(settings_limit_offset_done_)
+    {
+    }
 
     SelectQueryOptions copy() const { return *this; }
 
@@ -74,6 +96,19 @@ struct SelectQueryOptions
         out.to_stage = QueryProcessingStage::Complete;
         ++out.subquery_depth;
         out.is_subquery = true;
+        return out;
+    }
+
+    SelectQueryOptions & createView(bool value = true)
+    {
+        is_create_view = value;
+        return *this;
+    }
+
+    SelectQueryOptions createParameterizedView() const
+    {
+        SelectQueryOptions out = *this;
+        out.is_create_parameterized_view = true;
         return out;
     }
 
@@ -109,18 +144,6 @@ struct SelectQueryOptions
         return *this;
     }
 
-    SelectQueryOptions & ignoreProjections(bool value = true)
-    {
-        ignore_projections = value;
-        return *this;
-    }
-
-    SelectQueryOptions & projectionQuery(bool value = true)
-    {
-        is_projection_query = value;
-        return *this;
-    }
-
     SelectQueryOptions & ignoreAlias(bool value = true)
     {
         ignore_alias = value;
@@ -130,6 +153,24 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreASTOptimizations(bool value = true)
     {
         ignore_ast_optimizations = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreSettingConstraints(bool value = true)
+    {
+        ignore_setting_constraints = value;
+        return *this;
+    }
+
+    SelectQueryOptions & ignoreAccessCheck(bool value = true)
+    {
+        ignore_access_check = value;
+        return *this;
+    }
+
+    SelectQueryOptions & checkSubqueryTableAccess(bool value = true)
+    {
+        check_subquery_table_access = value;
         return *this;
     }
 
@@ -155,6 +196,12 @@ struct SelectQueryOptions
     SelectQueryOptions & setExplain(bool value = true)
     {
         is_explain = value;
+        return *this;
+    }
+
+    SelectQueryOptions & forceMaterializeCTE(bool value = true)
+    {
+        force_materialize_cte = value;
         return *this;
     }
 };

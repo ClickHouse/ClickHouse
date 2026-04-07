@@ -1,0 +1,7 @@
+   ┌─word───────────────┬─context──┬─belongs────────────┐
+1. │ 0003566aaabar      │ column   │ 0003566aaatable    │
+2. │ 0003566aaabaz      │ column   │ 0003566aaatable    │
+3. │ 0003566aaadatabase │ database │ ᴺᵁᴸᴸ               │
+4. │ 0003566aaafoo      │ column   │ 0003566aaatable    │
+5. │ 0003566aaatable    │ table    │ 0003566aaadatabase │
+   └────────────────────┴──────────┴────────────────────┘

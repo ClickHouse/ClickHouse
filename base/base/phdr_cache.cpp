@@ -1,6 +1,4 @@
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 /// This code was based on the code by Fedor Korotkiy https://www.linkedin.com/in/fedor-korotkiy-659a1838/
 
@@ -13,10 +11,8 @@
 /// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
 #ifdef USE_PHDR_CACHE
 
-#if defined(__clang__)
-#   pragma clang diagnostic ignored "-Wreserved-id-macro"
-#   pragma clang diagnostic ignored "-Wunused-macros"
-#endif
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#pragma clang diagnostic ignored "-Wunused-macros"
 
 #define __msan_unpoison(X, Y) // NOLINT
 #if defined(ch_has_feature)
@@ -59,10 +55,6 @@ std::atomic<PHDRCache *> phdr_cache {};
 
 
 extern "C"
-#ifndef __clang__
-[[gnu::visibility("default")]]
-[[gnu::externally_visible]]
-#endif
 int dl_iterate_phdr(int (*callback) (dl_phdr_info * info, size_t size, void * data), void * data)
 {
     auto * current_phdr_cache = phdr_cache.load();

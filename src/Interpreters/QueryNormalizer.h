@@ -2,9 +2,9 @@
 
 #include <map>
 
-#include <Parsers/IAST.h>
-#include <Interpreters/Aliases.h>
 #include <Core/Names.h>
+#include <Interpreters/Aliases.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -13,10 +13,13 @@ class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTablesInSelectQueryElement;
 class Context;
+class ASTQueryParameter;
+struct Settings;
 
 
 class QueryNormalizer
 {
+public:
     /// Extracts settings, mostly to show which are used and which are not.
     struct ExtractedSettings
     {
@@ -24,16 +27,9 @@ class QueryNormalizer
         const UInt64 max_expanded_ast_elements;
         bool prefer_column_name_to_alias;
 
-        template <typename T>
-        ExtractedSettings(const T & settings) /// NOLINT
-            : max_ast_depth(settings.max_ast_depth)
-            , max_expanded_ast_elements(settings.max_expanded_ast_elements)
-            , prefer_column_name_to_alias(settings.prefer_column_name_to_alias)
-        {
-        }
+        explicit ExtractedSettings(const Settings & settings);
     };
 
-public:
     struct Data
     {
         using SetOfASTs = std::set<const IAST *>;
@@ -42,6 +38,7 @@ public:
         Aliases & aliases;
         const NameSet & source_columns_set;
         ExtractedSettings settings;
+        NameSet query_parameters;
 
         /// tmp data
         size_t level;
@@ -52,14 +49,16 @@ public:
 
         /// It's Ok to have "c + 1 AS c" in queries, but not in table definition
         const bool allow_self_aliases; /// for constructs like "SELECT column + 1 AS column"
+        bool is_create_parameterized_view;
 
-        Data(Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_)
+        Data(Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_, bool is_create_parameterized_view_ = false)
             : aliases(aliases_)
             , source_columns_set(source_columns_set_)
             , settings(settings_)
             , level(0)
             , ignore_alias(ignore_alias_)
             , allow_self_aliases(allow_self_aliases_)
+            , is_create_parameterized_view(is_create_parameterized_view_)
         {}
     };
 

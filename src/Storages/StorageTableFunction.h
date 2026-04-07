@@ -3,12 +3,11 @@
 #include <TableFunctions/ITableFunction.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
-#include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -62,28 +61,21 @@ public:
     /// Avoid loading nested table by returning nullptr/false for all table functions.
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool storesDataOnDisk() const override { return false; }
-
-    String getName() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->getName();
-        return StorageProxy::getName();
-    }
+    bool supportsReplication() const override { return false; }
 
     void startup() override { }
-    void shutdown() override
+    void shutdown(bool is_drop) override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->shutdown();
+            nested->shutdown(is_drop);
     }
 
-    void flush() override
+    void flushAndPrepareForShutdown() override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
-            nested->flush();
+            nested->flushAndPrepareForShutdown();
     }
 
     void drop() override
@@ -103,27 +95,25 @@ public:
             size_t max_block_size,
             size_t num_streams) override
     {
-        String cnames;
-        for (const auto & c : column_names)
-            cnames += c + " ";
         auto storage = getNested();
         auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
         if (add_conversion)
         {
-            auto from_header = query_plan.getCurrentDataStream().header;
+            auto from_header = query_plan.getCurrentHeader();
             auto to_header = getHeaderForProcessingStage(column_names, storage_snapshot,
                                                          query_info, context, processed_stage);
 
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                    from_header.getColumnsWithTypeAndName(),
-                    to_header.getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
+                    from_header->getColumnsWithTypeAndName(),
+                    to_header->getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name,
+                    context);
 
             auto step = std::make_unique<ExpressionStep>(
-                query_plan.getCurrentDataStream(),
-                convert_actions_dag);
+                query_plan.getCurrentHeader(),
+                std::move(convert_actions_dag));
 
             step->setStepDescription("Converting columns");
             query_plan.addStep(std::move(step));
@@ -133,16 +123,17 @@ public:
     SinkToStoragePtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
-            ContextPtr context) override
+            ContextPtr context,
+            bool async_insert) override
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
         auto actual_structure = storage->getInMemoryMetadataPtr()->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {
-            throw Exception("Source storage and table function have different structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
+            throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Source storage and table function have different structure");
         }
-        return storage->write(query, metadata_snapshot, context);
+        return storage->write(query, metadata_snapshot, context, async_insert);
     }
 
     void renameInMemory(const StorageID & new_table_id) override
@@ -155,10 +146,10 @@ public:
     }
 
     bool isView() const override { return false; }
-    void checkTableCanBeDropped() const override {}
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override {}
 
 private:
-    mutable std::mutex nested_mutex;
+    mutable std::recursive_mutex nested_mutex;
     mutable GetNestedStorageFunc get_nested;
     mutable StoragePtr nested;
     const bool add_conversion;

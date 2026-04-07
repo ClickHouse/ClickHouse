@@ -1,6 +1,7 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/StorageDistributed.h>
@@ -10,10 +11,16 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsDistributedProductMode distributed_product_mode;
+    extern const SettingsBool prefer_global_in_and_join;
+}
 
 namespace ErrorCodes
 {
@@ -65,7 +72,7 @@ struct NonGlobalTableData : public WithContext
 private:
     void renameIfNeeded(ASTPtr & database_and_table)
     {
-        const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef().distributed_product_mode;
+        const DistributedProductMode distributed_product_mode = getContext()->getSettingsRef()[Setting::distributed_product_mode];
 
         StoragePtr storage = tryGetTable(database_and_table, getContext());
         if (!storage || !checker.hasAtLeastTwoShards(*storage))
@@ -81,14 +88,14 @@ private:
 
             String alias = database_and_table->tryGetAlias();
             if (alias.empty())
-                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
-                                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+                throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
+                                "Distributed table should have an alias when distributed_product_mode set to local");
 
             auto & identifier = database_and_table->as<ASTTableIdentifier &>();
             renamed_tables.emplace_back(identifier.clone());
             identifier.resetTable(database, table);
         }
-        else if (getContext()->getSettingsRef().prefer_global_in_and_join || distributed_product_mode == DistributedProductMode::GLOBAL)
+        else if (getContext()->getSettingsRef()[Setting::prefer_global_in_and_join] || distributed_product_mode == DistributedProductMode::GLOBAL)
         {
             if (function)
             {
@@ -103,22 +110,22 @@ private:
                     /// Already processed.
                 }
                 else
-                    throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function name {}", concrete->name);
             }
             else if (table_join)
                 table_join->locality = JoinLocality::Global;
             else
-                throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AST node");
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
-            throw Exception("Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny')."
-                " You may rewrite query to use local tables in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.",
-                ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
+            throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
+                            "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
+                            "You may rewrite query to use local tables "
+                            "in subqueries, or use GLOBAL keyword, or set distributed_product_mode to suitable value.");
         }
         else
-            throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting");
     }
 };
 
@@ -179,7 +186,7 @@ private:
             std::vector<ASTPtr> renamed;
             NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, &node, nullptr);
             NonGlobalTableVisitor(table_data).visit(subquery);
-            if (!renamed.empty()) //-V547
+            if (!renamed.empty())
                 data.renamed_tables.emplace_back(subquery, std::move(renamed));
         }
     }
@@ -199,7 +206,7 @@ private:
                     std::vector<ASTPtr> renamed;
                     NonGlobalTableVisitor::Data table_data(data.getContext(), data.checker, renamed, nullptr, table_join);
                     NonGlobalTableVisitor(table_data).visit(subquery);
-                    if (!renamed.empty()) //-V547
+                    if (!renamed.empty())
                         data.renamed_tables.emplace_back(subquery, std::move(renamed));
                 }
                 else if (table->database_and_table_name)
@@ -208,7 +215,7 @@ private:
                     std::vector<ASTPtr> renamed;
                     NonGlobalTableVisitor::Data table_data{data.getContext(), data.checker, renamed, nullptr, table_join};
                     NonGlobalTableVisitor(table_data).visit(tb);
-                    if (!renamed.empty()) //-V547
+                    if (!renamed.empty())
                         data.renamed_tables.emplace_back(tb, std::move(renamed));
                 }
             }
@@ -232,7 +239,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
     if (!query || !query->tables())
         return;
 
-    if (getContext()->getSettingsRef().distributed_product_mode == DistributedProductMode::ALLOW)
+    if (getContext()->getSettingsRef()[Setting::distributed_product_mode] == DistributedProductMode::ALLOW)
         return;
 
     const auto & tables_in_select_query = query->tables()->as<ASTTablesInSelectQuery &>();

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cassert>
 #include <type_traits>
 #include <base/defines.h>
 
@@ -16,17 +18,10 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
     // if MSB is set, return n, to avoid return zero
     if (unlikely(n >= 0x8000000000000000ULL))
         return n;
+    else if (n <= 1)
+        return n;
 
-    --n;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    n |= n >> 32;
-    ++n;
-
-    return n;
+    return size_t(1) << (64 - __builtin_clzl(n - 1));
 }
 
 
@@ -37,7 +32,7 @@ inline uint32_t getLeadingZeroBitsUnsafe(T x)
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
-        return __builtin_clz(x);
+        return __builtin_clz(x); // NOLINT(readability-redundant-casting)
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
@@ -45,7 +40,7 @@ inline uint32_t getLeadingZeroBitsUnsafe(T x)
     }
     else
     {
-        return __builtin_clzll(x);
+        return __builtin_clzll(x); // NOLINT(readability-redundant-casting)
     }
 }
 
@@ -81,11 +76,11 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
-        return __builtin_ctzl(x);
+        return __builtin_ctzl(x); // NOLINT(readability-redundant-casting) clang-tidy cross-references this with arrow's bit_util.h
     }
     else
     {
-        return __builtin_ctzll(x);
+        return __builtin_ctzll(x); // NOLINT(readability-redundant-casting)
     }
 }
 
@@ -100,20 +95,28 @@ inline size_t getTrailingZeroBits(T x)
 
 /** Returns a mask that has '1' for `bits` LSB set:
   * maskLowBits<UInt8>(3) => 00000111
+  * maskLowBits<Int8>(3) => 00000111
   */
 template <typename T>
 inline T maskLowBits(unsigned char bits)
 {
+    using UnsignedT = std::make_unsigned_t<T>;
     if (bits == 0)
     {
         return 0;
     }
 
-    T result = static_cast<T>(~T{0});
+    UnsignedT result = static_cast<UnsignedT>(~UnsignedT{0});
     if (bits < sizeof(T) * 8)
     {
-        result = static_cast<T>(result >> (sizeof(T) * 8 - bits));
+        result = static_cast<UnsignedT>(result >> (sizeof(UnsignedT) * 8 - bits));
     }
 
-    return result;
+    return static_cast<T>(result);
+}
+
+template <std::integral T>
+constexpr bool isPowerOf2(T number)
+{
+    return number > 0 && (number & (number - 1)) == 0;
 }

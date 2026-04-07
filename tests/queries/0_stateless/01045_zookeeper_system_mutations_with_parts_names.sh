@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-parallel, no-shared-merge-tree
+# no-shared-merge-tree -- we have similar tests for SMT
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,11 +22,11 @@ function wait_mutation_to_start()
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE table_for_mutations(k UInt32, v1 UInt64) ENGINE MergeTree ORDER BY k PARTITION BY modulo(k, 2)"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE table_for_mutations(k UInt32, v1 UInt64) ENGINE MergeTree ORDER BY k PARTITION BY modulo(k, 2) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'"
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO table_for_mutations select number, number from numbers(100000)"
+${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select 1 --query="INSERT INTO table_for_mutations select number, number from numbers(100000)"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT sum(v1) FROM table_for_mutations"
 
@@ -48,11 +49,12 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS table_for_mutations"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS replicated_table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/replicated_table_for_mutations', '1') ORDER BY k PARTITION BY modulo(k, 2)"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE replicated_table_for_mutations(k UInt32, v1 UInt64) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/replicated_table_for_mutations', '1') ORDER BY k PARTITION BY modulo(k, 2) SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'"
 
 ${CLICKHOUSE_CLIENT} --query="SYSTEM STOP MERGES replicated_table_for_mutations"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO replicated_table_for_mutations select number, number from numbers(100000)"
+# test relays on part ids, which are non-deterministic with keeper fault injections, so disable it
+${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select 1 --insert_keeper_fault_injection_probability=0 --query="INSERT INTO replicated_table_for_mutations select number, number from numbers(100000)"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT sum(v1) FROM replicated_table_for_mutations"
 

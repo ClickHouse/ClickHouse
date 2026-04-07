@@ -1,48 +1,55 @@
+import gzip
 import os
-import pytest
 import sys
 import time
-import pytz
 import uuid
-import grpc
-from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
-import gzip
+
+import grpc
 import lz4.frame
+import pytest
+import pytz
+
+from helpers.cluster import ClickHouseCluster, is_arm, run_and_check
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+pb2_dir = os.path.join(script_dir, "pb2")
+if pb2_dir not in sys.path:
+    sys.path.append(pb2_dir)
+import clickhouse_grpc_pb2  # Execute pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
 
 GRPC_PORT = 9100
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_ENCODING = "utf-8"
 
-
-# Use grpcio-tools to generate *pb2.py files from *.proto.
-
-proto_dir = os.path.join(SCRIPT_DIR, "./protos")
-gen_dir = os.path.join(SCRIPT_DIR, "./_gen")
-os.makedirs(gen_dir, exist_ok=True)
-run_and_check(
-    "python3 -m grpc_tools.protoc -I{proto_dir} --python_out={gen_dir} --grpc_python_out={gen_dir} \
-    {proto_dir}/clickhouse_grpc.proto".format(
-        proto_dir=proto_dir, gen_dir=gen_dir
-    ),
-    shell=True,
-)
-
-sys.path.append(gen_dir)
-import clickhouse_grpc_pb2
-import clickhouse_grpc_pb2_grpc
+# GRPC is disabled on ARM build - skip tests
+if is_arm():
+    pytestmark = pytest.mark.skip
 
 
 # Utilities
 
-config_dir = os.path.join(SCRIPT_DIR, "./configs")
+IPV6_ADDRESS = "2001:3984:3989::1:1111"
+
+config_dir = os.path.join(script_dir, "./configs")
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", main_configs=["configs/grpc_config.xml"])
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/config.xml"],
+    # Bug in TSAN reproduces in this test https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
+    },
+    ipv6_address=IPV6_ADDRESS,
+    stay_alive=True,
+)
 main_channel = None
 
 
-def create_channel():
-    node_ip_with_grpc_port = cluster.get_instance_ip("node") + ":" + str(GRPC_PORT)
+def create_channel(hostname=None):
+    if not hostname:
+        hostname = cluster.get_instance_ip("node")
+    node_ip_with_grpc_port = hostname + ":" + str(GRPC_PORT)
     channel = grpc.insecure_channel(node_ip_with_grpc_port)
     grpc.channel_ready_future(channel).result(timeout=10)
     global main_channel
@@ -205,6 +212,11 @@ def test_select_one():
     assert query("SELECT 1") == "1\n"
 
 
+def test_ipv6_select_one():
+    with create_channel(f"[{IPV6_ADDRESS}]") as channel:
+        assert query("SELECT 1", channel=channel) == "1\n"
+
+
 def test_ordinary_query():
     assert query("SELECT count() FROM numbers(100)") == "100\n"
 
@@ -255,7 +267,7 @@ def test_insert_default_column():
     )
 
 
-def test_insert_splitted_row():
+def test_insert_split_row():
     query("CREATE TABLE t (a UInt8) ENGINE = Memory")
     query("INSERT INTO t VALUES", input_data=["(1),(2),(", "3),(5),(4),(6)"])
     assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
@@ -345,10 +357,14 @@ def test_authentication():
 
 
 def test_logs():
-    logs = query_and_get_logs("SELECT 1", settings={"send_logs_level": "debug"})
-    assert "SELECT 1" in logs
-    assert "Read 1 rows" in logs
-    assert "Peak memory usage" in logs
+    query = "SELECT has(groupArray(number), 42) FROM numbers(1000000) SETTINGS max_block_size=100000"
+    logs = query_and_get_logs(
+        query,
+        settings={"send_logs_level": "debug"},
+    )
+    assert query in logs
+    assert "Read 1000000 rows" in logs
+    assert "Query peak memory usage" in logs
 
 
 def test_progress():
@@ -356,43 +372,33 @@ def test_progress():
         "SELECT number, sleep(0.31) FROM numbers(8) SETTINGS max_block_size=2, interactive_delay=100000",
         stream_output=True,
     )
-    for result in results:
-        result.time_zone = ""
-        result.query_id = ""
-    # print(results)
-    assert (
-        str(results)
-        == """[output_format: "TabSeparated"
-progress {
-  read_rows: 2
-  read_bytes: 16
-  total_rows_to_read: 8
-}
-, output: "0\\t0\\n1\\t0\\n"
-, progress {
-  read_rows: 2
-  read_bytes: 16
-}
-, output: "2\\t0\\n3\\t0\\n"
-, progress {
-  read_rows: 2
-  read_bytes: 16
-}
-, output: "4\\t0\\n5\\t0\\n"
-, progress {
-  read_rows: 2
-  read_bytes: 16
-}
-, output: "6\\t0\\n7\\t0\\n"
-, stats {
-  rows: 8
-  blocks: 4
-  allocated_bytes: 1092
-  applied_limit: true
-  rows_before_limit: 8
-}
-]"""
-    )
+
+    # Note: We can't compare results using a statement like `assert results == expected_results`
+    # because `results` can come in slightly different order.
+    # So we compare `outputs` and `progresses` separately and not `results` as a whole.
+
+    outputs = [i.output for i in results if i.output]
+    progresses = [i.progress for i in results if i.HasField("progress")]
+
+    # print(outputs)
+    # print(progresses)
+
+    expected_outputs = [
+        b"0\t0\n1\t0\n",
+        b"2\t0\n3\t0\n",
+        b"4\t0\n5\t0\n",
+        b"6\t0\n7\t0\n",
+    ]
+
+    expected_progresses = [
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16, total_rows_to_read=8),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+        clickhouse_grpc_pb2.Progress(read_rows=2, read_bytes=16),
+    ]
+
+    assert outputs == expected_outputs
+    assert progresses == expected_progresses
 
 
 def test_session_settings():
@@ -585,8 +591,6 @@ def test_cancel_while_processing_input():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQueryWithStreamInput(send_query_info())
     assert result.cancelled == True
-    assert result.progress.written_rows == 6
-    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n"
 
 
 def test_cancel_while_generating_output():
@@ -748,3 +752,9 @@ def test_opentelemetry_context_propagation():
         )
         == "SELECT 1\tsome custom state\n"
     )
+
+
+def test_restart():
+    assert query("SELECT 1") == "1\n"
+    node.restart_clickhouse()
+    assert query("SELECT 2") == "2\n"

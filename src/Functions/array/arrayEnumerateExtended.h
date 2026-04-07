@@ -7,7 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
-#include <Interpreters/AggregationCommon.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
 
@@ -17,10 +17,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 class FunctionArrayEnumerateUniq;
@@ -42,16 +42,17 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
+                getName(), arguments.size());
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (!array_type)
-                throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
-                    toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "All arguments for function {} must be arrays but argument {} has type {}.",
+                                getName(), i + 1, arguments[i]->getName());
         }
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
@@ -74,7 +75,7 @@ private:
 
     struct MethodString
     {
-        using Set = ClearableHashMapWithStackMemory<StringRef, UInt32, StringRefHash,
+        using Set = ClearableHashMapWithStackMemory<std::string_view, UInt32, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodString<typename Set::value_type, UInt32, false, false>;
@@ -82,7 +83,7 @@ private:
 
     struct MethodFixedString
     {
-        using Set = ClearableHashMapWithStackMemory<StringRef, UInt32, StringRefHash,
+        using Set = ClearableHashMapWithStackMemory<std::string_view, UInt32, StringViewHash,
             INITIAL_SIZE_DEGREE>;
 
         using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, UInt32, false, false>;
@@ -139,9 +140,8 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
                 arguments[i].column.get());
             if (!const_array)
-                throw Exception("Illegal column " + arguments[i].column->getName()
-                    + " of " + toString(i + 1) + "-th argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of {}-th argument of function {}",
+                    arguments[i].column->getName(), i + 1, getName());
             array_holders.emplace_back(const_array->convertToFullColumn());
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
         }
@@ -153,8 +153,8 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
             offsets_column = array->getOffsetsPtr();
         }
         else if (offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
-                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Lengths of all arrays passed to {} must be equal.",
+                getName());
 
         const auto * array_data = &array->getData();
         data_columns[i] = array_data;
@@ -164,7 +164,7 @@ ColumnPtr FunctionArrayEnumerateExtended<Derived>::executeImpl(const ColumnsWith
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*data_columns[i]))
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(data_columns[i]))
         {
             if (num_arguments == 1)
                 data_columns[i] = &nullable_col->getNestedColumn();

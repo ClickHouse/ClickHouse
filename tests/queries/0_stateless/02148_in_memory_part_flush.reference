@@ -1,4 +1,0 @@
-before DETACH TABLE
-500
-after DETACH TABLE
-500

@@ -1,0 +1,29 @@
+Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + Project names)))))
+Header: number UInt64
+Actions: INPUT : 0 -> __table2.number UInt64 : 0
+         INPUT :: 1 -> ignore(2_UInt8) UInt8 : 1
+         ALIAS __table2.number :: 0 -> number UInt64 : 2
+         ALIAS number :: 2 -> __table1.number UInt64 : 0
+         ALIAS __table1.number :: 0 -> number UInt64 : 2
+Positions: 2
+  Sorting (Sorting for ORDER BY)
+  Header: ignore(2_UInt8) UInt8
+          __table2.number UInt64
+  Sort description: ignore(2_UInt8) ASC
+    Expression (((WHERE + (Change column names to column identifiers + Project names)) + (Before ORDER BY + (Projection + Change column names to column identifiers))))
+    Header: ignore(2_UInt8) UInt8
+            __table2.number UInt64
+    Actions: INPUT : 0 -> number UInt64 : 0
+             COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+             ALIAS number :: 0 -> __table2.number UInt64 : 2
+             FUNCTION ignore(2_UInt8 :: 1) -> ignore(2_UInt8) UInt8 : 0
+    Positions: 0 2
+      Filter ((((WHERE + (Change column names to column identifiers + Project names)) + (Before ORDER BY + (Projection + Change column names to column identifiers))))[split])
+      Header: number UInt64
+      Filter column: _filter_ignore(2_UInt8)_0 (removed)
+      Actions: COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 0
+               FUNCTION ignore(2_UInt8 :: 0) -> ignore(2_UInt8) UInt8 : 1
+               ALIAS ignore(2_UInt8) :: 1 -> _filter_ignore(2_UInt8)_0 UInt8 : 0
+      Positions: 0
+        ReadFromSystemNumbers
+        Header: number UInt64

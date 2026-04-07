@@ -1,15 +1,22 @@
-#include <cassert>
+#include <Parsers/CommonParsers.h>
 
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/Lexer.h>
 #include <Poco/String.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/BitHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
+
+#include <algorithm>
+#include <cassert>
+#include <iterator>
+
+#include <boost/algorithm/string.hpp>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -24,46 +31,121 @@ namespace ErrorCodes
 namespace
 {
 
-const std::unordered_set<std::string_view> keywords
+const std::unordered_set<std::string> & getObfuscateKeywords()
 {
-    "CREATE",       "DATABASE",   "IF",       "NOT",      "EXISTS",    "TEMPORARY", "TABLE",       "ON",         "CLUSTER",     "DEFAULT",
-    "MATERIALIZED", "EPHEMERAL",  "ALIAS",    "ENGINE",   "AS",        "VIEW",      "POPULATE",    "SETTINGS",   "ATTACH",      "DETACH",
-    "DROP",         "RENAME",     "TO",       "ALTER",    "ADD",       "MODIFY",    "CLEAR",       "COLUMN",     "AFTER",       "COPY",
-    "PROJECT",      "PRIMARY",    "KEY",      "CHECK",    "PARTITION", "PART",      "FREEZE",      "FETCH",      "FROM",        "SHOW",
-    "INTO",         "OUTFILE",    "FORMAT",   "TABLES",   "DATABASES", "LIKE",      "PROCESSLIST", "CASE",       "WHEN",        "THEN",
-    "ELSE",         "END",        "DESCRIBE", "DESC",     "USE",       "SET",       "OPTIMIZE",    "FINAL",      "DEDUPLICATE", "INSERT",
-    "VALUES",       "SELECT",     "DISTINCT", "SAMPLE",   "ARRAY",     "JOIN",      "GLOBAL",      "LOCAL",      "ANY",         "ALL",
-    "INNER",        "LEFT",       "RIGHT",    "FULL",     "OUTER",     "CROSS",     "USING",       "PREWHERE",   "WHERE",       "GROUP",
-    "BY",           "WITH",       "TOTALS",   "HAVING",   "ORDER",     "COLLATE",   "LIMIT",       "UNION",      "AND",         "OR",
-    "ASC",          "IN",         "KILL",     "QUERY",    "SYNC",      "ASYNC",     "TEST",        "BETWEEN",    "TRUNCATE",    "USER",
-    "ROLE",         "PROFILE",    "QUOTA",    "POLICY",   "ROW",       "GRANT",     "REVOKE",      "OPTION",     "ADMIN",       "EXCEPT",
-    "REPLACE",      "IDENTIFIED", "HOST",     "NAME",     "READONLY",  "WRITABLE",  "PERMISSIVE",  "FOR",        "RESTRICTIVE", "RANDOMIZED",
-    "INTERVAL",     "LIMITS",     "ONLY",     "TRACKING", "IP",        "REGEXP",    "ILIKE",       "DICTIONARY", "OFFSET",      "TRIM",
-    "LTRIM",        "RTRIM",      "BOTH",     "LEADING",  "TRAILING"
+    auto initialize = []()
+    {
+        std::unordered_set<std::string> instance = {
+            "!=",
+            "",
+            "%",
+            "*",
+            "+",
+            "-",
+            "->",
+            ".",
+            "/",
+            ":",
+            "::",
+            "<",
+            "<=",
+            "<>",
+            "=",
+            "==",
+            "<=>",
+            ">",
+            ">=",
+            "?",
+            "[",
+            "]+",
+            "]+|[",
+            "^[",
+            "||",
+            "]+$"
+        };
+
+        for (const auto & keyword : getAllKeyWords())
+        {
+            /// The keyword may consist of several tokens (ORDER BY or GROUP BY)
+            /// We will split them and add separately.
+            std::vector<std::string> tokens;
+            boost::split(tokens, keyword, [](char c) { return c == ' '; });
+            for (const auto & token : tokens)
+                instance.insert(token);
+        }
+
+        /// Additional words used in SYSTEM commands, dictionary definitions, special SQL
+        /// constructs, and substitution syntax that are not registered as standalone keywords.
+        const std::vector<std::string> additional_keywords =
+        {
+            /// SYSTEM command words
+            "FLUSH", "LOGS", "UNCOMPRESSED", "RELOAD", "FETCHES", "MOVES", "SENDS", "REPLICATION",
+            "DISTRIBUTED", "COMPILED", "DNS", "MARK", "MMAP", "COVERAGE", "FAILPOINT", "JEMALLOC",
+            "PURGE", "PULLING", "REPLICAS", "PREWARM", "QUEUES", "CONFIG", "USERS", "EMBEDDED",
+            "ASYNCHRONOUS", "MODELS", "PAGE", "CONDITION", "QUEUE", "VIEWS", "FUZZER", "VIRTUAL",
+            "REDUCE", "BLOCKING", "RECONNECT", "ZOOKEEPER", "INSTRUMENT", "READY", "UNREADY",
+            "TRANSACTIONS", "DELTA", "KERNEL", "TRACING", "SNAPSHOT", "CACHE", "SCHEMA",
+            "STOP", "RESTART", "SHUTDOWN", "LISTEN", "REPLICA", "CANCEL", "CATALOG", "WAIT",
+            "LOADING", "ENABLE", "DISABLE", "NOTIFY", "QUERIES", "SIMILARITY", "VECTOR",
+            "POSTINGS", "HEADER", "METADATA", "ALLOCATE", "FREE", "LOAD", "UNLOAD", "UNKNOWN",
+            "CLIENT", "MODEL",
+            /// Special SQL functions/types parsed by special rules
+            "EXTRACT", "TRIM", "DECIMAL",
+            /// Multi-word data type constituents not registered as standalone keywords
+            "NATIONAL", "LARGE", "OBJECT", "NCHAR", "BINARY",
+            /// Special numeric literals
+            "INF", "NAN",
+            /// Substitution syntax type (uppercase because keyword lookup uses toUpper)
+            "IDENTIFIER",
+        };
+
+        for (const auto & kw : additional_keywords)
+            instance.insert(kw);
+
+        return instance;
+    };
+
+    static std::unordered_set<std::string> instance = initialize();
+    return instance;
 };
 
+/// We want to keep some words inside quotes. For example we want to keep HOUR inside:
+/// Select now() + INTERVAL '1 HOUR'
 const std::unordered_set<std::string_view> keep_words
 {
-    "id", "name", "value", "num",
-    "Id", "Name", "Value", "Num",
-    "ID", "NAME", "VALUE", "NUM",
+    "DAY",
+    "HOUR",
+    "ID",
+    "NAME",
+    "NANOSECOND",
+    "MICROSECOND",
+    "MILLISECOND",
+    "SECOND",
+    "MINUTE",
+    "NUM",
+    "VALUE",
+    "WEEK",
+    "MONTH",
+    "QUARTER",
+    "YEAR"
 };
 
 /// The list of nouns collected from here: http://www.desiquintans.com/nounlist, Public domain.
+/// Removed nouns with spaces, words with non-ascii chars and keywords
 std::initializer_list<std::string_view> nouns
 {
 "aardvark", "abacus", "abbey", "abbreviation", "abdomen", "ability", "abnormality", "abolishment", "abortion",
-"abrogation", "absence", "abundance", "abuse", "academics", "academy", "accelerant", "accelerator", "accent", "acceptance", "access",
+"abrogation", "absence", "abundance", "abuse", "academics", "academy", "accelerant", "accelerator", "accent", "acceptance",
 "accessory", "accident", "accommodation", "accompanist", "accomplishment", "accord", "accordance", "accordion", "account", "accountability",
 "accountant", "accounting", "accuracy", "accusation", "acetate", "achievement", "achiever", "acid", "acknowledgment", "acorn", "acoustics",
-"acquaintance", "acquisition", "acre", "acrylic", "act", "action", "activation", "activist", "activity", "actor", "actress", "acupuncture",
-"ad", "adaptation", "adapter", "addiction", "addition", "address", "adjective", "adjustment", "admin", "administration", "administrator",
+"acquaintance", "acquisition", "acre", "acrylic", "act", "activation", "activist", "activity", "actor", "actress", "acupuncture",
+"ad", "adaptation", "adapter", "addiction", "addition", "address", "adjective", "adjustment", "administration", "administrator",
 "admire", "admission", "adobe", "adoption", "adrenalin", "adrenaline", "adult", "adulthood", "advance", "advancement", "advantage", "advent",
 "adverb", "advertisement", "advertising", "advice", "adviser", "advocacy", "advocate", "affair", "affect", "affidavit", "affiliate",
 "affinity", "afoul", "afterlife", "aftermath", "afternoon", "aftershave", "aftershock", "afterthought", "age", "agency", "agenda", "agent",
 "aggradation", "aggression", "aglet", "agony", "agreement", "agriculture", "aid", "aide", "aim", "air", "airbag", "airbus", "aircraft",
 "airfare", "airfield", "airforce", "airline", "airmail", "airman", "airplane", "airport", "airship", "airspace", "alarm", "alb", "albatross",
-"album", "alcohol", "alcove", "alder", "ale", "alert", "alfalfa", "algebra", "algorithm", "alibi", "alien", "allegation", "allergist",
+"album", "alcohol", "alcove", "alder", "ale", "alert", "alfalfa", "algebra", "alibi", "alien", "allegation", "allergist",
 "alley", "alliance", "alligator", "allocation", "allowance", "alloy", "alluvium", "almanac", "almighty", "almond", "alpaca", "alpenglow",
 "alpenhorn", "alpha", "alphabet", "altar", "alteration", "alternative", "altitude", "alto", "aluminium", "aluminum", "amazement", "amazon",
 "ambassador", "amber", "ambience", "ambiguity", "ambition", "ambulance", "amendment", "amenity", "ammunition", "amnesty", "amount", "amusement",
@@ -76,7 +158,7 @@ std::initializer_list<std::string_view> nouns
 "apple", "applewood", "appliance", "application", "appointment", "appreciation", "apprehension", "approach", "appropriation", "approval",
 "apricot", "apron", "apse", "aquarium", "aquifer", "arcade", "arch", "archaeologist", "archaeology", "archeology", "archer",
 "architect", "architecture", "archives", "area", "arena", "argument", "arithmetic", "ark", "arm", "armadillo", "armament",
-"armchair", "armoire", "armor", "armour", "armpit", "armrest", "army", "arrangement", "array", "arrest", "arrival", "arrogance", "arrow",
+"armchair", "armoire", "armor", "armour", "armpit", "armrest", "army", "arrangement", "arrest", "arrival", "arrogance", "arrow",
 "art", "artery", "arthur", "artichoke", "article", "artifact", "artificer", "artist", "ascend", "ascent", "ascot", "ash", "ashram", "ashtray",
 "aside", "asparagus", "aspect", "asphalt", "aspic", "assassination", "assault", "assembly", "assertion", "assessment", "asset",
 "assignment", "assist", "assistance", "assistant", "associate", "association", "assumption", "assurance", "asterisk", "astrakhan", "astrolabe",
@@ -85,7 +167,7 @@ std::initializer_list<std::string_view> nouns
 "attraction", "attribute", "auction", "audience", "audit", "auditorium", "aunt", "authentication", "authenticity", "author", "authorisation",
 "authority", "authorization", "auto", "autoimmunity", "automation", "automaton", "autumn", "availability", "avalanche", "avenue", "average",
 "avocado", "award", "awareness", "awe", "axis", "azimuth", "babe", "baboon", "babushka", "baby", "bachelor", "back", "backbone",
-"backburn", "backdrop", "background", "backpack", "backup", "backyard", "bacon", "bacterium", "badge", "badger", "bafflement", "bag",
+"backburn", "backdrop", "background", "backpack", "backyard", "bacon", "bacterium", "badge", "badger", "bafflement", "bag",
 "bagel", "baggage", "baggie", "baggy", "bagpipe", "bail", "bait", "bake", "baker", "bakery", "bakeware", "balaclava", "balalaika", "balance",
 "balcony", "ball", "ballet", "balloon", "balloonist", "ballot", "ballpark", "bamboo", "ban", "banana", "band", "bandana", "bandanna",
 "bandolier", "bandwidth", "bangle", "banjo", "bank", "bankbook", "banker", "banking", "bankruptcy", "banner", "banquette", "banyan",
@@ -125,16 +207,16 @@ std::initializer_list<std::string_view> nouns
 "captain", "caption", "captor", "car", "carabao", "caramel", "caravan", "carbohydrate", "carbon", "carboxyl", "card", "cardboard", "cardigan",
 "care", "career", "cargo", "caribou", "carload", "carnation", "carnival", "carol", "carotene", "carp", "carpenter", "carpet", "carpeting",
 "carport", "carriage", "carrier", "carrot", "carry", "cart", "cartel", "carter", "cartilage", "cartload", "cartoon", "cartridge", "carving",
-"cascade", "casement", "cash", "cashew", "cashier", "casino", "casket", "cassava", "casserole", "cassock", "cast", "castanet",
+"casement", "cash", "cashew", "cashier", "casino", "casket", "cassava", "casserole", "cassock", "castanet",
 "castle", "casualty", "cat", "catacomb", "catalogue", "catalysis", "catalyst", "catamaran", "catastrophe", "catch", "catcher", "category",
 "caterpillar", "cathedral", "cation", "catsup", "cattle", "cauliflower", "causal", "cause", "causeway", "caution", "cave", "caviar",
 "cayenne", "ceiling", "celebration", "celebrity", "celeriac", "celery", "cell", "cellar", "cello", "celsius", "cement", "cemetery", "cenotaph",
 "census", "cent", "center", "centimeter", "centre", "centurion", "century", "cephalopod", "ceramic", "ceramics", "cereal", "ceremony",
 "certainty", "certificate", "certification", "cesspool", "chafe", "chain", "chainstay", "chair", "chairlift", "chairman", "chairperson",
-"chaise", "chalet", "chalice", "chalk", "challenge", "chamber", "champagne", "champion", "championship", "chance", "chandelier", "change",
-"channel", "chaos", "chap", "chapel", "chaplain", "chapter", "character", "characteristic", "characterization", "chard", "charge", "charger",
+"chaise", "chalet", "chalice", "chalk", "challenge", "chamber", "champagne", "champion", "championship", "chance", "chandelier",
+"channel", "chaos", "chap", "chapel", "chaplain", "chapter", "characteristic", "characterization", "chard", "charge", "charger",
 "charity", "charlatan", "charm", "charset", "chart", "charter", "chasm", "chassis", "chastity", "chasuble", "chateau", "chatter", "chauffeur",
-"chauvinist", "check", "checkbook", "checking", "checkout", "checkroom", "cheddar", "cheek", "cheer", "cheese", "cheesecake", "cheetah",
+"chauvinist", "checkbook", "checking", "checkout", "checkroom", "cheddar", "cheek", "cheer", "cheese", "cheesecake", "cheetah",
 "chef", "chem", "chemical", "chemistry", "chemotaxis", "cheque", "cherry", "chess", "chest", "chestnut", "chick", "chicken", "chicory",
 "chief", "chiffonier", "child", "childbirth", "childhood", "chili", "chill", "chime", "chimpanzee", "chin", "chinchilla", "chino", "chip",
 "chipmunk", "chivalry", "chive", "chives", "chocolate", "choice", "choir", "choker", "cholesterol", "choosing", "chop",
@@ -146,13 +228,13 @@ std::initializer_list<std::string_view> nouns
 "claw", "clay", "cleaner", "clearance", "clearing", "cleat", "cleavage", "clef", "cleft", "clergyman", "cleric", "clerk", "click", "client",
 "cliff", "climate", "climb", "clinic", "clip", "clipboard", "clipper", "cloak", "cloakroom", "clock", "clockwork", "clogs", "cloister",
 "clone", "close", "closet", "closing", "closure", "cloth", "clothes", "clothing", "cloud", "cloudburst", "clove", "clover", "cloves",
-"club", "clue", "cluster", "clutch", "coach", "coal", "coalition", "coast", "coaster", "coat", "cob", "cobbler", "cobweb",
+"club", "clue", "clutch", "coach", "coal", "coalition", "coast", "coaster", "coat", "cob", "cobbler", "cobweb",
 "cock", "cockpit", "cockroach", "cocktail", "cocoa", "coconut", "cod", "code", "codepage", "codling", "codon", "codpiece", "coevolution",
 "cofactor", "coffee", "coffin", "cohesion", "cohort", "coil", "coin", "coincidence", "coinsurance", "coke", "cold", "coleslaw", "coliseum",
-"collaboration", "collagen", "collapse", "collar", "collard", "collateral", "colleague", "collection", "collectivisation", "collectivization",
+"collaboration", "collagen", "collapse", "collar", "collard", "collateral", "colleague", "collectivisation", "collectivization",
 "collector", "college", "collision", "colloquy", "colon", "colonial", "colonialism", "colonisation", "colonization", "colony", "color",
-"colorlessness", "colt", "column", "columnist", "comb", "combat", "combination", "combine", "comeback", "comedy", "comestible", "comfort",
-"comfortable", "comic", "comics", "comma", "command", "commander", "commandment", "comment", "commerce", "commercial", "commission",
+"colorlessness", "colt", "columnist", "comb", "combat", "combination", "combine", "comeback", "comedy", "comestible", "comfort",
+"comfortable", "comic", "comics", "comma", "command", "commander", "commandment", "commerce", "commercial", "commission",
 "commitment", "committee", "commodity", "common", "commonsense", "commotion", "communicant", "communication", "communion", "communist",
 "community", "commuter", "company", "comparison", "compass", "compassion", "compassionate", "compensation", "competence", "competition",
 "competitor", "complaint", "complement", "completion", "complex", "complexity", "compliance", "complication", "complicity", "compliment",
@@ -162,8 +244,8 @@ std::initializer_list<std::string_view> nouns
 "confidentiality", "configuration", "confirmation", "conflict", "conformation", "confusion", "conga", "congo", "congregation", "congress",
 "congressman", "congressperson", "conifer", "connection", "connotation", "conscience", "consciousness", "consensus", "consent", "consequence",
 "conservation", "conservative", "consideration", "consignment", "consist", "consistency", "console", "consonant", "conspiracy", "conspirator",
-"constant", "constellation", "constitution", "constraint", "construction", "consul", "consulate", "consulting", "consumer", "consumption",
-"contact", "contact lens", "contagion", "container", "content", "contention", "contest", "context", "continent", "contingency", "continuity",
+"constant", "constellation", "constitution", "construction", "consul", "consulate", "consulting", "consumer", "consumption",
+"contact", "contagion", "container", "content", "contention", "contest", "context", "continent", "contingency", "continuity",
 "contour", "contract", "contractor", "contrail", "contrary", "contrast", "contribution", "contributor", "control", "controller", "controversy",
 "convection", "convenience", "convention", "conversation", "conversion", "convert", "convertible", "conviction", "cook", "cookbook",
 "cookie", "cooking", "coonskin", "cooperation", "coordination", "coordinator", "cop", "cope", "copper", "copy", "copying",
@@ -175,33 +257,33 @@ std::initializer_list<std::string_view> nouns
 "cousin", "covariate", "cover", "coverage", "coverall", "cow", "cowbell", "cowboy", "coyote", "crab", "crack", "cracker", "crackers",
 "cradle", "craft", "craftsman", "cranberry", "crane", "cranky", "crash", "crate", "cravat", "craw", "crawdad", "crayfish", "crayon",
 "crazy", "cream", "creation", "creationism", "creationist", "creative", "creativity", "creator", "creature", "creche", "credential",
-"credenza", "credibility", "credit", "creditor", "creek", "creme brulee", "crepe", "crest", "crew", "crewman", "crewmate", "crewmember",
+"credenza", "credibility", "credit", "creditor", "creek", "crepe", "crest", "crew", "crewman", "crewmate", "crewmember",
 "crewmen", "cria", "crib", "cribbage", "cricket", "cricketer", "crime", "criminal", "crinoline", "crisis", "crisp", "criteria", "criterion",
-"critic", "criticism", "crocodile", "crocus", "croissant", "crook", "crop", "cross", "crotch",
+"critic", "criticism", "crocodile", "crocus", "croissant", "crook", "crop", "crotch",
 "croup", "crow", "crowd", "crown", "crucifixion", "crude", "cruelty", "cruise", "crumb", "crunch", "crusader", "crush", "crust", "cry",
-"crystal", "crystallography", "cub", "cube", "cuckoo", "cucumber", "cue", "cuisine", "cultivar", "cultivator", "culture",
+"crystal", "crystallography", "cub", "cuckoo", "cucumber", "cue", "cuisine", "cultivar", "cultivator", "culture",
 "culvert", "cummerbund", "cup", "cupboard", "cupcake", "cupola", "curd", "cure", "curio", "curiosity", "curl", "curler", "currant", "currency",
-"current", "curriculum", "curry", "curse", "cursor", "curtailment", "curtain", "curve", "cushion", "custard", "custody", "custom", "customer",
+"curriculum", "curry", "curse", "cursor", "curtailment", "curtain", "curve", "cushion", "custard", "custody", "custom", "customer",
 "cut", "cuticle", "cutlet", "cutover", "cutting", "cyclamen", "cycle", "cyclone", "cyclooxygenase", "cygnet", "cylinder", "cymbal", "cynic",
 "cyst", "cytokine", "cytoplasm", "dad", "daddy", "daffodil", "dagger", "dahlia", "daikon", "daily", "dairy", "daisy", "dam", "damage",
 "dame", "dance", "dancer", "dancing", "dandelion", "danger", "dare", "dark", "darkness", "darn", "dart", "dash", "dashboard",
-"data", "date", "daughter", "dawn", "day", "daybed", "daylight", "dead", "deadline", "deal", "dealer", "dealing", "dearest",
+"data", "daughter", "dawn", "daybed", "daylight", "dead", "deadline", "deal", "dealer", "dealing", "dearest",
 "death", "deathwatch", "debate", "debris", "debt", "debtor", "decade", "decadence", "decency", "decimal", "decision",
 "deck", "declaration", "declination", "decline", "decoder", "decongestant", "decoration", "decrease", "decryption", "dedication", "deduce",
 "deduction", "deed", "deep", "deer", "defeat", "defendant", "defender", "defense", "deficit", "definition", "deformation",
-"degradation", "degree", "delay", "deliberation", "delight", "delivery", "demand", "democracy", "democrat", "demon", "demur", "den",
+"degradation", "degree", "deliberation", "delight", "delivery", "demand", "democracy", "democrat", "demon", "demur", "den",
 "denim", "denominator", "density", "dentist", "deodorant", "department", "departure", "dependency", "dependent", "deployment", "deposit",
 "deposition", "depot", "depression", "depressive", "depth", "deputy", "derby", "derivation", "derivative", "derrick", "descendant", "descent",
 "description", "desert", "design", "designation", "designer", "desire", "desk", "desktop", "dessert", "destination", "destiny", "destroyer",
 "destruction", "detail", "detainee", "detainment", "detection", "detective", "detector", "detention", "determination", "detour", "devastation",
 "developer", "developing", "development", "developmental", "deviance", "deviation", "device", "devil", "dew", "dhow", "diabetes", "diadem",
-"diagnosis", "diagram", "dial", "dialect", "dialogue", "diam", "diamond", "diaper", "diaphragm", "diarist", "diary", "dibble", "dickey", "dictaphone", "dictator", "diction", "dictionary", "die", "diesel", "diet", "difference", "differential", "difficulty", "diffuse",
+"diagnosis", "diagram", "dial", "dialect", "dialogue", "diam", "diamond", "diaper", "diaphragm", "diarist", "diary", "dibble", "dickey", "dictaphone", "dictator", "diction", "die", "diesel", "diet", "difference", "differential", "difficulty", "diffuse",
 "dig", "digestion", "digestive", "digger", "digging", "digit", "dignity", "dilapidation", "dill", "dilution", "dime", "dimension", "dimple",
 "diner", "dinghy", "dining", "dinner", "dinosaur", "dioxide", "dip", "diploma", "diplomacy", "dipstick", "direction", "directive", "director",
 "directory", "dirndl", "dirt", "disability", "disadvantage", "disagreement", "disappointment", "disarmament", "disaster", "discharge",
 "discipline", "disclaimer", "disclosure", "disco", "disconnection", "discount", "discourse", "discovery", "discrepancy", "discretion",
 "discrimination", "discussion", "disdain", "disease", "disembodiment", "disengagement", "disguise", "disgust", "dish", "dishwasher",
-"disk", "disparity", "dispatch", "displacement", "display", "disposal", "disposer", "disposition", "dispute", "disregard", "disruption",
+"disparity", "dispatch", "displacement", "display", "disposal", "disposer", "disposition", "dispute", "disregard", "disruption",
 "dissemination", "dissonance", "distance", "distinction", "distortion", "distribution", "distributor", "district", "divalent", "divan",
 "diver", "diversity", "divide", "dividend", "divider", "divine", "diving", "division", "divorce", "doc", "dock", "doctor", "doctorate",
 "doctrine", "document", "documentary", "documentation", "doe", "dog", "doggie", "dogsled", "dogwood", "doing", "doll", "dollar", "dollop",
@@ -209,10 +291,10 @@ std::initializer_list<std::string_view> nouns
 "doorpost", "doorway", "dory", "dose", "dot", "double", "doubling", "doubt", "doubter", "dough", "doughnut", "down", "downfall", "downforce",
 "downgrade", "download", "downstairs", "downtown", "downturn", "dozen", "draft", "drag", "dragon", "dragonfly", "dragonfruit", "dragster",
 "drain", "drainage", "drake", "drama", "dramaturge", "drapes", "draw", "drawbridge", "drawer", "drawing", "dream", "dreamer", "dredger",
-"dress", "dresser", "dressing", "drill", "drink", "drinking", "drive", "driver", "driveway", "driving", "drizzle", "dromedary", "drop",
+"dress", "dresser", "dressing", "drill", "drink", "drinking", "drive", "driver", "driveway", "driving", "drizzle", "dromedary",
 "drudgery", "drug", "drum", "drummer", "drunk", "dryer", "duck", "duckling", "dud", "dude", "due", "duel", "dueling", "duffel", "dugout",
-"dulcimer", "dumbwaiter", "dump", "dump truck", "dune", "dune buggy", "dungarees", "dungeon", "duplexer", "duration", "durian", "dusk",
-"dust", "dust storm", "duster", "duty", "dwarf", "dwell", "dwelling", "dynamics", "dynamite", "dynamo", "dynasty", "dysfunction",
+"dulcimer", "dumbwaiter", "dump", "dune", "dungarees", "dungeon", "duplexer", "duration", "durian", "dusk",
+"dust", "duster", "duty", "dwarf", "dwell", "dwelling", "dynamics", "dynamite", "dynamo", "dynasty", "dysfunction",
 "eagle", "eaglet", "ear", "eardrum", "earmuffs", "earnings", "earplug", "earring", "earrings", "earth", "earthquake",
 "earthworm", "ease", "easel", "east", "eating", "eaves", "eavesdropper", "ecclesia", "echidna", "eclipse", "ecliptic", "ecology", "economics",
 "economy", "ecosystem", "ectoderm", "ectodermal", "ecumenist", "eddy", "edge", "edger", "edible", "editing", "edition", "editor", "editorial",
@@ -222,19 +304,19 @@ std::initializer_list<std::string_view> nouns
 "ellipse", "elm", "elongation", "elver", "email", "emanate", "embarrassment", "embassy", "embellishment", "embossing", "embryo", "emerald",
 "emergence", "emergency", "emergent", "emery", "emission", "emitter", "emotion", "emphasis", "empire", "employ", "employee", "employer",
 "employment", "empowerment", "emu", "enactment", "encirclement", "enclave", "enclosure", "encounter", "encouragement", "encyclopedia",
-"end", "endive", "endoderm", "endorsement", "endothelium", "endpoint", "enemy", "energy", "enforcement", "engagement", "engine", "engineer",
+"endive", "endoderm", "endorsement", "endothelium", "endpoint", "enemy", "energy", "enforcement", "engagement", "engineer",
 "engineering", "enigma", "enjoyment", "enquiry", "enrollment", "enterprise", "entertainment", "enthusiasm", "entirety", "entity", "entrance",
 "entree", "entrepreneur", "entry", "envelope", "environment", "envy", "enzyme", "epauliere", "epee", "ephemera", "ephemeris", "ephyra",
 "epic", "episode", "epithelium", "epoch", "eponym", "epoxy", "equal", "equality", "equation", "equinox", "equipment", "equity", "equivalent",
 "era", "eraser", "erection", "erosion", "error", "escalator", "escape", "escort", "espadrille", "espalier", "essay", "essence", "essential",
-"establishment", "estate", "estimate", "estrogen", "estuary", "eternity", "ethernet", "ethics", "ethnicity", "ethyl", "euphonium", "eurocentrism",
-"evaluation", "evaluator", "evaporation", "eve", "evening", "event", "everybody", "everyone", "everything", "eviction",
+"establishment", "estate", "estrogen", "estuary", "eternity", "ethernet", "ethics", "ethnicity", "ethyl", "euphonium", "eurocentrism",
+"evaluation", "evaluator", "evaporation", "eve", "evening", "everybody", "everyone", "everything", "eviction",
 "evidence", "evil", "evocation", "evolution", "exaggeration", "exam", "examination", "examiner", "example",
-"exasperation", "excellence", "exception", "excerpt", "excess", "exchange", "excitement", "exclamation", "excursion", "excuse", "execution",
+"exasperation", "excellence", "exception", "excerpt", "excess", "excitement", "exclamation", "excursion", "excuse", "execution",
 "executive", "executor", "exercise", "exhaust", "exhaustion", "exhibit", "exhibition", "exile", "existence", "exit", "exocrine", "expansion",
 "expansionism", "expectancy", "expectation", "expedition", "expense", "experience", "experiment", "experimentation", "expert", "expertise",
-"explanation", "exploration", "explorer", "explosion", "export", "expose", "exposition", "exposure", "expression", "extension", "extent",
-"exterior", "external", "extinction", "extreme", "extremist", "eye", "eyeball", "eyebrow", "eyebrows", "eyeglasses", "eyelash", "eyelashes",
+"explanation", "exploration", "explorer", "explosion", "export", "expose", "exposition", "exposure", "extension", "extent",
+"exterior", "extinction", "extreme", "extremist", "eye", "eyeball", "eyebrow", "eyebrows", "eyeglasses", "eyelash", "eyelashes",
 "eyelid", "eyelids", "eyeliner", "eyestrain", "eyrie", "fabric", "face", "facelift", "facet", "facility", "facsimile", "fact", "factor",
 "factory", "faculty", "fahrenheit", "fail", "failure", "fairness", "fairy", "faith", "faithful", "fall", "fallacy", "fame",
 "familiar", "familiarity", "family", "fan", "fang", "fanlight", "fanny", "fantasy", "farm", "farmer", "farming", "farmland",
@@ -242,13 +324,13 @@ std::initializer_list<std::string_view> nouns
 "favorite", "fawn", "fax", "fear", "feast", "feather", "feature", "fedelini", "federation", "fedora", "fee", "feed", "feedback", "feeding",
 "feel", "feeling", "fellow", "felony", "female", "fen", "fence", "fencing", "fender", "feng", "fennel", "ferret", "ferry", "ferryboat",
 "fertilizer", "festival", "fetus", "few", "fiber", "fiberglass", "fibre", "fibroblast", "fibrosis", "ficlet", "fiction", "fiddle", "field",
-"fiery", "fiesta", "fifth", "fig", "fight", "fighter", "figure", "figurine", "file", "filing", "fill", "fillet", "filly", "film", "filter",
-"filth", "final", "finance", "financing", "finding", "fine", "finer", "finger", "fingerling", "fingernail", "finish", "finisher", "fir",
-"fire", "fireman", "fireplace", "firewall", "firm", "first", "fish", "fishbone", "fisherman", "fishery", "fishing", "fishmonger", "fishnet",
+"fiery", "fiesta", "fifth", "fig", "fight", "fighter", "figure", "figurine", "filing", "fillet", "filly", "film",
+"filth", "finance", "financing", "finding", "fine", "finer", "finger", "fingerling", "fingernail", "finish", "finisher", "fir",
+"fire", "fireman", "fireplace", "firewall", "firm", "fish", "fishbone", "fisherman", "fishery", "fishing", "fishmonger", "fishnet",
 "fisting", "fit", "fitness", "fix", "fixture", "flag", "flair", "flame", "flan", "flanker", "flare", "flash", "flat", "flatboat", "flavor",
 "flax", "fleck", "fledgling", "fleece", "flesh", "flexibility", "flick", "flicker", "flight", "flint", "flintlock", "flock",
 "flood", "floodplain", "floor", "floozie", "flour", "flow", "flower", "flu", "flugelhorn", "fluke", "flume", "flung", "flute", "fly",
-"flytrap", "foal", "foam", "fob", "focus", "fog", "fold", "folder", "folk", "folklore", "follower", "following", "fondue", "font", "food",
+"flytrap", "foal", "foam", "fob", "focus", "fog", "fold", "folder", "folk", "folklore", "follower", "fondue", "font", "food",
 "foodstuffs", "fool", "foot", "footage", "football", "footnote", "footprint", "footrest", "footstep", "footstool", "footwear", "forage",
 "forager", "foray", "force", "ford", "forearm", "forebear", "forecast", "forehead", "foreigner", "forelimb", "forest", "forestry", "forever",
 "forgery", "fork", "form", "formal", "formamide", "formation", "former", "formicarium", "formula", "fort", "forte", "fortnight",
@@ -256,7 +338,7 @@ std::initializer_list<std::string_view> nouns
 "frame", "framework", "fratricide", "fraud", "fraudster", "freak", "freckle", "freedom", "freelance", "freezer", "freezing", "freight",
 "freighter", "frenzy", "freon", "frequency", "fresco", "friction", "fridge", "friend", "friendship", "fries", "frigate", "fright", "fringe",
 "fritter", "frock", "frog", "front", "frontier", "frost", "frosting", "frown", "fruit", "frustration", "fry", "fuel", "fugato",
-"fulfillment", "full", "fun", "function", "functionality", "fund", "funding", "fundraising", "funeral", "fur", "furnace", "furniture",
+"fulfillment", "fun", "functionality", "fund", "funding", "fundraising", "funeral", "fur", "furnace", "furniture",
 "furry", "fusarium", "futon", "future", "gadget", "gaffe", "gaffer", "gain", "gaiters", "gale", "gallery", "galley",
 "gallon", "galoshes", "gambling", "game", "gamebird", "gaming", "gander", "gang", "gap", "garage", "garb", "garbage", "garden",
 "garlic", "garment", "garter", "gas", "gasket", "gasoline", "gasp", "gastronomy", "gastropod", "gate", "gateway", "gather", "gathering",
@@ -269,7 +351,7 @@ std::initializer_list<std::string_view> nouns
 "goggles", "going", "gold", "goldfish", "golf", "gondola", "gong", "good", "goodbye", "goodie", "goodness", "goodnight",
 "goodwill", "goose", "gopher", "gorilla", "gosling", "gossip", "governance", "government", "governor", "gown", "grace", "grade",
 "gradient", "graduate", "graduation", "graffiti", "graft", "grain", "gram", "grammar", "gran", "grand", "grandchild", "granddaughter",
-"grandfather", "grandma", "grandmom", "grandmother", "grandpa", "grandparent", "grandson", "granny", "granola", "grant", "grape", "grapefruit",
+"grandfather", "grandma", "grandmom", "grandmother", "grandpa", "grandparent", "grandson", "granny", "granola", "grape", "grapefruit",
 "graph", "graphic", "grasp", "grass", "grasshopper", "grassland", "gratitude", "gravel", "gravitas", "gravity", "gravy", "gray", "grease",
 "greatness", "greed", "green", "greenhouse", "greens", "grenade", "grey", "grid", "grief",
 "grill", "grin", "grip", "gripper", "grit", "grocery", "ground", "grouper", "grouse", "grove", "growth", "grub", "guacamole",
@@ -279,7 +361,7 @@ std::initializer_list<std::string_view> nouns
 "halibut", "hall", "halloween", "hallway", "halt", "ham", "hamburger", "hammer", "hammock", "hamster", "hand", "handball",
 "handful", "handgun", "handicap", "handle", "handlebar", "handmaiden", "handover", "handrail", "handsaw", "hanger", "happening", "happiness",
 "harald", "harbor", "harbour", "hardboard", "hardcover", "hardening", "hardhat", "hardship", "hardware", "hare", "harm",
-"harmonica", "harmonise", "harmonize", "harmony", "harp", "harpooner", "harpsichord", "harvest", "harvester", "hash", "hashtag", "hassock",
+"harmonica", "harmonise", "harmonize", "harmony", "harp", "harpooner", "harpsichord", "harvest", "harvester", "hashtag", "hassock",
 "haste", "hat", "hatbox", "hatchet", "hatchling", "hate", "hatred", "haunt", "haven", "haversack", "havoc", "hawk", "hay", "haze", "hazel",
 "hazelnut", "head", "headache", "headlight", "headline", "headphones", "headquarters", "headrest", "health", "hearing",
 "hearsay", "heart", "heartache", "heartbeat", "hearth", "hearthside", "heartwood", "heat", "heater", "heating", "heaven",
@@ -290,53 +372,53 @@ std::initializer_list<std::string_view> nouns
 "hobbit", "hobby", "hockey", "hoe", "hog", "hold", "holder", "hole", "holiday", "home", "homeland", "homeownership", "hometown", "homework",
 "homicide", "homogenate", "homonym", "honesty", "honey", "honeybee", "honeydew", "honor", "honoree", "hood",
 "hoof", "hook", "hop", "hope", "hops", "horde", "horizon", "hormone", "horn", "hornet", "horror", "horse", "horseradish", "horst", "hose",
-"hosiery", "hospice", "hospital", "hospitalisation", "hospitality", "hospitalization", "host", "hostel", "hostess", "hotdog", "hotel",
-"hound", "hour", "hourglass", "house", "houseboat", "household", "housewife", "housework", "housing", "hovel", "hovercraft", "howard",
+"hosiery", "hospice", "hospital", "hospitalisation", "hospitality", "hospitalization", "hostel", "hostess", "hotdog", "hotel",
+"hound", "hourglass", "house", "houseboat", "household", "housewife", "housework", "housing", "hovel", "hovercraft", "howard",
 "howitzer", "hub", "hubcap", "hubris", "hug", "hugger", "hull", "human", "humanity", "humidity", "hummus", "humor", "humour", "hunchback",
 "hundred", "hunger", "hunt", "hunter", "hunting", "hurdle", "hurdler", "hurricane", "hurry", "hurt", "husband", "hut", "hutch", "hyacinth",
 "hybridisation", "hybridization", "hydrant", "hydraulics", "hydrocarb", "hydrocarbon", "hydrofoil", "hydrogen", "hydrolyse", "hydrolysis",
 "hydrolyze", "hydroxyl", "hyena", "hygienic", "hype", "hyphenation", "hypochondria", "hypothermia", "hypothesis", "ice",
-"iceberg", "icebreaker", "icecream", "icicle", "icing", "icon", "icy", "id", "idea", "ideal", "identification", "identity", "ideology",
+"iceberg", "icebreaker", "icecream", "icicle", "icing", "icon", "icy", "idea", "ideal", "identification", "identity", "ideology",
 "idiom", "idiot", "igloo", "ignorance", "ignorant", "ikebana", "illegal", "illiteracy", "illness", "illusion", "illustration", "image",
 "imagination", "imbalance", "imitation", "immigrant", "immigration", "immortal", "impact", "impairment", "impala", "impediment", "implement",
 "implementation", "implication", "import", "importance", "impostor", "impress", "impression", "imprisonment", "impropriety", "improvement",
 "impudence", "impulse", "inability", "inauguration", "inbox", "incandescence", "incarnation", "incense", "incentive",
 "inch", "incidence", "incident", "incision", "inclusion", "income", "incompetence", "inconvenience", "increase", "incubation", "independence",
-"independent", "index", "indication", "indicator", "indigence", "individual", "industrialisation", "industrialization", "industry", "inequality",
+"independent", "indication", "indicator", "indigence", "individual", "industrialisation", "industrialization", "industry", "inequality",
 "inevitable", "infancy", "infant", "infarction", "infection", "infiltration", "infinite", "infix", "inflammation", "inflation", "influence",
 "influx", "info", "information", "infrastructure", "infusion", "inglenook", "ingrate", "ingredient", "inhabitant", "inheritance", "inhibition",
 "inhibitor", "initial", "initialise", "initialize", "initiative", "injunction", "injury", "injustice", "ink", "inlay", "inn", "innervation",
-"innocence", "innocent", "innovation", "input", "inquiry", "inscription", "insect", "insectarium", "insert", "inside", "insight", "insolence",
+"innocence", "innocent", "innovation", "input", "inquiry", "inscription", "insect", "insectarium", "inside", "insight", "insolence",
 "insomnia", "inspection", "inspector", "inspiration", "installation", "instance", "instant", "instinct", "institute", "institution",
 "instruction", "instructor", "instrument", "instrumentalist", "instrumentation", "insulation", "insurance", "insurgence", "insurrection",
 "integer", "integral", "integration", "integrity", "intellect", "intelligence", "intensity", "intent", "intention", "intentionality",
 "interaction", "interchange", "interconnection", "intercourse", "interest", "interface", "interferometer", "interior", "interject", "interloper",
-"internet", "interpretation", "interpreter", "interval", "intervenor", "intervention", "interview", "interviewer", "intestine", "introduction",
+"internet", "interpretation", "interpreter", "intervenor", "intervention", "interview", "interviewer", "intestine", "introduction",
 "intuition", "invader", "invasion", "invention", "inventor", "inventory", "inverse", "inversion", "investigation", "investigator", "investment",
 "investor", "invitation", "invite", "invoice", "involvement", "iridescence", "iris", "iron", "ironclad", "irony", "irrigation", "ischemia",
 "island", "isogloss", "isolation", "issue", "item", "itinerary", "ivory", "jack", "jackal", "jacket", "jackfruit", "jade", "jaguar",
-"jail", "jailhouse", "jalapeño", "jam", "jar", "jasmine", "jaw", "jazz", "jealousy", "jeans", "jeep", "jelly", "jellybeans", "jellyfish",
+"jail", "jailhouse", "jam", "jar", "jasmine", "jaw", "jazz", "jealousy", "jeans", "jeep", "jelly", "jellybeans", "jellyfish",
 "jerk", "jet", "jewel", "jeweller", "jewellery", "jewelry", "jicama", "jiffy", "job", "jockey", "jodhpurs", "joey", "jogging", "joint",
 "joke", "jot", "journal", "journalism", "journalist", "journey", "joy", "judge", "judgment", "judo", "jug", "juggernaut", "juice", "julienne",
 "jumbo", "jump", "jumper", "jumpsuit", "jungle", "junior", "junk", "junker", "junket", "jury", "justice", "justification", "jute", "kale",
 "kamikaze", "kangaroo", "karate", "kayak", "kazoo", "kebab", "keep", "keeper", "kendo", "kennel", "ketch", "ketchup", "kettle", "kettledrum",
-"key", "keyboard", "keyboarding", "keystone", "kick", "kid", "kidney", "kielbasa", "kill", "killer", "killing", "kilogram",
+"keyboard", "keyboarding", "keystone", "kick", "kid", "kidney", "kielbasa", "killer", "killing", "kilogram",
 "kilometer", "kilt", "kimono", "kinase", "kind", "kindness", "king", "kingdom", "kingfish", "kiosk", "kiss", "kit", "kitchen", "kite",
 "kitsch", "kitten", "kitty", "kiwi", "knee", "kneejerk", "knickers", "knife", "knight", "knitting", "knock", "knot",
 "knowledge", "knuckle", "koala", "kohlrabi", "kumquat", "lab", "label", "labor", "laboratory", "laborer", "labour", "labourer", "lace",
 "lack", "lacquerware", "lad", "ladder", "ladle", "lady", "ladybug", "lag", "lake", "lamb", "lambkin", "lament", "lamp", "lanai", "land",
 "landform", "landing", "landmine", "landscape", "lane", "language", "lantern", "lap", "laparoscope", "lapdog", "laptop", "larch", "lard",
-"larder", "lark", "larva", "laryngitis", "lasagna", "lashes", "last", "latency", "latex", "lathe", "latitude", "latte", "latter", "laugh",
-"laughter", "laundry", "lava", "law", "lawmaker", "lawn", "lawsuit", "lawyer", "lay", "layer", "layout", "lead", "leader", "leadership",
-"leading", "leaf", "league", "leaker", "leap", "learning", "leash", "leather", "leave", "leaver", "lecture", "leek", "leeway", "left",
+"larder", "lark", "larva", "laryngitis", "lasagna", "lashes", "latency", "latex", "lathe", "latitude", "latte", "latter", "laugh",
+"laughter", "laundry", "lava", "law", "lawmaker", "lawn", "lawsuit", "lawyer", "lay", "layer", "lead", "leader", "leadership",
+"leaf", "league", "leaker", "leap", "learning", "leash", "leather", "leave", "leaver", "lecture", "leek", "leeway",
 "leg", "legacy", "legal", "legend", "legging", "legislation", "legislator", "legislature", "legitimacy", "legume", "leisure", "lemon",
 "lemonade", "lemur", "lender", "lending", "length", "lens", "lentil", "leopard", "leprosy", "leptocephalus", "lesson", "letter",
-"lettuce", "level", "lever", "leverage", "leveret", "liability", "liar", "liberty", "libido", "library", "licence", "license", "licensing",
-"licorice", "lid", "lie", "lieu", "lieutenant", "life", "lifestyle", "lifetime", "lift", "ligand", "light", "lighting", "lightning",
+"lettuce", "lever", "leverage", "leveret", "liability", "liar", "liberty", "libido", "library", "licence", "license", "licensing",
+"licorice", "lid", "lie", "lieu", "lieutenant", "life", "lifestyle", "lift", "ligand", "light", "lighting", "lightning",
 "lightscreen", "ligula", "likelihood", "likeness", "lilac", "lily", "limb", "lime", "limestone", "limitation", "limo", "line",
 "linen", "liner", "linguist", "linguistics", "lining", "link", "linkage", "linseed", "lion", "lip", "lipid", "lipoprotein", "lipstick",
-"liquid", "liquidity", "liquor", "list", "listening", "listing", "literate", "literature", "litigation", "litmus", "litter", "littleneck",
-"liver", "livestock", "living", "lizard", "llama", "load", "loading", "loaf", "loafer", "loan", "lobby", "lobotomy", "lobster", "local",
+"liquid", "liquidity", "liquor", "listening", "listing", "literate", "literature", "litigation", "litmus", "litter", "littleneck",
+"liver", "livestock", "living", "lizard", "llama", "load", "loading", "loaf", "loafer", "loan", "lobby", "lobotomy", "lobster",
 "locality", "location", "lock", "locker", "locket", "locomotive", "locust", "lode", "loft", "log", "loggia", "logic", "login", "logistics",
 "logo", "loincloth", "lollipop", "loneliness", "longboat", "longitude", "look", "lookout", "loop", "loophole", "loquat", "lord", "loss",
 "lot", "lotion", "lottery", "lounge", "louse", "lout", "love", "lover", "lox", "loyalty", "luck", "luggage", "lumber", "lumberman", "lunch",
@@ -350,28 +432,28 @@ std::initializer_list<std::string_view> nouns
 "manufacturer", "manufacturing", "many", "map", "maple", "mapping", "maracas", "marathon", "marble", "march", "mare", "margarine", "margin",
 "mariachi", "marimba", "marines", "marionberry", "mark", "marker", "market", "marketer", "marketing", "marketplace", "marksman", "markup",
 "marmalade", "marriage", "marsh", "marshland", "marshmallow", "marten", "marxism", "mascara", "mask", "masonry", "mass", "massage", "mast",
-"master", "masterpiece", "mastication", "mastoid", "mat", "match", "matchmaker", "mate", "material", "maternity", "math", "mathematics",
-"matrix", "matter", "mattock", "mattress", "max", "maximum", "maybe", "mayonnaise", "mayor", "meadow", "meal", "mean", "meander", "meaning",
+"master", "masterpiece", "mastication", "mastoid", "mat", "matchmaker", "mate", "material", "maternity", "math", "mathematics",
+"matrix", "matter", "mattock", "mattress", "maximum", "maybe", "mayonnaise", "mayor", "meadow", "meal", "mean", "meander", "meaning",
 "means", "meantime", "measles", "measure", "measurement", "meat", "meatball", "meatloaf", "mecca", "mechanic", "mechanism", "med", "medal",
 "media", "median", "medication", "medicine", "medium", "meet", "meeting", "melatonin", "melody", "melon", "member", "membership", "membrane",
-"meme", "memo", "memorial", "memory", "men", "menopause", "menorah", "mention", "mentor", "menu", "merchandise", "merchant", "mercury",
+"meme", "memo", "memorial", "men", "menopause", "menorah", "mention", "mentor", "menu", "merchandise", "merchant", "mercury",
 "meridian", "meringue", "merit", "mesenchyme", "mess", "message", "messenger", "messy", "metabolite", "metal", "metallurgist", "metaphor",
 "meteor", "meteorology", "meter", "methane", "method", "methodology", "metric", "metro", "metronome", "mezzanine", "microlending", "micronutrient",
 "microphone", "microwave", "midden", "middle", "middleman", "midline", "midnight", "midwife", "might", "migrant", "migration",
 "mile", "mileage", "milepost", "milestone", "military", "milk", "milkshake", "mill", "millennium", "millet", "millimeter", "million",
-"millisecond", "millstone", "mime", "mimosa", "min", "mincemeat", "mind", "mine", "mineral", "mineshaft", "mini", "minibus",
-"minimalism", "minimum", "mining", "minion", "minister", "mink", "minnow", "minor", "minority", "mint", "minute", "miracle",
+"millstone", "mime", "mimosa", "mincemeat", "mind", "mine", "mineral", "mineshaft", "mini", "minibus",
+"minimalism", "minimum", "mining", "minion", "minister", "mink", "minnow", "minor", "minority", "mint", "miracle",
 "mirror", "miscarriage", "miscommunication", "misfit", "misnomer", "misogyny", "misplacement", "misreading", "misrepresentation", "miss",
 "missile", "mission", "missionary", "mist", "mistake", "mister", "misunderstand", "miter", "mitten", "mix", "mixer", "mixture", "moai",
 "moat", "mob", "mobile", "mobility", "mobster", "moccasins", "mocha", "mochi", "mode", "model", "modeling", "modem", "modernist", "modernity",
 "modification", "molar", "molasses", "molding", "mole", "molecule", "mom", "moment", "monastery", "monasticism", "money", "monger", "monitor",
-"monitoring", "monk", "monkey", "monocle", "monopoly", "monotheism", "monsoon", "monster", "month", "monument", "mood", "moody", "moon",
+"monitoring", "monk", "monkey", "monocle", "monopoly", "monotheism", "monsoon", "monster", "monument", "mood", "moody", "moon",
 "moonlight", "moonscape", "moonshine", "moose", "mop", "morale", "morbid", "morbidity", "morning", "moron", "morphology", "morsel", "mortal",
 "mortality", "mortgage", "mortise", "mosque", "mosquito", "most", "motel", "moth", "mother", "motion", "motivation",
 "motive", "motor", "motorboat", "motorcar", "motorcycle", "mound", "mountain", "mouse", "mouser", "mousse", "moustache", "mouth", "mouton",
 "movement", "mover", "movie", "mower", "mozzarella", "mud", "muffin", "mug", "mukluk", "mule", "multimedia", "murder", "muscat", "muscatel",
 "muscle", "musculature", "museum", "mushroom", "music", "musician", "muskrat", "mussel", "mustache", "mustard",
-"mutation", "mutt", "mutton", "mycoplasma", "mystery", "myth", "mythology", "nail", "name", "naming", "nanoparticle", "napkin", "narrative",
+"mutt", "mutton", "mycoplasma", "mystery", "myth", "mythology", "nail", "naming", "nanoparticle", "napkin", "narrative",
 "nasal", "nation", "nationality", "native", "naturalisation", "nature", "navigation", "necessity", "neck", "necklace", "necktie", "nectar",
 "nectarine", "need", "needle", "neglect", "negligee", "negotiation", "neighbor", "neighborhood", "neighbour", "neighbourhood", "neologism",
 "neon", "neonate", "nephew", "nerve", "nest", "nestling", "nestmate", "net", "netball", "netbook", "netsuke", "network", "networking",
@@ -381,13 +463,13 @@ std::initializer_list<std::string_view> nouns
 "noodle", "noodles", "noon", "norm", "normal", "normalisation", "normalization", "north", "nose", "notation", "note", "notebook", "notepad",
 "nothing", "notice", "notion", "notoriety", "nougat", "noun", "nourishment", "novel", "nucleotidase", "nucleotide", "nudge", "nuke",
 "number", "numeracy", "numeric", "numismatist", "nun", "nurse", "nursery", "nursing", "nurture", "nut", "nutmeg", "nutrient", "nutrition",
-"nylon", "nymph", "oak", "oar", "oasis", "oat", "oatmeal", "oats", "obedience", "obesity", "obi", "object", "objection", "objective",
+"nylon", "nymph", "oak", "oar", "oasis", "oat", "oatmeal", "oats", "obedience", "obesity", "obi", "objection", "objective",
 "obligation", "oboe", "observation", "observatory", "obsession", "obsidian", "obstacle", "occasion", "occupation", "occurrence", "ocean",
 "ocelot", "octagon", "octave", "octavo", "octet", "octopus", "odometer", "odyssey", "oeuvre", "offence", "offense", "offer",
-"offering", "office", "officer", "official", "offset", "oil", "okra", "oldie", "oleo", "olive", "omega", "omelet", "omission", "omnivore",
+"offering", "office", "officer", "official", "oil", "okra", "oldie", "oleo", "olive", "omega", "omelet", "omission", "omnivore",
 "oncology", "onion", "online", "onset", "opening", "opera", "operating", "operation", "operator", "ophthalmologist", "opinion", "opium",
 "opossum", "opponent", "opportunist", "opportunity", "opposite", "opposition", "optimal", "optimisation", "optimist", "optimization",
-"option", "orange", "orangutan", "orator", "orchard", "orchestra", "orchid", "ordinary", "ordination", "ore", "oregano", "organ",
+"orange", "orangutan", "orator", "orchard", "orchestra", "orchid", "ordinary", "ordination", "ore", "oregano", "organ",
 "organisation", "organising", "organization", "organizing", "orient", "orientation", "origin", "original", "originality", "ornament",
 "osmosis", "osprey", "ostrich", "other", "otter", "ottoman", "ounce", "outback", "outcome", "outfielder", "outfit", "outhouse", "outlaw",
 "outlay", "outlet", "outline", "outlook", "output", "outrage", "outrigger", "outrun", "outset", "outside", "oval", "ovary", "oven", "overcharge",
@@ -398,7 +480,7 @@ std::initializer_list<std::string_view> nouns
 "pansy", "panther", "panties", "pantologist", "pantology", "pantry", "pants", "pantsuit", "panty", "pantyhose", "papa", "papaya", "paper",
 "paperback", "paperwork", "parable", "parachute", "parade", "paradise", "paragraph", "parallelogram", "paramecium", "paramedic", "parameter",
 "paranoia", "parcel", "parchment", "pard", "pardon", "parent", "parenthesis", "parenting", "park", "parka", "parking", "parliament",
-"parole", "parrot", "parser", "parsley", "parsnip", "part", "participant", "participation", "particle", "particular", "partner", "partnership",
+"parole", "parrot", "parser", "parsley", "parsnip", "participant", "participation", "particle", "particular", "partner", "partnership",
 "partridge", "party", "pass", "passage", "passbook", "passenger", "passing", "passion", "passive", "passport", "password", "past", "pasta",
 "paste", "pastor", "pastoralist", "pastry", "pasture", "pat", "patch", "pate", "patent", "patentee", "path", "pathogenesis", "pathology",
 "pathway", "patience", "patient", "patina", "patio", "patriarch", "patrimony", "patriot", "patrol", "patroller", "patrolling", "patron",
@@ -413,26 +495,26 @@ std::initializer_list<std::string_view> nouns
 "physical", "physics", "physiology", "pianist", "piano", "piccolo", "pick", "pickax", "pickaxe", "picket", "pickle", "pickup", "picnic",
 "picture", "picturesque", "pie", "piece", "pier", "piety", "pig", "pigeon", "piglet", "pigpen", "pigsty", "pike", "pilaf", "pile", "pilgrim",
 "pilgrimage", "pill", "pillar", "pillbox", "pillow", "pilot", "pimp", "pimple", "pin", "pinafore", "pine", "pineapple",
-"pinecone", "ping", "pink", "pinkie", "pinot", "pinstripe", "pint", "pinto", "pinworm", "pioneer", "pipe", "pipeline", "piracy", "pirate",
+"pinecone", "ping", "pink", "pinkie", "pinot", "pinstripe", "pint", "pinto", "pinworm", "pioneer", "pipe", "piracy", "pirate",
 "pistol", "pit", "pita", "pitch", "pitcher", "pitching", "pith", "pizza", "place", "placebo", "placement", "placode", "plagiarism",
-"plain", "plaintiff", "plan", "plane", "planet", "planning", "plant", "plantation", "planter", "planula", "plaster", "plasterboard",
+"plain", "plaintiff", "plane", "planet", "planning", "plant", "plantation", "planter", "planula", "plaster", "plasterboard",
 "plastic", "plate", "platelet", "platform", "platinum", "platter", "platypus", "play", "player", "playground", "playroom", "playwright",
 "plea", "pleasure", "pleat", "pledge", "plenty", "plier", "pliers", "plight", "plot", "plough", "plover", "plow", "plowman", "plug",
 "plugin", "plum", "plumber", "plume", "plunger", "plywood", "pneumonia", "pocket", "pocketbook", "pod", "podcast", "poem",
 "poet", "poetry", "poignance", "point", "poison", "poisoning", "poker", "polarisation", "polarization", "pole", "polenta", "police",
-"policeman", "policy", "polish", "politician", "politics", "poll", "polliwog", "pollutant", "pollution", "polo", "polyester", "polyp",
+"policeman", "polish", "politician", "politics", "poll", "polliwog", "pollutant", "pollution", "polo", "polyester", "polyp",
 "pomegranate", "pomelo", "pompom", "poncho", "pond", "pony", "pool", "poor", "pop", "popcorn", "poppy", "popsicle", "popularity", "population",
 "populist", "porcelain", "porch", "porcupine", "pork", "porpoise", "port", "porter", "portfolio", "porthole", "portion", "portrait",
-"position", "possession", "possibility", "possible", "post", "postage", "postbox", "poster", "posterior", "postfix", "pot", "potato",
+"possession", "possibility", "possible", "post", "postage", "postbox", "poster", "posterior", "postfix", "pot", "potato",
 "potential", "pottery", "potty", "pouch", "poultry", "pound", "pounding", "poverty", "powder", "power", "practice", "practitioner", "prairie",
-"praise", "pray", "prayer", "precedence", "precedent", "precipitation", "precision", "predecessor", "preface", "preference", "prefix",
+"praise", "pray", "prayer", "precedence", "precedent", "precipitation", "predecessor", "preface", "preference", "prefix",
 "pregnancy", "prejudice", "prelude", "premeditation", "premier", "premise", "premium", "preoccupation", "preparation", "prescription",
 "presence", "present", "presentation", "preservation", "preserves", "presidency", "president", "press", "pressroom", "pressure", "pressurisation",
 "pressurization", "prestige", "presume", "pretzel", "prevalence", "prevention", "prey", "price", "pricing", "pride", "priest", "priesthood",
-"primary", "primate", "prince", "princess", "principal", "principle", "print", "printer", "printing", "prior", "priority", "prison",
+"primate", "prince", "princess", "principal", "principle", "print", "printer", "printing", "prior", "priority", "prison",
 "prisoner", "privacy", "private", "privilege", "prize", "prizefight", "probability", "probation", "probe", "problem", "procedure", "proceedings",
 "process", "processing", "processor", "proctor", "procurement", "produce", "producer", "product", "production", "productivity", "profession",
-"professional", "professor", "profile", "profit", "progenitor", "program", "programme", "programming", "progress", "progression", "prohibition",
+"professional", "professor", "profit", "progenitor", "program", "programme", "programming", "progress", "progression", "prohibition",
 "project", "proliferation", "promenade", "promise", "promotion", "prompt", "pronoun", "pronunciation", "proof", "propaganda",
 "propane", "property", "prophet", "proponent", "proportion", "proposal", "proposition", "proprietor", "prose", "prosecution", "prosecutor",
 "prospect", "prosperity", "prostacyclin", "prostanoid", "prostrate", "protection", "protein", "protest", "protocol", "providence", "provider",
@@ -440,14 +522,14 @@ std::initializer_list<std::string_view> nouns
 "psychologist", "psychology", "ptarmigan", "pub", "public", "publication", "publicity", "publisher", "publishing", "pudding", "puddle",
 "puffin", "pug", "puggle", "pulley", "pulse", "puma", "pump", "pumpernickel", "pumpkin", "pumpkinseed", "pun", "punch", "punctuation",
 "punishment", "pup", "pupa", "pupil", "puppet", "puppy", "purchase", "puritan", "purity", "purple", "purpose", "purr", "purse", "pursuit",
-"push", "pusher", "put", "puzzle", "pyramid", "pyridine", "quadrant", "quail", "qualification", "quality", "quantity", "quart", "quarter",
-"quartet", "quartz", "queen", "query", "quest", "question", "questioner", "questionnaire", "quiche", "quicksand", "quiet", "quill", "quilt",
-"quince", "quinoa", "quit", "quiver", "quota", "quotation", "quote", "rabbi", "rabbit", "raccoon", "race", "racer", "racing", "racism",
+"push", "pusher", "put", "puzzle", "pyramid", "pyridine", "quadrant", "quail", "qualification", "quality", "quantity", "quart",
+"quartet", "quartz", "queen", "quest", "question", "questioner", "questionnaire", "quiche", "quicksand", "quiet", "quill", "quilt",
+"quince", "quinoa", "quit", "quiver", "quotation", "quote", "rabbi", "rabbit", "raccoon", "race", "racer", "racing", "racism",
 "racist", "rack", "radar", "radiator", "radio", "radiosonde", "radish", "raffle", "raft", "rag", "rage", "raid", "rail", "railing", "railroad",
 "railway", "raiment", "rain", "rainbow", "raincoat", "rainmaker", "rainstorm", "rainy", "raise", "raisin", "rake", "rally", "ram", "rambler",
-"ramen", "ramie", "ranch", "rancher", "randomisation", "randomization", "range", "ranger", "rank", "rap", "rape", "raspberry", "rat",
+"ramen", "ramie", "ranch", "rancher", "randomisation", "randomization", "ranger", "rank", "rap", "rape", "raspberry", "rat",
 "rate", "ratepayer", "rating", "ratio", "rationale", "rations", "raven", "ravioli", "rawhide", "ray", "rayon", "razor", "reach", "reactant",
-"reaction", "read", "reader", "readiness", "reading", "real", "reality", "realization", "realm", "reamer", "rear", "reason", "reasoning",
+"reaction", "read", "reader", "readiness", "reading", "real", "reality", "realization", "reamer", "rear", "reason", "reasoning",
 "rebel", "rebellion", "reboot", "recall", "recapitulation", "receipt", "receiver", "reception", "receptor", "recess", "recession", "recipe",
 "recipient", "reciprocity", "reclamation", "recliner", "recognition", "recollection", "recommendation", "reconsideration", "record",
 "recorder", "recording", "recovery", "recreation", "recruit", "rectangle", "red", "redesign", "redhead", "redirect", "rediscovery", "reduction",
@@ -457,21 +539,21 @@ std::initializer_list<std::string_view> nouns
 "reliability", "relief", "religion", "relish", "reluctance", "remains", "remark", "reminder", "remnant", "remote", "removal", "renaissance",
 "rent", "reorganisation", "reorganization", "repair", "reparation", "repayment", "repeat", "replacement", "replica", "replication", "reply",
 "report", "reporter", "reporting", "repository", "representation", "representative", "reprocessing", "republic", "republican", "reputation",
-"request", "requirement", "resale", "rescue", "research", "researcher", "resemblance", "reservation", "reserve", "reservoir", "reset",
+"request", "requirement", "resale", "rescue", "research", "researcher", "resemblance", "reservation", "reserve", "reservoir",
 "residence", "resident", "residue", "resist", "resistance", "resolution", "resolve", "resort", "resource", "respect", "respite", "response",
-"responsibility", "rest", "restaurant", "restoration", "restriction", "restroom", "restructuring", "result", "resume", "retailer", "retention",
+"responsibility", "rest", "restaurant", "restoration", "restriction", "restroom", "restructuring", "result", "retailer", "retention",
 "rethinking", "retina", "retirement", "retouching", "retreat", "retrospect", "retrospective", "retrospectivity", "return", "reunion",
 "revascularisation", "revascularization", "reveal", "revelation", "revenant", "revenge", "revenue", "reversal", "reverse", "review",
 "revitalisation", "revitalization", "revival", "revolution", "revolver", "reward", "rhetoric", "rheumatism", "rhinoceros", "rhubarb",
-"rhyme", "rhythm", "rib", "ribbon", "rice", "riddle", "ride", "rider", "ridge", "riding", "rifle", "right", "rim", "ring", "ringworm",
+"rhyme", "rhythm", "rib", "ribbon", "rice", "riddle", "ride", "rider", "ridge", "riding", "rifle", "rim", "ring", "ringworm",
 "riot", "rip", "ripple", "rise", "riser", "risk", "rite", "ritual", "river", "riverbed", "rivulet", "road", "roadway", "roar", "roast",
-"robe", "robin", "robot", "robotics", "rock", "rocker", "rocket", "rod", "role", "roll", "roller", "romaine", "romance",
+"robe", "robin", "robot", "robotics", "rock", "rocker", "rocket", "rod", "roll", "roller", "romaine", "romance",
 "roof", "room", "roommate", "rooster", "root", "rope", "rose", "rosemary", "roster", "rostrum", "rotation", "round", "roundabout", "route",
-"router", "routine", "row", "rowboat", "rowing", "rubber", "rubric", "ruby", "ruckus", "rudiment", "ruffle", "rug", "rugby",
+"router", "routine", "rowboat", "rowing", "rubber", "rubric", "ruby", "ruckus", "rudiment", "ruffle", "rug", "rugby",
 "ruin", "rule", "ruler", "ruling", "rum", "rumor", "run", "runaway", "runner", "running", "runway", "rush", "rust", "rutabaga", "rye",
 "sabre", "sac", "sack", "saddle", "sadness", "safari", "safe", "safeguard", "safety", "saffron", "sage", "sail", "sailboat", "sailing",
-"sailor", "saint", "sake", "salad", "salami", "salary", "sale", "salesman", "salmon", "salon", "saloon", "salsa", "salt", "salute", "samovar",
-"sampan", "sample", "samurai", "sanction", "sanctity", "sanctuary", "sand", "sandal", "sandbar", "sandpaper", "sandwich", "sanity", "sardine",
+"sailor", "saint", "sake", "salad", "salami", "salary", "sale", "salesman", "salmon", "salon", "saloon", "salsa", "salute", "samovar",
+"sampan", "samurai", "sanction", "sanctity", "sanctuary", "sand", "sandal", "sandbar", "sandpaper", "sandwich", "sanity", "sardine",
 "sari", "sarong", "sash", "satellite", "satin", "satire", "satisfaction", "sauce", "saucer", "sauerkraut", "sausage", "savage", "savannah",
 "saving", "savings", "savior", "saviour", "savory", "saw", "saxophone", "scaffold", "scale", "scallion", "scallops", "scalp", "scam",
 "scanner", "scarecrow", "scarf", "scarification", "scenario", "scene", "scenery", "scent", "schedule", "scheduling", "schema", "scheme",
@@ -479,20 +561,20 @@ std::initializer_list<std::string_view> nouns
 "scooter", "scope", "score", "scorn", "scorpion", "scotch", "scout", "scow", "scrambled", "scrap", "scraper", "scratch", "screamer",
 "screen", "screening", "screenwriting", "screw", "screwdriver", "scrim", "scrip", "script", "scripture", "scrutiny", "sculpting",
 "sculptural", "sculpture", "sea", "seabass", "seafood", "seagull", "seal", "seaplane", "search", "seashore", "seaside", "season", "seat",
-"seaweed", "second", "secrecy", "secret", "secretariat", "secretary", "secretion", "section", "sectional", "sector", "security", "sediment",
+"seaweed", "secrecy", "secret", "secretariat", "secretary", "secretion", "section", "sectional", "sector", "security", "sediment",
 "seed", "seeder", "seeker", "seep", "segment", "seizure", "selection", "self", "seller",
 "selling", "semantics", "semester", "semicircle", "semicolon", "semiconductor", "seminar", "senate", "senator", "sender", "senior", "sense",
 "sensibility", "sensitive", "sensitivity", "sensor", "sentence", "sentencing", "sentiment", "sepal", "separation", "septicaemia", "sequel",
-"sequence", "serial", "series", "sermon", "serum", "serval", "servant", "server", "service", "servitude", "sesame", "session", "set",
-"setback", "setting", "settlement", "settler", "severity", "sewer", "sex", "sexuality", "shack", "shackle", "shade", "shadow", "shadowbox",
+"sequence", "serial", "series", "sermon", "serum", "serval", "servant", "service", "servitude", "sesame", "session",
+"setback", "settlement", "settler", "severity", "sewer", "sex", "sexuality", "shack", "shackle", "shade", "shadow", "shadowbox",
 "shakedown", "shaker", "shallot", "shallows", "shame", "shampoo", "shanty", "shape", "share", "shareholder", "shark", "shaw", "shawl",
 "shear", "shearling", "sheath", "shed", "sheep", "sheet", "shelf", "shell", "shelter", "sherbet", "sherry", "shield", "shift", "shin",
 "shine", "shingle", "ship", "shipper", "shipping", "shipyard", "shirt", "shirtdress", "shoat", "shock", "shoe",
 "shoehorn", "shoelace", "shoemaker", "shoes", "shoestring", "shofar", "shoot", "shootdown", "shop", "shopper", "shopping", "shore", "shoreline",
-"short", "shortage", "shorts", "shortwave", "shot", "shoulder", "shout", "shovel", "show", "shower", "shred", "shrimp",
+"short", "shortage", "shorts", "shortwave", "shot", "shoulder", "shout", "shovel", "shower", "shred", "shrimp",
 "shrine", "shutdown", "sibling", "sick", "sickness", "side", "sideboard", "sideburns", "sidecar", "sidestream", "sidewalk", "siding",
 "siege", "sigh", "sight", "sightseeing", "sign", "signal", "signature", "signet", "significance", "signify", "signup", "silence", "silica",
-"silicon", "silk", "silkworm", "sill", "silly", "silo", "silver", "similarity", "simple", "simplicity", "simplification", "simvastatin",
+"silicon", "silk", "silkworm", "sill", "silly", "silo", "silver", "similarity", "simplicity", "simplification", "simvastatin",
 "sin", "singer", "singing", "singular", "sink", "sinuosity", "sip", "sir", "sister", "sitar", "site", "situation", "size",
 "skate", "skating", "skean", "skeleton", "ski", "skiing", "skill", "skin", "skirt", "skull", "skullcap", "skullduggery", "skunk", "sky",
 "skylight", "skyline", "skyscraper", "skywalk", "slang", "slapstick", "slash", "slate", "slavery", "slaw", "sled", "sledge",
@@ -503,7 +585,7 @@ std::initializer_list<std::string_view> nouns
 "society", "sociology", "sock", "socks", "soda", "sofa", "softball", "softdrink", "softening", "software", "soil", "soldier", "sole",
 "solicitation", "solicitor", "solidarity", "solidity", "soliloquy", "solitaire", "solution", "solvency", "sombrero", "somebody", "someone",
 "someplace", "somersault", "something", "somewhere", "son", "sonar", "sonata", "song", "songbird", "sonnet", "soot", "sophomore", "soprano",
-"sorbet", "sorghum", "sorrel", "sorrow", "sort", "soul", "soulmate", "sound", "soundness", "soup", "source", "sourwood", "sousaphone",
+"sorbet", "sorghum", "sorrel", "sorrow", "sort", "soul", "soulmate", "sound", "soundness", "soup", "sourwood", "sousaphone",
 "south", "southeast", "souvenir", "sovereignty", "sow", "soy", "soybean", "space", "spacing", "spade", "spaghetti", "span", "spandex",
 "spank", "sparerib", "spark", "sparrow", "spasm", "spat", "spatula", "spawn", "speaker", "speakerphone", "speaking", "spear", "spec",
 "special", "specialist", "specialty", "species", "specification", "spectacle", "spectacles", "spectrograph", "spectrum", "speculation",
@@ -515,11 +597,11 @@ std::initializer_list<std::string_view> nouns
 "staff", "stag", "stage", "stain", "stair", "staircase", "stake", "stalk", "stall", "stallion", "stamen", "stamina", "stamp", "stance",
 "stand", "standard", "standardisation", "standardization", "standing", "standoff", "standpoint", "star", "starboard", "start", "starter",
 "state", "statement", "statin", "station", "statistic", "statistics", "statue", "status", "statute", "stay", "steak",
-"stealth", "steam", "steamroller", "steel", "steeple", "stem", "stench", "stencil", "step",
+"stealth", "steam", "steamroller", "steel", "steeple", "stem", "stench", "stencil",
 "stepdaughter", "stepmother",
 "stepson", "stereo", "stew", "steward", "stick", "sticker", "stiletto", "still", "stimulation", "stimulus", "sting",
 "stinger", "stitch", "stitcher", "stock", "stockings", "stole", "stomach", "stone", "stonework", "stool",
-"stop", "stopsign", "stopwatch", "storage", "store", "storey", "storm", "story", "storyboard", "stot", "stove", "strait",
+"stop", "stopsign", "stopwatch", "store", "storey", "storm", "story", "storyboard", "stot", "stove", "strait",
 "strand", "stranger", "strap", "strategy", "straw", "strawberry", "strawman", "stream", "street", "streetcar", "strength", "stress",
 "stretch", "strife", "strike", "string", "strip", "stripe", "strobe", "stroke", "structure", "strudel", "struggle", "stucco", "stud",
 "student", "studio", "study", "stuff", "stumbling", "stump", "stupidity", "sturgeon", "sty", "style", "styling", "stylus", "sub", "subcomponent",
@@ -533,16 +615,16 @@ std::initializer_list<std::string_view> nouns
 "suspenders", "suspension", "sustainment", "sustenance", "swallow", "swamp", "swan", "swanling", "swath", "sweat", "sweater", "sweatshirt",
 "sweatshop", "sweatsuit", "sweets", "swell", "swim", "swimming", "swimsuit", "swine", "swing", "switch", "switchboard", "switching",
 "swivel", "sword", "swordfight", "swordfish", "sycamore", "symbol", "symmetry", "sympathy", "symptom", "syndicate", "syndrome", "synergy",
-"synod", "synonym", "synthesis", "syrup", "system", "tab", "tabby", "tabernacle", "tablecloth", "tablet", "tabletop",
+"synod", "synonym", "synthesis", "syrup", "tab", "tabby", "tabernacle", "tablecloth", "tablet", "tabletop",
 "tachometer", "tackle", "taco", "tactics", "tactile", "tadpole", "tag", "tail", "tailbud", "tailor", "tailspin", "takeover",
 "tale", "talent", "talk", "talking", "tamale", "tambour", "tambourine", "tan", "tandem", "tangerine", "tank",
 "tanker", "tankful", "tap", "tape", "tapioca", "target", "taro", "tarragon", "tart", "task", "tassel", "taste", "tatami", "tattler",
 "tattoo", "tavern", "tax", "taxi", "taxicab", "taxpayer", "tea", "teacher", "teaching", "team", "teammate", "teapot", "tear", "tech",
 "technician", "technique", "technologist", "technology", "tectonics", "teen", "teenager", "teepee", "telephone", "telescreen", "teletype",
-"television", "tell", "teller", "temp", "temper", "temperature", "temple", "tempo", "temporariness", "temporary", "temptation", "temptress",
+"television", "tell", "teller", "temp", "temper", "temperature", "temple", "tempo", "temporariness", "temptation", "temptress",
 "tenant", "tendency", "tender", "tenement", "tenet", "tennis", "tenor", "tension", "tensor", "tent", "tentacle", "tenth", "tepee", "teriyaki",
 "term", "terminal", "termination", "terminology", "termite", "terrace", "terracotta", "terrapin", "terrarium", "territory", "terror",
-"terrorism", "terrorist", "test", "testament", "testimonial", "testimony", "testing", "text", "textbook", "textual", "texture", "thanks",
+"terrorism", "terrorist", "testament", "testimonial", "testimony", "testing", "text", "textbook", "textual", "texture", "thanks",
 "thaw", "theater", "theft", "theism", "theme", "theology", "theory", "therapist", "therapy", "thermals", "thermometer", "thermostat",
 "thesis", "thickness", "thief", "thigh", "thing", "thinking", "thirst", "thistle", "thong", "thongs", "thorn", "thought", "thousand",
 "thread", "threat", "threshold", "thrift", "thrill", "throat", "throne", "thrush", "thrust", "thug", "thumb", "thump", "thunder", "thunderbolt",
@@ -550,49 +632,49 @@ std::initializer_list<std::string_view> nouns
 "timber", "time", "timeline", "timeout", "timer", "timetable", "timing", "timpani", "tin", "tinderbox", "tinkle", "tintype", "tip", "tire",
 "tissue", "titanium", "title", "toad", "toast", "toaster", "tobacco", "today", "toe", "toenail", "toffee", "tofu", "tog", "toga", "toilet",
 "tolerance", "tolerant", "toll", "tomatillo", "tomato", "tomb", "tomography", "tomorrow", "ton", "tonality", "tone", "tongue",
-"tonic", "tonight", "tool", "toot", "tooth", "toothbrush", "toothpaste", "toothpick", "top", "topic", "topsail", "toque",
+"tonic", "tonight", "tool", "toot", "tooth", "toothbrush", "toothpaste", "toothpick", "topic", "topsail", "toque",
 "toreador", "tornado", "torso", "torte", "tortellini", "tortilla", "tortoise", "tosser", "total", "tote", "touch", "tour",
 "tourism", "tourist", "tournament", "towel", "tower", "town", "townhouse", "township", "toy", "trace", "trachoma", "track",
-"tracking", "tracksuit", "tract", "tractor", "trade", "trader", "trading", "tradition", "traditionalism", "traffic", "trafficker", "tragedy",
-"trail", "trailer", "trailpatrol", "train", "trainer", "training", "trait", "tram", "tramp", "trance", "transaction", "transcript", "transfer",
+"tracksuit", "tract", "tractor", "trade", "trader", "trading", "tradition", "traditionalism", "traffic", "trafficker", "tragedy",
+"trail", "trailer", "trailpatrol", "train", "trainer", "training", "trait", "tram", "tramp", "trance", "transcript", "transfer",
 "transformation", "transit", "transition", "translation", "transmission", "transom", "transparency", "transplantation", "transport",
 "transportation", "trap", "trapdoor", "trapezium", "trapezoid", "trash", "travel", "traveler", "tray", "treasure", "treasury", "treat",
-"treatment", "treaty", "tree", "trek", "trellis", "tremor", "trench", "trend", "triad", "trial", "triangle", "tribe", "tributary", "trick",
-"trigger", "trigonometry", "trillion", "trim", "trinket", "trip", "tripod", "tritone", "triumph", "trolley", "trombone", "troop", "trooper",
+"treatment", "treaty", "trek", "trellis", "tremor", "trench", "trend", "triad", "trial", "triangle", "tribe", "tributary", "trick",
+"trigonometry", "trillion", "trinket", "trip", "tripod", "tritone", "triumph", "trolley", "trombone", "troop", "trooper",
 "trophy", "trouble", "trousers", "trout", "trove", "trowel", "truck", "trumpet", "trunk", "trust", "trustee", "truth", "try", "tsunami",
 "tub", "tuba", "tube", "tuber", "tug", "tugboat", "tuition", "tulip", "tumbler", "tummy", "tuna", "tune", "tunic", "tunnel",
 "turban", "turf", "turkey", "turmeric", "turn", "turning", "turnip", "turnover", "turnstile", "turret", "turtle", "tusk", "tussle", "tutu",
-"tuxedo", "tweet", "tweezers", "twig", "twilight", "twine", "twins", "twist", "twister", "twitter", "type", "typeface", "typewriter",
+"tuxedo", "tweet", "tweezers", "twig", "twilight", "twine", "twins", "twist", "twister", "twitter", "typeface", "typewriter",
 "typhoon", "ukulele", "ultimatum", "umbrella", "unblinking", "uncertainty", "uncle", "underclothes", "underestimate", "underground",
 "underneath", "underpants", "underpass", "undershirt", "understanding", "understatement", "undertaker", "underwear", "underweight", "underwire",
-"underwriting", "unemployment", "unibody", "uniform", "uniformity", "unique", "unit", "unity", "universe", "university", "update",
-"upgrade", "uplift", "upper", "upstairs", "upward", "urge", "urgency", "urn", "usage", "use", "user", "usher", "usual", "utensil", "utilisation",
+"underwriting", "unemployment", "unibody", "uniform", "uniformity", "unit", "unity", "universe", "university",
+"upgrade", "uplift", "upper", "upstairs", "upward", "urge", "urgency", "urn", "usage", "usher", "usual", "utensil", "utilisation",
 "utility", "utilization", "vacation", "vaccine", "vacuum", "vagrant", "valance", "valentine", "validate", "validity", "valley", "valuable",
-"value", "vampire", "van", "vanadyl", "vane", "vanilla", "vanity", "variability", "variable", "variant", "variation", "variety", "vascular",
+"vampire", "van", "vanadyl", "vane", "vanilla", "vanity", "variability", "variable", "variant", "variation", "variety", "vascular",
 "vase", "vault", "vaulting", "veal", "vector", "vegetable", "vegetarian", "vegetarianism", "vegetation", "vehicle", "veil", "vein", "veldt",
 "vellum", "velocity", "velodrome", "velvet", "vendor", "veneer", "vengeance", "venison", "venom", "venti", "venture", "venue", "veranda",
 "verb", "verdict", "verification", "vermicelli", "vernacular", "verse", "version", "vertigo", "verve", "vessel", "vest", "vestment",
 "vet", "veteran", "veterinarian", "veto", "viability", "vibe", "vibraphone", "vibration", "vibrissae", "vice", "vicinity", "victim",
-"victory", "video", "view", "viewer", "vignette", "villa", "village", "vine", "vinegar", "vineyard", "vintage", "vintner", "vinyl", "viola",
+"victory", "video", "viewer", "vignette", "villa", "village", "vine", "vinegar", "vineyard", "vintage", "vintner", "vinyl", "viola",
 "violation", "violence", "violet", "violin", "virginal", "virtue", "virus", "visa", "viscose", "vise", "vision", "visit", "visitor",
 "visor", "vista", "visual", "vitality", "vitamin", "vitro", "vivo", "vixen", "vodka", "vogue", "voice", "void", "vol", "volatility",
-"volcano", "volleyball", "volume", "volunteer", "volunteering", "vomit", "vote", "voter", "voting", "voyage", "vulture", "wad", "wafer",
+"volcano", "volleyball", "volunteer", "volunteering", "vomit", "vote", "voter", "voting", "voyage", "vulture", "wad", "wafer",
 "waffle", "wage", "wagon", "waist", "waistband", "wait", "waiter", "waiting", "waitress", "waiver", "wake", "walk", "walker", "walking",
 "walkway", "wall", "wallaby", "wallet", "walnut", "walrus", "wampum", "wannabe", "want", "war", "warden", "wardrobe", "warfare", "warlock",
 "warlord", "warming", "warmth", "warning", "warrant", "warren", "warrior", "wasabi", "wash", "washbasin", "washcloth", "washer",
-"washtub", "wasp", "waste", "wastebasket", "wasting", "watch", "watcher", "watchmaker", "water", "waterbed", "watercress", "waterfall",
+"washtub", "wasp", "waste", "wastebasket", "wasting", "watcher", "watchmaker", "water", "waterbed", "watercress", "waterfall",
 "waterfront", "watermelon", "waterskiing", "waterspout", "waterwheel", "wave", "waveform", "wax", "way", "weakness", "wealth", "weapon",
-"wear", "weasel", "weather", "web", "webinar", "webmail", "webpage", "website", "wedding", "wedge", "weed", "weeder", "weedkiller", "week",
+"wear", "weasel", "weather", "web", "webinar", "webmail", "webpage", "website", "wedding", "wedge", "weed", "weeder", "weedkiller",
 "weekend", "weekender", "weight", "weird", "welcome", "welfare", "well", "west", "western", "wetland", "wetsuit",
 "whack", "whale", "wharf", "wheat", "wheel", "whelp", "whey", "whip", "whirlpool", "whirlwind", "whisker", "whiskey", "whisper", "whistle",
 "white", "whole", "wholesale", "wholesaler", "whorl", "wick", "widget", "widow", "width", "wife", "wifi", "wild", "wildebeest", "wilderness",
-"wildlife", "will", "willingness", "willow", "win", "wind", "windage", "window", "windscreen", "windshield", "wine", "winery",
+"wildlife", "will", "willingness", "willow", "win", "wind", "windage", "windscreen", "windshield", "wine", "winery",
 "wing", "wingman", "wingtip", "wink", "winner", "winter", "wire", "wiretap", "wiring", "wisdom", "wiseguy", "wish", "wisteria", "wit",
 "witch", "withdrawal", "witness", "wok", "wolf", "woman", "wombat", "wonder", "wont", "wood", "woodchuck", "woodland",
 "woodshed", "woodwind", "wool", "woolens", "word", "wording", "work", "workbench", "worker", "workforce", "workhorse", "working", "workout",
 "workplace", "workshop", "world", "worm", "worry", "worship", "worshiper", "worth", "wound", "wrap", "wraparound", "wrapper", "wrapping",
 "wreck", "wrecker", "wren", "wrench", "wrestler", "wriggler", "wrinkle", "wrist", "writer", "writing", "wrong", "xylophone", "yacht",
-"yahoo", "yak", "yam", "yang", "yard", "yarmulke", "yarn", "yawl", "year", "yeast", "yellow", "yellowjacket", "yesterday", "yew", "yin",
+"yahoo", "yak", "yam", "yang", "yard", "yarmulke", "yarn", "yawl", "yeast", "yellow", "yellowjacket", "yesterday", "yew", "yin",
 "yoga", "yogurt", "yoke", "yolk", "young", "youngster", "yourself", "youth", "yoyo", "yurt", "zampone", "zebra", "zebrafish", "zen",
 "zephyr", "zero", "ziggurat", "zinc", "zipper", "zither", "zombie", "zone", "zoo", "zoologist", "zoology", "zucchini"
 };
@@ -602,7 +684,7 @@ std::string_view obfuscateWord(std::string_view src, WordMap & obfuscate_map, Wo
 {
     /// Prevent using too many nouns
     if (obfuscate_map.size() * 2 > nouns.size())
-        throw Exception("Too many unique identifiers in queries", ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
+        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS, "Too many unique identifiers in queries");
 
     std::string_view & mapped = obfuscate_map[src];
     if (!mapped.empty())
@@ -637,7 +719,10 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
     {
         std::string_view word(word_begin, src_pos - word_begin);
 
-        if (keep_words.contains(word))
+        String wordcopy(word_begin, src_pos - word_begin);
+        Poco::toUpperInPlace(wordcopy);
+
+        if (keep_words.contains(wordcopy))
         {
             result.write(word.data(), word.size());
         }
@@ -686,15 +771,134 @@ void obfuscateIdentifier(std::string_view src, WriteBuffer & result, WordMap & o
 }
 
 
-void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_func)
+void obfuscateLiteral(
+    std::string_view src,
+    WriteBuffer & result,
+    SipHash hash_func,
+    KnownIdentifierFunc known_identifier_func)
 {
     const char * src_pos = src.data();
     const char * src_end = src_pos + src.size();
 
+    /// Preserve hex (0x/0X) and binary (0b/0B) number prefixes and structure.
+    if (src_pos + 2 <= src_end
+        && src_pos[0] == '0'
+        && (src_pos[1] == 'x' || src_pos[1] == 'X' || src_pos[1] == 'b' || src_pos[1] == 'B'))
+    {
+        bool is_hex = (src_pos[1] == 'x' || src_pos[1] == 'X');
+        result.write(src_pos[0]);
+        result.write(src_pos[1]);
+        src_pos += 2;
+
+        auto obfuscate_hex_digits = [&]()
+        {
+            while (src_pos < src_end && isHexDigit(*src_pos))
+            {
+                hash_func.update(*src_pos);
+                pcg64 rng(hash_func.get64());
+                static constexpr char hex_digits[] = "0123456789ABCDEF";
+                result.write(hex_digits[rng() % 16]);
+                ++src_pos;
+            }
+        };
+
+        if (is_hex)
+        {
+            /// Integer part hex digits.
+            obfuscate_hex_digits();
+
+            /// Fractional part: .hexdigits
+            if (src_pos < src_end && *src_pos == '.')
+            {
+                result.write('.');
+                ++src_pos;
+                obfuscate_hex_digits();
+            }
+
+            /// Binary exponent: p/P followed by optional sign and decimal digits.
+            if (src_pos < src_end && (*src_pos == 'p' || *src_pos == 'P'))
+            {
+                result.write(*src_pos);
+                ++src_pos;
+
+                if (src_pos < src_end && (*src_pos == '+' || *src_pos == '-'))
+                {
+                    result.write(*src_pos);
+                    ++src_pos;
+                }
+
+                /// Decimal exponent digits — keep structure but obfuscate values.
+                while (src_pos < src_end && isNumericASCII(*src_pos))
+                {
+                    hash_func.update(*src_pos);
+                    pcg64 rng(hash_func.get64());
+                    result.write('0' + rng() % 10);
+                    ++src_pos;
+                }
+            }
+        }
+        else
+        {
+            /// Binary literal digits.
+            while (src_pos < src_end && (*src_pos == '0' || *src_pos == '1'))
+            {
+                hash_func.update(*src_pos);
+                pcg64 rng(hash_func.get64());
+                result.write('0' + rng() % 2);
+                ++src_pos;
+            }
+        }
+    }
+
+    /// Helper: check if a range contains only hex digits.
+    auto isHexRange = [](const char * begin, const char * end) -> bool
+    {
+        for (const char * p = begin; p < end; ++p)
+            if (!isHexDigit(*p))
+                return false;
+        return begin < end;
+    };
+
     while (src_pos < src_end)
     {
+        /// UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (8-4-4-4-12 hex digits with dashes).
+        if (src_pos + 36 <= src_end
+            && isHexRange(src_pos, src_pos + 8)
+            && src_pos[8] == '-'
+            && isHexRange(src_pos + 9, src_pos + 13)
+            && src_pos[13] == '-'
+            && isHexRange(src_pos + 14, src_pos + 18)
+            && src_pos[18] == '-'
+            && isHexRange(src_pos + 19, src_pos + 23)
+            && src_pos[23] == '-'
+            && isHexRange(src_pos + 24, src_pos + 36))
+        {
+            /// Obfuscate each hex digit while preserving dashes and case.
+            SipHash hash_func_uuid = hash_func;
+            hash_func_uuid.update(src_pos, 36);
+            pcg64 rng(hash_func_uuid.get64());
+
+            for (size_t i = 0; i < 36; ++i)
+            {
+                if (src_pos[i] == '-')
+                {
+                    result.write('-');
+                }
+                else
+                {
+                    auto random = rng();
+                    if (src_pos[i] >= 'A' && src_pos[i] <= 'F')
+                        result.write("ABCDEF"[random % 6]);
+                    else if (src_pos[i] >= 'a' && src_pos[i] <= 'f')
+                        result.write("abcdef"[random % 6]);
+                    else
+                        result.write("0123456789"[random % 10]);
+                }
+            }
+            src_pos += 36;
+        }
         /// Date
-        if (src_pos + strlen("0000-00-00") <= src_end
+        else if (src_pos + strlen("0000-00-00") <= src_end
             && isNumericASCII(src_pos[0])
             && isNumericASCII(src_pos[1])
             && isNumericASCII(src_pos[2])
@@ -742,43 +946,115 @@ void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_f
                 hash_value /= 60;
                 uint32_t new_second = hash_value % 60;
 
-                result.write('0' + (new_hour / 10));
-                result.write('0' + (new_hour % 10));
+                result.write('0' + static_cast<char>(new_hour / 10));
+                result.write('0' + static_cast<char>(new_hour % 10));
                 result.write(':');
-                result.write('0' + (new_minute / 10));
-                result.write('0' + (new_minute % 10));
+                result.write('0' + static_cast<char>(new_minute / 10));
+                result.write('0' + static_cast<char>(new_minute % 10));
                 result.write(':');
-                result.write('0' + (new_second / 10));
-                result.write('0' + (new_second % 10));
+                result.write('0' + static_cast<char>(new_second / 10));
+                result.write('0' + static_cast<char>(new_second % 10));
 
                 src_pos += strlen(" 00:00:00");
             }
         }
         else if (isNumericASCII(src_pos[0]))
         {
-            /// Number
-            if (src_pos[0] == '0' || src_pos[0] == '1')
+            /// Try to match IPv4: N.N.N.N where each octet is 1-3 digits, value 0-255.
+            bool matched_ipv4 = false;
             {
-                /// Keep zero and one as is.
-                result.write(src_pos[0]);
-                ++src_pos;
+                const char * p = src_pos;
+                uint32_t octets[4] = {};
+                bool is_ipv4 = true;
+
+                for (int i = 0; i < 4 && is_ipv4; ++i)
+                {
+                    const char * octet_start = p;
+                    uint32_t val = 0;
+
+                    while (p < src_end && isNumericASCII(*p) && (p - octet_start) < 3)
+                    {
+                        val = val * 10 + (*p - '0');
+                        ++p;
+                    }
+
+                    if (p == octet_start || val > 255)
+                    {
+                        is_ipv4 = false;
+                        break;
+                    }
+
+                    octets[i] = val;
+
+                    if (i < 3)
+                    {
+                        if (p < src_end && *p == '.')
+                            ++p;
+                        else
+                            is_ipv4 = false;
+                    }
+                }
+
+                /// Must not be followed by more digits or dots (to avoid matching version numbers, etc).
+                if (is_ipv4 && p < src_end && (isNumericASCII(*p) || *p == '.'))
+                    is_ipv4 = false;
+
+                if (is_ipv4)
+                {
+                    matched_ipv4 = true;
+
+                    SipHash hash_func_ip = hash_func;
+                    hash_func_ip.update(src_pos, p - src_pos);
+                    pcg64 rng(hash_func_ip.get64());
+
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        if (i > 0)
+                            result.write('.');
+
+                        /// Obfuscate each octet while keeping it in valid range 0-255.
+                        /// Preserve 0, 1, and 255 as-is (common special values).
+                        uint32_t val = octets[i];
+                        if (val == 0 || val == 1 || val == 255)
+                        {
+                            writeIntText(val, result);
+                        }
+                        else
+                        {
+                            uint32_t obfuscated = 2 + rng() % 254; /// 2..255
+                            writeIntText(obfuscated, result);
+                        }
+                    }
+                    src_pos = p;
+                }
             }
-            else
+
+            if (!matched_ipv4)
             {
-                ReadBufferFromMemory in(src_pos, src_end - src_pos);
-                uint64_t num;
-                readIntText(num, in);
-                SipHash hash_func_num = hash_func;
-                hash_func_num.update(src_pos, in.count());
-                src_pos += in.count();
+                /// Number
+                if (src_pos[0] == '0' || src_pos[0] == '1')
+                {
+                    /// Keep zero and one as is.
+                    result.write(src_pos[0]);
+                    ++src_pos;
+                }
+                else
+                {
+                    ReadBufferFromMemory in(src_pos, src_end - src_pos);
+                    uint64_t num;
+                    readIntText(num, in);
+                    SipHash hash_func_num = hash_func;
+                    hash_func_num.update(src_pos, in.count());
+                    src_pos += in.count();
 
-                /// Obfuscate number but keep it within same power of two range.
+                    /// Obfuscate number but keep it within same power of two range.
 
-                uint64_t obfuscated = hash_func_num.get64();
-                uint64_t log2 = bitScanReverse(num);
+                    uint64_t obfuscated = hash_func_num.get64();
+                    uint64_t log2 = bitScanReverse(num);
 
-                obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
-                writeIntText(obfuscated, result);
+                    obfuscated = (1ULL << log2) + obfuscated % (1ULL << log2);
+                    writeIntText(obfuscated, result);
+                }
             }
         }
         else if (src_pos + 1 < src_end
@@ -799,24 +1075,34 @@ void obfuscateLiteral(std::string_view src, WriteBuffer & result, SipHash hash_f
         }
         else if (isAlphaASCII(src_pos[0]))
         {
-            /// Alphabetial characters
+            /// Alphabetical characters
 
             const char * alpha_end = src_pos + 1;
             while (alpha_end < src_end && isAlphaASCII(*alpha_end))
                 ++alpha_end;
 
-            hash_func.update(src_pos, alpha_end - src_pos);
-            pcg64 rng(hash_func.get64());
-
-            while (src_pos < alpha_end)
+            String word(src_pos, alpha_end);
+            String wordcopy = Poco::toUpper(word);
+            if (keep_words.contains(wordcopy) || known_identifier_func(word))
             {
-                auto random = rng();
-                if (isLowerAlphaASCII(*src_pos))
-                    result.write('a' + random % 26);
-                else
-                    result.write('A' + random % 26);
+                result.write(src_pos, alpha_end - src_pos);
+                src_pos = alpha_end;
+            }
+            else
+            {
+                hash_func.update(src_pos, alpha_end - src_pos);
+                pcg64 rng(hash_func.get64());
 
-                ++src_pos;
+                while (src_pos < alpha_end)
+                {
+                    auto random = rng();
+                    if (isLowerAlphaASCII(*src_pos))
+                        result.write('a' + random % 26);
+                    else
+                        result.write('A' + random % 26);
+
+                    ++src_pos;
+                }
             }
         }
         else if (isASCII(src_pos[0]))
@@ -875,6 +1161,38 @@ void obfuscateQueries(
     SipHash hash_func,
     KnownIdentifierFunc known_identifier_func)
 {
+    /// State machine for preserving settings values after `=`.
+    enum class SettingsState : uint8_t { None, ExpectName, AfterName, ExpectValue, AfterValue };
+    SettingsState settings_state = SettingsState::None;
+    bool settings_is_param = false; /// True when current setting name starts with `param_` (query parameter, not a real setting).
+
+    /// INSERT context tracking: data after VALUES or FORMAT <name> should be fully obfuscated
+    /// (no keyword/known-identifier preservation, since it is user data, not SQL).
+    bool in_insert_context = false;
+    bool in_insert_data = false;
+    bool expect_format_name = false;
+
+    /// After INTERVAL keyword, preserve the next string literal as-is
+    /// (it contains interval units like '2 years' that must stay valid).
+    bool after_interval = false;
+
+    /// Dictionary SOURCE(...) and LAYOUT(...) context tracking.
+    /// These blocks contain key-value pairs where keys are structural parameter names
+    /// (PORT, HOST, SIZE_IN_CELLS, etc.) that must be preserved, while values may be
+    /// user identifiers that should still be obfuscated.
+    /// Structure: SOURCE( TYPE( KEY1 value1 KEY2 value2 ... ) )
+    ///   depth 1: type name (fall through to known_identifier check)
+    ///   depth 2+: alternating key-value pairs
+    /// Values can contain sub-expressions like function calls: KEY func(arg1, arg2)
+    /// — everything inside value sub-expressions must be obfuscated.
+    bool expect_dict_block_open = false;    /// True after seeing SOURCE or LAYOUT keyword, expecting '('.
+    int dict_block_paren_depth = 0;         /// Parenthesis nesting depth inside the block; 0 = not inside.
+    bool dict_expect_key = true;            /// At depth >= 2, alternates between key (preserve) and value (obfuscate).
+    bool dict_after_value_bareword = false; /// True right after a value BareWord; if '(' follows, it's a function call.
+    int dict_value_paren_depth = 0;         /// Tracks parens opened inside a value; >0 means inside value sub-expression.
+
+    auto always_false_func = [](std::string_view) { return false; };
+
     Lexer lexer(src.data(), src.data() + src.size());
     while (true)
     {
@@ -884,13 +1202,303 @@ void obfuscateQueries(
         if (token.isEnd())
             break;
 
+        /// Whitespace is always written as-is; comments are always skipped.
+        /// Neither affects the state machine.
+        if (token.type == TokenType::Whitespace)
+        {
+            result.write(token.begin, token.size());
+            continue;
+        }
+        if (token.type == TokenType::Comment)
+        {
+            /// Replace comments with a space to avoid merging adjacent tokens
+            /// (e.g. ORDER/* ... */BY must not become ORDERBY).
+            result.write(' ');
+            continue;
+        }
+
+        /// Semicolons always reset all state.
+        if (token.type == TokenType::Semicolon)
+        {
+            settings_state = SettingsState::None;
+            in_insert_context = false;
+            in_insert_data = false;
+            expect_format_name = false;
+            after_interval = false;
+            expect_dict_block_open = false;
+            dict_block_paren_depth = 0;
+            dict_expect_key = true;
+            dict_after_value_bareword = false;
+            dict_value_paren_depth = 0;
+            result.write(token.begin, token.size());
+            continue;
+        }
+
+        /// ---- INSERT data mode: everything is user data, obfuscate uniformly. ----
+        if (in_insert_data)
+        {
+            if (token.type == TokenType::BareWord)
+            {
+                /// Always obfuscate bare words in data context (no keyword preservation).
+                obfuscateIdentifier(whole_token, result, obfuscate_map, used_nouns, hash_func);
+            }
+            else if (token.type == TokenType::Number)
+            {
+                obfuscateLiteral(whole_token, result, hash_func, always_false_func);
+            }
+            else if (token.type == TokenType::StringLiteral)
+            {
+                assert(token.size() >= 2);
+                result.write(*token.begin);
+                obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, always_false_func);
+                result.write(token.end[-1]);
+            }
+            else if (token.type == TokenType::QuotedIdentifier)
+            {
+                assert(token.size() >= 2);
+                result.write(*token.begin);
+                if (token.size() > 32)
+                    writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
+                else
+                    obfuscateIdentifier({token.begin + 1, token.size() - 2}, result, obfuscate_map, used_nouns, hash_func);
+                result.write(token.end[-1]);
+            }
+            else
+            {
+                result.write(token.begin, token.size());
+            }
+            continue;
+        }
+
+        /// ---- FORMAT name after INSERT ... FORMAT: preserve the format name, then enter data mode. ----
+        if (expect_format_name && token.type == TokenType::BareWord)
+        {
+            expect_format_name = false;
+            in_insert_data = true;
+            result.write(token.begin, token.size());
+            continue;
+        }
+        expect_format_name = false;
+
+        /// ---- INTERVAL string literal: preserve as-is (contains units like '2 years'). ----
+        if (after_interval)
+        {
+            after_interval = false;
+            if (token.type == TokenType::StringLiteral)
+            {
+                result.write(token.begin, token.size());
+                continue;
+            }
+            /// Not a string literal — fall through to normal processing.
+        }
+
+        /// ---- Settings state machine: preserve values of settings. ----
+        if (settings_state == SettingsState::ExpectValue)
+        {
+            settings_state = SettingsState::AfterValue;
+            if (!settings_is_param)
+            {
+                /// Write the value token as-is (number, string, bare word, etc.).
+                result.write(token.begin, token.size());
+                continue;
+            }
+            /// For `param_*` query parameters, fall through to normal obfuscation.
+        }
+        if (settings_state == SettingsState::AfterValue)
+        {
+            if (token.type == TokenType::Comma)
+            {
+                settings_state = SettingsState::ExpectName;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            settings_state = SettingsState::None;
+            /// Fall through to normal processing for this token.
+        }
+        if (settings_state == SettingsState::AfterName)
+        {
+            if (token.type == TokenType::Equals)
+            {
+                settings_state = SettingsState::ExpectValue;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            if (token.type == TokenType::Comma)
+            {
+                settings_state = SettingsState::ExpectName;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            settings_state = SettingsState::None;
+            /// Fall through.
+        }
+        if (settings_state == SettingsState::ExpectName && token.type == TokenType::BareWord)
+        {
+            auto upper = Poco::toUpper(toString(whole_token));
+            if (getObfuscateKeywords().contains(upper))
+            {
+                /// This is a keyword, not a setting name — leave settings context.
+                settings_state = SettingsState::None;
+                /// Fall through to normal processing.
+            }
+            else
+            {
+                settings_state = SettingsState::AfterName;
+                settings_is_param = whole_token.starts_with("param_");
+                /// Fall through to normal BareWord processing (the name will be preserved
+                /// if it is a known identifier, or obfuscated otherwise — both are fine).
+            }
+        }
+
+        /// ---- Dictionary SOURCE/LAYOUT block tracking. ----
+        /// These blocks use key-value pair grammar: SOURCE(TYPE(KEY1 value1 KEY2 value2 ...)).
+        /// At depth 1: the bare word is the source/layout type name — let it fall through to
+        /// normal keyword/known_identifier processing (factory-registered names handle it).
+        /// At depth >= 2: bare words alternate between structural keys (preserve) and
+        /// user-provided values (obfuscate). Non-BareWord values (literals, numbers) are always
+        /// obfuscated via normal processing.
+        if (expect_dict_block_open)
+        {
+            expect_dict_block_open = false;
+            if (token.type == TokenType::OpeningRoundBracket)
+            {
+                dict_block_paren_depth = 1;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            /// Not an opening paren — fall through to normal processing.
+        }
+        if (dict_block_paren_depth > 0)
+        {
+            /// Resolve deferred value BareWord state: if '(' follows, it's a function call
+            /// and we enter a value sub-expression; otherwise the value is complete.
+            if (dict_after_value_bareword)
+            {
+                dict_after_value_bareword = false;
+                if (token.type == TokenType::OpeningRoundBracket)
+                {
+                    ++dict_block_paren_depth;
+                    dict_value_paren_depth = 1;
+                    result.write(token.begin, token.size());
+                    continue;
+                }
+                else
+                {
+                    dict_expect_key = true;
+                    /// Fall through to process this token normally below.
+                }
+            }
+
+            if (token.type == TokenType::OpeningRoundBracket)
+            {
+                ++dict_block_paren_depth;
+                if (dict_value_paren_depth > 0)
+                {
+                    /// Inside a value sub-expression — track nesting, fall through to obfuscate.
+                    ++dict_value_paren_depth;
+                }
+                else
+                {
+                    /// Structural paren (entering type-name args or key-value block).
+                    dict_expect_key = true;
+                    result.write(token.begin, token.size());
+                    continue;
+                }
+            }
+            else if (token.type == TokenType::ClosingRoundBracket)
+            {
+                --dict_block_paren_depth;
+                if (dict_value_paren_depth > 0)
+                {
+                    --dict_value_paren_depth;
+                    if (dict_value_paren_depth == 0)
+                    {
+                        /// Exiting value sub-expression — next bare word is a key.
+                        dict_expect_key = true;
+                    }
+                    /// Fall through to normal processing for the closing paren.
+                }
+                else
+                {
+                    dict_expect_key = true;
+                    result.write(token.begin, token.size());
+                    continue;
+                }
+            }
+
+            /// Inside a value sub-expression — fall through to normal obfuscation for all tokens.
+            if (dict_value_paren_depth > 0)
+            {
+                /// Fall through to normal processing — everything gets obfuscated.
+            }
+            else if (dict_block_paren_depth >= 2 && token.type == TokenType::BareWord)
+            {
+                if (dict_expect_key)
+                {
+                    /// Structural parameter name — preserve as-is.
+                    result.write(token.begin, token.size());
+                    dict_expect_key = false;
+                    continue;
+                }
+                /// User-provided identifier value — defer key reset in case '(' follows (function call).
+                dict_after_value_bareword = true;
+            }
+            else if (dict_block_paren_depth >= 2 && !dict_expect_key
+                     && (token.type == TokenType::Number || token.type == TokenType::StringLiteral))
+            {
+                /// Non-BareWord value consumed — next bare word is a key again.
+                dict_expect_key = true;
+            }
+            /// Fall through to normal processing for type names (depth 1) and values.
+        }
+
+        /// ---- Normal token processing. ----
+
         if (token.type == TokenType::BareWord)
         {
-            std::string whole_token_uppercase(whole_token);
-            Poco::toUpperInPlace(whole_token_uppercase);
+            auto whole_token_uppercase = Poco::toUpper(toString(whole_token));
 
-            if (keywords.contains(whole_token_uppercase)
-                || known_identifier_func(whole_token))
+            /// Track INSERT context.
+            if (whole_token_uppercase == "INSERT")
+            {
+                in_insert_context = true;
+            }
+            else if (in_insert_context && whole_token_uppercase == "VALUES")
+            {
+                /// VALUES (...) contains SQL expressions parsed by the parser, not raw data.
+                /// Do not enter data mode here — keep normal SQL processing for the parenthesized content.
+                in_insert_context = false;
+            }
+            else if (in_insert_context && whole_token_uppercase == "FORMAT")
+            {
+                expect_format_name = true;
+                result.write(token.begin, token.size());
+                continue;
+            }
+            else if (in_insert_context && (whole_token_uppercase == "SELECT" || whole_token_uppercase == "WITH"))
+            {
+                in_insert_context = false;
+            }
+
+            /// Track SETTINGS/SET context.
+            if (whole_token_uppercase == "SET" || whole_token_uppercase == "SETTINGS")
+            {
+                settings_state = SettingsState::ExpectName;
+            }
+
+            /// INTERVAL may be followed by a string literal like '2 years'.
+            if (whole_token_uppercase == "INTERVAL")
+            {
+                after_interval = true;
+            }
+
+            /// Track dictionary SOURCE/LAYOUT blocks (only at top level, not inside an existing block).
+            if (dict_block_paren_depth == 0 && (whole_token_uppercase == "SOURCE" || whole_token_uppercase == "LAYOUT"))
+            {
+                expect_dict_block_open = true;
+            }
+
+            if (getObfuscateKeywords().contains(whole_token_uppercase) || known_identifier_func(whole_token))
             {
                 /// Keep keywords as is.
                 result.write(token.begin, token.size());
@@ -918,19 +1526,50 @@ void obfuscateQueries(
         }
         else if (token.type == TokenType::Number)
         {
-            obfuscateLiteral(whole_token, result, hash_func);
+            obfuscateLiteral(whole_token, result, hash_func, known_identifier_func);
         }
         else if (token.type == TokenType::StringLiteral)
         {
             assert(token.size() >= 2);
 
-            result.write(*token.begin);
-            obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func);
-            result.write(token.end[-1]);
-        }
-        else if (token.type == TokenType::Comment)
-        {
-            /// Skip comments - they may contain confidential info.
+            /// Hex string literals like x'ABCD' or binary string literals like b'1010'.
+            if (token.size() >= 3
+                && (*token.begin == 'x' || *token.begin == 'X' || *token.begin == 'b' || *token.begin == 'B')
+                && token.begin[1] == '\'')
+            {
+                bool is_hex = (*token.begin == 'x' || *token.begin == 'X');
+                result.write(*token.begin);   /// x or b prefix
+                result.write('\'');            /// opening quote
+
+                /// Obfuscate content while preserving hex/binary validity.
+                const char * content_begin = token.begin + 2;
+                const char * content_end = token.end - 1;
+
+                SipHash content_hash = hash_func;
+                for (const char * p = content_begin; p < content_end; ++p)
+                {
+                    content_hash.update(*p);
+                    pcg64 rng(content_hash.get64());
+
+                    if (is_hex)
+                    {
+                        static constexpr char hex_digits[] = "0123456789ABCDEF";
+                        result.write(hex_digits[rng() % 16]);
+                    }
+                    else
+                    {
+                        result.write('0' + rng() % 2);
+                    }
+                }
+
+                result.write('\'');            /// closing quote
+            }
+            else
+            {
+                result.write(*token.begin);
+                obfuscateLiteral({token.begin + 1, token.size() - 2}, result, hash_func, known_identifier_func);
+                result.write(token.end[-1]);
+            }
         }
         else
         {
@@ -941,4 +1580,3 @@ void obfuscateQueries(
 }
 
 }
-

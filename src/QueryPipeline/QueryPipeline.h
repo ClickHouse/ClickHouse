@@ -1,9 +1,13 @@
 #pragma once
-#include <QueryPipeline/PipelineResourcesHolder.h>
+
+#include <Core/Block_fwd.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <functional>
+#include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
+#include <functional>
 
 namespace DB
 {
@@ -34,8 +38,11 @@ class ISink;
 class ReadProgressCallback;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
 
+class QueryResultCacheWriter;
+
+class SourceFromChunks;
 
 class QueryPipeline
 {
@@ -96,14 +103,25 @@ public:
 
     /// Only for pushing and pulling.
     Block getHeader() const;
+    SharedHeader getSharedHeader() const;
 
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
+
+    bool getConcurrencyControl() const { return concurrency_control; }
+    void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(const ProgressCallback & callback);
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
+
+    void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
+    void finalizeWriteInQueryResultCache();
+    void readFromQueryResultCache(
+        std::unique_ptr<SourceFromChunks> source,
+        std::unique_ptr<SourceFromChunks> source_totals,
+        std::unique_ptr<SourceFromChunks> source_extremes);
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
@@ -120,15 +138,17 @@ public:
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
-    void addCompletedPipeline(QueryPipeline other);
+    void addCompletedPipeline(QueryPipeline && other);
+    void addCompletedPipeline(const QueryPipeline & other);
 
     const Processors & getProcessors() const { return *processors; }
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
-    void convertStructureTo(const ColumnsWithTypeAndName & columns);
+    void convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context);
 
     void reset();
+    void cancel() noexcept;
 
 private:
     QueryPlanResourceHolder resources;
@@ -150,12 +170,14 @@ private:
     IOutputFormat * output_format = nullptr;
 
     size_t num_threads = 0;
+    bool concurrency_control = false;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;
     friend class PushingAsyncPipelineExecutor;
     friend class PullingAsyncPipelineExecutor;
     friend class CompletedPipelineExecutor;
+    friend class RefreshTask;
     friend class QueryPipelineBuilder;
 };
 

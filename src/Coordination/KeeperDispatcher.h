@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include "config.h"
 
 #if USE_NURAFT
@@ -7,29 +8,32 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
 #include <functional>
+#include <unordered_set>
 #include <Coordination/KeeperServer.h>
-#include <Coordination/CoordinationSettings.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
+#include <Common/MultiVersion.h>
+#include <Common/Macros.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
-using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
+/// Callback invoked by setResponse and finishSession to deliver responses to clients.
+/// Must be safe for concurrent invocation: setResponse (from responseThread) and
+/// finishSession (from dead session cleaner) may invoke copies of the same callback
+/// concurrently for the same session.
+using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
 class KeeperDispatcher
 {
 private:
-    mutable std::mutex push_request_mutex;
-
-    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
+    using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
-    using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
+    using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
@@ -37,9 +41,10 @@ private:
     SnapshotsQueue snapshots_queue{1};
 
     /// More than 1k updates is definitely misconfiguration.
-    UpdateConfigurationQueue update_configuration_queue{1000};
+    ClusterUpdateQueue cluster_update_queue{1000};
 
-    std::atomic<bool> shutdown_called{false};
+    mutable std::mutex live_sessions_mutex;
+    std::unordered_set<int64_t> live_sessions;
 
     mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
@@ -72,12 +77,18 @@ private:
 
     KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     /// Counter for new session_id requests.
     std::atomic<int64_t> internal_session_id_counter{0};
 
     KeeperSnapshotManagerS3 snapshot_s3;
+
+    KeeperContextPtr keeper_context;
+
+    /// Flag to signal TCP handlers that they should close connections.
+    /// Set before the full shutdown() to allow handlers to exit promptly.
+    std::atomic<bool> shutting_down{false};
 
     /// Thread put requests to raft
     void requestThread();
@@ -87,20 +98,36 @@ private:
     void sessionCleanerTask();
     /// Thread create snapshots in the background
     void snapshotThread();
-    /// Thread apply or wait configuration changes from leader
-    void updateConfigurationThread();
 
-    void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
+    // TODO (myrrc) this should be removed once "reconfig" is stabilized
+    void clusterUpdateWithReconfigDisabledThread();
+    void clusterUpdateThread();
+
+    /// Returns true if response was successfully sent to client, false if session doesn't exist on this node.
+    bool setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
-    void addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error);
+    void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
-    void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
+    nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
+        RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
+
+    using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
+    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
+
+    /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
+    void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
+    void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
 public:
+    std::mutex read_request_queue_mutex;
+
+    /// queue of read requests that can be processed after a request with specific session ID and XID is committed
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
+
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
 
@@ -109,7 +136,8 @@ public:
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
-    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
+    /// 'macros' are used to substitute macros in endpoint of disks
+    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros);
 
     void startServer();
 
@@ -122,9 +150,18 @@ public:
     /// and achieved quorum
     bool isServerActive() const;
 
-    /// Registered in ConfigReloader callback. Add new configuration changes to
-    /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
-    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
+    void pushClusterUpdates(ClusterUpdateActions && actions);
+    bool reconfigEnabled() const;
+
+    /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
+    Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
+
+    /// Signal TCP handlers to close connections before the full shutdown.
+    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+
+    /// Returns true if signalShutdown() was called.
+    bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
@@ -132,19 +169,23 @@ public:
     void forceRecovery();
 
     /// Put request to ClickHouse Keeper
-    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
+    bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
+
+    /// Put local read request to ClickHouse Keeper
+    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
-    /// Register session and subscribe for responses with callback
+    /// Register session and subscribe for responses with callback.
+    /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStatLatency(uint64_t process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests = 1);
 
     /// Are we leader
     bool isLeader() const
@@ -157,6 +198,17 @@ public:
         return server->isFollower();
     }
 
+    const char * getRoleString() const
+    {
+        if (isLeader())
+            return "leader";
+        if (isFollower())
+            return "follower";
+        if (isObserver())
+            return "observer";
+        return "unknown";
+    }
+
     bool hasLeader() const
     {
         return server->isLeaderAlive();
@@ -165,6 +217,11 @@ public:
     bool isObserver() const
     {
         return server->isObserver();
+    }
+
+    bool isExceedingMemorySoftLimit() const
+    {
+        return server->isExceedingMemorySoftLimit();
     }
 
     uint64_t getLogDirSize() const;
@@ -179,7 +236,7 @@ public:
 
     Keeper4LWInfo getKeeper4LWInfo() const;
 
-    const KeeperStateMachine & getStateMachine() const
+    const IKeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }
@@ -187,6 +244,11 @@ public:
     const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
     {
         return configuration_and_settings;
+    }
+
+    const KeeperContextPtr & getKeeperContext() const
+    {
+        return keeper_context;
     }
 
     void incrementPacketsSent()
@@ -203,6 +265,39 @@ public:
     {
         keeper_stats.reset();
     }
+
+    /// Create snapshot manually, return the last committed log index in the snapshot
+    uint64_t createSnapshot()
+    {
+        return server->createSnapshot();
+    }
+
+    /// Get Raft information
+    KeeperLogInfo getKeeperLogInfo()
+    {
+        return server->getKeeperLogInfo();
+    }
+
+    /// Request to be leader.
+    bool requestLeader()
+    {
+        return server->requestLeader();
+    }
+
+    /// Yield leadership and become follower.
+    void yieldLeadership()
+    {
+        server->yieldLeadership();
+    }
+
+    void recalculateStorageStats()
+    {
+        server->recalculateStorageStats();
+    }
+
+    static void cleanResources();
+
+    std::optional<AuthenticationData> getAuthenticationData() const { return server->getAuthenticationData(); }
 };
 
 }

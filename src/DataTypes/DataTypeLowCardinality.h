@@ -12,6 +12,7 @@ class DataTypeLowCardinality : public IDataType
 private:
     DataTypePtr dictionary_type;
 
+
 public:
     explicit DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
@@ -22,6 +23,7 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
+
     TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     MutableColumnPtr createColumn() const override;
@@ -33,6 +35,7 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return dictionary_type->cannotBeStoredInTables(); }
+    bool hasDynamicStructure() const override { return dictionary_type->hasDynamicStructure(); }
     bool shouldAlignRightInPrettyFormats() const override { return dictionary_type->shouldAlignRightInPrettyFormats(); }
     bool textCanContainOnlyValidUTF8() const override { return dictionary_type->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return dictionary_type->isComparable(); }
@@ -43,8 +46,10 @@ public:
     bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); }
     bool isValueRepresentedByNumber() const override { return dictionary_type->isValueRepresentedByNumber(); }
     bool isValueRepresentedByInteger() const override { return dictionary_type->isValueRepresentedByInteger(); }
+    bool isValueRepresentedByUnsignedInteger() const override { return dictionary_type->isValueRepresentedByUnsignedInteger(); }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return dictionary_type->haveMaximumSizeOfValue(); }
+    void updateHashImpl(SipHash & hash) const override;
     size_t getMaximumSizeOfValueInMemory() const override { return dictionary_type->getMaximumSizeOfValueInMemory(); }
     size_t getSizeOfValueInMemory() const override { return dictionary_type->getSizeOfValueInMemory(); }
     bool isCategorial() const override { return false; }
@@ -57,8 +62,10 @@ public:
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
+    void forEachChild(const ChildCallback & callback) const override;
+
 private:
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     template <typename ... Params>
     using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, Params ...) const;
@@ -86,6 +93,9 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
-ColumnPtr recursiveTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
+ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
+/// Removes LowCardinality and Nullable in a correct order and returns T
+/// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
+DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
 }

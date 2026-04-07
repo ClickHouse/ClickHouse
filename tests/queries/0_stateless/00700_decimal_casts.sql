@@ -2,18 +2,18 @@ SELECT toDecimal32('1.1', 1), toDecimal32('1.1', 2), toDecimal32('1.1', 8);
 SELECT toDecimal32('1.1', 0);
 SELECT toDecimal32(1.1, 0), toDecimal32(1.1, 1), toDecimal32(1.1, 2), toDecimal32(1.1, 8);
 
-SELECT '1000000000' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '-1000000000' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '1000000000000000000' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '-1000000000000000000' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '100000000000000000000000000000000000000' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '-100000000000000000000000000000000000000' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '1' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '-1' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '1' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '-1' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '1' AS x, toDecimal128(x, 38); -- { serverError 69 }
-SELECT '-1' AS x, toDecimal128(x, 38); -- { serverError 69 }
+SELECT '1000000000' AS x, toDecimal32(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1000000000' AS x, toDecimal32(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1000000000000000000' AS x, toDecimal64(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1000000000000000000' AS x, toDecimal64(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '100000000000000000000000000000000000000' AS x, toDecimal128(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-100000000000000000000000000000000000000' AS x, toDecimal128(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1' AS x, toDecimal32(x, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1' AS x, toDecimal32(x, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1' AS x, toDecimal64(x, 18); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1' AS x, toDecimal64(x, 18); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1' AS x, toDecimal128(x, 38); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1' AS x, toDecimal128(x, 38); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT '0.1' AS x, toDecimal32(x, 0);
 SELECT '-0.1' AS x, toDecimal32(x, 0);
@@ -28,18 +28,18 @@ SELECT '-0.0000000000000000001' AS x, toDecimal64(x, 18);
 SELECT '0.000000000000000000000000000000000000001' AS x, toDecimal128(x, 38);
 SELECT '-0.000000000000000000000000000000000000001' AS x, toDecimal128(x, 38);
 
-SELECT '1e9' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '-1E9' AS x, toDecimal32(x, 0); -- { serverError 69 }
-SELECT '1E18' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '-1e18' AS x, toDecimal64(x, 0); -- { serverError 69 }
-SELECT '1e38' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '-1E38' AS x, toDecimal128(x, 0); -- { serverError 69 }
-SELECT '1e0' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '-1e-0' AS x, toDecimal32(x, 9); -- { serverError 69 }
-SELECT '1e0' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '-1e-0' AS x, toDecimal64(x, 18); -- { serverError 69 }
-SELECT '1e-0' AS x, toDecimal128(x, 38); -- { serverError 69 }
-SELECT '-1e0' AS x, toDecimal128(x, 38); -- { serverError 69 }
+SELECT '1e9' AS x, toDecimal32(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1E9' AS x, toDecimal32(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1E18' AS x, toDecimal64(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1e18' AS x, toDecimal64(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1e38' AS x, toDecimal128(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1E38' AS x, toDecimal128(x, 0); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1e0' AS x, toDecimal32(x, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1e-0' AS x, toDecimal32(x, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1e0' AS x, toDecimal64(x, 18); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1e-0' AS x, toDecimal64(x, 18); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '1e-0' AS x, toDecimal128(x, 38); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT '-1e0' AS x, toDecimal128(x, 38); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT '1e-1' AS x, toDecimal32(x, 0);
 SELECT '-1e-1' AS x, toDecimal32(x, 0);
@@ -137,9 +137,9 @@ SELECT CAST('42.42', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,7)'), CAST(a, 'Dec
 
 SELECT CAST('123456789', 'Decimal(9,0)'), CAST('123456789123456789', 'Decimal(18,0)');
 SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,0)');
-SELECT CAST('123456789', 'Decimal(9,1)'); -- { serverError 69 }
-SELECT CAST('123456789123456789', 'Decimal(18,1)'); -- { serverError 69 }
-SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,1)'); -- { serverError 69 }
+SELECT CAST('123456789', 'Decimal(9,1)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT CAST('123456789123456789', 'Decimal(18,1)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,1)'); -- { serverError ARGUMENT_OUT_OF_BOUND }
 
 SELECT CAST('0.123456789', 'Decimal(9,9)'), CAST('0.123456789123456789', 'Decimal(18,18)');
 SELECT CAST('0.12345678901234567890123456789012345678', 'Decimal(38,38)');

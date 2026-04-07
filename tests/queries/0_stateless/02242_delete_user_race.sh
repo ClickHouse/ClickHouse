@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-fasttest, no-parallel, no-backward-compatibility-check
+# Tags: race, no-fasttest, no-parallel
 
 # Test tries to reproduce a race between threads:
 # - deletes user
@@ -15,39 +15,47 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP ROLE IF EXISTS test_role_02242;
     CREATE ROLE test_role_02242;
 "
 
 function delete_user()
 {
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
+        sleep 0.$RANDOM;
+    done
 }
 
 function create_and_login_user()
 {
-    $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
-    $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE user == 'test_user_02242'" > /dev/null ||:
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
+        $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user == 'test_user_02242'" > /dev/null ||:
+        sleep 0.$RANDOM;
+    done
 }
 
 function set_role()
 {
-    $CLICKHOUSE_CLIENT -q "SET ROLE test_role_02242 TO test_user_02242" ||:
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "SET DEFAULT ROLE test_role_02242 TO test_user_02242" ||:
+        sleep 0.$RANDOM;
+    done
 }
-
-export -f delete_user
-export -f create_and_login_user
-export -f set_role
 
 TIMEOUT=10
 
-for (( i = 0 ; i < 100; ++i ))
-do
-    clickhouse_client_loop_timeout $TIMEOUT create_and_login_user 2> /dev/null &
-    clickhouse_client_loop_timeout $TIMEOUT delete_user 2> /dev/null &
-    clickhouse_client_loop_timeout $TIMEOUT set_role 2> /dev/null &
-done
+create_and_login_user 2> /dev/null &
+delete_user 2> /dev/null &
+set_role 2> /dev/null &
 
 wait
 

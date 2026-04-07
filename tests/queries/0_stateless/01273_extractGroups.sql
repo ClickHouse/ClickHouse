@@ -1,13 +1,13 @@
 -- error cases
-SELECT extractGroups();  --{serverError 42} not enough arguments
-SELECT extractGroups('hello');  --{serverError 42} not enough arguments
-SELECT extractGroups('hello', 123);  --{serverError 43} invalid argument type
-SELECT extractGroups(123, 'world');  --{serverError 43}  invalid argument type
-SELECT extractGroups('hello world', '((('); --{serverError 427}  invalid re
-SELECT extractGroups('hello world', materialize('\\w+')); --{serverError 44} non-const needle
+SELECT extractGroups();  --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
+SELECT extractGroups('hello');  --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH} not enough arguments
+SELECT extractGroups('hello', 123);  --{serverError ILLEGAL_TYPE_OF_ARGUMENT} invalid argument type
+SELECT extractGroups(123, 'world');  --{serverError ILLEGAL_TYPE_OF_ARGUMENT}  invalid argument type
+SELECT extractGroups('hello world', '((('); --{serverError CANNOT_COMPILE_REGEXP}  invalid re
+SELECT extractGroups('hello world', materialize('\\w+')); --{serverError ILLEGAL_COLUMN} non-const needle
 
 SELECT '0 groups, zero matches';
-SELECT extractGroups('hello world', '\\w+'); -- { serverError 36 }
+SELECT extractGroups('hello world', '\\w+'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '1 group, multiple matches, String and FixedString';
 SELECT extractGroups('hello world', '(\\w+) (\\w+)');

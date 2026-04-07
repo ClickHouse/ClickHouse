@@ -58,7 +58,10 @@ public:
     friend bool operator !=(const GrantedRoles & left, const GrantedRoles & right) { return !(left == right); }
 
     std::vector<UUID> findDependencies() const;
+    bool hasDependencies(const std::unordered_set<UUID> & ids) const;
     void replaceDependencies(const std::unordered_map<UUID, UUID> & old_to_new_ids);
+    void copyDependenciesFrom(const GrantedRoles & src, const std::unordered_set<UUID> & ids);
+    void removeDependencies(const std::unordered_set<UUID> & ids);
 
 private:
     boost::container::flat_set<UUID> roles;

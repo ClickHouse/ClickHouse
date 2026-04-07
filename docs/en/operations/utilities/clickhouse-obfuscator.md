@@ -1,6 +1,8 @@
 ---
-slug: /en/operations/utilities/clickhouse-obfuscator
-title: clickhouse-obfuscator 
+description: 'Documentation for Clickhouse Obfuscator'
+slug: /operations/utilities/clickhouse-obfuscator
+title: 'clickhouse-obfuscator'
+doc_type: 'reference'
 ---
 
 A simple tool for table data obfuscation.
@@ -24,7 +26,7 @@ It is designed to retain the following properties of data:
 
 Most of the properties above are viable for performance testing:
 
-reading data, filtering, aggregatio, and sorting will work at almost the same speed
+reading data, filtering, aggregation, and sorting will work at almost the same speed
 as on original data due to saved cardinalities, magnitudes, compression ratios, etc.
 
 It works in a deterministic fashion: you define a seed value and the transformation is determined by input data and by seed.
@@ -32,13 +34,12 @@ Some transformations are one to one and could be reversed, so you need to have a
 
 It uses some cryptographic primitives to transform data but from the cryptographic point of view, it does not do it properly, that is why you should not consider the result as secure unless you have another reason. The result may retain some data you don't want to publish.
 
-
 It always leaves 0, 1, -1 numbers, dates, lengths of arrays, and null flags exactly as in source data.
 For example, you have a column `IsMobile` in your table with values 0 and 1. In transformed data, it will have the same value.
 
 So, the user will be able to count the exact ratio of mobile traffic.
 
-Let's give another example. When you have some private data in your table, like user email and you don't want to publish any single email address.
+Let's give another example. When you have some private data in your table, like user email, and you don't want to publish any single email address.
 If your table is large enough and contains multiple different emails and no email has a very high frequency than all others, it will anonymize all data. But if you have a small number of different values in a column, it can reproduce some of them.
 You should look at the working algorithm of this tool works, and fine-tune its command line parameters.
 

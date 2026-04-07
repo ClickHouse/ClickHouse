@@ -40,7 +40,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.empty())
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at least one argument.", getName());
 
         return std::make_shared<DataTypeString>();
     }
@@ -65,7 +65,55 @@ public:
 
 REGISTER_FUNCTION(PartitionId)
 {
-    factory.registerFunction<FunctionPartitionId>();
+    FunctionDocumentation::Description description = R"(
+Computes the [partition ID](../../engines/table-engines/mergetree-family/custom-partitioning-key.md).
+
+:::note
+This function is slow and should not be called for large numbers of rows.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "partitionId(column1[, column2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column1, column2, ...", "Column for which to return the partition ID."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the partition ID that the row belongs to.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+  i int,
+  j int
+)
+ENGINE = MergeTree
+PARTITION BY i
+ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, 1), (1, 2), (1, 3), (2, 4), (2, 5), (2, 6);
+
+SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
+        )",
+        R"(
+┌─i─┬─j─┬─partitionId(i)─┬─_partition_id─┐
+│ 1 │ 1 │ 1              │ 1             │
+│ 1 │ 2 │ 1              │ 1             │
+│ 1 │ 3 │ 1              │ 1             │
+│ 2 │ 4 │ 2              │ 2             │
+│ 2 │ 5 │ 2              │ 2             │
+│ 2 │ 6 │ 2              │ 2             │
+└───┴───┴────────────────┴───────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionPartitionId>(documentation);
+    factory.registerAlias("partitionID", "partitionId");
 }
 
 }

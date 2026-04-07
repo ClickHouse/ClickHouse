@@ -1,9 +1,10 @@
-import time
-import pytest
 import os
+import time
 
-from helpers.cluster import ClickHouseCluster
+import pytest
+
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -20,7 +21,6 @@ def start_cluster():
 
 
 def test_reload_auxiliary_zookeepers(start_cluster):
-
     node.query(
         "CREATE TABLE simple (date Date, id UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', 'node') ORDER BY tuple() PARTITION BY date;"
     )

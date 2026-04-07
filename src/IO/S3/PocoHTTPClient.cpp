@@ -1,31 +1,44 @@
-#include "Common/DNSResolver.h"
+#include <Poco/Timespan.h>
+#include <Poco/Net/NetException.h>
+#include <Common/NetException.h>
+#include <Common/config_version.h>
 #include "config.h"
 
 #if USE_AWS_S3
 
-#include "PocoHTTPClient.h"
+#include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Requests.h>
 
-#include <utility>
 #include <algorithm>
 #include <functional>
 
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
+#include <Common/re2.h>
+#include <IO/Expect404ResponseScope.h>
+#include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/S3/ProviderType.h>
+#include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
+#include <smithy/tracing/NoopTelemetryProvider.h>
 #include <aws/core/http/HttpResponse.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 #include <aws/core/monitoring/HttpClientMetrics.h>
 #include <aws/core/utils/ratelimiter/RateLimiterInterface.h>
-#include "Poco/StreamCopier.h"
+#include <Poco/StreamCopier.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <re2/re2.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 #include <boost/algorithm/string.hpp>
+
 
 static const int SUCCESS_RESPONSE_MIN = 200;
 static const int SUCCESS_RESPONSE_MAX = 299;
@@ -55,6 +68,13 @@ namespace ProfileEvents
     extern const Event DiskS3WriteRequestsErrors;
     extern const Event DiskS3WriteRequestsThrottling;
     extern const Event DiskS3WriteRequestsRedirects;
+
+    extern const Event DiskS3GetRequestThrottlerCount;
+    extern const Event DiskS3GetRequestThrottlerBlocked;
+    extern const Event DiskS3GetRequestThrottlerSleepMicroseconds;
+    extern const Event DiskS3PutRequestThrottlerCount;
+    extern const Event DiskS3PutRequestThrottlerBlocked;
+    extern const Event DiskS3PutRequestThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -66,23 +86,78 @@ namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_REDIRECTS;
+    extern const int DNS_ERROR;
+    extern const int AUTHENTICATION_FAILED;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace HistogramMetrics
+{
+    extern MetricFamily & S3Connect;
+    extern MetricFamily & DiskS3Connect;
+    extern MetricFamily & S3FirstByte;
+    extern MetricFamily & DiskS3FirstByte;
 }
 
 namespace DB::S3
 {
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
-        const String & force_region_,
-        const RemoteHostFilter & remote_host_filter_,
-        unsigned int s3_max_redirects_,
-        bool enable_s3_requests_logging_,
-        bool for_disk_s3_)
-    : force_region(force_region_)
+    std::function<ProxyConfiguration()> per_request_configuration_,
+    const String & force_region_,
+    const RemoteHostFilter & remote_host_filter_,
+    unsigned int s3_max_redirects_,
+    RetryStrategy retry_strategy_,
+    bool s3_slow_all_threads_after_network_error_,
+    bool s3_slow_all_threads_after_retryable_error_,
+    bool enable_s3_requests_logging_,
+    bool for_disk_s3_,
+    std::optional<std::string> opt_disk_name_,
+    bool s3_use_adaptive_timeouts_,
+    const HTTPRequestThrottler & request_throttler_,
+    std::function<void(const ProxyConfiguration &)> error_report_)
+    : per_request_configuration(per_request_configuration_)
+    , force_region(force_region_)
     , remote_host_filter(remote_host_filter_)
     , s3_max_redirects(s3_max_redirects_)
+    , retry_strategy(retry_strategy_)
+    , s3_slow_all_threads_after_network_error(s3_slow_all_threads_after_network_error_)
+    , s3_slow_all_threads_after_retryable_error(s3_slow_all_threads_after_retryable_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
+    , opt_disk_name(opt_disk_name_)
+    , request_throttler(request_throttler_)
+    , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
+    , error_report(error_report_)
 {
+    /// This is used to identify configurations created by us.
+    userAgent = std::string(VERSION_FULL) + VERSION_OFFICIAL;
+    if (retry_strategy.initial_delay_ms > retry_strategy.max_delay_ms)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Initial retry delay must not exceed the maximum retry delay");
+    if (retry_strategy.jitter_factor < 0 || retry_strategy.jitter_factor > 1)
+    {
+        LOG_INFO(getLogger("PocoHTTPClientConfiguration"), "Jitter factor for the retry strategy must be within the [0, 1], clamping");
+        retry_strategy.jitter_factor = std::clamp(retry_strategy.jitter_factor, 0.0, 1.0);
+    }
+
+    /// NOTE: In some places AWS SDK expects it to be non-null.
+    telemetryProvider = smithy::components::tracing::NoopTelemetryProvider::CreateProvider();
+
+    /// NOTE: Without these settings AWS SDK enable transfer-encoding: chunked and content-encoding: aws-chunked
+    /// We don't use them and MinIO server doesn't support them.
+    checksumConfig.requestChecksumCalculation = Aws::Client::RequestChecksumCalculation::WHEN_REQUIRED;
+    checksumConfig.responseChecksumValidation = Aws::Client::ResponseChecksumValidation::WHEN_REQUIRED;
+
+    // Make sure throttlers update DiskS3* profile events if necessary
+    if (for_disk_s3)
+    {
+        request_throttler.disk_get_amount = ProfileEvents::DiskS3GetRequestThrottlerCount;
+        request_throttler.disk_get_blocked = ProfileEvents::DiskS3GetRequestThrottlerBlocked;
+        request_throttler.disk_get_sleep_us = ProfileEvents::DiskS3GetRequestThrottlerSleepMicroseconds;
+        request_throttler.disk_put_amount = ProfileEvents::DiskS3PutRequestThrottlerCount;
+        request_throttler.disk_put_blocked = ProfileEvents::DiskS3PutRequestThrottlerBlocked;
+        request_throttler.disk_put_sleep_us = ProfileEvents::DiskS3PutRequestThrottlerSleepMicroseconds;
+    }
 }
 
 void PocoHTTPClientConfiguration::updateSchemeAndRegion()
@@ -104,7 +179,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
             }
             else
             {
-                /// In global mode AWS C++ SDK send `us-east-1` but accept switching to another one if being suggested.
+                /// In global mode AWS C++ SDK sends `us-east-1` but accepts switching to another one if being suggested.
                 region = Aws::Region::AWS_GLOBAL;
             }
         }
@@ -115,20 +190,43 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     }
 }
 
+ConnectionTimeouts getTimeoutsFromConfiguration(const PocoHTTPClientConfiguration & client_configuration)
+{
+    return ConnectionTimeouts()
+        .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
+        .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
+        .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
+        .withTCPKeepAliveTimeout(Poco::Timespan(
+            client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))
+        .withHTTPKeepAliveTimeout(Poco::Timespan(client_configuration.http_keep_alive_timeout, 0))
+        .withHTTPKeepAliveMaxRequests(client_configuration.http_keep_alive_max_requests);
+}
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & client_configuration)
     : per_request_configuration(client_configuration.per_request_configuration)
     , error_report(client_configuration.error_report)
-    , timeouts(ConnectionTimeouts(
-          Poco::Timespan(client_configuration.connectTimeoutMs * 1000), /// connection timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000), /// send timeout.
-          Poco::Timespan(client_configuration.requestTimeoutMs * 1000) /// receive timeout.
-          ))
+    , timeouts(getTimeoutsFromConfiguration(client_configuration))
     , remote_host_filter(client_configuration.remote_host_filter)
     , s3_max_redirects(client_configuration.s3_max_redirects)
+    , s3_use_adaptive_timeouts(client_configuration.s3_use_adaptive_timeouts)
+    , http_max_fields(client_configuration.http_max_fields)
+    , http_max_field_name_size(client_configuration.http_max_field_name_size)
+    , http_max_field_value_size(client_configuration.http_max_field_value_size)
     , enable_s3_requests_logging(client_configuration.enable_s3_requests_logging)
     , for_disk_s3(client_configuration.for_disk_s3)
+    , request_throttler(client_configuration.request_throttler)
     , extra_headers(client_configuration.extra_headers)
+{
+}
+
+PocoHTTPClient::PocoHTTPClient(const Aws::Client::ClientConfiguration & client_configuration)
+    : timeouts(ConnectionTimeouts()
+       .withConnectionTimeout(Poco::Timespan(client_configuration.connectTimeoutMs * 1000))
+       .withSendTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
+       .withReceiveTimeout(Poco::Timespan(client_configuration.requestTimeoutMs * 1000))
+       .withTCPKeepAliveTimeout(Poco::Timespan(
+           client_configuration.enableTcpKeepAlive ? client_configuration.tcpKeepAliveIntervalMs * 1000 : 0))),
+    remote_host_filter(Context::getGlobalContextInstance()->getRemoteHostFilter())
 {
 }
 
@@ -170,7 +268,7 @@ namespace
     bool checkRequestCanReturn2xxAndErrorInBody(Aws::Http::HttpRequest & request)
     {
         auto query_params = request.GetQueryStringParameters();
-        if (request.HasHeader("z-amz-copy-source"))
+        if (request.HasHeader("x-amz-copy-source") || request.HasHeader("x-goog-copy-source"))
         {
             /// CopyObject https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html
             if (query_params.empty())
@@ -198,6 +296,9 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
     {
         case Aws::Http::HttpMethod::HTTP_GET:
         case Aws::Http::HttpMethod::HTTP_HEAD:
+        case Aws::Http::HttpMethod::HTTP_TRACE:
+        case Aws::Http::HttpMethod::HTTP_OPTIONS:
+        case Aws::Http::HttpMethod::HTTP_CONNECT:
             return S3MetricKind::Read;
         case Aws::Http::HttpMethod::HTTP_POST:
         case Aws::Http::HttpMethod::HTTP_DELETE:
@@ -205,12 +306,13 @@ PocoHTTPClient::S3MetricKind PocoHTTPClient::getMetricKind(const Aws::Http::Http
         case Aws::Http::HttpMethod::HTTP_PATCH:
             return S3MetricKind::Write;
     }
-    throw Exception("Unsupported request method", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported request method");
 }
 
 void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount) const
 {
-    const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
+    static const ProfileEvents::Event events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
+    {
         {ProfileEvents::S3ReadMicroseconds, ProfileEvents::S3WriteMicroseconds},
         {ProfileEvents::S3ReadRequestsCount, ProfileEvents::S3WriteRequestsCount},
         {ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors},
@@ -218,7 +320,8 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         {ProfileEvents::S3ReadRequestsRedirects, ProfileEvents::S3WriteRequestsRedirects},
     };
 
-    const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] = {
+    static const ProfileEvents::Event disk_s3_events_map[static_cast<size_t>(S3MetricType::EnumSize)][static_cast<size_t>(S3MetricKind::EnumSize)] =
+    {
         {ProfileEvents::DiskS3ReadMicroseconds, ProfileEvents::DiskS3WriteMicroseconds},
         {ProfileEvents::DiskS3ReadRequestsCount, ProfileEvents::DiskS3WriteRequestsCount},
         {ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors},
@@ -233,50 +336,218 @@ void PocoHTTPClient::addMetric(const Aws::Http::HttpRequest & request, S3MetricT
         ProfileEvents::increment(disk_s3_events_map[static_cast<unsigned int>(type)][static_cast<unsigned int>(kind)], amount);
 }
 
+void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency) const
+{
+    if (latency == 0)
+        return;
+
+    if (type == S3LatencyType::Connect)
+    {
+        static HistogramMetrics::Metric & s3_connect_metric = HistogramMetrics::S3Connect.withLabels({});
+        s3_connect_metric.observe(latency);
+
+        if (for_disk_s3)
+        {
+            static HistogramMetrics::Metric & disk_s3_connect_metric = HistogramMetrics::DiskS3Connect.withLabels({});
+            disk_s3_connect_metric.observe(latency);
+        }
+        return;
+    }
+
+    const String attempt_label = [](const S3LatencyType t)
+    {
+        switch (t)
+        {
+            case S3LatencyType::FirstByteAttempt1: return "1";
+            case S3LatencyType::FirstByteAttempt2: return "2";
+            case S3LatencyType::FirstByteAttemptN: return "N";
+            default: return "UNKNOWN";
+        }
+    }(type);
+
+    const String http_method_label = [](const Aws::Http::HttpMethod m)
+    {
+        switch (m)
+        {
+            case Aws::Http::HttpMethod::HTTP_GET:      return "GET";
+            case Aws::Http::HttpMethod::HTTP_HEAD:     return "HEAD";
+            case Aws::Http::HttpMethod::HTTP_POST:     return "POST";
+            case Aws::Http::HttpMethod::HTTP_DELETE:   return "DELETE";
+            case Aws::Http::HttpMethod::HTTP_PUT:      return "PUT";
+            case Aws::Http::HttpMethod::HTTP_PATCH:    return "PATCH";
+            case Aws::Http::HttpMethod::HTTP_CONNECT:  return "CONNECT";
+            case Aws::Http::HttpMethod::HTTP_TRACE:    return "TRACE";
+            case Aws::Http::HttpMethod::HTTP_OPTIONS:  return "OPTIONS";
+        }
+    }(request.GetMethod());
+
+    const HistogramMetrics::LabelValues first_byte_label_values = {http_method_label, attempt_label};
+
+    HistogramMetrics::observe(
+        HistogramMetrics::S3FirstByte, first_byte_label_values, latency);
+
+    if (for_disk_s3)
+    {
+        HistogramMetrics::observe(
+            HistogramMetrics::DiskS3FirstByte, first_byte_label_values, latency);
+    }
+}
+
+ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte) const
+{
+    if (!s3_use_adaptive_timeouts)
+        return timeouts;
+
+    return timeouts.getAdaptiveTimeouts(method, first_attempt, first_byte);
+}
+
 void PocoHTTPClient::makeRequestInternal(
+    Aws::Http::HttpRequest & request,
+    std::shared_ptr<PocoHTTPResponse> & response,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
+    Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
+{
+    makeRequestInternalImpl(request, response, readLimiter, writeLimiter);
+}
+
+String getMethod(const Aws::Http::HttpRequest & request)
+{
+    switch (request.GetMethod())
+    {
+        case Aws::Http::HttpMethod::HTTP_GET:
+            return Poco::Net::HTTPRequest::HTTP_GET;
+        case Aws::Http::HttpMethod::HTTP_POST:
+            return Poco::Net::HTTPRequest::HTTP_POST;
+        case Aws::Http::HttpMethod::HTTP_DELETE:
+            return Poco::Net::HTTPRequest::HTTP_DELETE;
+        case Aws::Http::HttpMethod::HTTP_PUT:
+            return Poco::Net::HTTPRequest::HTTP_PUT;
+        case Aws::Http::HttpMethod::HTTP_HEAD:
+            return Poco::Net::HTTPRequest::HTTP_HEAD;
+        case Aws::Http::HttpMethod::HTTP_PATCH:
+            return Poco::Net::HTTPRequest::HTTP_PATCH;
+        case Aws::Http::HttpMethod::HTTP_CONNECT:
+            return Poco::Net::HTTPRequest::HTTP_CONNECT;
+        case Aws::Http::HttpMethod::HTTP_TRACE:
+            return Poco::Net::HTTPRequest::HTTP_TRACE;
+        case Aws::Http::HttpMethod::HTTP_OPTIONS:
+            return Poco::Net::HTTPRequest::HTTP_OPTIONS;
+    }
+}
+
+PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(size_t sdk_attempt, size_t ch_attempt)
+{
+    S3LatencyType result = S3LatencyType::FirstByteAttempt1;
+    if (sdk_attempt != 1 || ch_attempt != 1)
+    {
+        if ((sdk_attempt == 1 && ch_attempt == 2) || (sdk_attempt == 2 && ch_attempt == 1))
+            result = S3LatencyType::FirstByteAttempt2;
+        else
+            result = S3LatencyType::FirstByteAttemptN;
+    }
+    return result;
+}
+
+void PocoHTTPClient::makeRequestInternalImpl(
     Aws::Http::HttpRequest & request,
     std::shared_ptr<PocoHTTPResponse> & response,
     Aws::Utils::RateLimits::RateLimiterInterface *,
     Aws::Utils::RateLimits::RateLimiterInterface *) const
 {
-    Poco::Logger * log = &Poco::Logger::get("AWSClient");
+    LoggerPtr log = getLogger("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-    if (enable_s3_requests_logging)
-        LOG_TEST(log, "Make request to: {}", uri);
+    auto method = getMethod(request);
+
+    auto sdk_attempt = getSDKAttemptNumber(request);
+    auto ch_attempt = getClickhouseAttemptNumber(request);
+    bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
+
+    if (!first_attempt)
+        LOG_DEBUG(
+            log,
+            "Retrying S3 request to: {}, aws sdk attempt: {}, clickhouse attempt: {}, kind: {}",
+            uri, sdk_attempt, ch_attempt, getMetricKind(request) == S3MetricKind::Read ? "Read" : "Write");
+    else // if (enable_s3_requests_logging)
+        LOG_TEST(
+            log,
+            "Make S3 request to: {}, aws sdk attempt: {}, clickhouse attempt: {}, kind: {}",
+            uri, sdk_attempt, ch_attempt, getMetricKind(request) == S3MetricKind::Read ? "Read" : "Write");
+
+    switch (request.GetMethod())
+    {
+        case Aws::Http::HttpMethod::HTTP_GET:
+        case Aws::Http::HttpMethod::HTTP_HEAD:
+        case Aws::Http::HttpMethod::HTTP_TRACE:
+        case Aws::Http::HttpMethod::HTTP_OPTIONS:
+        case Aws::Http::HttpMethod::HTTP_CONNECT:
+            /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
+            /// (i.e. throttles GetObject, HeadObject)
+            request_throttler.throttleHTTPGet();
+            break;
+        case Aws::Http::HttpMethod::HTTP_PUT:
+        case Aws::Http::HttpMethod::HTTP_POST:
+        case Aws::Http::HttpMethod::HTTP_PATCH:
+            /// Limits put request per second rate for PUT, COPY, POST, LIST requests
+            /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
+            request_throttler.throttleHTTPPut();
+            break;
+        case Aws::Http::HttpMethod::HTTP_DELETE:
+            /// DELETE and CANCEL requests are not throttled by either put or get throttler
+            break;
+    }
 
     addMetric(request, S3MetricType::Count);
     CurrentMetrics::Increment metric_increment{CurrentMetrics::S3Requests};
 
+    UInt64 connect_time = 0;
+    UInt64 first_byte_time = 0;
+    bool latency_recorded = false;
+    S3LatencyType first_byte_latency_type = getFirstByteLatencyType(sdk_attempt, ch_attempt);
+
+    auto account_error = [&]()
+    {
+        if (!latency_recorded)
+        {
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
+        }
+        addMetric(request, S3MetricType::Errors);
+    };
+
+    auto exception_handler = [&](Aws::Client::CoreErrors code)
+    {
+        account_error();
+
+        response->SetClientErrorType(code);
+        auto with_stacktrace = code != Aws::Client::CoreErrors::NETWORK_CONNECTION;
+        response->SetClientErrorMessage(getCurrentExceptionMessage(with_stacktrace));
+    };
+
     try
     {
-        for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
+        ProxyConfiguration proxy_configuration;
+        if (per_request_configuration)
+            proxy_configuration = per_request_configuration();
+
+        for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            HTTPSessionPtr session;
-            auto request_configuration = per_request_configuration(request);
 
-            if (!request_configuration.proxy_host.empty())
-            {
-                if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
+            if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
+                LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
 
-                /// Reverse proxy can replace host header with resolved ip address instead of host name.
-                /// This can lead to request signature difference on S3 side.
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
-                bool use_tunnel = request_configuration.proxy_scheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
+            auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
 
-                session->setProxy(
-                    request_configuration.proxy_host,
-                    request_configuration.proxy_port,
-                    Aws::Http::SchemeMapper::ToString(request_configuration.proxy_scheme),
-                    use_tunnel
-                );
-            }
-            else
-            {
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
-            }
+            /// Reset times, as this may be a next session after a redirect
+            connect_time = first_byte_time = 0;
+            latency_recorded = false;
+            auto session = makeHTTPSession(
+                group,
+                target_uri,
+                getTimeouts(method, first_attempt, /*first_byte*/ true),
+                proxy_configuration,
+                &connect_time);
 
             /// In case of error this address will be written to logs
             request.SetResolvedRemoteHost(session->getResolvedAddress());
@@ -296,61 +567,69 @@ void PocoHTTPClient::makeRequestInternal(
             const std::string & query = target_uri.getRawQuery();
             const std::string reserved = "?#:;+@&=%"; /// Poco::URI::RESERVED_QUERY_PARAM without '/' plus percent sign.
             Poco::URI::encode(target_uri.getPath(), reserved, path_and_query);
+
             if (!query.empty())
             {
                 path_and_query += '?';
                 path_and_query += query;
             }
-            poco_request.setURI(path_and_query);
 
-            switch (request.GetMethod())
-            {
-                case Aws::Http::HttpMethod::HTTP_GET:
-                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_GET);
-                    break;
-                case Aws::Http::HttpMethod::HTTP_POST:
-                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_POST);
-                    break;
-                case Aws::Http::HttpMethod::HTTP_DELETE:
-                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_DELETE);
-                    break;
-                case Aws::Http::HttpMethod::HTTP_PUT:
-                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_PUT);
-                    break;
-                case Aws::Http::HttpMethod::HTTP_HEAD:
-                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_HEAD);
-                    break;
-                case Aws::Http::HttpMethod::HTTP_PATCH:
-                    poco_request.setMethod(Poco::Net::HTTPRequest::HTTP_PATCH);
-                    break;
-            }
+            /// `target_uri.getPath()` could return an empty string, but a proper HTTP request must
+            /// always contain a non-empty URI in its first line (e.g. "POST / HTTP/1.1").
+            if (path_and_query.empty())
+                path_and_query = "/";
+
+            poco_request.setURI(path_and_query);
+            poco_request.setMethod(method);
 
             /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
-                poco_request.set(header_name, header_value);
-            for (const auto & [header_name, header_value] : extra_headers)
                 poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+            for (const auto & [header_name, header_value] : extra_headers)
+            {
+                // AWS S3 canonical headers must include `Host`, `Content-Type` and any `x-amz-*`.
+                // These headers will be signed. Custom S3 headers specified in ClickHouse storage conf are added in `extra_headers`.
+                // At this point in the stack trace, request has already been signed and any `x-amz-*` extra headers was already added
+                // to the canonical headers list. Therefore, we should not add them again to the request.
+                // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+                if (!header_name.starts_with("x-amz-"))
+                {
+                    poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+                }
+            }
 
             Poco::Net::HTTPResponse poco_response;
+            poco_response.setFieldLimit(static_cast<int>(http_max_fields));
+            poco_response.setNameLengthLimit(static_cast<int>(http_max_field_name_size));
+            poco_response.setValueLengthLimit(static_cast<int>(http_max_field_value_size));
 
             Stopwatch watch;
 
-            auto & request_body_stream = session->sendRequest(poco_request);
+            auto & request_body_stream = session->sendRequest(poco_request, &connect_time, &first_byte_time);
+            /// We record connect time here and not earlier, so that if an exception occurs while sending a request,
+            /// we won't record the same latency twice.
+            observeLatency(request, S3LatencyType::Connect, connect_time);
+            observeLatency(request, first_byte_latency_type, first_byte_time);
+            latency_recorded = true;
 
             if (request.GetContentBody())
             {
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Writing request body.");
 
-                if (attempt > 0) /// rewind content body buffer.
-                {
-                    request.GetContentBody()->clear();
-                    request.GetContentBody()->seekg(0);
-                }
+                /// Rewind content body buffer.
+                /// NOTE: we should do that always (even if `attempt == 0`) because the same request can be retried also by AWS,
+                /// see retryStrategy in Aws::Client::ClientConfiguration.
+                request.GetContentBody()->clear();
+                request.GetContentBody()->seekg(0);
+
+                setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
                 if (enable_s3_requests_logging)
                     LOG_TEST(log, "Written {} bytes to request body", size);
             }
+
+            setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
 
             if (enable_s3_requests_logging)
                 LOG_TEST(log, "Receiving response...");
@@ -361,8 +640,22 @@ void PocoHTTPClient::makeRequestInternal(
 
             int status_code = static_cast<int>(poco_response.getStatus());
 
-            if (enable_s3_requests_logging)
-                LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX)
+            {
+                if (enable_s3_requests_logging)
+                    LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
+            else if (Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED == status_code)
+            {
+                /// PreconditionFailed (412) is an expected response for conditional writes
+                /// (e.g. If-None-Match: *), not a genuine error.
+                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
+            else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
+            {
+                /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
+                LOG_ERROR(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
@@ -373,7 +666,6 @@ void PocoHTTPClient::makeRequestInternal(
                     LOG_TEST(log, "Redirecting request to new location: {}", location);
 
                 addMetric(request, S3MetricType::Redirects);
-
                 continue;
             }
 
@@ -399,6 +691,7 @@ void PocoHTTPClient::makeRequestInternal(
             /// Request is successful but for some special requests we can have actual error message in body
             if (status_code >= SUCCESS_RESPONSE_MIN && status_code <= SUCCESS_RESPONSE_MAX && checkRequestCanReturn2xxAndErrorInBody(request))
             {
+                /// reading the full response
                 std::string response_string((std::istreambuf_iterator<char>(response_body_stream)),
                                std::istreambuf_iterator<char>());
 
@@ -407,13 +700,12 @@ void PocoHTTPClient::makeRequestInternal(
                 const static std::string_view needle = "<Error>";
                 if (auto it = std::search(response_string.begin(), response_string.end(), std::default_searcher(needle.begin(), needle.end())); it != response_string.end())
                 {
-                    LOG_WARNING(log, "Response for request contain <Error> tag in body, settings internal server error (500 code)");
+                    LOG_WARNING(log, "Response for the request contains an <Error> tag in the body, will treat it as an internal server error (code 500)");
                     response->SetResponseCode(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR);
 
                     addMetric(request, S3MetricType::Errors);
                     if (error_report)
-                        error_report(request_configuration);
-
+                        error_report(proxy_configuration);
                 }
 
                 /// Set response from string
@@ -421,37 +713,192 @@ void PocoHTTPClient::makeRequestInternal(
             }
             else
             {
-
                 if (status_code == 429 || status_code == 503)
-                { // API throttling
+                {
+                    /// API throttling
                     addMetric(request, S3MetricType::Throttling);
                 }
                 else if (status_code >= 300)
                 {
                     addMetric(request, S3MetricType::Errors);
                     if (status_code >= 500 && error_report)
-                        error_report(request_configuration);
+                        error_report(proxy_configuration);
                 }
+
+                /// expose stream, after that client reads data from that stream without built-in retries
                 response->SetResponseBody(response_body_stream, session);
             }
 
             return;
         }
-        throw Exception(String("Too many redirects while trying to access ") + request.GetUri().GetURIString(),
-            ErrorCodes::TOO_MANY_REDIRECTS);
+        throw Exception(ErrorCodes::TOO_MANY_REDIRECTS, "Too many redirects while trying to access {}", request.GetUri().GetURIString());
     }
-    catch (...)
+    catch (Poco::Net::NetException &)
     {
-        tryLogCurrentException(log, fmt::format("Failed to make request to: {}", uri));
-        response->SetClientErrorType(Aws::Client::CoreErrors::NETWORK_CONNECTION);
-        response->SetClientErrorMessage(getCurrentExceptionMessage(false));
-
-        addMetric(request, S3MetricType::Errors);
-
-        /// Probably this is socket timeout or something more or less related to DNS
-        /// Let's just remove this host from DNS cache to be more safe
-        DNSResolver::instance().removeHostFromCache(Poco::URI(uri).getHost());
+        LOG_DEBUG(log, "Failed to make request to: {}: will be retried, Poco::Net::NetException: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        exception_handler(Aws::Client::CoreErrors::NETWORK_CONNECTION);
     }
+    catch (Poco::IOException &)
+    {
+        LOG_DEBUG(log, "Failed to make request to: {}: will be retried, Poco::IOException: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        exception_handler(Aws::Client::CoreErrors::NETWORK_CONNECTION);
+    }
+    catch (Poco::TimeoutException &)
+    {
+        LOG_DEBUG(log, "Failed to make request to: {}: will be retried, Poco::TimeoutException: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        exception_handler(Aws::Client::CoreErrors::NETWORK_CONNECTION);
+    }
+    catch (const NetException & e)
+    {
+        bool dns_error = e.code() == ErrorCodes::DNS_ERROR;
+        LOG_DEBUG(log, "Failed to make request to: {}: {}DB::NetException: {}",
+            uri,
+            dns_error ? "the error about DNS, " : "will be retried, ",
+            getCurrentExceptionMessage(/* with_stacktrace */ true));
+        exception_handler(e.code() == ErrorCodes::DNS_ERROR ? Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE : Aws::Client::CoreErrors::NETWORK_CONNECTION);
+    }
+    catch (const Exception &)
+    {
+        LOG_DEBUG(log, "Failed to make request to: {}: DB::Exception: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        account_error();
+        throw;
+    }
+    catch (...) // DB::Exception and all other exceptions
+    {
+        LOG_DEBUG(log, "Failed to make request to: {}: Unknown exception: {}", uri, getCurrentExceptionMessage(/* with_stacktrace */ true));
+        account_error();
+        throw;
+    }
+}
+
+namespace
+{
+
+String getStringOrDefault(const String & str, const String & default_str)
+{
+    return str.empty() ? default_str : str;
+}
+
+constexpr auto DEFAULT_SERVICE_ACCOUNT = "default";
+constexpr auto DEFAULT_METADATA_SERVICE = "metadata.google.internal";
+constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "computeMetadata/v1/instance/service-accounts";
+
+}
+
+PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration & client_configuration)
+    : PocoHTTPClient(client_configuration)
+    , service_account(getStringOrDefault(client_configuration.service_account, DEFAULT_SERVICE_ACCOUNT))
+    , metadata_service(getStringOrDefault(client_configuration.metadata_service, DEFAULT_METADATA_SERVICE))
+    , request_token_path(getStringOrDefault(client_configuration.request_token_path, DEFAULT_REQUEST_TOKEN_PATH))
+    , google_adc_client_id(client_configuration.google_adc_client_id)
+    , google_adc_client_secret(client_configuration.google_adc_client_secret)
+    , google_adc_refresh_token(client_configuration.google_adc_refresh_token)
+{
+    const bool has_client_id = !google_adc_client_id.empty();
+    const bool has_client_secret = !google_adc_client_secret.empty();
+    const bool has_refresh_token = !google_adc_refresh_token.empty();
+    if (has_client_id || has_client_secret || has_refresh_token)
+    {
+        if (!has_client_id || !has_client_secret || !has_refresh_token)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "GCP OAuth ADC credentials must be specified together: "
+                "google_adc_client_id, google_adc_client_secret, and google_adc_refresh_token "
+                "must all be set or all be empty");
+    }
+}
+
+void PocoHTTPClientGCPOAuth::makeRequestInternal(
+    Aws::Http::HttpRequest & request,
+    std::shared_ptr<PocoHTTPResponse> & response,
+    Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
+    Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const
+{
+    {
+        std::lock_guard lock(mutex);
+        if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
+            bearer_token = requestBearerToken();
+
+        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token));
+    }
+
+    PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
+}
+
+std::string PocoHTTPClientGCPOAuth::getBearerToken() const
+{
+    std::lock_guard lock(mutex);
+    if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
+        bearer_token = requestBearerToken();
+
+    return bearer_token->token;
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
+{
+    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
+        return requestBearerTokenFromADC();
+
+    assert(!request_token_path.empty());
+    assert(!metadata_service.empty());
+    assert(!service_account.empty());
+
+    Poco::URI url;
+    url.setScheme("http");
+    url.setHost(metadata_service);
+    url.setPath(fmt::format("{}/{}/token", request_token_path, service_account));
+
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.toString(), Poco::Net::HTTPRequest::HTTP_1_1);
+    request.add("metadata-flavor", "Google");
+
+    auto log = getLogger("PocoHTTPClientGCPOAuth");
+    if (enable_s3_requests_logging)
+        LOG_TEST(log, "Make request to: {}", url.toString());
+
+    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    auto session = makeHTTPSession(group, url, timeouts);
+    session->sendRequest(request);
+
+    Poco::Net::HTTPResponse response;
+    auto & in = session->receiveResponse(response);
+
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Failed to request bearer token: {}", response.getReason());
+
+    String token_json_raw;
+    Poco::StreamCopier::copyToString(in, token_json_raw);
+
+    if (enable_s3_requests_logging)
+        LOG_TEST(log, "Received token in response: {}", token_json_raw);
+
+    Poco::JSON::Parser parser;
+    auto object = parser.parse(token_json_raw).extract<Poco::JSON::Object::Ptr>();
+
+    if (!object->has("access_token") || !object->has("expires_in") || !object->has("token_type"))
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Unexpected structure of response. Response should have fields: 'access_token', 'expires_in', 'token_type'");
+
+    auto token_type = object->getValue<String>("token_type");
+    if (token_type != "Bearer")
+        throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+            "Unexpected structure of response. Expected Bearer token, got {}", token_type);
+
+    return
+    {
+        .token = object->getValue<String>("access_token"),
+        .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(object->getValue<Int64>("expires_in"))
+    };
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFromADC() const
+{
+    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts, group);
+    return
+    {
+        .token = std::move(result.access_token),
+        .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10)
+    };
 }
 
 }

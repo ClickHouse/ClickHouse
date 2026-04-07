@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 DROP TABLE IF EXISTS adaptive_table;
 
 CREATE TABLE adaptive_table(

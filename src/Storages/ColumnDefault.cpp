@@ -1,5 +1,5 @@
 #include <Storages/ColumnDefault.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/IAST.h>
 
 namespace
 {
@@ -36,7 +36,7 @@ ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
     if (it != std::end(map))
         return it->second;
 
-    throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column default specifier: {}", str);
 }
 
 
@@ -53,13 +53,36 @@ std::string toString(const ColumnDefaultKind kind)
     if (it != std::end(map))
         return it->second;
 
-    throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
 }
 
+ColumnDefault & ColumnDefault::operator=(const ColumnDefault & other)
+{
+    if (this == &other)
+        return *this;
+
+    kind = other.kind;
+    expression = other.expression ? other.expression->clone() : nullptr;
+    ephemeral_default = other.ephemeral_default;
+
+    return *this;
+}
+
+ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    kind = std::exchange(other.kind, ColumnDefaultKind{});
+    expression = std::exchange(other.expression, nullptr);
+    ephemeral_default = std::exchange(other.ephemeral_default, false);
+
+    return *this;
+}
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
-    auto expression_str = [](const ASTPtr & expr) { return expr ? queryToString(expr) : String(); };
+    auto expression_str = [](const ASTPtr & expr) { return expr ? expr->formatWithSecretsOneLine() : String(); };
     return lhs.kind == rhs.kind && expression_str(lhs.expression) == expression_str(rhs.expression);
 }
 

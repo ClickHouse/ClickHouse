@@ -2,163 +2,62 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 namespace
 {
-    void formatRenameTo(const String & new_name, const IAST::FormatSettings & settings)
+    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
-                      << quoteString(new_name);
+        ostr << " RENAME TO " << quoteString(new_name);
     }
 
-
-    void formatAuthenticationData(const AuthenticationData & auth_data, bool show_password, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        auto auth_type = auth_data.getType();
-        if (auth_type == AuthenticationType::NO_PASSWORD)
+        // safe because this method is only called if authentication_methods.size > 1
+        // if the first type is present, include the `WITH` keyword
+        if (authentication_methods[0]->type)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
-                          << (settings.hilite ? IAST::hilite_none : "");
-            return;
+            ostr << " WITH";
         }
 
-        String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
-        String prefix; /// "BY" or "SERVER" or "REALM"
-        std::optional<String> password; /// either a password or hash
-        std::optional<String> salt;
-        std::optional<String> parameter;
-        const boost::container::flat_set<String> * parameters = nullptr;
-
-        switch (auth_type)
+        for (std::size_t i = 0; i < authentication_methods.size(); i++)
         {
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-            {
-                prefix = "BY";
-                password = auth_data.getPassword();
-                break;
-            }
-            case AuthenticationType::SHA256_PASSWORD:
-            {
-                auth_type_name = "sha256_hash";
-                prefix = "BY";
-                password = auth_data.getPasswordHashHex();
-                if (!auth_data.getSalt().empty())
-                    salt = auth_data.getSalt();
-                break;
-            }
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            {
-                auth_type_name = "double_sha1_hash";
-                prefix = "BY";
-                password = auth_data.getPasswordHashHex();
-                break;
-            }
-            case AuthenticationType::LDAP:
-            {
-                prefix = "SERVER";
-                parameter = auth_data.getLDAPServerName();
-                break;
-            }
-            case AuthenticationType::KERBEROS:
-            {
-                const auto & realm = auth_data.getKerberosRealm();
-                if (!realm.empty())
-                {
-                    prefix = "REALM";
-                    parameter = realm;
-                }
-                break;
-            }
+            authentication_methods[i]->format(ostr, settings);
 
-            case AuthenticationType::SSL_CERTIFICATE:
-            {
-                prefix = "CN";
-                parameters = &auth_data.getSSLCertificateCommonNames();
-                break;
-            }
-
-            case AuthenticationType::NO_PASSWORD: [[fallthrough]];
-            case AuthenticationType::MAX:
-                throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
-        }
-
-        if (password && !show_password)
-        {
-            prefix = "";
-            password.reset();
-            salt.reset();
-            auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
-        }
-
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED" << (settings.hilite ? IAST::hilite_none : "");
-
-        if (!auth_type_name.empty())
-        {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " WITH " << auth_type_name
-                          << (settings.hilite ? IAST::hilite_none : "");
-        }
-
-        if (!prefix.empty())
-        {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << (settings.hilite ? IAST::hilite_none : "");
-        }
-
-        if (password)
-        {
-            settings.ostr << " " << quoteString(*password);
-        }
-
-        if (salt)
-        {
-            settings.ostr << " SALT " << quoteString(*salt);
-        }
-
-        if (parameter)
-        {
-            settings.ostr << " " << quoteString(*parameter);
-        }
-        else if (parameters)
-        {
-            settings.ostr << " ";
-            bool need_comma = false;
-            for (const auto & param : *parameters)
-            {
-                if (std::exchange(need_comma, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(param);
-            }
+            bool is_last = i < authentication_methods.size() - 1;
+            if (is_last)
+                ostr << ",";
         }
     }
 
+    void formatValidUntil(const IAST & valid_until, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    {
+        ostr << " VALID UNTIL ";
+        valid_until.format(ostr, settings);
+    }
 
-    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, const IAST::FormatSettings & settings)
+    void formatHosts(const char * prefix, const AllowedClientHosts & hosts, WriteBuffer & ostr, const IAST::FormatSettings &)
     {
         if (prefix)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " " << prefix << " HOST "
-                          << (settings.hilite ? IAST::hilite_none : "");
+            ostr << " " << prefix << " HOST ";
         else
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " HOST " << (settings.hilite ? IAST::hilite_none : "");
+            ostr << " HOST ";
 
         if (hosts.empty())
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NONE" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "NONE";
             return;
         }
 
         if (hosts.containsAnyHost())
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ANY" << (settings.hilite ? IAST::hilite_none : "");
+            ostr << "ANY";
             return;
         }
 
@@ -166,8 +65,8 @@ namespace
         if (hosts.containsLocalHost())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LOCAL" << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << "LOCAL";
         }
 
         const auto & addresses = hosts.getAddresses();
@@ -175,20 +74,20 @@ namespace
         if (!addresses.empty() || !subnets.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "IP " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << "IP ";
             bool need_comma2 = false;
             for (const auto & address : addresses)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(address.toString());
+                    ostr << ", ";
+                ostr << quoteString(address.toString());
             }
             for (const auto & subnet : subnets)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(subnet.toString());
+                    ostr << ", ";
+                ostr << quoteString(subnet.toString());
             }
         }
 
@@ -196,14 +95,14 @@ namespace
         if (!names.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NAME " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << "NAME ";
             bool need_comma2 = false;
             for (const auto & name : names)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(name);
+                    ostr << ", ";
+                ostr << quoteString(name);
             }
         }
 
@@ -211,14 +110,14 @@ namespace
         if (!name_regexps.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "REGEXP " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << "REGEXP ";
             bool need_comma2 = false;
             for (const auto & host_regexp : name_regexps)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(host_regexp);
+                    ostr << ", ";
+                ostr << quoteString(host_regexp);
             }
         }
 
@@ -226,43 +125,53 @@ namespace
         if (!like_patterns.empty())
         {
             if (std::exchange(need_comma, true))
-                settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "LIKE " << (settings.hilite ? IAST::hilite_none : "");
+                ostr << ", ";
+            ostr << "LIKE ";
             bool need_comma2 = false;
             for (const auto & like_pattern : like_patterns)
             {
                 if (std::exchange(need_comma2, true))
-                    settings.ostr << ", ";
-                settings.ostr << quoteString(like_pattern);
+                    ostr << ", ";
+                ostr << quoteString(like_pattern);
             }
         }
     }
 
 
-    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, const IAST::FormatSettings & settings)
+    void formatRoles(const ASTRolesOrUsersSet & roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
-        default_roles.format(settings);
+        ostr << " ROLE ";
+        roles.format(ostr, settings);
     }
 
-
-    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    void formatDefaultRoles(const ASTRolesOrUsersSet & default_roles, WriteBuffer & ostr, const IAST::FormatSettings & settings)
     {
-        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
-        settings.format(format);
+        ostr << " DEFAULT ROLE ";
+        default_roles.format(ostr, settings);
     }
 
-
-    void formatGrantees(const ASTRolesOrUsersSet & grantees, const IAST::FormatSettings & settings)
+    void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " GRANTEES " << (settings.hilite ? IAST::hilite_none : "");
-        grantees.format(settings);
+        ostr << " SETTINGS ";
+        settings.format(ostr, format);
     }
 
-    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, const IAST::FormatSettings & settings)
+    void formatAlterSettings(const ASTAlterSettingsProfileElements & alter_settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT DATABASE " << (settings.hilite ? IAST::hilite_none : "");
-        default_database.format(settings);
+        ostr << " ";
+        alter_settings.format(ostr, format);
+    }
+
+    void formatGrantees(const ASTRolesOrUsersSet & grantees, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    {
+        ostr << " GRANTEES ";
+        grantees.format(ostr, settings);
+    }
+
+    void formatDefaultDatabase(const ASTDatabaseOrNone & default_database, WriteBuffer & ostr, const IAST::FormatSettings & settings)
+    {
+        ostr << " DEFAULT DATABASE ";
+        default_database.format(ostr, settings);
     }
 }
 
@@ -275,57 +184,105 @@ String ASTCreateUserQuery::getID(char) const
 
 ASTPtr ASTCreateUserQuery::clone() const
 {
-    return std::make_shared<ASTCreateUserQuery>(*this);
-}
+    auto res = make_intrusive<ASTCreateUserQuery>(*this);
+    res->children.clear();
+    res->authentication_methods.clear();
 
+    if (names)
+        res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
 
-void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
-{
-    if (attach)
-    {
-        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH USER" << (format.hilite ? hilite_none : "");
-    }
-    else
-    {
-        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
-                    << (format.hilite ? hilite_none : "");
-    }
-
-    if (if_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
-    else if (if_not_exists)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
-    else if (or_replace)
-        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
-
-    format.ostr << " ";
-    names->format(format);
-
-    formatOnCluster(format);
-
-    if (new_name)
-        formatRenameTo(*new_name, format);
-
-    if (auth_data)
-        formatAuthenticationData(*auth_data, show_password, format);
-
-    if (hosts)
-        formatHosts(nullptr, *hosts, format);
-    if (add_hosts)
-        formatHosts("ADD", *add_hosts, format);
-    if (remove_hosts)
-        formatHosts("DROP", *remove_hosts, format);
-
-    if (default_database)
-        formatDefaultDatabase(*default_database, format);
+    if (roles)
+        res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());
 
     if (default_roles)
-        formatDefaultRoles(*default_roles, format);
+        res->default_roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(default_roles->clone());
 
-    if (settings && (!settings->empty() || alter))
-        formatSettings(*settings, format);
+    if (default_database)
+        res->default_database = boost::static_pointer_cast<ASTDatabaseOrNone>(default_database->clone());
 
     if (grantees)
-        formatGrantees(*grantees, format);
+        res->grantees = boost::static_pointer_cast<ASTRolesOrUsersSet>(grantees->clone());
+
+    if (settings)
+        res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+
+    if (alter_settings)
+        res->alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+
+    for (const auto & authentication_method : authentication_methods)
+    {
+        auto ast_clone = boost::static_pointer_cast<ASTAuthenticationData>(authentication_method->clone());
+        res->authentication_methods.push_back(ast_clone);
+        res->children.push_back(ast_clone);
+    }
+
+    return res;
 }
+
+
+void ASTCreateUserQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
+{
+    if (attach)
+        ostr << "ATTACH USER";
+    else
+        ostr << (alter ? "ALTER USER" : "CREATE USER");
+
+    if (if_exists)
+        ostr << " IF EXISTS";
+    else if (if_not_exists)
+        ostr << " IF NOT EXISTS";
+    else if (or_replace)
+        ostr << " OR REPLACE";
+
+    ostr << " ";
+    names->format(ostr, format);
+
+    if (!storage_name.empty())
+        ostr << " IN " << backQuoteIfNeed(storage_name);
+
+    formatOnCluster(ostr, format);
+
+    if (new_name)
+        formatRenameTo(*new_name, ostr, format);
+
+    if (!authentication_methods.empty())
+    {
+        if (add_identified_with)
+            ostr << " ADD";
+
+        ostr << " IDENTIFIED";
+        formatAuthenticationData(authentication_methods, ostr, format);
+    }
+
+    if (global_valid_until)
+        formatValidUntil(*global_valid_until, ostr, format);
+
+    if (hosts)
+        formatHosts(nullptr, *hosts, ostr, format);
+    if (add_hosts)
+        formatHosts("ADD", *add_hosts, ostr, format);
+    if (remove_hosts)
+        formatHosts("DROP", *remove_hosts, ostr, format);
+
+    if (default_database)
+        formatDefaultDatabase(*default_database, ostr, format);
+
+    if (roles)
+        formatRoles(*roles, ostr, format);
+
+    if (default_roles)
+        formatDefaultRoles(*default_roles, ostr, format);
+
+    if (alter_settings)
+        formatAlterSettings(*alter_settings, ostr, format);
+    else if (settings)
+        formatSettings(*settings, ostr, format);
+
+    if (grantees)
+        formatGrantees(*grantees, ostr, format);
+
+    if (reset_authentication_methods_to_new)
+        ostr << " RESET AUTHENTICATION METHODS TO NEW";
+}
+
 }

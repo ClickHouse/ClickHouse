@@ -1,45 +1,50 @@
 ---
-slug: /en/engines/table-engines/special/generate
+description: 'The GenerateRandom table engine produces random data for given table
+  schema.'
+sidebar_label: 'GenerateRandom'
 sidebar_position: 140
-sidebar_label:  GenerateRandom
-title: "GenerateRandom Table Engine"
+slug: /engines/table-engines/special/generate
+title: 'GenerateRandom table engine'
+doc_type: 'reference'
 ---
+
+# GenerateRandom table engine
 
 The GenerateRandom table engine produces random data for given table schema.
 
 Usage examples:
 
--   Use in test to populate reproducible large table.
--   Generate random input for fuzzing tests.
+- Use in test to populate reproducible large table.
+- Generate random input for fuzzing tests.
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
-``` sql
-ENGINE = GenerateRandom([random_seed] [,max_string_length] [,max_array_length])
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
 ```
 
 The `max_array_length` and `max_string_length` parameters specify maximum length of all
-array columns and strings correspondingly in generated data.
+array or map columns and strings correspondingly in generated data.
 
 Generate table engine supports only `SELECT` queries.
 
-It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can be stored in a table except `LowCardinality` and `AggregateFunction`.
+It supports all [DataTypes](../../../sql-reference/data-types/index.md) that can be stored in a table except `AggregateFunction`.
 
 ## Example {#example}
 
 **1.** Set up the `generate_engine_table` table:
 
-``` sql
+```sql
 CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
 ```
 
 **2.** Query the data:
 
-``` sql
+```sql
 SELECT * FROM generate_engine_table LIMIT 3
 ```
 
-``` text
+```text
 ┌─name─┬──────value─┐
 │ c4xJ │ 1412771199 │
 │ r    │ 1791099446 │
@@ -49,11 +54,9 @@ SELECT * FROM generate_engine_table LIMIT 3
 
 ## Details of Implementation {#details-of-implementation}
 
--   Not supported:
-    -   `ALTER`
-    -   `SELECT ... SAMPLE`
-    -   `INSERT`
-    -   Indices
-    -   Replication
-
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/special/generate/) <!--hide-->
+- Not supported:
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - `INSERT`
+  - Indices
+  - Replication

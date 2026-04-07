@@ -1,6 +1,13 @@
 # package sources should be placed in ${PWD}/root
 # nfpm should run from the same directory with a config
 name: "clickhouse-keeper-dbg"
+description: |
+  debugging symbols for clickhouse-keeper
+    This package contains the debugging symbols for clickhouse-keeper.
+
+
+#
+# Common packages config
 arch: "${DEB_ARCH}" # amd64, arm64
 platform: "linux"
 version: "${CLICKHOUSE_VERSION_STRING}"
@@ -10,14 +17,11 @@ license: "Apache"
 section: "database"
 priority: "optional"
 maintainer: "ClickHouse Dev Team <packages+linux@clickhouse.com>"
-description: |
-  debugging symbols for clickhouse-keeper
-    This package contains the debugging symbols for clickhouse-keeper.
-
 deb:
   fields:
     Source: clickhouse
 
+# Package specific content
 contents:
 - src: root/usr/lib/debug/usr/bin/clickhouse-keeper.debug
   dst: /usr/lib/debug/usr/bin/clickhouse-keeper.debug

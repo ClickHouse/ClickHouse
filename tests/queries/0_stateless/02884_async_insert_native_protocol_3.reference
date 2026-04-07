@@ -1,0 +1,13 @@
+Native	3
+Values	1
+1	aaa
+2	bbb
+3	ccc
+4	ddd
+5	eee
+6	fff
+7	ggg
+JSONEachRow	Ok	2	Preprocessed	JSONEachRow
+Values	Ok	3	Preprocessed	Values
+CSV	Ok	1	Preprocessed	CSV
+Values	Ok	1	Parsed	Values

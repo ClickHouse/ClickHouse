@@ -4,6 +4,7 @@
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 
+#include <limits>
 #include <zlib.h>
 
 
@@ -33,6 +34,11 @@ private:
 
     z_stream zstr;
     bool eof_flag;
+
+    /// Limit size of buffer because zlib uses
+    /// UInt32 for sizes of internal buffers.
+    using BufferSizeType =  decltype(zstr.avail_in);
+    static constexpr auto max_buffer_size = std::numeric_limits<BufferSizeType>::max();
 };
 
 }

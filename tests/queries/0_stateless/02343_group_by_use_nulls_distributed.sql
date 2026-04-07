@@ -1,3 +1,5 @@
+set optimize_group_by_function_keys=0;
+
 -- { echoOn }
 SELECT number, number % 2, sum(number) AS val
 FROM remote('127.0.0.{2,3}', numbers(10))

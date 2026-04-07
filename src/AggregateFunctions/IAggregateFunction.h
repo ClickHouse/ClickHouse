@@ -1,15 +1,20 @@
 #pragma once
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnSparse.h>
-#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Core/IResolvedFunction.h>
+#include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/Exception.h>
 #include <base/types.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
+#include <IO/ReadBuffer.h>
 #include "config.h"
 
 #include <cstddef>
@@ -28,11 +33,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class Arena;
 class ReadBuffer;
 class WriteBuffer;
@@ -41,13 +41,8 @@ class IDataType;
 class IWindowFunction;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = std::vector<DataTypePtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-using AggregateDataPtr = char *;
-using ConstAggregateDataPtr = const char *;
-
-class IAggregateFunction;
-using AggregateFunctionPtr = std::shared_ptr<const IAggregateFunction>;
 struct AggregateFunctionProperties;
 
 /** Aggregate functions interface.
@@ -58,23 +53,23 @@ struct AggregateFunctionProperties;
   *  (which can be created in some memory pool),
   *  and IAggregateFunction is the external interface for manipulating them.
   */
-class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>
+class IAggregateFunction : public std::enable_shared_from_this<IAggregateFunction>, public IResolvedFunction
 {
 public:
-    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_)
-        : argument_types(argument_types_), parameters(parameters_) {}
+    IAggregateFunction(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : argument_types(argument_types_)
+        , parameters(parameters_)
+        , result_type(result_type_)
+    {}
 
     /// Get main function name.
     virtual String getName() const = 0;
-
-    /// Get the result type.
-    virtual DataTypePtr getReturnType() const = 0;
 
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
 
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
-    virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
+    virtual DataTypePtr getNormalizedStateType() const;
 
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
@@ -90,10 +85,7 @@ public:
     bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
 
     /// Get type which will be used for prediction result in case if function is an ML method.
-    virtual DataTypePtr getReturnTypeToPredict() const
-    {
-        throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    virtual DataTypePtr getReturnTypeToPredict() const;
 
     virtual bool isVersioned() const { return false; }
 
@@ -101,7 +93,11 @@ public:
 
     virtual size_t getDefaultVersion() const { return 0; }
 
-    virtual ~IAggregateFunction() = default;
+    /// Some aggregate functions have more efficient implementation for merging final states.
+    /// See AggregateFunctionAny for example.
+    virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
+
+    ~IAggregateFunction() override = default;
 
     /** Data manipulating functions. */
 
@@ -144,14 +140,46 @@ public:
     /// Default values must be a the 0-th positions in columns.
     virtual void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const = 0;
 
+    virtual bool isParallelizeMergePrepareNeeded() const { return false; }
+
+    constexpr static bool parallelizeMergeWithKey() { return false; }
+
+    virtual void
+    parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const;
+
     /// Merges state (on which place points to) with other state of current aggregation function.
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
+
+    /// Tells if merge() with thread pool parameter could be used.
+    virtual bool isAbleToParallelizeMerge() const { return false; }
+
+    /// Return true if it is allowed to replace call of `addBatch`
+    /// to `addBatchSinglePlace` for ranges of consecutive equal keys.
+    virtual bool canOptimizeEqualKeysRanges() const { return true; }
+
+    /// Should be used only if isAbleToParallelizeMerge() returned true.
+    virtual void merge(
+        AggregateDataPtr __restrict /*place*/,
+        ConstAggregateDataPtr /*rhs*/,
+        ThreadPool & /*thread_pool*/,
+        std::atomic<bool> & /*is_cancelled*/,
+        Arena * /*arena*/) const;
+
+    /// Merges states (on which src places points to) with other states (on which dst places points to) of current aggregation function
+    /// then destroy states (on which src places points to).
+    virtual void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * src_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
 
+    /// Devirtualize serialize call.
+    virtual void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0; /// NOLINT
+
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0; /// NOLINT
+
+    /// Devirtualize create and deserialize calls. Used in deserialization of ColumnAggregateFunction.
+    virtual void createAndDeserializeBatch(PaddedPODArray<AggregateDataPtr> & data, AggregateDataPtr __restrict place, size_t total_size_of_state, size_t limit, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -168,13 +196,7 @@ public:
     /// but if we need to insert AggregateData into ColumnAggregateFunction we use special method
     /// insertInto that inserts default value and then performs merge with provided AggregateData
     /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
-    virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
-    {
-        if (isState())
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is marked as State but method insertMergeResultInto is not implemented");
-
-        insertResultInto(place, to, arena);
-    }
+    virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const;
 
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
@@ -184,10 +206,7 @@ public:
         const ColumnsWithTypeAndName & /*arguments*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        ContextPtr /*context*/) const
-    {
-        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+        ContextPtr /*context*/) const;
 
     /** Returns true for aggregate functions of type -State
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
@@ -231,6 +250,8 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const = 0;
 
     /** The same for single place.
@@ -262,15 +283,6 @@ public:
         const UInt8 * null_map,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
-
-    virtual void addBatchSinglePlaceFromInterval( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1)
-        const = 0;
 
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
@@ -332,13 +344,19 @@ public:
         return nullptr;
     }
 
+    /// For most functions if one of arguments is always NULL, we return NULL (it's implemented in combinator Null),
+    /// but in some functions we can want to process this argument somehow (for example condition argument in If combinator).
+    /// This method returns the set of argument indexes that can be always NULL, they will be skipped in combinator Null.
+    virtual UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const { return {}; }
+
     /** Return the nested function if this is an Aggregate Function Combinator.
       * Otherwise return nullptr.
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
-    const DataTypes & getArgumentTypes() const { return argument_types; }
-    const Array & getParameters() const { return parameters; }
+    const DataTypePtr & getResultType() const override { return result_type; }
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+    const Array & getParameters() const override { return parameters; }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
@@ -355,40 +373,26 @@ public:
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
 
-#if USE_EMBEDDED_COMPILER
-
     /// Is function JIT compilable
     virtual bool isCompilable() const { return false; }
 
     /// compileCreate should generate code for initialization of aggregate function state in aggregate_data_ptr
-    virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual void compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
     /// compileAdd should generate code for updating aggregate function state stored in aggregate_data_ptr
-    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const DataTypes & /*arguments_types*/, const std::vector<llvm::Value *> & /*arguments_values*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual void compileAdd(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/, const ValuesWithType & /*arguments*/) const;
 
     /// compileMerge should generate code for merging aggregate function states stored in aggregate_data_dst_ptr and aggregate_data_src_ptr
-    virtual void compileMerge(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_dst_ptr*/, llvm::Value * /*aggregate_data_src_ptr*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
+    virtual void compileMerge(
+        llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_dst_ptr*/, llvm::Value * /*aggregate_data_src_ptr*/) const;
 
     /// compileGetResult should generate code for getting result value from aggregate function state stored in aggregate_data_ptr
-    virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
-    }
-
-#endif
+    virtual llvm::Value * compileGetResult(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const;
 
 protected:
     DataTypes argument_types;
     Array parameters;
+    DataTypePtr result_type;
 };
 
 
@@ -403,8 +407,8 @@ private:
     }
 
 public:
-    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunction(argument_types_, parameters_) {}
+    IAggregateFunctionHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : IAggregateFunction(argument_types_, parameters_, result_type_) {}
 
     AddFunc getAddressOfAddFunction() const override { return &addFree; }
 
@@ -444,6 +448,43 @@ public:
         }
     }
 
+    void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const override // NOLINT
+    {
+        for (size_t i = start; i < size; ++i)
+            static_cast<const Derived *>(this)->serialize(data[i], buf, version);
+    }
+
+    void createAndDeserializeBatch(
+        PaddedPODArray<AggregateDataPtr> & data,
+        AggregateDataPtr __restrict place,
+        size_t total_size_of_state,
+        size_t limit,
+        ReadBuffer & buf,
+        std::optional<size_t> version,
+        Arena * arena) const override
+    {
+        for (size_t i = 0; i < limit; ++i)
+        {
+            if (buf.eof())
+                break;
+
+            static_cast<const Derived *>(this)->create(place);
+
+            try
+            {
+                static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+            }
+            catch (...)
+            {
+                static_cast<const Derived *>(this)->destroy(place);
+                throw;
+            }
+
+            data.push_back(place);
+            place += total_size_of_state;
+        }
+    }
+
     void addBatchSparse(
         size_t row_begin,
         size_t row_end,
@@ -457,8 +498,9 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
+            if (places[offset_it.getCurrentRow()])
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                        &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -467,24 +509,47 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
         for (size_t i = row_begin; i < row_end; ++i)
+        {
             if (places[i])
-                static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+            {
+                if constexpr (Derived::parallelizeMergeWithKey())
+                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
+                else
+                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+            }
+        }
+    }
+
+    void mergeAndDestroyBatch(AggregateDataPtr * dst_places, AggregateDataPtr * rhs_places, size_t size, size_t offset, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            if constexpr (Derived::parallelizeMergeWithKey())
+                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+            else
+                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+
+            static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
+        }
     }
 
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
-        const IColumn ** columns,
+        const IColumn ** __restrict columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            alignas(32) const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])
@@ -513,8 +578,10 @@ public:
         auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
 
         size_t num_defaults = (row_end - row_begin) - (to - from);
-        static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
-        static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
+        if (from < to)
+            static_cast<const Derived *>(this)->addBatchSinglePlace(from, to, place, &values, arena, -1);
+        if (num_defaults > 0)
+            static_cast<const Derived *>(this)->addManyDefaults(place, &values, num_defaults, arena);
     }
 
     void addBatchSinglePlaceNotNull( /// NOLINT
@@ -538,31 +605,6 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 if (!null_map[i])
                     static_cast<const Derived *>(this)->add(place, columns, i, arena);
-        }
-    }
-
-    void addBatchSinglePlaceFromInterval( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1)
-        const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    static_cast<const Derived *>(this)->add(place, columns, i, arena);
-            }
-        }
-        else
-        {
-            for (size_t i = row_begin; i < row_end; ++i)
-                static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
     }
 
@@ -677,15 +719,24 @@ class IAggregateFunctionDataHelper : public IAggregateFunctionHelper<Derived>
 protected:
     using Data = T;
 
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
 public:
     // Derived class can `override` this to flag that DateTime64 is not supported.
     static constexpr bool DateTime64Supported = true;
 
-    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
-        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
+    IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_, const DataTypePtr & result_type_)
+        : IAggregateFunctionHelper<Derived>(argument_types_, parameters_, result_type_)
+    {
+        /// To prevent derived classes changing the destroy() without updating hasTrivialDestructor() to match it
+        /// Enforce that either both of them are changed or none are
+        constexpr bool declares_destroy_and_has_trivial_destructor =
+            std::is_same_v<decltype(&IAggregateFunctionDataHelper::destroy), decltype(&Derived::destroy)> ==
+            std::is_same_v<decltype(&IAggregateFunctionDataHelper::hasTrivialDestructor), decltype(&Derived::hasTrivialDestructor)>;
+        static_assert(declares_destroy_and_has_trivial_destructor,
+            "destroy() and hasTrivialDestructor() methods of an aggregate function must be either both overridden or not");
+    }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
@@ -804,6 +855,9 @@ struct AggregateFunctionProperties
       * Some may also name this property as "non-commutative".
       */
     bool is_order_dependent = false;
+
+    /// Indicates if it's actually window function.
+    bool is_window_function = false;
 };
 
 

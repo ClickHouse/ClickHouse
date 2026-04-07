@@ -22,11 +22,23 @@ class GraphiteRollupSortedAlgorithm final : public IMergingAlgorithmWithSharedCh
 {
 public:
     GraphiteRollupSortedAlgorithm(
-        const Block & header, size_t num_inputs,
-        SortDescription description_, size_t max_block_size,
-        Graphite::Params params_, time_t time_of_merge_);
+        SharedHeader header,
+        size_t num_inputs,
+        SortDescription description_,
+        size_t max_block_size_rows_,
+        size_t max_block_size_bytes_,
+        std::optional<size_t> max_dynamic_subcolumns_,
+        Graphite::Params params_,
+        time_t time_of_merge_);
 
+    /// Reset merged_data before params is destroyed, because GraphiteRollupMergedData
+    /// holds raw pointers into params.patterns and its destructor accesses them.
+    ~GraphiteRollupSortedAlgorithm() override;
+
+    const char * getName() const override { return "GraphiteRollupSortedAlgorithm"; }
     Status merge() override;
+
+    MergedStats getMergedStats() const override { return merged_data->getMergedStats(); }
 
     struct ColumnsDefinition
     {
@@ -48,7 +60,7 @@ public:
     {
     public:
         using MergedData::MergedData;
-        ~GraphiteRollupMergedData();
+        ~GraphiteRollupMergedData() override;
 
         void startNextGroup(const ColumnRawPtrs & raw_columns, size_t row,
                             Graphite::RollupRule next_rule, ColumnsDefinition & def);
@@ -67,7 +79,7 @@ public:
     };
 
 private:
-    GraphiteRollupMergedData merged_data;
+    GraphiteRollupMergedData & graphite_rollup_merged_data;
 
     const Graphite::Params params;
     ColumnsDefinition columns_definition;

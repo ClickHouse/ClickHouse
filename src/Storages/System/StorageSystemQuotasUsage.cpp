@@ -8,12 +8,12 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemQuotasUsage::getNamesAndTypes()
+ColumnsDescription StorageSystemQuotasUsage::getColumnsDescription()
 {
-    return StorageSystemQuotaUsage::getNamesAndTypesImpl(/* add_column_is_current = */ true);
+    return StorageSystemQuotaUsage::getColumnsDescriptionImpl(/* add_column_is_current = */ true);
 }
 
-void StorageSystemQuotasUsage::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemQuotasUsage::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();

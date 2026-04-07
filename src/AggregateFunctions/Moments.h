@@ -1,22 +1,24 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <boost/math/distributions/students_t.hpp>
-#include <boost/math/distributions/normal.hpp>
-#include <boost/math/distributions/fisher_f.hpp>
 #include <cfloat>
 #include <numeric>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <boost/math/distributions/fisher_f.hpp>
+#include <boost/math/distributions/normal.hpp>
+#include <boost/math/distributions/students_t.hpp>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int DECIMAL_OVERFLOW;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -64,6 +66,11 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
+    T get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
     T getPopulation() const
     {
         if (m[0] == 0)
@@ -84,140 +91,51 @@ struct VarMoments
 
     T getMoment3() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        // to avoid accuracy problem
-        if (m[0] == 1)
-            return 0;
-        /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\]
-        return (m[3]
-            - (3 * m[2]
-                - 2 * m[1] * m[1] / m[0]
-            ) * m[1] / m[0]
-        ) / m[0];
+        if constexpr (_level < 3)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+        }
+        else
+        {
+            if (m[0] == 0)
+                return std::numeric_limits<T>::quiet_NaN();
+            // to avoid accuracy problem
+            if (m[0] == 1)
+                return 0;
+            /// \[ \frac{1}{m_0} (m_3 - (3 * m_2 - \frac{2 * {m_1}^2}{m_0}) * \frac{m_1}{m_0});\]
+            return (m[3]
+                - (3 * m[2]
+                    - 2 * m[1] * m[1] / m[0]
+                ) * m[1] / m[0]
+            ) / m[0];
+        }
     }
 
     T getMoment4() const
     {
-        if (m[0] == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        // to avoid accuracy problem
-        if (m[0] == 1)
-            return 0;
-        /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\]
-        return (m[4]
-            - (4 * m[3]
-                - (6 * m[2]
-                    - 3 * m[1] * m[1] / m[0]
+        if constexpr (_level < 4)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variation moments should be obtained by either 'getSample' or 'getPopulation' method");
+        }
+        else
+        {
+            if (m[0] == 0)
+                return std::numeric_limits<T>::quiet_NaN();
+            // to avoid accuracy problem
+            if (m[0] == 1)
+                return 0;
+            /// \[ \frac{1}{m_0}(m_4 - (4 * m_3 - (6 * m_2 - \frac{3 * m_1^2}{m_0} ) \frac{m_1}{m_0})\frac{m_1}{m_0})\]
+            return (m[4]
+                - (4 * m[3]
+                    - (6 * m[2]
+                        - 3 * m[1] * m[1] / m[0]
+                    ) * m[1] / m[0]
                 ) * m[1] / m[0]
-            ) * m[1] / m[0]
-        ) / m[0];
+            ) / m[0];
+        }
     }
 };
 
-template <typename T, size_t _level>
-class VarMomentsDecimal
-{
-public:
-    using NativeType = typename T::NativeType;
-
-    void add(NativeType x)
-    {
-        ++m0;
-        getM(1) += x;
-
-        NativeType tmp;
-        bool overflow = common::mulOverflow(x, x, tmp) || common::addOverflow(getM(2), tmp, getM(2));
-        if constexpr (_level >= 3)
-            overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(3), tmp, getM(3));
-        if constexpr (_level >= 4)
-            overflow = overflow || common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4));
-
-        if (overflow)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-    }
-
-    void merge(const VarMomentsDecimal & rhs)
-    {
-        m0 += rhs.m0;
-        getM(1) += rhs.getM(1);
-
-        bool overflow = common::addOverflow(getM(2), rhs.getM(2), getM(2));
-        if constexpr (_level >= 3)
-            overflow = overflow || common::addOverflow(getM(3), rhs.getM(3), getM(3));
-        if constexpr (_level >= 4)
-            overflow = overflow || common::addOverflow(getM(4), rhs.getM(4), getM(4));
-
-        if (overflow)
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-    }
-
-    void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
-    void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
-
-    Float64 getPopulation(UInt32 scale) const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<Float64>::infinity();
-
-        NativeType tmp;
-        if (common::mulOverflow(getM(1), getM(1), tmp) ||
-            common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / m0), scale));
-    }
-
-    Float64 getSample(UInt32 scale) const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<Float64>::quiet_NaN();
-        if (m0 == 1)
-            return std::numeric_limits<Float64>::infinity();
-
-        NativeType tmp;
-        if (common::mulOverflow(getM(1), getM(1), tmp) ||
-            common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return std::max(Float64{}, DecimalUtils::convertTo<Float64>(T(tmp / (m0 - 1)), scale));
-    }
-
-    Float64 getMoment3(UInt32 scale) const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<Float64>::infinity();
-
-        NativeType tmp;
-        if (common::mulOverflow(2 * getM(1), getM(1), tmp) ||
-            common::subOverflow(3 * getM(2), NativeType(tmp / m0), tmp) ||
-            common::mulOverflow(tmp, getM(1), tmp) ||
-            common::subOverflow(getM(3), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
-    }
-
-    Float64 getMoment4(UInt32 scale) const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<Float64>::infinity();
-
-        NativeType tmp;
-        if (common::mulOverflow(3 * getM(1), getM(1), tmp) ||
-            common::subOverflow(6 * getM(2), NativeType(tmp / m0), tmp) ||
-            common::mulOverflow(tmp, getM(1), tmp) ||
-            common::subOverflow(4 * getM(3), NativeType(tmp / m0), tmp) ||
-            common::mulOverflow(tmp, getM(1), tmp) ||
-            common::subOverflow(getM(4), NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return DecimalUtils::convertTo<Float64>(T(tmp / m0), scale);
-    }
-
-private:
-    UInt64 m0{};
-    NativeType m[_level]{};
-
-    NativeType & getM(size_t i) { return m[i - 1]; }
-    const NativeType & getM(size_t i) const { return m[i - 1]; }
-};
 
 /**
     Calculating multivariate central moments
@@ -258,6 +176,21 @@ struct CovarMoments
     void read(ReadBuffer & buf)
     {
         readPODBinary(*this, buf);
+    }
+
+    T get() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment3() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment4() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Covariation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 
     T NO_SANITIZE_UNDEFINED getPopulation() const
@@ -316,6 +249,26 @@ struct CorrMoments
     T NO_SANITIZE_UNDEFINED get() const
     {
         return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
+    }
+
+    T getSample() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
+    }
+
+    T getPopulation() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by the 'get' method");
+    }
+
+    T getMoment3() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
+    }
+
+    T getMoment4() const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Correlation moments should be obtained by either 'getSample' or 'getPopulation' method");
     }
 };
 
@@ -409,6 +362,103 @@ struct TTestMoments
     }
 };
 
+/// Data for calculation of One-Sample T-Tests.
+template <typename T>
+struct OneSampleTTestMoments
+{
+    T n{};      // sample size
+    T x1{};     // sum of values
+    T x2{};     // sum of squared values
+    Float64 population_mean = 0.0;  // known population mean
+
+    void add(T value)
+    {
+        ++n;
+        x1 += value;
+        x2 += value * value;
+    }
+
+    void setPopulationMean(Float64 mean)
+    {
+        population_mean = mean;
+    }
+
+    void merge(const OneSampleTTestMoments & rhs)
+    {
+        n += rhs.n;
+        x1 += rhs.x1;
+        x2 += rhs.x2;
+        // Note: population_mean should be the same for merged data
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writePODBinary(*this, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readPODBinary(*this, buf);
+    }
+
+    Float64 getMean() const
+    {
+        return x1 / n;
+    }
+
+    Float64 getVariance() const
+    {
+        if (n <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+        Float64 mean = getMean();
+        return (x2 + n * mean * mean - 2 * mean * x1) / (n - 1);
+    }
+
+    Float64 getStandardError() const
+    {
+        Float64 variance = getVariance();
+        return sqrt(variance / n);
+    }
+
+    Float64 getTStatistic() const
+    {
+        Float64 sample_mean = getMean();
+        Float64 standard_error = getStandardError();
+        return (sample_mean - population_mean) / standard_error;
+    }
+
+    Float64 getDegreesOfFreedom() const
+    {
+        return n - 1;
+    }
+
+    std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level) const
+    {
+        Float64 sample_mean = getMean();
+        Float64 standard_error = getStandardError();
+        Float64 degrees_of_freedom = getDegreesOfFreedom();
+
+        boost::math::students_t dist(degrees_of_freedom);
+        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
+
+        Float64 ci_low = sample_mean - t * standard_error;
+        Float64 ci_high = sample_mean + t * standard_error;
+
+        return {ci_low, ci_high};
+    }
+
+    bool isEssentiallyConstant() const
+    {
+        Float64 standard_error = getStandardError();
+        return standard_error < 10 * DBL_EPSILON * std::abs(getMean());
+    }
+
+    bool hasEnoughObservations() const
+    {
+        return n > 1;
+    }
+};
+
 template <typename T>
 struct ZTestMoments
 {
@@ -482,17 +532,23 @@ struct ZTestMoments
 template <typename T>
 struct AnalysisOfVarianceMoments
 {
+    constexpr static size_t MAX_GROUPS_NUMBER = 1024 * 1024;
+
     /// Sums of values within a group
-    std::vector<T> xs1{};
+    VectorWithMemoryTracking<T> xs1{};
     /// Sums of squared values within a group
-    std::vector<T> xs2{};
+    VectorWithMemoryTracking<T> xs2{};
     /// Sizes of each group. Total number of observations is just a sum of all these values
-    std::vector<size_t> ns{};
+    VectorWithMemoryTracking<size_t> ns{};
 
     void resizeIfNeeded(size_t possible_size)
     {
         if (xs1.size() >= possible_size)
             return;
+
+        if (possible_size > MAX_GROUPS_NUMBER)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups for analysis of variance (should be no more than {}, got {})",
+                            MAX_GROUPS_NUMBER, possible_size);
 
         xs1.resize(possible_size, 0.0);
         xs2.resize(possible_size, 0.0);
@@ -501,6 +557,10 @@ struct AnalysisOfVarianceMoments
 
     void add(T value, size_t group)
     {
+        if (group == std::numeric_limits<size_t>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too many groups for analysis of variance (should be no more than {}, got {})",
+                MAX_GROUPS_NUMBER, group);
+
         resizeIfNeeded(group + 1);
         xs1[group] += value;
         xs2[group] += value * value;
@@ -538,7 +598,7 @@ struct AnalysisOfVarianceMoments
         if (n == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are no observations to calculate mean value");
 
-        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / n;
+        return std::accumulate(xs1.begin(), xs1.end(), 0.0) / static_cast<Float64>(n);
     }
 
     Float64 getMeanGroup(size_t group) const
@@ -546,7 +606,7 @@ struct AnalysisOfVarianceMoments
         if (ns[group] == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no observations for group {}", group);
 
-        return xs1[group] / ns[group];
+        return xs1[group] / static_cast<T>(ns[group]);
     }
 
     Float64 getBetweenGroupsVariation() const
@@ -557,7 +617,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += ns[i] * (group_mean - mean) * (group_mean - mean);
+            res += static_cast<Float64>(ns[i]) * (group_mean - mean) * (group_mean - mean);
         }
         return res;
     }
@@ -568,7 +628,7 @@ struct AnalysisOfVarianceMoments
         for (size_t i = 0; i < xs1.size(); ++i)
         {
             auto group_mean = getMeanGroup(i);
-            res += xs2[i] + ns[i] * group_mean * group_mean - 2 * group_mean * xs1[i];
+            res += xs2[i] + static_cast<Float64>(ns[i]) * group_mean * group_mean - 2 * group_mean * xs1[i];
         }
         return res;
     }
@@ -584,11 +644,14 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return (getBetweenGroupsVariation() * (n - k)) / (getWithinGroupsVariation() * (k - 1));
+        return (getBetweenGroupsVariation() * static_cast<double>(n - k)) / (getWithinGroupsVariation() * static_cast<double>(k - 1));
     }
 
     Float64 getPValue(Float64 f_statistic) const
     {
+        if (unlikely(!std::isfinite(f_statistic)))
+            return std::numeric_limits<Float64>::quiet_NaN();
+
         const auto k = xs1.size();
         const auto n = std::accumulate(ns.begin(), ns.end(), 0UL);
 
@@ -598,7 +661,7 @@ struct AnalysisOfVarianceMoments
         if (k == n)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is only one observation in each group");
 
-        return 1.0f - boost::math::cdf(boost::math::fisher_f(k - 1, n - k), f_statistic);
+        return 1.0f - boost::math::cdf(boost::math::fisher_f(static_cast<double>(k - 1), static_cast<double>(n - k)), f_statistic);
     }
 };
 

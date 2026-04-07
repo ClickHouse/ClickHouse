@@ -1,6 +1,6 @@
 -- Tags: distributed
 
-set insert_distributed_sync=1;
+set distributed_foreground_insert=1;
 
 DROP TABLE IF EXISTS dist_00967;
 DROP TABLE IF EXISTS underlying_00967;

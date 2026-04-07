@@ -4,7 +4,6 @@
 
 namespace DB::GatherUtils
 {
-#pragma GCC visibility push(hidden)
 
 template <typename T>
 struct NumericValueSource;
@@ -37,5 +36,4 @@ protected:
     ~ValueSourceVisitorImpl() = default;
 };
 
-#pragma GCC visibility pop
 }

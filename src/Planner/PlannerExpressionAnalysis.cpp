@@ -1,8 +1,21 @@
+#include <memory>
+#include <optional>
 #include <Planner/PlannerExpressionAnalysis.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/FilterDescription.h>
+
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Interpreters/Context.h>
+
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/HashUtils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -16,8 +29,14 @@
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
 
+#include <Core/Settings.h>
+
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool group_by_use_nulls;
+}
 
 namespace ErrorCodes
 {
@@ -31,29 +50,88 @@ namespace
   * Actions before filter are added into into actions chain.
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
   */
-FilterAnalysisResult analyzeFilter(const QueryTreeNodePtr & filter_expression_node,
-    const ColumnsWithTypeAndName & join_tree_input_columns,
+std::optional<FilterAnalysisResult> analyzeFilter(
+    const QueryTreeNodePtr & filter_expression_node,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
-    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & filter_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
-
     FilterAnalysisResult result;
 
-    result.filter_actions = buildActionsDAGFromExpressionNode(filter_expression_node, filter_input, planner_context);
-    result.filter_column_name = result.filter_actions->getOutputs().at(0)->result_name;
+    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context, correlated_columns_set);
+
+    result.filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    result.filter_actions->dag = std::move(filter_expression_dag);
+    result.correlated_subtrees = std::move(correlated_subtrees);
+
+    const auto * output = result.filter_actions->dag.getOutputs().at(0);
+    if (output->column && ConstantFilterDescription(*output->column).always_true)
+        return {};
+
+    result.filter_column_name = output->result_name;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
 
     return result;
 }
 
+bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
+{
+    const auto & source_expression = root.getSourceExpression();
+    if (!source_expression)
+        return true;
+
+    std::stack<const IQueryTreeNode *> nodes;
+    nodes.push(source_expression.get());
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            /// Allow removing constants from scalar subqueries. We send them to all the shards.
+            continue;
+
+        const auto * constant_node = node->as<ConstantNode>();
+        const auto * function_node = node->as<FunctionNode>();
+        if (constant_node)
+        {
+            if (!canRemoveConstantFromGroupByKey(*constant_node))
+                return false;
+        }
+        else if (function_node)
+        {
+            if (!function_node->isOrdinaryFunction())
+            {
+                /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
+                /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
+                /// on them (it would throw), but we also don't need to — they won't produce
+                /// server-specific values. Skip examining their children.
+                continue;
+            }
+
+            /// Do not allow removing constants like `hostName()`
+            if (function_node->getFunctionOrThrow()->isServerConstant())
+                return false;
+
+            for (const auto & child : function_node->getArguments())
+                nodes.push(child.get());
+        }
+        // else
+        //     return false;
+    }
+
+    return true;
+}
+
 /** Construct aggregation analysis result if query tree has GROUP BY or aggregates.
   * Actions before aggregation are added into actions chain, if result is not null optional.
   */
-std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & query_tree,
-    const ColumnsWithTypeAndName & join_tree_input_columns,
+std::optional<AggregationAnalysisResult> analyzeAggregation(
+    const QueryTreeNodePtr & query_tree,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto & query_node = query_tree->as<QueryNode &>();
@@ -61,28 +139,33 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     auto aggregate_function_nodes = collectAggregateFunctionNodes(query_tree);
     auto aggregates_descriptions = extractAggregateDescriptions(aggregate_function_nodes, *planner_context);
 
-    ColumnsWithTypeAndName aggregates_columns;
-    aggregates_columns.reserve(aggregates_descriptions.size());
+    ColumnsWithTypeAndName available_columns_after_aggregation;
+    available_columns_after_aggregation.reserve(aggregates_descriptions.size());
     for (auto & aggregate_description : aggregates_descriptions)
-        aggregates_columns.emplace_back(nullptr, aggregate_description.function->getReturnType(), aggregate_description.column_name);
+        available_columns_after_aggregation.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
 
     Names aggregation_keys;
 
-    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & group_by_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
-
-    ActionsDAGPtr before_aggregation_actions = std::make_shared<ActionsDAG>(group_by_input);
-    before_aggregation_actions->getOutputs().clear();
+    ActionsAndProjectInputsFlagPtr before_aggregation_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    /// Here it is OK to materialize const columns: if column is used in GROUP BY, it may be expected to become non-const
+    /// See https://github.com/ClickHouse/ClickHouse/issues/70655 for example
+    before_aggregation_actions->dag = ActionsDAG(input_columns, false);
+    before_aggregation_actions->dag.getOutputs().clear();
 
     std::unordered_set<std::string_view> before_aggregation_actions_output_node_names;
 
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
-    bool disable_grouping_sets = false;
 
-    PlannerActionsVisitor actions_visitor(planner_context);
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
     /// Add expressions from GROUP BY
+    bool group_by_use_nulls = planner_context->getQueryContext()->getSettingsRef()[Setting::group_by_use_nulls]
+        && (query_node.isGroupByWithGroupingSets() || query_node.isGroupByWithRollup() || query_node.isGroupByWithCube());
+
+    bool is_secondary_query = planner_context->getQueryContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    bool is_distributed_query = planner_context->getQueryContext()->isDistributed();
+    bool check_constants_for_group_by_key = is_secondary_query || is_distributed_query;
 
     if (query_node.hasGroupBy())
     {
@@ -96,9 +179,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 
                 for (auto & grouping_set_key_node : grouping_set_keys_list_node_typed.getNodes())
                 {
-                    group_by_with_constant_keys |= grouping_set_key_node->hasConstantValue();
+                    const auto * constant_key = grouping_set_key_node->as<ConstantNode>();
+                    group_by_with_constant_keys |= (constant_key != nullptr);
 
-                    auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, grouping_set_key_node);
+                    if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                        continue;
+
+                    auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, grouping_set_key_node);
+                    correlated_subtrees.assertEmpty("in aggregation keys");
                     aggregation_keys.reserve(expression_dag_nodes.size());
 
                     for (auto & expression_dag_node : expression_dag_nodes)
@@ -107,8 +195,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
                         if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                             continue;
 
+                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
-                        before_aggregation_actions->getOutputs().push_back(expression_dag_node);
+                        before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                         before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                     }
                 }
@@ -136,30 +227,34 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 
                 grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
             }
-
-            /// It is expected by execution layer that if there are only 1 grouping sets it will be removed
-            if (grouping_sets_parameters_list.size() == 1)
-            {
-                disable_grouping_sets = true;
-                grouping_sets_parameters_list.clear();
-            }
         }
         else
         {
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
-                group_by_with_constant_keys |= group_by_key_node->hasConstantValue();
-
-            auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, query_node.getGroupByNode());
-            aggregation_keys.reserve(expression_dag_nodes.size());
-
-            for (auto & expression_dag_node : expression_dag_nodes)
             {
-                if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                const auto * constant_key = group_by_key_node->as<ConstantNode>();
+                group_by_with_constant_keys |= (constant_key != nullptr);
+
+                if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                     continue;
 
-                aggregation_keys.push_back(expression_dag_node->result_name);
-                before_aggregation_actions->getOutputs().push_back(expression_dag_node);
-                before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
+                correlated_subtrees.assertEmpty("in aggregation keys");
+                aggregation_keys.reserve(expression_dag_nodes.size());
+
+                for (auto & expression_dag_node : expression_dag_nodes)
+                {
+                    if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
+                        continue;
+
+                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+
+                    available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
+                    aggregation_keys.push_back(expression_dag_node->result_name);
+                    before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
+                    before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
+                }
             }
         }
     }
@@ -171,13 +266,14 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
         auto & aggregate_function_node_typed = aggregate_function_node->as<FunctionNode &>();
         for (const auto & aggregate_function_node_argument : aggregate_function_node_typed.getArguments().getNodes())
         {
-            auto expression_dag_nodes = actions_visitor.visit(before_aggregation_actions, aggregate_function_node_argument);
+            auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, aggregate_function_node_argument);
+            correlated_subtrees.assertEmpty("in aggregate function argument");
             for (auto & expression_dag_node : expression_dag_nodes)
             {
                 if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                     continue;
 
-                before_aggregation_actions->getOutputs().push_back(expression_dag_node);
+                before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                 before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
             }
         }
@@ -189,13 +285,13 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
     /** For non ordinary GROUP BY we add virtual __grouping_set column
       * With set number, which is used as an additional key at the stage of merging aggregating data.
       */
-    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || (query_node.isGroupByWithGroupingSets() && !disable_grouping_sets))
-        aggregates_columns.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
-
-    resolveGroupingFunctions(query_tree, aggregation_keys, grouping_sets_parameters_list, *planner_context);
+    if (query_node.isGroupByWithRollup() || query_node.isGroupByWithCube() || query_node.isGroupByWithGroupingSets())
+        available_columns_after_aggregation.emplace_back(nullptr, std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
     /// Only aggregation keys and aggregates are available for next steps after GROUP BY step
-    auto aggregate_step = std::make_unique<ActionsChainStep>(before_aggregation_actions, ActionsChainStep::AvailableOutputColumnsStrategy::OUTPUT_NODES, aggregates_columns);
+    auto aggregate_step = std::make_unique<ActionsChainStep>(before_aggregation_actions,
+        false /*use_actions_nodes_as_output_columns*/,
+        available_columns_after_aggregation);
     actions_chain.addStep(std::move(aggregate_step));
 
     AggregationAnalysisResult aggregation_analysis_result;
@@ -211,9 +307,11 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(QueryTreeNodePtr & q
 /** Construct window analysis result if query tree has window functions.
   * Actions before window functions are added into actions chain, if result is not null optional.
   */
-std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
-    const ColumnsWithTypeAndName & join_tree_input_columns,
+std::optional<WindowAnalysisResult> analyzeWindow(
+    const QueryTreeNodePtr & query_tree,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
     auto window_function_nodes = collectWindowFunctionNodes(query_tree);
@@ -222,13 +320,11 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
 
     auto window_descriptions = extractWindowDescriptions(window_function_nodes, *planner_context);
 
-    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & window_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
 
-    PlannerActionsVisitor actions_visitor(planner_context);
-
-    ActionsDAGPtr before_window_actions = std::make_shared<ActionsDAG>(window_input);
-    before_window_actions->getOutputs().clear();
+    ActionsAndProjectInputsFlagPtr before_window_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_window_actions->dag = ActionsDAG(input_columns);
+    before_window_actions->dag.getOutputs().clear();
 
     std::unordered_set<std::string_view> before_window_actions_output_node_names;
 
@@ -237,25 +333,27 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
         auto & window_node = window_function_node_typed.getWindowNode()->as<WindowNode &>();
 
-        auto expression_dag_nodes = actions_visitor.visit(before_window_actions, window_function_node_typed.getArgumentsNode());
+        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_window_actions->dag, window_function_node_typed.getArgumentsNode());
+        correlated_subtrees.assertEmpty("in window function arguments");
 
         for (auto & expression_dag_node : expression_dag_nodes)
         {
             if (before_window_actions_output_node_names.contains(expression_dag_node->result_name))
                 continue;
 
-            before_window_actions->getOutputs().push_back(expression_dag_node);
+            before_window_actions->dag.getOutputs().push_back(expression_dag_node);
             before_window_actions_output_node_names.insert(expression_dag_node->result_name);
         }
 
-        expression_dag_nodes = actions_visitor.visit(before_window_actions, window_node.getPartitionByNode());
+        std::tie(expression_dag_nodes, correlated_subtrees) = actions_visitor.visit(before_window_actions->dag, window_node.getPartitionByNode());
+        correlated_subtrees.assertEmpty("in window definition");
 
         for (auto & expression_dag_node : expression_dag_nodes)
         {
             if (before_window_actions_output_node_names.contains(expression_dag_node->result_name))
                 continue;
 
-            before_window_actions->getOutputs().push_back(expression_dag_node);
+            before_window_actions->dag.getOutputs().push_back(expression_dag_node);
             before_window_actions_output_node_names.insert(expression_dag_node->result_name);
         }
 
@@ -266,15 +364,57 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
         for (auto & sort_node : order_by_node_list.getNodes())
         {
             auto & sort_node_typed = sort_node->as<SortNode &>();
-            expression_dag_nodes = actions_visitor.visit(before_window_actions, sort_node_typed.getExpression());
+            std::tie(expression_dag_nodes, correlated_subtrees) = actions_visitor.visit(before_window_actions->dag, sort_node_typed.getExpression());
+            correlated_subtrees.assertEmpty("in window order definition");
 
             for (auto & expression_dag_node : expression_dag_nodes)
             {
                 if (before_window_actions_output_node_names.contains(expression_dag_node->result_name))
                     continue;
 
-                before_window_actions->getOutputs().push_back(expression_dag_node);
+                before_window_actions->dag.getOutputs().push_back(expression_dag_node);
                 before_window_actions_output_node_names.insert(expression_dag_node->result_name);
+            }
+        }
+    }
+
+    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
+    /// in the data flowing into window functions. But the aggregate function was created during analysis
+    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
+    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
+    for (auto & window_description : window_descriptions)
+    {
+        for (auto & window_function : window_description.window_functions)
+        {
+            bool types_changed = false;
+            DataTypes actual_argument_types;
+            actual_argument_types.reserve(window_function.argument_names.size());
+
+            for (size_t i = 0; i < window_function.argument_names.size(); ++i)
+            {
+                const auto * dag_node = before_window_actions->dag.tryFindInOutputs(window_function.argument_names[i]);
+                if (dag_node && !window_function.argument_types[i]->equals(*dag_node->result_type))
+                {
+                    actual_argument_types.push_back(dag_node->result_type);
+                    types_changed = true;
+                }
+                else
+                {
+                    actual_argument_types.push_back(window_function.argument_types[i]);
+                }
+            }
+
+            if (types_changed)
+            {
+                AggregateFunctionProperties properties;
+                auto new_function = AggregateFunctionFactory::instance().get(
+                    window_function.aggregate_function->getName(),
+                    NullsAction::EMPTY,
+                    actual_argument_types,
+                    window_function.function_parameters,
+                    properties);
+                window_function.aggregate_function = std::move(new_function);
+                window_function.argument_types = std::move(actual_argument_types);
             }
         }
     }
@@ -283,10 +423,10 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
 
     for (auto & window_description : window_descriptions)
         for (auto & window_function : window_description.window_functions)
-            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getReturnType(), window_function.column_name);
+            window_functions_additional_columns.emplace_back(nullptr, window_function.aggregate_function->getResultType(), window_function.column_name);
 
     auto before_window_step = std::make_unique<ActionsChainStep>(before_window_actions,
-        ActionsChainStep::AvailableOutputColumnsStrategy::ALL_NODES,
+        true /*use_actions_nodes_as_output_columns*/,
         window_functions_additional_columns);
     actions_chain.addStep(std::move(before_window_step));
 
@@ -301,14 +441,21 @@ std::optional<WindowAnalysisResult> analyzeWindow(QueryTreeNodePtr & query_tree,
   * Projection actions are added into actions chain.
   * It is client responsibility to update projection analysis result with project names actions after chain is finalized.
   */
-ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
-    const ColumnsWithTypeAndName & join_tree_input_columns,
+ProjectionAnalysisResult analyzeProjection(
+    const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
-    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & projection_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
-    auto projection_actions = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), projection_input, planner_context);
+    auto [projection_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        query_node.getProjectionNode(),
+        input_columns,
+        planner_context,
+        correlated_columns_set);
+
+    auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    projection_actions->dag = std::move(projection_actions_dag);
 
     auto projection_columns = query_node.getProjectionColumns();
     size_t projection_columns_size = projection_columns.size();
@@ -317,7 +464,7 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
     NamesWithAliases projection_column_names_with_display_aliases;
     projection_column_names_with_display_aliases.reserve(projection_columns_size);
 
-    auto & projection_actions_outputs = projection_actions->getOutputs();
+    auto & projection_actions_outputs = projection_actions->dag.getOutputs();
     size_t projection_outputs_size = projection_actions_outputs.size();
 
     if (projection_columns_size != projection_outputs_size)
@@ -341,6 +488,7 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
 
     ProjectionAnalysisResult result;
     result.projection_actions = std::move(projection_actions);
+    result.correlated_subtrees = std::move(correlated_subtrees);
     result.projection_column_names = std::move(projection_column_names);
     result.projection_column_names_with_display_aliases = std::move(projection_column_names_with_display_aliases);
 
@@ -350,20 +498,20 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
 /** Construct sort analysis result.
   * Actions before sort are added into actions chain.
   */
-SortAnalysisResult analyzeSort(const QueryNode & query_node,
-    const ColumnsWithTypeAndName & join_tree_input_columns,
+SortAnalysisResult analyzeSort(
+    const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
-    const auto *chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & order_by_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
-
-    ActionsDAGPtr before_sort_actions = std::make_shared<ActionsDAG>(order_by_input);
-    auto & before_sort_actions_outputs = before_sort_actions->getOutputs();
+    auto before_sort_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_sort_actions->dag = ActionsDAG(input_columns);
+    auto & before_sort_actions_outputs = before_sort_actions->dag.getOutputs();
     before_sort_actions_outputs.clear();
 
-    PlannerActionsVisitor actions_visitor(planner_context);
-
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
+    bool has_with_fill = false;
     std::unordered_set<std::string_view> before_sort_actions_dag_output_node_names;
 
     /** We add only sort node sort expression in before ORDER BY actions DAG.
@@ -373,7 +521,9 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
     for (const auto & sort_node : order_by_node_list.getNodes())
     {
         auto & sort_node_typed = sort_node->as<SortNode &>();
-        auto expression_dag_nodes = actions_visitor.visit(before_sort_actions, sort_node_typed.getExpression());
+        auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_sort_actions->dag, sort_node_typed.getExpression());
+        correlated_subtrees.assertEmpty("in ORDER BY");
+        has_with_fill |= sort_node_typed.withFill();
 
         for (auto & action_dag_node : expression_dag_nodes)
         {
@@ -385,28 +535,95 @@ SortAnalysisResult analyzeSort(const QueryNode & query_node,
         }
     }
 
+    if (has_with_fill)
+    {
+        for (auto & output_node : before_sort_actions_outputs)
+            output_node = &before_sort_actions->dag.materializeNode(*output_node);
+    }
+
     auto actions_step_before_sort = std::make_unique<ActionsChainStep>(before_sort_actions);
     actions_chain.addStep(std::move(actions_step_before_sort));
 
-    return SortAnalysisResult{std::move(before_sort_actions)};
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
+
+    /// We add only INPUT columns necessary for INTERPOLATE expression in before ORDER BY actions DAG
+    if (query_node.hasInterpolate())
+    {
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+
+        PlannerActionsVisitor interpolate_actions_visitor(planner_context, correlated_columns_set);
+
+        /// getLastStepAvailableOutputColumns should have been correct.
+        /// However, we materialize ORDER BY columns in case of WITH FILL, and it causes a name-collision.
+        /// If we take getLastStepAvailableOutputColumns list, it may return non-materialized constants,
+        /// so here we add materialized ORDER BY columns manually, and append everything else after.
+        ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
+        for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
+            if (!before_sort_actions_dag_output_node_names.contains(out.name))
+                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+
+        for (auto & interpolate_node : interpolate_list_node.getNodes())
+        {
+            auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
+
+            auto [nodes, correlated_subtrees] = interpolate_actions_visitor.visit(before_interpolate_actions_dag, interpolate_node_typed.getExpression());
+            correlated_subtrees.assertEmpty("in expression to interpolate");
+            if (nodes.size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Interpolate expression must return single column");
+            const auto * node = nodes.front();
+            node = &before_interpolate_actions_dag.addAlias(*node, interpolate_node_typed.getExpressionName());
+
+            before_interpolate_actions_dag.getOutputs().push_back(node);
+        }
+
+        before_interpolate_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
+    }
+
+    if (before_interpolate_actions)
+    {
+        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
+        actions_chain.addStep(std::move(actions_step_before_interpolate));
+    }
+
+    return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
 }
 
 /** Construct limit by analysis result.
   * Actions before limit by are added into actions chain.
   */
 LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
-    const ColumnsWithTypeAndName & join_tree_input_columns,
+    const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
+    const NameSet & required_output_nodes_names,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
     ActionsChain & actions_chain)
 {
-    const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & limit_by_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
-    auto before_limit_by_actions = buildActionsDAGFromExpressionNode(query_node.getLimitByNode(), limit_by_input, planner_context);
+    auto [before_limit_by_actions_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        query_node.getLimitByNode(),
+        input_columns,
+        planner_context,
+        correlated_columns_set);
+    correlated_subtrees.assertEmpty("in LIMIT BY expression");
 
+    auto before_limit_by_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_limit_by_actions->dag = std::move(before_limit_by_actions_dag);
+
+    NameSet limit_by_column_names_set;
     Names limit_by_column_names;
-    limit_by_column_names.reserve(before_limit_by_actions->getOutputs().size());
-    for (auto & output_node : before_limit_by_actions->getOutputs())
+    limit_by_column_names.reserve(before_limit_by_actions->dag.getOutputs().size());
+    for (auto & output_node : before_limit_by_actions->dag.getOutputs())
+    {
+        limit_by_column_names_set.insert(output_node->result_name);
         limit_by_column_names.push_back(output_node->result_name);
+    }
+
+    for (const auto & node : before_limit_by_actions->dag.getNodes())
+    {
+        if (required_output_nodes_names.contains(node.result_name) &&
+            !limit_by_column_names_set.contains(node.result_name))
+            before_limit_by_actions->dag.getOutputs().push_back(&node);
+    }
 
     auto actions_step_before_limit_by = std::make_unique<ActionsChainStep>(before_limit_by_actions);
     actions_chain.addStep(std::move(actions_step_before_limit_by));
@@ -416,65 +633,222 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
 
 }
 
-PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr query_tree,
+PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const PlannerQueryProcessingInfo & planner_query_processing_info)
 {
     auto & query_node = query_tree->as<QueryNode &>();
 
     ActionsChain actions_chain;
+
+    ColumnsWithTypeAndName current_output_columns = join_tree_input_columns;
+
+    auto correlated_columns_set = query_node.getCorrelatedColumnsSet();
 
     std::optional<FilterAnalysisResult> where_analysis_result_optional;
     std::optional<size_t> where_action_step_index_optional;
 
     if (query_node.hasWhere())
     {
-        where_analysis_result_optional = analyzeFilter(query_node.getWhere(), join_tree_input_columns, planner_context, actions_chain);
-        where_action_step_index_optional = actions_chain.getLastStepIndex();
+        where_analysis_result_optional = analyzeFilter(
+            query_node.getWhere(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (where_analysis_result_optional)
+        {
+            where_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
-    auto aggregation_analysis_result_optional = analyzeAggregation(query_tree, join_tree_input_columns, planner_context, actions_chain);
+    auto aggregation_analysis_result_optional = analyzeAggregation(
+        query_tree,
+        current_output_columns,
+        planner_context,
+        correlated_columns_set,
+        actions_chain);
+    if (aggregation_analysis_result_optional)
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     std::optional<FilterAnalysisResult> having_analysis_result_optional;
     std::optional<size_t> having_action_step_index_optional;
 
     if (query_node.hasHaving())
     {
-        having_analysis_result_optional = analyzeFilter(query_node.getHaving(), join_tree_input_columns, planner_context, actions_chain);
-        having_action_step_index_optional = actions_chain.getLastStepIndex();
+        having_analysis_result_optional = analyzeFilter(
+            query_node.getHaving(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (having_analysis_result_optional)
+        {
+            having_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
     }
 
-    auto window_analysis_result_optional = analyzeWindow(query_tree, join_tree_input_columns, planner_context, actions_chain);
-    auto projection_analysis_result = analyzeProjection(query_node, join_tree_input_columns, planner_context, actions_chain);
+    auto window_analysis_result_optional = analyzeWindow(
+        query_tree,
+        current_output_columns,
+        planner_context,
+        correlated_columns_set,
+        actions_chain);
+    if (window_analysis_result_optional)
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+
+    std::optional<FilterAnalysisResult> qualify_analysis_result_optional;
+    std::optional<size_t> qualify_action_step_index_optional;
+
+    if (query_node.hasQualify())
+    {
+        qualify_analysis_result_optional = analyzeFilter(
+            query_node.getQualify(),
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        if (qualify_analysis_result_optional)
+        {
+            qualify_action_step_index_optional = actions_chain.getLastStepIndex();
+            current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+        }
+    }
+
+    auto projection_analysis_result = analyzeProjection(
+        query_node,
+        current_output_columns,
+        planner_context,
+        correlated_columns_set,
+        actions_chain);
+    current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
 
     std::optional<SortAnalysisResult> sort_analysis_result_optional;
     if (query_node.hasOrderBy())
-        sort_analysis_result_optional = analyzeSort(query_node, join_tree_input_columns, planner_context, actions_chain);
+    {
+        sort_analysis_result_optional = analyzeSort(
+            query_node,
+            current_output_columns,
+            planner_context,
+            correlated_columns_set,
+            actions_chain);
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
 
     std::optional<LimitByAnalysisResult> limit_by_analysis_result_optional;
 
     if (query_node.hasLimitBy())
-        limit_by_analysis_result_optional = analyzeLimitBy(query_node, join_tree_input_columns, planner_context, actions_chain);
+    {
+        /** If we process only first stage of query and there is ORDER BY, we must preserve ORDER BY output columns
+          * and put them into LIMIT BY output columns, to prevent removing of unused expressions during chain finalize.
+          *
+          * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
+          * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
+          * otherwise coordinator does not find it in block.
+          *
+          * Similarly, when ORDER BY has WITH FILL, we must preserve the ORDER BY columns because
+          * the filling step added later requires them in the block header.
+          *
+          * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
+          */
+        NameSet required_output_nodes_names;
+        if (sort_analysis_result_optional.has_value()
+            && (sort_analysis_result_optional->has_with_fill
+                || (planner_query_processing_info.isFirstStage()
+                    && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
+        {
+            const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
+            for (const auto & output_node : before_order_by_actions->dag.getOutputs())
+                required_output_nodes_names.insert(output_node->result_name);
+        }
+
+        limit_by_analysis_result_optional = analyzeLimitBy(
+            query_node,
+            current_output_columns,
+            planner_context,
+            required_output_nodes_names,
+            correlated_columns_set,
+            actions_chain);
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
 
     const auto * chain_available_output_columns = actions_chain.getLastStepAvailableOutputColumnsOrNull();
-    const auto & project_names_input = chain_available_output_columns ? *chain_available_output_columns : join_tree_input_columns;
-    auto project_names_actions = std::make_shared<ActionsDAG>(project_names_input);
-    project_names_actions->project(projection_analysis_result.projection_column_names_with_display_aliases);
+    auto project_names_input = chain_available_output_columns ? *chain_available_output_columns : current_output_columns;
+
+    /** For distributed query `isToAggregationState`, we do not project names on shards/replicas.
+      * However, constant columns from project_names_actions still can be required on the initiator.
+      * For example, for query:
+      *   SELECT hostName(), number from clusterAllReplicas(default, numbers_mt(3)) ORDER BY number;
+      * executed to stage `WithMergeableStateAfterAggregationAndLimit` on replicas
+      * we must send hostName() column to initiator.
+      */
+    if (planner_query_processing_info.isToAggregationState())
+    {
+        for (auto & column : project_names_input)
+            column.column = nullptr;
+    }
+
+    bool has_with_fill = sort_analysis_result_optional.has_value() && sort_analysis_result_optional->has_with_fill;
+
+    /** If there is WITH FILL we must use non constant projection columns.
+      *
+      * Example: SELECT 1 AS value ORDER BY value ASC WITH FILL FROM 0 TO 5 STEP 1;
+      *
+      * If there is DISTINCT we must preserve non constant projection output columns
+      * in project names actions, to prevent removing of unused expressions during chain finalize.
+      *
+      * Example: SELECT DISTINCT id, 1 AS value FROM test_table ORDER BY id;
+      */
+    if (has_with_fill || query_node.isDistinct())
+    {
+        std::unordered_set<std::string_view> projection_column_names;
+
+        if (query_node.isDistinct())
+        {
+            for (auto & [column_name, _] : projection_analysis_result.projection_column_names_with_display_aliases)
+                projection_column_names.insert(column_name);
+        }
+
+        for (auto & column : project_names_input)
+        {
+            if (has_with_fill || projection_column_names.contains(column.name))
+                column.column = nullptr;
+        }
+    }
+
+    auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    project_names_actions->dag = ActionsDAG(project_names_input);
+
+    if (query_node.hasInterpolate())
+    {
+        auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
+        NameSet interpolate_names;
+        auto & interpolate_list_node = query_node.getInterpolate()->as<ListNode &>();
+        for (auto & interpolate_node : interpolate_list_node.getNodes())
+            interpolate_names.insert(interpolate_node->as<InterpolateNode &>().getExpressionName());
+
+        for (auto & [name, alias] : project_names)
+            if (interpolate_names.contains(alias))
+                name = alias;
+
+        project_names_actions->dag.project(project_names);
+    }
+    else
+        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+
+    project_names_actions->project_input = true;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
-    // std::cout << "Chain dump before finalize" << std::endl;
-    // std::cout << actions_chain.dump() << std::endl;
-
     actions_chain.finalize();
-
-    // std::cout << "Chain dump after finalize" << std::endl;
-    // std::cout << actions_chain.dump() << std::endl;
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 
     PlannerExpressionsAnalysisResult expressions_analysis_result(std::move(projection_analysis_result));
 
-    if (where_action_step_index_optional && where_analysis_result_optional)
+    if (where_analysis_result_optional && where_action_step_index_optional)
     {
         auto & where_analysis_result = *where_analysis_result_optional;
         auto & where_actions_chain_node = actions_chain.at(*where_action_step_index_optional);
@@ -485,7 +859,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr 
     if (aggregation_analysis_result_optional)
         expressions_analysis_result.addAggregation(std::move(*aggregation_analysis_result_optional));
 
-    if (having_action_step_index_optional && having_analysis_result_optional)
+    if (having_analysis_result_optional && having_action_step_index_optional)
     {
         auto & having_analysis_result = *having_analysis_result_optional;
         auto & having_actions_chain_node = actions_chain.at(*having_action_step_index_optional);
@@ -495,6 +869,14 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(QueryTreeNodePtr 
 
     if (window_analysis_result_optional)
         expressions_analysis_result.addWindow(std::move(*window_analysis_result_optional));
+
+    if (qualify_analysis_result_optional && qualify_action_step_index_optional)
+    {
+        auto & qualify_analysis_result = *qualify_analysis_result_optional;
+        auto & qualify_actions_chain_node = actions_chain.at(*qualify_action_step_index_optional);
+        qualify_analysis_result.remove_filter_column = !qualify_actions_chain_node->getChildRequiredOutputColumnsNames().contains(qualify_analysis_result.filter_column_name);
+        expressions_analysis_result.addQualify(std::move(qualify_analysis_result));
+    }
 
     if (sort_analysis_result_optional)
         expressions_analysis_result.addSort(std::move(*sort_analysis_result_optional));

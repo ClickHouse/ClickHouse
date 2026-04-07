@@ -1,5 +1,6 @@
 import pytest
-from helpers.client import QueryTimeoutExceedException, QueryRuntimeException
+
+from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -19,7 +20,10 @@ def start_cluster():
 
 def test_different_versions(start_cluster):
     with pytest.raises(QueryTimeoutExceedException):
-        node.query("SELECT sleepEachRow(3) FROM numbers(10)", timeout=5)
+        node.query(
+            "SELECT sleepEachRow(3) FROM numbers(10) SETTINGS function_sleep_max_microseconds_per_block = 0",
+            timeout=5,
+        )
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT 1", settings={"max_concurrent_queries_for_user": 1})
     assert node.contains_in_log("Too many simultaneous queries for user")

@@ -1,20 +1,23 @@
-#include "ExternalDictionaryLibraryBridgeHelper.h"
+#include <BridgeHelper/ExternalDictionaryLibraryBridgeHelper.h>
 
-#include <Formats/formatBlock.h>
+#include <Core/Block.h>
+#include <Core/Field.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/formatBlock.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/Pipe.h>
+#include <base/range.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <Common/logger_useful.h>
-#include <base/range.h>
-#include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -43,7 +46,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::getPingURI() const
 {
     auto uri = createBaseURI();
     uri.setPath(PING_HANDLER);
-    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("dictionary_id", fieldToString(dictionary_id));
     return uri;
 }
 
@@ -60,7 +63,7 @@ Poco::URI ExternalDictionaryLibraryBridgeHelper::createRequestURI(const String &
 {
     auto uri = getMainURI();
     uri.addQueryParameter("version", std::to_string(LIBRARY_BRIDGE_PROTOCOL_VERSION));
-    uri.addQueryParameter("dictionary_id", toString(dictionary_id));
+    uri.addQueryParameter("dictionary_id", fieldToString(dictionary_id));
     uri.addQueryParameter("method", method);
     return uri;
 }
@@ -71,8 +74,12 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
-        readString(result, buf);
+        auto buf = BuilderRWBufferFromHTTP(getPingURI())
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withTimeouts(http_timeouts)
+                       .create(credentials);
+
+        readString(result, *buf);
     }
     catch (...)
     {
@@ -87,19 +94,25 @@ bool ExternalDictionaryLibraryBridgeHelper::bridgeHandShake()
      * 2. Bridge crashed or restarted for some reason while server did not.
     **/
     if (result.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {}. Check that bridge and server have the same version.", result);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected message from library bridge: {}. "
+                        "Check that bridge and server have the same version.", result);
 
     UInt8 dictionary_id_exists;
     auto parsed = tryParse<UInt8>(dictionary_id_exists, result);
     if (!parsed || (dictionary_id_exists != 0 && dictionary_id_exists != 1))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected message from library bridge: {} ({}). Check that bridge and server have the same version.",
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected message from library bridge: {} ({}). "
+                        "Check that bridge and server have the same version.",
                         result, parsed ? toString(dictionary_id_exists) : "failed to parse");
 
     LOG_TRACE(log, "dictionary_id: {}, dictionary_id_exists on bridge side: {}, library confirmed to be initialized on server side: {}",
-              toString(dictionary_id), toString(dictionary_id_exists), library_initialized);
+        fieldToString(dictionary_id), toString(dictionary_id_exists), library_initialized);
 
     if (dictionary_id_exists && !library_initialized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Library was not initialized, but bridge responded to already have dictionary id: {}", dictionary_id);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Library was not initialized, but bridge responded to already have dictionary id: {}",
+                        dictionary_id);
 
     /// Here we want to say bridge to recreate a new library handler for current dictionary,
     /// because it responded to have lost it, but we know that it has already been created. (It is a direct result of bridge crash).
@@ -159,7 +172,7 @@ bool ExternalDictionaryLibraryBridgeHelper::cloneLibrary(const Field & other_dic
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LIB_CLONE_METHOD);
-    uri.addQueryParameter("from_dictionary_id", toString(other_dictionary_id));
+    uri.addQueryParameter("from_dictionary_id", fieldToString(other_dictionary_id));
     /// We also pass initialization settings in order to create a library handler
     /// in case from_dictionary_id does not exist in bridge side (possible in case of bridge crash).
     library_initialized = executeRequest(uri, getInitLibraryCallback());
@@ -204,7 +217,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadAll()
 }
 
 
-static String getDictIdsString(const std::vector<UInt64> & ids)
+static String getDictIdsString(const VectorWithMemoryTracking<UInt64> & ids)
 {
     WriteBufferFromOwnString out;
     writeVectorBinary(ids, out);
@@ -212,7 +225,7 @@ static String getDictIdsString(const std::vector<UInt64> & ids)
 }
 
 
-QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
+QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadIds(const VectorWithMemoryTracking<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(EXT_DICT_LOAD_IDS_METHOD);
@@ -233,6 +246,7 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadKeys(const Block & requ
         WriteBufferFromOStream out_buffer(os);
         auto output_format = getContext()->getOutputFormat(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
         formatBlock(output_format, requested_block);
+        out_buffer.finalize();
     };
     return QueryPipeline(loadBase(uri, out_stream_callback));
 }
@@ -240,30 +254,28 @@ QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadKeys(const Block & requ
 
 bool ExternalDictionaryLibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback) const
 {
-    ReadWriteBufferFromHTTP buf(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        std::move(out_stream_callback),
-        http_timeouts, credentials);
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                   .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                   .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                   .withTimeouts(http_timeouts)
+                   .withOutCallback(std::move(out_stream_callback))
+                   .create(credentials);
 
     bool res;
-    readBoolText(res, buf);
+    readBoolText(res, *buf);
     return res;
 }
 
 
 QueryPipeline ExternalDictionaryLibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
-    auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        std::move(out_stream_callback),
-        http_timeouts,
-        credentials,
-        0,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        getContext()->getReadSettings(),
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
+    auto read_buf_ptr = BuilderRWBufferFromHTTP(uri)
+                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+                            .withSettings(getContext()->getReadSettings())
+                            .withTimeouts(http_timeouts)
+                            .withOutCallback(std::move(out_stream_callback))
+                            .create(credentials);
 
     auto source = FormatFactory::instance().getInput(ExternalDictionaryLibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
     source->addBuffer(std::move(read_buf_ptr));

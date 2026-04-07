@@ -1,15 +1,16 @@
 ---
-slug: /en/sql-reference/data-types/
-sidebar_label: Data Types
-sidebar_position: 37
+description: 'Documentation for Data Types in ClickHouse'
+sidebar_label: 'List of data types'
+sidebar_position: 1
+slug: /sql-reference/data-types/
+title: 'Data Types in ClickHouse'
+doc_type: 'reference'
 ---
 
-# Data Types 
+# Data Types in ClickHouse
 
-ClickHouse can store various kinds of data in table cells.
+This section describes the data types supported by ClickHouse, for example [integers](int-uint.md), [floats](float.md) and [strings](string.md).
 
-This section describes the supported data types and special considerations for using and/or implementing them if any.
-
-You can check whether data type name is case-sensitive in the [system.data_type_families](../../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
-
-[Original article](https://clickhouse.com/docs/en/data_types/) <!--hide-->
+System table [system.data_type_families](/operations/system-tables/data_type_families) provides an
+overview of all available data types.
+It also shows whether a data type is an alias to another data type and its name is case-sensitive (e.g. `bool` vs. `BOOL`).

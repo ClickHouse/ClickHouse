@@ -80,7 +80,7 @@ bool DistinctSortedTransform::isApplicable(const Block & header, const SortDescr
 }
 
 DistinctSortedTransform::DistinctSortedTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & sort_description,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
@@ -94,12 +94,13 @@ DistinctSortedTransform::DistinctSortedTransform(
 
     /// pre-calculate column positions to use during chunk transformation
     ColumnNumbers const_column_positions;
-    calcColumnPositionsInHeader(header, column_names, column_positions, const_column_positions);
+    calcColumnPositionsInHeader(*header, column_names, column_positions, const_column_positions);
     if (column_positions.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DistinctSortedTransform: all columns can't be const. DistinctTransform should be used instead");
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "DistinctSortedTransform: all columns can't be const. DistinctTransform should be used instead");
 
     /// pre-calculate DISTINCT column positions which form sort prefix of sort description
-    calcSortPrefixPositionsInHeader(header, sort_description, column_positions, const_column_positions, sort_prefix_positions);
+    calcSortPrefixPositionsInHeader(*header, sort_description, column_positions, const_column_positions, sort_prefix_positions);
     if (sort_prefix_positions.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "DistinctSortedTransform: columns have to form a sort prefix for provided sort description");
@@ -158,7 +159,8 @@ void DistinctSortedTransform::transform(Chunk & chunk)
         return;
     }
 
-    if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    size_t data_total_row_count = data.getTotalRowCount();
+    if (!set_size_limits.check(data_total_row_count, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
         stopReading();
         chunk.clear();
@@ -166,7 +168,7 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     }
 
     /// Stop reading if we already reached the limit.
-    if (limit_hint && data.getTotalRowCount() >= limit_hint)
+    if (limit_hint && data_total_row_count >= limit_hint)
         stopReading();
 
     prev_chunk.chunk = std::move(chunk);

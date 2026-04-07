@@ -2,7 +2,8 @@
 
 #include <map>
 
-#include <Parsers/IAST.h>
+#include <base/types.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {

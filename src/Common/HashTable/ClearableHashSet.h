@@ -10,6 +10,10 @@
   * Instead of this class, you could just use the pair (version, key) in the HashSet as the key
   * but then the table would accumulate all the keys that it ever stored, and it was unreasonably growing.
   * This class goes a step further and considers the keys with the old version empty in the hash table.
+  *
+  * Zero values note:
+  * A cell in ClearableHashSet can store a zero values as normal value
+  * If its version is equal to the version of the set itself, then it's not considered as empty even key's value is zero value of the corresponding type
   */
 
 
@@ -44,7 +48,7 @@ struct ClearableHashTableCell : public BaseCell
     /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
     static constexpr bool need_zero_value_storage = false;
 
-    ClearableHashTableCell() {} //-V730 /// NOLINT
+    ClearableHashTableCell() {} /// NOLINT
     ClearableHashTableCell(const Key & key_, const State & state) : BaseCell(key_, state), version(state.version) {}
 };
 
@@ -56,6 +60,8 @@ template <
 class ClearableHashSet
     : public HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>
 {
+    using Cell = ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>;
+
 public:
     using Base = HashTable<Key, ClearableHashTableCell<Key, HashTableCell<Key, Hash, ClearableHashSetState>>, Hash, Grower, Allocator>;
     using typename Base::LookupResult;
@@ -79,6 +85,8 @@ class ClearableHashSetWithSavedHash : public HashTable<
                                           Grower,
                                           Allocator>
 {
+    using Cell = ClearableHashTableCell<Key, HashSetCellWithSavedHash<Key, Hash, ClearableHashSetState>>;
+
 public:
     void clear()
     {

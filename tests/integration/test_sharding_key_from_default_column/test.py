@@ -1,5 +1,7 @@
-import pytest
 import itertools
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -41,7 +43,7 @@ def test_default_column():
     )
 
     for insert_sync in [0, 1]:
-        settings = {"insert_distributed_sync": insert_sync}
+        settings = {"distributed_foreground_insert": insert_sync}
 
         # INSERT INTO TABLE dist (x)
         node1.query("TRUNCATE TABLE local ON CLUSTER 'test_cluster'")
@@ -49,14 +51,14 @@ def test_default_column():
             "INSERT INTO TABLE dist (x) VALUES (1), (2), (3), (4)", settings=settings
         )
         node1.query("SYSTEM FLUSH DISTRIBUTED dist")
-        assert node1.query("SELECT x, y, z FROM local") == TSV(
+        assert node1.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[2, 102, 104], [4, 104, 108]]
         )
-        assert node2.query("SELECT x, y, z FROM local") == TSV(
+        assert node2.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[1, 101, 102], [3, 103, 106]]
         )
-        assert node1.query("SELECT x, y, z FROM dist") == TSV(
-            [[2, 102, 104], [4, 104, 108], [1, 101, 102], [3, 103, 106]]
+        assert node1.query("SELECT x, y, z FROM dist ORDER BY x") == TSV(
+            [[1, 101, 102], [2, 102, 104], [3, 103, 106], [4, 104, 108]]
         )
 
         # INSERT INTO TABLE dist (x, y)
@@ -66,12 +68,12 @@ def test_default_column():
             settings=settings,
         )
         node1.query("SYSTEM FLUSH DISTRIBUTED dist")
-        assert node1.query("SELECT x, y, z FROM local") == TSV([[2, 22, 24]])
-        assert node2.query("SELECT x, y, z FROM local") == TSV(
+        assert node1.query("SELECT x, y, z FROM local ORDER BY x") == TSV([[2, 22, 24]])
+        assert node2.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[1, 11, 12], [3, 33, 36]]
         )
-        assert node1.query("SELECT x, y, z FROM dist") == TSV(
-            [[2, 22, 24], [1, 11, 12], [3, 33, 36]]
+        assert node1.query("SELECT x, y, z FROM dist ORDER BY x") == TSV(
+            [[1, 11, 12], [2, 22, 24], [3, 33, 36]]
         )
 
 
@@ -86,7 +88,7 @@ def test_materialized_column_allow_insert_materialized():
 
     for insert_sync in [0, 1]:
         settings = {
-            "insert_distributed_sync": insert_sync,
+            "distributed_foreground_insert": insert_sync,
             "insert_allow_materialized_columns": 1,
         }
 
@@ -96,14 +98,14 @@ def test_materialized_column_allow_insert_materialized():
             "INSERT INTO TABLE dist (x) VALUES (1), (2), (3), (4)", settings=settings
         )
         node1.query("SYSTEM FLUSH DISTRIBUTED dist")
-        assert node1.query("SELECT x, y, z FROM local") == TSV(
+        assert node1.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[2, 102, 104], [4, 104, 108]]
         )
-        assert node2.query("SELECT x, y, z FROM local") == TSV(
+        assert node2.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[1, 101, 102], [3, 103, 106]]
         )
-        assert node1.query("SELECT x, y, z FROM dist") == TSV(
-            [[2, 102, 104], [4, 104, 108], [1, 101, 102], [3, 103, 106]]
+        assert node1.query("SELECT x, y, z FROM dist ORDER BY x") == TSV(
+            [[1, 101, 102], [2, 102, 104], [3, 103, 106], [4, 104, 108]]
         )
 
         # INSERT INTO TABLE dist (x, y)
@@ -113,12 +115,12 @@ def test_materialized_column_allow_insert_materialized():
             settings=settings,
         )
         node1.query("SYSTEM FLUSH DISTRIBUTED dist")
-        assert node1.query("SELECT x, y, z FROM local") == TSV([[2, 22, 24]])
-        assert node2.query("SELECT x, y, z FROM local") == TSV(
+        assert node1.query("SELECT x, y, z FROM local ORDER BY x") == TSV([[2, 22, 24]])
+        assert node2.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[1, 11, 12], [3, 33, 36]]
         )
-        assert node1.query("SELECT x, y, z FROM dist") == TSV(
-            [[2, 22, 24], [1, 11, 12], [3, 33, 36]]
+        assert node1.query("SELECT x, y, z FROM dist ORDER BY x") == TSV(
+            [[1, 11, 12], [2, 22, 24], [3, 33, 36]]
         )
 
 
@@ -133,7 +135,7 @@ def test_materialized_column_disallow_insert_materialized():
 
     for insert_sync in [0, 1]:
         settings = {
-            "insert_distributed_sync": insert_sync,
+            "distributed_foreground_insert": insert_sync,
             "insert_allow_materialized_columns": 0,
         }
 
@@ -143,14 +145,14 @@ def test_materialized_column_disallow_insert_materialized():
             "INSERT INTO TABLE dist (x) VALUES (1), (2), (3), (4)", settings=settings
         )
         node1.query("SYSTEM FLUSH DISTRIBUTED dist")
-        assert node1.query("SELECT x, y, z FROM local") == TSV(
+        assert node1.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[2, 202, -200], [4, 204, -200]]
         )
-        assert node2.query("SELECT x, y, z FROM local") == TSV(
+        assert node2.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[1, 201, -200], [3, 203, -200]]
         )
-        assert node1.query("SELECT x, y, z FROM dist") == TSV(
-            [[2, 202, -200], [4, 204, -200], [1, 201, -200], [3, 203, -200]]
+        assert node1.query("SELECT x, y, z FROM dist ORDER BY x") == TSV(
+            [[1, 201, -200], [2, 202, -200], [3, 203, -200], [4, 204, -200]]
         )
 
         # INSERT INTO TABLE dist (x, y)
@@ -173,7 +175,7 @@ def test_materialized_column_disallow_insert_materialized_different_shards():
 
     for insert_sync in [0, 1]:
         settings = {
-            "insert_distributed_sync": insert_sync,
+            "distributed_foreground_insert": insert_sync,
             "insert_allow_materialized_columns": 0,
         }
 
@@ -183,12 +185,12 @@ def test_materialized_column_disallow_insert_materialized_different_shards():
             "INSERT INTO TABLE dist (x) VALUES (1), (2), (3), (4)", settings=settings
         )
         node1.query("SYSTEM FLUSH DISTRIBUTED dist")
-        assert node1.query("SELECT x, y, z FROM local") == TSV(
+        assert node1.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[1, 201, -200], [3, 203, -200]]
         )
-        assert node2.query("SELECT x, y, z FROM local") == TSV(
+        assert node2.query("SELECT x, y, z FROM local ORDER BY x") == TSV(
             [[2, 202, -200], [4, 204, -200]]
         )
-        assert node1.query("SELECT x, y, z FROM dist") == TSV(
-            [[1, 201, -200], [3, 203, -200], [2, 202, -200], [4, 204, -200]]
+        assert node1.query("SELECT x, y, z FROM dist ORDER BY x") == TSV(
+            [[1, 201, -200], [2, 202, -200], [3, 203, -200], [4, 204, -200]]
         )

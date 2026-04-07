@@ -3,17 +3,19 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <Common/memcmpSmall.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/scope_guard.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
+#endif
 
 namespace DB
 {
@@ -27,18 +29,41 @@ namespace ErrorCodes
 
 
 ColumnString::ColumnString(const ColumnString & src)
-    : COWHelper<IColumn, ColumnString>(src),
+    : COWHelper<IColumnHelper<ColumnString>, ColumnString>(src),
     offsets(src.offsets.begin(), src.offsets.end()),
     chars(src.chars.begin(), src.chars.end())
 {
-    if (!offsets.empty())
-    {
-        Offset last_offset = offsets.back();
+    Offset last_offset = offsets.empty() ? 0 : offsets.back();
+    /// This will also prevent possible overflow in offset.
+    if (last_offset != chars.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "String offsets has data inconsistent with chars array. Last offset: {}, array length: {}",
+            last_offset, chars.size());
+}
 
-        /// This will also prevent possible overflow in offset.
-        if (chars.size() != last_offset)
-            throw Exception("String offsets has data inconsistent with chars array", ErrorCodes::LOGICAL_ERROR);
-    }
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
+    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
+    const size_t src_buf_size
+        = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + src_buf_size * length;
+    chars.resize(new_size);
+
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + length);
+
+    for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
+        memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
+
+    for (size_t i = 0, current_offset = old_size + src_buf_size; i < length; ++i, current_offset += src_buf_size)
+        offsets[old_rows + i] = current_offset;
 }
 
 
@@ -53,45 +78,32 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
 
     if (to_size <= from_size)
     {
-        /// Just cut column.
+        /// Just cut the column.
 
         res->offsets.assign(offsets.begin(), offsets.begin() + to_size);
-        res->chars.assign(chars.begin(), chars.begin() + offsets[to_size - 1]);
+        res->chars.assign(chars.begin(), chars.begin() + offsetAt(to_size));
     }
     else
     {
         /// Copy column and append empty strings for extra elements.
 
-        Offset offset = 0;
         if (from_size > 0)
         {
             res->offsets.assign(offsets.begin(), offsets.end());
             res->chars.assign(chars.begin(), chars.end());
-            offset = offsets.back();
         }
 
-        /// Empty strings are just zero terminating bytes.
-
-        res->chars.resize_fill(res->chars.size() + to_size - from_size);
-
-        res->offsets.resize(to_size);
-        for (size_t i = from_size; i < to_size; ++i)
-        {
-            ++offset;
-            res->offsets[i] = offset;
-        }
+        /// Empty strings.
+        res->offsets.resize_fill(to_size, offsets.back());
     }
 
     return res;
 }
 
-void ColumnString::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnString::getWeakHash32() const
 {
     auto s = offsets.size();
-
-    if (hash.getData().size() != s)
-        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
-                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+    WeakHash32 hash(s);
 
     const UInt8 * pos = chars.data();
     UInt32 * hash_data = hash.getData().data();
@@ -100,17 +112,22 @@ void ColumnString::updateWeakHash32(WeakHash32 & hash) const
     for (const auto & offset : offsets)
     {
         auto str_size = offset - prev_offset;
-        /// Skip last zero byte.
-        *hash_data = ::updateWeakHash32(pos, str_size - 1, *hash_data);
+        *hash_data = ::updateWeakHash32(pos, str_size, *hash_data);
 
         pos += str_size;
         prev_offset = offset;
         ++hash_data;
     }
+
+    return hash;
 }
 
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -118,11 +135,13 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
 
     if (start + length > src_concrete.offsets.size())
-        throw Exception("Parameter out of bound in IColumnString::insertRangeFrom method.",
-            ErrorCodes::PARAMETER_OUT_OF_BOUND);
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.offsets[start + length - 1] - nested_offset;
+    size_t nested_length = src_concrete.offsetAt(start + length) - nested_offset;
+
+    /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
+    offsets.reserve(offsets.size() + length);
 
     size_t old_chars_size = chars.size();
     chars.resize(old_chars_size + nested_length);
@@ -155,54 +174,45 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
+
     return res;
+}
+
+void ColumnString::filter(const Filter & filt)
+{
+    if (offsets.empty())
+        return;
+
+    filterArraysImplInPlace<UInt8>(chars, offsets, filt);
 }
 
 void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
-    auto & chars_data = getChars();
     if (mask.size() < offsets_data.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
-
-    /// We cannot change only offsets, because each string should end with terminating zero byte.
-    /// So, we will insert one zero byte when mask value is zero.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
 
     ssize_t index = mask.size() - 1;
     ssize_t from = offsets_data.size() - 1;
-    /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
-    /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
-    UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
-    offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset, 0);
+    offsets_data.resize_exact(mask.size());
+    UInt64 last_offset = offsets_data[from];
     while (index >= 0)
     {
         offsets_data[index] = last_offset;
         if (!!mask[index] ^ inverted)
         {
             if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
 
-            size_t len = offsets_data[from] - offsets_data[from - 1];
-
-            /// Copy only if it makes sense. It's important to copy backward, because
-            /// ranges can overlap, but destination is always is more to the right then source
-            if (last_offset - len != offsets_data[from - 1])
-                std::copy_backward(&chars_data[offsets_data[from - 1]], &chars_data[offsets_data[from]], &chars_data[last_offset]);
-            last_offset -= len;
             --from;
-        }
-        else
-        {
-            chars_data[last_offset - 1] = 0;
-            --last_offset;
+            last_offset = offsets_data[from];
         }
 
         --index;
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
 }
 
 
@@ -211,41 +221,128 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     return permuteImpl(*this, perm, limit);
 }
 
-
-StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+ColumnCheckpointPtr ColumnString::getCheckpoint() const
 {
-    size_t string_size = sizeAt(n);
+    auto nested = std::make_shared<ColumnCheckpoint>(chars.size());
+    return std::make_shared<ColumnCheckpointWithNested>(size(), std::move(nested));
+}
+
+void ColumnString::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested->size = chars.size();
+}
+
+void ColumnString::rollback(const ColumnCheckpoint & checkpoint)
+{
+    offsets.resize_assume_reserved(checkpoint.size);
+    chars.resize_assume_reserved(assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested->size);
+}
+
+void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
+{
+    if (empty())
+        return;
+
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    if (is_null)
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
+            sizes[i] += 1 + !is_null[i] * (sizeof(string_size) + string_size);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+        {
+            size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
+            sizes[i] += sizeof(string_size) + string_size;
+        }
+    }
+}
+
+std::optional<size_t> ColumnString::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+{
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    return byteSizeAt(n) + serialize_string_with_zero_byte;
+}
+
+std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+{
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+
+    size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
     size_t offset = offsetAt(n);
 
-    StringRef res;
-    res.size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(res.size, begin);
+    auto result_size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(result_size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
-    memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    res.data = pos;
-
-    return res;
+    memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
+    if (serialize_string_with_zero_byte)
+        *(pos + sizeof(string_size) + string_size - 1) = 0;
+    return {pos, result_size};
 }
 
-const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
+ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
+    size_t offset = offsetAt(n);
 
+    memcpy(memory, &string_size, sizeof(string_size));
+    memory += sizeof(string_size);
+    memcpy(memory, &chars[offset], string_size - serialize_string_with_zero_byte);
+    if (serialize_string_with_zero_byte)
+        *(memory + string_size - 1) = 0;
+    return memory + string_size;
+}
+
+void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
+{
+    chassert(memories.size() == size());
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    for (size_t i = 0; i < memories.size(); ++i)
+    {
+        size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
+        size_t offset = offsetAt(i);
+
+        memcpy(memories[i], &string_size, sizeof(string_size));
+        memories[i] += sizeof(string_size);
+        memcpy(memories[i], &chars[offset], string_size - serialize_string_with_zero_byte);
+        if (serialize_string_with_zero_byte)
+            *(memories[i] + string_size - 1) = 0;
+        memories[i] += string_size;
+    }
+}
+
+void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
+{
+    size_t string_size;
+    readBinaryLittleEndian<size_t>(string_size, in);
+
+    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + string_size;
+    const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
-    memcpy(chars.data() + old_size, pos, string_size);
+    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size - serialize_string_with_zero_byte);
+    in.ignore(serialize_string_with_zero_byte);
 
     offsets.push_back(new_size);
-    return pos + string_size;
 }
 
-const char * ColumnString::skipSerializedInArena(const char * pos) const
+void ColumnString::skipSerializedInArena(ReadBuffer & in) const
 {
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    return pos + string_size;
+    size_t string_size;
+    readBinaryLittleEndian<size_t>(string_size, in);
+    in.ignore(string_size);
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
@@ -268,9 +365,9 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize(new_chars_size);
+    res_chars.resize_exact(new_chars_size);
 
-    res_offsets.resize(limit);
+    res_offsets.resize_exact(limit);
 
     Offset current_new_offset = 0;
 
@@ -289,20 +386,6 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     return res;
 }
 
-void ColumnString::compareColumn(
-    const IColumn & rhs, size_t rhs_row_num,
-    PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-    int direction, int nan_direction_hint) const
-{
-    return doCompareColumn<ColumnString>(assert_cast<const ColumnString &>(rhs), rhs_row_num, row_indexes,
-                                         compare_results, direction, nan_direction_hint);
-}
-
-bool ColumnString::hasEqualValues() const
-{
-    return hasEqualValuesImpl<ColumnString>();
-}
-
 struct ColumnString::ComparatorBase
 {
     const ColumnString & parent;
@@ -315,8 +398,8 @@ struct ColumnString::ComparatorBase
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
-            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
-            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs));
 
         return res;
     }
@@ -426,77 +509,114 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
+size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
+{
+    const size_t range_size = equal_range.size();
+    if (range_size <= 1)
+        return range_size;
+
+    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
+    StringHashSet elements;
+    bool inserted = false;
+    for (size_t i = equal_range.from; i < equal_range.to; ++i)
+    {
+        size_t permuted_i = permutation[i];
+        auto value = getDataAt(permuted_i);
+        elements.emplace(value, inserted);
+    }
+    return elements.size();
+}
+
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
-        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = ColumnString::create();
 
-    if (0 == col_size)
+    if (col_size == 0 || replicate_offsets.back() == 0)
         return res;
 
-    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
-    res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
-    res_offsets.reserve(replicate_offsets.back());
+    res_offsets.resize_exact(replicate_offsets.back());
 
-    Offset prev_replicate_offset = 0;
-    Offset prev_string_offset = 0;
-    Offset current_new_offset = 0;
-
+    Chars & res_chars = res->chars;
+    size_t res_chars_size = 0;
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        size_t string_size = offsets[i] - prev_string_offset;
+        size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        size_t string_size = offsets[i] - offsets[i - 1];
+        res_chars_size += size_to_replicate * string_size;
+    }
+    res_chars.resize_exact(res_chars_size);
 
+    size_t curr_row = 0;
+    size_t curr_offset = 0;
+    for (size_t i = 0; i < col_size; ++i)
+    {
+        const size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
+        const size_t string_size = offsets[i] - offsets[i-1];
+        const UInt8 * src = &chars[offsets[i - 1]];
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
-            current_new_offset += string_size;
-            res_offsets.push_back(current_new_offset);
-
-            res_chars.resize(res_chars.size() + string_size);
             memcpySmallAllowReadWriteOverflow15(
-                &res_chars[res_chars.size() - string_size], &chars[prev_string_offset], string_size);
-        }
+                &res_chars[curr_offset], src, string_size);
 
-        prev_replicate_offset = replicate_offsets[i];
-        prev_string_offset = offsets[i];
+            curr_offset += string_size;
+            res_offsets[curr_row] = curr_offset;
+            ++curr_row;
+        }
     }
 
     return res;
 }
 
-
-void ColumnString::gather(ColumnGathererStream & gatherer)
-{
-    gatherer.gather(*this);
-}
-
-
 void ColumnString::reserve(size_t n)
 {
-    offsets.reserve(n);
+    offsets.reserve_exact(n);
 }
 
+size_t ColumnString::capacity() const
+{
+    return offsets.capacity();
+}
 
-void ColumnString::getExtremes(Field & min, Field & max) const
+void ColumnString::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+{
+    size_t new_size = size();
+    size_t new_chars_size = chars.size();
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
+        new_size += source_string_column.size();
+        new_chars_size += source_string_column.chars.size();
+    }
+
+    offsets.reserve_exact(new_size * factor);
+    chars.reserve_exact(new_chars_size * factor);
+}
+
+void ColumnString::shrinkToFit()
+{
+    chars.shrink_to_fit();
+    offsets.shrink_to_fit();
+}
+
+void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;
@@ -508,33 +628,46 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnString::compress() const
+ColumnPtr ColumnString::compress(bool force_compression) const
 {
     const size_t source_chars_size = chars.size();
     const size_t source_offsets_elements = offsets.size();
     const size_t source_offsets_size = source_offsets_elements * sizeof(Offset);
 
     /// Don't compress small blocks.
-    if (source_chars_size < 4096) /// A wild guess.
+    if (source_chars_size < min_size_to_compress)
+    {
         return ColumnCompressed::wrap(this->getPtr());
+    }
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, force_compression);
 
     /// Return original column if not compressible.
     if (!chars_compressed)
+    {
         return ColumnCompressed::wrap(this->getPtr());
+    }
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, force_compression);
+    const bool offsets_were_compressed = !!offsets_compressed;
+
+    /// Offsets are not compressible. Use the source data.
+    if (!offsets_compressed)
+    {
+        offsets_compressed = std::make_shared<Memory<>>(source_offsets_size);
+        memcpy(offsets_compressed->data(), offsets.data(), source_offsets_size);
+    }
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();
-    return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
-        [
-            chars_compressed = std::move(chars_compressed),
-            offsets_compressed = std::move(offsets_compressed),
-            source_chars_size,
-            source_offsets_elements
-        ]
+    return ColumnCompressed::create(
+        source_offsets_elements,
+        chars_compressed_size + offsets_compressed_size,
+        [my_chars_compressed = std::move(chars_compressed),
+         my_offsets_compressed = std::move(offsets_compressed),
+         source_chars_size,
+         source_offsets_elements,
+         offsets_were_compressed]
         {
             auto res = ColumnString::create();
 
@@ -542,15 +675,82 @@ ColumnPtr ColumnString::compress() const
             res->getOffsets().resize(source_offsets_elements);
 
             ColumnCompressed::decompressBuffer(
-                chars_compressed->data(), res->getChars().data(), chars_compressed->size(), source_chars_size);
+                my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
 
-            ColumnCompressed::decompressBuffer(
-                offsets_compressed->data(), res->getOffsets().data(), offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
+            if (offsets_were_compressed)
+            {
+                ColumnCompressed::decompressBuffer(
+                    my_offsets_compressed->data(),
+                    res->getOffsets().data(),
+                    my_offsets_compressed->size(),
+                    source_offsets_elements * sizeof(Offset));
+            }
+            else
+            {
+                memcpy(res->getOffsets().data(), my_offsets_compressed->data(), my_offsets_compressed->size());
+            }
 
             return res;
         });
 }
 
+#if USE_EMBEDDED_COMPILER
+bool ColumnString::isComparatorCompilable() const
+{
+    return true;
+}
+
+llvm::Value * ColumnString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_offset_ptr = b.CreateExtractValue(lhs, {1});
+    llvm::Value * lhs_index = b.CreateExtractValue(lhs, {2});
+
+    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_offset_ptr = b.CreateExtractValue(rhs, {1});
+    llvm::Value * rhs_index = b.CreateExtractValue(rhs, {2});
+
+    auto * size_type = b.getInt64Ty();
+
+    llvm::Value * const_one = llvm::ConstantInt::get(size_type, 1);
+
+    auto load_offset = [&](llvm::Value * offset_array, llvm::Value * index)
+    {
+        /// Not inbounds: for row 0 the index is -1 (wrapped unsigned), accessing
+        /// the PaddedPODArray padding element before the start of the array.
+        auto * element_ptr = b.CreateGEP(size_type, offset_array, index);
+        return b.CreateLoad(size_type, element_ptr);
+    };
+    auto * lhs_prev_index = b.CreateSub(lhs_index, const_one);
+    auto * lhs_current_start_offset = load_offset(lhs_offset_ptr, lhs_prev_index);
+    auto * lhs_current_end_offset = load_offset(lhs_offset_ptr, lhs_index);
+    auto * lhs_current_size = b.CreateSub(lhs_current_end_offset, lhs_current_start_offset);
+    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, lhs_current_start_offset);
+
+    auto * rhs_prev_index = b.CreateSub(rhs_index, const_one);
+    auto * rhs_current_start_offset = load_offset(rhs_offset_ptr, rhs_prev_index);
+    auto * rhs_current_end_offset = load_offset(rhs_offset_ptr, rhs_index);
+    auto * rhs_current_size = b.CreateSub(rhs_current_end_offset, rhs_current_start_offset);
+    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, rhs_current_start_offset);
+
+    // Call memcmpSmallAllowOverflow15, same as in ColumnString::compareAt
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    llvm::FunctionType * memcmp_func_type = llvm::FunctionType::get(
+        b.getInt32Ty(),
+        {b.getInt8Ty()->getPointerTo(), b.getInt64Ty(), b.getInt8Ty()->getPointerTo(), b.getInt64Ty()},
+        false
+    );
+
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
+
+    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, lhs_current_size, rhs_current_ptr, rhs_current_size});
+
+    /// memcmpSmallAllowOverflow15 returns -1/0/1, so truncating i32 to i8 is safe
+    return b.CreateTrunc(compare_result, b.getInt8Ty());
+}
+#endif
 
 int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int, const Collator & collator) const
 {
@@ -569,8 +769,51 @@ void ColumnString::protect()
 
 void ColumnString::validate() const
 {
-    if (!offsets.empty() && offsets.back() != chars.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnString validation failed: size mismatch (internal logical error) {} != {}", offsets.back(), chars.size());
+    Offset last_offset = offsets.empty() ? 0 : offsets.back();
+    if (last_offset != chars.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
+                        last_offset, chars.size());
+}
+
+void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+    /// For compatibility, which is required in certain aggregate function states.
+    size_t size_used_in_hash = string_size + 1;
+
+    hash.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
+    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    /// This is for compatibility
+    hash.update(UInt8(0));
+}
+
+void ColumnString::updateHashFast(SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
+    hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
+}
+
+ColumnPtr ColumnString::createSizeSubcolumn() const
+{
+    MutableColumnPtr column_sizes = ColumnUInt64::create();
+    size_t rows = offsets.size();
+    if (rows == 0)
+        return column_sizes;
+
+    auto & sizes_data = assert_cast<ColumnUInt64 &>(*column_sizes).getData();
+    sizes_data.resize(rows);
+
+    IColumn::Offset prev_offset = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        auto current_offset = offsets[i];
+        sizes_data[i] = current_offset - prev_offset;
+        prev_offset = current_offset;
+    }
+
+    return column_sizes;
 }
 
 }

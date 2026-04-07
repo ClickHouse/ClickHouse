@@ -1,46 +1,12 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 
+
 namespace Coordination
 {
-
-void write(size_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap64(x);
-    writeBinary(x, out);
-}
-
-#ifdef OS_DARWIN
-void write(uint64_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap64(x);
-    writeBinary(x, out);
-}
-#endif
-
-void write(int64_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap64(x);
-    writeBinary(x, out);
-}
-void write(int32_t x, WriteBuffer & out)
-{
-    x = __builtin_bswap32(x);
-    writeBinary(x, out);
-}
-
-void write(uint8_t x, WriteBuffer & out)
-{
-    writeBinary(x, out);
-}
 
 void write(OpNum x, WriteBuffer & out)
 {
     write(static_cast<int32_t>(x), out);
-}
-
-void write(bool x, WriteBuffer & out)
-{
-    writeBinary(x, out);
 }
 
 void write(const std::string & s, WriteBuffer & out)
@@ -76,35 +42,30 @@ void write(const Error & x, WriteBuffer & out)
     write(static_cast<int32_t>(x), out);
 }
 
-#ifdef OS_DARWIN
-void read(uint64_t & x, ReadBuffer & in)
+size_t size(OpNum x)
 {
-    readBinary(x, in);
-    x = __builtin_bswap64(x);
-}
-#endif
-
-void read(size_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-    x = __builtin_bswap64(x);
+    return size(static_cast<int32_t>(x));
 }
 
-void read(int64_t & x, ReadBuffer & in)
+size_t size(const std::string & s)
 {
-    readBinary(x, in);
-    x = __builtin_bswap64(x);
+    return size(static_cast<int32_t>(s.size())) + s.size();
 }
 
-void read(uint8_t & x, ReadBuffer & in)
+size_t size(const ACL & acl)
 {
-    readBinary(x, in);
+    return size(acl.permissions) + size(acl.scheme) + size(acl.id);
 }
 
-void read(int32_t & x, ReadBuffer & in)
+size_t size(const Stat & stat)
 {
-    readBinary(x, in);
-    x = __builtin_bswap32(x);
+    return size(stat.czxid) + size(stat.mzxid) + size(stat.ctime) + size(stat.mtime) + size(stat.version) + size(stat.cversion)
+        + size(stat.aversion) + size(stat.ephemeralOwner) + size(stat.dataLength) + size(stat.numChildren) + size(stat.pzxid);
+}
+
+size_t size(const Error & x)
+{
+    return size(static_cast<int32_t>(x));
 }
 
 void read(OpNum & x, ReadBuffer & in)
@@ -112,16 +73,6 @@ void read(OpNum & x, ReadBuffer & in)
     int32_t raw_op_num;
     read(raw_op_num, in);
     x = getOpNum(raw_op_num);
-}
-
-void read(bool & x, ReadBuffer & in)
-{
-    readBinary(x, in);
-}
-
-void read(int8_t & x, ReadBuffer & in)
-{
-    readBinary(x, in);
 }
 
 void read(std::string & s, ReadBuffer & in)
@@ -137,13 +88,16 @@ void read(std::string & s, ReadBuffer & in)
     }
 
     if (size < 0)
-        throw Exception("Negative size while reading string from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception::fromMessage(Error::ZMARSHALLINGERROR, "Negative size while reading string from ZooKeeper");
 
     if (size > MAX_STRING_OR_ARRAY_SIZE)
-        throw Exception("Too large string size while reading from ZooKeeper", Error::ZMARSHALLINGERROR);
+        throw Exception(Error::ZMARSHALLINGERROR,"Too large string size while reading from ZooKeeper {}", size);
 
     s.resize(size);
-    in.read(s.data(), size);
+    size_t read_bytes = in.read(s.data(), size);
+    if (read_bytes != static_cast<size_t>(size))
+        throw Exception(
+            Error::ZMARSHALLINGERROR, "Buffer size read from Zookeeper is not big enough. Expected {}. Got {}", size, read_bytes);
 }
 
 void read(ACL & acl, ReadBuffer & in)

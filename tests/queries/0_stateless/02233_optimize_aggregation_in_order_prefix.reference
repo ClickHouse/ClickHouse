@@ -19,7 +19,7 @@ ExpressionTransform × 2
                 (Expression)
                 ExpressionTransform
                   (ReadFromMergeTree)
-                  MergeTreeInOrder 0 → 1
+                  MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 explain pipeline select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1, optimize_aggregation_in_order=0, read_in_order_two_level_merge_threshold=1;
 (Expression)
 ExpressionTransform × 2
@@ -36,7 +36,7 @@ ExpressionTransform × 2
               (Expression)
               ExpressionTransform
                 (ReadFromMergeTree)
-                MergeTreeInOrder 0 → 1
+                MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
 select parent_key, child_key, count() from data_02233 group by parent_key, child_key with totals order by parent_key, child_key settings max_threads=1, optimize_aggregation_in_order=1;
 0	0	4
 0	1	3

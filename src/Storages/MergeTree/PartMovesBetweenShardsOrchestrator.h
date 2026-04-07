@@ -1,11 +1,10 @@
 #pragma once
 
 #include <vector>
-#include <Common/logger_useful.h>
 #include <base/types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/UUID.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/CancellationCode.h>
 
@@ -84,23 +83,33 @@ public:
                 case CANCELLED: return "CANCELLED";
             }
 
-            throw Exception("Unknown EntryState: " + DB::toString<int>(value), ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown EntryState: {}", DB::toString<int>(value));
         }
 
         static EntryState::Value fromString(String in)
         {
             if (in == "TODO") return TODO;
-            else if (in == "SYNC_SOURCE") return SYNC_SOURCE;
-            else if (in == "SYNC_DESTINATION") return SYNC_DESTINATION;
-            else if (in == "DESTINATION_FETCH") return DESTINATION_FETCH;
-            else if (in == "DESTINATION_ATTACH") return DESTINATION_ATTACH;
-            else if (in == "SOURCE_DROP_PRE_DELAY") return SOURCE_DROP_PRE_DELAY;
-            else if (in == "SOURCE_DROP") return SOURCE_DROP;
-            else if (in == "SOURCE_DROP_POST_DELAY") return SOURCE_DROP_POST_DELAY;
-            else if (in == "REMOVE_UUID_PIN") return REMOVE_UUID_PIN;
-            else if (in == "DONE") return DONE;
-            else if (in == "CANCELLED") return CANCELLED;
-            else throw Exception("Unknown state: " + in, ErrorCodes::LOGICAL_ERROR);
+            if (in == "SYNC_SOURCE")
+                return SYNC_SOURCE;
+            if (in == "SYNC_DESTINATION")
+                return SYNC_DESTINATION;
+            if (in == "DESTINATION_FETCH")
+                return DESTINATION_FETCH;
+            if (in == "DESTINATION_ATTACH")
+                return DESTINATION_ATTACH;
+            if (in == "SOURCE_DROP_PRE_DELAY")
+                return SOURCE_DROP_PRE_DELAY;
+            if (in == "SOURCE_DROP")
+                return SOURCE_DROP;
+            if (in == "SOURCE_DROP_POST_DELAY")
+                return SOURCE_DROP_POST_DELAY;
+            if (in == "REMOVE_UUID_PIN")
+                return REMOVE_UUID_PIN;
+            if (in == "DONE")
+                return DONE;
+            if (in == "CANCELLED")
+                return CANCELLED;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown state: {}", in);
         }
     };
 
@@ -156,8 +165,8 @@ private:
 public:
     explicit PartMovesBetweenShardsOrchestrator(StorageReplicatedMergeTree & storage_);
 
-    void start() { task->activateAndSchedule(); }
-    void wakeup() { task->schedule(); }
+    void start();
+    void wakeup();
     void shutdown();
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid);
@@ -177,10 +186,10 @@ private:
 
     String zookeeper_path;
     String logger_name;
-    Poco::Logger * log = nullptr;
+    LoggerPtr log = nullptr;
     std::atomic<bool> need_stop{false};
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
 
     mutable std::mutex state_mutex;
     std::vector<Entry> entries;

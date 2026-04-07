@@ -22,7 +22,7 @@ QUERY id: 0
       COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
       COLUMN id: 4, column_name: value, result_type: String, source_id: 3
   JOIN TREE
-    TABLE id: 3, table_name: default.test_table
+    TABLE id: 3, alias: __table1, table_name: default.test_table
 --
 QUERY id: 0
   PROJECTION
@@ -64,7 +64,7 @@ QUERY id: 0
                       CONSTANT id: 9, constant_value: UInt64_1, constant_value_type: UInt8
             CONSTANT id: 10, constant_value: Array_[UInt64_1, UInt64_2, UInt64_3], constant_value_type: Array(UInt8)
   JOIN TREE
-    TABLE id: 11, table_name: default.test_table
+    TABLE id: 11, alias: __table1, table_name: default.test_table
 --
 QUERY id: 0
   WITH
@@ -99,4 +99,4 @@ QUERY id: 0
             COLUMN id: 4, column_name: id, result_type: UInt64, source_id: 5
             CONSTANT id: 6, constant_value: UInt64_1, constant_value_type: UInt8
   JOIN TREE
-    TABLE id: 5, table_name: default.test_table
+    TABLE id: 5, alias: __table1, table_name: default.test_table

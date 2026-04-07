@@ -3,7 +3,7 @@
 function _clickhouse_get_utils()
 {
     local cmd=$1 && shift
-    "$cmd" --help |& awk '/^clickhouse.*args/ { print $2 }'
+    "$cmd" help |& awk '/^clickhouse.*args/ { print $2 }'
 }
 
 function _complete_for_clickhouse_entrypoint_bin()
@@ -31,3 +31,4 @@ function _complete_for_clickhouse_entrypoint_bin()
 }
 
 _complete_clickhouse_generic clickhouse _complete_for_clickhouse_entrypoint_bin
+_complete_clickhouse_generic ch _complete_for_clickhouse_entrypoint_bin

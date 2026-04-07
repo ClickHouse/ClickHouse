@@ -1,7 +1,0 @@
-position: 50
-label: 'Документация'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Документация

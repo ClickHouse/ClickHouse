@@ -1,7 +1,6 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-
 namespace DB
 {
 void registerTableFunctions()
@@ -11,27 +10,35 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionPrimes(factory);
+    registerTableFunctionLoop(factory);
+    registerTableFunctionGenerateSeries(factory);
     registerTableFunctionNull(factory);
     registerTableFunctionZeros(factory);
     registerTableFunctionExecutable(factory);
     registerTableFunctionFile(factory);
+    registerTableFunctionFileCluster(factory);
     registerTableFunctionURL(factory);
+    registerTableFunctionURLCluster(factory);
     registerTableFunctionValues(factory);
     registerTableFunctionInput(factory);
     registerTableFunctionGenerate(factory);
+#if USE_MONGODB
     registerTableFunctionMongoDB(factory);
+#endif
+    registerTableFunctionRedis(factory);
 
-    registerTableFunctionMeiliSearch(factory);
-
-#if USE_AWS_S3
-    registerTableFunctionS3(factory);
-    registerTableFunctionS3Cluster(factory);
-    registerTableFunctionCOS(factory);
+#if USE_ARROWFLIGHT
+    registerTableFunctionArrowFlight(factory);
 #endif
 
-#if USE_HDFS
-    registerTableFunctionHDFS(factory);
-    registerTableFunctionHDFSCluster(factory);
+    registerTableFunctionMergeTreeIndex(factory);
+    registerTableFunctionMergeTreeAnalyzeIndexes(factory);
+    registerTableFunctionMergeTreeProjection(factory);
+    registerTableFunctionMergeTreeTextIndex(factory);
+    registerTableFunctionFuzzQuery(factory);
+#if USE_RAPIDJSON || USE_SIMDJSON
+    registerTableFunctionFuzzJSON(factory);
 #endif
 
 #if USE_HIVE
@@ -62,6 +69,17 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+    registerTableFunctionTimeSeries(factory);
+
+    registerTableFunctionObjectStorage(factory);
+    registerTableFunctionObjectStorageCluster(factory);
+    registerDataLakeTableFunctions(factory);
+    registerDataLakeClusterTableFunctions(factory);
+
+#if USE_YTSAURUS
+    registerTableFunctionYTsaurus(factory);
+#endif
+
 }
 
 }

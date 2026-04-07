@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
 
@@ -31,14 +33,10 @@ protected:
     void finishConsume() { finished_input = true; }
 
 public:
-    IAccumulatingTransform(Block input_header, Block output_header);
+    IAccumulatingTransform(SharedHeader input_header, SharedHeader output_header);
 
     Status prepare() override;
     void work() override;
-
-    /// Adds additional port for totals.
-    /// If added, totals will have been ready by the first generate() call (in totals chunk).
-    InputPort * addTotalsPort();
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }

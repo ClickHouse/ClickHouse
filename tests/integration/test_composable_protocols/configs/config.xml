@@ -1,4 +1,5 @@
 <clickhouse>
+    <auth_use_forwarded_address>true</auth_use_forwarded_address>
     <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -57,7 +58,41 @@
             <port>8444</port>
             <description>https protocol endpoint</description>
         </https_endpoint>
+        <https_tls1_2>
+            <type>tls</type>
+            <impl>http</impl>
+            <host>0.0.0.0</host>
+            <port>8445</port>
+            <description>https protocol with TLSv1_2 minimum version</description>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+        </https_tls1_2>
+        <https_tls1_3>
+            <type>tls</type>
+            <impl>http</impl>
+            <host>0.0.0.0</host>
+            <port>8446</port>
+            <description>https protocol with TLSv1_3 minimum version</description>
+            <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1,tlsv1_2</disableProtocols>
+            <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/server.key</privateKeyFile>
+        </https_tls1_3>
+        <http_proxy>
+            <type>proxy1</type>
+            <impl>http</impl>
+            <host>0.0.0.0</host>
+            <port>8223</port>
+            <description>http with PROXYv1</description>
+        </http_proxy>
     </protocols>
 
     <!--tcp_port>9010</tcp_port--> 
+
+    <validate_tcp_client_information>true</validate_tcp_client_information>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+    </query_log>
 </clickhouse>

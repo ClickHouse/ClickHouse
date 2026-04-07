@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 ISource::~ISource() = default;
 
-ISource::ISource(Block header, bool enable_auto_progress)
+ISource::ISource(SharedHeader header, bool enable_auto_progress)
     : IProcessor({}, {std::move(header)})
     , auto_progress(enable_auto_progress)
     , output(outputs.front())
@@ -48,7 +48,6 @@ ISource::Status ISource::prepare()
 
     if (got_exception)
     {
-        finished = true;
         output.finish();
         return Status::Finished;
     }
@@ -66,13 +65,15 @@ void ISource::progress(size_t read_rows, size_t read_bytes)
 {
     //std::cerr << "========= Progress " << read_rows << " from " << getName() << std::endl << StackTrace().toString() << std::endl;
     read_progress_was_set = true;
+    std::lock_guard lock(read_progress_mutex);
     read_progress.read_rows += read_rows;
     read_progress.read_bytes += read_bytes;
 }
 
 std::optional<ISource::ReadProgress> ISource::getReadProgress()
 {
-    if (finished && read_progress.read_bytes == 0 && read_progress.read_bytes == 0 && read_progress.total_rows_approx == 0)
+    std::lock_guard lock(read_progress_mutex);
+    if (finished && read_progress.read_bytes == 0 && read_progress.total_rows_approx == 0)
         return {};
 
     ReadProgressCounters res_progress;
@@ -85,10 +86,25 @@ std::optional<ISource::ReadProgress> ISource::getReadProgress()
     return ReadProgress{res_progress, empty_limits};
 }
 
+void ISource::addTotalRowsApprox(size_t value)
+{
+    std::lock_guard lock(read_progress_mutex);
+    read_progress.total_rows_approx += value;
+}
+
+void ISource::addTotalBytes(size_t value)
+{
+    std::lock_guard lock(read_progress_mutex);
+    read_progress.total_bytes += value;
+}
+
 void ISource::work()
 {
     try
     {
+        if (finished)
+            return;
+
         read_progress_was_set = false;
 
         if (auto chunk = tryGenerate())
@@ -104,12 +120,16 @@ void ISource::work()
         else
             finished = true;
 
-        if (isCancelled())
-            finished = true;
+        if (finished)
+            onFinish();
     }
     catch (...)
     {
-        finished = true;
+        got_exception = true;
+
+        if (!std::exchange(finished, true))
+            onFinish();
+
         throw;
     }
 }
@@ -123,10 +143,9 @@ std::optional<Chunk> ISource::tryGenerate()
 {
     auto chunk = generate();
     if (!chunk)
-        return {};
+        return std::nullopt;
 
     return chunk;
 }
 
 }
-

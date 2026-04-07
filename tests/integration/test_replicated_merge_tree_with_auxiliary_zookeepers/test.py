@@ -1,9 +1,10 @@
 import time
 
-import helpers.client as client
 import pytest
-from helpers.cluster import ClickHouseCluster
+
+import helpers.client as client
 from helpers.client import QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -37,7 +38,7 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} SYNC".format(table_name))
 
 
 # Create table with default zookeeper.

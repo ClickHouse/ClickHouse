@@ -5,6 +5,8 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 
@@ -65,7 +67,7 @@ void MergeTreeTransaction::checkIsNotCancelled() const
     CSN c = csn.load();
     if (c == Tx::RolledBackCSN)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-    else if (c != Tx::UnknownCSN)
+    if (c != Tx::UnknownCSN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
 }
 
@@ -125,6 +127,8 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         {
             transaction_context.part_name = covered->name;
             covered->version.lockRemovalTID(tid, transaction_context);
+            if (covered->wasInvolvedInTransaction())
+                covered->appendRemovalTIDToVersionMetadata();
         }
     }
 }
@@ -168,6 +172,8 @@ void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & 
 bool MergeTreeTransaction::isReadOnly() const
 {
     std::lock_guard lock{mutex};
+    if (finalized)
+        return is_read_only;
     chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
 }
@@ -182,7 +188,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
     /// We should wait for mutations to finish before committing transaction, because some mutation may fail and cause rollback.
     for (const auto & table_and_mutation : mutations_to_wait)
-        table_and_mutation.first->waitForMutation(table_and_mutation.second);
+        table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
 
     assert([&]()
     {
@@ -210,6 +216,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
     /// and we will be able to remove old entries from transaction log in ZK.
@@ -236,6 +243,17 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
     for (const auto & part : removed_parts)
     {
+        /// Ensure creation_csn is set before removal_csn.
+        /// The creating transaction's afterCommit may still be running on another thread,
+        /// so creation_csn might not yet be stored even though the creation is committed.
+        /// Without this, a concurrent reader could observe removal_csn != 0 with creation_csn == 0.
+        if (!part->version.creation_csn.load(std::memory_order_relaxed))
+        {
+            auto creation = TransactionLog::getCSN(part->version.creation_tid, &part->version.creation_csn);
+            if (creation)
+                part->version.creation_csn.store(creation, std::memory_order_relaxed);
+        }
+
         part->version.removal_csn.store(csn);
         part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
     }
@@ -246,6 +264,7 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 
 bool MergeTreeTransaction::rollback() noexcept
 {
+    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     CSN expected = Tx::UnknownCSN;
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
@@ -303,7 +322,6 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-
     assert([&]()
     {
         std::lock_guard lock{mutex};
@@ -314,6 +332,22 @@ bool MergeTreeTransaction::rollback() noexcept
     }());
 
     return true;
+}
+
+void MergeTreeTransaction::afterFinalize()
+{
+    std::lock_guard lock{mutex};
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
+
+    /// Remember if it was read-only transaction before we clear storages
+    is_read_only = storages.empty();
+
+    /// Release shared pointers just in case
+    creating_parts.clear();
+    removing_parts.clear();
+    storages.clear();
+    mutations.clear();
+    finalized = true;
 }
 
 void MergeTreeTransaction::onException()
@@ -332,6 +366,11 @@ String MergeTreeTransaction::dumpDescription() const
     }
 
     std::lock_guard lock{mutex};
+    if (finalized)
+    {
+        res += ", cannot dump detailed description, transaction is finalized";
+        return res;
+    }
 
     res += fmt::format(", affects {} tables:", storages.size());
 
@@ -343,7 +382,7 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }

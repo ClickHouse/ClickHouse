@@ -1,0 +1,41 @@
+('TencentOS','123.45.67')
+('Android','12')
+('Android','default')
+('Android','default')
+('BlackBerry WebKit','10.0')
+('BlackBerry WebKit','1.0')
+(true,'61f0c404-5cb3-11e7-907b-a6006ad3dba0','2023-01-01','2023-01-01 01:01:01',[1,2,3,-1,-2,-3])
+(['ClickHouse'],[1],[],[])
+(['ClickHouse'],[1],[],[])
+(['ClickHouse Documentation','ClickHouse','Documentation'],[0,1,2],['/en'],['ClickHouse'])
+(['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])
+(['Documentation','GitHub'],[2,3],[NULL],[])
+(['Documentation','GitHub'],[2,3],[NULL],[])
+ClickHouse
+['ClickHouse']
+ClickHouse Documentation
+['ClickHouse Documentation','ClickHouse','Documentation']
+GitHub Documentation
+['GitHub Documentation','GitHub']
+Documentation
+['Documentation']
+ClickHouse
+['ClickHouse']
+ClickHouse Documentation
+['ClickHouse Documentation','ClickHouse','Documentation']
+GitHub Documentation
+['GitHub Documentation','GitHub']
+Documentation
+['Documentation']
+['foo','(?i)foo','(?-i)foo']
+['(?i)foo']
+['hello.*world','(?i)hello.*world','(?-i)hello.*world']
+[]
+['(?i)hello.*world']
+[]
+['foo','(?i)foo','(?-i)foo']
+['foo','(?i)foo']
+['hello.*world','(?i)hello.*world','(?-i)hello.*world']
+['hello.*world','(?i)hello.*world','(?-i)hello.*world']
+['hello.*world','(?i)hello.*world']
+['hello.*world','(?i)hello.*world']

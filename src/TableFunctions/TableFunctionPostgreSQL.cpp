@@ -1,38 +1,68 @@
-#include <TableFunctions/TableFunctionPostgreSQL.h>
+#include "config.h"
 
 #if USE_LIBPQXX
-#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
-#include <Storages/StoragePostgreSQL.h>
 
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Core/PostgreSQL/PoolWithFailover.h>
+#include <Core/Settings.h>
+#include <Storages/StoragePostgreSQL.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include "registerTableFunctions.h"
-#include <Common/parseRemoteDescription.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+class TableFunctionPostgreSQL : public ITableFunction
+{
+public:
+    static constexpr auto name = "postgresql";
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(
+            const ASTPtr & ast_function, ContextPtr context,
+            const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    const char * getStorageEngineName() const override { return "PostgreSQL"; }
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    postgres::PoolWithFailoverPtr connection_pool;
+    std::optional<StoragePostgreSQL::Configuration> configuration;
+};
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
 {
-    auto columns = getActualTableStructure(context);
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
         configuration->table,
-        columns,
+        cached_columns,
         ConstraintsDescription{},
         String{},
+        context,
         configuration->schema,
         configuration->on_conflict);
 
@@ -41,17 +71,9 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 }
 
 
-ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
-    auto connection_holder = connection_pool->get();
-    auto columns_info = fetchPostgreSQLTableStructure(
-            connection_holder->get(), configuration->table, configuration->schema, use_nulls).physical_columns;
-
-    if (!columns_info)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
-
-    return ColumnsDescription{columns_info->columns};
+    return StoragePostgreSQL::getTableStructureFromData(connection_pool, configuration->table, configuration->schema, context);
 }
 
 
@@ -59,22 +81,25 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
-        throw Exception("Table function 'PostgreSQL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'PostgreSQL' must have arguments.");
 
     configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
     const auto & settings = context->getSettingsRef();
     connection_pool = std::make_shared<postgres::PoolWithFailover>(
         *configuration,
-        settings.postgresql_connection_pool_size,
-        settings.postgresql_connection_pool_wait_timeout,
-        POSTGRESQL_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-        settings.postgresql_connection_pool_auto_close_connection);
+        settings[Setting::postgresql_connection_pool_size],
+        settings[Setting::postgresql_connection_pool_wait_timeout],
+        settings[Setting::postgresql_connection_pool_retries],
+        settings[Setting::postgresql_connection_pool_auto_close_connection],
+        settings[Setting::postgresql_connection_attempt_timeout]);
+}
+
 }
 
 
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPostgreSQL>();
+    factory.registerFunction<TableFunctionPostgreSQL>({});
 }
 
 }

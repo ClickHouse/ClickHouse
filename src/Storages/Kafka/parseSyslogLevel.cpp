@@ -1,10 +1,11 @@
-#include "parseSyslogLevel.h"
+#include <Storages/Kafka/parseSyslogLevel.h>
+
 #include <sys/syslog.h>
 
 /// Must be in a separate compilation unit due to macros overlaps:
 /// - syslog (LOG_DEBUG/...)
 /// - logger_useful.h (LOG_DEBUG(...)/...)
-std::pair<Poco::Message::Priority, DB::LogsLevel> parseSyslogLevel(const int level)
+std::pair<Poco::Message::Priority, DB::LogsLevel> parseSyslogLevel(int level)
 {
     using DB::LogsLevel;
     using Poco::Message;

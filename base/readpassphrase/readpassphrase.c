@@ -27,9 +27,7 @@
 #define _PATH_TTY "/dev/tty"
 #endif
 
-#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 #include <termios.h>
 #include <signal.h>
@@ -67,7 +65,7 @@ readpassphrase(const char *prompt, char *buf, size_t bufsiz, int flags)
     /* I suppose we could alloc on demand in this case (XXX). */
     if (bufsiz == 0) {
         errno = EINVAL;
-        return(NULL);
+        return (char *)NULL;
     }
 
 restart:
@@ -84,7 +82,7 @@ restart:
         (input = output = open(_PATH_TTY, O_RDWR)) == -1) {
         if (flags & RPP_REQUIRE_TTY) {
             errno = ENOTTY;
-            return(NULL);
+            return (char *)NULL;
         }
         input = STDIN_FILENO;
         output = STDERR_FILENO;
@@ -153,7 +151,7 @@ restart:
 
     /* Restore old terminal settings and signals. */
     if (memcmp(&term, &oterm, sizeof(term)) != 0) {
-        const int sigttou = signo[SIGTTOU];
+        const int sigttou = (int)signo[SIGTTOU];
 
         /* Ignore SIGTTOU generated when we are not the fg pgrp. */
         while (tcsetattr(input, TCSAFLUSH|TCSASOFT, &oterm) == -1 &&

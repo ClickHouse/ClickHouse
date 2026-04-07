@@ -1,8 +1,8 @@
 #pragma once
 
-#include "DateLUTImpl.h"
-
+#include <base/DayNum.h>
 #include <base/defines.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -11,28 +11,36 @@
 #include <mutex>
 #include <unordered_map>
 
+class DateLUTImpl;
+
 
 /// This class provides lazy initialization and lookup of singleton DateLUTImpl objects for a given timezone.
 class DateLUT : private boost::noncopyable
 {
 public:
-    /// Return singleton DateLUTImpl instance for the default time zone.
-    static ALWAYS_INLINE const DateLUTImpl & instance()  // -V1071
+    /// Return DateLUTImpl instance for session timezone.
+    /// session_timezone is a session-level setting.
+    /// If setting is not set, returns the server timezone.
+    static const DateLUTImpl & instance();
+
+    static ALWAYS_INLINE const DateLUTImpl & instance(std::string_view time_zone)
+    {
+        if (time_zone.empty())
+            return instance();
+
+        const auto & date_lut = getInstance();
+        return date_lut.getImplementation(time_zone);
+    }
+
+    /// Return singleton DateLUTImpl for the server time zone.
+    /// It may be set using 'timezone' server setting.
+    static ALWAYS_INLINE const DateLUTImpl & serverTimezoneInstance()
     {
         const auto & date_lut = getInstance();
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
-    /// Return singleton DateLUTImpl instance for a given time zone.
-    static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
-    {
-        const auto & date_lut = getInstance();
-        if (time_zone.empty())
-            return *date_lut.default_impl.load(std::memory_order_acquire);
-
-        return date_lut.getImplementation(time_zone);
-    }
-    static void setDefaultTimezone(const std::string & time_zone)
+    static void setDefaultTimezone(std::string_view time_zone)
     {
         auto & date_lut = getInstance();
         const auto & impl = date_lut.getImplementation(time_zone);
@@ -45,7 +53,7 @@ protected:
 private:
     static DateLUT & getInstance();
 
-    const DateLUTImpl & getImplementation(const std::string & time_zone) const;
+    const DateLUTImpl & getImplementation(std::string_view time_zone) const;
 
     using DateLUTImplPtr = std::unique_ptr<DateLUTImpl>;
 
@@ -75,3 +83,15 @@ inline UInt64 timeInNanoseconds(std::chrono::time_point<std::chrono::system_cloc
 {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(timepoint.time_since_epoch()).count();
 }
+
+/// A few helper functions to avoid having to include DateLUTImpl.h in some heavy headers
+
+ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0);
+std::optional<ExtendedDayNum> tryToMakeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month);
+
+Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month);
+Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
+std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second);
+
+const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut);
+UInt32 getDayNumOffsetEpoch();

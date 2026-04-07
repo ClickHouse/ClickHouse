@@ -1,0 +1,28 @@
+-- INSERT 20 rows using the reinterpret() technique
+-- Brute-force scan
+<dbpedia:Honda>
+<dbpedia:Tata_Motors>
+<dbpedia:Saab_Automobile>
+<dbpedia:Bugatti_Automobiles>
+-- Approximate nearest neighbor search
+<dbpedia:Honda>
+<dbpedia:Tata_Motors>
+<dbpedia:Saab_Automobile>
+<dbpedia:Bugatti_Automobiles>
+-- Verify the vector index is used
+Description: vector_similarity GRANULARITY 100000000
+-- Run a couple more ANN queries
+<dbpedia:Pizza>
+<dbpedia:Hamburger>
+<dbpedia:Salad>
+<dbpedia:Idli>
+<dbpedia:Database_theory>
+<dbpedia:Database_index>
+<dbpedia:Database_tuning>
+<dbpedia:Database_transaction>
+-- Verify the index is small
+Good
+-- Result without rescoring
+1
+-- Result with rescoring
+2

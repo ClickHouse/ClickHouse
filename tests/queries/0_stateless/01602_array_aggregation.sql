@@ -3,6 +3,12 @@ SELECT 'Array max ', (arrayMax(array(1,2,3,4,5,6)));
 SELECT 'Array sum ', (arraySum(array(1,2,3,4,5,6)));
 SELECT 'Array avg ', (arrayAvg(array(1,2,3,4,5,6)));
 
+SELECT 'Array min :';
+SELECT arrayMin([[3], [1], [2]]);
+
+SELECT 'Array max :';
+SELECT arrayMax([[3], [1], [2]]);
+
 DROP TABLE IF EXISTS test_aggregation;
 CREATE TABLE test_aggregation (x Array(Int)) ENGINE=TinyLog;
 
@@ -33,6 +39,11 @@ SELECT 'Table array decimal avg';
 SELECT arrayAvg(x) FROM test_aggregation;
 
 DROP TABLE test_aggregation;
+
+WITH ['2023-04-05 00:25:23', '2023-04-05 00:25:24']::Array(DateTime) AS dt SELECT arrayMax(dt), arrayMin(dt), arrayDifference(dt);
+WITH ['2023-04-05 00:25:23.123', '2023-04-05 00:25:24.124']::Array(DateTime64(3)) AS dt SELECT arrayMax(dt), arrayMin(dt), arrayDifference(dt);
+WITH ['2023-04-05', '2023-04-06']::Array(Date) AS d SELECT arrayMax(d), arrayMin(d), arrayDifference(d);
+WITH ['2023-04-05', '2023-04-06']::Array(Date32) AS d SELECT arrayMax(d), arrayMin(d), arrayDifference(d);
 
 SELECT 'Types of aggregation result array min';
 SELECT toTypeName(arrayMin([toInt8(0)])), toTypeName(arrayMin([toInt16(0)])), toTypeName(arrayMin([toInt32(0)])), toTypeName(arrayMin([toInt64(0)]));

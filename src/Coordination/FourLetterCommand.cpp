@@ -1,25 +1,62 @@
 #include <Coordination/FourLetterCommand.h>
 
+#include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
+#include <Common/config_version.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include <unistd.h>
+#include <bit>
+
+#if USE_JEMALLOC
+#include <Common/Jemalloc.h>
+#include <jemalloc/jemalloc.h>
+#endif
+
+namespace
+{
+
+String formatZxid(int64_t zxid)
+{
+    /// ZooKeeper print zxid in hex and
+    String hex = getHexUIntLowercase(zxid);
+    /// without leading zeros
+    trimLeft(hex, '0');
+    if (hex.empty())
+        hex = "0";
+    return "0x" + hex;
+}
+
+}
+
+#if USE_NURAFT
+namespace ProfileEvents
+{
+    extern const std::vector<Event> keeper_profile_events;
+}
+#endif
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
@@ -32,17 +69,23 @@ int32_t IFourLetterCommand::code()
     return toCode(name());
 }
 
+String IFourLetterCommand::runWithArgument(const std::string &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Four letter command {} does not support argument", name());
+}
+
 String IFourLetterCommand::toName(int32_t code)
 {
-    int reverted_code = __builtin_bswap32(code);
+    int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
-int32_t IFourLetterCommand::toCode(const String & name)
+int32_t IFourLetterCommand::toCode(std::string_view name)
 {
-    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
+    int32_t res = 0;
+    std::memcpy(&res, name.data(), sizeof(int32_t));
     /// keep consistent with Coordination::read method by changing big endian to little endian.
-    return __builtin_bswap32(res);
+    return std::byteswap(res);
 }
 
 IFourLetterCommand::~IFourLetterCommand() = default;
@@ -56,10 +99,10 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
 void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
-        throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
-bool FourLetterCommandFactory::isKnown(int32_t code)
+bool FourLetterCommandFactory::isKnown(int32_t code) const
 {
     checkInitialization();
     return commands.contains(code);
@@ -74,7 +117,7 @@ FourLetterCommandPtr FourLetterCommandFactory::get(int32_t code)
 void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
-        throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command {} already registered", command->name());
 
     commands.emplace(command->code(), std::move(command));
 }
@@ -136,12 +179,55 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr api_version_command = std::make_shared<ApiVersionCommand>(keeper_dispatcher);
         factory.registerCommand(api_version_command);
 
+        FourLetterCommandPtr create_snapshot_command = std::make_shared<CreateSnapshotCommand>(keeper_dispatcher);
+        factory.registerCommand(create_snapshot_command);
+
+        FourLetterCommandPtr log_info_command = std::make_shared<LogInfoCommand>(keeper_dispatcher);
+        factory.registerCommand(log_info_command);
+
+        FourLetterCommandPtr request_leader_command = std::make_shared<RequestLeaderCommand>(keeper_dispatcher);
+        factory.registerCommand(request_leader_command);
+
+        FourLetterCommandPtr recalculate_command = std::make_shared<RecalculateCommand>(keeper_dispatcher);
+        factory.registerCommand(recalculate_command);
+
+        FourLetterCommandPtr clean_resources_command = std::make_shared<CleanResourcesCommand>(keeper_dispatcher);
+        factory.registerCommand(clean_resources_command);
+
+        FourLetterCommandPtr feature_flags_command = std::make_shared<FeatureFlagsCommand>(keeper_dispatcher);
+        factory.registerCommand(feature_flags_command);
+
+        FourLetterCommandPtr yield_leadership_command = std::make_shared<YieldLeadershipCommand>(keeper_dispatcher);
+        factory.registerCommand(yield_leadership_command);
+
+#if USE_JEMALLOC
+        FourLetterCommandPtr jemalloc_dump_stats = std::make_shared<JemallocDumpStats>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_dump_stats);
+
+        FourLetterCommandPtr jemalloc_flush_profile = std::make_shared<JemallocFlushProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_flush_profile);
+
+        FourLetterCommandPtr jemalloc_enable_profile = std::make_shared<JemallocEnableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_enable_profile);
+
+        FourLetterCommandPtr jemalloc_disable_profile = std::make_shared<JemallocDisableProfile>(keeper_dispatcher);
+        factory.registerCommand(jemalloc_disable_profile);
+#endif
+        FourLetterCommandPtr profile_events_command = std::make_shared<ProfileEventsCommand>(keeper_dispatcher);
+        factory.registerCommand(profile_events_command);
+
+        FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
+        factory.registerCommand(toggle_request_logging);
+
+        FourLetterCommandPtr reconfigure_command = std::make_shared<ReconfigureCommand>(keeper_dispatcher);
+        factory.registerCommand(reconfigure_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
 
-bool FourLetterCommandFactory::isEnabled(int32_t code)
+bool FourLetterCommandFactory::isEnabled(int32_t code) const
 {
     checkInitialization();
     if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
@@ -150,15 +236,24 @@ bool FourLetterCommandFactory::isEnabled(int32_t code)
     return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
+bool FourLetterCommandFactory::supportArguments(int32_t code) const
+{
+    checkInitialization();
+
+    if (IFourLetterCommand::toName(code) == "rcfg")
+        return true;
+    return false;
+}
+
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
     const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
-
+    auto log = getLogger("FourLetterCommandFactory");
     String list_str = keeper_settings->four_letter_word_allow_list;
-    Strings tokens;
+    std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
-    for (String token: tokens)
+    for (auto token : tokens)
     {
         trim(token);
 
@@ -168,18 +263,11 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
+
+        if (auto code = IFourLetterCommand::toCode(token); commands.contains(code))
+            allow_list.push_back(code);
         else
-        {
-            if (commands.contains(IFourLetterCommand::toCode(token)))
-            {
-                allow_list.push_back(IFourLetterCommand::toCode(token));
-            }
-            else
-            {
-                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
-                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
-            }
-        }
+            LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
     }
 }
 
@@ -191,7 +279,9 @@ String RuokCommand::run()
 namespace
 {
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
+using StringBuffer = DB::WriteBufferFromOwnString;
+
+void print(StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -200,7 +290,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, const Str
     writeText('\n', buf);
 }
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
+void print(StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }
@@ -233,22 +323,30 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    print(ret, "znode_count", state_machine.getNodesCount());
-    print(ret, "watch_count", state_machine.getTotalWatchesCount());
-    print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
-    print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
-    print(ret, "key_arena_size", state_machine.getKeyArenaSize());
-    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotBufSize());
+    const auto & storage_stats = state_machine.getStorageStats();
+
+    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
+    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
+    print(ret, "key_arena_size", 0);
+    print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
+    auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    if (max_file_descriptor_count.has_value())
+        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
+    else
+        print(ret, "max_file_descriptor_count", -1);
 #endif
 
     if (keeper_info.is_leader)
     {
+        print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
+        print(ret, "synced_non_voting_followers", keeper_info.synced_non_voting_follower_count);
     }
 
     return ret.str();
@@ -275,6 +373,7 @@ String ConfCommand::run()
 
     StringBuffer buf;
     keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
 
@@ -314,6 +413,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -325,9 +425,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -343,6 +443,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -358,9 +459,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", toString(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -429,7 +530,7 @@ String EnviCommand::run()
 
     StringBuffer buf;
     buf << "Environment:\n";
-    buf << "clickhouse.keeper.version=" << (String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH) << '\n';
+    buf << "clickhouse.keeper.version=" << VERSION_DESCRIBE << '-' << VERSION_GITHASH << '\n';
 
     buf << "host.name=" << Environment::nodeName() << '\n';
     buf << "os.name=" << Environment::osDisplayName() << '\n';
@@ -439,7 +540,7 @@ String EnviCommand::run()
 
     String os_user;
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
         os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
@@ -457,8 +558,7 @@ String IsReadOnlyCommand::run()
 {
     if (keeper_dispatcher.isObserver())
         return "ro";
-    else
-        return "rw";
+    return "rw";
 }
 
 String RecoveryCommand::run()
@@ -469,7 +569,175 @@ String RecoveryCommand::run()
 
 String ApiVersionCommand::run()
 {
-    return toString(static_cast<uint8_t>(Coordination::current_keeper_api_version));
+    return toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+}
+
+String CreateSnapshotCommand::run()
+{
+    auto log_index = keeper_dispatcher.createSnapshot();
+    return log_index > 0 ? std::to_string(log_index) : "Failed to schedule snapshot creation task.";
+}
+
+String LogInfoCommand::run()
+{
+    KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
+    StringBuffer ret;
+
+    auto append = [&ret] (String key, uint64_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+    append("first_log_idx", log_info.first_log_idx);
+    append("first_log_term", log_info.first_log_idx);
+    append("last_log_idx", log_info.last_log_idx);
+    append("last_log_term", log_info.last_log_term);
+    append("last_committed_log_idx", log_info.last_committed_log_idx);
+    append("leader_committed_log_idx", log_info.leader_committed_log_idx);
+    append("target_committed_log_idx", log_info.target_committed_log_idx);
+    append("last_snapshot_idx", log_info.last_snapshot_idx);
+
+    append("latest_logs_cache_entries", log_info.latest_logs_cache_entries);
+    append("latest_logs_cache_size", log_info.latest_logs_cache_size);
+
+    append("commit_logs_cache_entries", log_info.commit_logs_cache_entries);
+    append("commit_logs_cache_size", log_info.commit_logs_cache_size);
+    return ret.str();
+}
+
+String RequestLeaderCommand::run()
+{
+    return keeper_dispatcher.requestLeader() ? "Sent leadership request to leader." : "Failed to send leadership request to leader.";
+}
+
+String RecalculateCommand::run()
+{
+    keeper_dispatcher.recalculateStorageStats();
+    return "ok";
+}
+
+String CleanResourcesCommand::run()
+{
+    KeeperDispatcher::cleanResources();
+    return "ok";
+}
+
+String FeatureFlagsCommand::run()
+{
+    const auto & feature_flags = keeper_dispatcher.getKeeperContext()->getFeatureFlags();
+
+    StringBuffer ret;
+
+    auto append = [&ret] (const String & key, uint8_t value) -> void
+    {
+        writeText(key, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\n', ret);
+    };
+
+    for (const auto & [feature_flag, name] : magic_enum::enum_entries<KeeperFeatureFlag>())
+    {
+        std::string feature_flag_string(name);
+        boost::to_lower(feature_flag_string);
+        append(feature_flag_string, feature_flags.isEnabled(feature_flag));
+    }
+
+    return ret.str();
+}
+
+String YieldLeadershipCommand::run()
+{
+    keeper_dispatcher.yieldLeadership();
+    return "Sent yield leadership request to leader.";
+}
+
+#if USE_JEMALLOC
+
+void printToString(void * output, const char * data)
+{
+    std::string * output_data = reinterpret_cast<std::string *>(output);
+    *output_data += std::string(data);
+}
+
+String JemallocDumpStats::run()
+{
+    std::string output;
+    je_malloc_stats_print(printToString, &output, nullptr);
+    return output;
+}
+
+String JemallocFlushProfile::run()
+{
+    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
+}
+
+String JemallocEnableProfile::run()
+{
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
+}
+
+String JemallocDisableProfile::run()
+{
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
+}
+#endif
+
+String ProfileEventsCommand::run()
+{
+    StringBuffer ret;
+
+#if USE_NURAFT
+    auto append = [&ret] (const String & metric, uint64_t value, const String & docs) -> void
+    {
+        writeText(metric, ret);
+        writeText('\t', ret);
+        writeText(std::to_string(value), ret);
+        writeText('\t', ret);
+        writeText(docs, ret);
+        writeText('\n', ret);
+    };
+
+    for (auto i : ProfileEvents::keeper_profile_events)
+    {
+        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
+        std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
+        append(metric_name, counter, metric_doc);
+    }
+#endif
+
+    return ret.str();
+}
+
+String ToggleRequestLogging::run()
+{
+    const auto & keeper_context = keeper_dispatcher.getKeeperContext();
+    auto old_value = keeper_context->shouldLogRequests();
+    keeper_context->setLogRequests(!old_value);
+    return old_value ? "disabled" : "enabled";
+}
+
+
+String ReconfigureCommand::run()
+{
+    return "Reconfiguration command require single JSON argument";
+}
+
+String ReconfigureCommand::runWithArgument(const std::string & argument)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(argument).extract<Poco::JSON::Object::Ptr>();
+
+    if (!keeper_dispatcher.reconfigEnabled())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconfiguration is not enabled on this keeper server");
+
+    auto result = keeper_dispatcher.reconfigureClusterFromReconfigureCommand(json);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(result, oss, 4);
+    return oss.str();
 }
 
 }

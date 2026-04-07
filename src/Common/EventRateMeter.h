@@ -4,8 +4,6 @@
 
 #include <Common/ExponentiallySmoothedCounter.h>
 
-#include <numbers>
-
 
 namespace DB
 {
@@ -14,9 +12,10 @@ namespace DB
 class EventRateMeter
 {
 public:
-    explicit EventRateMeter(double now, double period_)
+    explicit EventRateMeter(double now, double period_, size_t heating_ = 0)
         : period(period_)
-        , half_decay_time(period * std::numbers::ln2) // for `ExponentiallySmoothedAverage::sumWeights()` to be equal to `1/period`
+        , max_interval(period * 10)
+        , heating(heating_)
     {
         reset(now);
     }
@@ -27,10 +26,13 @@ public:
     /// NOTE: Adding events into distant past (further than `period`) must be avoided.
     void add(double now, double count)
     {
-        if (now - period <= start) // precise counting mode
-            events = ExponentiallySmoothedAverage(events.value + count, now);
-        else // exponential smoothing mode
-            events.add(count, now, half_decay_time);
+        // Remove data for initial heating stage that can present at the beginning of a query.
+        // Otherwise it leads to wrong gradual increase of average value, turning algorithm into not very reactive.
+        if (count != 0.0 && data_points++ <= heating)
+            reset(events.time, data_points);
+
+        duration.add(std::min(max_interval, now - duration.time), now, period);
+        events.add(count, now, period);
     }
 
     /// Compute average event rate throughout `[now - period, now]` period.
@@ -41,23 +43,27 @@ public:
         add(now, 0);
         if (unlikely(now <= start))
             return 0;
-        if (now - period <= start) // precise counting mode
-            return events.value / (now - start);
-        else // exponential smoothing mode
-            return events.get(half_decay_time); // equals to `events.value / period`
+
+        // We do not use .get() because sum of weights will anyway be canceled out (optimization)
+        return events.value / duration.value;
     }
 
-    void reset(double now)
+    void reset(double now, size_t data_points_ = 0)
     {
         start = now;
         events = ExponentiallySmoothedAverage();
+        duration = ExponentiallySmoothedAverage();
+        data_points = data_points_;
     }
 
 private:
     const double period;
-    const double half_decay_time;
+    const double max_interval;
+    const size_t heating;
     double start; // Instant in past without events before it; when measurement started or reset
-    ExponentiallySmoothedAverage events; // Estimated number of events in the last `period`
+    ExponentiallySmoothedAverage duration; // Current duration of a period
+    ExponentiallySmoothedAverage events; // Estimated number of events in last `duration` seconds
+    size_t data_points = 0;
 };
 
 }

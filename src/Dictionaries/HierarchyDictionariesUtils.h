@@ -5,9 +5,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnArray.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <Dictionaries/IDictionary.h>
 
@@ -26,7 +24,12 @@ public:
         UInt32 end_index;
     };
 
-    explicit DictionaryHierarchicalParentToChildIndex(const HashMap<UInt64, PaddedPODArray<UInt64>> & parent_to_children_map_)
+    /// By default we use initial_bytes=4096 in PodArray.
+    /// It might lead to really high memory consumption when arrays are almost empty but there are a lot of them.
+    using Array = PODArray<UInt64, 8 * sizeof(UInt64), Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
+    using ParentToChildIndex = HashMap<UInt64, Array>;
+
+    explicit DictionaryHierarchicalParentToChildIndex(const ParentToChildIndex & parent_to_children_map_)
     {
         size_t parent_to_children_map_size = parent_to_children_map_.size();
 
@@ -122,7 +125,7 @@ namespace detail
             auto hierarchy_key = keys[i];
             size_t current_hierarchy_depth = 0;
 
-            bool is_key_valid = std::forward<IsKeyValidFunc>(is_key_valid_func)(hierarchy_key);
+            bool is_key_valid = is_key_valid_func(hierarchy_key);
 
             if (!is_key_valid)
             {
@@ -147,7 +150,7 @@ namespace detail
 
                     size_t array_element_offset = index.array_element_offset;
 
-                    size_t previous_offset_size = offset > 0 ? offsets[offset - 1] : 0;
+                    size_t previous_offset_size = offsets[offset - 1];
                     size_t start_index = previous_offset_size + array_element_offset;
                     size_t end_index = offsets[offset];
 
@@ -162,7 +165,7 @@ namespace detail
                 elements.emplace_back(hierarchy_key);
                 ++current_hierarchy_depth;
 
-                std::optional<UInt64> parent_key = std::forward<GetParentKeyFunc>(get_parent_key_func)(hierarchy_key);
+                std::optional<UInt64> parent_key = get_parent_key_func(hierarchy_key);
 
                 if (!parent_key.has_value())
                     break;

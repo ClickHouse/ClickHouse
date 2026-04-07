@@ -1,6 +1,7 @@
 #include <base/sort.h>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -80,7 +81,7 @@ private:
         if (!(max_key_data_type.isInt() || max_key_data_type.isUInt()))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Function {} max key should be of signed or unsigned integer type. Actual type {}.",
+                "Function {} max key should be of signed or unsigned integer type. Actual type {}, max type {}.",
                 getName(),
                 key_type->getName(),
                 max_key_type->getName());
@@ -102,17 +103,13 @@ private:
 
         if (key_argument_data_type.isArray())
         {
-            DataTypePtr value_type;
-            if (1 < arguments.size())
-                value_type = arguments[1];
-
-            if (arguments.size() < 2 || (value_type && !isArray(value_type)))
+            if (arguments.size() < 2 || !arguments[1] || !isArray(arguments[1]))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Function {} if array argument is passed as key, additional array argument as value must be passed",
                     getName());
 
             const auto & key_array_type = assert_cast<const DataTypeArray &>(*arguments[0]);
-            const auto & value_array_type = assert_cast<const DataTypeArray &>(*value_type);
+            const auto & value_array_type = assert_cast<const DataTypeArray &>(*arguments[1]);
 
             key_argument_series_type = key_array_type.getNestedType();
             value_argument_series_type = value_array_type.getNestedType();
@@ -143,8 +140,7 @@ private:
 
         if (key_argument_data_type.isArray())
             return std::make_shared<DataTypeTuple>(DataTypes{arguments[0], arguments[1]});
-        else
-            return arguments[0];
+        return arguments[0];
     }
 
     template <typename KeyType, typename ValueType>
@@ -233,14 +229,14 @@ private:
                 }
                 else if (is_max_key_positive && !is_min_key_positive)
                 {
-                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
+                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
                     max_min_key_difference = static_cast<KeyTypeUnsigned>(max_key) + min_key_unsigned;
                 }
                 else
                 {
                     /// Both max and min key are negative
-                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
-                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(max_key);
+                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
+                    KeyTypeUnsigned max_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(max_key));
                     max_min_key_difference = min_key_unsigned - max_key_unsigned;
                 }
             }
@@ -263,7 +259,7 @@ private:
 
             for (KeyType current_key = min_key; current_key <= max_key; ++current_key)
             {
-                size_t key_offset_index = current_key - min_key;
+                size_t key_offset_index = static_cast<size_t>(current_key - min_key);
                 size_t insert_index = result_value_data_size + key_offset_index;
 
                 result_key_data[insert_index] = current_key;
@@ -457,23 +453,29 @@ private:
             using ValueType = typename Types::RightType;
 
             static constexpr bool key_and_value_are_numbers = IsDataTypeNumber<KeyType> && IsDataTypeNumber<ValueType>;
-            static constexpr bool key_is_float = std::is_same_v<KeyType, DataTypeFloat32> || std::is_same_v<KeyType, DataTypeFloat64>;
 
-            if constexpr (key_and_value_are_numbers && !key_is_float)
+            if constexpr (key_and_value_are_numbers)
             {
-                using KeyFieldType = typename KeyType::FieldType;
-                using ValueFieldType = typename ValueType::FieldType;
+                if constexpr (is_floating_point<typename KeyType::FieldType>)
+                {
+                    return false;
+                }
+                else
+                {
+                    using KeyFieldType = typename KeyType::FieldType;
+                    using ValueFieldType = typename ValueType::FieldType;
 
-                executeImplTyped<KeyFieldType, ValueFieldType>(
-                    input.key_column,
-                    input.value_column,
-                    input.offsets_column,
-                    input.max_key_column,
-                    std::move(result_columns.result_key_column),
-                    std::move(result_columns.result_value_column),
-                    std::move(result_columns.result_offset_column));
+                    executeImplTyped<KeyFieldType, ValueFieldType>(
+                        input.key_column,
+                        input.value_column,
+                        input.offsets_column,
+                        input.max_key_column,
+                        std::move(result_columns.result_key_column),
+                        std::move(result_columns.result_value_column),
+                        std::move(result_columns.result_offset_column));
 
-                return true;
+                    return true;
+                }
             }
 
             return false;
@@ -498,7 +500,29 @@ private:
 
 REGISTER_FUNCTION(MapPopulateSeries)
 {
-    factory.registerFunction<FunctionMapPopulateSeries>();
+    FunctionDocumentation::Description description = R"(
+Fills missing key-value pairs in a map with integer keys.
+To support extending the keys beyond the largest value, a maximum key can be specified.
+More specifically, the function returns a map in which the keys form a series from the smallest to the largest key (or max argument if specified) with step size of 1, and corresponding values.
+If no value is specified for a key, a default value is used as value.
+In case keys repeat, only the first value (in order of appearance) is associated with the key.
+)";
+    FunctionDocumentation::Syntax syntax = "mapPopulateSeries(map[, max]) | mapPopulateSeries(keys, values[, max])";
+    FunctionDocumentation::Arguments arguments = {
+        {"map", "Map with integer keys.", {"Map((U)Int*, V)"}},
+        {"keys", "Array of keys.", {"Array(T)"}},
+        {"values", "Array of values.", {"Array(T)"}},
+        {"max", "Optional. Maximum key value.", {"Int8", "Int16", "Int32", "Int64", "Int128", "Int256"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys.", {"Map(K, V)", "Tuple(Array(UInt*), Array(Any))"}};
+    FunctionDocumentation::Examples examples = {
+        {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}"},
+        {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 10};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionMapPopulateSeries>(documentation);
 }
 
 }

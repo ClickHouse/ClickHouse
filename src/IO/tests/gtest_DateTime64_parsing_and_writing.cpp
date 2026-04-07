@@ -1,4 +1,3 @@
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 #include <gtest/gtest.h>
 
 #include <IO/ReadHelpers.h>
@@ -35,7 +34,7 @@ class DateTime64StringWriteTest : public DateTime64StringsTest {};
 TEST_P(DateTime64StringParseTest, readDateTime64Text)
 {
     const auto & param = GetParam();
-    ReadBufferFromMemory read_buffer(param.string.data(), param.string.size());
+    ReadBufferFromMemory read_buffer(param.string);
 
     DateTime64 actual{};
     EXPECT_TRUE(tryReadDateTime64Text(actual, param.scale, read_buffer, param.timezone));
@@ -46,7 +45,7 @@ TEST_P(DateTime64StringParseTest, readDateTime64Text)
 TEST_P(DateTime64StringParseTest, parseDateTime64BestEffort)
 {
     const auto & param = GetParam();
-    ReadBufferFromMemory read_buffer(param.string.data(), param.string.size());
+    ReadBufferFromMemory read_buffer(param.string);
 
     DateTime64 actual;
     EXPECT_TRUE(tryParseDateTime64BestEffort(actual, param.scale, read_buffer, param.timezone, DateLUT::instance("UTC")));
@@ -60,10 +59,11 @@ TEST_P(DateTime64StringWriteTest, WriteText)
 
     PaddedPODArray<char> actual_string(param.string.size() * 2, '\0'); // TODO: detect overflows
 
-    WriteBuffer write_buffer(actual_string.data(), actual_string.size());
+    WriteBufferFromPointer write_buffer(actual_string.data(), actual_string.size());
     EXPECT_NO_THROW(writeDateTimeText(param.dt64, param.scale, write_buffer, param.timezone));
+    write_buffer.finalize();
 
-    EXPECT_STREQ(param.string.data(), actual_string.data());
+    EXPECT_STREQ(param.string.data(), actual_string.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 TEST_P(DateTime64StringParseBestEffortTest, parse)
@@ -154,6 +154,60 @@ INSTANTIATE_TEST_SUITE_P(BestEffort,
     })
 );
 
+INSTANTIATE_TEST_SUITE_P(PreEpoch,
+    DateTime64StringParseBestEffortTest,
+    ::testing::ValuesIn(std::initializer_list<DateTime64StringsTestParam>{
+        {
+            "Pre-epoch date with fractional seconds (original issue case)",
+            "1969-01-01 00:00:00.468",
+            -31535999532,
+            3,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date near epoch boundary with small fractional seconds",
+            "1969-12-31 23:59:59.001",
+            -999,
+            3,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date near epoch boundary with large fractional seconds",
+            "1969-12-31 23:59:59.999",
+            -1,
+            3,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date with zero fractional seconds",
+            "1969-12-31 23:59:59.000",
+            -1000,
+            3,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date with different scale (scale=2)",
+            "1969-12-31 23:59:58.12",
+            -188,
+            2,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date with high precision (scale=9)",
+            "1969-12-31 23:59:58.123456789",
+            -1876543211,
+            9,
+            DateLUT::instance("UTC")
+        },
+        {
+            "Pre-epoch date far from epoch",
+            "1900-01-01 12:34:56.789",
+            -2208943503211,
+            3,
+            DateLUT::instance("UTC")
+        }
+    })
+);
 
 // TODO: add negative test cases for invalid strings, verifying that error is reported properly
 
@@ -182,7 +236,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             DateLUT::instance("Europe/Minsk")
         },
         {
-            "When scale is 0, subsecond part (and separtor) is missing from string",
+            "When scale is 0, subsecond part (and separator) is missing from string",
             "2019-09-16 19:20:17",
             1568650817ULL,
             0,
@@ -197,4 +251,3 @@ INSTANTIATE_TEST_SUITE_P(Basic,
         }
     })
 );
-

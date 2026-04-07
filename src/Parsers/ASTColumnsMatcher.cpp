@@ -2,7 +2,6 @@
 
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <re2/re2.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 
@@ -10,82 +9,85 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_COMPILE_REGEXP;
-}
-
 ASTPtr ASTColumnsRegexpMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsRegexpMatcher>(*this);
-    clone->cloneChildren();
+    auto clone = make_intrusive<ASTColumnsRegexpMatcher>(*this);
+    clone->children.clear();
+
+    if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
+
     return clone;
 }
 
 void ASTColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
 {
+    if (expression)
+    {
+        expression->appendColumnName(ostr);
+        writeCString(".", ostr);
+    }
     writeCString("COLUMNS(", ostr);
-    writeQuotedString(original_pattern, ostr);
+    writeQuotedString(pattern, ostr);
     writeChar(')', ostr);
 }
 
-void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
+    hash_state.update(pattern.size());
+    hash_state.update(pattern);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
-
-    /// Format column transformers
-    for (const auto & child : children)
+    if (expression)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        expression->format(ostr, settings, state, frame);
+        ostr << ".";
+    }
+
+    ostr << "COLUMNS" << "(";
+    ostr << quoteString(pattern);
+    ostr << ")";
+
+    if (transformers)
+    {
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
-void ASTColumnsRegexpMatcher::setPattern(String pattern)
+void ASTColumnsRegexpMatcher::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+    pattern = std::move(pattern_);
 }
 
-const std::shared_ptr<re2::RE2> & ASTColumnsRegexpMatcher::getMatcher() const
+const String & ASTColumnsRegexpMatcher::getPattern() const
 {
-    return column_matcher;
-}
-
-bool ASTColumnsRegexpMatcher::isColumnMatching(const String & column_name) const
-{
-    return RE2::PartialMatch(column_name, *column_matcher);
+    return pattern;
 }
 
 ASTPtr ASTColumnsListMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTColumnsListMatcher>(*this);
-    clone->column_list = column_list->clone();
-    clone->cloneChildren();
-    return clone;
-}
+    auto clone = make_intrusive<ASTColumnsListMatcher>(*this);
+    clone->children.clear();
 
-void ASTColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) const
-{
-    column_list->updateTreeHash(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
+    if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
+
+    clone->column_list = column_list->clone();
+    clone->children.push_back(clone->column_list);
+
+    return clone;
 }
 
 void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 {
+    if (expression)
+    {
+        expression->appendColumnName(ostr);
+        writeCString(".", ostr);
+    }
     writeCString("COLUMNS(", ostr);
     for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
@@ -97,104 +99,102 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    if (expression)
+    {
+        expression->format(ostr, settings, state, frame);
+        ostr << ".";
+    }
+
+    ostr << "COLUMNS" << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
         {
-            settings.ostr << ", ";
+            ostr << ", ";
         }
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
-    settings.ostr << ")";
+    ostr << ")";
 
-    /// Format column transformers
-    for (const auto & child : children)
+    if (transformers)
     {
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
 ASTPtr ASTQualifiedColumnsRegexpMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTQualifiedColumnsRegexpMatcher>(*this);
-    clone->cloneChildren();
+    auto clone = make_intrusive<ASTQualifiedColumnsRegexpMatcher>(*this);
+    clone->children.clear();
+
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
+
+    clone->qualifier = qualifier->clone();
+    clone->children.push_back(clone->qualifier);
+
     return clone;
 }
 
 void ASTQualifiedColumnsRegexpMatcher::appendColumnName(WriteBuffer & ostr) const
 {
-    const auto & qualifier = children.at(0);
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
-    writeQuotedString(original_pattern, ostr);
+    writeQuotedString(pattern, ostr);
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern)
+void ASTQualifiedColumnsRegexpMatcher::setPattern(String pattern_)
 {
-    original_pattern = std::move(pattern);
-    column_matcher = std::make_shared<RE2>(original_pattern, RE2::Quiet);
-    if (!column_matcher->ok())
-        throw DB::Exception(
-            "COLUMNS pattern " + original_pattern + " cannot be compiled: " + column_matcher->error(),
-            DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+    pattern = std::move(pattern_);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::setMatcher(std::shared_ptr<re2::RE2> matcher)
+const String & ASTQualifiedColumnsRegexpMatcher::getPattern() const
 {
-    column_matcher = std::move(matcher);
+    return pattern;
 }
 
-const std::shared_ptr<re2::RE2> & ASTQualifiedColumnsRegexpMatcher::getMatcher() const
+void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    return column_matcher;
+    hash_state.update(pattern.size());
+    hash_state.update(pattern);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
-void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    hash_state.update(original_pattern.size());
-    hash_state.update(original_pattern);
-    IAST::updateTreeHashImpl(hash_state);
-}
+    qualifier->format(ostr, settings, state, frame);
 
-void ASTQualifiedColumnsRegexpMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
+    ostr << ".COLUMNS" << "(";
+    ostr << quoteString(pattern);
+    ostr << ")";
 
-    const auto & qualifier = children.at(0);
-    qualifier->formatImpl(settings, state, frame);
-
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
-    settings.ostr << quoteString(original_pattern);
-    settings.ostr << ")";
-
-    /// Format column transformers
-    size_t children_size = children.size();
-
-    for (size_t i = 1; i < children_size; ++i)
+    if (transformers)
     {
-        const auto & child = children[i];
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
 ASTPtr ASTQualifiedColumnsListMatcher::clone() const
 {
-    auto clone = std::make_shared<ASTQualifiedColumnsListMatcher>(*this);
+    auto clone = make_intrusive<ASTQualifiedColumnsListMatcher>(*this);
+    clone->children.clear();
+
+    if (transformers) { clone->transformers = transformers->clone(); clone->children.push_back(clone->transformers); }
+
+    clone->qualifier = qualifier->clone();
     clone->column_list = column_list->clone();
-    clone->cloneChildren();
+
+    clone->children.push_back(clone->qualifier);
+    clone->children.push_back(clone->column_list);
+
     return clone;
 }
 
 void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 {
-    const auto & qualifier = children.at(0);
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
 
@@ -208,38 +208,23 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     writeChar(')', ostr);
 }
 
-void ASTQualifiedColumnsListMatcher::updateTreeHashImpl(SipHash & hash_state) const
+void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    column_list->updateTreeHash(hash_state);
-    IAST::updateTreeHashImpl(hash_state);
-}
-
-void ASTQualifiedColumnsListMatcher::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    settings.ostr << (settings.hilite ? hilite_keyword : "");
-
-    const auto & qualifier = children.at(0);
-    qualifier->formatImpl(settings, state, frame);
-
-    settings.ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    qualifier->format(ostr, settings, state, frame);
+    ostr << ".COLUMNS" << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
-            settings.ostr << ", ";
+            ostr << ", ";
 
-        (*it)->formatImpl(settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
-    settings.ostr << ")";
+    ostr << ")";
 
-    /// Format column transformers
-    size_t children_size = children.size();
-
-    for (size_t i = 1; i < children_size; ++i)
+    if (transformers)
     {
-        const auto & child = children[i];
-        settings.ostr << ' ';
-        child->formatImpl(settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 

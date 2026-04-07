@@ -1,20 +1,11 @@
-#include "RedisSource.h"
-
-#include <string>
-#include <vector>
-
-#include <Poco/Redis/Array.h>
-#include <Poco/Redis/Client.h>
-#include <Poco/Redis/Command.h>
-#include <Poco/Redis/Type.h>
+#include <Dictionaries/RedisSource.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include "DictionaryStructure.h"
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -30,10 +21,10 @@ namespace DB
 
 
     RedisSource::RedisSource(
-        ConnectionPtr connection_,
+        RedisConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
-        const DB::Block & sample_block,
+        SharedHeader sample_block,
         size_t max_block_size_)
         : ISource(sample_block)
         , connection(std::move(connection_))
@@ -41,7 +32,7 @@ namespace DB
         , storage_type(storage_type_)
         , max_block_size{max_block_size_}
     {
-        description.init(sample_block);
+        description.init(*sample_block);
     }
 
     RedisSource::~RedisSource() = default;
@@ -107,8 +98,7 @@ namespace DB
                     ReadBufferFromString in(string_value);
                     time_t time = 0;
                     readDateTimeText(time, in);
-                    if (time < 0)
-                        time = 0;
+                    time = std::max<time_t>(time, 0);
                     assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                     break;
                 }
@@ -143,7 +133,7 @@ namespace DB
             {
                 ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
                 insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
-                column_nullable.getNullMapData().emplace_back(0);
+                column_nullable.getNullMapData().emplace_back(false);
             }
             else
                 insertValue(*columns[idx], description.types[idx].first, value);
@@ -159,7 +149,7 @@ namespace DB
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Too low keys in request to source: {}, expected 2 or more",
-                        DB::toString(keys_array.size()));
+                        keys_array.size());
                 }
 
                 if (num_rows + keys_array.size() - 1 > max_block_size)

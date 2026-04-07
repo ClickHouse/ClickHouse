@@ -16,7 +16,7 @@ namespace MySQLParser
 
 ASTPtr ASTDeclareColumn::clone() const
 {
-    auto res = std::make_shared<ASTDeclareColumn>(*this);
+    auto res = make_intrusive<ASTDeclareColumn>(*this);
     res->children.clear();
 
     if (data_type)
@@ -52,6 +52,7 @@ static inline bool parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, 
             OptionDescribe("KEY", "primary_key", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("COMMENT", "comment", std::make_unique<ParserStringLiteral>()),
             OptionDescribe("CHARACTER SET", "charset_name", std::make_unique<ParserCharsetOrCollateName>()),
+            OptionDescribe("CHARSET", "charset", std::make_unique<ParserCharsetOrCollateName>()),
             OptionDescribe("COLLATE", "collate", std::make_unique<ParserCharsetOrCollateName>()),
             OptionDescribe("COLUMN_FORMAT", "column_format", std::make_unique<ParserIdentifier>()),
             OptionDescribe("STORAGE", "storage", std::make_unique<ParserIdentifier>()),
@@ -59,6 +60,7 @@ static inline bool parseColumnDeclareOptions(IParser::Pos & pos, ASTPtr & node, 
             OptionDescribe("GENERATED ALWAYS AS", "generated", std::make_unique<ParserExpression>()),
             OptionDescribe("STORED", "is_stored", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("VIRTUAL", "is_stored", std::make_unique<ParserAlwaysFalse>()),
+            OptionDescribe("INVISIBLE", "", std::make_unique<ParserAlwaysTrue>()),
             OptionDescribe("", "reference", std::make_unique<ParserDeclareReference>()),
             OptionDescribe("", "constraint", std::make_unique<ParserDeclareConstraint>()),
         }
@@ -84,7 +86,7 @@ bool ParserDeclareColumn::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     parseColumnDeclareOptions(pos, column_options, expected);
 
-    auto declare_column = std::make_shared<ASTDeclareColumn>();
+    auto declare_column = make_intrusive<ASTDeclareColumn>();
     declare_column->name = getIdentifierName(column_name);
     declare_column->data_type = column_data_type;
     declare_column->column_options = column_options;

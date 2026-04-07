@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
 
 namespace DB
@@ -15,7 +16,7 @@ namespace DB
 class JSONColumnsBlockOutputFormat : public JSONColumnsBlockOutputFormatBase
 {
 public:
-    JSONColumnsBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8, size_t indent_ = 0);
+    JSONColumnsBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, bool validate_utf8, size_t indent_ = 0);
 
     String getName() const override { return "JSONColumnsBlockOutputFormat"; }
 
@@ -27,6 +28,8 @@ protected:
 
     Names names;
     size_t indent;
+
+    SharedHeader header;
 };
 
 }

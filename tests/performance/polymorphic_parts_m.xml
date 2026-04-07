@@ -25,8 +25,8 @@
     </settings>
 
     <!-- 100 parts -->
-    <query>INSERT INTO hits_wide(UserID)    SELECT rand() FROM  numbers(10000)</query>
-    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM numbers(100000)</query>
+    <query>INSERT INTO hits_wide(UserID)    SELECT rand() FROM numbers(10000)</query>
+    <query>INSERT INTO hits_compact(UserID) SELECT rand() FROM numbers(10000)</query>
     <query>INSERT INTO hits_buffer(UserID)  SELECT rand() FROM numbers(10000)</query>
 
     <drop_query>DROP TABLE IF EXISTS hits_wide</drop_query>

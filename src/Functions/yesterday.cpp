@@ -1,11 +1,9 @@
-#include <Common/DateLUT.h>
-
 #include <Core/Field.h>
-
 #include <DataTypes/DataTypeDate.h>
-
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -14,7 +12,7 @@ namespace DB
 class ExecutableFunctionYesterday : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionYesterday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionYesterday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
     String getName() const override { return "yesterday"; }
 
@@ -51,7 +49,6 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
@@ -77,13 +74,39 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
         auto day_num = DateLUT::instance().toDayNum(time(nullptr)) - 1;
-        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(day_num));
+        return std::make_unique<FunctionBaseYesterday>(static_cast<DayNum>(static_cast<UInt16>(day_num)));
     }
 };
 
 REGISTER_FUNCTION(Yesterday)
 {
-    factory.registerFunction<YesterdayOverloadResolver>();
+    FunctionDocumentation::Description description = R"(
+Accepts zero arguments and returns yesterday's date at one of the moments of query analysis.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+yesterday()
+    )";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns yesterday's date.", {"Date"}};
+    FunctionDocumentation::Examples examples = {
+        {"Get yesterday's date", R"(
+SELECT yesterday();
+SELECT today() - 1;
+        )",
+        R"(
+┌─yesterday()─┐
+│  2025-06-09 │
+└─────────────┘
+┌─minus(today(), 1)─┐
+│        2025-06-09 │
+└───────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<YesterdayOverloadResolver>(documentation);
 }
 
 }

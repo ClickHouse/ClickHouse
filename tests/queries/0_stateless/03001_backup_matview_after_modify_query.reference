@@ -1,0 +1,16 @@
+mv before:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22
+
+BACKUP_CREATED
+RESTORED
+
+mv after:
+timestamp	c12
+DateTime	Nullable(String)
+2024-02-22 00:00:00	00
+2024-02-22 00:00:01	11
+2024-02-22 00:00:02	22

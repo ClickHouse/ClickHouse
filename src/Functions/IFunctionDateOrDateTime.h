@@ -2,13 +2,19 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/TransformDateTime64.h>
+
+#include <Functions/TransformTime64.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -20,13 +26,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Transform>
-class IFunctionDateOrDateTime : public IFunction
+class FunctionDateOrDateTimeBase : public IFunction
 {
-public:
-    static constexpr auto name = Transform::name;
-    String getName() const override { return name; }
-
     bool isVariadic() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -42,56 +43,19 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
-            return { .is_monotonic = true, .is_always_monotonic = true };
-
-        const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
-        const IFunction::Monotonicity is_not_monotonic;
-
-        const DateLUTImpl * date_lut = &DateLUT::instance();
-        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
-            date_lut = &timezone->getTimeZone();
-
-        if (left.isNull() || right.isNull())
-            return is_not_monotonic;
-
-        /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
-
-        if (checkAndGetDataType<DataTypeDate>(&type))
-        {
-            return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), *date_lut)
-                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), *date_lut)
-                ? is_monotonic : is_not_monotonic;
-        }
-        else if (checkAndGetDataType<DataTypeDate32>(&type))
-        {
-            return Transform::FactorTransform::execute(Int32(left.get<UInt64>()), *date_lut)
-                   == Transform::FactorTransform::execute(Int32(right.get<UInt64>()), *date_lut)
-                   ? is_monotonic : is_not_monotonic;
-        }
-        else
-        {
-            return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), *date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), *date_lut)
-                ? is_monotonic : is_not_monotonic;
-        }
-    }
-
 protected:
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
     {
         if (arguments.size() == 1)
         {
-            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
                     arguments[0].type->getName(), getName());
         }
         else if (arguments.size() == 2)
         {
-            if (!isDateOrDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
                     arguments[0].type->getName(), getName());
@@ -109,6 +73,128 @@ protected:
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
                 getName(), arguments.size());
+    }
+};
+
+template <typename Transform>
+class IFunctionDateOrDateTime : public FunctionDateOrDateTimeBase
+{
+public:
+    static constexpr auto name = Transform::name;
+    String getName() const override { return name; }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+        {
+            const IDataType * type_ptr = &type;
+
+            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+                type_ptr = lc_type->getDictionaryType().get();
+
+            if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
+                type_ptr = nullable_type->getNestedType().get();
+
+            /// Date32 values outside the valid LUT range get clamped to sentinel values,
+            /// which breaks monotonicity. Only claim monotonic if the range is within bounds.
+            if (checkAndGetDataType<DataTypeDate32>(type_ptr))
+            {
+                /// Valid Date32 range: -DAYNUM_OFFSET_EPOCH .. DATE_LUT_MAX_EXTEND_DAY_NUM
+                static constexpr Int32 MIN_DATE32_DAY_NUM = -static_cast<Int32>(DAYNUM_OFFSET_EPOCH);
+                static constexpr Int32 MAX_DATE32_DAY_NUM = static_cast<Int32>(DATE_LUT_MAX_EXTEND_DAY_NUM);
+
+                if (left.isNull() || right.isNull())
+                    return { .is_monotonic = false };
+
+                Int64 left_val = left.safeGet<Int64>();
+                Int64 right_val = right.safeGet<Int64>();
+
+                if (left_val >= MIN_DATE32_DAY_NUM && left_val <= MAX_DATE32_DAY_NUM
+                    && right_val >= MIN_DATE32_DAY_NUM && right_val <= MAX_DATE32_DAY_NUM)
+                    return { .is_monotonic = true, .is_always_monotonic = true };
+
+                return { .is_monotonic = false };
+            }
+
+            return { .is_monotonic = true, .is_always_monotonic = true };
+        }
+        else
+        {
+            const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
+            const IFunction::Monotonicity is_not_monotonic;
+
+            const DateLUTImpl * date_lut = &DateLUT::instance();
+            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(&type))
+                date_lut = &timezone->getTimeZone();
+
+            if (left.isNull() || right.isNull())
+                return is_not_monotonic;
+
+            const auto * type_ptr = &type;
+
+            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+                type_ptr = lc_type->getDictionaryType().get();
+
+            if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
+                type_ptr = nullable_type->getNestedType().get();
+
+            /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
+
+            if (checkAndGetDataType<DataTypeDate>(type_ptr))
+            {
+                return Transform::FactorTransform::execute(UInt16(left.safeGet<UInt64>()), *date_lut)
+                    == Transform::FactorTransform::execute(UInt16(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic : is_not_monotonic;
+            }
+            if (checkAndGetDataType<DataTypeDate32>(type_ptr))
+            {
+                return Transform::FactorTransform::execute(Int32(left.safeGet<UInt64>()), *date_lut)
+                        == Transform::FactorTransform::execute(Int32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            }
+            if (checkAndGetDataType<DataTypeDateTime>(type_ptr))
+            {
+                return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), *date_lut)
+                        == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            }
+            if (checkAndGetDataType<DataTypeTime>(type_ptr))
+            {
+                return Transform::FactorTransform::execute(UInt32(left.safeGet<UInt64>()), *date_lut)
+                        == Transform::FactorTransform::execute(UInt32(right.safeGet<UInt64>()), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            }
+            if (checkAndGetDataType<DataTypeTime64>(type_ptr))
+            {
+                const auto & left_time = left.safeGet<Time64>();
+                TransformTime64<typename Transform::FactorTransform> transformer_left(left_time.getScale());
+
+                const auto & right_time = right.safeGet<Time64>();
+                TransformTime64<typename Transform::FactorTransform> transformer_right(right_time.getScale());
+
+                return transformer_left.execute(left_time.getValue(), *date_lut)
+                        == transformer_right.execute(right_time.getValue(), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            }
+
+            if (!checkAndGetDataType<DataTypeDateTime64>(type_ptr))
+                return is_not_monotonic;
+
+            const auto & left_date_time = left.safeGet<DateTime64>();
+            TransformDateTime64<typename Transform::FactorTransform> transformer_left(left_date_time.getScale());
+
+            const auto & right_date_time = right.safeGet<DateTime64>();
+            TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
+
+            return transformer_left.execute(left_date_time.getValue(), *date_lut)
+                    == transformer_right.execute(right_date_time.getValue(), *date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
+        }
     }
 };
 

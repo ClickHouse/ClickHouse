@@ -6,14 +6,20 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Coordination/KeeperConstants.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -21,13 +27,10 @@
 #include <map>
 #include <mutex>
 #include <chrono>
-#include <vector>
 #include <memory>
-#include <thread>
 #include <atomic>
 #include <cstdint>
 #include <optional>
-#include <functional>
 #include <random>
 
 
@@ -87,6 +90,12 @@ namespace CurrentMetrics
 namespace DB
 {
     class ZooKeeperLog;
+    class AggregatedZooKeeperLog;
+}
+
+namespace HistogramMetrics
+{
+    struct Metric;
 }
 
 namespace Coordination
@@ -99,35 +108,34 @@ using namespace DB;
 class ZooKeeper final : public IKeeper
 {
 public:
-    struct Node
-    {
-        Poco::Net::SocketAddress address;
-        bool secure;
-    };
-
-    using Nodes = std::vector<Node>;
-
     /** Connection to nodes is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
       * Operation timeout applies independently for network read, network write, waiting for events and synchronization.
       */
     ZooKeeper(
-        const Nodes & nodes,
+        const zkutil::ShuffleHosts & nodes,
         const zkutil::ZooKeeperArgs & args_,
-        std::shared_ptr<ZooKeeperLog> zk_log_);
+        std::shared_ptr<ZooKeeperLog> zk_log_,
+        std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log_);
 
     ~ZooKeeper() override;
 
-
     /// If expired, you can only destroy the object. All other methods will throw exception.
     bool isExpired() const override { return requests_queue.isFinished(); }
+
+    std::optional<int8_t> getConnectedNodeIdx() const override;
+    String getConnectedHostPort() const override;
+    int64_t getConnectionXid() const override;
+
+    String tryGetAvailabilityZone() override;
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
 
     void executeGenericRequest(
         const ZooKeeperRequestPtr & request,
-        ResponseCallback callback);
+        ResponseCallback callback,
+        WatchCallbackPtrOrEventPtr watch = {});
 
     /// See the documentation about semantics of these methods in IKeeper class.
 
@@ -144,15 +152,20 @@ public:
         int32_t version,
         RemoveCallback callback) override;
 
+    void removeRecursive(
+        const String &path,
+        uint32_t remove_nodes_limit,
+        RemoveRecursiveCallback callback) override;
+
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,
@@ -164,7 +177,9 @@ public:
         const String & path,
         ListRequestType list_request_type,
         ListCallback callback,
-        WatchCallback watch) override;
+        WatchCallbackPtrOrEventPtr watch,
+        bool with_stat,
+        bool with_data) override;
 
     void check(
         const String & path,
@@ -175,11 +190,24 @@ public:
          const String & path,
          SyncCallback callback) override;
 
+    void reconfig(
+        std::string_view joining,
+        std::string_view leaving,
+        std::string_view new_members,
+        int32_t version,
+        ReconfigCallback callback) final;
+
+    void multi(
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) override;
+
     void multi(
         const Requests & requests,
         MultiCallback callback) override;
 
-    DB::KeeperApiVersion getApiVersion() override;
+    void getACL(const String & path, GetACLCallback callback) override;
+
+    bool isFeatureEnabled(KeeperFeatureFlag feature_flag) const override;
 
     /// Without forcefully invalidating (finalizing) ZooKeeper session before
     /// establishing a new one, there was a possibility that server is using
@@ -195,21 +223,51 @@ public:
 
     void finalize(const String & reason)  override { finalize(false, false, reason); }
 
-    void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
+    std::shared_ptr<ZooKeeperLog> getZooKeeperLog();
+    std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog();
+
+    void setServerCompletelyStarted();
+
+    const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
+
+    int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
 private:
+    const Int32 send_receive_os_threads_nice_value;
+
     ACLs default_acls;
+    zkutil::ZooKeeperArgs::PathAclMap path_acls;
 
     zkutil::ZooKeeperArgs args;
+    std::atomic<int8_t> original_index{-1};
 
+    /// Fault injection
+    void maybeInjectSendFault();
+    void maybeInjectRecvFault();
+    void maybeInjectSendSleep();
+    void maybeInjectRecvSleep();
+    void setupFaultDistributions();
+    std::atomic_flag inject_setup = ATOMIC_FLAG_INIT;
     std::optional<std::bernoulli_distribution> send_inject_fault;
     std::optional<std::bernoulli_distribution> recv_inject_fault;
+    std::optional<std::bernoulli_distribution> send_inject_sleep;
+    std::optional<std::bernoulli_distribution> recv_inject_sleep;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.
     Poco::Net::SocketAddress socket_address;
+
     std::optional<ReadBufferFromPocoSocket> in;
     std::optional<WriteBufferFromPocoSocket> out;
+    std::optional<CompressedReadBuffer> compressed_in;
+    std::optional<CompressedWriteBuffer> compressed_out;
+
+    bool use_compression = false;
+    bool use_xid_64 = false;
+    bool pass_opentelemetry_tracing_context = false;
+    bool enforce_component_tracking = false;
+
+    int64_t close_xid = CLOSE_XID;
 
     int64_t session_id = 0;
 
@@ -224,8 +282,8 @@ private:
     {
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallback watch;
-        clock::time_point time;
+        WatchCallbackPtrOrEventPtr watch;
+        StaticString component;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
@@ -238,19 +296,37 @@ private:
     Operations operations TSA_GUARDED_BY(operations_mutex);
     std::mutex operations_mutex;
 
-    using WatchCallbacks = std::vector<WatchCallback>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
     Watches watches TSA_GUARDED_BY(watches_mutex);
-    std::mutex watches_mutex;
 
-    ThreadFromGlobalPool send_thread;
-    ThreadFromGlobalPool receive_thread;
+    /// A wrapper around ThreadFromGlobalPool that allows to call join() on it from multiple threads.
+    class ThreadReference
+    {
+    public:
+        ThreadReference & operator = (ThreadFromGlobalPool && thread_)
+        {
+            std::lock_guard<std::mutex> l(lock);
+            thread = std::move(thread_);
+            return *this;
+        }
 
-    Poco::Logger * log;
+        void join()
+        {
+            std::lock_guard<std::mutex> l(lock);
+            if (thread.joinable())
+                thread.join();
+        }
+    private:
+        std::mutex lock;
+        ThreadFromGlobalPool thread;
+    };
+
+    ThreadReference send_thread;
+    ThreadReference receive_thread;
+
+    LoggerPtr log;
 
     void connect(
-        const Nodes & node,
+        const zkutil::ShuffleHosts & node,
         Poco::Timespan connection_timeout);
 
     void sendHandshake();
@@ -274,14 +350,27 @@ private:
     template <typename T>
     void read(T &);
 
-    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_ms = 0);
+    WriteBuffer & getWriteBuffer();
+    void flushWriteBuffer();
+    void cancelWriteBuffer() noexcept;
+    ReadBuffer & getReadBuffer();
 
-    void initApiVersion();
+    void logOperationIfNeeded(const ZooKeeperRequestPtr & request, const ZooKeeperResponsePtr & response = nullptr, bool finalize = false, UInt64 elapsed_microseconds = 0);
+
+    /// Observes the operation in Aggregated ZooKeeper Log.
+    void observeOperation(const ZooKeeperRequest * request, const Response * response, UInt64 elapsed_microseconds, StaticString component, bool is_subrequest = false);
+
+    std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
+
+    void initFeatureFlags();
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
+    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
 
-    DB::KeeperApiVersion keeper_api_version{DB::KeeperApiVersion::ZOOKEEPER_COMPATIBLE};
+    std::atomic<int64_t> last_zxid_seen;
+
+    DB::KeeperFeatureFlags keeper_feature_flags;
 };
 
 }

@@ -1,0 +1,5 @@
+1	{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_value"}}}}}}}}}}
+2	{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_array_value"}}}}}}}}}}
+
+{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_value"}}}}}}}}}}	JSON
+{"level1":{"level2":{"level3":{"level4":{"level5":{"level6":{"level7":{"level8":{"level9":{"level10":"deep_array_value"}}}}}}}}}}	JSON

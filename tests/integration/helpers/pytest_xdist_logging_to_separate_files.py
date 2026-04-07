@@ -1,5 +1,7 @@
 import logging
 import os.path
+import os
+
 
 # Makes the parallel workers of pytest-xdist to log to separate files.
 # Without this function all workers will log to the same log file
@@ -16,6 +18,11 @@ def setup():
             filename, ext = os.path.splitext(handler.baseFilename)
             if not filename.endswith("-" + worker_name):
                 new_filename = filename + "-" + worker_name
+                try:
+                    if os.path.realpath(handler.baseFilename) == os.devnull:
+                        continue
+                except Exception:
+                    pass
                 new_handler = logging.FileHandler(new_filename + ext)
                 new_handler.setFormatter(handler.formatter)
                 new_handler.setLevel(handler.level)

@@ -1,52 +1,125 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
-#include <list>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <boost/functional/hash.hpp>
-#include <boost/noncopyable.hpp>
 
-#include <Core/Types.h>
-#include <Common/logger_useful.h>
+#include <Common/callOnce.h>
 #include <Common/ThreadPool.h>
-#include <IO/ReadSettings.h>
-#include <Interpreters/Cache/IFileCachePriority.h>
-#include <Interpreters/Cache/FileCacheKey.h>
+#include <Common/StatusFile.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/Metadata.h>
+#include <Interpreters/Cache/QueryLimit.h>
+#include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Interpreters/Cache/SplitFileCachePriority.h>
+#include <filesystem>
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace DB
 {
+struct ReadSettings;
+
+/// Track acquired space in cache during reservation
+/// to make error messages when no space left more informative.
+struct FileCacheReserveStat
+{
+    struct Stat
+    {
+        size_t releasable_size = 0;
+        size_t releasable_count = 0;
+
+        size_t non_releasable_size = 0;
+        size_t non_releasable_count = 0;
+
+        size_t evicting_count = 0;
+        size_t moving_count = 0;
+        size_t invalidated_count = 0;
+
+        Stat & operator +=(const Stat & other)
+        {
+            releasable_size += other.releasable_size;
+            releasable_count += other.releasable_count;
+            non_releasable_size += other.non_releasable_size;
+            non_releasable_count += other.non_releasable_count;
+            evicting_count += other.evicting_count;
+            moving_count += other.moving_count;
+            invalidated_count += other.invalidated_count;
+            return *this;
+        }
+
+        std::string toString() const;
+    };
+
+    Stat total_stat;
+    std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
+
+    enum class State
+    {
+        Releasable,
+        NonReleasable,
+        Evicting,
+        Moving,
+        Invalidated,
+    };
+    void update(size_t size, FileSegmentKind kind, State state);
+
+    FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
+    {
+        total_stat += other.total_stat;
+        for (const auto & [name, stat_] : other.stat_by_kind)
+            stat_by_kind[name] += stat_;
+        return *this;
+    }
+};
 
 /// Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
 /// Different caching algorithms are implemented using IFileCachePriority.
 class FileCache : private boost::noncopyable
 {
-
-friend class FileSegment;
-friend class IFileCachePriority;
-friend struct FileSegmentsHolder;
-friend class FileSegmentRangeWriter;
-
-struct QueryContext;
-using QueryContextPtr = std::shared_ptr<QueryContext>;
-
 public:
     using Key = DB::FileCacheKey;
+    using QueryLimit = DB::FileCacheQueryLimit;
+    using Priority = IFileCachePriority;
+    using PriorityEntry = IFileCachePriority::Entry;
+    using QueryContextHolder = FileCacheQueryLimit::QueryContextHolder;
+    using OriginInfo = FileCacheOriginInfo;
+    using UserID = FileCacheOriginInfo::UserID;
+    using Type = FileSegmentKeyType;
+    using CachePriorityCreatorFunction = SplitFileCachePriority::CachePriorityCreatorFunction;
 
-    FileCache(const String & cache_base_path_, const FileCacheSettings & cache_settings_);
+    FileCache(const std::string & cache_name, const FileCacheSettings & settings);
 
-    ~FileCache() = default;
+    ~FileCache();
 
     void initialize();
 
-    const String & getBasePath() const { return cache_base_path; }
+    bool isInitialized() const;
+
+    /// Throws if `!load_metadata_asynchronously` and there is an exception in `init_exception`
+    void throwInitExceptionIfNeeded();
+
+    const String & getBasePath() const;
+
+    bool skipCacheOnDiskFailure() const;
+
+    static const FileCacheOriginInfo & getCommonOrigin();
+
+    static const OriginInfo & getInternalOrigin();
+
+    OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
+
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const;
+
+    String getKeyPath(const Key & key, const OriginInfo & origin) const;
 
     /**
      * Given an `offset` and `size` representing [offset, offset + size) bytes interval,
@@ -56,10 +129,18 @@ public:
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
      *
-     * As long as pointers to returned file segments are hold
+     * As long as pointers to returned file segments are held
      * it is guaranteed that these file segments are not removed from cache.
      */
-    FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size, const CreateFileSegmentSettings & settings);
+    FileSegmentsHolderPtr getOrSet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        size_t file_size,
+        const CreateFileSegmentSettings & settings,
+        size_t file_segments_limit,
+        const OriginInfo & origin,
+        std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -70,250 +151,246 @@ public:
      * with the destruction of the holder, while in getOrSet() EMPTY file segments can eventually change
      * it's state (and become DOWNLOADED).
      */
-    FileSegmentsHolder get(const Key & key, size_t offset, size_t size);
+    FileSegmentsHolderPtr get(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        size_t file_segments_limit,
+        const UserID & user_id);
 
-    /// Remove files by `key`. Removes files which might be used at the moment.
-    void removeIfExists(const Key & key);
+    FileSegmentsHolderPtr set(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        const OriginInfo & origin);
 
-    /// Remove files by `key`. Will not remove files which are used at the moment.
-    void removeIfReleasable();
+    FileSegmentsHolderPtr trySet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        const OriginInfo & origin);
 
-    static Key hash(const String & path);
+    /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
+    void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
 
-    String getPathInLocalCache(const Key & key, size_t offset, bool is_persistent) const;
+    /// Remove file segment by `key` and `offset`. Does nothing if file segment does not exist.
+    void removeFileSegmentIfExists(const Key & key, size_t offset, const UserID & user_id);
 
-    String getPathInLocalCache(const Key & key) const;
+    /// Remove files by `key`. Throws if key does not exist.
+    void removeKey(const Key & key, const UserID & user_id);
+
+    /// Remove files by `key`.
+    void removeKeyIfExists(const Key & key, const UserID & user_id);
+
+    /// Removes files by `path`.
+    void removePathIfExists(const String & path, const UserID & user_id);
+
+    /// Remove files by `key`.
+    void removeAllReleasable(const UserID & user_id);
 
     std::vector<String> tryGetCachePaths(const Key & key);
 
-    size_t capacity() const { return max_size; }
-
     size_t getUsedCacheSize() const;
+    size_t getMaxCacheSize() const;
 
     size_t getFileSegmentsNum() const;
 
-    static bool isReadOnly();
+    size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
 
-    /**
-     * Create a file segment of exactly requested size with EMPTY state.
-     * Throw exception if requested size exceeds max allowed file segment size.
-     * This method is for protected usage: file segment range writer uses it
-     * to dynamically allocate file segments.
-     */
-    FileSegmentPtr createFileSegmentForDownload(
-         const Key & key,
-         size_t offset,
-         size_t size,
-         const CreateFileSegmentSettings & create_settings,
-         std::lock_guard<std::mutex> & cache_lock);
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
 
-    FileSegments getSnapshot() const;
+    size_t getBoundaryAlignment() const { return boundary_alignment; }
 
-    /// For debug.
-    String dumpStructure(const Key & key);
+    bool tryReserve(
+        FileSegment & file_segment,
+        size_t size,
+        FileCacheReserveStat & stat,
+        const OriginInfo & origin,
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason);
 
-    /// Save a query context information, and adopt different cache policies
-    /// for different queries through the context cache layer.
-    struct QueryContextHolder : private boost::noncopyable
-    {
-        QueryContextHolder(const String & query_id_, FileCache * cache_, QueryContextPtr context_);
+    bool tryIncreasePriority(FileSegment & file_segment);
 
-        QueryContextHolder() = default;
+    std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
-        ~QueryContextHolder();
+    std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
 
-        String query_id;
-        FileCache * cache = nullptr;
-        QueryContextPtr context;
-    };
+    IFileCachePriority::PriorityDumpPtr dumpQueue();
 
-    QueryContextHolder getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+    IFileCachePriority::Type getEvictionPolicyType();
+
+    using UsageStat = IFileCachePriority::UsageStat;
+    std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
+
+    void deactivateBackgroundOperations();
+
+    CachePriorityGuard::WriteLock lockCache() const;
+
+    std::vector<FileSegment::Info> sync();
+
+    using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
+    QueryContextHolderPtr getQueryContextHolder(const String & query_id, const ReadSettings & settings);
+
+    using IterateFunc = std::function<void(const FileSegmentInfo &)>;
+    void iterate(IterateFunc && func, const UserID & user_id);
+
+    using CacheIteratorPtr = CacheMetadata::IteratorPtr;
+    CacheIteratorPtr getCacheIterator(const UserID & user_id);
+
+    void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
+
+    void freeSpaceRatioKeepingThreadFunc();
+
+    const String & getName() const { return name; }
 
 private:
-    String cache_base_path;
+    using KeyAndOffset = FileCacheKeyAndOffset;
 
-    const size_t max_size;
-    const size_t max_element_size;
-    const size_t max_file_segment_size;
+    std::atomic<size_t> max_file_segment_size;
+    const size_t bypass_cache_threshold;
+    const size_t boundary_alignment;
+    std::atomic<size_t> background_download_max_file_segment_size;
+    size_t load_metadata_threads;
+    const bool load_metadata_asynchronously;
+    std::atomic<bool> stop_loading_metadata = false;
+    ThreadFromGlobalPool load_metadata_main_thread;
+    const bool write_cache_per_user_directory;
+    const bool allow_dynamic_cache_resize;
 
-    const bool allow_persistent_files;
-    const size_t enable_cache_hits_threshold;
-    const bool enable_filesystem_query_cache_limit;
+    BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
+    const double keep_current_size_to_max_ratio;
+    const double keep_current_elements_to_max_ratio;
+    const size_t keep_up_free_space_remove_batch;
 
-    const bool enable_bypass_cache_with_threashold;
-    const size_t bypass_cache_threashold;
+    // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
+    const bool use_split_cache;
+    const double split_cache_ratio;
 
-    mutable std::mutex mutex;
-    Poco::Logger * log;
+    const bool skip_cache_on_disk_failure;
 
-    bool is_initialized = false;
-    std::exception_ptr initialization_exception;
+    String name;
+    LoggerPtr log;
 
-    void assertInitialized(std::lock_guard<std::mutex> & cache_lock) const;
+    std::exception_ptr init_exception;
+    std::atomic<bool> is_initialized = false;
+    OnceFlag initialize_called;
+    mutable std::mutex init_mutex;
+    std::unique_ptr<StatusFile> status_file;
+    std::atomic<bool> shutdown = false;
+    std::atomic<bool> cache_is_being_resized = false;
 
-    bool tryReserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
+    std::atomic<size_t> cache_reserve_active_threads = 0;
 
-    void remove(
-        Key key,
-        size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::unique_lock<std::mutex> & segment_lock);
+    std::mutex apply_settings_mutex;
 
-    void remove(
-        FileSegmentPtr file_segment,
-        std::lock_guard<std::mutex> & cache_lock);
+    CacheMetadata metadata;
 
-    bool isLastFileSegmentHolder(
-        const Key & key,
-        size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::unique_lock<std::mutex> & segment_lock);
+    FileCachePriorityPtr main_priority;
+    mutable CachePriorityGuard cache_guard;
+    mutable CachePriorityGuard queue_guard;
+    mutable CacheStateGuard cache_state_guard;
 
-    void reduceSizeToDownloaded(
-        const Key & key,
-        size_t offset,
-        std::lock_guard<std::mutex> & cache_lock,
-        std::unique_lock<std::mutex> & segment_lock);
-
-    struct FileSegmentCell : private boost::noncopyable
+    /// Random checks for cache correctness.
+    /// They are heavy, so cannot be done on each cache access.
+    struct CheckCacheProbability
     {
-        FileSegmentPtr file_segment;
+        explicit CheckCacheProbability(double probability, UInt64 seed = 0);
 
-        /// Iterator is put here on first reservation attempt, if successful.
-        IFileCachePriority::WriteIterator queue_iterator;
+        bool doCheck();
 
-        /// Pointer to file segment is always hold by the cache itself.
-        /// Apart from pointer in cache, it can be hold by cache users, when they call
-        /// getorSet(), but cache users always hold it via FileSegmentsHolder.
-        bool releasable() const { return file_segment.unique(); }
-
-        size_t size() const { return file_segment->reserved_size; }
-
-        FileSegmentCell(FileSegmentPtr file_segment_, FileCache * cache, std::lock_guard<std::mutex> & cache_lock);
-
-        FileSegmentCell(FileSegmentCell && other) noexcept
-            : file_segment(std::move(other.file_segment)), queue_iterator(std::move(other.queue_iterator)) {}
+    private:
+        pcg64_fast rndgen;
+        std::bernoulli_distribution distribution;
+        std::mutex mutex;
     };
+    CheckCacheProbability check_cache_probability;
 
-    using AccessKeyAndOffset = std::pair<Key, size_t>;
-    struct KeyAndOffsetHash
-    {
-        std::size_t operator()(const AccessKeyAndOffset & key) const
-        {
-            return std::hash<UInt128>()(key.first.key) ^ std::hash<UInt64>()(key.second);
-        }
-    };
+    /**
+     * A QueryLimit allows to control cache write limit per query.
+     * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
+     * then allowed loaded cache size is std::min(n - k, max_query_cache_size).
+     */
+    FileCacheQueryLimitPtr query_limit;
 
-    using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
-    using CachedFiles = std::unordered_map<Key, FileSegmentsByOffset>;
-    using FileCacheRecords = std::unordered_map<AccessKeyAndOffset, IFileCachePriority::WriteIterator, KeyAndOffsetHash>;
+    void initializeImpl(bool load_metadata);
 
-    CachedFiles files;
-    std::unique_ptr<IFileCachePriority> main_priority;
+    void assertInitialized() const;
+    void assertCacheCorrectness();
+    void assertCacheCorrectnessWithProbability();
 
-    FileCacheRecords stash_records;
-    std::unique_ptr<IFileCachePriority> stash_priority;
-    size_t max_stash_element_size;
+    void loadMetadata();
+    void loadMetadataImpl();
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
 
-    void loadCacheInfoIntoMemory(std::lock_guard<std::mutex> & cache_lock);
+    /// Get all file segments from cache which intersect with `range`.
+    /// If `file_segments_limit` > 0, return no more than first file_segments_limit
+    /// file segments.
+    FileSegments getImpl(
+        const LockedKey & locked_key,
+        const FileSegment::Range & range,
+        size_t file_segments_limit) const;
 
-    FileSegments getImpl(const Key & key, const FileSegment::Range & range, std::lock_guard<std::mutex> & cache_lock);
+    /// Split range into subranges by max_file_segment_size,
+    /// each subrange size must be less or equal to max_file_segment_size.
+    std::vector<FileSegment::Range> splitRange(size_t offset, size_t size, size_t aligned_size);
 
-    FileSegmentCell * getCell(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
-
-    FileSegmentCell * addCell(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        FileSegment::State state,
-        const CreateFileSegmentSettings & create_settings,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    static void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
-
-    bool tryReserveForMainList(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        QueryContextPtr query_context,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    FileSegments splitRangeIntoCells(
-        const Key & key,
-        size_t offset,
-        size_t size,
-        FileSegment::State state,
-        const CreateFileSegmentSettings & create_settings,
-        std::lock_guard<std::mutex> & cache_lock);
-
-    String dumpStructureUnlocked(const Key & key_, std::lock_guard<std::mutex> & cache_lock);
+    FileSegments createFileSegmentsFromRanges(
+        LockedKey & locked_key,
+        const std::vector<FileSegment::Range> & ranges,
+        size_t & file_segments_count,
+        size_t file_segments_limit,
+        const CreateFileSegmentSettings & create_settings);
 
     void fillHolesWithEmptyFileSegments(
+        LockedKey & locked_key,
         FileSegments & file_segments,
-        const Key & key,
         const FileSegment::Range & range,
+        size_t non_aligned_right_offset,
+        size_t file_segments_limit,
         bool fill_with_detached_file_segments,
-        const CreateFileSegmentSettings & settings,
-        std::lock_guard<std::mutex> & cache_lock);
+        const CreateFileSegmentSettings & settings);
 
-    size_t getUsedCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
+    KeyMetadata::iterator addFileSegment(
+        LockedKey & locked_key,
+        size_t offset,
+        size_t size,
+        FileSegment::State state,
+        const CreateFileSegmentSettings & create_settings);
 
-    size_t getAvailableCacheSizeUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
-
-    size_t getFileSegmentsNumUnlocked(std::lock_guard<std::mutex> & cache_lock) const;
-
-    void assertCacheCellsCorrectness(const FileSegmentsByOffset & cells_by_offset, std::lock_guard<std::mutex> & cache_lock);
-
-    void removeKeyDirectoryIfExists(const Key & key, std::lock_guard<std::mutex> & cache_lock) const;
-
-    /// Used to track and control the cache access of each query.
-    /// Through it, we can realize the processing of different queries by the cache layer.
-    struct QueryContext
+    struct SizeLimits
     {
-        FileCacheRecords records;
-        FileCachePriorityPtr priority;
-
-        size_t cache_size = 0;
-        size_t max_cache_size;
-
-        bool skip_download_if_exceeds_query_cache;
-
-        QueryContext(size_t max_cache_size_, bool skip_download_if_exceeds_query_cache_)
-            : max_cache_size(max_cache_size_)
-            , skip_download_if_exceeds_query_cache(skip_download_if_exceeds_query_cache_) {}
-
-        size_t getMaxCacheSize() const { return max_cache_size; }
-
-        size_t getCacheSize() const { return cache_size; }
-
-        FileCachePriorityPtr getPriority() const { return priority; }
-
-        bool isSkipDownloadIfExceed() const { return skip_download_if_exceeds_query_cache; }
-
-        void remove(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
-
-        void reserve(const Key & key, size_t offset, size_t size, std::lock_guard<std::mutex> & cache_lock);
-
-        void use(const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
+        size_t max_size = 0;
+        size_t max_elements = 0;
+        double slru_size_ratio = 0;
     };
+    SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
+    bool doDynamicResizeImpl(
+        const SizeLimits & prev_limits,
+        const SizeLimits & desired_limits,
+        SizeLimits & result_limits,
+        CacheStateGuard::Lock &);
 
-    using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
-    QueryContextMap query_map;
+    bool doTryReserve(
+        FileSegment & file_segment,
+        size_t size,
+        FileCacheReserveStat & stat,
+        const OriginInfo & origin_info,
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason);
 
-    QueryContextPtr getCurrentQueryContext(std::lock_guard<std::mutex> & cache_lock);
-
-    QueryContextPtr getQueryContext(const String & query_id, std::lock_guard<std::mutex> & cache_lock);
-
-    void removeQueryContext(const String & query_id);
-
-    QueryContextPtr getOrSetQueryContext(const String & query_id, const ReadSettings & settings, std::lock_guard<std::mutex> &);
-
-public:
-    void assertCacheCorrectness(const Key & key, std::lock_guard<std::mutex> & cache_lock);
-
-    void assertCacheCorrectness(std::lock_guard<std::mutex> & cache_lock);
-
-    void assertPriorityCorrectness(std::lock_guard<std::mutex> & cache_lock);
+    bool doEviction(
+        const EvictionInfo & main_eviction_info,
+        const EvictionInfo * query_eviction_info,
+        FileSegment & file_segment,
+        const OriginInfo & origin_info,
+        const IFileCachePriority::IteratorPtr & main_priority_iterator,
+        FileCacheReserveStat & reserve_stat,
+        EvictionCandidates & eviction_candidates,
+        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
+        Priority * query_priority,
+        std::string & failure_reason);
 };
 
 }

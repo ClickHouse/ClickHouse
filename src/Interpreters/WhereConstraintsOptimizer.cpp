@@ -9,7 +9,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Poco/Logger.h>
 
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -27,17 +26,17 @@ WhereConstraintsOptimizer::WhereConstraintsOptimizer(
 namespace
 {
 
-enum class MatchState
+enum class MatchState : uint8_t
 {
     FULL_MATCH, /// a = b
     NOT_MATCH, /// a = not b
     NONE, /// other
 };
 
-MatchState match(CNFQuery::AtomicFormula a, CNFQuery::AtomicFormula b)
+MatchState match(CNFQueryAtomicFormula a, CNFQueryAtomicFormula b)
 {
     bool match_means_ok = (a.negative == b.negative);
-    if (a.ast->getTreeHash() == b.ast->getTreeHash())
+    if (a.ast->getTreeHash(/*ignore_aliases=*/ true) == b.ast->getTreeHash(/*ignore_aliases=*/ true))
         return match_means_ok ? MatchState::FULL_MATCH : MatchState::NOT_MATCH;
 
     return MatchState::NONE;
@@ -74,7 +73,7 @@ bool checkIfGroupAlwaysTrueFullMatch(const CNFQuery::OrGroup & group, const Cons
     return false;
 }
 
-bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const ComparisonGraph & graph)
+bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const ComparisonGraph<ASTPtr> & graph)
 {
     /// We try to find at least one atom that is always true by using comparison graph.
     for (const auto & atom : group)
@@ -82,7 +81,7 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
         const auto * func = atom.ast->as<ASTFunction>();
         if (func && func->arguments->children.size() == 2)
         {
-            const auto expected = ComparisonGraph::atomToCompareResult(atom);
+            const auto expected = ComparisonGraph<ASTPtr>::atomToCompareResult(atom);
             if (graph.isAlwaysCompare(expected, func->arguments->children[0], func->arguments->children[1]))
                 return true;
         }
@@ -91,8 +90,24 @@ bool checkIfGroupAlwaysTrueGraph(const CNFQuery::OrGroup & group, const Comparis
     return false;
 }
 
+bool checkIfGroupAlwaysTrueAtoms(const CNFQuery::OrGroup & group)
+{
+    /// Filters out groups containing mutually exclusive atoms,
+    /// since these groups are always True
 
-bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const ConstraintsDescription & constraints_description)
+    for (const auto & atom : group)
+    {
+        auto negated(atom);
+        negated.negative = !atom.negative;
+        if (group.contains(negated))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool checkIfAtomAlwaysFalseFullMatch(const CNFQueryAtomicFormula & atom, const ConstraintsDescription & constraints_description)
 {
     const auto constraint_atom_ids = constraints_description.getAtomIds(atom.ast);
     if (constraint_atom_ids)
@@ -108,20 +123,20 @@ bool checkIfAtomAlwaysFalseFullMatch(const CNFQuery::AtomicFormula & atom, const
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
+bool checkIfAtomAlwaysFalseGraph(const CNFQueryAtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
 {
     const auto * func = atom.ast->as<ASTFunction>();
     if (func && func->arguments->children.size() == 2)
     {
         /// TODO: special support for !=
-        const auto expected = ComparisonGraph::atomToCompareResult(atom);
+        const auto expected = ComparisonGraph<ASTPtr>::atomToCompareResult(atom);
         return !graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]);
     }
 
     return false;
 }
 
-void replaceToConstants(ASTPtr & term, const ComparisonGraph & graph)
+void replaceToConstants(ASTPtr & term, const ComparisonGraph<ASTPtr> & graph)
 {
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
@@ -135,9 +150,9 @@ void replaceToConstants(ASTPtr & term, const ComparisonGraph & graph)
     }
 }
 
-CNFQuery::AtomicFormula replaceTermsToConstants(const CNFQuery::AtomicFormula & atom, const ComparisonGraph & graph)
+CNFQueryAtomicFormula replaceTermsToConstants(const CNFQueryAtomicFormula & atom, const ComparisonGraph<ASTPtr> & graph)
 {
-    CNFQuery::AtomicFormula result;
+    CNFQueryAtomicFormula result;
     result.negative = atom.negative;
     result.ast = atom.ast->clone();
 
@@ -153,12 +168,13 @@ void WhereConstraintsOptimizer::perform()
     if (select_query->where() && metadata_snapshot)
     {
         const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
-        auto cnf = TreeCNFConverter::toCNF(select_query->where());
+        auto cnf = TreeCNFConverter::toCNF(select_query->where().get());
         cnf.pullNotOutFunctions()
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {
                 /// remove always true groups from CNF
-                return !checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints()) && !checkIfGroupAlwaysTrueGraph(group, compare_graph);
+                return !checkIfGroupAlwaysTrueFullMatch(group, metadata_snapshot->getConstraints())
+                    && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
             })
             .filterAlwaysFalseAtoms([&compare_graph, this](const auto & atom)
             {

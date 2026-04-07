@@ -19,7 +19,7 @@ try
 
     {
         auto buf
-            = std::make_unique<DB::WriteBufferFromFile>("test_lzma_buffers.xz", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
+            = std::make_unique<DB::WriteBufferFromFile>("test_lzma_buffers.xz", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
         DB::LZMADeflatingWriteBuffer lzma_buf(std::move(buf), /*compression level*/ 3);
 
         stopwatch.restart();
@@ -33,7 +33,7 @@ try
         stopwatch.stop();
 
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-                  << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
+                  << ", " << (static_cast<double>(lzma_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     {
@@ -48,11 +48,11 @@ try
             lzma_buf.ignore();
 
             if (x != i)
-                throw DB::Exception("Failed!, read: " + std::to_string(x) + ", expected: " + std::to_string(i), 0);
+                throw DB::Exception(0, "Failed!, read: {}, expected: {}", x, i);
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-                  << ", " << (lzma_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
+                  << ", " << (static_cast<double>(lzma_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s" << std::endl;
     }
 
     return 0;

@@ -1,19 +1,19 @@
-#include <cassert>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
-#include "Columns/ColumnMap.h"
-#include "DataTypes/DataTypeMap.h"
 
+#include <cassert>
 
 namespace DB
 {
@@ -37,21 +37,22 @@ struct TupArg
 };
 using TupleMaps = std::vector<TupArg>;
 
-enum class OpTypes
+enum class OpTypes : uint8_t
 {
     ADD = 0,
     SUBTRACT = 1
 };
 
-template <OpTypes op_type>
 class FunctionMapOp : public IFunction
 {
 public:
-    static constexpr auto name = (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapOp>(); }
+    static FunctionPtr create(ContextPtr, OpTypes op_type_) { return std::make_shared<FunctionMapOp>(op_type_); }
+    explicit FunctionMapOp(OpTypes op_type_) : op_type(op_type_) {}
 
 private:
-    String getName() const override { return name; }
+    const OpTypes op_type;
+
+    String getName() const override { return (op_type == OpTypes::ADD) ? "mapAdd" : "mapSubtract"; }
 
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
@@ -62,28 +63,28 @@ private:
         DataTypePtr & key_type, DataTypePtr & promoted_val_type, const DataTypePtr & check_key_type, DataTypePtr & check_val_type) const
     {
         if (!(check_key_type->equals(*key_type)))
-            throw Exception(
-                "Expected same " + key_type->getName() + " type for all keys in " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected same {} type for all keys in {}",
+                key_type->getName(), getName());
 
         WhichDataType which_val(promoted_val_type);
         WhichDataType which_ch_val(check_val_type);
 
         if (which_ch_val.isFloat() != which_val.isFloat())
-            throw Exception(
-                "All value types in " + getName() + " should be either or float or integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All value types in {} should be either or float or integer",
+                getName());
 
         if (!(check_val_type->equals(*promoted_val_type)))
         {
-            throw Exception(
-                "All value types in " + getName() + " should be promotable to " + promoted_val_type->getName() + ", got "
-                    + check_val_type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "All value types in {} should be promotable to {}, got {}",
+                getName(), promoted_val_type->getName(), check_val_type->getName());
         }
     }
 
     DataTypePtr getReturnTypeForTuples(const DataTypes & arguments) const
     {
-        DataTypePtr key_type, val_type, res;
+        DataTypePtr key_type;
+        DataTypePtr val_type;
+        DataTypePtr res;
 
         for (const auto & arg : arguments)
         {
@@ -92,24 +93,23 @@ private:
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
-                throw Exception(getName() + " accepts at least two map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two map tuples", getName());
 
             auto elems = tup->getElements();
             if (elems.size() != 2)
-                throw Exception(
-                    "Each tuple in " + getName() + " arguments should consist of two arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Each tuple in {} arguments should consist of two arrays",
+                    getName());
 
             k = checkAndGetDataType<DataTypeArray>(elems[0].get());
             v = checkAndGetDataType<DataTypeArray>(elems[1].get());
 
             if (!k || !v)
-                throw Exception(
-                    "Each tuple in " + getName() + " arguments should consist of two arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Each tuple in {} arguments should consist of two arrays",
+                    getName());
 
-            auto result_type = v->getNestedType();
+            const auto & result_type = v->getNestedType();
             if (!result_type->canBePromoted())
-                throw Exception(
-                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Values to be summed are expected to be Numeric, Float or Decimal.");
 
             auto promoted_val_type = result_type->promoteNumericType();
             if (!key_type)
@@ -128,19 +128,20 @@ private:
 
     DataTypePtr getReturnTypeForMaps(const DataTypes & arguments) const
     {
-        DataTypePtr key_type, val_type, res;
+        DataTypePtr key_type;
+        DataTypePtr val_type;
+        DataTypePtr res;
 
         for (const auto & arg : arguments)
         {
             const auto * map = checkAndGetDataType<DataTypeMap>(arg.get());
             if (!map)
-                throw Exception(getName() + " accepts at least two maps", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps", getName());
 
             const auto & v = map->getValueType();
 
             if (!v->canBePromoted())
-                throw Exception(
-                    "Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Values to be summed are expected to be Numeric, Float or Decimal.");
 
             auto promoted_val_type = v->promoteNumericType();
             if (!key_type)
@@ -159,21 +160,21 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception(getName() + " accepts at least two maps or map tuples", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "{} accepts at least two maps or map tuples", getName());
 
         if (arguments[0]->getTypeId() == TypeIndex::Tuple)
             return getReturnTypeForTuples(arguments);
-        else if (arguments[0]->getTypeId() == TypeIndex::Map)
+        if (arguments[0]->getTypeId() == TypeIndex::Map)
             return getReturnTypeForMaps(arguments);
-        else
-            throw Exception(getName() + " only accepts maps", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} only accepts maps", getName());
     }
 
     template <typename KeyType, typename ValType>
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr res_type) const
     {
         MutableColumnPtr res_column = res_type->createColumn();
-        IColumn *to_keys_data, *to_vals_data;
+        IColumn *to_keys_data;
+        IColumn *to_vals_data;
         ColumnArray::Offsets * to_keys_offset;
         ColumnArray::Offsets * to_vals_offset = nullptr;
 
@@ -209,7 +210,8 @@ private:
             [[maybe_unused]] bool first = true;
             for (auto & arg : args)
             {
-                size_t offset = 0, len = arg.key_offsets[0];
+                size_t offset = 0;
+                size_t len = arg.key_offsets[0];
 
                 if (!arg.is_const)
                 {
@@ -217,8 +219,7 @@ private:
                     len = arg.key_offsets[i] - offset;
 
                     if (arg.val_offsets[i] != arg.key_offsets[i])
-                        throw Exception(
-                            "Key and value array should have same amount of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Key and value array should have same amount of elements");
                 }
 
                 Field temp_val;
@@ -228,9 +229,9 @@ private:
                     if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
-                            key = col_fixed->getDataAt(offset + j).toString();
+                            key = col_fixed->getDataAt(offset + j);
                         else if (const auto * col_str = checkAndGetColumn<ColumnString>(arg.key_column.get()))
-                            key = col_str->getDataAt(offset + j).toString();
+                            key = col_str->getDataAt(offset + j);
                         else // should not happen
                             throw Exception(ErrorCodes::LOGICAL_ERROR,
                                 "Expected String or FixedString, got {} in {}",
@@ -242,9 +243,9 @@ private:
                     }
 
                     arg.val_column->get(offset + j, temp_val);
-                    ValType value = temp_val.get<ValType>();
+                    ValType value = temp_val.safeGet<ValType>();
 
-                    if constexpr (op_type == OpTypes::ADD)
+                    if (op_type == OpTypes::ADD)
                     {
                         const auto [it, inserted] = summing_map.insert({key, value});
                         if (!inserted)
@@ -252,7 +253,6 @@ private:
                     }
                     else
                     {
-                        static_assert(op_type == OpTypes::SUBTRACT);
                         const auto [it, inserted] = summing_map.insert({key, first ? value : common::negateIgnoreOverflow(value)});
                         if (!inserted)
                             it->second = common::subIgnoreOverflow(it->second, value);
@@ -299,10 +299,13 @@ private:
                 return execute2<KeyType, UInt256>(row_count, args, res_type);
             case TypeIndex::Float64:
                 return execute2<KeyType, Float64>(row_count, args, res_type);
+            case TypeIndex::Decimal128:
+                return execute2<KeyType, Decimal128>(row_count, args, res_type);
+            case TypeIndex::Decimal256:
+                return execute2<KeyType, Decimal256>(row_count, args, res_type);
             default:
-                throw Exception(
-                    "Illegal column type " + res_value_type->getName() + " for values in arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} for values in arguments of function {}",
+                    res_value_type->getName(), getName());
         }
     }
 
@@ -386,9 +389,8 @@ private:
                 }
             }
             else
-                throw Exception(
-                    "Illegal column type " + arguments[0].type->getName() + " in arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} in arguments of function {}",
+                    arguments[0].type->getName(), getName());
         }
 
         // we can check const columns before any processing
@@ -397,8 +399,7 @@ private:
             if (arg.is_const)
             {
                 if (arg.val_offsets[0] != arg.key_offsets[0])
-                    throw Exception(
-                        "Key and value array should have same amount of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Key and value array should have same amount of elements");
             }
         }
 
@@ -439,9 +440,8 @@ private:
             case TypeIndex::String:
                 return execute1<String>(row_count, res_type, res_value_type, args);
             default:
-                throw Exception(
-                    "Illegal column type " + key_type->getName() + " for keys in arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column type {} for keys in arguments of function {}",
+                    key_type->getName(), getName());
         }
     }
 };
@@ -450,8 +450,41 @@ private:
 
 REGISTER_FUNCTION(MapOp)
 {
-    factory.registerFunction<FunctionMapOp<OpTypes::ADD>>();
-    factory.registerFunction<FunctionMapOp<OpTypes::SUBTRACT>>();
+    /// mapAdd function documentation
+    FunctionDocumentation::Description description_mapAdd = R"(
+Collect all the keys and sum corresponding values.
+)";
+    FunctionDocumentation::Syntax syntax_mapAdd = "mapAdd(arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments_mapAdd = {
+        {"arg1[, arg2, ...]", "Maps or tuples of two arrays in which items in the first array represent keys, and the second array contains values for each key.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapAdd = {"Returns a map or returns a tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
+    FunctionDocumentation::Examples examples_mapAdd = {
+        {"With Map type", "SELECT mapAdd(map(1, 1), map(1, 1))", "{1:2}"},
+        {"With tuple", "SELECT mapAdd(([toUInt8(1), 2], [1, 1]), ([toUInt8(1), 2], [1, 1]))", "([1, 2], [2, 2])"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapAdd = {20, 7};
+    FunctionDocumentation::Category category_mapAdd = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapAdd = {description_mapAdd, syntax_mapAdd, arguments_mapAdd, {}, returned_value_mapAdd, examples_mapAdd, introduced_in_mapAdd, category_mapAdd};
+    factory.registerFunction("mapAdd", [](ContextPtr context){ return FunctionMapOp::create(context, OpTypes::ADD); }, documentation_mapAdd);
+
+    /// mapSubtract function documentation
+    FunctionDocumentation::Description description_mapSubtract = R"(
+Collect all the keys and subtract corresponding values.
+)";
+    FunctionDocumentation::Syntax syntax_mapSubtract = "mapSubtract(arg1[, arg2, ...])";
+    FunctionDocumentation::Arguments arguments_mapSubtract = {
+        {"arg1[, arg2, ...]", "Maps or tuples of two arrays in which items in the first array represent keys, and the second array contains values for each key.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapSubtract = {"Returns one map or tuple, where the first array contains the sorted keys and the second array contains values.", {"Map(K, V)", "Tuple(Array(T), Array(T))"}};
+    FunctionDocumentation::Examples examples_mapSubtract = {
+        {"With Map type", "SELECT mapSubtract(map(1, 1), map(1, 1))", "{1:0}"},
+        {"With tuple map", "SELECT mapSubtract(([toUInt8(1), 2], [toInt32(1), 1]), ([toUInt8(1), 2], [toInt32(2), 1]))", "([1, 2], [-1, 0])"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapSubtract = {20, 7};
+    FunctionDocumentation::Category category_mapSubtract = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapSubtract = {description_mapSubtract, syntax_mapSubtract, arguments_mapSubtract, {}, returned_value_mapSubtract, examples_mapSubtract, introduced_in_mapSubtract, category_mapSubtract};
+    factory.registerFunction("mapSubtract", [](ContextPtr context){ return FunctionMapOp::create(context, OpTypes::SUBTRACT); }, documentation_mapSubtract);
 }
 
 }

@@ -1,6 +1,11 @@
--- Tags: no-parallel
+-- Tags: no-random-merge-tree-settings
 
 SET send_logs_level = 'fatal';
+-- The PartsSplitter injection (merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability)
+-- causes one extra row to be read on S3 storage when combined with disabled prewhere and query condition cache,
+-- exceeding the tight max_rows_to_read limits in this test. Pin to 0 since this test is about adaptive index
+-- granularity, not the PartsSplitter.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SELECT '----00489----';
 DROP TABLE IF EXISTS pk;
 
@@ -77,7 +82,7 @@ CREATE TABLE large_alter_table_00926 (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
     data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
-) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS min_index_granularity_bytes=30, write_final_mark = 0, min_bytes_for_wide_part = '10M';
+) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS min_index_granularity_bytes=30, write_final_mark = 0, min_bytes_for_wide_part = '10M', min_rows_for_wide_part = 0;
 
 INSERT INTO large_alter_table_00926 SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
 

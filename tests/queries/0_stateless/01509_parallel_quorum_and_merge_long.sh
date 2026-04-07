@@ -2,26 +2,26 @@
 # Tags: long, no-replicated-database
 # Tag no-replicated-database: Fails due to additional replicas or shards
 
-
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q1"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q2"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q1 SYNC"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q2 SYNC"
 
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE parallel_q1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parallel_q', 'r1') ORDER BY tuple() SETTINGS old_parts_lifetime = 1, cleanup_delay_period = 0, cleanup_delay_period_random_add = 0"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE parallel_q1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parallel_q', 'r1') ORDER BY tuple()
+SETTINGS old_parts_lifetime = 1, cleanup_delay_period = 0, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration=0"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE parallel_q2 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/parallel_q', 'r2') ORDER BY tuple() SETTINGS always_fetch_merged_part = 1"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP REPLICATION QUEUES parallel_q2"
 
-$CLICKHOUSE_CLIENT -q "INSERT INTO parallel_q1 VALUES (1)"
-
-$CLICKHOUSE_CLIENT --insert_quorum 2 --insert_quorum_parallel 1 --query="INSERT INTO parallel_q1 VALUES (2)" &
+# This test depends on part names and those aren't deterministic with faults
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 -q "INSERT INTO parallel_q1 VALUES (1)"
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --insert_quorum 2 --insert_quorum_parallel 1 --query="INSERT INTO parallel_q1 VALUES (2)" &
 
 part_count=$($CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM system.parts WHERE table='parallel_q1' and database='${CLICKHOUSE_DATABASE}'")
 
@@ -60,11 +60,11 @@ $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA parallel_q2"
 # quorum satisfied even for merged part
 wait
 
-$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS part_log"
 $CLICKHOUSE_CLIENT --query="SELECT name FROM system.parts WHERE table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and active=1 ORDER BY name"
-$CLICKHOUSE_CLIENT --query="SELECT event_type FROM system.part_log WHERE table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and part_name='all_0_1_1'"
+$CLICKHOUSE_CLIENT --query="SELECT event_type FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and part_name='all_0_1_1'"
 $CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM parallel_q2"
 $CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM parallel_q1"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q1"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q2"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q1 SYNC"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parallel_q2 SYNC"

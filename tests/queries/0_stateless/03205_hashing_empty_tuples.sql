@@ -1,0 +1,23 @@
+SELECT sipHash64(());
+SELECT sipHash64((), ());
+SELECT sipHash64((), 1);
+SELECT sipHash64(1, ());
+SELECT sipHash64(1, (), 1);
+SELECT sipHash64((), 1, ());
+SELECT sipHash64((), (1, 2));
+SELECT sipHash64((), (1, 2));
+SELECT sipHash64((1, 2), ());
+SELECT sipHash64((), (1, 2), ());
+SELECT sipHash64((1, 2), (), (3, 4));
+
+SELECT sipHash64(materialize(()));
+SELECT sipHash64(materialize(()), materialize(()));
+SELECT sipHash64(materialize(()), 1);
+SELECT sipHash64(1, materialize(()));
+SELECT sipHash64(1, materialize(()), 1);
+SELECT sipHash64((), 1, materialize(()));
+SELECT sipHash64(materialize(()), (1, 2));
+SELECT sipHash64(materialize(()), (1, 2));
+SELECT sipHash64((1, 2), materialize(()));
+SELECT sipHash64(materialize(()), (1, 2), ());
+SELECT sipHash64((1, 2), materialize(()), (3, 4));

@@ -1,85 +1,86 @@
 ---
-slug: /en/sql-reference/data-types/special-data-types/interval
+description: 'Documentation for the Interval special data type'
+sidebar_label: 'Interval'
 sidebar_position: 61
-sidebar_label: Interval
+slug: /sql-reference/data-types/special-data-types/interval
+title: 'Interval'
+doc_type: 'reference'
 ---
 
 # Interval
 
-The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
-
-:::warning    
-`Interval` data type values can’t be stored in tables.
-:::
+The family of data types representing time and date intervals. The resulting types of the [INTERVAL](/sql-reference/operators#interval) operator.
 
 Structure:
 
--   Time interval as an unsigned integer value.
--   Type of an interval.
+- Time interval as an unsigned integer value.
+- Type of an interval.
 
 Supported interval types:
 
--   `SECOND`
--   `MINUTE`
--   `HOUR`
--   `DAY`
--   `WEEK`
--   `MONTH`
--   `QUARTER`
--   `YEAR`
+- `NANOSECOND`
+- `MICROSECOND`
+- `MILLISECOND`
+- `SECOND`
+- `MINUTE`
+- `HOUR`
+- `DAY`
+- `WEEK`
+- `MONTH`
+- `QUARTER`
+- `YEAR`
 
 For each interval type, there is a separate data type. For example, the `DAY` interval corresponds to the `IntervalDay` data type:
 
-``` sql
+```sql
 SELECT toTypeName(INTERVAL 4 DAY)
 ```
 
-``` text
+```text
 ┌─toTypeName(toIntervalDay(4))─┐
 │ IntervalDay                  │
 └──────────────────────────────┘
 ```
 
-## Usage Remarks
+## Usage Remarks {#usage-remarks}
 
 You can use `Interval`-type values in arithmetical operations with [Date](../../../sql-reference/data-types/date.md) and [DateTime](../../../sql-reference/data-types/datetime.md)-type values. For example, you can add 4 days to the current time:
 
-``` sql
-SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY
 ```
 
-``` text
+```text
 ┌───current_date_time─┬─plus(now(), toIntervalDay(4))─┐
 │ 2019-10-23 10:58:45 │           2019-10-27 10:58:45 │
 └─────────────────────┴───────────────────────────────┘
 ```
 
-Intervals with different types can’t be combined. You can’t use intervals like `4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, the interval `1 day and an hour` interval can be expressed as `25 HOUR` or `90000 SECOND`.
+Also it is possible to use multiple intervals simultaneously:
 
-You can’t perform arithmetical operations with `Interval`-type values, but you can add intervals of different types consequently to values in `Date` or `DateTime` data types. For example:
-
-``` sql
-SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
+```sql
+SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
 ```
 
-``` text
-┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
-│ 2019-10-23 11:16:28 │                                    2019-10-27 14:16:28 │
-└─────────────────────┴────────────────────────────────────────────────────────┘
+```text
+┌───current_date_time─┬─plus(current_date_time, plus(toIntervalDay(4), toIntervalHour(3)))─┐
+│ 2024-08-08 18:31:39 │                                                2024-08-12 21:31:39 │
+└─────────────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-The following query causes an exception:
+And to compare values with different intervals:
 
-``` sql
-select now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
+```sql
+SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 ```
 
-``` text
-Received exception from server (version 19.14.1):
-Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argument types for function plus: if one argument is Interval, then another must be Date or DateTime..
+```text
+┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
+│                                                           1 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
--   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
+- [INTERVAL](/sql-reference/operators#interval) operator
+- [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions

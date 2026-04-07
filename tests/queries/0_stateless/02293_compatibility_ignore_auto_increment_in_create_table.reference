@@ -11,7 +11,7 @@ s	String
 create table, several columns with different default specifiers
 di	UInt8	DEFAULT	1			
 id	Int32					
-s	String	EPHEMERAL	\'\'			
+s	String	EPHEMERAL	defaultValueOfTypeName(\'String\')			
 create table failed, column +type +DEFAULT +AUTO_INCREMENT
 create table failed, column -type +DEFAULT +AUTO_INCREMENT
 create table failed, column +type +AUTO_INCREMENT +DEFAULT

@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <max_postpone_time_for_failed_mutations_ms>200</max_postpone_time_for_failed_mutations_ms>
+    </merge_tree>
+</clickhouse>

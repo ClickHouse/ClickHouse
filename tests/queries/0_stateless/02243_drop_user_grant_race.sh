@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-fasttest, no-parallel, no-backward-compatibility-check
+# Tags: race, no-fasttest, no-parallel
 
 set -e
 
@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP ROLE IF EXISTS test_role_02244;
     CREATE ROLE test_role_02244;
     DROP USER IF EXISTS kek_02243;
@@ -19,17 +19,18 @@ $CLICKHOUSE_CLIENT -nm -q "
 
 function create_drop_grant()
 {
-    $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02243 GRANTEES NONE" ||:
-    $CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO test_user_02243 WITH GRANT OPTION" ||:
-    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02243" &
-    $CLICKHOUSE_CLIENT --user test_user_02243 -q "GRANT ALL ON *.* TO kek_02243" &
-    wait
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02243 GRANTEES NONE" ||:
+        $CLICKHOUSE_CLIENT -q "GRANT ALL ON *.* TO test_user_02243 WITH GRANT OPTION" ||:
+        $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02243" &
+        $CLICKHOUSE_CLIENT --user test_user_02243 -q "GRANT ALL ON *.* TO kek_02243" &
+    done
 }
 
-export -f create_drop_grant
-
 TIMEOUT=10
-clickhouse_client_loop_timeout $TIMEOUT create_drop_grant 2> /dev/null &
+create_drop_grant 2> /dev/null &
 wait
 
 $CLICKHOUSE_CLIENT --user kek_02243 -q "SELECT * FROM test" 2>&1| grep -Fa "Exception: " | grep -Eo ACCESS_DENIED | uniq

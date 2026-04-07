@@ -1,0 +1,28 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>integer_type</name>
+            <values>
+                <value>UInt32</value>
+                <value>UInt64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>sort_expression</name>
+            <values>
+                <value>key</value>
+                <value>key, value</value>
+                <value>key DESC</value>
+                <value>key DESC, value DESC</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE sequential_{integer_type} (key {integer_type}, value {integer_type}) Engine = Memory</create_query>
+
+    <fill_query>INSERT INTO sequential_{integer_type} SELECT number, number FROM numbers(500000000)</fill_query>
+
+    <query>SELECT key, value FROM sequential_{integer_type} ORDER BY {sort_expression} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS sequential_{integer_type}</drop_query>
+</test>

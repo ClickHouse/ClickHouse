@@ -39,4 +39,4 @@ SELECT reinterpret(toDecimal128(5, 2), 'Decimal128(2)'), reinterpret('1', 'Decim
 SELECT reinterpret(toDecimal256(5, 2), 'Decimal256(2)'), reinterpret('1', 'Decimal256(2)');
 SELECT reinterpret(toDateTime64(0, 0), 'Decimal64(2)');
 SELECT 'ReinterpretErrors';
-SELECT reinterpret('123', 'FixedString(1)'); -- {serverError 43}
+SELECT reinterpret('123', 'FixedString(1)'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}

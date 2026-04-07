@@ -1,5 +1,10 @@
 SET joined_subquery_requires_alias = 0;
 SET max_threads = 1;
+-- It affects number of read rows and max_rows_to_read.
+SET max_bytes_before_external_sort = 0;
+SET max_bytes_ratio_before_external_sort = 0;
+SET max_bytes_before_external_group_by = 0;
+SET max_bytes_ratio_before_external_group_by = 0;
 
 -- incremental streaming usecase
 -- that has sense only if data filling order has guarantees of chronological order
@@ -13,7 +18,7 @@ DROP TABLE IF EXISTS mv_checkouts2target;
 -- that is the final table, which is filled incrementally from 2 different sources
 
 CREATE TABLE target_table Engine=SummingMergeTree() ORDER BY id
-SETTINGS index_granularity=128
+SETTINGS index_granularity=128, index_granularity_bytes = '10Mi'
 AS
    SELECT
      number as id,
@@ -22,7 +27,8 @@ AS
      minState( toUInt64(-1) ) as fastest_session,
      maxState( toUInt64(0) ) as biggest_inactivity_period
 FROM numbers(50000)
-GROUP BY id;
+GROUP BY id
+SETTINGS max_insert_threads=1;
 
 -- source table #1
 

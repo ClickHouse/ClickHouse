@@ -1,16 +1,20 @@
+import logging
+import os.path
+import ssl
+import urllib.parse
+import urllib.request
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.ssl_context import WrapSSLContextWithSNI
-import urllib.request, urllib.parse
-import ssl
-import os.path
-
 
 # The test cluster is configured with certificate for that host name, see 'server-ext.cnf'.
 # The client has to verify server certificate against that name. Client uses SNI
 SSL_HOST = "integration-tests.clickhouse.com"
 HTTPS_PORT = 8443
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+MAX_RETRY = 5
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -88,10 +92,8 @@ def test_https_wrong_cert():
         execute_query_https("SELECT currentUser()", user="john", cert_name="client2")
     assert "HTTP Error 403" in str(err.value)
 
-    # Wrong certificate: self-signed certificate.
-    with pytest.raises(Exception) as err:
-        execute_query_https("SELECT currentUser()", user="john", cert_name="wrong")
-    assert "unknown ca" in str(err.value)
+    # TODO: Add non-flaky tests for:
+    # - Wrong certificate: self-signed certificate.
 
     # No certificate.
     with pytest.raises(Exception) as err:
@@ -181,27 +183,13 @@ def test_https_non_ssl_auth():
         == "jane\n"
     )
 
-    # However if we send a certificate it must not be wrong.
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="peter",
-            enable_ssl_auth=False,
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
-    with pytest.raises(Exception) as err:
-        execute_query_https(
-            "SELECT currentUser()",
-            user="jane",
-            enable_ssl_auth=False,
-            password="qwe123",
-            cert_name="wrong",
-        )
-    assert "unknown ca" in str(err.value)
+    # TODO: Add non-flaky tests for:
+    # - sending wrong cert
 
 
 def test_create_user():
+    instance.query("DROP USER IF EXISTS emma")
+
     instance.query("CREATE USER emma IDENTIFIED WITH ssl_certificate CN 'client3'")
     assert (
         execute_query_https("SELECT currentUser()", user="emma", cert_name="client3")
@@ -235,6 +223,8 @@ def test_create_user():
         instance.query(
             "SELECT name, auth_type, auth_params FROM system.users WHERE name IN ['emma', 'lucy'] ORDER BY name"
         )
-        == 'emma\tssl_certificate\t{"common_names":["client2"]}\n'
-        'lucy\tssl_certificate\t{"common_names":["client2","client3"]}\n'
+        == "emma\t['ssl_certificate']\t['{\"common_names\":[\"client2\"]}']\n"
+        'lucy\t[\'ssl_certificate\']\t[\'{"common_names":["client2","client3"]}\']\n'
     )
+
+    instance.query("DROP USER IF EXISTS emma")

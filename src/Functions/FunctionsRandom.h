@@ -68,9 +68,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 0 or 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 0 or 1.",
+                getName(), arguments.size());
 
         return std::make_shared<DataTypeNumber<ToType>>();
     }
@@ -80,8 +80,7 @@ public:
         auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
-        size_t size = input_rows_count;
-        vec_to.resize(size);
+        vec_to.resize(input_rows_count);
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;
@@ -98,8 +97,8 @@ public:
             FunctionRandomImpl<TargetSpecific::Default::RandImpl, ToType, Name>>();
 
     #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomImpl<TargetSpecific::AVX2::RandImpl, ToType, Name>>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+            FunctionRandomImpl<TargetSpecific::x86_64_v3::RandImpl, ToType, Name>>();
     #endif
     }
 

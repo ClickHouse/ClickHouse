@@ -1,8 +1,5 @@
 #include <Compression/CompressionFactory.h>
 
-#include <Common/PODArray.h>
-#include <Common/Stopwatch.h>
-#include <base/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -10,6 +7,12 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
+#include <Common/PODArray.h>
+#include <Common/Stopwatch.h>
+
+#include <Compression/ICompressionCodec.h>
+#include <Compression/LZ4_decompress_faster.h>
+#include <IO/BufferWithOwnMemory.h>
 
 #include <random>
 #include <bitset>
@@ -19,18 +22,13 @@
 #include <iostream>
 #include <iterator>
 #include <memory>
+#include <numbers>
 #include <typeinfo>
 #include <vector>
 
 #include <cstring>
 
 /// For the expansion of gtest macros.
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wdeprecated"
-#elif defined (__GNUC__) && __GNUC__ >= 9
-    #pragma GCC diagnostic ignored "-Wdeprecated-copy"
-#endif
-
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -39,9 +37,7 @@ using namespace DB;
 namespace
 {
 
-template <class T> using is_pod = std::is_trivial<std::is_standard_layout<T>>;
-template <class T> inline constexpr bool is_pod_v = is_pod<T>::value;
-
+template <class T> inline constexpr bool is_pod_v = std::is_trivial_v<std::is_standard_layout<T>>;
 
 template <typename T>
 struct AsHexStringHelper
@@ -175,7 +171,7 @@ private:
             throw std::runtime_error("No more data to read");
         }
 
-        current_value = unalignedLoadLE<T>(data);
+        current_value = unalignedLoadLittleEndian<T>(data);
         data = reinterpret_cast<const char *>(data) + sizeof(T);
     }
 };
@@ -371,7 +367,7 @@ CodecTestSequence makeSeq(Args && ... args)
     char * write_pos = data.data();
     for (const auto & v : vals)
     {
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -391,9 +387,10 @@ CodecTestSequence generateSeq(Generator gen, const char* gen_name, B Begin = 0, 
 
     for (auto i = Begin; i < End; i += direction)
     {
-        const T v = static_cast<T>(gen(i));
+        /// Pass index as T so generators using decltype(i) produce values of the target type.
+        const T v = static_cast<T>(gen(static_cast<T>(i)));
 
-        unalignedStoreLE<T>(write_pos, v);
+        unalignedStoreLittleEndian<T>(write_pos, v);
         write_pos += sizeof(v);
     }
 
@@ -447,7 +444,7 @@ CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePt
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-    IParser::Pos token_iterator(tokens, 0);
+    IParser::Pos token_iterator(tokens, 0, 0);
 
     Expected expected;
     ASTPtr codec_ast;
@@ -486,10 +483,10 @@ void testTranscoding(Timer & timer, ICompressionCodec & codec, const CodecTestSe
 
     decoded.resize(decoded_size);
 
-    ASSERT_TRUE(EqualByteContainers(test_sequence.data_type->getSizeOfValueInMemory(), source_data, decoded));
+    ASSERT_TRUE(EqualByteContainers(static_cast<uint8_t>(test_sequence.data_type->getSizeOfValueInMemory()), source_data, decoded));
 
-    const auto header_size = codec.getHeaderSize();
-    const auto compression_ratio = (encoded_size - header_size) / (source_data.size() * 1.0);
+    const auto header_size = ICompressionCodec::getHeaderSize();
+    const auto compression_ratio = (encoded_size - header_size) / static_cast<double>(source_data.size());
 
     if (expected_compression_ratio)
     {
@@ -526,6 +523,14 @@ public:
 
 TEST_P(CodecTest, TranscodingWithDataType)
 {
+    /// Gorilla and ALP can only be applied to floating point columns
+    const auto & codec_statement = std::get<0>(GetParam()).codec_statement;
+    const bool codec_is_float_point = codec_statement.contains("Gorilla") || codec_statement.contains("ALP");
+    const WhichDataType which(std::get<1>(GetParam()).data_type.get());
+    const bool data_is_float = which.isFloat();
+    if (codec_is_float_point && !data_is_float)
+        GTEST_SKIP() << "Skipping Float-point-compressed non-float column";
+
     const auto codec = makeCodec(CODEC_WITH_DATA_TYPE);
     testTranscoding(*codec);
 }
@@ -569,7 +574,7 @@ TEST_P(CodecTestCompatibility, Decoding)
         encoded_data.c_str(), static_cast<UInt32>(encoded_data.size()), decoded.data());
     decoded.resize(decoded_size);
 
-    ASSERT_TRUE(EqualByteContainers(expected.data_type->getSizeOfValueInMemory(), expected.serialized_data, decoded));
+    ASSERT_TRUE(EqualByteContainers(static_cast<UInt8>(expected.data_type->getSizeOfValueInMemory()), expected.serialized_data, decoded));
 }
 
 class CodecTestPerformance : public ::testing::TestWithParam<std::tuple<Codec, CodecTestSequence>>
@@ -612,17 +617,17 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
 
         for (const auto & v : tmp_v)
         {
-            mean += v;
+            mean += static_cast<double>(v);
         }
 
-        mean = mean / tmp_v.size();
+        mean = mean / static_cast<double>(tmp_v.size());
         double std_dev = 0.0;
         for (const auto & v : tmp_v)
         {
-            const auto d = (v - mean);
+            const auto d = (static_cast<double>(v) - mean);
             std_dev += (d * d);
         }
-        std_dev = std::sqrt(std_dev / tmp_v.size());
+        std_dev = std::sqrt(std_dev / static_cast<double>(tmp_v.size()));
 
         return std::make_tuple(mean, std_dev);
     };
@@ -665,7 +670,7 @@ auto SequentialGenerator = [](auto stride = 1)
     return [=](auto i)
     {
         using ValueType = decltype(i);
-        return static_cast<ValueType>(stride * i);
+        return static_cast<ValueType>(static_cast<ValueType>(stride) * i);
     };
 };
 
@@ -700,7 +705,7 @@ struct MonotonicGenerator // NOLINT
     explicit MonotonicGenerator(T stride_ = 1, T max_step = 10) // NOLINT
         : prev_value(0),
           stride(stride_),
-          random_engine(0),
+          random_engine(0), /// NOLINT
           distribution(0, max_step)
     {}
 
@@ -738,10 +743,15 @@ private:
     uniform_distribution<T> distribution;
 };
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+MonotonicGenerator() -> MonotonicGenerator<Int32>;
+#pragma clang diagnostic pop
+
 auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
-    double sin_value = sin(static_cast<double>(i * i)) * i;
+    double sin_value = sin(static_cast<double>(i * i)) * static_cast<double>(i);
     if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
         return T{};
     return T(sin_value);
@@ -792,7 +802,7 @@ std::vector<CodecTestSequence> generatePyramidOfSequences(const size_t sequences
     for (size_t i = 1; i < sequences_count; ++i)
     {
         std::string name = generator_name + std::string(" from 0 to ") + std::to_string(i);
-        sequences.push_back(generateSeq<T>(std::forward<decltype(generator)>(generator), name.c_str(), 0, i));
+        sequences.push_back(generateSeq<T>(generator, name.c_str(), 0, i));
     }
 
     return sequences;
@@ -807,7 +817,10 @@ const auto DefaultCodecsToTest = ::testing::Values(
     Codec("DoubleDelta, ZSTD"),
     Codec("Gorilla"),
     Codec("Gorilla, LZ4"),
-    Codec("Gorilla, ZSTD")
+    Codec("Gorilla, ZSTD"),
+    Codec("ALP"),
+    Codec("ALP, LZ4"),
+    Codec("ALP, ZSTD")
 );
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -837,6 +850,8 @@ INSTANTIATE_TEST_SUITE_P(SmallSequences,
                 + generatePyramidOfSequences<UInt16>(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<UInt32>(42, G(SequentialGenerator(1)))
                 + generatePyramidOfSequences<UInt64>(42, G(SequentialGenerator(1)))
+                + generatePyramidOfSequences<Float32>(42, G(SequentialGenerator(1)))
+                + generatePyramidOfSequences<Float64>(42, G(SequentialGenerator(1)))
         )
     )
 );
@@ -846,14 +861,16 @@ INSTANTIATE_TEST_SUITE_P(Mixed,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int8>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<Int8>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int8>(G(SequentialGenerator(1)), -128, 128),
             generateSeq<Int16>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int16>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<Int32>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int32>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<Int64>(G(MinMaxGenerator()), 1, 5) + generateSeq<Int64>(G(SequentialGenerator(1)), 1, 1001),
-            generateSeq<UInt8>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt8>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<UInt8>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt8>(G(SequentialGenerator(1)), 0, 256),
             generateSeq<UInt16>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt16>(G(SequentialGenerator(1)), 1, 1001),
             generateSeq<UInt32>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt32>(G(SequentialGenerator(1)), 1, 1001),
-            generateSeq<UInt64>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt64>(G(SequentialGenerator(1)), 1, 1001)
+            generateSeq<UInt64>(G(MinMaxGenerator()), 1, 5) + generateSeq<UInt64>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<Float32>(G(MinMaxGenerator()), 1, 5) + generateSeq<Float32>(G(SequentialGenerator(1)), 1, 1001),
+            generateSeq<Float64>(G(MinMaxGenerator()), 1, 5) + generateSeq<Float64>(G(SequentialGenerator(1)), 1, 1001)
         )
     )
 );
@@ -897,7 +914,11 @@ INSTANTIATE_TEST_SUITE_P(SameValueFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
+            Codec("ALP"),
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(M_E))),
@@ -911,7 +932,11 @@ INSTANTIATE_TEST_SUITE_P(SameNegativeValueFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
+            Codec("ALP"),
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SameValueGenerator(-1 * M_E))),
@@ -925,11 +950,11 @@ INSTANTIATE_TEST_SUITE_P(SequentialInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8>(G(SequentialGenerator(1))),
+            generateSeq<Int8>(G(SequentialGenerator(1)), 1, 128),
             generateSeq<Int16 >(G(SequentialGenerator(1))),
             generateSeq<Int32 >(G(SequentialGenerator(1))),
             generateSeq<Int64 >(G(SequentialGenerator(1))),
-            generateSeq<UInt8 >(G(SequentialGenerator(1))),
+            generateSeq<UInt8 >(G(SequentialGenerator(1)), 1, 128),
             generateSeq<UInt16>(G(SequentialGenerator(1))),
             generateSeq<UInt32>(G(SequentialGenerator(1))),
             generateSeq<UInt64>(G(SequentialGenerator(1)))
@@ -944,11 +969,11 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<Int8>(G(SequentialGenerator(-1))),
+            generateSeq<Int8>(G(SequentialGenerator(-1)), 1, 128),
             generateSeq<Int16 >(G(SequentialGenerator(-1))),
             generateSeq<Int32 >(G(SequentialGenerator(-1))),
             generateSeq<Int64 >(G(SequentialGenerator(-1))),
-            generateSeq<UInt8 >(G(SequentialGenerator(-1))),
+            generateSeq<UInt8 >(G(SequentialGenerator(-1)), 0, 256),
             generateSeq<UInt16>(G(SequentialGenerator(-1))),
             generateSeq<UInt32>(G(SequentialGenerator(-1))),
             generateSeq<UInt64>(G(SequentialGenerator(-1)))
@@ -961,7 +986,11 @@ INSTANTIATE_TEST_SUITE_P(SequentialFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
+            Codec("ALP"),
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(M_E))),
@@ -975,7 +1004,11 @@ INSTANTIATE_TEST_SUITE_P(SequentialReverseFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla"),
-            Codec("Gorilla, LZ4")
+            Codec("Gorilla, LZ4"),
+            Codec("Gorilla, ZSTD"),
+            Codec("ALP"),
+            Codec("ALP, LZ4"),
+            Codec("ALP, ZSTD")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(SequentialGenerator(-1 * M_E))),
@@ -1022,7 +1055,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
-            Codec("Gorilla")
+            Codec("Gorilla"),
+            Codec("ALP")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(M_E), 5))),
@@ -1035,7 +1069,8 @@ INSTANTIATE_TEST_SUITE_P(MonotonicReverseFloat,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
-            Codec("Gorilla")
+            Codec("Gorilla"),
+            Codec("ALP")
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MonotonicGenerator<Float32>(static_cast<Float32>(-1 * M_E), 5))),
@@ -1049,7 +1084,7 @@ INSTANTIATE_TEST_SUITE_P(RandomInt,
     ::testing::Combine(
         DefaultCodecsToTest,
         ::testing::Values(
-            generateSeq<UInt8 >(G(RandomGenerator<UInt8>(0))),
+            generateSeq<UInt8 >(G(RandomGenerator<uint8_t>(0))),
             generateSeq<UInt16>(G(RandomGenerator<UInt16>(0))),
             generateSeq<UInt32>(G(RandomGenerator<UInt32>(0, 0, 1000'000'000))),
             generateSeq<UInt64>(G(RandomGenerator<UInt64>(0, 0, 1000'000'000)))
@@ -1105,7 +1140,11 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
     ::testing::Combine(
         ::testing::Values(
             Codec("Gorilla", 1.1),
-            Codec("Gorilla, LZ4", 1.0)
+            Codec("Gorilla, LZ4", 1.0),
+            Codec("Gorilla, ZSTD", 1.0),
+            Codec("ALP", 1.1),
+            Codec("ALP, LZ4", 1.0),
+            Codec("ALP, ZSTD", 1.0)
         ),
         ::testing::Values(
             generateSeq<Float32>(G(MinMaxGenerator())),
@@ -1116,11 +1155,27 @@ INSTANTIATE_TEST_SUITE_P(OverflowFloat,
     )
 );
 
+/// Size of data after ZSTD is not a multiple of 8,
+/// and may break DoubleDelta.
+INSTANTIATE_TEST_SUITE_P(DoubleDeltaUnalignedTranscode,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ZSTD, DoubleDelta")
+        ),
+        ::testing::Values(
+            makeSeq<Float64>(0, 1),
+            makeSeq<Float64>(1, 0)
+        )
+    )
+);
+
+
 template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
-    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable //-V788
+    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
         const auto curr = dd + prev + prev_delta;
         prev = curr;
@@ -1200,69 +1255,21 @@ auto DDperformanceTestSequence()
         + generateSeq<ValueType>(G(SameValueGenerator(42)), 0, times); // best
 }
 
-// prime numbers in ascending order with some random repitions hit all the cases of Gorilla.
-auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
-{
-    return [multiplier](auto i)
-    {
-        static const int vals[] = {
-             2, 3, 5, 7, 11, 11, 13, 17, 19, 23, 29, 29, 31, 37, 41, 43,
-            47, 47, 53, 59, 61, 61, 67, 71, 73, 79, 83, 89, 89, 97, 101, 103,
-            107, 107, 109, 113, 113, 127, 127, 127
-        };
-        static const size_t count = sizeof(vals)/sizeof(vals[0]);
-
-        return static_cast<UInt64>(vals[i % count]) * multiplier;
-    };
-};
-
-template <typename ValueType>
-auto GCompatibilityTestSequence()
-{
-    // Also multiply result by some factor to test large values on types that can hold those.
-    return generateSeq<ValueType>(G(PrimesWithMultiplierGenerator(intExp10(sizeof(ValueType)))), 0, 42);
-}
-
-INSTANTIATE_TEST_SUITE_P(Gorilla,
-    CodecTestCompatibility,
-    ::testing::Combine(
-        ::testing::Values(Codec("Gorilla")),
-        ::testing::ValuesIn(std::initializer_list<std::tuple<CodecTestSequence, std::string>>{
-            {
-                GCompatibilityTestSequence<Int8>(),
-                BIN_STR("\x95\x35\x00\x00\x00\x2a\x00\x00\x00\x01\x00\x2a\x00\x00\x00\x14\xe1\xdd\x25\xe5\x7b\x29\x86\xee\x2a\x16\x5a\xc5\x0b\x23\x75\x1b\x3c\xb1\x97\x8b\x5f\xcb\x43\xd9\xc5\x48\xab\x23\xaf\x62\x93\x71\x4a\x73\x0f\xc6\x0a")
-            },
-            {
-                GCompatibilityTestSequence<UInt8>(),
-                BIN_STR("\x95\x35\x00\x00\x00\x2a\x00\x00\x00\x01\x00\x2a\x00\x00\x00\x14\xe1\xdd\x25\xe5\x7b\x29\x86\xee\x2a\x16\x5a\xc5\x0b\x23\x75\x1b\x3c\xb1\x97\x8b\x5f\xcb\x43\xd9\xc5\x48\xab\x23\xaf\x62\x93\x71\x4a\x73\x0f\xc6\x0a")
-            },
-            {
-                GCompatibilityTestSequence<Int16>(),
-                BIN_STR("\x95\x52\x00\x00\x00\x54\x00\x00\x00\x02\x00\x2a\x00\x00\x00\xc8\x00\xdc\xfe\x66\xdb\x1f\x4e\xa7\xde\xdc\xd5\xec\x6e\xf7\x37\x3a\x23\xe7\x63\xf5\x6a\x8e\x99\x37\x34\xf9\xf8\x2e\x76\x35\x2d\x51\xbb\x3b\xc3\x6d\x13\xbf\x86\x53\x9e\x25\xe4\xaf\xaf\x63\xd5\x6a\x6e\x76\x35\x3a\x27\xd3\x0f\x91\xae\x6b\x33\x57\x6e\x64\xcc\x55\x81\xe4")
-            },
-            {
-                GCompatibilityTestSequence<UInt16>(),
-                BIN_STR("\x95\x52\x00\x00\x00\x54\x00\x00\x00\x02\x00\x2a\x00\x00\x00\xc8\x00\xdc\xfe\x66\xdb\x1f\x4e\xa7\xde\xdc\xd5\xec\x6e\xf7\x37\x3a\x23\xe7\x63\xf5\x6a\x8e\x99\x37\x34\xf9\xf8\x2e\x76\x35\x2d\x51\xbb\x3b\xc3\x6d\x13\xbf\x86\x53\x9e\x25\xe4\xaf\xaf\x63\xd5\x6a\x6e\x76\x35\x3a\x27\xd3\x0f\x91\xae\x6b\x33\x57\x6e\x64\xcc\x55\x81\xe4")
-            },
-            {
-                GCompatibilityTestSequence<Int32>(),
-                BIN_STR("\x95\x65\x00\x00\x00\xa8\x00\x00\x00\x04\x00\x2a\x00\x00\x00\x20\x4e\x00\x00\xe4\x57\x63\xc0\xbb\x67\xbc\xce\x91\x97\x99\x15\x9e\xe3\x36\x3f\x89\x5f\x8e\xf2\xec\x8e\xd3\xbf\x75\x43\x58\xc4\x7e\xcf\x93\x43\x38\xc6\x91\x36\x1f\xe7\xb6\x11\x6f\x02\x73\x46\xef\xe0\xec\x50\xfb\x79\xcb\x9c\x14\xfa\x13\xea\x8d\x66\x43\x48\xa0\xde\x3a\xcf\xff\x26\xe0\x5f\x93\xde\x5e\x7f\x6e\x36\x5e\xe6\xb4\x66\x5d\xb0\x0e\xc4")
-            },
-            {
-                GCompatibilityTestSequence<UInt32>(),
-                BIN_STR("\x95\x65\x00\x00\x00\xa8\x00\x00\x00\x04\x00\x2a\x00\x00\x00\x20\x4e\x00\x00\xe4\x57\x63\xc0\xbb\x67\xbc\xce\x91\x97\x99\x15\x9e\xe3\x36\x3f\x89\x5f\x8e\xf2\xec\x8e\xd3\xbf\x75\x43\x58\xc4\x7e\xcf\x93\x43\x38\xc6\x91\x36\x1f\xe7\xb6\x11\x6f\x02\x73\x46\xef\xe0\xec\x50\xfb\x79\xcb\x9c\x14\xfa\x13\xea\x8d\x66\x43\x48\xa0\xde\x3a\xcf\xff\x26\xe0\x5f\x93\xde\x5e\x7f\x6e\x36\x5e\xe6\xb4\x66\x5d\xb0\x0e\xc4")
-            },
-            {
-                GCompatibilityTestSequence<Int64>(),
-                BIN_STR("\x95\x91\x00\x00\x00\x50\x01\x00\x00\x08\x00\x2a\x00\x00\x00\x00\xc2\xeb\x0b\x00\x00\x00\x00\xe3\x2b\xa0\xa6\x19\x85\x98\xdc\x45\x74\x74\x43\xc2\x57\x41\x4c\x6e\x42\x79\xd9\x8f\x88\xa5\x05\xf3\xf1\x94\xa3\x62\x1e\x02\xdf\x05\x10\xf1\x15\x97\x35\x2a\x50\x71\x0f\x09\x6c\x89\xf7\x65\x1d\x11\xb7\xcc\x7d\x0b\x70\xc1\x86\x88\x48\x47\x87\xb6\x32\x26\xa7\x86\x87\x88\xd3\x93\x3d\xfc\x28\x68\x85\x05\x0b\x13\xc6\x5f\xd4\x70\xe1\x5e\x76\xf1\x9f\xf3\x33\x2a\x14\x14\x5e\x40\xc1\x5c\x28\x3f\xec\x43\x03\x05\x11\x91\xe8\xeb\x8e\x0a\x0e\x27\x21\x55\xcb\x39\xbc\x6a\xff\x11\x5d\x81\xa0\xa6\x10")
-            },
-            {
-                GCompatibilityTestSequence<UInt64>(),
-                BIN_STR("\x95\x91\x00\x00\x00\x50\x01\x00\x00\x08\x00\x2a\x00\x00\x00\x00\xc2\xeb\x0b\x00\x00\x00\x00\xe3\x2b\xa0\xa6\x19\x85\x98\xdc\x45\x74\x74\x43\xc2\x57\x41\x4c\x6e\x42\x79\xd9\x8f\x88\xa5\x05\xf3\xf1\x94\xa3\x62\x1e\x02\xdf\x05\x10\xf1\x15\x97\x35\x2a\x50\x71\x0f\x09\x6c\x89\xf7\x65\x1d\x11\xb7\xcc\x7d\x0b\x70\xc1\x86\x88\x48\x47\x87\xb6\x32\x26\xa7\x86\x87\x88\xd3\x93\x3d\xfc\x28\x68\x85\x05\x0b\x13\xc6\x5f\xd4\x70\xe1\x5e\x76\xf1\x9f\xf3\x33\x2a\x14\x14\x5e\x40\xc1\x5c\x28\x3f\xec\x43\x03\x05\x11\x91\xe8\xeb\x8e\x0a\x0e\x27\x21\x55\xcb\x39\xbc\x6a\xff\x11\x5d\x81\xa0\xa6\x10")
-            },
-        })
-    )
-);
+// prime numbers in ascending order with some random repetitions hit all the cases of Gorilla.
+// auto PrimesWithMultiplierGenerator = [](int multiplier = 1)
+// {
+//     return [multiplier](auto i)
+//     {
+//         static const int vals[] = {
+//              2, 3, 5, 7, 11, 11, 13, 17, 19, 23, 29, 29, 31, 37, 41, 43,
+//             47, 47, 53, 59, 61, 61, 67, 71, 73, 79, 83, 89, 89, 97, 101, 103,
+//             107, 107, 109, 113, 113, 127, 127, 127
+//         };
+//         static const size_t count = sizeof(vals)/sizeof(vals[0]);
+//
+//         return static_cast<UInt64>(vals[i % count]) * multiplier;
+//     };
+// };
 
 // These 'tests' try to measure performance of encoding and decoding and hence only make sense to be run locally,
 // also they require pretty big data to run against and generating this data slows down startup of unit test process.
@@ -1318,5 +1325,627 @@ INSTANTIATE_TEST_SUITE_P(Gorilla,
 //        )
 //    ),
 //);
+
+TEST(LZ4Test, DecompressMalformedInput)
+{
+    /// This malformed input was initially found by lz4_decompress_fuzzer and causes failure under UBSAN.
+    constexpr unsigned char data[]
+        = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x00,
+           0x00, 0x20, 0x00, 0x00, 0x66, 0x66, 0x66, 0x66, 0xff, 0xff, 0xff, 0x17, 0xff, 0xff, 0x0f, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
+           0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+           0xfe, 0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+    const char * const source = reinterpret_cast<const char * const>(data);
+    const uint32_t source_size = std::size(data);
+    constexpr uint32_t uncompressed_size = 80;
+
+    DB::Memory<> memory;
+    memory.resize(ICompressionCodec::getHeaderSize() + uncompressed_size + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+    unalignedStoreLittleEndian<uint8_t>(memory.data(), static_cast<uint8_t>(CompressionMethodByte::LZ4));
+    unalignedStoreLittleEndian<uint32_t>(&memory[1], source_size);
+    unalignedStoreLittleEndian<uint32_t>(&memory[5], uncompressed_size);
+
+    auto codec = CompressionCodecFactory::instance().get("LZ4", {});
+    ASSERT_THROW(codec->decompress(source, source_size, memory.data()), Exception);
+}
+
+TEST(DoubleDeltaTest, TranscodeRawInput)
+{
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+        std::make_shared<DataTypeFloat32>(),
+        std::make_shared<DataTypeFloat64>(),
+    };
+
+    for (const auto & type : types)
+    {
+        for (size_t buffer_size = 1; buffer_size < 40; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(buffer_size);
+
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = static_cast<char>(i);
+
+            DB::Memory<> memory_for_compression;
+            memory_for_compression.resize(ICompressionCodec::getHeaderSize() + buffer_size);
+
+            auto codec = makeCodec("DoubleDelta", type);
+
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
+    }
+}
+
+TEST(T64Test, TranscodeRawInput)
+{
+    std::vector<DataTypePtr> types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+    };
+
+    for (const auto & type : types)
+    {
+        for (size_t buffer_size = 1; buffer_size < 2000; buffer_size++)
+        {
+            DB::Memory<> source_memory;
+            source_memory.resize(buffer_size);
+
+            for (size_t i = 0; i < buffer_size; ++i)
+                source_memory.data()[i] = static_cast<char>(i);
+
+            DB::Memory<> memory_for_compression;
+            auto codec = makeCodec("T64", type);
+
+            memory_for_compression.resize(codec->getCompressedReserveSize(static_cast<UInt32>(buffer_size)));
+
+            auto compressed = codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data());
+
+            DB::Memory<> memory_for_decompression;
+            memory_for_decompression.resize(buffer_size);
+            auto decompressed = codec->decompress(memory_for_compression.data(), compressed, memory_for_decompression.data());
+
+            ASSERT_EQ(decompressed, source_memory.size());
+            for (size_t i = 0; i < decompressed; ++i)
+                ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
+        }
+    }
+}
+
+TEST(T64Test, DecompressMalformedInputBytesToSkip)
+{
+    /// Reproducer for heap-buffer-overflow when `bytes_to_skip > bytes_size`
+    /// in `decompressData`. Cookie 0x84 -> UInt64; bytes_to_skip = 26757 % 8 = 5,
+    /// but only 1 payload byte remains after the cookie.
+    constexpr unsigned char block[] = {
+        0x93,                   /// T64 method byte
+        0x0B, 0x00, 0x00, 0x00, /// compressed_size = 11 (9-byte header + 2-byte payload)
+        0x85, 0x68, 0x00, 0x00, /// decompressed_size = 26757
+        0x84, 0x2C,             /// cookie 0x84 = UInt64/Bit; bytes_to_skip=5 > bytes_size=1
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(26757);
+
+    auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(T64Test, DecompressMalformedInputShortHeader)
+{
+    /// Reproducer for heap-buffer-overflow when payload has no bytes_to_skip
+    /// but is shorter than the 16-byte min/max header required by T64.
+    /// decompressed_size=8 → bytes_to_skip = 8 % 8 = 0; bytes_size=8 < header_size=16.
+    constexpr unsigned char block[] = {
+        0x93,                   /// T64 method byte
+        0x11, 0x00, 0x00, 0x00, /// compressed_size = 17 (9-byte header + 8-byte payload)
+        0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8 (bytes_to_skip = 8 % 8 = 0)
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, /// 8-byte payload; bytes_size=8 < header_size=16
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(8);
+
+    auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
+{
+    /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:
+    /// PODArray constructed from reversed pointer range → ~2^64-byte allocation.
+    /// source[0] = 0x9a = 154 codecs claimed in a 1-byte payload.
+    constexpr unsigned char block[] = {
+        0x91,                   /// Multiple method byte
+        0x0A, 0x00, 0x00, 0x00, /// compressed_size = 10 (9-byte header + 1-byte payload)
+        0x00, 0x00, 0x00, 0x00, /// decompressed_size = 0
+        0x9A,                   /// claims 154 codecs in a 1-byte payload
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(64);
+
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
+{
+    /// Reproducer for OOB read when the compressed payload after the methods list
+    /// is shorter than COMPRESSED_BLOCK_HEADER_SIZE (9 bytes).
+    /// 1 codec declared; 4 bytes of compressed data follow — too short for a block header.
+    constexpr unsigned char block[] = {
+        0x91,                   /// Multiple method byte
+        0x0F, 0x00, 0x00, 0x00, /// compressed_size = 15 (9-byte header + 6-byte payload)
+        0x00, 0x00, 0x00, 0x00, /// decompressed_size = 0
+        0x01,                   /// compression_methods_size = 1
+        0x82,                   /// LZ4 method byte
+        0x00, 0x01, 0x02, 0x03, /// 4-byte compressed data; source_size=4 < COMPRESSED_BLOCK_HEADER_SIZE=9
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(64);
+
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
+{
+    std::default_random_engine random_engine(17); /// NOLINT
+    std::uniform_real_distribution<> random_distribution(0.0, 1.0);
+
+    return [=](auto i) mutable
+    {
+        auto random_value = random_distribution(random_engine);
+        if (random_value < exception_probability)
+            return exception;
+
+        T trend_k = static_cast<T>(0.1);
+        T trend = base + trend_k * static_cast<T>(i);
+        T oscillation = std::sin(trend);
+        T round_factor = std::pow(T{10}, static_cast<T>(decimals));
+
+        T value = trend + oscillation;
+        value = std::ceil(value * round_factor) / round_factor;
+
+        return value;
+    };
+};
+
+INSTANTIATE_TEST_SUITE_P(ALPSequentialF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.3)),
+        ::testing::Values(
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1024),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2048),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2560),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(-50.0)), 0, 2048),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(-5000.0)), 0, 2048)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.8)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1024),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2560),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(-50.0)), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(-5000.0)), 0, 2048)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP")),
+        ::testing::ValuesIn(
+              generatePyramidOfSequences<Float64>(2050, G(ALPSequentialGenerator.template operator()<Float64>()))
+            + generatePyramidOfSequences<Float32>(2050, G(ALPSequentialGenerator.template operator()<Float32>()))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.3)),
+        ::testing::Values(
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 65536),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 66000),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 150000)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.9)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 65536),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 66000),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 150000)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.5)),
+        ::testing::Values(
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 4)), 0, 2048),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 6)), 0, 2048)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.999)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 4)), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 6)), 0, 2048)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.4)),
+        ::testing::Values(
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::infinity(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -std::numeric_limits<Float64>::infinity(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::signaling_NaN(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::bit_cast<Float64>(0x8000000000000000ULL), 0.1))), // negative zero
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::max(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::min(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::denorm_min(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 9223372036854773760.0, 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -9223372036854773760.0, 0.1)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.9)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::infinity(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -std::numeric_limits<Float32>::infinity(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::signaling_NaN(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::bit_cast<Float32>(0x80000000U), 0.1))), // negative zero
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::denorm_min(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 9223371487098961920.0f, 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -9223371487098961920.0f, 0.1)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.99)),
+        ::testing::Values(
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.4))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.6)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 1.01)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.4))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.6)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 1.01)),
+        ::testing::Values(
+            generateSeq<Float64>(G([](auto) { return std::numeric_limits<Float64>::quiet_NaN(); })),
+            generateSeq<Float32>(G([](auto) { return std::numeric_limits<Float32>::quiet_NaN(); })),
+            generateSeq<Float64>(G([](auto) { return std::numbers::pi_v<double>; })),
+            generateSeq<Float32>(G([](auto) { return std::numbers::pi_v<float>; }))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSameValuesF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.1)),
+        ::testing::Values(
+            generateSeq<Float64>(G([](auto) { return 2.2; })),
+            generateSeq<Float64>(G([](auto) { return -2.2; })),
+            generateSeq<Float64>(G([](auto) { return 0.0; }))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.1)),
+        ::testing::Values(
+            generateSeq<Float32>(G([](auto) { return 2.2f; })),
+            generateSeq<Float32>(G([](auto) { return -2.2f; })),
+            generateSeq<Float32>(G([](auto) { return 0.0f; }))
+        )
+    )
+);
+
+class ALPTest : public ::testing::Test
+{
+protected:
+    static std::vector<UInt8> constructSourceWithHeader(const std::vector<UInt8> & source, UInt32 dest_size)
+    {
+        UInt32 source_size = static_cast<UInt32>(source.size());
+
+        std::vector<UInt8> data = {
+            // General codec header
+            static_cast<UInt8>(CompressionMethodByte::ALP), // method byte
+            static_cast<UInt8>(source_size & 0xFF),         // compressed size (byte 0)
+            static_cast<UInt8>((source_size >> 8) & 0xFF),  // compressed size (byte 1)
+            static_cast<UInt8>((source_size >> 16) & 0xFF), // compressed size (byte 2)
+            static_cast<UInt8>((source_size >> 24) & 0xFF), // compressed size (byte 3)
+            static_cast<UInt8>(dest_size & 0xFF),           // decompressed size (byte 0)
+            static_cast<UInt8>((dest_size >> 8) & 0xFF),    // decompressed size (byte 1)
+            static_cast<UInt8>((dest_size >> 16) & 0xFF),   // decompressed size (byte 2)
+            static_cast<UInt8>((dest_size >> 24) & 0xFF),   // decompressed size (byte 3)
+        };
+        data.append_range(source);
+
+        return data;
+    }
+
+    template <typename T = DataTypeFloat64>
+    static auto verifyDecompressExpectedException(const std::vector<UInt8> & source, const std::string & expectedMessage, UInt32 dest_size = 8192)
+    {
+        try
+        {
+            std::vector<UInt8> source_with_header = constructSourceWithHeader(source, dest_size);
+            auto codec = makeCodec("ALP", std::make_shared<T>());
+            std::vector<char> dest(dest_size);
+
+            codec->decompress(reinterpret_cast<const char *>(source_with_header.data()), static_cast<UInt32>(source_with_header.size()), dest.data());
+
+            FAIL() << "Expected Exception with message: " << expectedMessage;
+        }
+        catch (const Exception& e)
+        {
+            EXPECT_EQ(expectedMessage, e.message());
+        }
+    }
+};
+
+TEST_F(ALPTest, SupportedFloatTypes)
+{
+    std::vector<DataTypePtr> supported_types = {
+        std::make_shared<DataTypeFloat32>(),
+        std::make_shared<DataTypeFloat64>()
+    };
+
+    for (const auto & type : supported_types)
+        ASSERT_NO_THROW(makeCodec("ALP", type)) << "ALP codec should accept " << type->getName();
+}
+
+TEST_F(ALPTest, UnsupportedFloatTypes)
+{
+    std::vector<DataTypePtr> unsupported_types = {
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeBFloat16>()
+    };
+
+    for (const auto & type : unsupported_types)
+        ASSERT_THROW(makeCodec("ALP", type), Exception) << "ALP codec should reject " << type->getName();
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)
+{
+    const std::vector<UInt8> source = {
+        0x01, // meta byte
+        0x08  // float width
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, data has wrong header");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidFloatWidth)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x01,       // float width (invalid, should be 4 or 8)
+        0x00, 0x04  // block float count
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, unsupported float width 1");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidBlockFloatCount)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x08  // block float count equal to 2048 (invalid, should be 1024)
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, supported block float count is 1024, got 2048");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockHeader)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, incomplete block header (encoded)");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidExponent)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x7F,       // exponent
+        0x00,       // fraction
+        0x00, 0x00, // exception count = 0
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exponent value: 127, max allowed: 18");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidFraction)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x00,       // exponent
+        0x7F,       // fraction
+        0x00, 0x00, // exception count = 0
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid fraction value: 127, max allowed: 18");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockData)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+        0x00,       // fraction
+        0x00, 0x00, // exception count = 0
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // Bitpacked data (incomplete)
+        0xFF, 0xFF, 0xFF, 0xFF // only 2 bytes instead of 128 bytes
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, incomplete block payload, available size: 4, bit-width: 1, exceptions: 0");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionsCount)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+        0x00,       // fraction
+        0x01, 0x00, // exception count = 1
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // Bitpacked data (128 bytes for 1024 values with 1 bit each)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        // No exceptions data, expected 1 exception
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, incomplete block payload, available size: 128, bit-width: 1, exceptions: 1");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionIndex)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+        0x00,       // fraction
+        0x01, 0x00, // exception count = 1
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // Bitpacked data (128 bytes for 1024 values with 1 bit each)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        // Exception indices (invalid index 1025)
+        0x00, 0x04,                                     // exception index (1024 bigger than max allowed index 1023)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // exception value
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exception index, index: 1024, float count: 1024");
+}
 
 }

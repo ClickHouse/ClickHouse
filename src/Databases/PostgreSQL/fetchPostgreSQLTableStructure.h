@@ -16,13 +16,18 @@ struct PostgreSQLTableStructure
     {
         Int32 atttypid;
         Int32 atttypmod;
+        Int32 attnum;
+        bool atthasdef;
+        char attgenerated;
+        std::string attr_def;
     };
-    using Attributes = std::vector<PGAttribute>;
+    using Attributes = std::unordered_map<std::string, PGAttribute>;
 
     struct ColumnsInfo
     {
         NamesAndTypesList columns;
         Attributes attributes;
+        std::vector<std::string> names;
         ColumnsInfo(NamesAndTypesList && columns_, Attributes && attributes_) : columns(columns_), attributes(attributes_) {}
     };
     using ColumnsInfoPtr = std::shared_ptr<ColumnsInfo>;
@@ -43,7 +48,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     T & tx, const String & postgres_table, const String & postgres_schema, bool use_nulls = true,
-    bool with_primary_key = false, bool with_replica_identity_index = false);
+    bool with_primary_key = false, bool with_replica_identity_index = false, const Strings & columns = {});
 
 template<typename T>
 std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema);

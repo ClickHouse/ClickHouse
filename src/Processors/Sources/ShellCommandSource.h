@@ -2,11 +2,12 @@
 
 #include <memory>
 
-#include <Common/logger_useful.h>
 #include <base/BorrowedObjectPool.h>
 
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandSettings.h>
 #include <Common/ThreadPool.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>
@@ -55,6 +56,15 @@ public:
         /// Timeout for writing data to command stdin
         size_t command_write_timeout_milliseconds = 10000;
 
+        /// Reaction when external command outputs data to its stderr.
+        ExternalCommandStderrReaction stderr_reaction = ExternalCommandStderrReaction::NONE;
+
+        /// Will throw if the command exited with
+        /// non-zero status code.
+        /// NOTE: If executable pool is used, we cannot check exit code,
+        /// which makes this configuration no effect.
+        size_t check_exit_code = false;
+
         /// Pool size valid only if executable_pool = true
         size_t pool_size = 16;
 
@@ -81,7 +91,7 @@ public:
 
     Pipe createPipe(
         const std::string & command,
-        const std::vector<std::string> & arguments,
+        const VectorWithMemoryTracking<std::string> & arguments,
         std::vector<Pipe> && input_pipes,
         Block sample_block,
         ContextPtr context,
@@ -97,11 +107,8 @@ public:
         return createPipe(command, {}, std::move(input_pipes), std::move(sample_block), std::move(context), source_configuration);
     }
 
-    Pipe createPipe(
-        const std::string & command,
-        const std::vector<std::string> & arguments,
-        Block sample_block,
-        ContextPtr context)
+    Pipe
+    createPipe(const std::string & command, const VectorWithMemoryTracking<std::string> & arguments, Block sample_block, ContextPtr context)
     {
         return createPipe(command, arguments, {}, std::move(sample_block), std::move(context), {});
     }

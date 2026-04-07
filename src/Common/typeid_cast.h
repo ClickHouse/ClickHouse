@@ -2,21 +2,10 @@
 
 #include <type_traits>
 #include <typeinfo>
-#include <typeindex>
 #include <memory>
-#include <string>
-
-#include <Common/Exception.h>
-#include <base/demangle.h>
 
 
-namespace DB
-{
-    namespace ErrorCodes
-    {
-        extern const int LOGICAL_ERROR;
-    }
-}
+[[noreturn]] void throwBadTypeidCast(const std::type_info & from, const std::type_info & to);
 
 
 /** Checks type by comparing typeid.
@@ -25,38 +14,22 @@ namespace DB
   */
 template <typename To, typename From>
 requires std::is_reference_v<To>
-To typeid_cast(From & from)
+To typeid_cast(From & from) noexcept(false)
 {
-    try
-    {
-        if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
-            return static_cast<To>(from);
-    }
-    catch (const std::exception & e)
-    {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
-    }
+    if ((typeid(From) == typeid(To)) || (typeid(from) == typeid(To)))
+        return static_cast<To>(from);
 
-    throw DB::Exception("Bad cast from type " + demangle(typeid(from).name()) + " to " + demangle(typeid(To).name()),
-                        DB::ErrorCodes::LOGICAL_ERROR);
+    throwBadTypeidCast(typeid(from), typeid(To));
 }
 
 
 template <typename To, typename From>
 requires std::is_pointer_v<To>
-To typeid_cast(From * from)
+To typeid_cast(From * from) noexcept
 {
-    try
-    {
-        if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
-            return static_cast<To>(from);
-        else
-            return nullptr;
-    }
-    catch (const std::exception & e)
-    {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
-    }
+    if ((typeid(From) == typeid(std::remove_pointer_t<To>)) || (from && typeid(*from) == typeid(std::remove_pointer_t<To>)))
+        return static_cast<To>(from);
+    return nullptr;
 }
 
 namespace detail
@@ -79,17 +52,9 @@ inline constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
 
 template <typename To, typename From>
 requires detail::is_shared_ptr_v<To>
-To typeid_cast(const std::shared_ptr<From> & from)
+To typeid_cast(const std::shared_ptr<From> & from) noexcept
 {
-    try
-    {
-        if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
-            return std::static_pointer_cast<typename To::element_type>(from);
-        else
-            return nullptr;
-    }
-    catch (const std::exception & e)
-    {
-        throw DB::Exception(e.what(), DB::ErrorCodes::LOGICAL_ERROR);
-    }
+    if ((typeid(From) == typeid(typename To::element_type)) || (from && typeid(*from) == typeid(typename To::element_type)))
+        return std::static_pointer_cast<typename To::element_type>(from);
+    return nullptr;
 }

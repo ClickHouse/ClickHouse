@@ -1,33 +1,47 @@
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <base/errnoToString.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/memory.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Core/Settings.h>
+#include <base/getPageSize.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
-#include <base/getThreadId.h>
-#include <base/getPageSize.h>
 
 #include <csignal>
-#include <mutex>
 #include <sys/mman.h>
 
 
 namespace DB
 {
-
+thread_local ThreadStatus constinit * current_thread = nullptr;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
-
-thread_local ThreadStatus constinit * current_thread = nullptr;
 
 #if !defined(SANITIZER)
 namespace
 {
+
+constexpr bool guardPagesEnabled()
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    return true;
+#else
+    return false;
+#endif
+}
+
+/// For aarch64 16K is not enough (likely due to tons of registers)
+constexpr size_t UNWIND_MINSIGSTKSZ = 32 << 10;
 
 /// Alternative stack for signal handling.
 ///
@@ -44,24 +58,47 @@ namespace
 struct ThreadStack
 {
     ThreadStack()
-        : data(aligned_alloc(getPageSize(), getSize()))
     {
-        /// Add a guard page
-        /// (and since the stack grows downward, we need to protect the first page).
-        mprotect(data, getPageSize(), PROT_NONE);
+        auto page_size = getPageSize();
+        data = aligned_alloc(page_size, getSize());
+        if (!data)
+            throw ErrnoException(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate ThreadStack");
+
+        if constexpr (guardPagesEnabled())
+        {
+            try
+            {
+                /// Since the stack grows downward, we need to protect the first page
+                memoryGuardInstall(data, page_size);
+            }
+            catch (...)
+            {
+                free(data);
+                throw;
+            }
+        }
     }
     ~ThreadStack()
     {
-        mprotect(data, getPageSize(), PROT_WRITE|PROT_READ);
+        if constexpr (guardPagesEnabled())
+            memoryGuardRemove(data, getPageSize());
+
         free(data);
     }
 
-    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
+    static size_t getSize()
+    {
+        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
+
+        if constexpr (guardPagesEnabled())
+            size += getPageSize();
+
+        return size;
+    }
     void * getData() const { return data; }
 
 private:
-    /// 16 KiB - not too big but enough to handle error.
-    void * data;
+    void * data = nullptr;
 };
 
 }
@@ -71,31 +108,15 @@ static thread_local bool has_alt_stack = false;
 #endif
 
 
-std::vector<ThreadGroupStatus::ProfileEventsCountersAndMemory> ThreadGroupStatus::getProfileEventsCountersAndMemoryForThreads()
-{
-    std::lock_guard guard(mutex);
-
-    /// It is OK to move it, since it is enough to report statistics for the thread at least once.
-    auto stats = std::move(finished_threads_counters_memory);
-    for (auto * thread : threads)
-    {
-        stats.emplace_back(ProfileEventsCountersAndMemory{
-            thread->performance_counters.getPartiallyAtomicSnapshot(),
-            thread->memory_tracker.get(),
-            thread->thread_id,
-        });
-    }
-
-    return stats;
-}
-
 ThreadStatus::ThreadStatus()
-    : thread_id{getThreadId()}
+    : thread_id(getThreadId())
 {
+    chassert(!current_thread);
+
     last_rusage = std::make_unique<RUsageCounters>();
 
-    memory_tracker.setDescription("(for thread)");
-    log = &Poco::Logger::get("ThreadStatus");
+    memory_tracker.setDescription("Thread");
+    log = getLogger("ThreadStatus");
 
     current_thread = this;
 
@@ -115,7 +136,7 @@ ThreadStatus::ThreadStatus()
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
-        altstack_description.ss_size = alt_stack.getSize();
+        altstack_description.ss_size = ThreadStack::getSize();
 
         if (0 != sigaltstack(&altstack_description, nullptr))
         {
@@ -143,44 +164,137 @@ ThreadStatus::ThreadStatus()
 #endif
 }
 
-ThreadStatus::~ThreadStatus()
+ThreadGroupPtr ThreadStatus::getThreadGroup() const
 {
-    memory_tracker.adjustWithUntrackedMemory(untracked_memory);
+    chassert(current_thread == this);
+    return thread_group;
+}
+
+void ThreadStatus::setQueryId(std::string && new_query_id) noexcept
+{
+    chassert(query_id.empty());
+    query_id = std::move(new_query_id);
+}
+
+void ThreadStatus::clearQueryId() noexcept
+{
+    query_id.clear();
+}
+
+const String & ThreadStatus::getQueryId() const
+{
+    return query_id;
+}
+
+ContextPtr ThreadStatus::tryGetQueryContext() const
+{
+    return query_context.lock();
+}
+
+ContextPtr ThreadStatus::getGlobalContext() const
+{
+    return global_context.lock();
+}
+
+void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
+{
+    std::lock_guard lock(mutex);
+    shared_data.logs_queue_ptr = logs_queue;
+    shared_data.client_logs_level = logs_level;
+}
+
+void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
+                                               LogsLevel logs_level)
+{
+    local_data.logs_queue_ptr = logs_queue;
+    local_data.client_logs_level = logs_level;
 
     if (thread_group)
-    {
-        ThreadGroupStatus::ProfileEventsCountersAndMemory counters
-        {
-            performance_counters.getPartiallyAtomicSnapshot(),
-            memory_tracker.get(),
-            thread_id
-        };
+        thread_group->attachInternalTextLogsQueue(logs_queue, logs_level);
+}
 
-        std::lock_guard guard(thread_group->mutex);
-        thread_group->finished_threads_counters_memory.emplace_back(std::move(counters));
-        thread_group->threads.erase(this);
-    }
+InternalTextLogsQueuePtr ThreadStatus::getInternalTextLogsQueue() const
+{
+    return local_data.logs_queue_ptr.lock();
+}
 
+InternalProfileEventsQueuePtr ThreadStatus::getInternalProfileEventsQueue() const
+{
+    return local_data.profile_queue_ptr.lock();
+}
+
+const String & ThreadStatus::getQueryForLog() const
+{
+    return local_data.query_for_logs;
+}
+
+LogsLevel ThreadStatus::getClientLogsLevel() const
+{
+    return local_data.client_logs_level;
+}
+
+void ThreadStatus::flushUntrackedMemory()
+{
+    if (untracked_memory == 0)
+        return;
+
+    MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
+    Int64 current_untracked_memory = current_thread->untracked_memory;
+    untracked_memory = 0;
+    memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
+}
+
+bool ThreadStatus::isQueryCanceled() const
+{
+    if (!thread_group)
+        return false;
+
+    if (local_data.query_is_canceled_predicate)
+        return local_data.query_is_canceled_predicate();
+    return false;
+}
+
+size_t ThreadStatus::getNextPlanStepIndex() const
+{
+    return local_data.plan_step_index->fetch_add(1);
+}
+
+size_t ThreadStatus::getNextPipelineProcessorIndex() const
+{
+    return local_data.pipeline_processor_index->fetch_add(1);
+}
+
+ThreadStatus::~ThreadStatus()
+{
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
-    assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
+    assert((!query_context_ptr && getQueryId().empty()) || (query_context_ptr && getQueryId() == query_context_ptr->getCurrentQueryId()));
 
+    /// detachGroup if it was attached
     if (deleter)
         deleter();
+
+    chassert(current_thread == this);
+
+    /// Flush untracked_memory **right before** switching the current_thread to avoid losing untracked_memory in deleter (detachFromGroup)
+    flushUntrackedMemory();
 
     /// Only change current_thread if it's currently being used by this ThreadStatus
     /// For example, PushingToViews chain creates and deletes ThreadStatus instances while running in the main query thread
     if (current_thread == this)
         current_thread = nullptr;
+    else
+        LOG_FATAL(log, "current_thread contains invalid address");
 }
 
 void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
-        RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
+        auto & counters = current_performance_counters ? *current_performance_counters : performance_counters;
+        RUsageCounters::updateProfileEvents(*last_rusage, counters);
         if (taskstats)
-            taskstats->updateCounters(performance_counters);
+            taskstats->updateCounters(counters);
     }
     catch (...)
     {
@@ -188,53 +302,18 @@ void ThreadStatus::updatePerformanceCounters()
     }
 }
 
-void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description) const
+void ThreadStatus::updatePerformanceCountersIfNeeded()
 {
-    for (auto permitted_state : permitted_states)
+    if (last_rusage->thread_id == 0)
+        return; // Performance counters are not initialized, so there is no need to update them
+
+    constexpr UInt64 performance_counters_update_period_microseconds = 10 * 1000; // 10 milliseconds
+    UInt64 total_elapsed_microseconds = stopwatch.elapsedMicroseconds();
+    if (last_performance_counters_update_time + performance_counters_update_period_microseconds < total_elapsed_microseconds)
     {
-        if (getCurrentState() == permitted_state)
-            return;
+        updatePerformanceCounters();
+        last_performance_counters_update_time = total_elapsed_microseconds;
     }
-
-    if (description)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}: {}", getCurrentState(), description);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected thread state {}", getCurrentState());
-}
-
-void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
-                                               LogsLevel client_logs_level)
-{
-    logs_queue_ptr = logs_queue;
-
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
-    thread_group->logs_queue_ptr = logs_queue;
-    thread_group->client_logs_level = client_logs_level;
-}
-
-void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
-{
-    profile_queue_ptr = profile_queue;
-
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
-    thread_group->profile_queue_ptr = profile_queue;
-}
-
-void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
-{
-    fatal_error_callback = std::move(callback);
-
-    if (!thread_group)
-        return;
-
-    std::lock_guard lock(thread_group->mutex);
-    thread_group->fatal_error_callback = fatal_error_callback;
 }
 
 void ThreadStatus::onFatalError()
@@ -244,17 +323,31 @@ void ThreadStatus::onFatalError()
 }
 
 ThreadStatus * MainThreadStatus::main_thread = nullptr;
+std::atomic_flag MainThreadStatus::is_initialized;
+
 MainThreadStatus & MainThreadStatus::getInstance()
 {
     static MainThreadStatus thread_status;
     return thread_status;
 }
+
 MainThreadStatus::MainThreadStatus()
 {
     main_thread = current_thread;
+    is_initialized.test_and_set(std::memory_order_relaxed);
 }
+
 MainThreadStatus::~MainThreadStatus()
 {
+    reset();
+    /// Stop gathering task stats. We do this to avoid issues due to static object destruction order
+    /// `MainThreadStatus thread_status` inside MainThreadStatus::getInstance might call detachFromGroup which calls taskstats->updateCounters
+    /// `thread_local auto metrics_provider` inside TasksStatsCounters::TasksStatsCounters holds the file descriptors open
+    /// If the `metrics_provider` static object is destroyed first then by the time when the destructor of `thread_status` is called
+    /// the file descriptors are closed, which will throw errors.
+    /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
+    /// implicit ~ThreadStatus is called here
+    getInstance().taskstats = nullptr;
     main_thread = nullptr;
 }
 

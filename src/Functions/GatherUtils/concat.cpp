@@ -1,8 +1,8 @@
 #ifndef __clang_analyzer__ // It's too hard to analyze.
 
-#include "GatherUtils.h"
-#include "Selectors.h"
-#include "Algorithms.h"
+#include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Selectors.h>
+#include <Functions/GatherUtils/Algorithms.h>
 
 namespace DB
 {
@@ -57,7 +57,7 @@ struct ArrayConcat : public ArraySourceSelector<ArrayConcat>
 ColumnArray::MutablePtr concat(const std::vector<std::unique_ptr<IArraySource>> & sources)
 {
     if (sources.empty())
-        throw Exception("Concat function should get at least 1 ArraySource", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Concat function should get at least 1 ArraySource");
 
     ColumnArray::MutablePtr res;
     ArrayConcat::select(*sources.front(), sources, res);

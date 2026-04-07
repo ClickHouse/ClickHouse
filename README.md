@@ -1,20 +1,82 @@
-[![ClickHouse — open source distributed column-oriented DBMS](https://github.com/ClickHouse/clickhouse-presentations/raw/master/images/logo-400x240.png)](https://clickhouse.com)
+<div align=center>
 
-ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.
+[![Website](https://img.shields.io/website?up_message=AVAILABLE&down_message=DOWN&url=https%3A%2F%2Fclickhouse.com&style=for-the-badge)](https://clickhouse.com)
+[![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blueviolet?style=for-the-badge)](https://www.apache.org/licenses/LICENSE-2.0)
+
+<picture align=center>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/ClickHouse/clickhouse-docs/assets/9611008/4ef9c104-2d3f-4646-b186-507358d2fe28">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/ClickHouse/clickhouse-docs/assets/9611008/b001dc7b-5a45-4dcd-9275-e03beb7f9177">
+    <img alt="The ClickHouse company logo." src="https://github.com/ClickHouse/clickhouse-docs/assets/9611008/b001dc7b-5a45-4dcd-9275-e03beb7f9177">
+</picture>
+
+<h4>ClickHouse® is an open-source column-oriented database management system that allows generating analytical data reports in real-time.</h4>
+
+</div>
+
+## How To Install (Linux, macOS, FreeBSD)
+
+```
+curl https://clickhouse.com/ | sh
+```
 
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
-* [ClickHouse Cloud](https://clickhouse.com/cloud) ClickHouse as a service, built by the creators and maintainers.
-* [Tutorial](https://clickhouse.com/docs/en/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
-* [Documentation](https://clickhouse.com/docs/en/) provides more in-depth information.
+* [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
+* [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
+* [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
-* [Slack](https://join.slack.com/t/clickhousedb/shared_invite/zt-rxm3rdrk-lIUmhLC3V8WTaL0TGxsOmg) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
+* [ClickHouse Theater](https://presentations.clickhouse.com/) contains presentations and videos about ClickHouse.
+* [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
-* [Code Browser (Woboq)](https://clickhouse.com/codebrowser/ClickHouse/index.html) with syntax highlight and navigation.
-* [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlight, powered by github.dev.
+* [Bluesky](https://bsky.app/profile/clickhouse.com) and [X](https://x.com/ClickHouseDB) for short news.
+* [Code Browser (github.dev)](https://github.dev/ClickHouse/ClickHouse) with syntax highlighting, powered by github.dev.
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
-## Upcoming events
-* [**v22.10 Release Webinar**](https://clickhouse.com/company/events/v22-10-release-webinar) Original creator, co-founder, and CTO of ClickHouse Alexey Milovidov will walk us through the highlights of the release, provide live demos, and share vision into what is coming in the roadmap.
-* [**Introducing ClickHouse Cloud**](https://clickhouse.com/company/events/cloud-beta) Introducing ClickHouse as a service, built by creators and maintainers of the fastest OLAP database on earth. Join Tanya Bragin for a detailed walkthrough of ClickHouse Cloud capabilities, as well as a peek behind the curtain to understand the unique architecture that makes our service tick. 
+## Monthly Release & Community Call
+
+Join us for the [ClickHouse **26.2** Release Call](https://clickhouse.com/company/events/v26-2-community-release-call) on February 26, 2026.
+
+Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
+
+## Upcoming Events
+
+Keep an eye out for upcoming meetups and events around the world.
+Somewhere else you want us to be?
+Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
+You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
+
+Upcoming meetups
+* [AI Demo Night SF](https://luma.com/jyzlu78v) - April 9th, 2026
+* [San Jose Meetup](https://luma.com/f3bdyaup) - April 16th, 2026
+* [Taipei Open Source Night](https://luma.com/kt3xtz3a) - April 16th, 2026
+
+Recent meetups
+* [Seattle Observability Meetup](https://luma.com/vph3jbkm) - March 26th, 2026
+* [Milan Meetup](https://www.meetup.com/clickhouse-italy-user-group/events/313586581/) - March 26th, 2026
+* [RSA Iceberg Meetup SF](https://luma.com/rsa-iceberg) - March 24th, 2026 
+* [NY Meetup](https://luma.com/c7tprb51) - March 19th, 2026
+* [Munich Meetup](https://www.meetup.com/clickhouse-meetup-munich/events/313487152/) - March 19th, 2026
+* [AI Builders Night San Jose](https://luma.com/xoq2dz0l) - March 16th, 2026
+* [Apache Iceberg™ Meetup Pittsburgh](https://luma.com/mqgwk79x) - March 12th, 2026
+* [SRE Days London Meetup](https://luma.com/sreday-2026-london-q1) - March 12, 2026
+* [San Francisco Meetup](https://luma.com/6rnu6wzs) - March 11th, 2026
+* [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/313294062) - March 10th, 2026
+* [Women+ in open source](https://luma.com/qcqlia4g) - March 9th, 2026 
+* [Tokyo Meetup - LibreChat Night](https://www.meetup.com/clickhouse-tokyo-user-group/events/313275265/) - March 9th, 2026
+* [LA Meetup](https://luma.com/wbkqmaqk) - March 6th, 2026
+
+
+
+
+## Recent Recordings
+
+* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. 
+
+## Interested in joining ClickHouse and making it your full-time job?
+
+ClickHouse is a nice DBMS, and it's a good place to work.
+
+Check out our **current openings** here: https://clickhouse.com/company/careers
+
+Email: careers@clickhouse.com!

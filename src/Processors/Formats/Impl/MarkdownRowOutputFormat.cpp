@@ -1,12 +1,14 @@
 #include <Processors/Formats/Impl/MarkdownRowOutputFormat.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatFactory.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
 
-MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), format_settings(format_settings_) {}
+MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_), format_settings(format_settings_) {}
 
 void MarkdownRowOutputFormat::writePrefix()
 {
@@ -52,19 +54,25 @@ void MarkdownRowOutputFormat::writeRowEndDelimiter()
 
 void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    serialization.serializeTextEscaped(column, row_num, out, format_settings);
+    serialization.serializeTextMarkdown(column, row_num, out, format_settings);
 }
 
 void registerOutputFormatMarkdown(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Markdown", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings & settings)
+    auto registerWithName = [&](const auto & name)
     {
-        return std::make_shared<MarkdownRowOutputFormat>(buf, sample, params, settings);
-    });
+        factory.registerOutputFormat(name, [](
+            WriteBuffer & buf,
+            const Block & sample,
+            const FormatSettings & settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
+        {
+            return std::make_shared<MarkdownRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
+        });
+    };
+
+    registerWithName("Markdown");
+    registerWithName("MD");
 
     factory.markOutputFormatSupportsParallelFormatting("Markdown");
     factory.registerFileExtension("md", "Markdown");

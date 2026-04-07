@@ -21,37 +21,47 @@
 
 namespace DB
 {
-NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
+ColumnsDescription StorageSystemRowPolicies::getColumnsDescription()
 {
-    NamesAndTypesList names_and_types{
-        {"name", std::make_shared<DataTypeString>()},
-        {"short_name", std::make_shared<DataTypeString>()},
-        {"database", std::make_shared<DataTypeString>()},
-        {"table", std::make_shared<DataTypeString>()},
-        {"id", std::make_shared<DataTypeUUID>()},
-        {"storage", std::make_shared<DataTypeString>()},
+    ColumnsDescription description
+    {
+        {"name", std::make_shared<DataTypeString>(), "Name of a row policy."},
+        {"short_name", std::make_shared<DataTypeString>(),
+            "Short name of a row policy. Names of row policies are compound, for example: myfilter ON mydb.mytable. "
+            "Here 'myfilter ON mydb.mytable' is the name of the row policy, 'myfilter' is it's short name."
+        },
+        {"database", std::make_shared<DataTypeString>(), "Database name."},
+        {"table", std::make_shared<DataTypeString>(), "Table name. Empty if policy for database."},
+        {"id", std::make_shared<DataTypeUUID>(), "Row policy ID."},
+        {"storage", std::make_shared<DataTypeString>(), "Name of the directory where the row policy is stored."},
     };
 
     for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
     {
-        const String & column_name = RowPolicyFilterTypeInfo::get(filter_type).name;
-        names_and_types.push_back({column_name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
+        const auto & filter_type_info = RowPolicyFilterTypeInfo::get(filter_type);
+        description.add({filter_type_info.name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), filter_type_info.description});
     }
 
-    NamesAndTypesList extra_names_and_types{
-        {"is_restrictive", std::make_shared<DataTypeUInt8>()},
-        {"apply_to_all", std::make_shared<DataTypeUInt8>()},
-        {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())}
-    };
+    description.add({"is_restrictive", std::make_shared<DataTypeUInt8>(),
+        "Shows whether the row policy restricts access to rows. Value: "
+        "• 0 — The row policy is defined with `AS PERMISSIVE` clause, "
+        "• 1 — The row policy is defined with AS RESTRICTIVE clause."
+    });
+    description.add({"apply_to_all", std::make_shared<DataTypeUInt8>(),
+        "Shows that the row policies set for all roles and/or users."
+    });
+    description.add({"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+        "List of the roles and/or users to which the row policies is applied."
+    });
+    description.add({"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+        "The row policies is applied to all roles and/or users excepting of the listed ones."
+    });
 
-    insertAtEnd(names_and_types, extra_names_and_types);
-
-    return names_and_types;
+    return description;
 }
 
 
-void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
@@ -150,10 +160,10 @@ void StorageSystemRowPolicies::backupData(
 }
 
 void StorageSystemRowPolicies::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer);
+    access_control.restoreFromBackup(restorer, data_path_in_backup);
 }
 
 }

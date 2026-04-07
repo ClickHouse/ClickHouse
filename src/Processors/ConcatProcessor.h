@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 
 
@@ -13,10 +14,10 @@ namespace DB
   * Doesn't do any heavy calculations.
   * Preserves an order of data.
   */
-class ConcatProcessor : public IProcessor
+class ConcatProcessor final : public IProcessor
 {
 public:
-    ConcatProcessor(const Block & header, size_t num_inputs);
+    ConcatProcessor(SharedHeader header, size_t num_inputs);
 
     String getName() const override { return "Concat"; }
 

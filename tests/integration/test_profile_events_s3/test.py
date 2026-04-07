@@ -3,6 +3,7 @@ import re
 
 import pytest
 import requests
+
 from helpers.cluster import ClickHouseCluster
 
 
@@ -20,6 +21,7 @@ def cluster():
                 "configs/ssl_conf.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,  # The test compares some S3 events. We disable the remote DB disk, so it doesn't affect the comparing events.
         )
 
         logging.info("Starting cluster...")
@@ -31,58 +33,8 @@ def cluster():
         cluster.shutdown()
 
 
-init_list = {
-    "ReadBufferFromS3Bytes": 0,
-    "ReadBufferFromS3Microseconds": 0,
-    "ReadBufferFromS3RequestsErrors": 0,
-    "WriteBufferFromS3Bytes": 0,
-    "S3ReadMicroseconds": 0,
-    "S3ReadRequestsCount": 0,
-    "S3ReadRequestsErrorsTotal": 0,
-    "S3ReadRequestsErrors503": 0,
-    "S3ReadRequestsRedirects": 0,
-    "S3WriteMicroseconds": 0,
-    "S3WriteRequestsCount": 0,
-    "S3WriteRequestsErrorsTotal": 0,
-    "S3WriteRequestsErrors503": 0,
-    "S3WriteRequestsRedirects": 0,
-    "DiskS3ReadMicroseconds": 0,
-    "DiskS3ReadRequestsCount": 0,
-    "DiskS3ReadRequestsErrorsTotal": 0,
-    "DiskS3ReadRequestsErrors503": 0,
-    "DiskS3ReadRequestsRedirects": 0,
-    "DiskS3WriteMicroseconds": 0,
-    "DiskS3WriteRequestsCount": 0,
-    "DiskS3WriteRequestsErrorsTotal": 0,
-    "DiskS3WriteRequestsErrors503": 0,
-    "DiskS3WriteRequestsRedirects": 0,
-    "S3DeleteObjects": 0,
-    "S3CopyObject": 0,
-    "S3ListObjects": 0,
-    "S3HeadObject": 0,
-    "S3CreateMultipartUpload": 0,
-    "S3UploadPartCopy": 0,
-    "S3UploadPart": 0,
-    "S3AbortMultipartUpload": 0,
-    "S3CompleteMultipartUpload": 0,
-    "S3PutObject": 0,
-    "S3GetObject": 0,
-    "DiskS3DeleteObjects": 0,
-    "DiskS3CopyObject": 0,
-    "DiskS3ListObjects": 0,
-    "DiskS3HeadObject": 0,
-    "DiskS3CreateMultipartUpload": 0,
-    "DiskS3UploadPartCopy": 0,
-    "DiskS3UploadPart": 0,
-    "DiskS3AbortMultipartUpload": 0,
-    "DiskS3CompleteMultipartUpload": 0,
-    "DiskS3PutObject": 0,
-    "DiskS3GetObject": 0,
-}
-
-
 def get_s3_events(instance):
-    result = init_list.copy()
+    result = dict()
     events = instance.query(
         "SELECT event, value FROM system.events WHERE event LIKE '%S3%'"
     ).split("\n")
@@ -127,7 +79,7 @@ def get_minio_stat(cluster):
 
 
 def get_query_stat(instance, hint):
-    result = init_list.copy()
+    result = dict()
     instance.query("SYSTEM FLUSH LOGS")
     events = instance.query(
         """
@@ -143,7 +95,10 @@ def get_query_stat(instance, hint):
         ev = event.split("\t")
         if len(ev) == 2:
             if "S3" in ev[0]:
-                result[ev[0]] += int(ev[1])
+                if ev[0] in result:
+                    result[ev[0]] += int(ev[1])
+                else:
+                    result[ev[0]] = int(ev[1])
     return result
 
 
@@ -164,12 +119,13 @@ def test_profile_events(cluster):
 
     instance.query("DROP TABLE IF EXISTS test_s3.test_s3")
     instance.query("DROP DATABASE IF EXISTS test_s3")
-    instance.query("CREATE DATABASE IF NOT EXISTS test_s3")
+    instance.query("CREATE DATABASE test_s3")
 
     metrics0 = get_s3_events(instance)
     minio0 = get_minio_stat(cluster)
 
     query1 = "CREATE TABLE test_s3.test_s3 (key UInt32, value UInt32) ENGINE=MergeTree PRIMARY KEY key ORDER BY key SETTINGS storage_policy = 's3'"
+    prev_stat1 = get_query_stat(instance, query1)
     instance.query(query1)
 
     size1 = get_minio_size(cluster)
@@ -186,12 +142,13 @@ def test_profile_events(cluster):
     )
     stat1 = get_query_stat(instance, query1)
     for metric in stat1:
-        assert stat1[metric] == metrics1[metric] - metrics0[metric]
+        assert stat1[metric] - prev_stat1.get(metric, 0) == metrics1.get(metric, 0) - metrics0.get(metric, 0)
     assert (
         metrics1["WriteBufferFromS3Bytes"] - metrics0["WriteBufferFromS3Bytes"] == size1
     )
 
     query2 = "INSERT INTO test_s3.test_s3 VALUES"
+    prev_stat2 = get_query_stat(instance, query2)
     instance.query(query2 + " (1,1)")
 
     size2 = get_minio_size(cluster)
@@ -210,7 +167,7 @@ def test_profile_events(cluster):
     stat2 = get_query_stat(instance, query2)
 
     for metric in stat2:
-        assert stat2[metric] == metrics2[metric] - metrics1[metric]
+        assert stat2[metric] - prev_stat2.get(metric, 0) == metrics2.get(metric, 0) - metrics1.get(metric, 0)
 
     assert (
         metrics2["WriteBufferFromS3Bytes"] - metrics1["WriteBufferFromS3Bytes"]
@@ -236,4 +193,7 @@ def test_profile_events(cluster):
     # With async reads profile events are not updated fully because reads are done in a separate thread.
     # for metric in stat3:
     #    print(metric)
-    #    assert stat3[metric] == metrics3[metric] - metrics2[metric]
+    #    assert stat3[metric] == metrics3.get(metric, 0) - metrics2.get(metric, 0)
+
+    instance.query("DROP TABLE IF EXISTS test_s3.test_s3 SYNC")
+    instance.query("DROP DATABASE IF EXISTS test_s3 SYNC")

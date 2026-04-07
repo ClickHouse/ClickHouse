@@ -1,14 +1,14 @@
-SELECT extractGroups('hello', ''); -- { serverError 36 }
-SELECT extractAllGroups('hello', ''); -- { serverError 36 }
+SELECT extractGroups('hello', ''); -- { serverError BAD_ARGUMENTS }
+SELECT extractAllGroups('hello', ''); -- { serverError BAD_ARGUMENTS }
 
-SELECT extractGroups('hello', ' '); -- { serverError 36 }
-SELECT extractAllGroups('hello', ' '); -- { serverError 36 }
+SELECT extractGroups('hello', ' '); -- { serverError BAD_ARGUMENTS }
+SELECT extractAllGroups('hello', ' '); -- { serverError BAD_ARGUMENTS }
 
-SELECT extractGroups('hello', '\0'); -- { serverError 36 }
-SELECT extractAllGroups('hello', '\0'); -- { serverError 36 }
+SELECT extractGroups('hello', '\0'); -- { serverError BAD_ARGUMENTS }
+SELECT extractAllGroups('hello', '\0'); -- { serverError BAD_ARGUMENTS }
 
-SELECT extractGroups('hello', 'world'); -- { serverError 36 }
-SELECT extractAllGroups('hello', 'world'); -- { serverError 36 }
+SELECT extractGroups('hello', 'world'); -- { serverError BAD_ARGUMENTS }
+SELECT extractAllGroups('hello', 'world'); -- { serverError BAD_ARGUMENTS }
 
-SELECT extractGroups('hello', 'hello|world'); -- { serverError 36 }
-SELECT extractAllGroups('hello', 'hello|world'); -- { serverError 36 }
+SELECT extractGroups('hello', 'hello|world'); -- { serverError BAD_ARGUMENTS }
+SELECT extractAllGroups('hello', 'hello|world'); -- { serverError BAD_ARGUMENTS }

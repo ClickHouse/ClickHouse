@@ -70,6 +70,22 @@ TEST(Identifier, IdentifierBasics)
     }
 }
 
+TEST(Identifier, IdentifierPushParts)
+{
+    {
+        Identifier identifier;
+
+        identifier.push_back("value1");
+        ASSERT_EQ(identifier.getFullName(), "value1");
+        identifier.push_back("value2");
+        ASSERT_EQ(identifier.getFullName(), "value1.value2");
+        identifier.push_back("value3");
+        ASSERT_EQ(identifier.getFullName(), "value1.value2.value3");
+        ASSERT_FALSE(identifier.isEmpty());
+    }
+}
+
+
 TEST(Identifier, IdentifierPopParts)
 {
     {

@@ -3,12 +3,14 @@ import re
 import time
 
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
+    main_configs=["configs/remote_servers.xml"],
     user_configs=[
         "configs/users.d/assign_myquota_to_default_user.xml",
         "configs/users.d/drop_default_quota.xml",
@@ -29,7 +31,7 @@ def system_quota_limits(canonical):
     canonical_tsv = TSV(canonical)
     r = TSV(
         instance.query(
-            "SELECT * FROM system.quota_limits ORDER BY quota_name, duration"
+            "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits ORDER BY quota_name, duration"
         )
     )
     print(("system_quota_limits: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
@@ -40,7 +42,7 @@ def system_quota_usage(canonical):
     canonical_tsv = TSV(canonical)
     query = (
         "SELECT quota_name, quota_key, duration, queries, max_queries, query_selects, max_query_selects, query_inserts, max_query_inserts, errors, max_errors, result_rows, max_result_rows,"
-        "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time "
+        "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time, max_failed_sequential_authentications "
         "FROM system.quota_usage ORDER BY duration"
     )
     r = TSV(instance.query(query))
@@ -52,7 +54,7 @@ def system_quotas_usage(canonical):
     canonical_tsv = TSV(canonical)
     query = (
         "SELECT quota_name, quota_key, is_current, duration, queries, max_queries, query_selects, max_query_selects, query_inserts, max_query_inserts, errors, max_errors, result_rows, max_result_rows, "
-        "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time "
+        "result_bytes, max_result_bytes, read_rows, max_read_rows, read_bytes, max_read_bytes, max_execution_time, max_failed_sequential_authentications "
         "FROM system.quotas_usage ORDER BY quota_name, quota_key, duration"
     )
     r = TSV(instance.query(query))
@@ -105,7 +107,7 @@ def test_quota_from_users_xml():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -127,6 +129,7 @@ def test_quota_from_users_xml():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -156,6 +159,7 @@ def test_quota_from_users_xml():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -181,6 +185,7 @@ def test_quota_from_users_xml():
                 0,
                 1000,
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -211,6 +216,7 @@ def test_quota_from_users_xml():
                 200,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -239,6 +245,7 @@ def test_quota_from_users_xml():
                 400,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -252,7 +259,7 @@ def test_simpliest_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[]",
                 0,
@@ -285,6 +292,7 @@ def test_simpliest_quota():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -295,6 +303,7 @@ def test_simpliest_quota():
             [
                 "myQuota",
                 "default",
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -326,7 +335,7 @@ def test_tracking_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -341,6 +350,7 @@ def test_tracking_quota():
                 "myQuota",
                 31556952,
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -375,6 +385,7 @@ def test_tracking_quota():
                 0,
                 "\\N",
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -405,6 +416,7 @@ def test_tracking_quota():
                 200,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -433,6 +445,7 @@ def test_tracking_quota():
                 400,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -446,7 +459,7 @@ def test_exceed_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -456,7 +469,7 @@ def test_exceed_quota():
         ]
     )
     system_quota_limits(
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N"]]
+        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]]
     )
     system_quota_usage(
         [
@@ -481,6 +494,7 @@ def test_exceed_quota():
                 0,
                 "\\N",
                 "\\N",
+                "1",
             ]
         ]
     )
@@ -512,6 +526,7 @@ def test_exceed_quota():
                 0,
                 "\\N",
                 "\\N",
+                "1",
             ]
         ]
     )
@@ -523,7 +538,7 @@ def test_exceed_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -548,6 +563,7 @@ def test_exceed_quota():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -572,6 +588,7 @@ def test_exceed_quota():
                 50,
                 1000,
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -602,6 +619,7 @@ def test_exceed_quota():
                 200,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -613,7 +631,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -635,6 +653,7 @@ def test_add_remove_interval():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -664,6 +683,7 @@ def test_add_remove_interval():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -675,7 +695,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952,63113904]",
                 0,
@@ -700,6 +720,7 @@ def test_add_remove_interval():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ],
             [
                 "myQuota",
@@ -714,6 +735,7 @@ def test_add_remove_interval():
                 "\\N",
                 20000,
                 120,
+                "\\N",
                 "\\N",
             ],
         ]
@@ -741,6 +763,7 @@ def test_add_remove_interval():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ],
             [
                 "myQuota",
@@ -763,6 +786,7 @@ def test_add_remove_interval():
                 0,
                 20000,
                 120,
+                "\\N",
             ],
         ]
     )
@@ -791,6 +815,7 @@ def test_add_remove_interval():
                 200,
                 "\\N",
                 "\\N",
+                "\\N",
             ],
             [
                 "myQuota",
@@ -813,6 +838,7 @@ def test_add_remove_interval():
                 200,
                 20000,
                 120,
+                "\\N",
             ],
         ]
     )
@@ -824,7 +850,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -849,6 +875,7 @@ def test_add_remove_interval():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -873,6 +900,7 @@ def test_add_remove_interval():
                 50,
                 1000,
                 200,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -903,6 +931,7 @@ def test_add_remove_interval():
                 400,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -914,7 +943,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[]",
                 0,
@@ -947,6 +976,7 @@ def test_add_remove_interval():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -957,6 +987,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "default",
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -986,7 +1017,7 @@ def test_add_remove_interval():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -1008,6 +1039,7 @@ def test_add_remove_interval():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -1037,6 +1069,7 @@ def test_add_remove_interval():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1048,7 +1081,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -1070,6 +1103,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -1100,6 +1134,7 @@ def test_add_remove_quota():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1111,7 +1146,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1121,7 +1156,7 @@ def test_add_remove_quota():
             [
                 "myQuota2",
                 "4590510c-4d13-bf21-ec8a-c2187b092e73",
-                "users.xml",
+                "users_xml",
                 "['client_key','user_name']",
                 "[3600,2629746]",
                 0,
@@ -1146,6 +1181,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ],
             [
                 "myQuota2",
@@ -1161,6 +1197,7 @@ def test_add_remove_quota():
                 400000,
                 60,
                 "\\N",
+                "3",
             ],
             [
                 "myQuota2",
@@ -1175,6 +1212,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 1800,
+                "\\N",
                 "\\N",
             ],
         ]
@@ -1203,6 +1241,7 @@ def test_add_remove_quota():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1214,7 +1253,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1239,6 +1278,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1264,6 +1304,7 @@ def test_add_remove_quota():
                 0,
                 1000,
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -1283,7 +1324,7 @@ def test_add_remove_quota():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1305,6 +1346,7 @@ def test_add_remove_quota():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -1335,6 +1377,7 @@ def test_add_remove_quota():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1346,7 +1389,7 @@ def test_reload_users_xml_by_timer():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 "[31556952]",
                 0,
@@ -1371,6 +1414,7 @@ def test_reload_users_xml_by_timer():
                 "\\N",
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1385,7 +1429,7 @@ def test_reload_users_xml_by_timer():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 ["user_name"],
                 "[31556952]",
                 0,
@@ -1396,8 +1440,8 @@ def test_reload_users_xml_by_timer():
     )
     assert_eq_with_retry(
         instance,
-        "SELECT * FROM system.quota_limits",
-        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N"]],
+        "SELECT quota_name, duration, is_randomized_interval, max_queries, max_query_selects, max_query_inserts, max_errors, max_result_rows, max_result_bytes, max_read_rows, max_read_bytes, max_execution_time, max_written_bytes, max_failed_sequential_authentications FROM system.quota_limits",
+        [["myQuota", 31556952, 0, 1, 1, 1, 1, 1, "\\N", 1, "\\N", "\\N", "\\N", "1"]],
     )
 
 
@@ -1412,13 +1456,13 @@ def test_dcl_introspection():
         == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, query_selects = 500, query_inserts = 500, read_rows = 1000 TO default\n"
     )
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t1000\\t0\\t\\\\N\\t.*\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t1000\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1433,8 +1477,8 @@ def test_dcl_introspection():
         == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000, FOR RANDOMIZED INTERVAL 2 year MAX result_bytes = 30000, read_bytes = 20000, execution_time = 120 TO default\n"
     )
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\n"
-        "myQuota\\tdefault\\t.*\\t63113904\\t0\\t\\\\N\t0\\t\\\\N\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t30000\\t0\\t\\\\N\\t0\\t20000\\t.*\\t120",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\n"
+        "myQuota\\tdefault\\t.*\\t63113904\\t0\\t\\\\N\t0\\t\\\\N\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t30000\\t0\\t\\\\N\\t0\\t20000\\t.*\\t120\\t0\\t\\\\N",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1447,15 +1491,15 @@ def test_dcl_introspection():
     )
     assert (
         instance.query("SHOW CREATE QUOTA myQuota2")
-        == "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, FOR INTERVAL 1 month MAX execution_time = 1800\n"
+        == "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, failed_sequential_authentications = 3, FOR INTERVAL 1 month MAX execution_time = 1800\n"
     )
     assert (
         instance.query("SHOW CREATE QUOTAS")
         == "CREATE QUOTA myQuota KEYED BY user_name FOR INTERVAL 1 year MAX queries = 1000, read_rows = 1000 TO default\n"
-        "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, FOR INTERVAL 1 month MAX execution_time = 1800\n"
+        "CREATE QUOTA myQuota2 KEYED BY client_key, user_name FOR RANDOMIZED INTERVAL 1 hour MAX result_rows = 4000, result_bytes = 400000, read_rows = 4000, read_bytes = 400000, execution_time = 60, failed_sequential_authentications = 3, FOR INTERVAL 1 month MAX execution_time = 1800\n"
     )
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\n",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t1000\\t200\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1478,13 +1522,14 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 5 quarter MAX queries = 123 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
+    # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t1\\t123\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1496,15 +1541,16 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t1\\t321\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t10\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
+    # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t2\\t321\\t2\\t\\\\N\\t0\\t\\\\N\\t0\\t10\\t100\\t\\\\N\\t400\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1512,13 +1558,14 @@ def test_dcl_management():
         "ALTER QUOTA qA FOR INTERVAL 15 MONTH NO LIMITS, FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY, FOR INTERVAL 1800 SECOND NO LIMITS"
     )
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
+    # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1527,14 +1574,16 @@ def test_dcl_management():
         instance.query("SHOW CREATE QUOTA qB")
         == "CREATE QUOTA qB FOR RANDOMIZED INTERVAL 16 month TRACKING ONLY TO default\n"
     )
+    # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t1\\t\\\\N\\t1\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t50\\t\\\\N\\t200\\t\\\\N\\t.*\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
+    # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t2\\t\\\\N\\t2\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t100\\t\\\\N\\t400\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1554,7 +1603,7 @@ def test_query_inserts():
             [
                 "myQuota",
                 "e651da9c-a748-8703-061a-7e5e5096dae7",
-                "users.xml",
+                "users_xml",
                 "['user_name']",
                 [31556952],
                 0,
@@ -1576,6 +1625,7 @@ def test_query_inserts():
                 "\\N",
                 "\\N",
                 1000,
+                "\\N",
                 "\\N",
                 "\\N",
                 "\\N",
@@ -1605,6 +1655,7 @@ def test_query_inserts():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1630,6 +1681,7 @@ def test_query_inserts():
                 0,
                 1000,
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -1663,6 +1715,7 @@ def test_query_inserts():
                 0,
                 "\\N",
                 "\\N",
+                "\\N",
             ]
         ]
     )
@@ -1689,6 +1742,7 @@ def test_query_inserts():
                 0,
                 1000,
                 0,
+                "\\N",
                 "\\N",
                 "\\N",
             ]
@@ -1727,7 +1781,7 @@ def test_consumption_of_show_clusters():
 def test_consumption_of_show_processlist():
     instance.query("SHOW PROCESSLIST")
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t0\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N.*",
         instance.query("SHOW QUOTA"),
     )
 

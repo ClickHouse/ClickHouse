@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
@@ -43,33 +44,23 @@ using ActionsChainSteps = std::vector<ActionsChainStepPtr>;
 class ActionsChainStep
 {
 public:
-    /// Available output columns strategy for actions chain step
-    enum class AvailableOutputColumnsStrategy
-    {
-        ALL_NODES,
-        OUTPUT_NODES
-    };
-
     /** Initialize actions step with actions dag.
       * Input column names initialized using actions dag nodes with INPUT type.
-      *
-      * If available output columns strategy is ALL_NODES, then available output columns initialized using actions dag nodes.
-      * If available output columns strategy is OUTPUT_NODES, then available output columns initialized using actions dag output nodes.
+      * If use_actions_nodes_as_output_columns = true output columns are initialized using actions dag nodes.
+      * If additional output columns are specified they are added to output columns.
       */
-    explicit ActionsChainStep(ActionsDAGPtr actions_, AvailableOutputColumnsStrategy available_output_columns_stategy_ = AvailableOutputColumnsStrategy::ALL_NODES);
-
-    explicit ActionsChainStep(ActionsDAGPtr actions_,
-        AvailableOutputColumnsStrategy available_output_columns_stategy_,
-        ColumnsWithTypeAndName additional_output_columns_);
+    explicit ActionsChainStep(ActionsAndProjectInputsFlagPtr actions_,
+        bool use_actions_nodes_as_output_columns = true,
+        ColumnsWithTypeAndName additional_output_columns_ = {});
 
     /// Get actions
-    ActionsDAGPtr & getActions()
+    ActionsAndProjectInputsFlagPtr & getActions()
     {
         return actions;
     }
 
     /// Get actions
-    const ActionsDAGPtr & getActions() const
+    const ActionsAndProjectInputsFlagPtr & getActions() const
     {
         return actions;
     }
@@ -108,9 +99,9 @@ public:
 private:
     void initialize();
 
-    ActionsDAGPtr actions;
+    ActionsAndProjectInputsFlagPtr actions;
 
-    AvailableOutputColumnsStrategy available_output_columns_strategy;
+    bool use_actions_nodes_as_output_columns = true;
 
     NameSet input_columns_names;
 

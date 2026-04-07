@@ -1,0 +1,2 @@
+SQLite database file path '/etc/passwd' must be inside 'user_files' directory. (PATH_ACCESS_DENIED)
+SQLite database file path '../../../../etc/passwd' must be inside 'user_files' directory. (PATH_ACCESS_DENIED)

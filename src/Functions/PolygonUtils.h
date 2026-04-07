@@ -1,27 +1,27 @@
 #pragma once
 
+#include <base/demangle.h>
 #include <base/types.h>
+#include <Common/Exception.h>
 #include <Core/Defines.h>
 #include <base/TypeLists.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <Common/SipHash.h>
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-parameter"
 #include <boost/geometry.hpp>
+#pragma clang diagnostic pop
 
-#pragma GCC diagnostic pop
-
+#include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
+#include <boost/geometry/index/rtree.hpp>
 
 #include <array>
 #include <vector>
@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace bgi = boost::geometry::index;
 
 template <typename Polygon>
 UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
@@ -126,7 +127,7 @@ public:
 
     bool hasEmptyBound() const { return has_empty_bound; }
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
+    inline bool contains(CoordinateType x, CoordinateType y) const
     {
         Point point(x, y);
 
@@ -145,12 +146,114 @@ private:
     Strategy strategy;
 };
 
+/// Optimized algorithm with R-tree of bounding boxes of polygons.
+template <typename PointInPolygonImpl>
+class PointInMultiPolygonRTree
+{
+public:
+    using Point = typename PointInPolygonImpl::Point;
+    using Polygon = typename PointInPolygonImpl::Polygon;
+    using Box = typename PointInPolygonImpl::Box;
+    using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
+    using CoordinateType = decltype(std::declval<Point>().x());
+
+    using PolyBox = std::pair<Box, std::size_t>;
+
+    /// Max children per R-tree node before splitting.
+    /// — Larger value -> shallower tree, fewer node visits per query, but each
+    ///   visit scans a longer list and node splits are more expensive.
+    /// ─ Smaller value -> deeper tree, more pointer hops per query, yet each hop
+    ///   touches fewer boxes and nodes fit cache lines better
+    /// ─ Default value is 16, which is a good compromise for most cases.
+    static constexpr std::size_t max_elements_per_rtree_node = 16;
+
+    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon_, UInt16 grid_size_ = 8)
+        : multi_polygon(multi_polygon_)
+    {
+        build(grid_size_);
+    }
+
+    /// O(log N + K) where K = polygons that contain the point.
+    bool contains(CoordinateType x, CoordinateType y) const
+    {
+        if (has_empty_bound || !isFinite(x) || !isFinite(y))
+            return false;
+
+        for (auto it = rtree.qbegin(bgi::contains(Point(x, y))); it != rtree.qend(); ++it)
+        {
+            if (polygon_impls[it->second].contains(x, y))
+                return true;
+        }
+
+        return false;
+    }
+
+    bool hasEmptyBound() const { return has_empty_bound; }
+
+    UInt64 getAllocatedBytes() const
+    {
+        UInt64 size = sizeof(*this) + polygon_impls.capacity() * sizeof(PointInPolygonImpl) + rtree.size() * sizeof(PolyBox);
+
+        for (const auto & impl : polygon_impls)
+            size += impl.getAllocatedBytes();
+
+        return size;
+    }
+
+private:
+    MultiPolygon multi_polygon;
+    std::vector<PointInPolygonImpl> polygon_impls;
+
+    /// Boost.Geometry split policy choices
+    ///   linear     — quick to build, queries slowest
+    ///   quadratic  — build cost medium, queries medium
+    ///   rstar      — build slowest, queries fastest
+    /// With the default block size, the quadratic split was the fastest in performance tests, so we use it.
+    using RTree = bgi::rtree<PolyBox, bgi::quadratic<max_elements_per_rtree_node>>;
+    RTree rtree;
+
+    /// Only becomes true if all polygons have empty bounding box.
+    bool has_empty_bound = false;
+
+    void build(UInt16 grid_size)
+    {
+        polygon_impls.reserve(multi_polygon.size());
+
+        std::vector<PolyBox> boxes; // bulk-build container
+        boxes.reserve(multi_polygon.size());
+
+        std::size_t idx = 0;
+        for (const auto & poly : multi_polygon)
+        {
+            polygon_impls.emplace_back(poly, grid_size);
+
+            if (!polygon_impls.back().hasEmptyBound())
+            {
+                Box box = boost::geometry::return_envelope<Box>(poly);
+                boxes.emplace_back(box, idx);
+            }
+
+            ++idx;
+        }
+
+        /// All polygons have empty bounding boxes; skip R-tree building
+        /// and mark the multipolygon as having an empty bound.
+        if (boxes.empty())
+        {
+            has_empty_bound = true;
+            return;
+        }
+
+        rtree = RTree(boxes.begin(), boxes.end());
+    }
+};
 
 /// Optimized algorithm with bounding box and grid.
-template <typename CoordinateType>
+template <typename TCoordinateType>
 class PointInPolygonWithGrid
 {
 public:
+    using CoordinateType = TCoordinateType;
     using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
     /// Counter-Clockwise ordering.
     using Polygon = boost::geometry::model::polygon<Point, false>;
@@ -169,10 +272,10 @@ public:
 
     UInt64 getAllocatedBytes() const;
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
+    bool contains(CoordinateType x, CoordinateType y) const;
 
 private:
-    enum class CellType
+    enum class CellType : uint8_t
     {
         inner,                                  /// The cell is completely inside polygon.
         outer,                                  /// The cell is completely outside of polygon.
@@ -201,7 +304,7 @@ private:
         }
 
         /// Inner part of the HalfPlane is the left side of initialized vector.
-        bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
+        bool contains(CoordinateType x, CoordinateType y) const { return a * x + b * y + c >= 0; }
     };
 
     struct Cell
@@ -235,7 +338,7 @@ private:
     void calcGridAttributes(Box & box);
 
     template <typename T>
-    T ALWAYS_INLINE getCellIndex(T row, T col) const { return row * grid_size + col; }
+    T getCellIndex(T row, T col) const { return row * grid_size + col; }
 
     /// Complex case. Will check intersection directly.
     inline void addComplexPolygonCell(size_t index, const Box & box);
@@ -300,7 +403,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
         && isFinite(x_shift)
         && isFinite(y_shift)
         && isFinite(grid_size)))
-        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Polygon is not valid: bounding box is unbounded");
 }
 
 template <typename CoordinateType>
@@ -318,13 +421,13 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 
     for (size_t row = 0; row < grid_size; ++row)
     {
-        CoordinateType y_min = min_corner.y() + row * cell_height;
-        CoordinateType y_max = min_corner.y() + (row + 1) * cell_height;
+        CoordinateType y_min = min_corner.y() + static_cast<CoordinateType>(row) * cell_height;
+        CoordinateType y_max = min_corner.y() + static_cast<CoordinateType>(row + 1) * cell_height;
 
         for (size_t col = 0; col < grid_size; ++col)
         {
-            CoordinateType x_min = min_corner.x() + col * cell_width;
-            CoordinateType x_max = min_corner.x() + (col + 1) * cell_width;
+            CoordinateType x_min = min_corner.x() + static_cast<CoordinateType>(col) * cell_width;
+            CoordinateType x_max = min_corner.x() + static_cast<CoordinateType>(col + 1) * cell_width;
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
             MultiPolygon intersection;
@@ -383,8 +486,6 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
     }
-
-    UNREACHABLE();
 }
 
 
@@ -556,7 +657,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     auto size = x.size();
 
     if (impl.hasEmptyBound())
-        return ColumnVector<UInt8>::create(size, 0);
+        return ColumnVector<UInt8>::create(size, static_cast<UInt8>(0));
 
     auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
@@ -564,8 +665,9 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     const auto & x_data = x.getData();
     const auto & y_data = y.getData();
 
+    using CoordinateType = typename std::decay_t<PointInPolygonImpl>::CoordinateType;
     for (auto i : collections::range(0, size))
-        data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
+        data[i] = static_cast<UInt8>(impl.contains(static_cast<CoordinateType>(x_data[i]), static_cast<CoordinateType>(y_data[i])));
 
     return result;
 }
@@ -580,17 +682,17 @@ struct CallPointInPolygon<Type, Types ...>
     static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl && impl)
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
-            return pointInPolygon(x, *column, impl);
-        return CallPointInPolygon<Types ...>::template call<T>(x, y, impl);
+            return pointInPolygon(x, *column, std::forward<PointInPolygonImpl>(impl));
+        return CallPointInPolygon<Types ...>::call(x, y, std::forward<PointInPolygonImpl>(impl));
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
+        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
-            return Impl::template call<Type>(*column, y, impl);
-        return CallPointInPolygon<Types ...>::call(x, y, impl);
+            return Impl::call(*column, y, std::forward<PointInPolygonImpl>(impl));
+        return CallPointInPolygon<Types ...>::call(x, y, std::forward<PointInPolygonImpl>(impl));
     }
 };
 
@@ -600,46 +702,20 @@ struct CallPointInPolygon<>
     template <typename T, typename PointInPolygonImpl>
     static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(y).name()));
     }
 
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown numeric column type: {}", demangle(typeid(x).name()));
     }
 };
 
 template <typename PointInPolygonImpl>
 NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
+    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
     return Impl::call(x, y, impl);
 }
-
-
-template <typename Polygon>
-UInt128 sipHash128(Polygon && polygon)
-{
-    SipHash hash;
-
-    auto hash_ring = [&hash](const auto & ring)
-    {
-        UInt32 size = static_cast<UInt32>(ring.size());
-        hash.update(size);
-        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
-    };
-
-    hash_ring(polygon.outer());
-
-    const auto & inners = polygon.inners();
-    hash.update(inners.size());
-    for (auto & inner : inners)
-        hash_ring(inner);
-
-    UInt128 res;
-    hash.get128(res);
-    return res;
-}
-
 }

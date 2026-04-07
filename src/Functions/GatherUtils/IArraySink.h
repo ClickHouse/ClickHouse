@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ArraySinkVisitor.h"
+#include <Functions/GatherUtils/ArraySinkVisitor.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -20,16 +20,13 @@ struct IArraySink
 
     virtual void accept(ArraySinkVisitor &)
     {
-        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Accept not implemented for {}", demangle(typeid(*this).name()));
     }
 };
 
-#pragma GCC visibility push(hidden)
-
 template <typename Derived>
-class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};
+class ArraySinkImpl : public Visitable<Derived, IArraySink, ArraySinkVisitor> {};  /// NOLINT(bugprone-crtp-constructor-accessibility)
 
-#pragma GCC visibility pop
 }
 
 }

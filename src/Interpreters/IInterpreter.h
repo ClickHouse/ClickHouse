@@ -39,7 +39,7 @@ public:
     virtual bool supportsTransactions() const { return false; }
 
     /// Helper function for some Interpreters.
-    static void checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context);
+    static void checkStorageSupportsTransactionsIfNeeded(const StoragePtr & storage, ContextPtr context, bool is_readonly_query = false);
 
     virtual ~IInterpreter() = default;
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Core/UUID.h>
@@ -13,12 +14,24 @@ namespace DB
   */
 class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 {
+    struct ASTQueryWithTableAndOutputFlags
+    {
+        using ParentFlags = ASTQueryWithOutput::ASTQueryWithOutputFlags;
+        static constexpr UInt32 RESERVED_BITS = ParentFlags::RESERVED_BITS + 1;
+
+        UInt32 _parent_reserved : ParentFlags::RESERVED_BITS;
+        UInt32 is_temporary : 1;
+    };
 public:
     ASTPtr database;
     ASTPtr table;
-
     UUID uuid = UUIDHelpers::Nil;
-    bool temporary{false};
+
+    /// Note that flags are initialized to zero (false) by default
+    ASTQueryWithTableAndOutput() = default;
+
+    bool isTemporary() const { return flags<ASTQueryWithTableAndOutputFlags>().is_temporary; }
+    void setIsTemporary(bool value) { flags<ASTQueryWithTableAndOutputFlags>().is_temporary = value; }
 
     String getDatabase() const;
     String getTable() const;
@@ -28,9 +41,6 @@ public:
     void setTable(const String & name);
 
     void cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const;
-
-protected:
-    void formatHelper(const FormatSettings & settings, const char * name) const;
 };
 
 
@@ -42,17 +52,30 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
+        auto res = make_intrusive<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);
         return res;
     }
 
+    QueryKind getQueryKind() const override { return QueryKind::Show; }
+
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        formatHelper(settings, temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query);
+        ostr
+            << (isTemporary() ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
+            << " ";
+
+        if (database)
+        {
+            database->format(ostr, settings, state, frame);
+            ostr << '.';
+        }
+
+        chassert(table != nullptr, "Table is empty for the ASTQueryWithTableAndOutputImpl.");
+        table->format(ostr, settings, state, frame);
     }
 };
 

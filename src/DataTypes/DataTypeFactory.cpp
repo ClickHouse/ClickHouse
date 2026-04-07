@@ -1,33 +1,119 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool log_queries;
+}
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
-    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
+/// Helper to create Enum data type from ASTEnumDataType values
+static DataTypePtr createEnumFromValues(const String & type_name, const std::vector<std::pair<String, Int64>> & values)
+{
+    String type_name_upper = Poco::toUpper(type_name);
+    bool use_enum16 = (type_name_upper == "ENUM16");
+
+    if (!use_enum16 && type_name_upper == "ENUM")
+    {
+        /// Auto-detect Enum8 vs Enum16 based on values
+        for (const auto & [_, value] : values)
+        {
+            if (value < std::numeric_limits<Int8>::min() || value > std::numeric_limits<Int8>::max())
+            {
+                use_enum16 = true;
+                break;
+            }
+        }
+    }
+
+    if (use_enum16)
+    {
+        DataTypeEnum16::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int16>(value));
+        return std::make_shared<DataTypeEnum16>(enum_values);
+    }
+    else
+    {
+        DataTypeEnum8::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int8>(value));
+        return std::make_shared<DataTypeEnum8>(enum_values);
+    }
+}
+
+/// Helper to create Tuple data type from ASTTupleDataType
+static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
+{
+    const auto arguments = tuple_ast->getArguments();
+    if (!arguments || arguments->children.empty())
+        return std::make_shared<DataTypeTuple>(DataTypes{});
+
+    DataTypes nested_types;
+    nested_types.reserve(arguments->children.size());
+
+    for (const auto & child : arguments->children)
+        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+
+    /// If element_names is empty, it's an unnamed tuple
+    if (tuple_ast->element_names.empty())
+        return std::make_shared<DataTypeTuple>(nested_types);
+
+    /// Named tuple - validate all elements have names (no mixed named/unnamed)
+    for (const auto & elem_name : tuple_ast->element_names)
+    {
+        if (elem_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
+    }
+
+    if (tuple_ast->element_names.size() != nested_types.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
+
+    return std::make_shared<DataTypeTuple>(nested_types, tuple_ast->element_names);
+}
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
+{
+    return getImpl<false>(full_name);
+}
+
+DataTypePtr DataTypeFactory::tryGet(const String & full_name) const
+{
+    return getImpl<true>(full_name);
+}
+
+template <bool nullptr_on_error>
+DataTypePtr DataTypeFactory::getImpl(const String & full_name) const
 {
     /// Data type parser can be invoked from coroutines with small stack.
     /// Value 315 is known to cause stack overflow in some test configurations (debug build, sanitizers)
@@ -41,55 +127,110 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
 #endif
 
     ParserDataType parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0, data_type_max_parse_depth);
-    return get(ast);
+    ASTPtr ast;
+    if constexpr (nullptr_on_error)
+    {
+        String out_err;
+        const char * start = full_name.data();
+        ast = tryParseQuery(parser, start, start + full_name.size(), out_err, false, "data type", false,
+            DBMS_DEFAULT_MAX_QUERY_SIZE, data_type_max_parse_depth, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
+        if (!ast)
+            return nullptr;
+    }
+    else
+    {
+        ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", false, data_type_max_parse_depth, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    }
+
+    return getImpl<nullptr_on_error>(ast);
 }
 
 DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 {
-    if (const auto * func = ast->as<ASTFunction>())
+    return getImpl<false>(ast);
+}
+
+DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
+{
+    return getImpl<true>(ast);
+}
+
+template <bool nullptr_on_error>
+DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
+{
+    /// Handle specialized ASTEnumDataType directly
+    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+        return createEnumFromValues(enum_type->name, enum_type->values);
+
+    /// Handle specialized ASTTupleDataType directly
+    if (const auto * tuple_type = ast->as<ASTTupleDataType>())
+        return createTupleFromAST(tuple_type);
+
+    if (const auto * type = ast->as<ASTDataType>())
     {
-        if (func->parameters)
-            throw Exception("Data type cannot have multiple parenthesized parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
-        return get(func->name, func->arguments);
+        return getImpl<nullptr_on_error>(type->name, type->getArguments());
     }
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
-        return get(ident->name(), {});
+        return getImpl<nullptr_on_error>(ident->name(), {});
     }
 
     if (const auto * lit = ast->as<ASTLiteral>())
     {
         if (lit->value.isNull())
-            return get("Null", {});
+            return getImpl<nullptr_on_error>("Null", {});
     }
 
-    throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+    if constexpr (nullptr_on_error)
+        return nullptr;
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for data type: {}.", ast->getID());
 }
 
 DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
+    return getImpl<false>(family_name_param, parameters);
+}
+
+DataTypePtr DataTypeFactory::tryGet(const String & family_name_param, const ASTPtr & parameters) const
+{
+    return getImpl<true>(family_name_param, parameters);
+}
+
+template <bool nullptr_on_error>
+DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const ASTPtr & parameters) const
+{
     String family_name = getAliasToOrName(family_name_param);
 
-    if (endsWith(family_name, "WithDictionary"))
+    const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
+    DataTypePtr data_type;
+    if constexpr (nullptr_on_error)
     {
-        ASTPtr low_cardinality_params = std::make_shared<ASTExpressionList>();
-        String param_name = family_name.substr(0, family_name.size() - strlen("WithDictionary"));
-        if (parameters)
-        {
-            auto func = std::make_shared<ASTFunction>();
-            func->name = param_name;
-            func->arguments = parameters;
-            low_cardinality_params->children.push_back(func);
-        }
-        else
-            low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
+        if (!creator)
+            return nullptr;
 
-        return get("LowCardinality", low_cardinality_params);
+        try
+        {
+            data_type = (*creator)(parameters);
+        }
+        catch (...) // Ok: tryGetDataType is a try-pattern
+        {
+            return nullptr;
+        }
+    }
+    else
+    {
+        assert(creator);
+        data_type = (*creator)(parameters);
     }
 
-    return findCreatorByName(family_name)(parameters);
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+    {
+        query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());
+    }
+
+    return data_type;
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
@@ -102,44 +243,47 @@ DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) cons
     return type;
 }
 
+DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomDescPtr customization) const
+{
+    auto type = get(base_name);
+    type->setCustomization(std::move(customization));
+    return type;
+}
 
-void DataTypeFactory::registerDataType(const String & family_name, Value creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataType(const String & family_name, Value creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
-            " a null constructor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family {} has been provided  a null constructor", family_name);
 
     String family_name_lowercase = Poco::toLower(family_name);
 
     if (isAlias(family_name) || isAlias(family_name_lowercase))
-        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is already registered as alias", family_name);
 
     if (!data_types.emplace(family_name, creator).second)
-        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type family name '{}' is not unique",
+            family_name);
 
-    if (case_sensitiveness == CaseInsensitive
+    if (case_sensitiveness == Case::Insensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
-        throw Exception("DataTypeFactory: the case insensitive data type family name '" + family_name + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the case insensitive data type family name '{}' is not unique", family_name);
 }
 
-void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, Case case_sensitiveness)
 {
     if (creator == nullptr)
-        throw Exception("DataTypeFactory: the data type " + name + " has been provided "
-            " a null constructor", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "DataTypeFactory: the data type {} has been provided  a null constructor",
+            name);
 
     registerDataType(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
-            throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, Case case_sensitiveness)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
@@ -150,27 +294,24 @@ void DataTypeFactory::registerDataTypeCustom(const String & family_name, Creator
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCreatorWithCustom creator, Case case_sensitiveness)
 {
-    registerDataTypeCustom(name, [creator](const ASTPtr & /*ast*/)
+    registerDataTypeCustom(name, [name, creator](const ASTPtr & ast)
     {
+        if (ast)
+            throw Exception(ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS, "Data type {} cannot have arguments", name);
         return creator();
     }, case_sensitiveness);
 }
 
-const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
+template <bool nullptr_on_error>
+const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String & family_name) const
 {
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
-
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef().log_queries)
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
-            return it->second;
+            return &it->second;
         }
     }
 
@@ -180,17 +321,17 @@ const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef().log_queries)
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
-            return it->second;
+            return &it->second;
         }
     }
 
+    if constexpr (nullptr_on_error)
+        return nullptr;
+
     auto hints = this->getHints(family_name);
     if (!hints.empty())
-        throw Exception("Unknown data type family: " + family_name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
-    else
-        throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}. Maybe you meant: {}", family_name, toString(hints));
+    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unknown data type family: {}", family_name);
 }
 
 DataTypeFactory::DataTypeFactory()
@@ -200,24 +341,28 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDate(*this);
     registerDataTypeDate32(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
+    registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
+    registerDataTypeIPv4andIPv6(*this);
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
-    registerDataTypeDomainIPv4AndIPv6(*this);
     registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObject(*this);
+    registerDataTypeVariant(*this);
+    registerDataTypeDynamic(*this);
+    registerDataTypeJSON(*this);
 }
 
 DataTypeFactory & DataTypeFactory::instance()

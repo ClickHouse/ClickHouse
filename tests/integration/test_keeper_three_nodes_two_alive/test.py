@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-import pytest
-from helpers.cluster import ClickHouseCluster
-import helpers.keeper_utils as keeper_utils
-import random
-import string
-import os
 import time
 from multiprocessing.dummy import Pool
-from helpers.test_tools import assert_eq_with_retry
-from kazoo.client import KazooClient, KazooState
+
+import pytest
+
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -29,11 +26,7 @@ node3 = cluster.add_instance(
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 @pytest.fixture(scope="module")
@@ -54,11 +47,16 @@ def start(node):
 
 def delete_with_retry(node_name, path):
     for _ in range(30):
+        zk = None
         try:
-            get_fake_zk(node_name).delete(path)
+            zk = get_fake_zk(node_name)
+            zk.delete(path)
             return
         except:
             time.sleep(0.5)
+        finally:
+            zk.stop()
+            zk.close()
     raise Exception(f"Cannot delete {path} from node {node_name}")
 
 
@@ -89,9 +87,14 @@ def test_start_offline(started_cluster):
         p.map(start, [node1, node2, node3])
         delete_with_retry("node1", "/test_alive")
 
+        node1_zk.stop()
+        node1_zk.close()
+
 
 def test_start_non_existing(started_cluster):
     p = Pool(3)
+    node2_zk = None
+
     try:
         node1.stop_clickhouse()
         node2.stop_clickhouse()
@@ -134,15 +137,23 @@ def test_start_non_existing(started_cluster):
         p.map(start, [node1, node2, node3])
         delete_with_retry("node2", "/test_non_exising")
 
+        if node2_zk:
+            node2_zk.stop()
+            node2_zk.close()
+
 
 def test_restart_third_node(started_cluster):
-    node1_zk = get_fake_zk("node1")
-    node1_zk.create("/test_restart", b"aaaa")
+    try:
+        node1_zk = get_fake_zk("node1")
+        node1_zk.create("/test_restart", b"aaaa")
 
-    node3.restart_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node3)
+        node3.restart_clickhouse()
+        keeper_utils.wait_until_connected(cluster, node3)
 
-    assert node3.contains_in_log(
-        "Connected to ZooKeeper (or Keeper) before internal Keeper start"
-    )
-    node1_zk.delete("/test_restart")
+        assert node3.contains_in_log(
+            "Connected to ZooKeeper (or Keeper) before internal Keeper start"
+        )
+        node1_zk.delete("/test_restart")
+    finally:
+        node1_zk.stop()
+        node1_zk.close()

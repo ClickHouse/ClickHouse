@@ -1,12 +1,9 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <atomic>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
-
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -29,10 +26,10 @@ private:
 
     DiskLocal * disk;
     size_t check_period_ms;
-    Poco::Logger * log;
+    LoggerPtr log;
     std::atomic<bool> need_stop{false};
 
-    BackgroundSchedulePool::TaskHolder task;
+    BackgroundSchedulePoolTaskHolder task;
     size_t retry{};
 };
 

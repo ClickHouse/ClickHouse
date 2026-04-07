@@ -1,10 +1,5 @@
--- Tags: no-parallel
 
-DROP DATABASE IF EXISTS dictdb;
-
-CREATE DATABASE dictdb;
-
-CREATE TABLE dictdb.table_for_dict
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.table_for_dict
 (
   key_column UInt64,
   value Float64
@@ -12,33 +7,32 @@ CREATE TABLE dictdb.table_for_dict
 ENGINE = MergeTree()
 ORDER BY key_column;
 
-INSERT INTO dictdb.table_for_dict VALUES (1, 1.1);
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.table_for_dict VALUES (1, 1.1);
 
-CREATE DICTIONARY IF NOT EXISTS dictdb.dict_exists
+CREATE DICTIONARY IF NOT EXISTS {CLICKHOUSE_DATABASE:Identifier}.dict_exists
 (
   key_column UInt64,
   value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'dictdb'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB currentDatabase()))
 LIFETIME(1)
 LAYOUT(FLAT());
 
-SELECT dictGetFloat64('dictdb.dict_exists', 'value', toUInt64(1));
+SELECT dictGetFloat64({CLICKHOUSE_DATABASE:String} || '.dict_exists', 'value', toUInt64(1));
 
 
-CREATE DICTIONARY IF NOT EXISTS dictdb.dict_exists
+CREATE DICTIONARY IF NOT EXISTS {CLICKHOUSE_DATABASE:Identifier}.dict_exists
 (
   key_column UInt64,
   value Float64 DEFAULT 77.77
 )
 PRIMARY KEY key_column
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB 'dictdb'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table_for_dict' DB currentDatabase()))
 LIFETIME(1)
 LAYOUT(FLAT());
 
-SELECT dictGetFloat64('dictdb.dict_exists', 'value', toUInt64(1));
+SELECT dictGetFloat64({CLICKHOUSE_DATABASE:String} || '.dict_exists', 'value', toUInt64(1));
 
-DROP DICTIONARY dictdb.dict_exists;
-DROP TABLE dictdb.table_for_dict;
-DROP DATABASE dictdb;
+DROP DICTIONARY {CLICKHOUSE_DATABASE:Identifier}.dict_exists;
+DROP TABLE {CLICKHOUSE_DATABASE:Identifier}.table_for_dict;

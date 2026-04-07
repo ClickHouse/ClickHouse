@@ -1,0 +1,4 @@
+BACKUP_CREATED
+CREATE TABLE default.test\n(\n    `test` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+RESTORED
+CREATE TABLE default.test\n(\n    `test` String\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192

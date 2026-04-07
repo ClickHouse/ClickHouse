@@ -1,21 +1,38 @@
 #pragma once
 #include <Core/Types.h>
-#include <Common/hex.h>
+#include <fmt/format.h>
 
 namespace DB
 {
 
 struct FileCacheKey
 {
-    UInt128 key;
+    using KeyHash = UInt128;
+    KeyHash key;
 
-    String toString() const { return getHexUIntLowercase(key); }
+    std::string toString() const;
 
     FileCacheKey() = default;
 
-    explicit FileCacheKey(const UInt128 & key_) : key(key_) { }
+    static FileCacheKey random();
+    static FileCacheKey fromPath(const std::string & path);
+    static FileCacheKey fromKey(const UInt128 & key);
+    static FileCacheKey fromKeyString(const std::string & key_str);
 
     bool operator==(const FileCacheKey & other) const { return key == other.key; }
+    bool operator<(const FileCacheKey & other) const { return key < other.key; }
+
+private:
+    explicit FileCacheKey(const UInt128 & key_);
+};
+
+using FileCacheKeyAndOffset = std::pair<FileCacheKey, size_t>;
+struct FileCacheKeyAndOffsetHash
+{
+    std::size_t operator()(const FileCacheKeyAndOffset & key) const
+    {
+        return std::hash<UInt128>()(key.first.key) ^ std::hash<UInt64>()(key.second);
+    }
 };
 
 }
@@ -29,3 +46,13 @@ struct hash<DB::FileCacheKey>
 };
 
 }
+
+template <>
+struct fmt::formatter<DB::FileCacheKey> : fmt::formatter<std::string>
+{
+    template <typename FormatCtx>
+    auto format(const DB::FileCacheKey & key, FormatCtx & ctx) const
+    {
+        return fmt::formatter<std::string>::format(key.toString(), ctx);
+    }
+};

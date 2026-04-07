@@ -1,16 +1,30 @@
-#include "MySQLDumpRowInputFormat.h"
+#include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+
+#include <Common/assert_cast.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
+#include <Parsers/MySQL/ASTDeclareColumn.h>
+#include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Storages/IStorage.h>
+
 #include <boost/algorithm/string.hpp>
 #include <base/find_symbols.h>
+
 
 namespace DB
 {
@@ -19,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
+    extern const int UNKNOWN_TYPE;
 }
 
 namespace
@@ -31,13 +46,13 @@ namespace
     };
 }
 
-MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , table_name(format_settings_.mysql_dump.table_name)
-    , types(header_.getDataTypes())
-    , column_indexes_by_names(header_.getNamesToIndexesMap())
+    , types(header_->getDataTypes())
     , format_settings(format_settings_)
 {
+    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
 }
 
 
@@ -160,6 +175,80 @@ static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String
     }
 }
 
+static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
+{
+    NamesAndTypesList columns_name_and_type;
+    for (const auto & declare_column_ast : columns_definition->children)
+    {
+        const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
+
+        if (!declare_column || !declare_column->data_type)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Missing type in definition of column.");
+
+        bool is_nullable = true;
+        bool is_unsigned = false;
+        if (declare_column->column_options)
+        {
+            if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
+            {
+                if (options->changes.contains("is_null"))
+                    is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
+
+                if (options->changes.contains("is_unsigned"))
+                    is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
+            }
+        }
+
+        ASTPtr data_type = declare_column->data_type;
+        auto * data_type_node = data_type->as<ASTDataType>();
+
+        if (data_type_node)
+        {
+            String type_name_upper = Poco::toUpper(data_type_node->name);
+
+            if (is_unsigned)
+            {
+                /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
+                if (type_name_upper.contains("INT") && !endsWith(type_name_upper, "SIGNED")
+                    && !endsWith(type_name_upper, "UNSIGNED"))
+                    data_type_node->name = type_name_upper + " UNSIGNED";
+            }
+
+            if (type_name_upper == "SET")
+                data_type_node->resetArguments();
+
+            /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
+            /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
+            /// Elements on a position further than 32767 are assigned negative values, starting with -32768.
+            /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
+            if (type_name_upper.contains("ENUM"))
+            {
+                UInt16 i = 0;
+                for (ASTPtr & child : data_type_node->getArguments()->children)
+                {
+                    auto new_child = make_intrusive<ASTFunction>();
+                    new_child->name = "equals";
+                    auto * literal = child->as<ASTLiteral>();
+
+                    new_child->arguments = make_intrusive<ASTExpressionList>();
+                    new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(literal->value.safeGet<String>()));
+                    new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(Int16(++i)));
+                    child = new_child;
+                }
+            }
+
+            if (type_name_upper == "DATE")
+                data_type_node->name = "Date32";
+        }
+        if (is_nullable)
+            data_type = makeASTDataType("Nullable", data_type);
+
+        columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get(data_type));
+    }
+
+    return columns_name_and_type;
+}
+
 void readUnquotedColumnName(String & name, ReadBuffer & in)
 {
     name.clear();
@@ -273,7 +362,8 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     String error;
     const char * start = create_query_str.data();
     const char * end = create_query_str.data() + create_query_str.size();
-    ASTPtr query = tryParseQuery(parser, start, end, error, false, "MySQL create query", false, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ASTPtr query = tryParseQuery(parser, start, end, error, false, "MySQL create query", false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, true);
     if (!query)
         return false;
 
@@ -285,7 +375,7 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_defines)
         return false;
 
-    structure = MySQLInterpreter::getColumnsList(create_defines->columns);
+    structure = getColumnsList(create_defines->columns);
     return true;
 }
 
@@ -303,15 +393,8 @@ static void skipFieldDelimiter(ReadBuffer & in)
     skipWhitespaceIfAny(in);
 }
 
-static void skipEndOfRow(ReadBuffer & in, String & table_name)
+static void skipEndOfInsertQueryIfNeeded(ReadBuffer & in, String & table_name)
 {
-    skipWhitespaceIfAny(in);
-    assertChar(')', in);
-
-    skipWhitespaceIfAny(in);
-    if (!in.eof() && *in.position() == ',')
-        ++in.position();
-
     skipWhitespaceIfAny(in);
     if (!in.eof() && *in.position() == ';')
     {
@@ -321,6 +404,18 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
         if (skipToInsertQuery(table_name, in))
             skipToDataInInsertQuery(in);
     }
+}
+
+static void skipEndOfRow(ReadBuffer & in, String & table_name)
+{
+    skipWhitespaceIfAny(in);
+    assertChar(')', in);
+
+    skipWhitespaceIfAny(in);
+    if (!in.eof() && *in.position() == ',')
+        ++in.position();
+
+    skipEndOfInsertQueryIfNeeded(in, table_name);
 }
 
 static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
@@ -337,7 +432,8 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     }
 
     if (!insert_query_present)
-        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file", table_name.empty() ? "" : " for table " + table_name);
+        throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There is no INSERT queries{} in MySQL dump file",
+                        table_name.empty() ? "" : " for table " + table_name);
 
     skipToDataInInsertQuery(in, column_names.empty() ? &column_names : nullptr);
 }
@@ -384,12 +480,25 @@ bool MySQLDumpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension
     return true;
 }
 
+size_t MySQLDumpRowInputFormat::countRows(size_t max_block_size)
+{
+    size_t num_rows = 0;
+    while (!in->eof() && num_rows < max_block_size)
+    {
+        ValuesBlockInputFormat::skipToNextRow(in, 1, 0);
+        skipEndOfInsertQueryIfNeeded(*in, table_name);
+        ++num_rows;
+    }
+
+    return num_rows;
+}
+
 bool MySQLDumpRowInputFormat::readField(IColumn & column, size_t column_idx)
 {
     const auto & type = types[column_idx];
     const auto & serialization = serializations[column_idx];
-    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
-        return SerializationNullable::deserializeTextQuotedImpl(column, *in, format_settings, serialization);
+    if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+        return SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *in, format_settings, serialization);
 
     serialization->deserializeTextQuoted(column, *in, format_settings);
     return true;
@@ -421,7 +530,7 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     return IRowSchemaReader::readSchema();
 }
 
-DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
+std::optional<DataTypes> MySQLDumpSchemaReader::readRowAndGetDataTypes()
 {
     if (in.eof())
         return {};
@@ -435,11 +544,16 @@ DataTypes MySQLDumpSchemaReader::readRowAndGetDataTypes()
             skipFieldDelimiter(in);
 
         readQuotedField(value, in);
-        auto type = determineDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
+        auto type = tryInferDataTypeByEscapingRule(value, format_settings, FormatSettings::EscapingRule::Quoted);
         data_types.push_back(std::move(type));
     }
     skipEndOfRow(in, table_name);
     return data_types;
+}
+
+void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)
+{
+    transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
 void registerInputFormatMySQLDump(FormatFactory & factory)
@@ -450,7 +564,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<MySQLDumpRowInputFormat>(buf, header, params, settings);
+        return std::make_shared<MySQLDumpRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings);
     });
 }
 

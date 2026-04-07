@@ -1,4 +1,5 @@
 #include <Processors/Transforms/SortingTransform.h>
+#include <Columns/ColumnReplicated.h>
 
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
@@ -22,8 +23,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
-    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(header, description)
+MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
+    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(*header, description)
 {
     Chunks nonempty_chunks;
     size_t chunks_size = chunks.size();
@@ -39,7 +40,21 @@ MergeSorter::MergeSorter(const Block & header, Chunks chunks_, SortDescription &
         /// which can be inefficient.
         convertToFullIfSparse(chunk);
 
-        cursors.emplace_back(header, chunk.getColumns(), description, chunk_index);
+        /// Convert to full column, because some cursors expect non-contant columns
+        convertToFullIfConst(chunk);
+
+        size_t num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        /// We don't support sorting by replicated columns for now,
+        /// because it requires special code for them in the cursors.
+        for (const auto & column_desc : description)
+        {
+            size_t column_number = header->getPositionByName(column_desc.column_name);
+            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+        }
+        chunk.setColumns(std::move(columns), num_rows);
+
+        cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
         has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
@@ -80,7 +95,8 @@ template <typename TSortingQueue>
 Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
-    MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
+    MutableColumns merged_columns = createMergedColumns();
+
 
     /// Reserve
     if (queue.isValid())
@@ -144,8 +160,28 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
     return Chunk(std::move(merged_columns), merged_rows);
 }
 
+MutableColumns MergeSorter::createMergedColumns() const
+{
+    size_t num_columns = chunks[0].getNumColumns();
+    std::vector<bool> is_replicated(num_columns, false);
+    for (const auto & chunk : chunks)
+    {
+        for (size_t i = 0; i != chunk.getNumColumns(); ++i)
+            is_replicated[i] = is_replicated[i] || chunk.getColumns()[i]->isReplicated();
+    }
+    MutableColumns merged_columns = chunks[0].cloneEmptyColumns();
+    for (size_t i = 0; i != num_columns; ++i)
+    {
+        if (is_replicated[i] && !merged_columns[i]->isReplicated())
+            merged_columns[i] = ColumnReplicated::create(std::move(merged_columns[i]));
+    }
+
+    return merged_columns;
+}
+
+
 SortingTransform::SortingTransform(
-    const Block & header,
+    SharedHeader header,
     const SortDescription & description_,
     size_t max_merged_block_size_,
     UInt64 limit_,
@@ -180,7 +216,7 @@ SortingTransform::SortingTransform(
     description_without_constants.reserve(description.size());
     for (const auto & column_description : description)
     {
-        auto old_pos = header.getPositionByName(column_description.column_name);
+        auto old_pos = header->getPositionByName(column_description.column_name);
         auto new_pos = map[old_pos];
 
         if (new_pos < num_columns)
@@ -316,29 +352,27 @@ IProcessor::Status SortingTransform::prepareGenerate()
         output.push(std::move(generated_chunk));
         return Status::PortFull;
     }
-    else
+
+    auto & input = inputs.back();
+
+    if (generated_chunk)
+        output.push(std::move(generated_chunk));
+
+    if (input.isFinished())
     {
-        auto & input = inputs.back();
-
-        if (generated_chunk)
-            output.push(std::move(generated_chunk));
-
-        if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        input.setNeeded();
-
-        if (!input.hasData())
-            return Status::NeedData;
-
-        auto chunk = input.pull();
-        enrichChunkWithConstants(chunk);
-        output.push(std::move(chunk));
-        return Status::PortFull;
+        output.finish();
+        return Status::Finished;
     }
+
+    input.setNeeded();
+
+    if (!input.hasData())
+        return Status::NeedData;
+
+    auto chunk = input.pull();
+    enrichChunkWithConstants(chunk);
+    output.push(std::move(chunk));
+    return Status::PortFull;
 }
 
 void SortingTransform::work()
@@ -359,8 +393,8 @@ void SortingTransform::removeConstColumns(Chunk & chunk)
     size_t num_rows = chunk.getNumRows();
 
     if (num_columns != const_columns_to_remove.size())
-        throw Exception("Block has different number of columns with header: " + toString(num_columns)
-                        + " vs " + toString(const_columns_to_remove.size()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block has different number of columns with header: {} vs {}",
+                        num_columns, const_columns_to_remove.size());
 
     auto columns = chunk.detachColumns();
     Columns column_without_constants;
@@ -394,8 +428,7 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
         else
         {
             if (next_non_const_column >= columns.size())
-                throw Exception("Can't enrich chunk with constants because run out of non-constant columns.",
-                        ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't enrich chunk with constants because run out of non-constant columns.");
 
             column_with_constants.emplace_back(std::move(columns[next_non_const_column]));
             ++next_non_const_column;
@@ -407,7 +440,7 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
 
 void SortingTransform::serialize()
 {
-    throw Exception("Method 'serialize' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'serialize' is not implemented for {} processor", getName());
 }
 
 }

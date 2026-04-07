@@ -12,12 +12,12 @@ class Context;
 /** Implements `functions`system table, which allows you to get a list
   * all normal and aggregate functions.
   */
-class StorageSystemFunctions final : public IStorageSystemOneBlock<StorageSystemFunctions>
+class StorageSystemFunctions final : public IStorageSystemOneBlock
 {
 public:
     std::string getName() const override { return "SystemFunctions"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    static ColumnsDescription getColumnsDescription();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -25,7 +25,7 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
 };
 
 }

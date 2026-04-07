@@ -12,12 +12,16 @@ namespace DB
 class WeakHash32
 {
 public:
+    static constexpr UInt32 kDefaultInitialValue = ~UInt32(0);
+
     using Container = PaddedPODArray<UInt32>;
 
-    explicit WeakHash32(size_t size) : data(size, ~UInt32(0)) {}
+    explicit WeakHash32(size_t size, UInt32 initial_value = kDefaultInitialValue) : data(size, initial_value) {}
     WeakHash32(const WeakHash32 & other) { data.assign(other.data); }
 
-    void reset(size_t size) { data.assign(size, ~UInt32(0)); }
+    void reset(size_t size, UInt32 initial_value = kDefaultInitialValue) { data.assign(size, initial_value); }
+
+    void update(const WeakHash32 & other);
 
     const Container & getData() const { return data; }
     Container & getData() { return data; }

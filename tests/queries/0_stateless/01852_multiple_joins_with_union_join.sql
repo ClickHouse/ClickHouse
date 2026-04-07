@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS v1;
 DROP TABLE IF EXISTS v2;
 
@@ -12,12 +14,14 @@ JOIN v1 AS t2 USING (id)
 JOIN v2 AS n1 ON t1.id = n1.value
 JOIN v2 AS n2 ON t1.id = n2.value;
 
+SELECT '---';
+
 SELECT * FROM v1 AS t1
 JOIN v1 AS t2 USING (id)
 CROSS JOIN v2 AS n1
 CROSS JOIN v2 AS n2;
 
-SELECT * FROM v1 AS t1 JOIN v1 AS t2 USING (id) JOIN v1 AS t3 USING (value); -- { serverError NOT_IMPLEMENTED }
+SELECT * FROM v1 AS t1 JOIN v1 AS t2 USING (id) JOIN v1 AS t3 USING (value); -- { serverError UNKNOWN_IDENTIFIER }
 
 DROP TABLE IF EXISTS v1;
 DROP TABLE IF EXISTS v2;

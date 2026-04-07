@@ -52,9 +52,9 @@ bool ReadBufferFromFileDecorator::nextImpl()
     return result;
 }
 
-size_t ReadBufferFromFileDecorator::getFileSize()
+std::optional<size_t> ReadBufferFromFileDecorator::tryGetFileSize()
 {
-    return getFileSizeFromReadBuffer(*impl);
+    return tryGetFileSizeFromReadBuffer(*impl);
 }
 
 }

@@ -1,14 +1,12 @@
 #include "config.h"
+#include <Common/Config/YAMLParser.h>
 
 #if USE_YAML_CPP
-#include "YAMLParser.h"
 
-#include <vector>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/Element.h>
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/DOM/Text.h>
 #include <Common/Exception.h>
@@ -110,9 +108,23 @@ namespace
                     }
                     else
                     {
-                        Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
-                        parent_xml_node.appendChild(xml_key);
-                        processNode(value_node, *xml_key);
+                        if (key == "#text" && value_node.IsScalar())
+                        {
+                            for (Node * child_node = parent_xml_node.firstChild(); child_node; child_node = child_node->nextSibling())
+                                if (child_node->nodeType() == Node::TEXT_NODE)
+                                    throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                                                    "YAMLParser has encountered node with several text nodes "
+                                                    "and cannot continue parsing of the file");
+                            std::string value = value_node.as<std::string>();
+                            Poco::AutoPtr<Poco::XML::Text> xml_value = xml_document->createTextNode(value);
+                            parent_xml_node.appendChild(xml_value);
+                        }
+                        else
+                        {
+                            Poco::AutoPtr<Poco::XML::Element> xml_key = xml_document->createElement(key);
+                            parent_xml_node.appendChild(xml_key);
+                            processNode(value_node, *xml_key);
+                        }
                     }
                 }
                 break;
@@ -121,7 +133,9 @@ namespace
             case YAML::NodeType::Null: break;
             case YAML::NodeType::Undefined:
             {
-                throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with undefined type and cannot continue parsing of the file");
+                throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                                "YAMLParser has encountered node with undefined type and cannot continue parsing "
+                                "of the file");
             }
         }
     }
@@ -154,10 +168,31 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
     }
     catch (const YAML::TypedBadConversion<std::string>&)
     {
-        throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "YAMLParser has encountered node with key or value which cannot be represented as string and cannot continue parsing of the file");
+        throw Exception(ErrorCodes::CANNOT_PARSE_YAML,
+                        "YAMLParser has encountered node with key "
+                        "or value which cannot be represented as string and cannot continue parsing of the file");
     }
     return xml;
 }
 
 }
+#else
+
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int CANNOT_PARSE_YAML;
+}
+
+Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
+{
+    throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {} without usage of yaml-cpp library", path);
+}
+
+}
+
 #endif

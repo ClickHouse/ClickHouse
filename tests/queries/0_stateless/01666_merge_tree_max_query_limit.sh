@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-azure-blob-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +9,7 @@ function wait_for_query_to_start() {
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT sum(read_rows) FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
 }
 
-${CLICKHOUSE_CLIENT} --multiline --multiquery --query "
+${CLICKHOUSE_CLIENT} --multiline --query "
 drop table if exists simple;
 
 create table simple (i int, j int) engine = MergeTree order by i
@@ -71,7 +72,7 @@ ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "select i from simple where 
 
 # We have to search the server's error log because the following warning message
 # is generated during pipeline destruction and thus is not sent to the client.
-${CLICKHOUSE_CLIENT} --query "system flush logs"
-if [[ $(${CLICKHOUSE_CLIENT} --query "select count() > 0 from system.text_log where query_id = '$query_id' and level = 'Warning' and message like '%We have query_id removed but it\'s not recorded. This is a bug%' format TSVRaw") == 1 ]]; then echo "We have query_id removed but it's not recorded. This is a bug." >&2; exit 1; fi
+${CLICKHOUSE_CLIENT} --query "system flush logs text_log"
+if [[ $(${CLICKHOUSE_CLIENT} --query "select count() > 0 from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' and level = 'Warning' and message_format_string like '%We have query_id removed but it\'s not recorded. This is a bug%' format TSVRaw SETTINGS max_rows_to_read = 0") == 1 ]]; then echo "We have query_id removed but it's not recorded. This is a bug." >&2; exit 1; fi
 
 ${CLICKHOUSE_CLIENT} --query "drop table simple"

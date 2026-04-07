@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Compression/CompressionInfo.h>
-#include <Compression/ICompressionCodec.h>
-#include <DataTypes/IDataType.h>
-#include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
+#include <Parsers/IAST_fwd.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
+
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
@@ -17,6 +17,8 @@ namespace DB
 static constexpr auto DEFAULT_CODEC_NAME = "Default";
 
 class ICompressionCodec;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
@@ -68,6 +70,12 @@ public:
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
+    /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
+    CompressionCodecPtr get(const String & compression_codec) const;
+
+    /// Insert codec information into MutableColumns to show in the system table
+    void fillCodecDescriptions(MutableColumns & res_columns) const;
+
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);
     /// Register codec with parameters
@@ -75,6 +83,8 @@ public:
 
     /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, SimpleCreator creator);
+
+    std::vector<String> getAllRegisteredNames() const;
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;

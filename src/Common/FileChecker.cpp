@@ -1,5 +1,7 @@
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/ErrorCodes.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -7,6 +9,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <base/JSON.h>
+
+#include <boost/range/adaptor/map.hpp>
 
 
 namespace fs = std::filesystem;
@@ -25,7 +29,9 @@ FileChecker::FileChecker(const String & file_info_path_) : FileChecker(nullptr, 
 {
 }
 
-FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_) : disk(std::move(disk_))
+FileChecker::FileChecker(DiskPtr disk_, const String & file_info_path_)
+    : disk(std::move(disk_))
+    , log(getLogger("FileChecker"))
 {
     setPath(file_info_path_);
     try
@@ -56,6 +62,11 @@ void FileChecker::update(const String & full_file_path)
     map[fileName(full_file_path)] = real_size;
 }
 
+void FileChecker::update(const String & filename, size_t size)
+{
+    map[filename] = size;
+}
+
 void FileChecker::setEmpty(const String & full_file_path)
 {
     map[fileName(full_file_path)] = 0;
@@ -78,33 +89,32 @@ size_t FileChecker::getTotalSize() const
 }
 
 
-CheckResults FileChecker::check() const
+FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
 {
-    if (map.empty())
+    return std::make_unique<DataValidationTasks>(map);
+}
+
+std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks) const
+{
+    String name;
+    size_t expected_size;
+    bool is_finished = check_data_tasks->next(name, expected_size);
+    if (is_finished)
         return {};
 
-    CheckResults results;
+    String path = parentPath(files_info_path) + name;
+    bool exists = fileReallyExists(path);
+    auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
 
-    for (const auto & name_size : map)
+    if (real_size != expected_size)
     {
-        const String & name = name_size.first;
-        String path = parentPath(files_info_path) + name;
-        bool exists = fileReallyExists(path);
-        auto real_size = exists ? getRealFileSize(path) : 0;  /// No race condition assuming no one else is working with these files.
-
-        if (real_size != name_size.second)
-        {
-            String failure_message = exists
-                ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(name_size.second))
-                : ("File " + path + " doesn't exist");
-            results.emplace_back(name, false, failure_message);
-            break;
-        }
-
-        results.emplace_back(name, true, "");
+        String failure_message = exists
+            ? ("Size of " + path + " is wrong. Size is " + toString(real_size) + " but should be " + toString(expected_size))
+            : ("File " + path + " doesn't exist");
+        return CheckResult(name, false, failure_message);
     }
 
-    return results;
+    return CheckResult(name, true, "");
 }
 
 void FileChecker::repair()
@@ -129,31 +139,37 @@ void FileChecker::repair()
     }
 }
 
+void FileChecker::save(WriteBuffer & buffer) const
+{
+    /// So complex JSON structure - for compatibility with the old format.
+    writeCString("{\"clickhouse\":{", buffer);
+
+    auto settings = FormatSettings();
+    for (auto it = map.begin(); it != map.end(); ++it)
+    {
+        if (it != map.begin())
+            writeString(",", buffer);
+
+        /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
+        writeJSONString(escapeForFileName(it->first), buffer, settings);
+        writeString(R"(:{"size":")", buffer);
+        writeIntText(it->second, buffer);
+        writeString("\"}", buffer);
+    }
+
+    writeCString("}}", buffer);
+
+}
+
 void FileChecker::save() const
 {
     std::string tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 
     {
-        std::unique_ptr<WriteBuffer> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
-
-        /// So complex JSON structure - for compatibility with the old format.
-        writeCString("{\"clickhouse\":{", *out);
-
-        auto settings = FormatSettings();
-        for (auto it = map.begin(); it != map.end(); ++it)
-        {
-            if (it != map.begin())
-                writeString(",", *out);
-
-            /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
-            writeJSONString(escapeForFileName(it->first), *out, settings);
-            writeString(R"(:{"size":")", *out);
-            writeIntText(it->second, *out);
-            writeString("\"}", *out);
-        }
-
-        writeCString("}}", *out);
-        out->next();
+        std::unique_ptr<WriteBufferFromFileBase> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
+        save(*out);
+        out->sync();
+        out->finalize();
     }
 
     if (disk)
@@ -169,7 +185,7 @@ void FileChecker::load()
     if (!fileReallyExists(files_info_path))
         return;
 
-    std::unique_ptr<ReadBuffer> in = disk ? disk->readFile(files_info_path) : std::make_unique<ReadBufferFromFile>(files_info_path);
+    std::unique_ptr<ReadBuffer> in = disk ? disk->readFile(files_info_path, getReadSettings()) : std::make_unique<ReadBufferFromFile>(files_info_path);
     WriteBufferFromOwnString out;
 
     /// The JSON library does not support whitespace. We delete them. Inefficient.
@@ -189,7 +205,7 @@ void FileChecker::load()
 
 bool FileChecker::fileReallyExists(const String & path_) const
 {
-    return disk ? disk->exists(path_) : fs::exists(path_);
+    return disk ? disk->existsFile(path_) : fs::exists(path_);
 }
 
 size_t FileChecker::getRealFileSize(const String & path_) const

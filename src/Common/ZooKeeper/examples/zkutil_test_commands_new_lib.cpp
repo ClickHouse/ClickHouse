@@ -1,10 +1,12 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Event.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
+#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
+#include <memory>
 #include <base/find_symbols.h>
 
 
@@ -24,24 +26,25 @@ try
     Poco::Logger::root().setChannel(channel);
     Poco::Logger::root().setLevel("trace");
 
-    std::string hosts_arg = argv[1];
-    std::vector<std::string> hosts_strings;
-    splitInto<','>(hosts_strings, hosts_arg);
-    ZooKeeper::Nodes nodes;
-    nodes.reserve(hosts_strings.size());
-    for (auto & host_string : hosts_strings)
+    zkutil::ZooKeeperArgs args{argv[1]};
+    zkutil::ShuffleHosts nodes;
+    nodes.reserve(args.hosts.size());
+    for (size_t i = 0; i < args.hosts.size(); ++i)
     {
-        bool secure = bool(startsWith(host_string, "secure://"));
+        zkutil::ShuffleHost node;
+        std::string host_string = args.hosts[i];
+        node.secure = startsWith(host_string, "secure://");
 
-        if (secure)
+        if (node.secure)
             host_string.erase(0, strlen("secure://"));
 
-        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string},secure});
+        node.host = host_string;
+        node.original_index = static_cast<UInt8>(i);
+
+        nodes.emplace_back(node);
     }
 
-
-    zkutil::ZooKeeperArgs args;
-    ZooKeeper zk(nodes, args, nullptr);
+    ZooKeeper zk(nodes, args, nullptr, nullptr);
 
     Poco::Event event(true);
 
@@ -72,13 +75,15 @@ try
 
             //event.set();
         },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
-        });
+        std::make_shared<Coordination::WatchCallback>(
+            [](const WatchResponse & response)
+            {
+                if (response.error != Coordination::Error::ZOK)
+                    std::cerr << "Watch (get) on /test, Error: " << errorMessage(response.error) << '\n';
+                else
+                    std::cerr << "Watch (get) on /test, path: " << response.path << ", type: " << response.type << '\n';
+            })
+        );
 
     //event.wait();
 
@@ -114,13 +119,16 @@ try
 
             //event.set();
         },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
-        });
+        std::make_shared<Coordination::WatchCallback>(
+            [](const WatchResponse & response)
+            {
+                if (response.error != Coordination::Error::ZOK)
+                    std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
+                else
+                    std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
+            }),
+        false,
+        false);
 
     //event.wait();
 
@@ -136,13 +144,15 @@ try
 
             //event.set();
         },
-        [](const WatchResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
-            else
-                std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
-        });
+        std::make_shared<Coordination::WatchCallback>(
+            [](const WatchResponse & response)
+            {
+                if (response.error != Coordination::Error::ZOK)
+                    std::cerr << "Watch (exists) on /test, Error: " << errorMessage(response.error) << '\n';
+                else
+                    std::cerr << "Watch (exists) on /test, path: " << response.path << ", type: " << response.type << '\n';
+            })
+        );
 
     //event.wait();
 

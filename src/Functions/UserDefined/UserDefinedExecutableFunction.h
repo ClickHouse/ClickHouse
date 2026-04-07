@@ -3,8 +3,9 @@
 #include <string>
 
 #include <DataTypes/IDataType.h>
-#include <Processors/Sources/ShellCommandSource.h>
 #include <Interpreters/IExternalLoadable.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -26,11 +27,12 @@ struct UserDefinedExecutableFunctionConfiguration
 {
     std::string name;
     std::string command;
-    std::vector<std::string> command_arguments;
+    VectorWithMemoryTracking<std::string> command_arguments;
     std::vector<UserDefinedExecutableFunctionArgument> arguments;
     std::vector<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;
     String result_name;
+    bool is_deterministic;
 };
 
 class UserDefinedExecutableFunction final : public IExternalLoadable
@@ -62,7 +64,7 @@ public:
         return true;
     }
 
-    std::shared_ptr<const IExternalLoadable> clone() const override
+    std::shared_ptr<IExternalLoadable> clone() const override
     {
         return std::make_shared<UserDefinedExecutableFunction>(configuration, coordinator, lifetime);
     }

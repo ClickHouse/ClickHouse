@@ -1,24 +1,13 @@
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionInfo.h>
 #include <Common/PODArray.h>
-#include <base/unaligned.h>
 #include <Compression/CompressionFactory.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
-#include <Common/hex.h>
 
 
 namespace DB
 {
-
-
-namespace ErrorCodes
-{
-    extern const int CORRUPTED_DATA;
-}
 
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
     : codecs(codecs_)
@@ -76,12 +65,17 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return static_cast<UInt32>(1 + codecs.size() + source_size);
 }
 
-void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
+UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
     if (source_size < 1 || !source[0])
-        throw Exception("Wrong compression methods list", ErrorCodes::CORRUPTED_DATA);
+        throw Exception(decompression_error_code, "Wrong compression methods list");
 
     UInt8 compression_methods_size = source[0];
+    /// +1 for the compression_methods_size byte itself
+    if (static_cast<UInt32>(compression_methods_size) + 1 > source_size)
+        throw Exception(decompression_error_code, "Wrong compression methods list: header claims {} codecs"
+                        " but compressed data is only {} bytes",
+                        static_cast<UInt32>(compression_methods_size), source_size);
 
     PODArray<char> compressed_buf(&source[compression_methods_size + 1], &source[source_size]);
     PODArray<char> uncompressed_buf;
@@ -94,28 +88,57 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
         const auto codec = CompressionCodecFactory::instance().get(compression_method);
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
-        compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
-        UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
+        if (compressed_buf.size() >= 1_GiB)
+            throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
+
+        if (source_size < COMPRESSED_BLOCK_HEADER_SIZE)
+            throw Exception(decompression_error_code, "Compressed data is too short to contain a block header: {} bytes",
+                            source_size);
+
+        {
+            UInt32 bytes_to_resize;
+            if (common::addOverflow(static_cast<UInt32>(compressed_buf.size()), additional_size_at_the_end_of_buffer, bytes_to_resize))
+                throw Exception(decompression_error_code, "Too large compressed size: {}", compressed_buf.size());
+
+            compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
+        }
+
+        UInt32 uncompressed_size = readDecompressedBlockSize(compressed_buf.data());
+
+        if (uncompressed_size >= 1_GiB)
+            throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
 
         if (idx == 0 && uncompressed_size != decompressed_size)
-            throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) +
-                ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
+            throw Exception(decompression_error_code, "Wrong final decompressed size in codec Multiple, got {}, expected {}",
+                uncompressed_size, decompressed_size);
 
-        uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
+        {
+            UInt32 bytes_to_resize;
+            if (common::addOverflow(uncompressed_size, additional_size_at_the_end_of_buffer, bytes_to_resize))
+                throw Exception(decompression_error_code, "Too large uncompressed size: {}", uncompressed_size);
+
+            uncompressed_buf.resize(bytes_to_resize);
+        }
+
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
         uncompressed_buf.swap(compressed_buf);
+        /// The call to decompress will validate uncompressed_size (same readDecompressedBlockSize call as here)
         source_size = uncompressed_size;
     }
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
+    return decompressed_size;
 }
 
 std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
 {
     std::vector<uint8_t> result;
     uint8_t compression_methods_size = source[0];
+    result.reserve(compression_methods_size);
+
     for (size_t i = 0; i < compression_methods_size; ++i)
         result.push_back(source[1 + i]);
+
     return result;
 }
 

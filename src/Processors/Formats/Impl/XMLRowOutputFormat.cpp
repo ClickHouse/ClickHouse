@@ -1,15 +1,18 @@
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/XMLRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : RowOutputFormatWithUTF8ValidationAdaptor(true, header_, out_, params_), fields(header_.getNamesAndTypes()), format_settings(format_settings_)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, format_settings_.xml.valid_output_on_exception, true), fields(header_->getNamesAndTypes()), format_settings(format_settings_)
 {
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
     const auto & sample = getPort(PortKind::Main).getHeader();
     field_tag_names.resize(sample.columns());
 
@@ -94,11 +97,9 @@ void XMLRowOutputFormat::writeRowEndDelimiter()
     ++row_count;
 }
 
-
 void XMLRowOutputFormat::writeSuffix()
 {
     writeCString("\t</data>\n", *ostr);
-
 }
 
 
@@ -179,28 +180,31 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 }
 
 
-void XMLRowOutputFormat::onProgress(const Progress & value)
-{
-    statistics.progress.incrementPiecewiseAtomically(value);
-}
-
 void XMLRowOutputFormat::finalizeImpl()
 {
     writeCString("\t<rows>", *ostr);
     writeIntText(row_count, *ostr);
     writeCString("</rows>\n", *ostr);
 
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
+    writeRowsBeforeAggregationAtLeast();
 
-    if (format_settings.write_statistics)
+    if (!exception_message.empty())
+        writeException();
+    else if (format_settings.write_statistics)
         writeStatistics();
 
     writeCString("</result>\n", *ostr);
     ostr->next();
+}
+
+void XMLRowOutputFormat::resetFormatterImpl()
+{
+    RowOutputFormatWithExceptionHandlerAdaptor::resetFormatterImpl();
+    ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
+    row_count = 0;
+    statistics = Statistics();
 }
 
 void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
@@ -210,6 +214,16 @@ void XMLRowOutputFormat::writeRowsBeforeLimitAtLeast()
         writeCString("\t<rows_before_limit_at_least>", *ostr);
         writeIntText(statistics.rows_before_limit, *ostr);
         writeCString("</rows_before_limit_at_least>\n", *ostr);
+    }
+}
+
+void XMLRowOutputFormat::writeRowsBeforeAggregationAtLeast()
+{
+    if (statistics.applied_aggregation)
+    {
+        writeCString("\t<rows_before_aggregation>", *ostr);
+        writeIntText(statistics.rows_before_aggregation, *ostr);
+        writeCString("</rows_before_aggregation>\n", *ostr);
     }
 }
 
@@ -228,20 +242,27 @@ void XMLRowOutputFormat::writeStatistics()
     writeCString("\t</statistics>\n", *ostr);
 }
 
+void XMLRowOutputFormat::writeException()
+{
+    writeCString("\t<exception>", *ostr);
+    writeXMLStringForTextElement(exception_message, *ostr);
+    writeCString("</exception>\n", *ostr);
+}
 
 void registerOutputFormatXML(FormatFactory & factory)
 {
     factory.registerOutputFormat("XML", [](
         WriteBuffer & buf,
         const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<XMLRowOutputFormat>(buf, sample, params, settings);
+        return std::make_shared<XMLRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("XML");
     factory.markFormatHasNoAppendSupport("XML");
+    factory.setContentType("XML", "application/xml; charset=UTF-8");
 }
 
 }

@@ -16,6 +16,7 @@ REPLACE recursive
 ATTACH FROM
 5	8
 5	8
+7	12
 REPLACE with fetch
 4	6
 4	6

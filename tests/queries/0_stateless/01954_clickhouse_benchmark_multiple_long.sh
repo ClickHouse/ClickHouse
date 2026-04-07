@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-BASE="$CUR_DIR/$(basename "${BASH_SOURCE[0]}" .sh)"
+BASE="$CUR_DIR/01954_clickhouse_benchmark_multiple_long"
 
 server_pids=()
 paths=()
@@ -123,7 +123,7 @@ function test_clickhouse_benchmark_multi_hosts()
         --query 'select 1'
         --concurrency 10
     )
-    clickhouse-benchmark "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
+    ${CLICKHOUSE_BENCHMARK_BINARY} "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
 
     local queries1 queries2
     queries1="$(execute_query "$port1" --query "select value from system.events where event = 'Query'")"
@@ -133,7 +133,7 @@ function test_clickhouse_benchmark_multi_hosts()
         echo "server1 (port=$port1) handled $queries1 queries" >&2
     fi
     if [[ $queries2 -lt 4000 ]] || [[ $queries2 -gt 6000 ]]; then
-        echo "server1 (port=$port2) handled $queries2 queries" >&2
+        echo "server2 (port=$port2) handled $queries2 queries" >&2
     fi
 }
 function test_clickhouse_benchmark_multi_hosts_roundrobin()
@@ -146,7 +146,7 @@ function test_clickhouse_benchmark_multi_hosts_roundrobin()
         --concurrency 10
         --roundrobin
     )
-    clickhouse-benchmark "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
+    ${CLICKHOUSE_BENCHMARK_BINARY} "${benchmark_opts[@]}" >& "$(mktemp "$BASE.clickhouse-benchmark.XXXXXX.log")"
 
     local queries1 queries2
     queries1="$(execute_query "$port1" --query "select value from system.events where event = 'Query'")"
@@ -158,7 +158,7 @@ function test_clickhouse_benchmark_multi_hosts_roundrobin()
         echo "server1 (port=$port1) handled $queries1 queries (with --roundrobin)" >&2
     fi
     if [[ $queries2 -lt 9000 ]] || [[ $queries2 -gt 11000 ]]; then
-        echo "server1 (port=$port2) handled $queries2 queries (with --roundrobin)" >&2
+        echo "server2 (port=$port2) handled $queries2 queries (with --roundrobin)" >&2
     fi
 }
 

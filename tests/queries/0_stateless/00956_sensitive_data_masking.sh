@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-flaky-check
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
@@ -17,7 +17,7 @@ echo 1
 # normal execution
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM numbers(1) FORMAT Null" \
-  --log_queries=1 --ignore-error --multiquery >"$tmp_file" 2>&1
+  --log_queries=1 --ignore-error >"$tmp_file" 2>&1
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 1a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 1b'
@@ -37,18 +37,26 @@ rm -f "$tmp_file" >/dev/null 2>&1
 echo 3
 # failure at before query start
 $CLICKHOUSE_CLIENT \
-  --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
-  --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > "$tmp_file"
+  --query="SELECT 1 FROM system.numbers WHERE credit_card_number='find_me_TOPSECRET=TOPSECRET' FORMAT Null" \
+  --log_queries=1 --ignore-error |& grep -v '^(query: ' > "$tmp_file"
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 3a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 3b'
+
+echo '3.1'
+echo "SELECT 1 FROM system.numbers WHERE credit_card_number='find_me_TOPSECRET=TOPSECRET' FORMAT Null" | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}" -d @- >"$tmp_file" 2>&1
+
+grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 3.1a'
+grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 3.1b'
+
+#echo "SELECT 1 FROM system.numbers WHERE credit_card_number='find_me_TOPSECRET=TOPSECRET' FORMAT Null" | curl -sSg http://172.17.0.3:8123/ -d @-
 
 rm -f "$tmp_file" >/dev/null 2>&1
 echo 4
 # failure at the end of query
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET', intDiv( 100, number - 10) FROM numbers(11) FORMAT Null" \
-  --log_queries=1 --ignore-error --max_block_size=2 --multiquery |& grep -v '^(query: ' > "$tmp_file"
+  --log_queries=1 --ignore-error --max_block_size=2 |& grep -v '^(query: ' > "$tmp_file"
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 4a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 4b'
@@ -57,8 +65,9 @@ echo 5
 # run in background
 rm -f "$tmp_file2" >/dev/null 2>&1
 bash -c "$CLICKHOUSE_CLIENT \
+  --function_sleep_max_microseconds_per_block 60000000 \
   --query=\"select sleepEachRow(1) from numbers(10) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
-  --log_queries=1 --ignore-error --multiquery |& grep -v '^(query: ' > $tmp_file2" &
+  --log_queries=1 --ignore-error |& grep -v '^(query: ' > $tmp_file2" &
 
 rm -f "$tmp_file" >/dev/null 2>&1
 # check that executing query doesn't expose secrets in processlist
@@ -85,7 +94,7 @@ grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 5c'
 # instead of disabling send_logs_level=trace (enabled globally for that test) - redir it's output to /dev/null
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="system flush logs"
+  --query="system flush logs query_log"
 
 
 echo 6
@@ -98,7 +107,22 @@ echo 7
 # and finally querylog
 $CLICKHOUSE_CLIENT \
   --server_logs_file=/dev/null \
-  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() and query like '%TOPSECRET%';"
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 and query like '%TOPSECRET%';"
+
+echo '7.1'
+# query_log exceptions
+$CLICKHOUSE_CLIENT \
+  --server_logs_file=/dev/null \
+  --query="select * from system.query_log where current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 and exception like '%TOPSECRET%'"
+
+echo '7.2'
+
+# not perfect: when run in parallel with other tests that check can give false-negative result
+# because other tests can overwrite the last_error_message, where we check the absence of sensitive data.
+# But it's still good enough for CI - in case of regressions it will start flapping (normally it shouldn't)
+$CLICKHOUSE_CLIENT \
+  --server_logs_file=/dev/null \
+  --query="select * from system.errors where last_error_message like '%TOPSECRET%';"
 
 
 rm -f "$tmp_file" >/dev/null 2>&1
@@ -109,19 +133,18 @@ insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' 
 insert into sensitive select number as id, toDate('2019-01-01') as date, 'find_me_TOPSECRET=TOPSECRET' as value1, rand() as valuer from numbers(10);
 insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' as value1, rand() as valuer from numbers(10000);
 select * from sensitive WHERE value1 = 'find_me_TOPSECRET=TOPSECRET' FORMAT Null;
-drop table sensitive;" --log_queries=1 --ignore-error --multiquery >"$tmp_file" 2>&1
+drop table sensitive;" --log_queries=1 --ignore-error >"$tmp_file" 2>&1
 
 grep -F 'find_me_[hidden]' "$tmp_file" >/dev/null || echo 'fail 8a'
 grep -F 'TOPSECRET' "$tmp_file" && echo 'fail 8b'
 
-$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS" --server_logs_file=/dev/null
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS text_log" --server_logs_file=/dev/null
 
 echo 9
 $CLICKHOUSE_CLIENT \
    --server_logs_file=/dev/null \
-   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() and message like '%find_me%';
-   select * from system.text_log where event_date >= yesterday() and message like '%TOPSECRET=TOPSECRET%';"  --ignore-error --multiquery
-
+   --query="SELECT if( count() > 0, 'text_log non empty', 'text_log empty') FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 and message like '%find_me%';
+   select * from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 and message like '%TOPSECRET=TOPSECRET%' SETTINGS max_rows_to_read = 0"  --ignore-error
 echo 'finish'
 rm -f "$tmp_file" >/dev/null 2>&1
 rm -f "$tmp_file2" >/dev/null 2>&1

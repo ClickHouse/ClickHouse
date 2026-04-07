@@ -16,13 +16,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if defined(__clang__)
-    #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#endif
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 
 
 struct CompactStringRef
@@ -43,7 +40,7 @@ struct CompactStringRef
     CompactStringRef(const char * data_, size_t size_)
     {
         data_mixed = data_;
-        size = size_;
+        size = static_cast<UInt16>(size_);
     }
 
     CompactStringRef(const unsigned char * data_, size_t size_) : CompactStringRef(reinterpret_cast<const char *>(data_), size_) {}
@@ -120,7 +117,7 @@ struct FastHash64
         pos2 = reinterpret_cast<const unsigned char*>(pos);
         v = 0;
 
-        switch (len & 7)
+        switch (len & 7) // NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: v ^= static_cast<UInt64>(pos2[6]) << 48; [[fallthrough]];
             case 6: v ^= static_cast<UInt64>(pos2[5]) << 40; [[fallthrough]];
@@ -147,7 +144,8 @@ struct CrapWow
         size_t len = x.size;
         size_t seed = 0;
 
-        const UInt64 m = 0x95b47aa3355ba1a1, n = 0x8a970be7488fda55;
+        const UInt64 m = 0x95b47aa3355ba1a1;
+        const UInt64 n = 0x8a970be7488fda55;
 
         UInt64 hash;
         // 3 = m, 4 = n
@@ -323,7 +321,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -352,7 +350,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (CityHash64). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -381,7 +379,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (FastHash64). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -411,7 +409,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (CrapWow). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -441,7 +439,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "HashMap (SimpleHash). Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
             << ", collisions: " << map.getCollisions()
 #endif
@@ -460,7 +458,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "std::unordered_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -477,7 +475,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::dense_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
@@ -493,7 +491,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "google::sparse_hash_map. Size: " << map.size()
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 

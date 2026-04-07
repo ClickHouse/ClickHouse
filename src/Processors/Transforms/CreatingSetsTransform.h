@@ -6,6 +6,7 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
+#include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
@@ -23,15 +24,15 @@ class PushingPipelineExecutor;
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
 /// Independent processors is created for each subquery.
-class CreatingSetsTransform : public IAccumulatingTransform, WithContext
+class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(
-        Block in_header_,
-        Block out_header_,
-        SubqueryForSet subquery_for_set_,
+        SharedHeader in_header_,
+        SharedHeader out_header_,
+        SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
-        ContextPtr context_);
+        PreparedSetsCachePtr prepared_sets_cache_);
 
     ~CreatingSetsTransform() override;
 
@@ -42,23 +43,26 @@ public:
     Chunk generate() override;
 
 private:
-    SubqueryForSet subquery;
+    SetAndKeyPtr set_and_key;
+    std::optional<std::promise<SetPtr>> promise_to_build;
 
     QueryPipeline table_out;
     std::unique_ptr<PushingPipelineExecutor> executor;
     UInt64 read_rows = 0;
+    bool set_from_cache = false;
     Stopwatch watch;
 
     bool done_with_set = true;
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;
+    PreparedSetsCachePtr prepared_sets_cache;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;
 
     using Logger = Poco::Logger;
-    Poco::Logger * log = &Poco::Logger::get("CreatingSetsTransform");
+    LoggerPtr log = getLogger("CreatingSetsTransform");
 
     bool is_initialized = false;
 

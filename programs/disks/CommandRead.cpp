@@ -1,80 +1,55 @@
-#pragma once
-
-#include "ICommand.h"
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/TerminalSize.h>
+#include <ICommand.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
-class CommandRead : public ICommand
+class CommandRead final : public ICommand
 {
 public:
-    CommandRead()
+    CommandRead() : ICommand("CommandRead")
     {
         command_name = "read";
-        command_option_description.emplace(createOptionsDescription("Allowed options", getTerminalWidth()));
-        description = "read File `from_path` to `to_path` or to stdout\nPath should be in format './' or './path' or 'path'";
-        usage = "read [OPTION]... <FROM_PATH> <TO_PATH>\nor\nread [OPTION]... <FROM_PATH>";
-        command_option_description->add_options()
-            ("output", po::value<String>(), "set path to file to which we are read")
-            ;
+        description = "Read a file from `path-from` to `path-to`";
+        options_description.add_options()("path-from", po::value<String>(), "file from which we are reading (mandatory, positional)")(
+            "path-to", po::value<String>(), "file to which we are writing, defaults to `stdout`");
+        positional_options_description.add("path-from", 1);
     }
 
-    void processOptions(
-        Poco::Util::LayeredConfiguration & config,
-        po::variables_map & options) const override
+    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        if (options.count("output"))
-            config.setString("output", options["output"].as<String>());
-    }
+        const auto & disk = client.getCurrentDiskWithPath();
+        String path_from = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
+        std::optional<String> path_to = getValueFromCommandLineOptionsWithOptional<String>(options, "path-to");
 
-    void execute(
-        const std::vector<String> & command_arguments,
-        DB::ContextMutablePtr & global_context,
-        Poco::Util::LayeredConfiguration & config) override
-    {
-        if (command_arguments.size() != 1)
+        auto in = disk.getDisk()->readFile(path_from, getReadSettings());
+        std::unique_ptr<WriteBufferFromFileBase> out = {};
+        if (path_to.has_value())
         {
-            printHelpMessage();
-            throw DB::Exception("Bad Arguments", DB::ErrorCodes::BAD_ARGUMENTS);
-        }
-
-        String disk_name = config.getString("disk", "default");
-
-        String path = command_arguments[0];
-
-        DiskPtr disk = global_context->getDisk(disk_name);
-
-        String full_path = fullPathWithValidate(disk, path);
-
-        String path_output = config.getString("output", "");
-
-        if (!path_output.empty())
-        {
-            String full_path_output = fullPathWithValidate(disk, path_output);
-
-            auto in = disk->readFile(full_path);
-            auto out = disk->writeFile(full_path_output);
+            String relative_path_to = disk.getRelativeFromRoot(path_to.value());
+            out = disk.getDisk()->writeFile(relative_path_to);
+            LOG_INFO(log, "Writing file from '{}' to '{}' at disk '{}'", path_from, path_to.value(), disk.getDisk()->getName());
             copyData(*in, *out);
-            out->finalize();
-            return;
         }
         else
         {
-            auto in = disk->readFile(full_path);
-            std::unique_ptr<WriteBufferFromFileBase> out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            out = std::make_unique<WriteBufferFromFileDescriptor>(STDOUT_FILENO);
+            LOG_INFO(log, "Writing file from '{}' to 'stdout' at disk '{}'", path_from, disk.getDisk()->getName());
             copyData(*in, *out);
+            out->write('\n');
         }
+        out->finalize();
     }
 };
+
+CommandPtr makeCommandRead()
+{
+    return std::make_shared<DB::CommandRead>();
 }
 
-std::unique_ptr <DB::ICommand> makeCommandRead()
-{
-    return std::make_unique<DB::CommandRead>();
 }

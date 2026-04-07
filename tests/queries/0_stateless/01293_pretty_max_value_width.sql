@@ -1,3 +1,5 @@
+SET output_format_pretty_color = 1, output_format_pretty_max_value_width_apply_for_single_value = 1, output_format_pretty_row_numbers = 0;
+SET output_format_pretty_display_footer_column_names=0;
 SELECT 'привет' AS x, 'мир' AS y FORMAT Pretty;
 
 SET output_format_pretty_max_value_width = 5;

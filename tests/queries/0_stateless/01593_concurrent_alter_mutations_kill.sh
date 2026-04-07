@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_kill"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_kill SYNC"
 
 $CLICKHOUSE_CLIENT --query "CREATE TABLE concurrent_mutate_kill (key UInt64, value String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/concurrent_mutate_kill', '1') ORDER BY key PARTITION BY key % 100 SETTINGS max_replicated_mutations_in_queue=1000, number_of_free_entries_in_pool_to_execute_mutation=0,max_replicated_merges_in_queue=1000"
 
-$CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_mutate_kill SELECT number, toString(number) FROM numbers(1000000)"
+$CLICKHOUSE_CLIENT --insert_keeper_fault_injection_probability=0 --query "INSERT INTO concurrent_mutate_kill SELECT number, toString(number) FROM numbers(1000000)"
 
 function alter_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         TYPE=$($CLICKHOUSE_CLIENT --query "SELECT type FROM system.columns WHERE table='concurrent_mutate_kill' and database='${CLICKHOUSE_DATABASE}' and name='value'")
         if [ "$TYPE" == "String" ]; then
             $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_mutate_kill MODIFY COLUMN value UInt64 SETTINGS replication_alter_partitions_sync=2"
@@ -25,7 +26,8 @@ function alter_thread
 
 function kill_mutation_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         # find any mutation and kill it
         mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done=0 and database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_kill' LIMIT 1")
         if [ ! -z "$mutation_id" ]; then
@@ -36,13 +38,10 @@ function kill_mutation_thread
 }
 
 
-export -f alter_thread;
-export -f kill_mutation_thread;
+TIMEOUT=20
 
-TIMEOUT=30
-
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
+alter_thread 2> /dev/null &
+kill_mutation_thread 2> /dev/null &
 
 wait
 
@@ -67,4 +66,4 @@ done
 $CLICKHOUSE_CLIENT --query "SHOW CREATE TABLE concurrent_mutate_kill"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE concurrent_mutate_kill FINAL"
 $CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM concurrent_mutate_kill"
-$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_kill"
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_mutate_kill SYNC"

@@ -1,13 +1,12 @@
 #pragma once
 
-#include <shared_mutex>
-
-#include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SortedBlocksWriter.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/CacheBase.h>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
@@ -16,17 +15,30 @@ class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 class RowBitmaps;
-enum class JoinTableSide;
+enum class JoinTableSide : uint8_t;
 
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_sample_block);
 
+    struct NotProcessed
+    {
+        Block block;
+        size_t left_position;
+        size_t left_key_tail;
+        size_t right_position;
+        size_t right_block;
+
+        bool empty() const { return block.empty(); }
+    };
+
+    std::string getName() const override { return "PartialMergeJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
-    bool addJoinedBlock(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
-    void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
+    JoinResultPtr joinBlock(Block block) override;
+    void joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed);
 
     void setTotals(const Block &) override;
 
@@ -35,20 +47,13 @@ public:
     /// Has to be called only after setTotals()/mergeRightBlocks()
     bool alwaysReturnsEmptySet() const override { return (is_right || is_inner) && min_max_right_blocks.empty(); }
 
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
+    IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+    static bool isSupported(JoinKind kind, JoinStrictness strictness);
 
 private:
     friend class NotJoinedMerge;
-
-    struct NotProcessed : public ExtraBlock
-    {
-        size_t left_position;
-        size_t left_key_tail;
-        size_t right_position;
-        size_t right_block;
-    };
 
     struct RightBlockInfo
     {
@@ -72,7 +77,7 @@ private:
 
     using Cache = CacheBase<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
-    mutable std::shared_mutex rwlock;
+    mutable SharedMutex rwlock;
     std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
@@ -117,13 +122,13 @@ private:
 
     Names lowcard_right_keys;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);
 
     template <bool is_all>
-    ExtraBlockPtr extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
+    std::optional<NotProcessed> extraBlock(Block & processed, MutableColumns && left_columns, MutableColumns && right_columns,
                              size_t left_position, size_t left_key_tail, size_t right_position,
                              size_t right_block_number);
 
@@ -132,7 +137,7 @@ private:
     template <bool in_memory>
     size_t rightBlocksCount() const;
     template <bool in_memory, bool is_all>
-    void joinSortedBlock(Block & block, ExtraBlockPtr & not_processed);
+    void joinSortedBlock(Block & block, std::optional<NotProcessed> & not_processed);
     template <bool in_memory>
     std::shared_ptr<Block> loadRightBlock(size_t pos) const;
 

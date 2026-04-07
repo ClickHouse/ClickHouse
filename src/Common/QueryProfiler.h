@@ -7,6 +7,8 @@
 
 #include "config.h"
 
+#include <Common/Logger.h>
+
 
 namespace Poco
 {
@@ -27,21 +29,45 @@ namespace DB
   * Destructor tries to unset timer and restore previous signal handler.
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
+
+#if defined(SIGEV_THREAD_ID)
+class Timer
+{
+public:
+    Timer();
+    Timer(const Timer &) = delete;
+    Timer & operator = (const Timer &) = delete;
+    ~Timer();
+
+    void createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal);
+    void set(UInt64 period);
+    void stop();
+    void cleanup();
+
+private:
+    LoggerPtr log;
+    std::optional<timer_t> timer_id;
+};
+#endif // defined(SIGEV_THREAD_ID)
+
 template <typename ProfilerImpl>
 class QueryProfilerBase
 {
+    friend ProfilerImpl;
+
 public:
-    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt32 period, int pause_signal_);
     ~QueryProfilerBase();
 
+    void setPeriod(UInt64 period_);
+
 private:
-    void tryCleanup();
+    QueryProfilerBase(UInt64 thread_id, int clock_type, UInt64 period, int pause_signal_);
+    void cleanup();
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
-#if USE_UNWIND
-    /// Timer id from timer_create(2)
-    std::optional<timer_t> timer_id;
+#if defined(SIGEV_THREAD_ID)
+    inline static thread_local Timer timer = Timer();
 #endif
 
     /// Pause signal to interrupt threads to get traces
@@ -52,18 +78,22 @@ private:
 class QueryProfilerReal : public QueryProfilerBase<QueryProfilerReal>
 {
 public:
-    QueryProfilerReal(UInt64 thread_id, UInt32 period); /// NOLINT
+    QueryProfilerReal(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
+
+    static constexpr int PAUSE_SIGNAL = SIGUSR1;
 };
 
 /// Query profiler with timer based on CPU clock
 class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
 {
 public:
-    QueryProfilerCPU(UInt64 thread_id, UInt32 period); /// NOLINT
+    QueryProfilerCPU(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
+
+    static constexpr int PAUSE_SIGNAL = SIGUSR2;
 };
 
 }

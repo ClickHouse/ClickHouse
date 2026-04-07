@@ -5,10 +5,15 @@
 #include <memory>
 #include <future>
 #include <boost/noncopyable.hpp>
+#include <Common/Stopwatch.h>
+#include <Common/Priority.h>
 
 
 namespace DB
 {
+
+class PageCacheCell;
+using PageCacheCellPtr = std::shared_ptr<PageCacheCell>;
 
 /** Interface for asynchronous reads from file descriptors.
   * It can abstract Linux AIO, io_uring or normal reads from separate thread pool,
@@ -45,22 +50,40 @@ public:
         FileDescriptorPtr descriptor;
         size_t offset = 0;
         size_t size = 0;
+        /// If descriptor is a RemoteFSFileDescriptor containing a CachedInMemoryReadBufferFromFile
+        /// then `buf` can be nullptr, and PageCacheCell buffer will be used instead (to avoid
+        /// copying data out of userspace page cache).
         char * buf = nullptr;
-        int64_t priority = 0;
+        Priority priority;
+        /// Some implementations require ignore < size.
+        /// AsynchronousBoundedReadBuffer may set ignore >= size, so it should only be used with
+        /// implementations that don't require that.
         size_t ignore = 0;
+        bool direct_io = false;
     };
 
     struct Result
     {
-        /// size
+        /// The read data is at [buf + offset, buf + size).
+        /// (Notice that `offset` is included in `size`.)
+        /// buf is either the buf from Request or inside page_cache_cell's buffer,
+        /// or nullptr if size = 0.
         /// Less than requested amount of data can be returned.
         /// If size is zero - the file has ended.
         /// (for example, EINTR must be handled by implementation automatically)
+        char * buf = nullptr;
         size_t size = 0;
-
-        /// offset
-        /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
+
+        /// File offset corresponding to `buf + size`. Equal to:
+        /// request.offset + request.ignore + (result.size - result.offset)
+        size_t file_offset_of_buffer_end = 0;
+
+        /// If not null, `buf` points into it, so this shared_ptr must be kept alive for as long
+        /// as `buf` is in use.
+        PageCacheCellPtr page_cache_cell = {};
+
+        std::unique_ptr<Stopwatch> execution_watch = {};
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.
@@ -68,6 +91,7 @@ public:
     /// or destroy the whole reader before destroying the buffer for request.
     /// The method can be called concurrently from multiple threads.
     virtual std::future<Result> submit(Request request) = 0;
+    virtual Result execute(Request request) = 0;
 
     virtual void wait() = 0;
 

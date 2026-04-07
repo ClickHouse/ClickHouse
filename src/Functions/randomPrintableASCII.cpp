@@ -12,8 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -38,20 +36,23 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception("Function " + getName() + " requires at least one argument: the size of resulting string",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        FunctionArgumentDescriptors mandatory_args{
+            {"length", &isNumber, nullptr, "(U)Int*"}
+        };
 
-        if (arguments.size() > 2)
-            throw Exception("Function " + getName() + " requires at most two arguments: the size of resulting string and optional disambiguation tag",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        FunctionArgumentDescriptors optional_args{
+            {"x", nullptr, nullptr, "Any"}
+        };
 
-        const IDataType & length_type = *arguments[0];
-        if (!isNumber(length_type))
-            throw Exception("First argument of function " + getName() + " must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
+        return std::make_shared<DataTypeString>();
+    }
+
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -74,9 +75,9 @@ public:
         {
             size_t length = length_column.getUInt(row_num);
             if (length > (1 << 30))
-                throw Exception("Too large string size in function " + getName(), ErrorCodes::TOO_LARGE_STRING_SIZE);
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            IColumn::Offset next_offset = offset + length + 1;
+            IColumn::Offset next_offset = offset + length;
             data_to.resize(next_offset);
             offsets_to[row_num] = next_offset;
 
@@ -85,9 +86,9 @@ public:
             {
                 UInt64 rand = rng();
 
-                UInt16 rand1 = rand;
-                UInt16 rand2 = rand >> 16;
-                UInt16 rand3 = rand >> 32;
+                UInt16 rand1 = static_cast<UInt16>(rand);
+                UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                UInt16 rand3 = static_cast<UInt16>(rand >> 32);
                 UInt16 rand4 = rand >> 48;
 
                 /// Printable characters are from range [32; 126].
@@ -99,10 +100,7 @@ public:
                 data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                 /// NOTE gcc failed to vectorize this code (aliasing of char?)
-                /// TODO Implement SIMD optimizations from Danila Kutenin.
             }
-
-            data_to[offset + length] = 0;
 
             offset = next_offset;
         }
@@ -115,7 +113,31 @@ public:
 
 REGISTER_FUNCTION(RandomPrintableASCII)
 {
-    factory.registerFunction<FunctionRandomPrintableASCII>();
+    FunctionDocumentation::Description description = R"(
+Generates a random [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) string with the specified number of characters.
+
+If you pass `length < 0`, the behavior of the function is undefined.
+    )";
+    FunctionDocumentation::Syntax syntax = "randomPrintableASCII(length[, x])";
+    FunctionDocumentation::Arguments arguments = {
+        {"length", "String length in bytes.", {"(U)Int*"}},
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with a random set of ASCII printable characters.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example", "SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers LIMIT 3", R"(
+┌─number─┬─str────────────────────────────┬─length(randomPrintableASCII(30))─┐
+│      0 │ SuiCOSTvC0csfABSw=UcSzp2.`rv8x │                               30 │
+│      1 │ 1Ag NlJ &RCN:*>HVPG;PE-nO"SUFD │                               30 │
+│      2 │ /"+<"with:=LjJ Vm!c&hI*m#XTfzz │                               30 │
+└────────┴────────────────────────────────┴──────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRandomPrintableASCII>(documentation);
 }
 
 }

@@ -1,13 +1,12 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParsedTemplateFormatString.h>
+#include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -19,7 +18,7 @@ class TemplateRowInputFormat final : public RowInputFormatWithDiagnosticInfo
 {
     using EscapingRule = FormatSettings::EscapingRule;
 public:
-    TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    TemplateRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                            std::string row_between_delimiter);
@@ -27,9 +26,11 @@ public:
     String getName() const override { return "TemplateRowInputFormat"; }
 
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
+    void resetReadBuffer() override;
 
 private:
-    TemplateRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
+    TemplateRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
                            ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                            std::string row_between_delimiter);
@@ -48,8 +49,6 @@ private:
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
-
-    void setReadBuffer(ReadBuffer & in_) override;
 
     std::unique_ptr<PeekableReadBuffer> buf;
     const DataTypes data_types;
@@ -83,7 +82,7 @@ public:
 
     void readPrefix();
     void skipField(EscapingRule escaping_rule);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
+    void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
     template <typename ReturnType = void>
     ReturnType tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end);
@@ -118,16 +117,18 @@ public:
                          std::string row_between_delimiter,
                          const FormatSettings & format_settings_);
 
-    DataTypes readRowAndGetDataTypes() override;
+    std::optional<DataTypes> readRowAndGetDataTypes() override;
 
 private:
-    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type, size_t column_idx) override;
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;
     TemplateFormatReader format_reader;
     bool first_row = true;
+    JSONInferenceInfo json_inference_info;
+    const char default_csv_delimiter;
 };
 
 bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);

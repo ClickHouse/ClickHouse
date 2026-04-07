@@ -1,0 +1,15 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <s3_retry_attempts>5</s3_retry_attempts>
+            <backup_restore_s3_retry_attempts>5</backup_restore_s3_retry_attempts>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>

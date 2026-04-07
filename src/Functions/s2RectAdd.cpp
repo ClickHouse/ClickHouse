@@ -7,10 +7,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
-#include "s2_fwd.h"
+#include <Functions/s2_fwd.h>
 
 namespace DB
 {
@@ -114,13 +112,18 @@ public:
             const auto hi = S2CellId(data_hi[row]);
             const auto point = S2CellId(data_point[row]);
 
-            if (!lo.is_valid() || !hi.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Rectangle is not valid");
+            S2LatLngRect rect(lo.ToLatLng(), hi.ToLatLng());
 
             if (!point.is_valid())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Point is not valid");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Point is invalid. For valid point the latitude is between -90 and 90 degrees inclusive "
+                    "and the longitude is between -180 and 180 degrees inclusive.");
 
-            S2LatLngRect rect(lo.ToLatLng(), hi.ToLatLng());
+            if (!rect.is_valid())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Rectangle is invalid. For valid rectangles the latitude bounds do not exceed "
+                    "Pi/2 in absolute value and the longitude bounds do not exceed Pi in absolute value. "
+                    "Also, if either the latitude or longitude bound is empty then both must be. ");
 
             rect.AddPoint(point.ToPoint());
 
@@ -137,7 +140,22 @@ public:
 
 REGISTER_FUNCTION(S2RectAdd)
 {
-    factory.registerFunction<FunctionS2RectAdd>();
+    FunctionDocumentation::Description description = R"(
+Expands an S2 latitude-longitude rectangle to include the given S2 point. The rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectAdd(s2RectLow, s2RectHigh, s2Point)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2RectLow", "S2 cell identifier of the low vertex of the rectangle.", {"UInt64"}},
+        {"s2RectHigh", "S2 cell identifier of the high vertex of the rectangle.", {"UInt64"}},
+        {"s2Point", "S2 cell identifier of the point to add.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple (s2RectLow, s2RectHigh) representing the expanded rectangle.", {"Tuple(UInt64, UInt64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectAdd(5765131099823669248, 5765131099823669248, 5765131099956887552)", ""}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectAdd>(documentation);
 }
 
 

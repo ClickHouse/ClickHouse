@@ -3,7 +3,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
-#include <Common/Documentation.h>
 
 #include <functional>
 #include <memory>
@@ -18,7 +17,25 @@ namespace DB
 class Context;
 
 using TableFunctionCreator = std::function<TableFunctionPtr()>;
-using TableFunctionFactoryData = std::pair<TableFunctionCreator, Documentation>;
+
+struct TableFunctionFactoryData
+{
+    TableFunctionCreator creator;
+    FunctionDocumentation documentation;
+    TableFunctionProperties properties;
+
+    TableFunctionFactoryData() = default;
+    TableFunctionFactoryData(const TableFunctionFactoryData &) = default;
+    TableFunctionFactoryData & operator = (const TableFunctionFactoryData &) = default;
+
+    template <typename Creator>
+        requires (!std::is_same_v<Creator, TableFunctionFactoryData>)
+    TableFunctionFactoryData(Creator creator_, FunctionDocumentation documentation_, TableFunctionProperties properties_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
+    {
+    }
+};
+
 
 /** Lets you get a table function by its name.
   */
@@ -29,17 +46,15 @@ public:
 
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
-    void registerFunction(
-        const std::string & name,
-        TableFunctionCreator creator,
-        Documentation doc = {},
-        CaseSensitiveness case_sensitiveness = CaseSensitive);
+    void registerFunction(const std::string & name, Value value, Case case_sensitiveness = Case::Sensitive);
 
     template <typename Function>
-    void registerFunction(Documentation doc = {}, CaseSensitiveness case_sensitiveness = CaseSensitive)
+    void registerFunction(FunctionDocumentation documentation, TableFunctionProperties properties = {}, Case case_sensitiveness = Case::Sensitive)
     {
         auto creator = []() -> TableFunctionPtr { return std::make_shared<Function>(); };
-        registerFunction(Function::name, std::move(creator), std::move(doc), case_sensitiveness);
+        registerFunction(Function::name,
+                         TableFunctionFactoryData(std::move(creator), std::move(documentation), {std::move(properties)}) ,
+                         case_sensitiveness);
     }
 
     /// Throws an exception if not found.
@@ -48,7 +63,8 @@ public:
     /// Returns nullptr if not found.
     TableFunctionPtr tryGet(const std::string & name, ContextPtr context) const;
 
-    Documentation getDocumentation(const std::string & name) const;
+    std::optional<FunctionDocumentation> tryGetDocumentation(const String & name) const;
+    std::optional<TableFunctionProperties> tryGetProperties(const String & name) const;
 
     bool isTableFunctionName(const std::string & name) const;
 
@@ -60,6 +76,9 @@ private:
     const TableFunctions & getCaseInsensitiveMap() const override { return case_insensitive_table_functions; }
 
     String getFactoryName() const override { return "TableFunctionFactory"; }
+
+    std::optional<FunctionDocumentation> tryGetDocumentationImpl(const String & name) const;
+    std::optional<TableFunctionProperties> tryGetPropertiesImpl(const String & name) const;
 
     TableFunctions table_functions;
     TableFunctions case_insensitive_table_functions;
