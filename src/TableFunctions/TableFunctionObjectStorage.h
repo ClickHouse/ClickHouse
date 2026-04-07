@@ -29,6 +29,9 @@ struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
 
+/// Get the ObjectStorageType for a disk by name. Defined in TableFunctionObjectStorage.cpp.
+ObjectStorageType getObjectStorageTypeForDisk(const String & disk_name, const ContextPtr & context);
+
 template <typename Definition, typename Configuration, bool is_data_lake = false>
 class TableFunctionObjectStorage : public ITableFunction
 {
@@ -59,8 +62,33 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
+        auto disk_name = getDiskName();
+        auto type = Configuration::type;
+        if (!disk_name.empty())
+        {
+            auto disk_type = getObjectStorageTypeForDisk(disk_name, context);
+            if constexpr (is_data_lake)
+            {
+                /// Generic data lake functions (iceberg, deltaLake, etc.) accept any disk type.
+                /// Type-specific ones (icebergS3, icebergLocal, etc.) must match.
+                constexpr bool is_generic = (std::string_view(Definition::name) == "iceberg"
+                    || std::string_view(Definition::name) == "icebergCluster"
+                    || std::string_view(Definition::name) == "deltaLake"
+                    || std::string_view(Definition::name) == "deltaLakeCluster"
+                    || std::string_view(Definition::name) == "hudi"
+                    || std::string_view(Definition::name) == "paimon");
+                if constexpr (!is_generic)
+                {
+                    if (disk_type != type)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Disk type doesn't match with table engine type storage");
+                }
+            }
+            type = disk_type;
+        }
         auto [config, opts]
-            = ObjectStorageConnectionConfiguration::initialize(Configuration::type, args, context, true, nullptr, getDiskName());
+            = ObjectStorageConnectionConfiguration::initialize(type, args, context, true, nullptr, disk_name);
         configuration = config;
         table_options = std::move(opts);
         if constexpr (is_data_lake)

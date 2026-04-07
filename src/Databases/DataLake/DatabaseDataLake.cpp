@@ -608,6 +608,15 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     auto object_storage = configuration->createObjectStorage(
         context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(table_id));
 
+    /// When creating datalake storages from DatabaseDataLake, format is typically "auto"
+    /// because the configuration was initialized without table structure. Set it explicitly
+    /// based on the datalake type to avoid attempting format auto-detection on directory paths.
+    if (table_options.format == "auto")
+    {
+        if (datalake_type == DataLakeType::DeltaLake)
+            table_options.format = "Parquet";
+    }
+
     switch (datalake_type)
     {
 #if USE_AVRO

@@ -60,6 +60,11 @@ namespace DataLakeStorageSetting
     extern const DataLakeStorageSettingsString disk;
 }
 
+ObjectStorageType getObjectStorageTypeForDisk(const String & disk_name, const ContextPtr & context)
+{
+    return context->getDisk(disk_name)->getObjectStorage()->getType();
+}
+
 template <typename Definition, typename Configuration, bool is_data_lake>
 String TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::getDiskName() const
 {
