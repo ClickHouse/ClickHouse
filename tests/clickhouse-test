@@ -1399,9 +1399,11 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
         # Default-true optimize/enable settings: disable with 0.05 probability
+        "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
@@ -1409,9 +1411,23 @@ class SettingsRandomizer:
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
         "query_plan_join_shard_by_pk_ranges": lambda: random.random() < 0.3,
         "count_distinct_optimization": lambda: random.random() < 0.3,
+        "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # More query plan optimizations
+        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
+        "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
+        "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
+        "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "query_plan_merge_filters": lambda: random.random() > 0.05,
+        "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
+        "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
+        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
+        "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,
+        "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
+        "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
+        "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
     }
 
     dependent_settings = {
@@ -1428,6 +1444,8 @@ class SettingsRandomizer:
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
     }
+
+    stress_test_only_settings = {"query_plan_optimize_join_order_randomize"}
 
     @staticmethod
     def adjust_settings_for_autopr(args, tags, random_settings):
@@ -1450,6 +1468,8 @@ class SettingsRandomizer:
         random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
+            if setting in SettingsRandomizer.stress_test_only_settings and not args.stress_tests:
+                continue
             if (
                 is_debug
                 and setting == "allow_prefetched_read_pool_for_remote_filesystem"
@@ -1572,7 +1592,6 @@ def replace_in_file(filename, what, with_what):
 
 def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
-
 
 def str_to_numeric(v: str):
     vl = v.lower()
@@ -2181,9 +2200,10 @@ class TestCase:
             return FailureReason.SKIP
 
         if "no-flaky-check" in tags and args.flaky_check:
-            # skip for flaky and targeted check
-            #  main reason for using this tag - a test is not compatible with the thread fuzzer which is used in both jobs
-            return FailureReason.SKIP
+            # In flaky check mode, no-flaky-check tests run sequentially (like no-parallel)
+            # with --sequential-test-runs runs instead of being skipped entirely.
+            # They are still excluded from parallel execution — see is_sequential_test().
+            pass
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
@@ -2715,6 +2735,9 @@ class TestCase:
                 + " --param_CLICKHOUSE_DATABASE_1="
                 + database
                 + "_1"
+                + " --param_CLICKHOUSE_DATABASE_2="
+                + database
+                + "_2"
             )
             for env_to_param in [
                 "CLICKHOUSE_USER_FILES",
@@ -3358,9 +3381,11 @@ class TestSuite:
         self.sequential_tests = []
         self.parallel_tests = []
 
+        # Sort unique test names first, then expand to repeated runs.
+        # Sorting after expansion would re-group equal names together
+        # (for asc/desc order), destroying the round-robin interleaving.
+        all_tests.sort(key=self.tests_in_suite_key_func)
         self.all_tests = self.apply_test_runs(all_tests)
-
-        self.all_tests.sort(key=self.tests_in_suite_key_func)
 
         post_run_check_tests = []
 
@@ -3382,6 +3407,7 @@ class TestSuite:
         long_test_runs = max(
             int(self.args.test_runs * self.args.long_test_runs_ratio), 1
         )
+        sequential_runs = self.args.sequential_test_runs if self.args.sequential_test_runs is not None else test_runs
 
         newly_modified_runs = {}
         if (
@@ -3396,13 +3422,26 @@ class TestSuite:
                 )
 
         def get_runs(test):
-            base = long_test_runs if self.is_long_test(test) else test_runs
+            if self.is_long_test(test):
+                base = long_test_runs
+            elif self.is_sequential_test(test):
+                base = sequential_runs
+            else:
+                base = test_runs
             extra = newly_modified_runs.get(test, 0)
             return max(base, extra)
 
-        all_tests = [[test] * get_runs(test) for test in all_tests]
-        all_tests = [item for sublist in all_tests for item in sublist]
-        return all_tests
+        # Build a round-robin list so each run-slot interleaves all tests before
+        # starting the next slot. E.g. [t1,t2,t3, t1,t2,t3, t1,t2] instead of
+        # [t1,t1,t1, t2,t2,t2, t3,t3], so tests with different run counts still
+        # start at the same time. This guarantees no test monopolizes consecutive
+        # runs regardless of --order.
+        runs_per_test = {test: get_runs(test) for test in all_tests}
+        max_runs = max(runs_per_test.values()) if runs_per_test else 0
+        result = []
+        for slot in range(max_runs):
+            result.extend(test for test in all_tests if slot < runs_per_test[test])
+        return result
 
     def get_newly_modified_test_runs(self, all_tests):
         """Get repetition counts for recently added tests based on test name order.
@@ -3439,9 +3478,12 @@ class TestSuite:
         if test_name not in self.all_tags:
             return False
 
-        return ("no-parallel" in self.all_tags[test_name]) or (
-            "sequential" in self.all_tags[test_name]
-        )
+        tags = self.all_tags[test_name]
+        if "no-parallel" in tags or "sequential" in tags:
+            return True
+        if "no-flaky-check" in tags and args.flaky_check:
+            return True
+        return False
 
     def get_selected_tests(self, filter_func):
         """
@@ -5097,6 +5139,14 @@ def parse_args():
         nargs="?",
         type=float,
         help="Ratio from --test-runs for long tests",
+    )
+    parser.add_argument(
+        "--sequential-test-runs",
+        default=None,
+        nargs="?",
+        type=int,
+        help="Number of runs for sequential (no-parallel) and no-flaky-check tests. "
+             "Defaults to half of --test-runs.",
     )
     parser.add_argument(
         "--repeat-newly-modified-tests",
