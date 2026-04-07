@@ -485,8 +485,11 @@ std::optional<AuthResult> LDAPAccessStorage::authenticateImpl(
     }
     else
     {
-        // Just in case external_roles are changed. This will be no-op if they are not.
-        updateAssignedRolesNoLock(*id, user->getName(), external_roles);
+        // Don't update roles when authenticating via AlwaysAllowCredentials (interserver path),
+        // because we didn't contact LDAP and have no role information — updating with an empty
+        // set would wipe the user's existing mapped roles.
+        if (!typeid_cast<const AlwaysAllowCredentials *>(&credentials))
+            updateAssignedRolesNoLock(*id, user->getName(), external_roles);
     }
 
     if (id)
