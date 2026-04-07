@@ -1399,9 +1399,11 @@ class SettingsRandomizer:
         # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
         # That is why we use it with fallback to 'greedy'.
         "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
+        "query_plan_optimize_join_order_randomize": lambda: 1 if random.random() < 0.1 else random.randint(2, 1_000_000),
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
         # Default-true optimize/enable settings: disable with 0.05 probability
+        "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
@@ -1409,9 +1411,23 @@ class SettingsRandomizer:
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
         "query_plan_join_shard_by_pk_ranges": lambda: random.random() < 0.3,
         "count_distinct_optimization": lambda: random.random() < 0.3,
+        "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # More query plan optimizations
+        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
+        "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
+        "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
+        "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "query_plan_merge_filters": lambda: random.random() > 0.05,
+        "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
+        "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
+        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
+        "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,
+        "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
+        "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
+        "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
     }
 
     dependent_settings = {
@@ -1428,6 +1444,8 @@ class SettingsRandomizer:
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
     }
+
+    stress_test_only_settings = {"query_plan_optimize_join_order_randomize"}
 
     @staticmethod
     def adjust_settings_for_autopr(args, tags, random_settings):
@@ -1450,6 +1468,8 @@ class SettingsRandomizer:
         random_settings = {}
         is_debug = BuildFlags.DEBUG in args.build_flags
         for setting, generator in SettingsRandomizer.settings.items():
+            if setting in SettingsRandomizer.stress_test_only_settings and not args.stress_tests:
+                continue
             if (
                 is_debug
                 and setting == "allow_prefetched_read_pool_for_remote_filesystem"
@@ -1572,7 +1592,6 @@ def replace_in_file(filename, what, with_what):
 
 def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
-
 
 def str_to_numeric(v: str):
     vl = v.lower()
@@ -1800,7 +1819,6 @@ class TestCase:
             database = testcase_args.database
             os.environ.setdefault("CLICKHOUSE_DATABASE", database)
             os.environ.setdefault("CLICKHOUSE_TMP", suite_tmp_dir)
-            os.environ.setdefault("CLICKHOUSE_WRITE_COVERAGE", f"coverage.{database}")
             testcase_args.test_tmp_dir = suite_tmp_dir
         else:
             # If --database is not specified, we will create temporary database with
@@ -1829,7 +1847,6 @@ class TestCase:
             testcase_args.test_tmp_dir = os.path.join(suite_tmp_dir, database)
             os.mkdir(testcase_args.test_tmp_dir)
             os.environ["CLICKHOUSE_TMP"] = testcase_args.test_tmp_dir
-            os.environ["CLICKHOUSE_WRITE_COVERAGE"] = f"coverage.{database}"
 
         testcase_args.testcase_database = database
 
@@ -2183,9 +2200,10 @@ class TestCase:
             return FailureReason.SKIP
 
         if "no-flaky-check" in tags and args.flaky_check:
-            # skip for flaky and targeted check
-            #  main reason for using this tag - a test is not compatible with the thread fuzzer which is used in both jobs
-            return FailureReason.SKIP
+            # In flaky check mode, no-flaky-check tests run sequentially (like no-parallel)
+            # with --sequential-test-runs runs instead of being skipped entirely.
+            # They are still excluded from parallel execution — see is_sequential_test().
+            pass
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
         if "stateful" not in tags and args.no_stateless:
@@ -2653,66 +2671,6 @@ class TestCase:
 
         description_full += result.description
 
-        if (
-            args.collect_per_test_coverage
-            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
-        ):
-            try:
-                clickhouse_execute(
-                    args,
-                    f"INSERT INTO system.coverage_log "
-                    f"WITH arrayDistinct(arrayFilter(x -> x != 0, coverageCurrent())) AS coverage_distinct "
-                    f"SELECT DISTINCT now(), '{self.case}', coverage_distinct, "
-                    f"arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) ",
-                    retry_error_codes=True,
-                )
-            except Exception as e:
-                print("Cannot insert coverage data: ", str(e))
-                traceback.print_exc()
-                sys.exit(1)
-
-
-            # Check for dumped coverage files
-
-            if self.testcase_args and self.testcase_args.testcase_database:
-                file_pattern = f"coverage.{self.testcase_args.testcase_database}.*"
-                matching_files = glob.glob(file_pattern)
-                for file_path in matching_files:
-                    try:
-                        body = read_file_as_binary_string(file_path)
-                        clickhouse_execute(
-                            args,
-                            "INSERT INTO system.coverage_log "
-                            "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
-                            f"WITH arrayDistinct(groupArray(data)) AS coverage_distinct "
-                            f"SELECT now(), '{self.case}', coverage_distinct, "
-                            f"arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) "
-                            f"FROM input('data UInt64') FORMAT RowBinary",
-                            body=body,
-                            retry_error_codes=True,
-                        )
-                    except Exception as e:
-                        print("Cannot insert coverage data: ", str(e))
-                        traceback.print_exc()
-                        sys.exit(1)
-
-                    # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
-                    try:
-                        os.remove(file_path)
-                    except Exception as e:
-                        print("FIXME: Race! Cannot remove coverage file: ", str(e))
-            else:
-                # self.testcase_args not configured - test was skipped
-                pass
-
-            coverage = clickhouse_execute(
-                args,
-                "SELECT length(coverageCurrent())",
-                retry_error_codes=True,
-            ).decode()
-
-            description_full += f" (coverage: {coverage})"
-
         description_full += "\n"
 
         if result.status == TestStatus.FAIL and self.testcase_args:
@@ -2777,6 +2735,9 @@ class TestCase:
                 + " --param_CLICKHOUSE_DATABASE_1="
                 + database
                 + "_1"
+                + " --param_CLICKHOUSE_DATABASE_2="
+                + database
+                + "_2"
             )
             for env_to_param in [
                 "CLICKHOUSE_USER_FILES",
@@ -2813,18 +2774,6 @@ class TestCase:
             )
 
         command = pattern.format(**params)
-
-        # We want to calculate per-test code coverage. That's why we reset it before each test.
-        if (
-            args.collect_per_test_coverage
-            and args.reset_coverage_before_every_test
-            and BuildFlags.SANITIZE_COVERAGE in args.build_flags
-        ):
-            clickhouse_execute(
-                args,
-                "SYSTEM RESET COVERAGE",
-                retry_error_codes=True,
-            )
 
         preexec_fn = None
         cgroup_name = None
@@ -2976,6 +2925,19 @@ class TestCase:
             )
 
             client_options = self.add_effective_settings(client_options)
+
+            if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
+                try:
+                    safe_case = self.case.replace("'", "\\'")
+                    clickhouse_execute(args, f"SYSTEM SET COVERAGE TEST '{safe_case}'")
+                except Exception as e:
+                    return TestResult(
+                        self.name,
+                        TestStatus.FAIL,
+                        None,
+                        0.0,
+                        f"\nCannot arm per-test coverage: {e}\n",
+                    )
 
             if not is_valid_utf_8(self.case_file) or (
                 self.reference_file and not is_valid_utf_8(self.reference_file)
@@ -3419,9 +3381,11 @@ class TestSuite:
         self.sequential_tests = []
         self.parallel_tests = []
 
+        # Sort unique test names first, then expand to repeated runs.
+        # Sorting after expansion would re-group equal names together
+        # (for asc/desc order), destroying the round-robin interleaving.
+        all_tests.sort(key=self.tests_in_suite_key_func)
         self.all_tests = self.apply_test_runs(all_tests)
-
-        self.all_tests.sort(key=self.tests_in_suite_key_func)
 
         post_run_check_tests = []
 
@@ -3443,6 +3407,7 @@ class TestSuite:
         long_test_runs = max(
             int(self.args.test_runs * self.args.long_test_runs_ratio), 1
         )
+        sequential_runs = self.args.sequential_test_runs if self.args.sequential_test_runs is not None else test_runs
 
         newly_modified_runs = {}
         if (
@@ -3457,13 +3422,26 @@ class TestSuite:
                 )
 
         def get_runs(test):
-            base = long_test_runs if self.is_long_test(test) else test_runs
+            if self.is_long_test(test):
+                base = long_test_runs
+            elif self.is_sequential_test(test):
+                base = sequential_runs
+            else:
+                base = test_runs
             extra = newly_modified_runs.get(test, 0)
             return max(base, extra)
 
-        all_tests = [[test] * get_runs(test) for test in all_tests]
-        all_tests = [item for sublist in all_tests for item in sublist]
-        return all_tests
+        # Build a round-robin list so each run-slot interleaves all tests before
+        # starting the next slot. E.g. [t1,t2,t3, t1,t2,t3, t1,t2] instead of
+        # [t1,t1,t1, t2,t2,t2, t3,t3], so tests with different run counts still
+        # start at the same time. This guarantees no test monopolizes consecutive
+        # runs regardless of --order.
+        runs_per_test = {test: get_runs(test) for test in all_tests}
+        max_runs = max(runs_per_test.values()) if runs_per_test else 0
+        result = []
+        for slot in range(max_runs):
+            result.extend(test for test in all_tests if slot < runs_per_test[test])
+        return result
 
     def get_newly_modified_test_runs(self, all_tests):
         """Get repetition counts for recently added tests based on test name order.
@@ -3500,9 +3478,12 @@ class TestSuite:
         if test_name not in self.all_tags:
             return False
 
-        return ("no-parallel" in self.all_tags[test_name]) or (
-            "sequential" in self.all_tags[test_name]
-        )
+        tags = self.all_tags[test_name]
+        if "no-parallel" in tags or "sequential" in tags:
+            return True
+        if "no-flaky-check" in tags and args.flaky_check:
+            return True
+        return False
 
     def get_selected_tests(self, filter_func):
         """
@@ -3595,7 +3576,8 @@ def run_tests_array(
         multiprocessing.synchronize.Event,
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.managers.ListProxy,
-        int
+        int,
+        multiprocessing.sharedctypes.Synchronized,
     ],
 ):
     (
@@ -3608,7 +3590,8 @@ def run_tests_array(
         server_died,
         workers_to_shed,
         restarted_tests,
-        process_index
+        process_index,
+        total_failures_shared,
     ) = all_tests_with_params
 
     os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-proc{process_index}-%2m.profraw"
@@ -3754,6 +3737,12 @@ def run_tests_array(
                     stop_tests()
                     server_died.set()
                     raise ServerDied("Server died")
+                if args.max_failures > 0:
+                    with total_failures_shared.get_lock():
+                        total_failures_shared.value += 1
+                        if total_failures_shared.value >= args.max_failures:
+                            stop_tests()
+                            raise ServerDied(f"Reached --max-failures limit ({args.max_failures})")
             elif test_result.status == TestStatus.SKIPPED:
                 skipped_total += 1
 
@@ -3922,8 +3911,9 @@ class BuildFlags:
     ADDRESS = "asan"
     UNDEFINED = "ubsan"
     MEMORY = "msan"
-    SANITIZE_COVERAGE = "sanitize-coverage"
-    SANITIZERS = [THREAD, ADDRESS, UNDEFINED, MEMORY, SANITIZE_COVERAGE]
+    WITH_COVERAGE = "with-coverage"
+    WITH_COVERAGE_DEPTH = "with-coverage-depth"
+    SANITIZERS = [THREAD, ADDRESS, UNDEFINED, MEMORY]
     DEBUG = "debug"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
@@ -3959,8 +3949,20 @@ def collect_build_flags(args):
             if flag is not None:
                 result.append(flag)
         SANITIZED = bool(result)
-    if b"-DSANITIZE_COVERAGE=1" in value:
-        result.append(BuildFlags.SANITIZE_COVERAGE)
+
+    # WITH_COVERAGE / WITH_COVERAGE_DEPTH have dedicated rows in system.build_options;
+    # do not rely on CXX_FLAGS which uses FULL_CXX_FLAGS_NORMALIZED and may not include them.
+    with_coverage = clickhouse_execute(
+        args, "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+    )
+    if with_coverage.strip() in (b"ON", b"1"):
+        result.append(BuildFlags.WITH_COVERAGE)
+
+    with_coverage_depth = clickhouse_execute(
+        args, "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE_DEPTH'"
+    )
+    if with_coverage_depth.strip() in (b"ON", b"1"):
+        result.append(BuildFlags.WITH_COVERAGE_DEPTH)
 
     value = clickhouse_execute(
         args, "SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE'"
@@ -4104,6 +4106,7 @@ def do_run_tests(
         parallel_tests = manager.list()
         parallel_tests.extend(test_suite.parallel_tests)
         workers_to_shed = multiprocessing.Value('i', 0)
+        total_failures_shared = multiprocessing.Value('i', 0)
 
         processes = []
         for i in range(jobs):
@@ -4121,6 +4124,7 @@ def do_run_tests(
                         workers_to_shed,
                         restarted_tests,
                         i,  # process index
+                        total_failures_shared,
                     ),
                 ),
             )
@@ -4199,6 +4203,9 @@ def do_run_tests(
                     processes.remove(p)
 
     if test_suite.sequential_tests:
+        # Sequential runner shares the total_failures_shared counter with parallel workers
+        # so that --max-failures counts failures from both groups combined.
+        seq_total_failures = total_failures_shared if test_suite.parallel_tests else multiprocessing.Value('i', 0)
         run_tests_array(
             (
                 list(test_suite.sequential_tests),
@@ -4210,7 +4217,8 @@ def do_run_tests(
                 server_died,
                 multiprocessing.Value('i', 0),  # sequential runner is never shed
                 restarted_tests,
-                jobs + 1
+                jobs + 1,
+                seq_total_failures,
             )
         )
 
@@ -4519,6 +4527,25 @@ def main(args):
     args.build_flags = collect_build_flags(args)
     args.changed_merge_tree_settings = collect_changed_merge_tree_settings(args)
 
+    print(
+        f"build_flags={args.build_flags} "
+        f"collect_per_test_coverage={args.collect_per_test_coverage} "
+        f"coverage_active={args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags}"
+    )
+
+    if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH not in args.build_flags:
+        raise RuntimeError(
+            "--collect-per-test-coverage is enabled but the binary was not built with "
+            "WITH_COVERAGE_DEPTH=ON. Per-test coverage collection will not work. "
+            "Make sure the binary is built with -DWITH_COVERAGE_DEPTH=ON."
+        )
+    if BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags and not args.collect_per_test_coverage:
+        raise RuntimeError(
+            "Binary is built with WITH_COVERAGE_DEPTH=ON but --collect-per-test-coverage "
+            "is disabled. Per-test coverage data will not be collected. "
+            "Pass --collect-per-test-coverage to enable collection."
+        )
+
     if args.s3_storage and (BuildFlags.RELEASE not in args.build_flags):
         args.no_random_settings = True
 
@@ -4589,29 +4616,105 @@ def main(args):
 
     if (
         args.collect_per_test_coverage
-        and BuildFlags.SANITIZE_COVERAGE in args.build_flags
+        and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags
     ):
         clickhouse_execute(
             args,
-            """
-                CREATE TABLE IF NOT EXISTS system.coverage_log
-                (
-                    time DateTime,
-                    test_name String,
-                    coverage Array(UInt64),
-                    symbol Array(String)
-                ) ENGINE = MergeTree ORDER BY test_name
-                COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
-            """,
+            """CREATE TABLE IF NOT EXISTS system.coverage_log
+            (
+                time        DateTime,
+                test_name   LowCardinality(String),
+                file        LowCardinality(String),
+                line_start  UInt32,
+                line_end    UInt32,
+                min_depth   UInt8 DEFAULT 255,
+                branch_flag UInt8 DEFAULT 0,
+                INDEX file_bloom  file       TYPE bloom_filter GRANULARITY 1,
+                INDEX line_minmax line_start TYPE minmax        GRANULARITY 1
+            )
+            ENGINE = ReplacingMergeTree(time)
+ORDER BY (test_name, file, line_start, line_end)
+            COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'""",
         )
-
-        # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage_log "
-            "WITH arrayDistinct(arrayFilter(x -> x != 0, coverageCurrent())) AS coverage_distinct "
-            "SELECT DISTINCT now(), '', coverage_distinct, "
-            "arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) ",
+            """CREATE TABLE IF NOT EXISTS system.coverage_indirect_calls
+            (
+                test_name LowCardinality(String),
+                callee_offset UInt64,
+                caller_name_hash UInt64,
+                caller_func_hash UInt64,
+                call_count UInt64
+            )
+            ENGINE = ReplacingMergeTree(call_count)
+ORDER BY (test_name, callee_offset)
+            COMMENT 'Indirect (virtual/function-pointer) call observations per test for coverage-based test selection'""",
+        )
+        # Self-test: verify the coverage collection pipeline works end-to-end.
+        clickhouse_execute(args, "SYSTEM SET COVERAGE TEST '_selftest'")
+        # Diagnostic: check coverage map size and covered NameRefs via SQL
+        try:
+            diag = clickhouse_execute(
+                args, "SELECT coverageDiag()"
+            ).decode(errors="replace").strip()
+            print(f"Coverage diagnostic (before self-test): coverageDiag={diag} "
+                  f"(name_refs, map_size, matches, non_empty_file_regions, zero_line_regions, first_file_len_and_line)")
+        except Exception as e:
+            print(f"Coverage diagnostic: coverageDiag() failed: {e}")
+        clickhouse_execute(args, "SELECT 1")
+        clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
+        selftest_rows = int(
+            clickhouse_execute(
+                args,
+                "SELECT count() FROM system.coverage_log FINAL WHERE test_name = '_selftest'",
+            )
+            or 0
+        )
+        try:
+            diag2 = clickhouse_execute(
+                args, "SELECT coverageDiag()"
+            ).decode(errors="replace").strip()
+            print(f"Coverage diagnostic (after self-test): coverageDiag={diag2} "
+                  f"(name_refs, map_size, matches, non_empty_file_regions, zero_line_regions, first_file_len_and_line)")
+        except Exception:
+            pass
+        if selftest_rows == 0:
+            raise Exception(
+                "Coverage self-test FAILED: coverage_log has 0 rows for _selftest — "
+                "coverage mapping is not working (binary built without WITH_COVERAGE_DEPTH?)"
+            )
+        print(f"Coverage self-test: coverage_log rows for _selftest = {selftest_rows} (OK)")
+        # Validate that the coverage mapping parser produced no bogus line numbers.
+        # line_end > 50000 or line_end < line_start indicate cursor-misalignment bugs
+        # in the LLVM coverage region decoder (e.g. wrong kKindShift for BranchRegion).
+        try:
+            bogus_rows = int(
+                clickhouse_execute(
+                    args,
+                    "SELECT count() FROM system.coverage_log FINAL"
+                    " WHERE test_name = '_selftest'"
+                    "   AND (line_end > 50000 OR line_end < line_start)",
+                )
+                or 0
+            )
+            if bogus_rows > 0:
+                sample = clickhouse_execute(
+                    args,
+                    "SELECT file, line_start, line_end FROM system.coverage_log FINAL"
+                    " WHERE test_name = '_selftest'"
+                    "   AND (line_end > 50000 OR line_end < line_start)"
+                    " LIMIT 5",
+                ).decode(errors="replace").strip()
+                raise Exception(
+                    f"Coverage region quality FAILED: {bogus_rows} bogus line numbers "
+                    f"(line_end > 50000 or line_end < line_start) — "
+                    f"coverage mapping parser has bugs.\nSample:\n{sample}"
+                )
+            print(f"Coverage region quality: bogus line numbers = 0 (OK)")
+        except Exception as e:
+            print(f"Coverage region quality check failed: {e}")
+        clickhouse_execute(
+            args, "DELETE FROM system.coverage_log WHERE test_name = '_selftest'"
         )
 
     total_tests_run = 0
@@ -4785,6 +4888,45 @@ def main(args):
         sys.exit(1)
     else:
         print("All tests have finished.")
+
+    if args.collect_per_test_coverage and BuildFlags.WITH_COVERAGE_DEPTH in args.build_flags:
+        try:
+            # Flush the last test's coverage into system.coverage_log.
+            clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
+        except Exception as e:
+            print("Cannot flush final coverage: ", str(e))
+        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
+        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
+        print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
+        try:
+            ic_rows = int(
+                clickhouse_execute(
+                    args,
+                    "SELECT count() FROM system.coverage_indirect_calls FINAL",
+                )
+                or 0
+            )
+            ic_tests = int(
+                clickhouse_execute(
+                    args,
+                    "SELECT uniq(test_name) FROM system.coverage_indirect_calls FINAL",
+                )
+                or 0
+            )
+            ic_callees = int(
+                clickhouse_execute(
+                    args,
+                    "SELECT uniqExact(callee_offset) FROM system.coverage_indirect_calls FINAL",
+                )
+                or 0
+            )
+            ic_status = "OK" if ic_rows > 0 else "EMPTY - indirect call value profiling inactive"
+            print(
+                f"system.coverage_indirect_calls: {ic_rows} rows, {ic_tests} tests, "
+                f"{ic_callees} unique callees ({ic_status})"
+            )
+        except Exception as e:
+            print(f"Coverage indirect calls stats check failed: {e}")
 
     if int(clickhouse_execute(args, "EXISTS system.trace_log")):
         try:
@@ -4997,6 +5139,14 @@ def parse_args():
         nargs="?",
         type=float,
         help="Ratio from --test-runs for long tests",
+    )
+    parser.add_argument(
+        "--sequential-test-runs",
+        default=None,
+        nargs="?",
+        type=int,
+        help="Number of runs for sequential (no-parallel) and no-flaky-check tests. "
+             "Defaults to half of --test-runs.",
     )
     parser.add_argument(
         "--repeat-newly-modified-tests",
@@ -5245,6 +5395,12 @@ def parse_args():
         help="Max number of failed tests in a row (stop tests if higher)",
     )
     parser.add_argument(
+        "--max-failures",
+        default=0,
+        type=int,
+        help="Stop after this many total failures across all workers (0 = no limit)",
+    )
+    parser.add_argument(
         "--report-coverage",
         action="store_true",
         default=False,
@@ -5253,7 +5409,7 @@ def parse_args():
     parser.add_argument(
         "--collect-per-test-coverage",
         action="store_true",
-        default=True,
+        default=False,
         help="Create `system.coverage_log` table on the server and collect information about low-level code coverage on a per test basis there",
     )
     parser.add_argument(
