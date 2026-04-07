@@ -17,6 +17,7 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_);
     static SerializationPtr create(const SerializationPtr & nested_);
     bool supportsPooling() const override { return nested->supportsPooling(); }
+    const SerializationPtr & getNested() const { return nested; }
 
     KindStack getKindStack() const override;
 
