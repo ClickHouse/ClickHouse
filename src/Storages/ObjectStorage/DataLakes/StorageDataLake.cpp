@@ -110,9 +110,14 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
         || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
 
-    if (!is_table_function && is_delta_lake_cdf && !std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
+    if (!is_table_function && is_delta_lake_cdf)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
+#if USE_PARQUET
+        if constexpr (!std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
+#endif
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
+        }
     }
 
     try
