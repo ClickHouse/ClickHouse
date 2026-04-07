@@ -469,6 +469,28 @@ void StorageDataLake<DataLakeMetadata>::read(
 }
 
 template <typename DataLakeMetadata>
+SinkToStoragePtr StorageDataLake<DataLakeMetadata>::write(
+    const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /* async_insert */)
+{
+    ensureMetadataInitialized(local_context);
+
+    if (!current_metadata->supportsWrites())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
+
+    const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+    return current_metadata->write(
+        sample_block,
+        storage_id,
+        object_storage,
+        configuration,
+        table_options.format,
+        table_options.compression_method,
+        format_settings,
+        local_context,
+        catalog);
+}
+
+template <typename DataLakeMetadata>
 void StorageDataLake<DataLakeMetadata>::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,

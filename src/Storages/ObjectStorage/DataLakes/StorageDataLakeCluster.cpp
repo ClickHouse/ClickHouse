@@ -94,7 +94,20 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, {}, sample_path, context_);
+
+    /// Try to resolve schema from data lake metadata first.
+    if (columns.empty() && current_metadata)
+    {
+        auto schema = current_metadata->getTableSchema(context_);
+        if (!schema.empty())
+            columns = ColumnsDescription(std::move(schema));
+    }
+
+    if (table_options.format == "auto")
+        table_options.format = "Parquet";
+
+    if (columns.empty())
+        resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, {}, sample_path, context_);
     FormatFactory::instance().checkFormatName(table_options.format);
 
     StorageInMemoryMetadata metadata;

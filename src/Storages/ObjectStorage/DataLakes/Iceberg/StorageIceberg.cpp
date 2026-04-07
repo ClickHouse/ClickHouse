@@ -308,7 +308,7 @@ SinkToStoragePtr StorageDataLake<IcebergMetadata>::write(
 {
     ensureMetadataInitialized(local_context);
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
-    return current_metadata->write(sample_block, storage_id, object_storage, configuration, format_settings, local_context, catalog);
+    return current_metadata->write(sample_block, storage_id, object_storage, configuration, table_options.format, table_options.compression_method, format_settings, local_context, catalog);
 }
 
 bool StorageDataLake<IcebergMetadata>::optimize(

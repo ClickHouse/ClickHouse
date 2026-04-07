@@ -1234,6 +1234,8 @@ SinkToStoragePtr IcebergMetadata::write(
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
     ObjectStorageConnectionConfigurationPtr configuration,
+    const String & /*format*/,
+    const String & /*compression_method*/,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)

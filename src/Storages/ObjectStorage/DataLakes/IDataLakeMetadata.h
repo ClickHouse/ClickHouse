@@ -7,9 +7,18 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Disks/DiskType.h>
+#include <Storages/IStorage.h>
+#include <Interpreters/StorageID.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Databases/DataLake/ICatalog.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class ActionsDAG;
 struct IObjectIterator;
@@ -53,6 +62,20 @@ public:
     virtual void update(const ContextPtr &) { }
 
     virtual bool supportsWrites() const { return false; }
+
+    virtual SinkToStoragePtr write(
+        SharedHeader /* sample_block */,
+        const StorageID & /* table_id */,
+        ObjectStoragePtr /* object_storage */,
+        ObjectStorageConnectionConfigurationPtr /* configuration */,
+        const String & /* format */,
+        const String & /* compression_method */,
+        const std::optional<FormatSettings> & /* format_settings */,
+        ContextPtr /* context */,
+        std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Write is not supported for this data lake engine");
+    }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 

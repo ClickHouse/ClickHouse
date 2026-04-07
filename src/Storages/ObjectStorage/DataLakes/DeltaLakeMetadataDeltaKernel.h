@@ -96,7 +96,7 @@ public:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog);
+        std::shared_ptr<DataLake::ICatalog> catalog) override;
 
 private:
     using TableSnapshotCache = CacheBase<SnapshotVersion, DeltaLake::TableSnapshot>;
