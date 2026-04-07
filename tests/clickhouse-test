@@ -1403,6 +1403,7 @@ class SettingsRandomizer:
         # changing grace_hash_join_initial_buckets is giving wrong results in a test
         # "grace_hash_join_initial_buckets": lambda: random.choice([1, 2, 4, 8, 16, 32, 64, 128]),
         # Default-true optimize/enable settings: disable with 0.05 probability
+        "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
         "enable_parallel_blocks_marshalling": lambda: random.random() > 0.05,
@@ -1410,9 +1411,23 @@ class SettingsRandomizer:
         "query_plan_reuse_storage_ordering_for_window_functions": lambda: random.random() < 0.3,
         "query_plan_join_shard_by_pk_ranges": lambda: random.random() < 0.3,
         "count_distinct_optimization": lambda: random.random() < 0.3,
+        "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # More query plan optimizations
+        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
+        "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
+        "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
+        "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "query_plan_merge_filters": lambda: random.random() > 0.05,
+        "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
+        "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
+        "query_plan_convert_any_join_to_semi_or_anti_join": lambda: random.random() > 0.05,
+        "query_plan_merge_filter_into_join_condition": lambda: random.random() > 0.05,
+        "query_plan_enable_multithreading_after_window_functions": lambda: random.random() > 0.05,
+        "query_plan_max_limit_for_lazy_materialization": lambda: random.choice([0, 1, 10, 100, 1000, 10000, 100000]),
+        "query_plan_optimize_join_order_limit": lambda: 0 if random.random() < 0.05 else random.choice([1, 5, 10, 20, 64]),
     }
 
     dependent_settings = {
