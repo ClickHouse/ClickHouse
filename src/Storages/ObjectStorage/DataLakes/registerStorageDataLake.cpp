@@ -104,6 +104,10 @@ createStorageDataLake(const StorageFactory::Arguments & args, ObjectStorageType 
         : "";
     auto [configuration, table_options]
         = ObjectStorageConnectionConfiguration::initialize(type, args.engine_args, context, false, &args.table_id, disk_name);
+
+    if (table_options.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data lake engines do not support the `partition_strategy` argument");
+
     if (table_options.format == "auto")
         table_options.format = "Parquet";
 
