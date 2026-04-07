@@ -1535,6 +1535,7 @@ bigrams
 binlog
 bitAnd
 bitCount
+bitfield
 bitHammingDistance
 bitNot
 bitOr
@@ -3463,6 +3464,7 @@ unencoded
 unencrypted
 unescaped
 unescaping
+unfreed
 unhex
 unicode
 unidimensional

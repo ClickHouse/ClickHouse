@@ -67,7 +67,9 @@ REF=master&sha=59d18f406d9ef99bbf400184fd0ba47a84381bec&base_url=https%3A%2F%2Fs
 
 Run the following from the repository root.
 
-## Test location
+## Deploy json.html (legacy viewer)
+
+### Test location
 
 - Will not affect production.
 - Can be accessed by replacing `json.html` with `json_test.html` in any CI report URL.
@@ -76,13 +78,58 @@ Run the following from the repository root.
 python -m ci.praktika infrastructure --deploy --only html --test
 ```
 
-## Production
+### Production
 
 - Will be immediately applied for all CI reports.
 
 ```bash
 python -m ci.praktika infrastructure --deploy --only html
 ```
+
+## Deploy report.html (React UI viewer)
+
+The new React-based CI results viewer built with Click UI.
+
+### Test location
+
+- Will not affect production.
+- Can be accessed by replacing `json.html` with `report_test.html` in any CI report URL.
+
+```bash
+python -m ci.praktika infrastructure --deploy --only report --test
+```
+
+### Production
+
+- Will be immediately applied when accessed via `report.html` URL.
+
+```bash
+python -m ci.praktika infrastructure --deploy --only report
+```
+
+### Development
+
+The report UI is located in `ci/praktika/report-click-ui/`.
+
+To develop locally:
+```bash
+cd ci/praktika/report-click-ui
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173 with URL parameters, for example:
+```
+http://localhost:5173/?PR=96792&SHA=dd4e76d&name_0=PR
+```
+
+To build for production:
+```bash
+cd ci/praktika/report-click-ui
+npm run build
+```
+
+The deployment command will automatically run `npm install` and `npm run build` before uploading to S3.
 
 ### Troubleshooting
 
