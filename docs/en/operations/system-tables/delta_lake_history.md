@@ -1,12 +1,14 @@
 ---
 description: 'System Delta Lake version history'
 keywords: ['system delta_lake_history']
+sidebar_label: 'system.delta_lake_history'
+sidebar_position: 53
 slug: /operations/system-tables/delta_lake_history
 title: 'system.delta_lake_history'
 doc_type: 'reference'
 ---
 
-# system.delta_lake_history
+# system.delta_lake_history {#system-delta-lake-history}
 
 This system table contains the version history of Delta Lake tables existing in ClickHouse. It will be empty if you don't have any Delta Lake tables in ClickHouse.
 
@@ -15,7 +17,7 @@ This table is useful for:
 - Understanding what operations were performed on each version
 - Working with the Change Data Feed (CDF) feature to query specific versions
 
-Columns:
+## Columns {#system-delta-lake-history-columns}
 
 - `database` ([String](../../sql-reference/data-types/string.md)) — Database name.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
@@ -25,7 +27,7 @@ Columns:
 - `operation_parameters` ([Map(String, String)](../../sql-reference/data-types/map.md)) — Parameters of the operation.
 - `is_latest_version` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag indicating if this is the current (latest) version.
 
-**Example**
+## Example {#system-delta-lake-history-example}
 
 ```sql
 SELECT * FROM system.delta_lake_history;
@@ -39,7 +41,7 @@ SELECT * FROM system.delta_lake_history;
 └──────────┴────────────┴─────────┴─────────────────────────┴───────────┴──────────────────────────────────────┴───────────────────┘
 ```
 
-**See Also**
+## See Also {#system-delta-lake-history-see-also}
 
 - [Delta Lake Table Engine](/docs/en/engines/table-engines/integrations/deltalake.md)
 - [system.iceberg_history](iceberg_history.md) — Similar table for Iceberg tables
