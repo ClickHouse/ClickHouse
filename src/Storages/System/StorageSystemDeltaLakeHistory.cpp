@@ -1,4 +1,6 @@
 #include <Access/ContextAccess.h>
+#include <Columns/ColumnString.h>
+#include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
@@ -15,10 +17,13 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemDeltaLakeHistory.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include "config.h"
+
+#include <optional>
 
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
@@ -35,6 +40,11 @@ namespace Setting
 extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ErrorCodes
+{
+extern const int LIMIT_EXCEEDED;
+}
+
 namespace
 {
 
@@ -45,10 +55,12 @@ public:
     SystemDeltaLakeHistorySource(
         SharedHeader header_,
         UInt64 max_block_size_,
-        ContextPtr context_)
+        ContextPtr context_,
+        std::optional<ActionsDAG> explicit_database_table_filter_)
         : ISource(header_)
         , WithContext(context_)
         , max_block_size(max_block_size_)
+        , explicit_database_table_filter(std::move(explicit_database_table_filter_))
     {
 #if USE_PARQUET
         context_copy = Context::createCopy(context_);
@@ -180,8 +192,12 @@ private:
                     /// System-table filters (WHERE database/table = ...) are applied
                     /// *after* row generation, so rethrowing here would let one
                     /// oversized unrelated table break queries targeting healthy tables.
-                    /// Log and skip instead; users can raise
-                    /// `delta_lake_history_max_records` for specific tables.
+                    /// If the query explicitly requested this table, rethrow
+                    /// `LIMIT_EXCEEDED`; otherwise log and skip.
+                    if (getCurrentExceptionCode() == ErrorCodes::LIMIT_EXCEEDED
+                        && isExplicitlyRequestedTable(db_name, tbl_name))
+                        throw;
+
                     LOG_WARNING(
                         getLogger("SystemDeltaLakeHistory"),
                         "Skipping table {}: {}",
@@ -195,6 +211,24 @@ private:
         }
 
         return false;
+    }
+
+    bool isExplicitlyRequestedTable(const String & database_name, const String & table_name) const
+    {
+        if (!explicit_database_table_filter)
+            return false;
+
+        Block block;
+        auto database_column = ColumnString::create();
+        auto table_column = ColumnString::create();
+        database_column->insert(database_name);
+        table_column->insert(table_name);
+
+        block.insert(ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "database"));
+        block.insert(ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "table"));
+
+        VirtualColumnUtils::filterBlockWithPredicate(explicit_database_table_filter->getOutputs().at(0), block, context_copy);
+        return block.rows() > 0;
     }
 #endif
 
@@ -212,6 +246,8 @@ private:
     DeltaLakeHistory current_history;
     size_t current_history_idx = 0;
 #endif
+
+    std::optional<ActionsDAG> explicit_database_table_filter;
 };
 
 class ReadFromSystemDeltaLakeHistory final : public SourceStepWithFilter
@@ -237,9 +273,49 @@ public:
 
     String getName() const override { return "ReadFromSystemDeltaLakeHistory"; }
 
+    void applyFilters(ActionDAGNodes added_filter_nodes) override
+    {
+        SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
+
+        if (!filter_actions_dag)
+            return;
+
+        Block block_to_filter;
+        block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "database"));
+        block_to_filter.insert(ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "table"));
+
+        auto filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            filter_actions_dag->getOutputs().at(0),
+            &block_to_filter,
+            context);
+
+        if (!filter)
+            return;
+
+        bool has_database_or_table_filter = false;
+        for (const auto * input : filter->getInputs())
+        {
+            if (input->result_name == "database" || input->result_name == "table")
+            {
+                has_database_or_table_filter = true;
+                break;
+            }
+        }
+
+        if (!has_database_or_table_filter)
+            return;
+
+        VirtualColumnUtils::buildSetsForDAG(*filter, context);
+        explicit_database_table_filter = std::move(filter);
+    }
+
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        auto source = std::make_shared<SystemDeltaLakeHistorySource>(getOutputHeader(), max_block_size, context);
+        auto source = std::make_shared<SystemDeltaLakeHistorySource>(
+            getOutputHeader(),
+            max_block_size,
+            context,
+            std::move(explicit_database_table_filter));
         source->setStorageLimits(storage_limits);
         processors.push_back(source);
         pipeline.init(Pipe(std::move(source)));
@@ -248,6 +324,7 @@ public:
 private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     const UInt64 max_block_size;
+    std::optional<ActionsDAG> explicit_database_table_filter;
 };
 
 }
