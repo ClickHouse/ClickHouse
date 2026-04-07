@@ -14,7 +14,6 @@
 
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
-#include <Common/Coverage.h>
 
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
@@ -214,10 +213,6 @@ int main(int argc_, char ** argv_)
     }
 
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
-
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
 
     return exit_code;
 }

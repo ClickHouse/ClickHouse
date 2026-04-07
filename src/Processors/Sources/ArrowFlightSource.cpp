@@ -5,6 +5,7 @@
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <arrow/table.h>
 
 
@@ -13,9 +14,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ARROWFLIGHT_CONNECTION_FAILURE;
-extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
-extern const int ARROWFLIGHT_INTERNAL_ERROR;
+    extern const int ARROWFLIGHT_CONNECTION_FAILURE;
+    extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
+    extern const int ARROWFLIGHT_INTERNAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
@@ -23,44 +25,78 @@ namespace Setting
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
 }
 
+namespace
+{
+
+Block convertBlockToHeader(Block block, const Block & header, ContextPtr context)
+{
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        block.cloneEmpty().getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
+
+    auto actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    actions->execute(block);
+    return block;
+}
+
+Block buildOutputHeader(const Block & sample_block_, const Block & virtual_header_)
+{
+    Block output_header = sample_block_.cloneEmpty();
+    for (const auto & column : virtual_header_)
+        output_header.insert(column.cloneEmpty());
+
+    return output_header;
+}
+
+}
+
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
     const String & dataset_name_,
     const Block & sample_block_,
+    const Block & virtual_header_,
+    StorageID storage_id_,
     ContextPtr context_)
-    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    : ISource(std::make_shared<const Block>(buildOutputHeader(sample_block_, virtual_header_)))
     , connection(connection_)
     , sample_block(sample_block_)
+    , virtual_header(virtual_header_)
+    , storage_id(std::move(storage_id_))
+    , context(context_)
 {
-    initializeEndpoints(dataset_name_, context_);
+    initializeEndpoints(dataset_name_);
 }
 
 ArrowFlightSource::ArrowFlightSource(
     std::shared_ptr<ArrowFlightConnection> connection_,
     std::vector<arrow::flight::FlightEndpoint> endpoints_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , connection(connection_)
     , sample_block(sample_block_)
+    , storage_id(StorageID::createEmpty())
+    , context(context_)
     , endpoints(std::move(endpoints_))
 {
 }
 
 ArrowFlightSource::ArrowFlightSource(
     std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , sample_block(sample_block_)
+    , storage_id(StorageID::createEmpty())
+    , context(context_)
     , stream_reader(std::move(stream_reader_))
 {
     initializeSchema();
 }
 
-
-ArrowFlightSource::~ArrowFlightSource() = default;
-
-
-void ArrowFlightSource::initializeEndpoints(const String & dataset_name_, ContextPtr context)
+void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
 {
     auto client = connection->getClient();
     auto options = connection->getOptions();
@@ -133,6 +169,18 @@ void ArrowFlightSource::initializeSchema()
     }
 }
 
+Block ArrowFlightSource::fillVirtualColumns(Block result_block)
+{
+    for (const auto & [name, type] : virtual_header.getNamesAndTypes())
+    {
+        if (name == "_table")
+            result_block.insert({type->createColumnConst(result_block.rows(), storage_id.empty() ? "" : storage_id.getTableName()), type, name});
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", name);
+    }
+
+    return result_block;
+}
 
 Chunk ArrowFlightSource::generate()
 {
@@ -160,8 +208,6 @@ Chunk ArrowFlightSource::generate()
         }
     }
 
-    MutableColumns columns;
-
     ArrowColumnToCHColumn converter(sample_block, "Arrow",
                                     /* format_settings= */ {},
                                     /* parquet_columns_to_clickhouse= */ std::nullopt,
@@ -178,7 +224,11 @@ Chunk ArrowFlightSource::generate()
     }
     auto table = std::move(table_res).ValueOrDie();
 
-    return converter.arrowTableToCHChunk(table, chunk.data->num_rows(), nullptr, nullptr);
+    auto block_initial = sample_block.cloneWithColumns(converter.arrowTableToCHChunk(table, chunk.data->num_rows(), nullptr, nullptr).detachColumns());
+    auto block_with_virtuals = fillVirtualColumns(std::move(block_initial));
+    auto block_projected = convertBlockToHeader(std::move(block_with_virtuals), getPort().getHeader(), context);
+
+    return Chunk(block_projected.getColumns(), block_projected.rows());
 }
 
 }
