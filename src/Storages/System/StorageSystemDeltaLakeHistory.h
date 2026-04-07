@@ -10,7 +10,8 @@ class Context;
 
 /** Implements a system table for Delta Lake tables history.
  * Uses streaming mode to produce results in chunks, allowing LIMIT to work
- * and avoiding the need for an arbitrary cap on the number of records.
+ * while applying a configurable safety cap (`delta_lake_history_max_records`)
+ * when reading records from the Delta Lake metadata log.
  *
  * database String
  * table String
