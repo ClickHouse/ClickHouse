@@ -50,19 +50,6 @@ namespace CurrentMetrics
     extern const Metric KeeperOutstandingRequests;
 }
 
-namespace ProfileEvents
-{
-    extern const Event KeeperCommitsFailed;
-    extern const Event KeeperCommitWaitElapsedMicroseconds;
-    extern const Event KeeperBatchMaxCount;
-    extern const Event KeeperBatchMaxTotalSize;
-    extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
-    extern const Event KeeperStaleRequestsSkipped;
-    extern const Event KeeperLiveSessionsLockWaitMicroseconds;
-    extern const Event KeeperSessionCallbackLockWaitMicroseconds;
-    extern const Event KeeperReadRequestQueueLockWaitMicroseconds;
-}
-
 namespace HistogramMetrics
 {
     extern Metric & KeeperCurrentBatchSizeElements;

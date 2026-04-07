@@ -96,7 +96,7 @@ public:
             }
             else if (!enqueue_pos.compare_exchange_weak(pos, pos + 1))
             {
-                // Another producer won a diffferent race.
+                // Another producer won a different race.
                 continue;
             }
 

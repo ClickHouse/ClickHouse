@@ -38,7 +38,6 @@ namespace ProfileEvents
 {
     extern const Event KeeperCommits;
     extern const Event KeeperReconfigRequest;
-    extern const Event KeeperCommitsFailed;
     extern const Event KeeperSnapshotCreations;
     extern const Event KeeperSnapshotCreationsFailed;
     extern const Event KeeperSnapshotApplys;

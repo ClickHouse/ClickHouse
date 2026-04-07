@@ -92,8 +92,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int SYSTEM_ERROR;
-    extern const int BAD_ARGUMENTS;
-    extern const int ABORTED;
 }
 
 namespace

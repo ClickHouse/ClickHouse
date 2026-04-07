@@ -78,7 +78,7 @@ namespace DB
 ///
 /// (KeeperRequestDispatcher2 implementation goes all fancy on avoiding locks and grouping atomics.
 ///  This is mostly just for fun and for practice; a much sloppier implementation would probably be
-///  equally fast because KeeperRequestDispatcher2 should't be the bottleneck.
+///  equally fast because KeeperRequestDispatcher2 shouldn't be the bottleneck.
 ///  One part where performance matters is commit callback; we shouldn't waste any time there
 ///  because the commit thread is likely a bottleneck.)
 class KeeperRequestDispatcher2

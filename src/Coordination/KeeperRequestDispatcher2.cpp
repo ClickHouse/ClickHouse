@@ -176,7 +176,7 @@ void KeeperRequestDispatcher2::shutdown(bool closed_all_connections)
     /// Drain queues just to check for counter leaks.
     /// Don't bother sending replies because client connections should already be closed by now
     /// (or stuck and timed out, if closed_all_connections is false).
-    /// Don't need to do anything witht in_flight_batches.
+    /// Don't need to do anything with in_flight_batches.
     KeeperRequestForSession request_for_session;
     while (tryPopRequest(request_for_session)) {}
     KeeperResponseForSession response_for_session;
@@ -333,7 +333,7 @@ void KeeperRequestDispatcher2::onResponse(KeeperResponseForSession response) noe
     if (!try_push())
     {
         /// Queue too big.
-        /// This is unusual because dispatchThread doesn't start reqests when response queue is
+        /// This is unusual because dispatchThread doesn't start requests when response queue is
         /// bigger than half the limit.
         /// This covers e.g. the case where many requests have huge responses
         /// (e.g. get on huge znodes or list on fertile znodes).
@@ -651,7 +651,7 @@ void KeeperRequestDispatcher2::dispatchThread()
                     bool is_read = request.request->isReadRequest();
 
                     /// If reads have to go through raft, it's sufficient to send the first read of a batch through raft.
-                    /// NOTE: Currently this `if` block is reduntant with the `if (is_read && requests.empty())` below.
+                    /// NOTE: Currently this `if` block is redundant with the `if (is_read && requests.empty())` below.
                     ///       It's left here to make sure we don't accidentally break quorum_reads if we change the condition below in future.
                     if (is_read && requests.empty() && quorum_reads)
                         is_read = false;
