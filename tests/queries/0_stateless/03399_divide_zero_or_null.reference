@@ -65,3 +65,12 @@ TEST with non const arguments
 \N
 \N
 \N
+Test with INT_MIN/-1
+intDivOrNull_Int64	\N
+intDivOrNull_Int32	\N
+intDivOrNull_Int16	\N
+intDivOrNull_Int8	\N
+moduloOrNull_Int64	\N
+positiveModuloOrNull_Int64	\N
+intDivOrNull_mat	\N
+moduloOrNull_mat	\N

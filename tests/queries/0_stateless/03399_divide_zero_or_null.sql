@@ -67,3 +67,13 @@ SELECT divideOrNull(materialize(1), materialize(0));
 SELECT divideOrNull(materialize(1), materialize(NULL));
 SELECT divideOrNull(materialize(NULL), materialize(0));
 SELECT divideOrNull(materialize(NULL), materialize(NULL));
+
+SELECT 'Test with INT_MIN/-1';
+SELECT 'intDivOrNull_Int64', intDivOrNull(toInt64(-9223372036854775808), toInt64(-1));
+SELECT 'intDivOrNull_Int32', intDivOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT 'intDivOrNull_Int16', intDivOrNull(toInt16(-32768), toInt16(-1));
+SELECT 'intDivOrNull_Int8', intDivOrNull(toInt8(-128), toInt8(-1));
+SELECT 'moduloOrNull_Int64', moduloOrNull(toInt64(-9223372036854775808), toInt64(-1));
+SELECT 'positiveModuloOrNull_Int64', positiveModuloOrNull(toInt64(-9223372036854775808), toInt64(-1));
+SELECT 'intDivOrNull_mat', intDivOrNull(materialize(toInt64(-9223372036854775808)), materialize(toInt64(-1)));
+SELECT 'moduloOrNull_mat', moduloOrNull(materialize(toInt64(-9223372036854775808)), materialize(toInt64(-1)));

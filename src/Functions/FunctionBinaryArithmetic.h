@@ -823,6 +823,9 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
+    static constexpr bool integral_div_or_modulo_overflow_to_null = IsOperation<Op>::int_div_or_null
+        || IsOperation<Op>::modulo_or_null
+        || IsOperation<Op>::positive_modulo_or_null;
 
     ContextPtr context;
     bool check_decimal_overflow = true;
@@ -856,6 +859,51 @@ class FunctionBinaryArithmetic : public IFunction
                 return f(left_, right_);
             });
         });
+    }
+
+    static ColumnPtr prepareNumericColumnForIntegralFPECheck(const ColumnPtr & column)
+    {
+        ColumnPtr res = column->convertToFullIfNeeded();
+        if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(res.get()))
+            res = nullable_col->getNestedColumnPtr();
+        return res->convertToFullIfNeeded();
+    }
+
+    template <typename T>
+    static T getNumericValueFromColumn(const IColumn & column, size_t row)
+    {
+        if (const auto * const_col = checkAndGetColumn<ColumnConst>(&column))
+            return const_col->getValue<T>();
+        return assert_cast<const ColumnVector<T> &>(column).getData()[row];
+    }
+
+    static bool integralDivisionOverflowOrNullAtRow(
+        const DataTypePtr & left_type,
+        const DataTypePtr & right_type,
+        const ColumnPtr & left_column_prepared,
+        const ColumnPtr & right_column_prepared,
+        size_t row)
+    {
+        return castBothTypes(
+            removeLowCardinalityAndNullable(left_type).get(),
+            removeLowCardinalityAndNullable(right_type).get(),
+            [&](const auto & left_, const auto & right_) -> bool
+            {
+                using LDT = std::decay_t<decltype(left_)>;
+                using RDT = std::decay_t<decltype(right_)>;
+                if constexpr (IsDataTypeNumber<LDT> && IsDataTypeNumber<RDT>)
+                {
+                    using A = typename LDT::FieldType;
+                    using B = typename RDT::FieldType;
+                    if constexpr (std::is_integral_v<A> && std::is_integral_v<B>)
+                    {
+                        A a = getNumericValueFromColumn<A>(*left_column_prepared, row);
+                        B b = getNumericValueFromColumn<B>(*right_column_prepared, row);
+                        return divisionLeadsToFPE(a, b);
+                    }
+                }
+                return false;
+            });
     }
 
     static FunctionOverloadResolverPtr
@@ -2608,8 +2656,30 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             {
                 auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
+
+                ColumnPtr left_prepared;
+                ColumnPtr right_prepared;
+                if constexpr (integral_div_or_modulo_overflow_to_null)
+                {
+                    left_prepared = prepareNumericColumnForIntegralFPECheck(left_argument.column);
+                    right_prepared = prepareNumericColumnForIntegralFPECheck(right_argument.column);
+                }
+
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
+                {
+                    bool is_null = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
+                    if constexpr (integral_div_or_modulo_overflow_to_null)
+                    {
+                        if (!is_null)
+                            is_null = integralDivisionOverflowOrNullAtRow(
+                                left_argument.type,
+                                right_argument.type,
+                                left_prepared,
+                                right_prepared,
+                                i);
+                    }
+                    null_map_data[i] = is_null;
+                }
                 auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
                 return !null_map_col->empty() ? wrapInNullable(res, std::move(null_map_col)) : makeNullable(res);
             }
