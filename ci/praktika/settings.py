@@ -85,7 +85,8 @@ class _Settings:
     #        Report settings             #
     ######################################
     HTML_S3_PATH: str = ""
-    HTML_PAGE_FILE: str = "./ci/praktika/json.html"
+    # Legacy plain JSON viewer page. The React/Click UI-based page is report.html (see ci/praktika/report-click-ui).
+    HTML_PAGE_FILE: str = "json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
     # Compress if text file size exceeds this threshold (in MB, 0 - disable compression)
@@ -177,6 +178,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_READ_USER",
     "CI_DB_READ_URL",
     "TEST_FAILURE_PATTERNS",
+    "HTML_PAGE_FILE",
 ]
 
 
