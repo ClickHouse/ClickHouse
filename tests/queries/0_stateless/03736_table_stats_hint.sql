@@ -6,6 +6,7 @@ SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_algorithm = 'greedy';
+SET query_plan_optimize_join_order_limit = 10; -- needed for statistics-based row count estimates in EXPLAIN output
 
 CREATE TABLE part
 (
