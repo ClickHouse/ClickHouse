@@ -160,6 +160,11 @@ namespace
                         getName());
                 }
                 default_non_const = castColumn(arguments[3], result_type);
+                /// The column might be const on some blocks (e.g. when all values are NULL),
+                /// but the code below uses insertFrom which requires matching column types.
+                /// Convert to full column to avoid ColumnNullable.insertFrom(ColumnConst) mismatch.
+                if (isColumnConst(*default_non_const))
+                    default_non_const = default_non_const->convertToFullColumnIfConst();
             }
 
             ColumnPtr in_cast = arguments[0].column;
