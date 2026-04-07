@@ -207,6 +207,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
        {"enable_analyzer", trueOrFalseSetting},
        {"enable_automatic_decision_for_merging_across_partitions_for_final", trueOrFalseSetting},
+       {"enable_join_transitive_predicates", trueOrFalseSetting},
        {"enable_join_runtime_filters", trueOrFalseSetting},
        {"enable_lazy_columns_replication", trueOrFalseSetting},
        {"enable_optimize_predicate_expression", trueOrFalseSetting},
@@ -287,6 +288,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_sorting_by_input_stream_properties", trueOrFalseSetting},
        {"optimize_substitute_columns", trueOrFalseSetting},
        {"optimize_syntax_fuse_functions", trueOrFalseSetting},
+       {"optimize_truncate_order_by_after_group_by_keys", trueOrFalseSetting},
        {"optimize_trivial_approximate_count_query", trueOrFalseSetting},
        {"optimize_trivial_count_query", trueOrFalseSetting},
        {"optimize_uniq_to_count", trueOrFalseSetting},
@@ -395,6 +397,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
        {"use_statistics", trueOrFalseSetting},
+       {"use_statistics_for_part_pruning", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
@@ -1131,6 +1134,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_pretty_glue_chunks", trueOrFalseSettingNoOracle},
     {"output_format_pretty_grid_charset",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'UTF-8'" : "'ASCII'"; }, {}, false)},
+    {"highlight_max_matches_per_row",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextBool() ? 0 : 10000); }, {}, false)},
     {"output_format_pretty_highlight_digit_groups", trueOrFalseSettingNoOracle},
     {"output_format_pretty_multiline_fields", trueOrFalseSettingNoOracle},
     {"output_format_pretty_named_tuples_as_json", trueOrFalseSettingNoOracle},
@@ -1337,6 +1342,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_roaring_bitmap_iceberg_positional_deletes", trueOrFalseSetting},
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_statistics_cache", trueOrFalseSettingNoOracle},
+    {"use_strict_insert_block_limits", trueOrFalseSettingNoOracle},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
     {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_text_index_header_cache", trueOrFalseSetting},

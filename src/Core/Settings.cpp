@@ -4906,6 +4906,9 @@ Propagate WITH statements to UNION queries and all subqueries
     DECLARE(Bool, enable_materialized_cte, false, R"(
 Enable materialized common table expressions, it will be preferred over enable_global_with_statement
 )", EXPERIMENTAL) \
+    DECLARE(Bool, analyzer_inline_views, false, R"(
+When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
 
