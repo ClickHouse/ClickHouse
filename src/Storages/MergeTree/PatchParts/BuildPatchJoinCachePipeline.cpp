@@ -70,6 +70,44 @@ static bool collectJoinPatches(
     return has_patches;
 }
 
+/// Precompute per-range minmax stats for each patch part.
+/// Returns a map: patch_name -> (mark_range -> {block_number_stat, block_offset_stat}).
+static absl::node_hash_map<String, PatchStatsMap> collectPatchStats(
+    const RangesInPatchParts & ranges_in_patch_parts,
+    const absl::node_hash_map<String, JoinPatchInfo> & join_patches,
+    const MergeTreeReaderSettings & reader_settings)
+{
+    absl::node_hash_map<String, PatchStatsMap> patch_stats_by_name;
+
+    for (const auto & [patch_name, patch_ranges] : ranges_in_patch_parts.getRanges())
+    {
+        auto patch_it = join_patches.find(patch_name);
+        if (patch_it == join_patches.end())
+            continue;
+
+        const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_it->second.patch_part.part.get());
+        if (!loaded_part)
+            continue;
+
+        auto block_number_stats = getPatchMinMaxStats(loaded_part->getDataPart(), patch_ranges, BlockNumberColumn::name, reader_settings);
+        auto block_offset_stats = getPatchMinMaxStats(loaded_part->getDataPart(), patch_ranges, BlockOffsetColumn::name, reader_settings);
+
+        if (block_number_stats && block_offset_stats)
+        {
+            auto & stats = patch_stats_by_name[patch_name];
+
+            for (size_t i = 0; i < patch_ranges.size(); ++i)
+            {
+                auto & stat = stats[patch_ranges[i]];
+                stat.block_number_stat = block_number_stats[i];
+                stat.block_offset_stat = block_offset_stats[i];
+            }
+        }
+    }
+
+    return patch_stats_by_name;
+}
+
 std::shared_ptr<Processors> buildPatchJoinCachePipeline(
     PatchJoinCachePtr patch_join_cache,
     const RangesInPatchParts & ranges_in_patch_parts,
@@ -96,33 +134,7 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         return nullptr;
 
     /// 2. Precompute per-range minmax stats for each patch part (read once, reused across data parts).
-    absl::node_hash_map<String, PatchStatsMap> patch_stats_by_name;
-
-    for (const auto & [patch_name, patch_ranges] : ranges_in_patch_parts.getRanges())
-    {
-        auto patch_it = join_patches.find(patch_name);
-        if (patch_it == join_patches.end())
-            continue;
-
-        const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(
-            patch_it->second.patch_part.part.get());
-        if (!loaded_part)
-            continue;
-
-        auto bn = getPatchMinMaxStats(loaded_part->getDataPart(), patch_ranges, BlockNumberColumn::name, reader_settings);
-        auto bo = getPatchMinMaxStats(loaded_part->getDataPart(), patch_ranges, BlockOffsetColumn::name, reader_settings);
-
-        if (bn && bo)
-        {
-            auto & stats = patch_stats_by_name[patch_name];
-            for (size_t i = 0; i < patch_ranges.size(); ++i)
-            {
-                auto & s = stats[patch_ranges[i]];
-                s.block_number_stat = (*bn)[i];
-                s.block_offset_stat = (*bo)[i];
-            }
-        }
-    }
+    auto patch_stats_by_name = collectPatchStats(ranges_in_patch_parts, join_patches, reader_settings);
 
     /// 3. For each data part, read its minmax stats and filter patch ranges by per-part overlap.
     ///    Track global `_block_number` range for bucket assignment.
