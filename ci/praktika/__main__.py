@@ -57,6 +57,14 @@ def create_parser():
         default=None,
     )
     run_parser.add_argument(
+        "--run-hooks-locally",
+        help=(
+            "Run hooks for a local run (they are skipped by default for local runs)"
+        ),
+        action="store_true",
+        default=False,
+    )
+    run_parser.add_argument(
         "--test",
         help=(
             "One or more values passed to the job script as --test (space-separated) (job script defines semantics). Useful for selecting tests"
@@ -269,6 +277,7 @@ def main():
                 job=job,
                 docker=args.docker,
                 local_run=not args.ci,
+                run_hooks=args.ci or args.run_hooks_locally,
                 no_docker=args.no_docker,
                 param=args.param,
                 test=" ".join(args.test),
