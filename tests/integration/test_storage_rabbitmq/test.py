@@ -26,12 +26,12 @@ def started_cluster():
 def get_last_event_time(logger_name, message):
     instance.query("SYSTEM FLUSH LOGS")
     ts = instance.query(
-        f"""SELECT 
-                event_time_microseconds 
-            FROM merge(system, '^text_log') 
-            WHERE 
+        f"""SELECT
+                event_time_microseconds
+            FROM merge(system, '^text_log')
+            WHERE
                 logger_name  = '{logger_name}' AND
-                message = '{ message}' 
+                message = '{ message}'
             ORDER BY event_time_microseconds DESC
             LIMIT 1"""
     ).strip()
@@ -98,7 +98,7 @@ def test_shutdown_rabbitmq_with_materialized_view(started_cluster):
     logging.info("Publishing messages by inserting into RabbitMQ table")
     instance.query(
         """
-        INSERT INTO test.rabbitmq_queue 
+        INSERT INTO test.rabbitmq_queue
         SELECT number AS key, toString(number) AS value
         FROM numbers(1000)
     """
@@ -116,7 +116,7 @@ def test_shutdown_rabbitmq_with_materialized_view(started_cluster):
         instance.query(
             f"""
             INSERT INTO test.rabbitmq_queue
-            SELECT number + {1000 + batch * 100} AS key, 
+            SELECT number + {1000 + batch * 100} AS key,
                    concat('batch_', toString({batch}), '_', toString(number)) AS value
             FROM numbers(100)
         """
@@ -223,3 +223,68 @@ def test_attach_detach_rabbitmq_with_materialized_view(started_cluster):
 
     assert rabbit_shutdown_time_after_restart > registry_shutdown_queue_time
     assert registry_already_shutdown_queue_time > rabbit_shutdown_time_after_restart
+
+
+def test_rabbitmq_virtual_column_table(started_cluster):
+    """
+    Test that the `_table` virtual column returns the table name
+    for the RabbitMQ engine.
+    """
+
+    instance.query("DROP DATABASE IF EXISTS test_virt SYNC")
+    instance.query("CREATE DATABASE test_virt ENGINE=Atomic")
+
+    exchange_name = "test_virtual_table_exchange"
+
+    instance.query(
+        f"""
+        CREATE TABLE test_virt.rabbitmq_source (
+            key UInt64,
+            value String
+        ) ENGINE = RabbitMQ
+        SETTINGS
+            rabbitmq_host_port = 'rabbitmq1:5672',
+            rabbitmq_exchange_name = '{exchange_name}',
+            rabbitmq_exchange_type = 'fanout',
+            rabbitmq_format = 'JSONEachRow',
+            rabbitmq_username = 'root',
+            rabbitmq_password = 'clickhouse',
+            rabbitmq_flush_interval_ms = 100,
+            rabbitmq_max_block_size = 100,
+            rabbitmq_commit_on_select = 1
+    """
+    )
+
+    time.sleep(10)
+
+    instance.query(
+        """
+        INSERT INTO test_virt.rabbitmq_source
+        SELECT number AS key, toString(number) AS value
+        FROM numbers(10)
+        """
+    )
+
+    result = ""
+    for _ in range(100):
+        result += instance.query(
+            """
+            SELECT key, value, _exchange_name, _table
+            FROM test_virt.rabbitmq_source
+            SETTINGS stream_like_engine_allow_direct_select=1
+            """
+        )
+        lines = [l for l in result.strip().split("\n") if l]
+        if len(lines) == 10:
+            break
+        time.sleep(0.5)
+
+    lines = [l for l in result.strip().split("\n") if l]
+    assert len(lines) == 10, f"Expected 10 rows, got {len(lines)}"
+
+    for line in lines:
+        parts = line.split("\t")
+        assert parts[2] == exchange_name, f"Expected exchange '{exchange_name}', got '{parts[2]}'"
+        assert parts[3] == "rabbitmq_source", f"Expected table 'rabbitmq_source', got '{parts[3]}'"
+
+    instance.query("DROP DATABASE test_virt SYNC")
