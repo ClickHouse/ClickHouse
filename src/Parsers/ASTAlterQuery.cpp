@@ -91,7 +91,8 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeBool("first", first);
     w.writeBool("replace", replace);
 
-    w.writeString("move_destination_type", std::string(magic_enum::enum_name(move_destination_type)));
+    if (type == ASTAlterCommand::MOVE_PARTITION)
+        w.writeString("move_destination_type", std::string(magic_enum::enum_name(move_destination_type)));
 
     if (!move_destination_name.empty())
         w.writeString("move_destination_name", move_destination_name);
@@ -157,10 +158,13 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     first = r.getBool("first");
     replace = r.getBool("replace");
 
-    String move_dest_type_str = r.getString("move_destination_type");
-    auto move_dest_opt = magic_enum::enum_cast<DataDestinationType>(move_dest_type_str);
-    if (move_dest_opt)
-        move_destination_type = *move_dest_opt;
+    if (r.has("move_destination_type"))
+    {
+        String move_dest_type_str = r.getString("move_destination_type");
+        auto move_dest_opt = magic_enum::enum_cast<DataDestinationType>(move_dest_type_str);
+        if (move_dest_opt)
+            move_destination_type = *move_dest_opt;
+    }
 
     move_destination_name = r.getString("move_destination_name");
     from = r.getString("from");
