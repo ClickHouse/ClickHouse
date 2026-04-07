@@ -154,9 +154,17 @@ if (OS_LINUX)
     # - The main clickhouse binary does not use dlopen,
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
+
+    if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+        # Fold identical code and data sections to reduce binary size.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
+    endif ()
 endif ()
 
 if (OS_DARWIN)
+    # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
+
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -168,7 +176,7 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
+if (NOT WITH_COVERAGE
     AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL"))
@@ -279,6 +287,22 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
+# Put each function and data item into its own section so that the linker can
+# remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
+# Sanitizer and coverage builds do not benefit from these size optimizations
+# and the extra sections hurt instruction-cache locality in hot loops,
+# causing timing-sensitive tests to fail.
+if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
+    # -faddrsig emits an address-significance table that lets lld's ICF
+    # distinguish address-taken symbols from non-address-taken ones.
+    # Only useful on Linux where we use lld with --icf=all; Darwin's ld64
+    # does not consume these sections.
+    if (OS_LINUX)
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
+    endif ()
+endif()
+
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
     # which makes benchmark results more stable.
@@ -339,7 +363,7 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
+if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND OS_LINUX)
     # https://clang.llvm.org/docs/ThinLTO.html
     # Applies to clang and linux only.
     # Disabled when building with tests or sanitizers.
@@ -570,7 +594,7 @@ if (ENABLE_RUST)
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT ENABLE_FUZZING
+    AND NOT SANITIZE AND NOT ENABLE_FUZZING
     AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <utility>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -60,6 +61,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
+#include <Common/CoverageCollection.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -1040,6 +1042,41 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM);
             resetCoverage();
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM);
+            LOG_INFO(getLogger("InterpreterSystemQuery"),
+                "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
+#if WITH_COVERAGE_DEPTH
+            {
+                /// Register (or re-register) the flush callback so coverage data is
+                /// resolved and inserted into system.coverage_log when the previous
+                /// test's counters are flushed.  We re-register on each call so the
+                /// captured global context stays fresh after server restart scenarios,
+                /// and so that the callback is available even on the very first call.
+                ContextPtr global_ctx = getContext()->getGlobalContext();
+                registerCoverageFlushCallback(
+                    [global_ctx](std::string_view prev_test,
+                                 const std::vector<CovCounter> & name_refs,
+                                 const std::vector<IndirectCallEntry> & indirect_calls)
+                    {
+                        LOG_INFO(getLogger("CoverageCollection"),
+                            "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
+                            prev_test, name_refs.size(), indirect_calls.size());
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+                        DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
+#else
+                        (void)prev_test;
+                        (void)name_refs;
+                        (void)indirect_calls;
+                        (void)global_ctx;
+#endif
+                    });
+            }
+#endif
+            setCoverageTest(query.coverage_test_name);
             break;
         }
         case Type::LOAD_PRIMARY_KEY: {
@@ -2540,6 +2577,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
+        case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::RESET_DDL_WORKER:
         case Type::END: break;

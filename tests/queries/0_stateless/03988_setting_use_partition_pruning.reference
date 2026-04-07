@@ -25,7 +25,7 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
     Indexes:
-      MinMax
+      Partition Min-Max
         Keys:
           d
         Condition: (d in [20454, 20454])
@@ -52,17 +52,15 @@ Expression ((Project names + Projection))
   Expression ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test)
     Indexes:
-      MinMax
-        Keys:
-          d
-        Condition: (d in [20454, 20454])
-        Parts: 1/2
-        Granules: 1/2
+      Partition Min-Max
+        Condition: true
+        Parts: 2/2
+        Granules: 2/2
       Partition
         Condition: true
-        Parts: 1/1
-        Granules: 1/1
-      Ranges: 1
+        Parts: 2/2
+        Granules: 2/2
+      Ranges: 2
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (
@@ -117,17 +115,15 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.test)
         Indexes:
-          MinMax
-            Keys:
-              p
-            Condition: (toYear(toDate(p)) in [2020, 2020])
-            Parts: 1/2
-            Granules: 2/3
+          Partition Min-Max
+            Condition: true
+            Parts: 2/2
+            Granules: 3/3
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 2/2
-          Ranges: 1
+            Parts: 2/2
+            Granules: 3/3
+          Ranges: 2
 -- `use_partition_key` is an alias
 EXPLAIN indexes = 1
 SELECT count()
@@ -154,14 +150,12 @@ Expression ((Projection + Before ORDER BY))
       Filter (WHERE)
         ReadFromMergeTree (default.test)
         Indexes:
-          MinMax
-            Keys:
-              p
-            Condition: (toYear(toDate(p)) in [2020, 2020])
-            Parts: 1/2
-            Granules: 2/3
+          Partition Min-Max
+            Condition: true
+            Parts: 2/2
+            Granules: 3/3
           Partition
             Condition: true
-            Parts: 1/1
-            Granules: 2/2
-          Ranges: 1
+            Parts: 2/2
+            Granules: 3/3
+          Ranges: 2

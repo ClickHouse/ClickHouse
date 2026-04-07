@@ -431,8 +431,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , part_check_thread(*this)
     , restarting_thread(*this)
     , part_moves_between_shards_orchestrator(*this)
-    , replicated_fetches_throttler(std::make_shared<Throttler>("replicated_fetches_table", (*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
-    , replicated_sends_throttler(std::make_shared<Throttler>("replicated_sends_table", (*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
+    , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
+    , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
@@ -2457,7 +2457,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
-                profile_events_scope.getSnapshot());
+                profile_events_scope.getSnapshot(), {}, {});
 
             return true;
         }
@@ -5381,7 +5381,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            profile_events_scope.getSnapshot(), {}, {});
     };
 
     auto is_zero_copy_part = [&settings_ptr](const auto & data_part)
@@ -5659,7 +5659,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            profile_events_scope.getSnapshot(), {}, {});
     };
 
     std::function<MutableDataPartPtr()> get_part;
