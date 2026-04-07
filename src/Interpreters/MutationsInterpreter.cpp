@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool validate_mutation_query;
+    extern const SettingsBool allow_statistics;
 }
 
 namespace MergeTreeSetting
@@ -85,6 +86,7 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
+    extern const int INCORRECT_QUERY;
 }
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
@@ -511,7 +513,7 @@ static void validateUpdateColumns(
 
     const auto & storage_columns = storage_snapshot->metadata->getColumns();
     const auto & virtual_columns = *storage_snapshot->virtual_columns;
-    const auto & common_virtual_columns = IStorage::getCommonVirtuals();
+    const auto common_virtual_columns = storage_snapshot->storage.getCommonVirtuals(storage_snapshot->virtual_columns);
 
     for (const auto & column_name : updated_columns)
     {
@@ -544,7 +546,7 @@ static void validateUpdateColumns(
                 if (!source.supportsLightweightDelete())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight delete is not supported for table");
             }
-            else if (virtual_columns.tryGet(column_name) || common_virtual_columns.tryGet(column_name))
+            else if (virtual_columns.tryGet(column_name) || common_virtual_columns->tryGet(column_name))
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Update is not supported for virtual column {} ", backQuote(column_name));
             }
@@ -611,6 +613,9 @@ static bool extractRequiredNonTableColumnsFromStorage(
         return false;
 
     if (std::dynamic_pointer_cast<StorageDistributed>(storage))
+        return false;
+
+    if (storage->getVirtualsPtr()->has("_table"))
         return false;
 
     bool has_table_virtual_column = false;
@@ -976,6 +981,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
+            if (!context->getSettingsRef()[Setting::allow_statistics])
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
             if (command.statistics_columns.empty())
@@ -1021,6 +1029,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
+            if (!context->getSettingsRef()[Setting::allow_statistics])
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
             if (command.clear && command.statistics_columns.empty())
@@ -1044,6 +1055,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
+            if (!metadata_snapshot->hasAnyTTL())
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
+
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
                 && metadata_snapshot->hasOnlyRowsTTL();

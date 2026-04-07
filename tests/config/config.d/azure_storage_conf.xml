@@ -8,6 +8,7 @@
                 <max_single_part_upload_size>33554432</max_single_part_upload_size>
                 <container_name>openbucketforpublicci</container_name>
                 <connection_string from_env="AZURE_CONNECTION_STRING"/>
+                <persistent_removal_log>true</persistent_removal_log>
             </azure>
             <cached_azure>
                 <type>cache</type>

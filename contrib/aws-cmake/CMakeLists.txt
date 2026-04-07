@@ -82,8 +82,8 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/bearer-token-provider/*.cpp"
-    "${AWS_SDK_CORE_DIR}/source/auth/signer/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/auth/signer-provider/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/auth/signer/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/client/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/config/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/config/defaults/*.cpp"
@@ -102,6 +102,8 @@ file(GLOB AWS_SDK_CORE_SRC
     "${AWS_SDK_CORE_DIR}/source/smithy/tracing/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/base64/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/cbor/*.cpp"
+    "${AWS_SDK_CORE_DIR}/source/utils/checksum/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/component-registry/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/*.cpp"
     "${AWS_SDK_CORE_DIR}/source/utils/crypto/crt/*.cpp"
@@ -318,6 +320,7 @@ file(GLOB AWS_CRT_SRC
     "${AWS_CRT_DIR}/source/external/*.cpp"
     "${AWS_CRT_DIR}/source/http/*.cpp"
     "${AWS_CRT_DIR}/source/io/*.cpp"
+    "${AWS_CRT_DIR}/source/cbor/*.cpp"
     "${AWS_CRT_DIR}/source/checksum/*.cpp"
 )
 
