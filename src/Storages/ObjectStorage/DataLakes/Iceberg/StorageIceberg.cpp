@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIceberg.h>
 
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -38,6 +39,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 StorageDataLake<IcebergMetadata>::StorageDataLake(
@@ -82,6 +84,18 @@ StorageDataLake<IcebergMetadata>::StorageDataLake(
     auto raw_path = configuration->getRawPath();
     if (!raw_path.path.ends_with('/'))
         configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(raw_path.path + "/"));
+
+    /// Validate that local paths are inside user_files_path.
+    if (object_storage->getType() == ObjectStorageType::Local)
+    {
+        auto user_files_path = context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(configuration->getRawPath().path, user_files_path))
+            throw Exception(
+                ErrorCodes::PATH_ACCESS_DENIED,
+                "File path {} is not inside {}",
+                configuration->getRawPath().path,
+                user_files_path);
+    }
 
     const bool need_resolve_columns = columns_in_table_or_function_definition.empty();
     const bool skip_initialization = request_skipping_initialization && !need_resolve_columns && !is_table_function;

@@ -30,6 +30,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIcebergCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Common/filesystemHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
@@ -51,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 namespace DataLakeStorageSetting
@@ -221,6 +223,18 @@ ColumnsDescription TableFunctionObjectStorage<
 
         if constexpr (is_data_lake)
         {
+            /// Validate that local paths are inside user_files_path.
+            if (storage->getType() == ObjectStorageType::Local)
+            {
+                auto user_files_path = context->getUserFilesPath();
+                if (!fileOrSymlinkPathStartsWith(configuration->getRawPath().path, user_files_path))
+                    throw Exception(
+                        ErrorCodes::PATH_ACCESS_DENIED,
+                        "File path {} is not inside {}",
+                        configuration->getRawPath().path,
+                        user_files_path);
+            }
+
             /// For data lake table functions, resolve schema from data lake metadata
             /// (e.g. Paimon/DeltaLake/Iceberg store schema in their own metadata files).
             using MetadataType = typename Definition::MetadataType;

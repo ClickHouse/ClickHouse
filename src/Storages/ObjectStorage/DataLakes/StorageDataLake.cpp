@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
@@ -48,6 +49,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 template <typename DataLakeMetadata>
@@ -83,6 +85,19 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     auto path = configuration->getRawPath();
     if (!path.path.ends_with('/'))
         configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(path.path + "/"));
+
+    /// Validate that local paths are inside user_files_path.
+    if (object_storage->getType() == ObjectStorageType::Local)
+    {
+        auto user_files_path = context->getUserFilesPath();
+        if (!fileOrSymlinkPathStartsWith(configuration->getRawPath().path, user_files_path))
+            throw Exception(
+                ErrorCodes::PATH_ACCESS_DENIED,
+                "File path {} is not inside {}",
+                configuration->getRawPath().path,
+                user_files_path);
+    }
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
 
