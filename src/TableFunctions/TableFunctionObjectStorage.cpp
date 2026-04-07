@@ -29,6 +29,10 @@
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIcebergCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/HivePartitioningUtils.h>
 
 
@@ -213,26 +217,55 @@ ColumnsDescription TableFunctionObjectStorage<
         auto storage = getObjectStorage(context, !is_insert_query);
         configuration->lazyInitializeIfNeeded(object_storage, context);
 
-        std::string sample_path;
         ColumnsDescription columns;
-        resolveSchemaAndFormat(
-            columns,
-            table_options.format,
-            table_options.compression_method,
-            std::move(storage),
-            configuration,
-            /* format_settings */std::nullopt,
-            sample_path,
-            context);
 
-        HivePartitioningUtils::setupHivePartitioningForObjectStorage(
-            columns,
-            configuration,
-            table_options,
-            sample_path,
-            /* inferred_schema */ true,
-            /* format_settings */ std::nullopt,
-            context);
+        if constexpr (is_data_lake)
+        {
+            /// For data lake table functions, resolve schema from data lake metadata
+            /// (e.g. Paimon/DeltaLake/Iceberg store schema in their own metadata files).
+            using MetadataType = typename Definition::MetadataType;
+            NamesAndTypesList schema;
+            if constexpr (std::is_same_v<MetadataType, IcebergMetadata>)
+            {
+                auto dl_settings = settings ? std::dynamic_pointer_cast<DataLakeStorageSettings>(settings) : std::make_shared<DataLakeStorageSettings>();
+                auto format_for_create = table_options.format == "auto" ? String("Parquet") : table_options.format;
+                auto metadata = MetadataType::create(storage, configuration, dl_settings, context, format_for_create);
+                schema = metadata->getTableSchema(context);
+            }
+            else
+            {
+                auto metadata = MetadataType::create(storage, configuration, context);
+                schema = metadata->getTableSchema(context);
+            }
+            if (!schema.empty())
+                columns = ColumnsDescription(std::move(schema));
+
+            if (table_options.format == "auto")
+                table_options.format = "Parquet";
+        }
+
+        if (columns.empty())
+        {
+            std::string sample_path;
+            resolveSchemaAndFormat(
+                columns,
+                table_options.format,
+                table_options.compression_method,
+                storage,
+                configuration,
+                /* format_settings */std::nullopt,
+                sample_path,
+                context);
+
+            HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+                columns,
+                configuration,
+                table_options,
+                sample_path,
+                /* inferred_schema */ true,
+                /* format_settings */ std::nullopt,
+                context);
+        }
 
         return columns;
     }
