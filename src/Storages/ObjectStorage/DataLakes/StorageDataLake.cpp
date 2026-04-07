@@ -496,7 +496,7 @@ void StorageDataLake<DataLakeMetadata>::addInferredEngineArgsToCreateQuery(ASTs 
 template class StorageDataLake<PaimonMetadata>;
 #endif
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 template class StorageDataLake<DeltaLakeMetadata>;
 #endif
 

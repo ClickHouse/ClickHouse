@@ -279,7 +279,7 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster<DataLakeMetadata>::getTask
 template class StorageDataLakeCluster<PaimonMetadata>;
 #endif
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 template class StorageDataLakeCluster<DeltaLakeMetadata>;
 #endif
 
