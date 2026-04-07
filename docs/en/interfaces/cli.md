@@ -35,7 +35,7 @@ The install script downloads the correct version for your OS and installs to `~/
 ## Requirements {#requirements}
 
 - macOS (aarch64, x86_64) or Linux (aarch64, x86_64)
-- Cloud commands require a [ClickHouse Cloud API key](/cloud/manage/api)
+- Cloud commands require a [ClickHouse Cloud API key](/cloud/manage/api/api-overview)
 
 ## Local {#local}
 
