@@ -4882,3 +4882,157 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         expected_result=4950,
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
+
+@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
+def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_insert_select_cluster_pruning")
+
+    schema = pa.schema(
+        [
+            ("event_time", pa.date32()),
+            ("account_id", pa.string()),
+            ("impressions", pa.int64()),
+        ]
+    )
+    storage_options = get_storage_options(started_cluster)
+    path = f"s3://root/{table_name}"
+
+    dates = [
+        datetime.strptime("2026-02-01", "%Y-%m-%d").date(),
+        datetime.strptime("2026-02-02", "%Y-%m-%d").date(),
+        datetime.strptime("2026-02-03", "%Y-%m-%d").date(),
+    ]
+
+    for dt in dates:
+        data = pa.table(
+            {
+                "event_time": pa.array([dt] * 5, type=pa.date32()),
+                "account_id": pa.array([f"acc_{dt}_{i}" for i in range(5)], type=pa.string()),
+                "impressions": pa.array(list(range(5)), type=pa.int64()),
+            },
+            schema=schema,
+        )
+        write_deltalake_with_retry(
+            path,
+            data,
+            storage_options=storage_options,
+            partition_by=["event_time"],
+            mode="append",
+        )
+
+    table_function = (
+        f"deltaLakeCluster(cluster,"
+        f" 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}',"
+        f" 'minio', '{minio_secret_key}',"
+        f" SETTINGS allow_experimental_delta_kernel_rs=1)"
+    )
+
+    total = int(node.query(f"SELECT count() FROM {table_function}"))
+    assert total == 15, f"Expected 15 total rows, got {total}"
+
+    zk_path = f"/clickhouse/tables/{{shard}}/{table_name}_dst"
+    node.query(
+        f"""
+        CREATE TABLE {table_name}_dst ON CLUSTER cluster
+        (event_time Nullable(Date), account_id Nullable(String), impressions Nullable(Int64))
+        ENGINE = ReplicatedMergeTree('{zk_path}', '{{replica}}') ORDER BY tuple()
+        """
+    )
+
+    query_id = f"{table_name}-insert-{uuid.uuid4()}"
+    node.query(
+        f"""
+        INSERT INTO {table_name}_dst (event_time, account_id, impressions)
+        SELECT event_time, account_id, impressions
+        FROM {table_function}
+        WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
+        """,
+        query_id=query_id,
+        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
+    )
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name}_dst WHERE event_time = '2026-02-01'"
+        )
+    )
+    assert result == 5
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name}_dst WHERE event_time != '2026-02-01'"
+        )
+    )
+    assert result == 0
+
+    pruned = int(
+        node.query(
+            f"""
+            SELECT ProfileEvents['DeltaLakePartitionPrunedFiles']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND is_initial_query = 1
+            """
+        )
+    )
+    assert pruned >= 2
+    node.query(f"DROP TABLE IF EXISTS {table_name}_dst ON CLUSTER cluster")
+    table_name2 = randomize_table_name("test_insert_select_cluster_pruning_virt")
+    zk_path2 = f"/clickhouse/tables/{{shard}}/{table_name2}_dst"
+    query_id = f"{table_name2}-insert-{uuid.uuid4()}"
+
+    node.query(
+        f"""
+        CREATE TABLE {table_name2}_dst ON CLUSTER cluster
+        (
+            event_time Nullable(Date),
+            account_id Nullable(String),
+            impressions Nullable(Int64),
+            file_path LowCardinality(String)
+        )
+        ENGINE = ReplicatedMergeTree('{zk_path2}', '{{replica}}') ORDER BY tuple()
+        """
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {table_name2}_dst (event_time, account_id, impressions, file_path)
+        SELECT event_time, account_id, impressions, _path
+        FROM {table_function}
+        WHERE _path LIKE '%2026-02-01%'
+        """,
+        query_id=query_id,
+        settings={
+            "allow_experimental_delta_kernel_rs": 1,
+            "delta_lake_enable_engine_predicate": 0,
+            "allow_experimental_analyzer": allow_experimental_analyzer,
+        },
+    )
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name2}_dst WHERE file_path LIKE '%2026-02-01%'"
+        )
+    )
+    assert result == 5
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name2}_dst WHERE NOT (file_path LIKE '%2026-02-01%')"
+        )
+    )
+    assert result == 0
+    node.query(f"DROP TABLE IF EXISTS {table_name2}_dst ON CLUSTER cluster")
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
+    filtered = int(
+        node.query(
+            f"""
+            SELECT ProfileEvents['ObjectStoragePredicateFilteredObjects']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND is_initial_query = 1
+            """
+        )
+    )
+    assert filtered >= 2
