@@ -1535,6 +1535,7 @@ bigrams
 binlog
 bitAnd
 bitCount
+bitfield
 bitHammingDistance
 bitNot
 bitOr
