@@ -108,49 +108,36 @@ static absl::node_hash_map<String, PatchStatsMap> collectPatchStats(
     return patch_stats_by_name;
 }
 
-/// Filter patch ranges of a single data part by minmax overlap.
-/// Surviving ranges are inserted into `filtered_ranges_by_patch`.
-static void filterPatchRangesByOverlap(
-    const MergeTreeReadTaskInfo & info,
-    const RangesInPatchParts & ranges_in_patch_parts,
-    const absl::node_hash_map<String, PatchStatsMap> & patch_stats_by_name,
+/// Filter patch ranges by minmax overlap with a data part's stats.
+/// Returns the subset of `patch_ranges` that overlap.
+static std::set<MarkRange> filterPatchRangesByOverlap(
+    const MarkRanges & patch_ranges,
+    const PatchStatsMap * patch_stats,
     const std::vector<MinMaxStat> & data_block_number_ranges,
-    const std::vector<MinMaxStat> & data_block_offset_ranges,
-    absl::node_hash_map<String, std::set<MarkRange>> & filtered_ranges_by_patch)
+    const std::vector<MinMaxStat> & data_block_offset_ranges)
 {
-    for (const auto & patch_part : info.patch_parts)
+    std::set<MarkRange> result;
+
+    for (const auto & range : patch_ranges)
     {
-        if (patch_part.mode != PatchMode::Join)
-            continue;
-
-        const auto & patch_name = patch_part.part->getPartName();
-        auto ranges_it = ranges_in_patch_parts.getRanges().find(patch_name);
-
-        if (ranges_it == ranges_in_patch_parts.getRanges().end())
-            continue;
-
-        const auto & patch_ranges = ranges_it->second;
-        auto stats_it = patch_stats_by_name.find(patch_name);
-
-        for (const auto & range : patch_ranges)
+        if (patch_stats)
         {
-            if (stats_it != patch_stats_by_name.end())
+            auto stat_it = patch_stats->find(range);
+
+            if (stat_it != patch_stats->end())
             {
-                auto stat_it = stats_it->second.find(range);
+                if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
+                    continue;
 
-                if (stat_it != stats_it->second.end())
-                {
-                    if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
-                        continue;
-
-                    if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
-                        continue;
-                }
+                if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
+                    continue;
             }
-
-            filtered_ranges_by_patch[patch_name].insert(range);
         }
+
+        result.insert(range);
     }
+
+    return result;
 }
 
 std::shared_ptr<Processors> buildPatchJoinCachePipeline(
@@ -215,10 +202,26 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         std::ranges::sort(data_block_number_ranges, [](const auto & lhs, const auto & rhs) { return lhs.min < rhs.min; });
         std::ranges::sort(data_block_offset_ranges, [](const auto & lhs, const auto & rhs) { return lhs.min < rhs.min; });
 
-        filterPatchRangesByOverlap(
-            info, ranges_in_patch_parts, patch_stats_by_name,
-            data_block_number_ranges, data_block_offset_ranges,
-            filtered_ranges_by_patch);
+        for (const auto & patch_part : info.patch_parts)
+        {
+            if (patch_part.mode != PatchMode::Join)
+                continue;
+
+            const auto & patch_name = patch_part.part->getPartName();
+            auto ranges_it = ranges_in_patch_parts.getRanges().find(patch_name);
+
+            if (ranges_it == ranges_in_patch_parts.getRanges().end())
+                continue;
+
+            auto stats_it = patch_stats_by_name.find(patch_name);
+            const PatchStatsMap * patch_stats = stats_it != patch_stats_by_name.end() ? &stats_it->second : nullptr;
+
+            auto filtered = filterPatchRangesByOverlap(
+                ranges_it->second, patch_stats,
+                data_block_number_ranges, data_block_offset_ranges);
+
+            filtered_ranges_by_patch[patch_name].merge(filtered);
+        }
     }
 
     if (global_min_block > global_max_block)
