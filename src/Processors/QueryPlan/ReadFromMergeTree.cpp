@@ -3246,6 +3246,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 has_parts_with_lwd = true;
                 break;
             }
+
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, context);
+            if (alter_conversions->hasLightweightDelete())
+            {
+                has_parts_with_lwd = true;
+                break;
+            }
         }
 
         if (has_parts_with_lwd)
