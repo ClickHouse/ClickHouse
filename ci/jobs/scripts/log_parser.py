@@ -499,7 +499,7 @@ class FuzzerLogParser:
             return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
-            f"grep -a '{query_id}' {self.server_log} | head -n1"
+            f"grep -a '{query_id}.* executeQuery:' {self.server_log} | tail -n1"
         )
         if not query_command:
             print("Query not found in server log by query id")
