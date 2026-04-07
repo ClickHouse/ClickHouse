@@ -35,11 +35,6 @@ namespace Setting
 extern const SettingsSeconds lock_acquire_timeout;
 }
 
-namespace ErrorCodes
-{
-extern const int LIMIT_EXCEEDED;
-}
-
 namespace
 {
 
@@ -182,16 +177,14 @@ private:
                 }
                 catch (...)
                 {
-                    /// Propagate history materialization guard errors instead of silently skipping:
-                    /// this is a deliberate safety limit, not a malformed-table parsing issue.
-                    if (getCurrentExceptionCode() == ErrorCodes::LIMIT_EXCEEDED)
-                        throw;
-
-                    /// Broken external Delta tables are expected during broad system-table scans.
-                    /// Keep this at debug level to avoid polluting stderr in stateless tests.
-                    LOG_DEBUG(
+                    /// System-table filters (WHERE database/table = ...) are applied
+                    /// *after* row generation, so rethrowing here would let one
+                    /// oversized unrelated table break queries targeting healthy tables.
+                    /// Log and skip instead; users can raise
+                    /// `delta_lake_history_max_records` for specific tables.
+                    LOG_WARNING(
                         getLogger("SystemDeltaLakeHistory"),
-                        "Ignoring broken table {}: {}",
+                        "Skipping table {}: {}",
                         object_storage_table->getStorageID().getFullTableName(),
                         getCurrentExceptionMessage(false));
                 }
