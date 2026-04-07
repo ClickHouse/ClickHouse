@@ -1,0 +1,45 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    name String
+    sum(age) Int64
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: name, result_type: String, source_id: 3
+      FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Int64
+        ARGUMENTS
+          LIST id: 5, nodes: 1
+            COLUMN id: 6, column_name: age, result_type: Int16, source_id: 3
+  JOIN TREE
+    QUERY id: 3, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        name String
+        age Int16
+      PROJECTION
+        LIST id: 7, nodes: 2
+          COLUMN id: 8, column_name: name, result_type: String, source_id: 9
+          COLUMN id: 10, column_name: age, result_type: Int16, source_id: 9
+      JOIN TREE
+        TABLE id: 9, alias: __table2, table_name: default.users
+  WHERE
+    FUNCTION id: 11, function_name: greater, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 12, nodes: 2
+          COLUMN id: 13, column_name: name, result_type: String, source_id: 3
+          CONSTANT id: 14, constant_value: \'\', constant_value_type: String
+  GROUP BY
+    LIST id: 15, nodes: 1
+      COLUMN id: 16, column_name: name, result_type: String, source_id: 3
+  ORDER BY
+    LIST id: 17, nodes: 1
+      SORT id: 18, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION name
+          COLUMN id: 19, column_name: name, result_type: String, source_id: 3
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      MergingAggregated
+        Expression (Convert distributed names)
+          ReadFromRemoteParallelReplicas (Query: SELECT `__table1`.`name` AS `name`, sum(`__table1`.`age`) AS `sum(age)` FROM (SELECT `__table2`.`name` AS `name`, `__table2`.`age` AS `age` FROM `default`.`users` AS `__table2`) AS `__table1` WHERE `__table1`.`name` > \'\' GROUP BY `__table1`.`name` ORDER BY `__table1`.`name` ASC Replicas: 127.0.0.1:9000, 127.0.0.2:9000, 127.0.0.3:9000)
+Alice	50
+John	33
+Ksenia	48
