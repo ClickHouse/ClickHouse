@@ -30,6 +30,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     ObjectStoragePtr object_storage_,
     ObjectStorageConnectionConfigurationPtr configuration_,
     const StorageObjectStorageTableOptions & table_options_,
+    ObjectStorageConnectionConfiguration::Paths object_paths_,
     const Names & columns_to_read,
     const NamesAndTypesList & virtual_columns_,
     const SelectQueryInfo & query_info_,
@@ -45,6 +46,7 @@ ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     , object_storage(object_storage_)
     , configuration(configuration_)
     , table_options(table_options_)
+    , object_paths(std::move(object_paths_))
     , info(std::move(info_))
     , virtual_columns(virtual_columns_)
     , format_settings(format_settings_)
@@ -158,7 +160,7 @@ void ReadFromObjectStorageStep::createIterator()
     iterator_wrapper = StorageObjectStorageSource::createFileIterator(
         configuration,
         table_options.getPathForRead(),
-        {table_options.getPathForRead()},
+        object_paths,
         configuration->getQuerySettings(context),
         object_storage,
         storage_snapshot->metadata,

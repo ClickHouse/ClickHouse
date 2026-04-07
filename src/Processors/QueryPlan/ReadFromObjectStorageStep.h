@@ -17,6 +17,7 @@ public:
         ObjectStoragePtr object_storage_,
         ObjectStorageConnectionConfigurationPtr configuration_,
         const StorageObjectStorageTableOptions & table_options_,
+        ObjectStorageConnectionConfiguration::Paths object_paths_,
         const Names & columns_to_read,
         const NamesAndTypesList & virtual_columns_,
         const SelectQueryInfo & query_info_,
@@ -46,6 +47,7 @@ private:
     ObjectStoragePtr object_storage;
     ObjectStorageConnectionConfigurationPtr configuration;
     const StorageObjectStorageTableOptions table_options;
+    const ObjectStorageConnectionConfiguration::Paths object_paths;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     ReadFromFormatInfo info;

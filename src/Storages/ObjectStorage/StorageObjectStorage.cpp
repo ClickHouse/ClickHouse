@@ -376,6 +376,7 @@ void StorageObjectStorage::read(
         object_storage,
         configuration,
         table_options,
+        object_paths,
         column_names,
         getVirtualsList(),
         query_info,
