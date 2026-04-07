@@ -65,3 +65,16 @@ TEST with non const arguments
 \N
 \N
 \N
+Test INT_MIN / -1 returns NULL (not FPE)
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+\N
+2147483647
+0

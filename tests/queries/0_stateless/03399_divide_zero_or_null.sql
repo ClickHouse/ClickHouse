@@ -67,3 +67,17 @@ SELECT divideOrNull(materialize(1), materialize(0));
 SELECT divideOrNull(materialize(1), materialize(NULL));
 SELECT divideOrNull(materialize(NULL), materialize(0));
 SELECT divideOrNull(materialize(NULL), materialize(NULL));
+
+SELECT 'Test INT_MIN / -1 returns NULL (not FPE)';
+SELECT intDivOrNull(toInt8(-128), toInt8(-1));
+SELECT intDivOrNull(toInt16(-32768), toInt16(-1));
+SELECT intDivOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT intDivOrNull(toInt64(-9223372036854775808), toInt64(-1));
+SELECT moduloOrNull(toInt8(-128), toInt8(-1));
+SELECT moduloOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1));
+SELECT positiveModuloOrNull(toInt32(-2147483648), toInt32(-1));
+SELECT intDivOrNull(materialize(toInt32(-2147483648)), materialize(toInt32(-1)));
+SELECT moduloOrNull(materialize(toInt32(-2147483648)), materialize(toInt32(-1)));
+SELECT intDivOrNull(toInt32(-2147483647), toInt32(-1));
+SELECT moduloOrNull(toInt32(-2147483647), toInt32(-1));
