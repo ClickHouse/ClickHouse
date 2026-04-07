@@ -34,6 +34,7 @@
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
@@ -148,6 +149,7 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
         {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
         {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
         {"_iceberg_metadata_file_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
     };
 }
 
@@ -434,6 +436,13 @@ void addRequestedFileLikeStorageVirtualsToChunk(
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
+        else if (virtual_column.name == "_table")
+        {
+            if (!virtual_values.storage_id.empty())
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.storage_id.getTableName())->convertToFullColumnIfConst());
+            else
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
             FormatSettings hive_format_settings;
@@ -543,8 +552,14 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 /// at least two arguments; also it can't be reduced to (256) because result type is different.
                 if (!res->result_type->equals(*node->result_type))
                 {
+                    /// Convert to boolean via notEquals(x, 0) instead of a truncating numeric cast.
+                    /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
+                    /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
                     ActionsDAG tmp_dag;
-                    res = &tmp_dag.addCast(*res, node->result_type, {}, context);
+                    auto zero_column = res->result_type->createColumnConst(1, res->result_type->getDefault());
+                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
+                    auto ne_func = FunctionFactory::instance().get("notEquals", context);
+                    res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
                 }
 
