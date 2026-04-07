@@ -124,10 +124,12 @@ void cancelTask(const String & endpoint_uri, const String & task_id, const Conte
         creds.setPassword(credentials->getPassword());
     }
 
+    /// Short timeouts for cancel — it's best-effort. Workers will
+    /// eventually clean up orphaned tasks on their own.
     ConnectionTimeouts timeouts;
     timeouts.connection_timeout = Poco::Timespan(100 * 1000);
-    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
-    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+    timeouts.send_timeout = Poco::Timespan(5 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(5 * 1000 * 1000);
     ReadSettings read_settings;
     read_settings.http_max_tries = 1;
     read_settings.http_retry_initial_backoff_ms = 500;

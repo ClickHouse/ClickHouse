@@ -834,32 +834,47 @@ protected:
             }
             else
             {
-                finished.wait();
+                /// Poll with timeout instead of blocking indefinitely, so that
+                /// checkCancelled can detect worker failures stored in first_exception.
+                while (finished.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+                    checkCancelled();
                 stage_finished = true;
             }
             checkCancelled();
             return stage_finished;
         }
 
-        /// Cancel all unfinished tasks
+        /// Cancel all unfinished tasks. Collects task info under lock, then
+        /// sends HTTP cancel requests without holding lock so that
+        /// `checkStatusFunc` threads can observe `is_cancelled` and exit.
         void cancel()
         {
-            std::lock_guard g(lock);
-            for (auto & [stage_name, started_tasks] : stage_tasks)
+            std::vector<RunningTaskInfo> tasks_to_cancel;
             {
-                while (!started_tasks.empty())
+                std::lock_guard g(lock);
+                for (auto & [stage_name, started_tasks] : stage_tasks)
                 {
-                    auto & task = started_tasks.begin()->second;
-                    LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, task.endpoint_uri);
-                    try
-                    {
-                        cancelTask(task.endpoint_uri, task.task_id, context);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                    }
-                    started_tasks.erase(started_tasks.begin());
+                    for (auto & [task_name, task_info] : started_tasks)
+                        tasks_to_cancel.push_back(task_info);
+                    started_tasks.clear();
+                }
+                /// Clear queues so that `enqueueGetStatus` doesn't pick up
+                /// stale task names after `stage_tasks` has been emptied.
+                stages_to_check.clear();
+                for (auto & [_, stage] : all_stages)
+                    stage->tasks_to_check.clear();
+            }
+
+            for (auto & task : tasks_to_cancel)
+            {
+                LOG_TRACE(logger, "Cancelling task {} on host {}", task.task_id, task.endpoint_uri);
+                try
+                {
+                    cancelTask(task.endpoint_uri, task.task_id, context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
                 }
             }
         }
@@ -869,6 +884,12 @@ protected:
         {
             if (query_status)
                 query_status->checkTimeLimit();
+
+            {
+                std::lock_guard exception_lock(lock);
+                if (first_exception)
+                    std::rethrow_exception(first_exception);
+            }
 
             if (*is_cancelled)
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
@@ -971,7 +992,14 @@ protected:
             if (!task)
                 return;
 
-            auto task_info = stage_tasks[task->first][task->second];
+            /// Look up task metadata; skip if absent (task was cancelled/removed).
+            auto stage_it = stage_tasks.find(task->first);
+            if (stage_it == stage_tasks.end())
+                return;
+            auto task_it = stage_it->second.find(task->second);
+            if (task_it == stage_it->second.end())
+                return;
+            auto task_info = task_it->second;
 
             thread_pool.scheduleOrThrow([this, task, task_info]()
                 {
@@ -982,6 +1010,12 @@ protected:
                     catch (...)
                     {
                         tryLogCurrentException(__PRETTY_FUNCTION__);
+                        {
+                            std::lock_guard exception_lock(lock);
+                            if (!first_exception)
+                                first_exception = std::current_exception();
+                        }
+                        *is_cancelled = true;
                     }
                     --in_flight_request_count;
                 });
@@ -1011,6 +1045,7 @@ protected:
         std::deque<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);  /// Queue of stages that have unfinished tasks to be checked
         std::unordered_map<String, std::shared_future<void>> stage_results TSA_GUARDED_BY(lock);
         std::shared_ptr<std::atomic<bool>> is_cancelled;
+        std::exception_ptr first_exception TSA_GUARDED_BY(lock);
         ThreadPool thread_pool;
         LoggerPtr logger;
     };

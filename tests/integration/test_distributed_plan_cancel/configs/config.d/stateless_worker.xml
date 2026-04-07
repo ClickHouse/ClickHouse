@@ -1,0 +1,35 @@
+<clickhouse>
+    <stateless_worker_server>
+        <enabled>1</enabled>
+        <endpoint>localhost</endpoint>
+    </stateless_worker_server>
+
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <cluster>default</cluster>
+    </stateless_worker_client>
+
+    <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
+        <temporary_files_storage>
+            <type>local</type>
+            <path>./local_object_storage/</path>
+            <endpoint_subpath>tmp_sub_path/</endpoint_subpath>
+        </temporary_files_storage>
+    </distributed_query>
+
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>
