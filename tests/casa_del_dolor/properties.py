@@ -479,7 +479,7 @@ cache_storage_properties = {
     "load_metadata_asynchronously": true_false_lambda,
     "load_metadata_threads": threads_lambda,
     "max_elements": threshold_generator(0.2, 0.2, 10000, 10000000),
-    "max_file_segment_size": file_size_value(100),
+    "max_file_segment_size": threshold_generator(0.2, 0.2, 4 * 1024 * 1024, 32 * 1024 * 1024),  # must be >= default boundary_alignment (4Mi)
     "overcommit_eviction_evict_step": threshold_generator(
         0.2, 0.2, 1, 10 * 1024 * 1024
     ),

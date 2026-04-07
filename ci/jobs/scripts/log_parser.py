@@ -589,7 +589,7 @@ class FuzzerLogParser:
             return None
         print(f"Query id: {query_id}")
         query_command = Shell.get_output(
-            f"rg -z --text '{query_id}' {log_path} | rg 'query:' | head -n1"
+            f"rg -z --text '{query_id}' {log_path} | rg 'executeQuery:' | head -n1"
         )
         if not query_command:
             print(f"Query not found in {log_path} by query id")
