@@ -528,11 +528,50 @@ struct DeltaLakeMetadataImpl
         auto partition_values_column_raw = res_block.getByName("add.partitionValues").column;
         const auto & partition_values_column = assert_cast<const ColumnMap &>(*partition_values_column_raw);
 
+        /// Decode partition values for a single add-row using the current file_schema.
+        auto decode_partition_values = [&](size_t row_idx)
+        {
+            const auto path = String(path_column.getDataAt(row_idx));
+            if (path.empty())
+                return;
+
+            auto full_path = fs::path(table_path) / path;
+            if (file_partition_columns.contains(full_path))
+                return;
+
+            Field map;
+            partition_values_column.get(row_idx, map);
+            auto partition_values_map = map.safeGet<Map>();
+            if (partition_values_map.empty())
+                return;
+
+            auto filename = fs::path(path).filename().string();
+            auto & current_partition_columns = file_partition_columns[full_path];
+            for (const auto & map_value : partition_values_map)
+            {
+                const auto tuple = map_value.safeGet<Tuple>();
+                const auto partition_name = tuple[0].safeGet<String>();
+                auto name_and_type = file_schema.tryGetByName(partition_name);
+                if (!name_and_type)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "No such column in schema: {} (schema: {})",
+                        partition_name, file_schema.toString());
+                }
+                const auto value = tuple[1].safeGet<String>();
+                auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
+                current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
+
+                LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
+            }
+        };
+
         /// Process schema and add entries in a single pass so that each row's
         /// partition values are decoded against the schema active at that row's position.
-        /// A checkpoint can contain metaData entries from multiple schema versions
-        /// interleaved with add entries; using a two-pass approach would decode all
-        /// partition values against the final schema, which can fail after schema evolution.
+        /// Checkpoint row order is not guaranteed, so add rows that arrive before any
+        /// metaData row are buffered and their partition values decoded after schema is known.
+        std::vector<size_t> deferred_partition_rows;
         for (size_t i = 0; i < path_column.size(); ++i)
         {
             const auto metadata = String(schema_column.getDataAt(i));
@@ -547,6 +586,11 @@ struct DeltaLakeMetadataImpl
                 {
                     file_schema = current_schema;
                     LOG_TEST(log, "Processed schema from checkpoint: {}", file_schema.toString());
+
+                    /// Schema is now available — decode any buffered add rows.
+                    for (auto deferred_idx : deferred_partition_rows)
+                        decode_partition_values(deferred_idx);
+                    deferred_partition_rows.clear();
                 }
                 else if (file_schema != current_schema)
                 {
@@ -559,43 +603,24 @@ struct DeltaLakeMetadataImpl
             if (path.empty())
                 continue;
 
-            auto filename = fs::path(path).filename().string();
-            auto full_path = fs::path(table_path) / path;
-            auto it = file_partition_columns.find(full_path);
-            if (it == file_partition_columns.end())
-            {
-                Field map;
-                partition_values_column.get(i, map);
-                auto partition_values_map = map.safeGet<Map>();
-                if (!partition_values_map.empty())
-                {
-                    auto & current_partition_columns = file_partition_columns[full_path];
-                    for (const auto & map_value : partition_values_map)
-                    {
-                        const auto tuple = map_value.safeGet<Tuple>();
-                        const auto partition_name = tuple[0].safeGet<String>();
-                        auto name_and_type = file_schema.tryGetByName(partition_name);
-                        if (!name_and_type)
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "No such column in schema: {} (schema: {})",
-                                partition_name, file_schema.toString());
-                        }
-                        const auto value = tuple[1].safeGet<String>();
-                        auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
-                        current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
-
-                        LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
-                    }
-                }
-            }
-
+            /// Always register the file path immediately.
             LOG_TEST(log, "Adding {}", path);
             const auto [_, inserted] = result.insert(std::filesystem::path(table_path) / path);
             if (!inserted)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "File already exists {}", path);
+
+            /// Decode partition values if schema is available, otherwise defer.
+            if (file_schema.empty())
+                deferred_partition_rows.push_back(i);
+            else
+                decode_partition_values(i);
         }
+
+        /// If there are still deferred rows (no metaData row was ever seen),
+        /// this is an invalid checkpoint — but don't crash, just skip partition decoding.
+        if (!deferred_partition_rows.empty())
+            LOG_WARNING(log, "Checkpoint has {} add rows but no metaData row; "
+                "partition column decoding skipped for those files", deferred_partition_rows.size());
 
         return version;
     }
