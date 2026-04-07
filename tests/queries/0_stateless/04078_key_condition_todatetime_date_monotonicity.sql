@@ -1,6 +1,11 @@
 -- { echo }
 
+SET parallel_replicas_local_plan = 1;
 SET session_timezone = 'UTC';
+
+-- toDateTime(Date) overflows for Date values beyond ~2106-02-06.
+-- The primary key index must not treat toDateTime as monotonic for Date input,
+-- otherwise it incorrectly prunes granules containing large Date values.
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (stamp Date)
@@ -15,5 +20,25 @@ OPTIMIZE TABLE test FINAL;
 SELECT count() FROM test WHERE stamp >= '2024-11-01' SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
 SELECT count() FROM test WHERE stamp >= '2024-11-01';
+
+DROP TABLE test;
+
+-- Partition pruning via the Partition key condition no longer
+-- work when the partition key wraps a Nullable column with assumeNotNull,
+-- because assumeNotNull is not considered always-monotonic over Nullable input.
+-- Earlier it worked because the monotonicity check received the wrong type
+-- (the function's output type instead of input type), which masked the issue.
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (d Nullable(Date))
+ENGINE = MergeTree PARTITION BY toRelativeDayNum(assumeNotNull(d)) ORDER BY tuple();
+
+INSERT INTO test VALUES ('2024-01-20');
+INSERT INTO test VALUES ('2024-01-30');
+INSERT INTO test VALUES ('2024-02-20');
+INSERT INTO test VALUES ('2025-01-20');
+
+EXPLAIN indexes = 1
+SELECT count() FROM test WHERE d <= '2024-01-25';
 
 DROP TABLE test;
