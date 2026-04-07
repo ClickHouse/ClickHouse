@@ -127,15 +127,7 @@ public:
             {
                 auto new_pair = std::make_shared<KVPair>();
                 new_pair->key = iter->key().ToStringView();
-                ReadBufferFromOwnString buffer(iter->value().ToStringView());
-                typename Node::Meta & meta = new_pair->value;
-                readPODBinary(meta, buffer);
-                readVarUInt(new_pair->value.stats.data_size, buffer);
-                if (new_pair->value.stats.data_size)
-                {
-                    new_pair->value.data = std::unique_ptr<char[]>(new char[new_pair->value.stats.data_size]);
-                    buffer.readStrict(new_pair->value.data.get(), new_pair->value.stats.data_size);
-                }
+                new_pair->value.decodeFromString(iter->value().ToString());
                 pair = new_pair;
             }
             else
@@ -258,25 +250,15 @@ public:
 
     const_iterator find(std::string_view key) const
     {
-        /// rocksdb::PinnableSlice slice;
         std::string buffer_str;
         rocksdb::Status status = rocksdb_ptr->Get(rocksdb::ReadOptions(), key, &buffer_str);
         if (status.IsNotFound())
             return end();
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "Got rocksdb error during executing find. The error message is {}.", status.ToString());
-        ReadBufferFromOwnString buffer(buffer_str);
         auto kv = std::make_shared<KVPair>();
         kv->key = key;
-        typename Node::Meta & meta = kv->value;
-        readPODBinary(meta, buffer);
-        /// TODO: Sometimes we don't need to load data.
-        readVarUInt(kv->value.stats.data_size, buffer);
-        if (kv->value.stats.data_size)
-        {
-            kv->value.data = std::unique_ptr<char[]>(new char[kv->value.stats.data_size]);
-            buffer.readStrict(kv->value.data.get(), kv->value.stats.data_size);
-        }
+        kv->value.decodeFromString(buffer_str);
         return const_iterator(kv);
     }
 

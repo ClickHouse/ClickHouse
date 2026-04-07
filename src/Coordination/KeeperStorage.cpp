@@ -363,6 +363,12 @@ String KeeperRocksNode::getEncodedString()
     const KeeperRocksNodeInfo & node_info = *this;
     writePODBinary(node_info, buffer);
     writeBinary(getData(), buffer);
+    writeBinary(destroy_time.has_value(), buffer);
+    if (destroy_time.has_value())
+        writeBinary(*destroy_time, buffer);
+    writeBinary(ttl.has_value(), buffer);
+    if (ttl.has_value())
+        writeBinary(*ttl, buffer);
     return buffer.str();
 }
 
@@ -376,6 +382,25 @@ void KeeperRocksNode::decodeFromString(const String &buffer_str)
     {
         data = std::unique_ptr<char[]>(new char[stats.data_size]);
         buffer.readStrict(data.get(), stats.data_size);
+    }
+    if (!buffer.eof())
+    {
+        bool has_destroy_time = false;
+        readBinary(has_destroy_time, buffer);
+        if (has_destroy_time)
+        {
+            int64_t v = 0;
+            readBinary(v, buffer);
+            destroy_time = v;
+        }
+        bool has_ttl = false;
+        readBinary(has_ttl, buffer);
+        if (has_ttl)
+        {
+            int64_t v = 0;
+            readBinary(v, buffer);
+            ttl = v;
+        }
     }
 }
 
