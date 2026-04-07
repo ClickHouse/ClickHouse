@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Processors/Port.h>
+#include <set>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByRangeTransform.h>
 
@@ -29,6 +30,7 @@ static bool hasOverlapWithSortedRanges(const std::vector<MinMaxStat> & data_rang
         if (intersects(patch_stat, *it))
             return true;
     }
+
     return false;
 }
 
@@ -37,7 +39,6 @@ struct JoinPatchInfo
 {
     PatchPartInfoForReader patch_part;
     NamesAndTypesList columns;
-    VirtualFields const_virtual_fields;
 };
 
 /// Collects unique Join-mode patches from the given task infos.
@@ -62,7 +63,6 @@ static bool collectJoinPatches(
             {
                 .patch_part = patch_part,
                 .columns = info.task_columns.patch_columns[patch_idx],
-                .const_virtual_fields = info.const_virtual_fields,
             };
         }
     }
@@ -95,63 +95,10 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
     if (join_patches.empty())
         return nullptr;
 
-    /// 2. Read minmax indexes on `_block_number` and `_block_offset` from data parts.
-    ///    Used for: (a) filtering patch ranges by overlap, (b) range-based bucket assignment.
-    std::vector<MinMaxStat> data_block_number_ranges;
-    std::vector<MinMaxStat> data_block_offset_ranges;
-    UInt64 global_min_block = std::numeric_limits<UInt64>::max();
-    UInt64 global_max_block = 0;
+    /// 2. Precompute per-range minmax stats for each patch part (read once, reused across data parts).
+    absl::node_hash_map<String, PatchStatsMap> patch_stats_by_name;
 
-    for (const auto & part_idx : part_indexes_with_patches)
-    {
-        const auto & data_part = parts_ranges[part_idx].data_part;
-        const auto & data_ranges = parts_ranges[part_idx].ranges;
-
-        auto block_number_stats = getPatchMinMaxStats(
-            data_part, data_ranges, BlockNumberColumn::name, reader_settings);
-
-        if (block_number_stats)
-        {
-            for (const auto & stat : *block_number_stats)
-            {
-                data_block_number_ranges.push_back(stat);
-                global_min_block = std::min(global_min_block, stat.min);
-                global_max_block = std::max(global_max_block, stat.max);
-            }
-        }
-
-        auto block_offset_stats = getPatchMinMaxStats(
-            data_part, data_ranges, BlockOffsetColumn::name, reader_settings);
-
-        if (block_offset_stats)
-        {
-            for (const auto & stat : *block_offset_stats)
-                data_block_offset_ranges.push_back(stat);
-        }
-    }
-
-    if (global_min_block > global_max_block)
-    {
-        global_min_block = 0;
-        global_max_block = 0;
-    }
-
-    auto sort_by_min = [](const MinMaxStat & lhs, const MinMaxStat & rhs) { return lhs.min < rhs.min; };
-    std::sort(data_block_number_ranges.begin(), data_block_number_ranges.end(), sort_by_min);
-    std::sort(data_block_offset_ranges.begin(), data_block_offset_ranges.end(), sort_by_min);
-
-    /// 3. Initialize cache structure.
-    patch_join_cache->init(ranges_in_patch_parts, num_buckets, global_min_block, global_max_block);
-
-    /// 4. Flatten work items, filter by minmax overlap.
-    struct ReadWorkItem
-    {
-        String patch_name;
-        MarkRange range;
-    };
-
-    std::vector<ReadWorkItem> work_items;
-    for (const auto & [patch_name, ranges] : ranges_in_patch_parts.getRanges())
+    for (const auto & [patch_name, patch_ranges] : ranges_in_patch_parts.getRanges())
     {
         auto patch_it = join_patches.find(patch_name);
         if (patch_it == join_patches.end())
@@ -162,59 +109,111 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         if (!loaded_part)
             continue;
 
-        PatchStatsMap stats;
-        auto block_number_stats = getPatchMinMaxStats(
-            loaded_part->getDataPart(), ranges, BlockNumberColumn::name, reader_settings);
-        auto block_offset_stats = getPatchMinMaxStats(
-            loaded_part->getDataPart(), ranges, BlockOffsetColumn::name, reader_settings);
+        auto bn = getPatchMinMaxStats(loaded_part->getDataPart(), patch_ranges, BlockNumberColumn::name, reader_settings);
+        auto bo = getPatchMinMaxStats(loaded_part->getDataPart(), patch_ranges, BlockOffsetColumn::name, reader_settings);
 
-        if (block_number_stats && block_offset_stats)
+        if (bn && bo)
         {
-            for (size_t range_idx = 0; range_idx < ranges.size(); ++range_idx)
+            auto & stats = patch_stats_by_name[patch_name];
+            for (size_t i = 0; i < patch_ranges.size(); ++i)
             {
-                auto & range_stats = stats[ranges[range_idx]];
-                range_stats.block_number_stat = (*block_number_stats)[range_idx];
-                range_stats.block_offset_stat = (*block_offset_stats)[range_idx];
+                auto & s = stats[patch_ranges[i]];
+                s.block_number_stat = (*bn)[i];
+                s.block_offset_stat = (*bo)[i];
             }
-        }
-
-        for (const auto & range : ranges)
-        {
-            auto stat_it = stats.find(range);
-            if (stat_it != stats.end())
-            {
-                if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
-                    continue;
-                if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
-                    continue;
-            }
-
-            work_items.push_back({patch_name, range});
         }
     }
 
-    if (work_items.empty())
+    /// 3. For each data part, read its minmax stats and filter patch ranges by per-part overlap.
+    ///    Track global `_block_number` range for bucket assignment.
+    UInt64 global_min_block = std::numeric_limits<UInt64>::max();
+    UInt64 global_max_block = 0;
+    absl::node_hash_map<String, std::set<MarkRange>> filtered_ranges_by_patch;
+
+    for (const auto & part_idx : part_indexes_with_patches)
+    {
+        const auto & data_part = parts_ranges[part_idx].data_part;
+        const auto & data_mark_ranges = parts_ranges[part_idx].ranges;
+        const auto & info = *per_part_infos[part_idx];
+
+        std::vector<MinMaxStat> data_block_number_ranges;
+        std::vector<MinMaxStat> data_block_offset_ranges;
+
+        if (auto stats = getPatchMinMaxStats(data_part, data_mark_ranges, BlockNumberColumn::name, reader_settings))
+        {
+            for (const auto & stat : *stats)
+            {
+                data_block_number_ranges.push_back(stat);
+                global_min_block = std::min(global_min_block, stat.min);
+                global_max_block = std::max(global_max_block, stat.max);
+            }
+        }
+
+        if (auto stats = getPatchMinMaxStats(data_part, data_mark_ranges, BlockOffsetColumn::name, reader_settings))
+        {
+            for (const auto & stat : *stats)
+                data_block_offset_ranges.push_back(stat);
+        }
+
+        std::ranges::sort(data_block_number_ranges, [](const auto & lhs, const auto & rhs) { return lhs.min < rhs.min; });
+        std::ranges::sort(data_block_offset_ranges, [](const auto & lhs, const auto & rhs) { return lhs.min < rhs.min; });
+
+        /// Filter patch ranges for each Join-mode patch of this data part.
+        for (size_t patch_idx = 0; patch_idx < info.patch_parts.size(); ++patch_idx)
+        {
+            if (info.patch_parts[patch_idx].mode != PatchMode::Join)
+                continue;
+
+            const auto & patch_name = info.patch_parts[patch_idx].part->getPartName();
+            auto ranges_it = ranges_in_patch_parts.getRanges().find(patch_name);
+            if (ranges_it == ranges_in_patch_parts.getRanges().end())
+                continue;
+
+            const auto & patch_ranges = ranges_it->second;
+            auto stats_it = patch_stats_by_name.find(patch_name);
+
+            for (const auto & range : patch_ranges)
+            {
+                if (stats_it != patch_stats_by_name.end())
+                {
+                    auto stat_it = stats_it->second.find(range);
+                    if (stat_it != stats_it->second.end())
+                    {
+                        if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
+                            continue;
+                        if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
+                            continue;
+                    }
+                }
+
+                filtered_ranges_by_patch[patch_name].insert(range);
+            }
+        }
+    }
+
+    if (global_min_block > global_max_block)
+    {
+        global_min_block = 0;
+        global_max_block = 0;
+    }
+
+    if (filtered_ranges_by_patch.empty())
         return nullptr;
 
-    /// Sort by patch_name for grouping.
-    std::stable_sort(work_items.begin(), work_items.end(),
-        [](const auto & lhs, const auto & rhs) { return lhs.patch_name < rhs.patch_name; });
+    /// 4. Initialize cache structure.
+    patch_join_cache->init(ranges_in_patch_parts, num_buckets, global_min_block, global_max_block);
 
-    /// 5. Group work items by patch_name.
-    absl::node_hash_map<String, std::vector<MarkRange>> ranges_by_patch;
-    for (auto & item : work_items)
-        ranges_by_patch[item.patch_name].push_back(item.range);
-
-    /// 6. Build pipeline.
+    /// 5. Build pipeline.
     auto processors = std::make_shared<Processors>();
 
-    for (auto & [patch_name, patch_ranges] : ranges_by_patch)
+    for (auto & [patch_name, filtered_ranges_set] : filtered_ranges_by_patch)
     {
         auto patch_it = join_patches.find(patch_name);
         if (patch_it == join_patches.end())
             continue;
 
         auto & patch_info = patch_it->second;
+        std::vector<MarkRange> patch_ranges(filtered_ranges_set.begin(), filtered_ranges_set.end());
 
         /// Build MergeTreeReadTaskInfo for this patch part.
         const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(
@@ -240,8 +239,8 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
             auto part_col = part_columns.tryGetByName(col.name);
             resolved_columns.push_back(part_col ? *part_col : col);
         }
+
         task_info->task_columns.columns = resolved_columns;
-        task_info->const_virtual_fields = patch_info.const_virtual_fields;
 
         /// Compute header from resolved columns (using the part's actual types).
         Block patch_header;
