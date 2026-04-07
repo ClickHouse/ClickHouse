@@ -107,6 +107,8 @@ add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
 add_headers_and_sources(clickhouse_common_io Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/AllocationInterceptors.cpp)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/ExceptionExt.cpp)
+list (REMOVE_ITEM clickhouse_common_io_sources Common/OOMCanary.cpp)
+list (REMOVE_ITEM clickhouse_common_io_headers Common/OOMCanary.h)
 
 
 add_headers_and_sources(clickhouse_compression Compression)
@@ -284,6 +286,8 @@ add_object_library(clickhouse_backups Backups)
 
 add_object_library(clickhouse_core Core)
 list (APPEND dbms_sources Common/ExceptionExt.cpp)
+list (APPEND dbms_sources Common/OOMCanary.cpp)
+list (APPEND dbms_headers Common/OOMCanary.h)
 
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_querypipeline QueryPipeline)

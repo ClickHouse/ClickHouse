@@ -30,6 +30,7 @@
 #include <Common/PoolId.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryWorker.h>
+#include <Common/OOMCanary.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
@@ -401,6 +402,9 @@ namespace ServerSetting
     extern const ServerSettingsString google_protos_path;
     extern const ServerSettingsString filesystem_caches_path;
     extern const ServerSettingsInt32 oom_score;
+    extern const ServerSettingsBool oom_canary_enable;
+    extern const ServerSettingsUInt64 oom_canary_size;
+    extern const ServerSettingsBool oom_canary_relaunch;
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
@@ -1767,6 +1771,13 @@ try
         setOOMScore(oom_score, log);
 #endif
 
+    std::optional<OOMCanary> oom_canary;
+    oom_canary.emplace(global_context);
+    OOMCanary::Config canary_config;
+    canary_config.enable = server_settings[ServerSetting::oom_canary_enable];
+    canary_config.size_bytes = server_settings[ServerSetting::oom_canary_size];
+    canary_config.relaunch = server_settings[ServerSetting::oom_canary_relaunch];
+
     std::unique_ptr<DB::BackgroundSchedulePoolTaskHolder> cancellation_task;
 
     SCOPE_EXIT({
@@ -2854,6 +2865,8 @@ try
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
 
+        oom_canary->start(canary_config);
+
         global_context->handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded();
 
         /// Build loggers before tables startup to make log messages from tables
@@ -3139,6 +3152,11 @@ try
                 global_context->waitAllBackupsAndRestores();
             else
                 global_context->cancelAllBackupsAndRestores();
+
+            /// Stop OOM canary before killing queries to avoid the canary's
+            /// response sequence interfering with the normal shutdown path.
+            if (oom_canary)
+                oom_canary->stop();
 
             /// Killing remaining queries.
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
