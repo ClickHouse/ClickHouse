@@ -1758,12 +1758,8 @@ enum SQLTableFunc {
     TFytsaurus = 75;
 }
 
-message Database {
-    required string database = 1;
-}
-
-message Table {
-    required string table = 1;
+message SQLIdentifier {
+    required string value = 1;
 }
 
 message Column {
@@ -1773,30 +1769,6 @@ message Column {
 message ColumnPath {
     required Column col = 1;
     repeated Column sub_cols = 2;
-}
-
-message Index {
-    required string index = 1;
-}
-
-message Projection {
-    required string projection = 1;
-}
-
-message Constraint {
-    required string constraint = 1;
-}
-
-message Function {
-    required string function = 1;
-}
-
-message Policy {
-    required string policy = 1;
-}
-
-message Role {
-    required string role = 1;
 }
 
 message Cluster {
@@ -1998,8 +1970,8 @@ message ExprColumn {
 }
 
 message ExprSchemaTableColumn {
-    optional Database database = 1;
-    optional Table table = 2;
+    optional SQLIdentifier database = 1;
+    optional SQLIdentifier table = 2;
     required ExprColumn col = 3;
 }
 
@@ -2076,10 +2048,16 @@ message ExprIn {
     }
 }
 
+enum AnyAllSome {
+    AAS_ANY = 1;
+    AAS_ALL = 2;
+    AAS_SOME = 3;
+}
+
 message ExprAny {
     required Expr expr = 1;
     required BinaryOperator op = 2;
-    required bool anyall = 3;
+    required AnyAllSome anyall = 3;
     required ExplainQuery sel = 4;
 }
 
@@ -2145,7 +2123,7 @@ enum FuncNulls {
 message SQLFuncName {
     oneof func_arg_oneof {
         SQLFunc catalog_func = 1;
-        Function function = 2;
+        SQLIdentifier function = 2;
     }
 }
 
@@ -2303,6 +2281,14 @@ message IntervalExpr {
         MONTH = 9;
         QUARTER = 10;
         YEAR = 11;
+        EPOCH = 12;
+        DOW = 13;
+        DOY = 14;
+        ISODOW = 15;
+        ISOYEAR = 16;
+        CENTURY = 17;
+        DECADE = 18;
+        MILLENNIUM = 19;
     }
     required Interval interval = 1;
     required Expr expr = 2;
@@ -2331,7 +2317,7 @@ message ComplicatedExpr {
         string columns = 18;
         ExprList array = 19;
         ExprList tuple = 20;
-        Table table = 21;
+        SQLIdentifier table = 21;
         LambdaExpr lambda = 22;
     }
 }
@@ -2358,8 +2344,8 @@ message ResultColumn {
 }
 
 message ExprSchemaTable {
-    optional Database database = 1;
-    required Table table = 2;
+    optional SQLIdentifier database = 1;
+    required SQLIdentifier table = 2;
 }
 
 enum InFormat {
@@ -2623,6 +2609,11 @@ message KeyValuePair {
     required string value = 2;
 }
 
+message HTTPHeader {
+    required string name = 1;
+    required string value = 2;
+}
+
 message SetValue {
     required string property = 1;
     required string value = 2;
@@ -2675,6 +2666,7 @@ message TableOrFunction {
         ExprSchemaTable est = 1;
         TableFunction tfunc = 2;
         ExplainQuery select = 3;
+        ValuesStatement values_standard = 4;
     }
 }
 
@@ -2756,6 +2748,7 @@ message ObjectStoreFunc {
     required string credential = 4;
     repeated KeyValuePair params = 5;
     optional SettingValues setting_values = 6;
+    repeated HTTPHeader http_headers = 7;
 }
 
 message URLFunc {
@@ -2772,6 +2765,7 @@ message URLFunc {
         InOutFormat inoutformat = 6;
     }
     optional Expr structure = 7;
+    repeated HTTPHeader http_headers = 8;
 }
 
 message SQLTableFuncCall {
@@ -2799,12 +2793,12 @@ message MergeTreeIndexFunc {
 
 message MergeTreeProjectionFunc {
     required ExprSchemaTable est = 1;
-    required Projection proj = 2;
+    required SQLIdentifier proj = 2;
 }
 
 message MergeTreeTextIndexFunc {
     required ExprSchemaTable est = 1;
-    required Index idx = 2;
+    required SQLIdentifier idx = 2;
 }
 
 message PartsList {
@@ -2876,7 +2870,7 @@ message SampleClause {
 
 message JoinedTableOrFunction {
     required TableOrFunction tof = 1;
-    optional Table table_alias = 2;
+    optional SQLIdentifier table_alias = 2;
     repeated Column col_aliases = 3;
     optional bool final = 4;
     optional SampleClause sample = 5;
@@ -3019,8 +3013,9 @@ message SetQuery {
 
 message CTEquery {
     optional bool recursive = 1;
-    required Table table = 2;
+    required SQLIdentifier table = 2;
     required Select query = 3;
+    optional bool is_materialized = 4;
 }
 
 message CTEexpr {
@@ -3101,7 +3096,7 @@ message DatabaseEngine {
 
 message CreateDatabase {
     optional bool if_not_exists = 1;
-    required Database database = 2;
+    required SQLIdentifier database = 2;
     optional string uuid = 3;
     optional Cluster cluster = 4;
     required DatabaseEngine dengine = 5;
@@ -3110,7 +3105,7 @@ message CreateDatabase {
 
 message CreateFunction {
     required CreateReplaceOption create_opt = 1;
-    required Function function = 2;
+    required SQLIdentifier function = 2;
     optional Cluster cluster = 3;
     required LambdaExpr lexpr = 4;
 }
@@ -3330,11 +3325,13 @@ enum IndexType {
     IDX_ngrambf_v1 = 5;
     IDX_tokenbf_v1 = 6;
     IDX_text = 7;
+    /// Indexes for projections
     IDX_basic = 8;
+    IDX_commit_order = 9;
 }
 
 message IndexDef {
-    optional Index idx = 1;
+    optional SQLIdentifier idx = 1;
     required Expr expr = 2;
     required IndexType type = 3;
     repeated IndexParam params = 4;
@@ -3347,7 +3344,7 @@ message ProjectionSelectDef {
 }
 
 message ProjectionDef {
-    required Projection proj = 1;
+    required SQLIdentifier proj = 1;
     oneof projection_oneof {
         ProjectionSelectDef sel_def = 2;
         IndexDef idx_def = 3;
@@ -3359,7 +3356,7 @@ message ConstraintDef {
         CHECK = 1;
         ASSUME = 2;
     }
-    required Constraint constr = 1;
+    required SQLIdentifier constr = 1;
     required ConstraintType ctype = 2;
     required Expr expr = 3;
 }
@@ -3463,8 +3460,8 @@ message TableEngineParam {
         InOutFormat in_out = 4;
         JoinType join_op = 5;
         JoinConst join_const = 6;
-        Database database = 7;
-        Table table = 8;
+        SQLIdentifier database = 7;
+        SQLIdentifier table = 8;
         uint32 num = 9;
         string svalue = 10;
         ColumnPathList col_list = 11;
@@ -3572,9 +3569,9 @@ enum SQLObject {
 message SQLObjectName {
     oneof objn_oneof {
         ExprSchemaTable est = 1;
-        Database database = 2;
-        Function function = 3;
-        Policy policy = 4;
+        SQLIdentifier database = 2;
+        SQLIdentifier function = 3;
+        SQLIdentifier policy = 4;
     }
 }
 
@@ -3663,8 +3660,8 @@ message LightUpdate {
 message Truncate {
     oneof truncate_oneof {
         ExprSchemaTable est = 1;
-        Database all_tables = 2;
-        Database database = 3;
+        SQLIdentifier all_tables = 2;
+        SQLIdentifier database = 3;
     }
     optional Cluster cluster = 4;
     optional bool sync = 5;
@@ -3740,7 +3737,7 @@ message Exchange {
 message AddWhere {
     oneof add_where_oneof {
         ColumnPath col = 1;
-        Index idx = 2;
+        SQLIdentifier idx = 2;
         bool first = 3;
     }
 }
@@ -3783,12 +3780,12 @@ message AddIndex {
 }
 
 message IdxInPartition {
-    required Index idx = 1;
+    required SQLIdentifier idx = 1;
     optional SinglePartitionExpr single_partition = 2;
 }
 
 message ProjectionInPartition {
-    required Projection proj = 1;
+    required SQLIdentifier proj = 1;
     optional SinglePartitionExpr single_partition = 2;
 }
 
@@ -3904,6 +3901,9 @@ message DictionarySourceDetails {
     optional string user = 5;
     optional string password = 6;
     optional RedisStorageType redis_storage = 7;
+    optional string invalidate_query = 8;
+    optional ColumnPath update_field = 9;
+    optional uint32 update_lag = 10;
 }
 
 message DictionarySource {
@@ -3980,11 +3980,11 @@ message ClearColumnInPartition {
 
 message FreezePartition {
     optional SinglePartitionExpr single_partition = 1;
-    required uint32 fname = 2;
+    required string fname = 2;
 }
 
 message ClearIndexInPartition {
-    required Index idx = 1;
+    required SQLIdentifier idx = 1;
     required SinglePartitionExpr single_partition = 2;
 }
 
@@ -4022,12 +4022,12 @@ message CreateMaskingPolicy {
 message AlterPolicyContent {
     required ExprSchemaTable target = 1;
     optional WhereStatement where_expr = 2;
-    optional Role role = 3;
+    optional SQLIdentifier role = 3;
     oneof create_policy_oneof {
         CreateRowPolicy row = 4;
         CreateMaskingPolicy masking = 5;
     }
-    optional Policy rename_to = 6;
+    optional SQLIdentifier rename_to = 6;
 }
 
 message AlterItem {
@@ -4052,7 +4052,7 @@ message AlterItem {
         MaterializeStatistics mat_stats = 17;
         AddIndex add_index = 18;
         IdxInPartition materialize_index = 19;
-        Index drop_index = 20;
+        SQLIdentifier drop_index = 20;
         IdxInPartition clear_index = 21;
         RemoveColumnProperty column_remove_property = 22;
         ModifyColumnSetting column_modify_setting = 23;
@@ -4060,11 +4060,11 @@ message AlterItem {
         SettingValues table_modify_setting = 25;
         SettingList table_remove_setting = 26;
         ProjectionDef add_projection = 27;
-        Projection remove_projection = 28;
+        SQLIdentifier remove_projection = 28;
         ProjectionInPartition materialize_projection = 29;
         ProjectionInPartition clear_projection = 30;
         ConstraintDef add_constraint = 31;
-        Constraint remove_constraint = 32;
+        SQLIdentifier remove_constraint = 32;
         SinglePartitionExpr detach_partition = 33;
         SinglePartitionExpr drop_partition = 34;
         SinglePartitionExpr drop_detached_partition = 35;
@@ -4139,14 +4139,14 @@ message DropReplica {
     required string replica = 1;
     oneof drop_oneof {
         ExprSchemaTable est = 2;
-        Database database = 3;
+        SQLIdentifier database = 3;
     }
 }
 
 message DropDatabaseReplica {
     required string replica = 1;
     optional string shard = 2;
-    optional Database database = 3;
+    optional SQLIdentifier database = 3;
 }
 
 enum DeltaKernelTraceLevel {
@@ -4157,6 +4157,11 @@ enum DeltaKernelTraceLevel {
     TRACE = 5;
 }
 
+message UnlockSnapshot {
+    required string name = 1;
+    optional BackupOut from = 2;
+}
+
 message SystemCommand {
     optional Cluster cluster = 1;
     oneof system_cmd_oneof {
@@ -4164,7 +4169,7 @@ message SystemCommand {
         bool reload_dictionaries = 3;
         bool reload_models = 4;
         bool reload_functions = 5;
-        Function reload_function = 6;
+        SQLIdentifier reload_function = 6;
         bool reload_asynchronous_metrics = 7;
         bool drop_dns_cache = 8;
         bool drop_mark_cache = 9;
@@ -4192,7 +4197,7 @@ message SystemCommand {
         ExprSchemaTable stop_pulling_replication_log = 30;
         ExprSchemaTable start_pulling_replication_log = 31;
         SyncReplica sync_replica = 32;
-        Database sync_replicated_database = 33;
+        SQLIdentifier sync_replicated_database = 33;
         ExprSchemaTable restart_replica = 34;
         ExprSchemaTable restore_replica = 35;
         bool restart_replicas = 36;
@@ -4240,10 +4245,10 @@ message SystemCommand {
         string wait_failpoint = 78;
         string notify_failpoint = 79;
         DeltaKernelTraceLevel reload_delta_kernel_tracing = 80;
-        Database restore_database_replica = 81;
+        SQLIdentifier restore_database_replica = 81;
         ExprSchemaTable stop_replicated_view = 82;
         ExprSchemaTable start_replicated_view = 83;
-        uint32 unfreeze = 84;
+        string unfreeze = 84;
         DropReplica drop_replica = 85;
         DropDatabaseReplica drop_database_replica = 86;
         ExprSchemaTable stop_cleanup = 87;
@@ -4258,7 +4263,7 @@ message SystemCommand {
         bool start_thread_fuzzer = 96;
         bool stop_thread_fuzzer = 97;
         bool drop_distributed_cache = 98;
-        string unlock_snapshot = 99;
+        UnlockSnapshot unlock_snapshot = 99;
     }
 }
 
@@ -4284,20 +4289,29 @@ message BackupRestore {
         RESTORE = 2;
     }
     required BackupCommand command = 1;
-    required BackupRestoreElement backup_element = 2;
-    repeated BackupRestoreElement other_elements = 3;
-    optional Cluster cluster = 4;
-    required BackupOut out = 5;
-    optional SettingValues setting_values = 6;
+    oneof backup_source {
+        BackupRestoreElement backup_element = 2;
+        /// BACKUP FROM SNAPSHOT {snapshot_source} TO {out}
+        BackupOut from_snapshot = 3;
+    }
+    repeated BackupRestoreElement other_elements = 4;
+    optional Cluster cluster = 5;
+    required BackupOut out = 6;
+    optional SettingValues setting_values = 7;
     enum SyncOrAsync {
         SYNC = 1;
         ASYNC = 2;
     }
-    optional SyncOrAsync sync = 7;
+    optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
-        InFormat informat = 8;
-        OutFormat outformat = 9;
+        InFormat informat = 9;
+        OutFormat outformat = 10;
     }
+}
+
+message SnapshotQuery {
+    required BackupRestoreElement element = 1;
+    required BackupOut out = 2;
 }
 
 message Rename {
@@ -4339,11 +4353,11 @@ message ShowObject {
 message ShowTables {
     optional bool full = 1;
     optional bool is_temp = 2;
-    optional Database database = 3;
+    optional SQLIdentifier database = 3;
 }
 
 message ShowDictionaries {
-    optional Database database = 1;
+    optional SQLIdentifier database = 1;
 }
 
 message ShowColumns {
@@ -4396,11 +4410,11 @@ message ShowStatement {
 message CreatePolicy {
     required CreateReplaceOption create_opt = 1;
     optional bool if_not_exists = 2;
-    required Policy policy = 3;
+    required SQLIdentifier policy = 3;
     required ExprSchemaTable target = 4;
     optional Cluster cluster = 5;
     optional WhereStatement where_expr = 6;
-    optional Role role = 7;
+    optional SQLIdentifier role = 7;
     oneof create_policy_oneof {
         CreateRowPolicy row = 8;
         CreateMaskingPolicy masking = 9;
@@ -4434,6 +4448,7 @@ message SQLQueryInner {
         Kill kill = 23;
         ShowStatement show = 24;
         CreatePolicy create_policy = 25;
+        SnapshotQuery snapshot_query = 26;
     }
 }
 

@@ -429,6 +429,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -471,6 +473,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -514,9 +518,36 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
+    /// Flush crash_log first since it's the most important log during a crash.
+    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
+    /// time budget from the signal handler's 303-second timeout, potentially
+    /// preventing crash_log from being flushed if stack symbolization was slow.
+    /// Use try/catch so that a timeout in one log does not prevent flushing others.
+    if (crash_log)
+    {
+        try
+        {
+            crash_log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     auto logs = getAllLogs();
     for (auto & log : logs)
-        log->handleCrash();
+    {
+        try
+        {
+            if (log != crash_log.get())
+                log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 template <typename LogElement>
