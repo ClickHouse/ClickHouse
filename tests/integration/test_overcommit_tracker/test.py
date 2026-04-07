@@ -6,7 +6,6 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/config.d/config.xml"],
     user_configs=[
         "configs/users.d/users.xml",
     ],
@@ -22,14 +21,24 @@ def start_cluster():
         cluster.shutdown()
 
 
-USER_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS max_memory_usage_for_user=2000000000,memory_overcommit_ratio_denominator=1"
-USER_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(2500000) SETTINGS max_memory_usage_for_user=2000000000,memory_overcommit_ratio_denominator=80000000"
+# Use larger queries (128 MB each) and a lower user memory limit (300 MB) so that
+# memory pressure is reached even when only a handful of queries overlap in time.
+# This prevents flakiness on slow builds (coverage, ARM) where fewer queries run
+# concurrently and the old 2 GB limit was rarely hit.
+USER_TEST_QUERY_A = "SELECT groupArray(number) FROM numbers(5000000) SETTINGS max_threads=1, max_memory_usage_for_user=300000000, memory_overcommit_ratio_denominator=1"
+USER_TEST_QUERY_B = "SELECT groupArray(number) FROM numbers(5000000) SETTINGS max_threads=1, max_memory_usage_for_user=300000000, memory_overcommit_ratio_denominator=80000000"
+
+QUERY_COUNT = 40  # 20 × A + 20 × B
 
 
 def test_user_overcommit():
-    if node.is_built_with_memory_sanitizer() or node.is_built_with_address_sanitizer():
+    if (
+        node.is_built_with_memory_sanitizer()
+        or node.is_built_with_address_sanitizer()
+        or node.is_built_with_thread_sanitizer()
+    ):
         pytest.skip(
-            "doesn't fit in memory limits under sanitizers (memory overhead causes timeouts)"
+            "sanitizers inflate per-query memory 2-10x, making individual queries exceed the 300 MB user limit"
         )
 
     node.query("CREATE USER IF NOT EXISTS A")
@@ -41,10 +50,10 @@ def test_user_overcommit():
     finished = False
     last_error = ""
 
-    for attempt in range(3):
+    for attempt in range(5):
         responses_A = list()
         responses_B = list()
-        for i in range(100):
+        for i in range(QUERY_COUNT):
             if i % 2 == 0:
                 responses_A.append(
                     node.get_query_request(USER_TEST_QUERY_A, user="A")
