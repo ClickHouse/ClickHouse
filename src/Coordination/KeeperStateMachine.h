@@ -21,6 +21,8 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 struct KeeperStorageStats;
 
+struct ISnapshotLoader;
+
 class IKeeperStateMachine : public nuraft::state_machine
 {
 public:
@@ -85,6 +87,8 @@ public:
     int read_logical_snp_obj(
         nuraft::snapshot & s, void *& user_snp_ctx, uint64_t obj_id, nuraft::ptr<nuraft::buffer> & data_out, bool & is_last_obj) override;
 
+    void free_user_snp_ctx(void *& user_snp_ctx) override;
+
     virtual void shutdownStorage() = 0;
 
     ClusterConfigPtr getClusterConfig() const;
@@ -123,11 +127,19 @@ public:
 
 protected:
     CommitCallback commit_callback;
-    /// In our state machine we always have a single snapshot which is stored
-    /// in memory in compressed (serialized) format.
+
+    /// Latest snapshot metadata, stored on both leader/follower.
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
     std::shared_ptr<SnapshotFileInfo> latest_snapshot_info TSA_GUARDED_BY(snapshots_lock);
-    nuraft::ptr<nuraft::buffer> latest_snapshot_buf TSA_GUARDED_BY(snapshots_lock) = nullptr;
+
+    /// Follower snapshot receive context.
+    /// Kept for the duration of snapshot transfer, reset on completion/error.
+    std::unique_ptr<SnapshotReceiveCtx> snapshot_receive_ctx TSA_GUARDED_BY(snapshots_lock);
+
+    /// Leader snapshot loader info, stored only in case of remote disk.
+    /// Shared across concurrent followers transferring the same snapshot.
+    /// Reset when a new snapshot is created or when the loader encounters an error.
+    std::shared_ptr<ISnapshotLoader> snapshot_loader_info TSA_GUARDED_BY(snapshots_lock);
 
     /// Cached size of the latest snapshot file, updated atomically after each snapshot
     /// creation/save while snapshots_lock is held. Read lock-free by `getLatestSnapshotSize`
@@ -195,7 +207,6 @@ public:
     KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
-        /// const CoordinationSettingsPtr & coordination_settings_,
         const KeeperContextPtr & keeper_context_,
         KeeperSnapshotManagerS3 * snapshot_manager_s3_,
         CommitCallback commit_callback_ = {},
@@ -265,6 +276,9 @@ public:
     void recalculateStorageStats() override;
 
     void reconfigure(const KeeperRequestForSession& request_for_session) override;
+
+    /// Cancel an in-progress snapshot receive: remove partial files and reset the context.
+    void cancelIfHasUnfinishedSnapshotReceive() TSA_REQUIRES(snapshots_lock);
 
 private:
     /// Main state machine logic
