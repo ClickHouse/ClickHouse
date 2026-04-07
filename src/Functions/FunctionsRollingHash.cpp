@@ -96,6 +96,19 @@ size_t forceCutPositionUtf8(const UInt8 * data, size_t data_size, size_t chunk_s
         UTF8::syncForward(p, data + data_size);
         cut_pos = std::min<size_t>(static_cast<size_t>(p - data), data_size);
     }
+    /// Malformed UTF-8 (e.g. a non-continuation byte followed by a long run of continuation bytes)
+    /// can yield cut_pos == chunk_start: syncBackward lands on chunk_start and syncForward does not advance.
+    /// forEachContentDefinedChunk must always make progress (cut_end > chunk_start).
+    if (cut_pos <= chunk_start)
+    {
+        if (chunk_start + 1 >= data_size)
+            return data_size;
+        p = data + chunk_start + 1;
+        UTF8::syncForward(p, data + data_size);
+        cut_pos = std::min<size_t>(static_cast<size_t>(p - data), data_size);
+        if (cut_pos <= chunk_start)
+            cut_pos = std::min(chunk_start + 1, data_size);
+    }
     return cut_pos;
 }
 

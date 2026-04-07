@@ -175,3 +175,27 @@ TEST(RollingHashCDC, ForceCutUtf8WhenTentativeEqualsDataSize)
     size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, 100);
     EXPECT_EQ(cut, input.size());
 }
+
+/// Malformed UTF-8: lead ASCII byte then a long run of continuation bytes (invalid).
+/// Old force-cut logic could return cut_pos == chunk_start and loop forever in UTF-8 CDC.
+TEST(RollingHashCDC, ForceCutUtf8MalformedMakesProgress)
+{
+    const size_t n = 300000;
+    std::string input;
+    input.resize(n);
+    input[0] = '\x41';
+    for (size_t i = 1; i < n; ++i)
+        input[i] = static_cast<char>(0x80);
+
+    const UInt8 * data = reinterpret_cast<const UInt8 *>(input.data());
+    const size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, 262144);
+    EXPECT_GT(cut, 0u);
+    EXPECT_LE(cut, input.size());
+
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 8, 1000, true, false, chunks, offsets);
+    EXPECT_EQ(concatChunks(chunks), input);
+    for (const auto & chunk : chunks)
+        EXPECT_FALSE(chunk.empty());
+}
