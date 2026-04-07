@@ -911,18 +911,19 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
+                virtual_columns[8]->insert(getStorageID().getTableName());
 
                 if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
-                        virtual_columns[8]->insert(msg_info.currentPayload());
-                        virtual_columns[9]->insert(*exception_message);
+                        virtual_columns[9]->insert(msg_info.currentPayload());
+                        virtual_columns[10]->insert(*exception_message);
                     }
                     else
                     {
-                        virtual_columns[8]->insertDefault();
                         virtual_columns[9]->insertDefault();
+                        virtual_columns[10]->insertDefault();
                     }
                 }
             }
