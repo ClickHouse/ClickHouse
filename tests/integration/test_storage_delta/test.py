@@ -5025,3 +5025,14 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
     )
     assert result == 0
     node.query(f"DROP TABLE IF EXISTS {table_name2}_dst ON CLUSTER cluster")
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
+    filtered = int(
+        node.query(
+            f"""
+            SELECT ProfileEvents['ObjectStoragePredicateFilteredObjects']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND is_initial_query = 1
+            """
+        )
+    )
+    assert filtered >= 2
