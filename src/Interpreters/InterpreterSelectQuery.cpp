@@ -841,9 +841,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                         parts_for_estimator = *parts;
                 }
 
-                /// Just attempting to read statistics files on disk can increase query latencies
-                /// First check the in-memory metadata if statistics are present at all
-                auto estimator = storage_snapshot->metadata->hasStatistics()
+                /// Just attempting to read statistics files on disk can increase query latencies.
+                /// First check the in-memory metadata if statistics are present at all.
+                /// Also, statistics are only used to reorder conditions, so skip if there is just one.
+                const auto * where_function = query.where()->as<ASTFunction>();
+                const bool has_multiple_conditions = where_function && where_function->name == "and";
+                const bool has_statistics = storage_snapshot->metadata->hasStatistics();
+                auto estimator = (has_statistics && has_multiple_conditions)
                                     ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
                                     : nullptr;
 
@@ -2232,7 +2236,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
             }
 
-            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            /// `isToAggregationState` covers both `WithMergeableStateAfterAggregation` (stage 3) and
+            /// `WithMergeableStateAfterAggregationAndLimit` (stage 4). OFFSET must not be applied at
+            /// either stage because OFFSET means skipping rows from the entire query result, not from each
+            /// shard individually.
+            bool apply_offset = options.to_stage < QueryProcessingStage::WithMergeableStateAfterAggregation;
             if (apply_prelimit)
             {
                 executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);

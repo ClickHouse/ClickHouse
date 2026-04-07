@@ -41,9 +41,16 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
+            {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
+            {"query_plan_optimize_join_order_randomize", 0, 0, "New setting to randomize join order statistics for testing."},
             {"enable_materialized_cte", false, false, "New setting"},
+            {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"analyzer_inline_views", false, false, "New setting"},
+            {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
+            {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -92,8 +99,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_dry_run_check_part", true, true, "New setting"},
             {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},
-            {"enable_full_text_index", false, true, "The text index is now GA"},
-            {"allow_experimental_full_text_index", false, true, "The text index is now GA"},
+            {"enable_full_text_index", true, true, "The text index is now GA"},
+            {"allow_experimental_full_text_index", true, true, "The text index is now GA"},
+            {"query_plan_direct_read_from_text_index", true, true, "The text index is now GA"},
+            {"use_skip_indexes_on_data_read", true, true, "The text index is now GA"},
             {"use_page_cache_for_local_disks", false, false, "New setting to use userspace page cache for local disks"},
             {"use_page_cache_for_object_storage", false, false, "New setting to use userspace page cache for object storage table functions"},
             {"use_statistics_cache", false, true, "Enable statistics cache"},
@@ -1115,6 +1124,12 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"auto_statistics_types", "", "minmax, uniq", "Enable auto statistics by default"},
             {"table_readonly", false, false, "New setting to mark table as read-only, preventing inserts and modifications"},
             {"propagate_types_serialization_versions_to_nested_types", false, true, "Propagate data types serialization version to nested types by default"},
+            {"map_serialization_version", "basic", "basic", "Add a setting to control Map serialization version"},
+            {"map_serialization_version_for_zero_level_parts", "basic", "basic", "Add a setting to control Map serialization version for zero-level parts"},
+            {"max_buckets_in_map", 32, 32, "Add a setting to control the maximum number of buckets for 'with_buckets' Map serialization"},
+            {"map_buckets_strategy", "sqrt", "sqrt", "Add a setting to control the strategy for choosing the number of buckets for 'with_buckets' Map serialization"},
+            {"map_buckets_coefficient", 1.0, 1.0, "Add a setting to control the coefficient used in `sqrt` and `linear` strategy for calculating the number of buckets for 'with_buckets' Map serialization"},
+            {"map_buckets_min_avg_size", 32, 32, "Add a setting to control the minimum average map size (number of keys per row) required to apply `with_buckets` serialization"},
             {"shared_merge_tree_use_zookeeper_connection_pool", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",

@@ -37,6 +37,7 @@ namespace
 
 SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dictionary_type_)
      : dictionary_type(dictionary_type_)
+     , nested_serialization(dictionary_type_->getDefaultSerialization())
      , dict_inner_serialization(removeNullable(dictionary_type_)->getDefaultSerialization())
 {
 }
@@ -48,7 +49,6 @@ UInt128 SerializationLowCardinality::getHash(const DataTypePtr & dictionary_type
     auto dict_type_name = dictionary_type_->getName();
     hash.update(dict_type_name.size());
     hash.update(dict_type_name);
-    hash.update(removeNullable(dictionary_type_)->getDefaultSerialization()->getHash());
     return hash.get128();
 }
 
@@ -243,6 +243,13 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     ///   in case of long block of empty arrays we may not need read dictionary at first reading.
     bool need_update_dictionary = false;
 
+    /// True if this part has a single dictionary for the entire column, detected via
+    /// `has_uniform_marks_callback` in the prefix. When true, non-continuous reads
+    /// (granule skips) do not invalidate the cached dictionary, and if the
+    /// `DictionaryKeys` stream already contains the dictionary body in the prefix
+    /// it can be read once and shared across all threads via `clone`.
+    bool single_dictionary_for_part = false;
+
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
@@ -309,6 +316,12 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
         return;
     }
 
+    /// Check whether all marks for this substream have uniform positions before
+    /// obtaining the stream. The path currently ends with DictionaryKeys.
+    bool is_single_dict = settings.has_uniform_marks_callback
+        && settings.data_part_type == MergeTreeDataPartType::Wide
+        && settings.has_uniform_marks_callback(settings.path, 2);
+
     auto * stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -318,7 +331,33 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     UInt64 keys_version;
     readBinaryLittleEndian(keys_version, *stream);
 
-    state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
+    auto new_state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
+    new_state->single_dictionary_for_part = is_single_dict;
+
+    if (is_single_dict && !stream->eof())
+    {
+        /// For `Wide` parts with a single dictionary, the stream is now positioned
+        /// right at the dictionary data (after the version). Read it here so that
+        /// all threads sharing this prefix state via `DeserializationPrefixesCache`
+        /// get the dictionary through a shared_ptr clone instead of each reading
+        /// it independently.
+        ///
+        /// Some streams are allowed to contain only `keys_version` with no dictionary
+        /// body afterwards, for example unused `LowCardinality` alternatives inside
+        /// `Variant` or empty nested `LowCardinality` streams. In that case `eof`
+        /// is true and we keep `global_dictionary` empty.
+        UInt64 num_keys;
+        readBinaryLittleEndian(num_keys, *stream);
+
+        auto keys_type = removeNullable(dictionary_type);
+        auto global_dict_keys = keys_type->createColumn();
+        dict_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *stream, 0, num_keys, 0);
+
+        new_state->global_dictionary = DataTypeLowCardinality::createColumnUnique(
+            *dictionary_type, std::move(global_dict_keys));
+    }
+
+    state = std::move(new_state);
 }
 
 namespace
@@ -673,7 +712,8 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     {
         low_cardinality_state->num_pending_rows = 0;
 
-        /// Remember in state that some granules were skipped and we need to update dictionary.
+        /// Some granules were skipped; the next granule header may signal a dictionary
+        /// update. For multi-dict parts this forces a re-read at the next boundary.
         low_cardinality_state->need_update_dictionary = true;
     }
 
@@ -693,7 +733,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
             if (index_type.need_global_dictionary && need_update_dictionary)
             {
-                read_dictionary();
+                /// For single-dict parts the in-memory dictionary is valid for the entire part,
+                /// so skip re-reading it even if the stream was seeked back to the beginning.
+                if (!low_cardinality_state->single_dictionary_for_part || !global_dictionary)
+                    read_dictionary();
                 low_cardinality_state->need_update_dictionary = false;
             }
 
@@ -725,11 +768,11 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
+    nested_serialization->serializeBinary(field, ostr, settings);
 }
 void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
+    nested_serialization->deserializeBinary(field, istr, settings);
 }
 
 void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -842,8 +885,7 @@ void SerializationLowCardinality::serializeImpl(
 {
     const auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
-    auto serialization = dictionary_type->getDefaultSerialization();
-    (serialization.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
+    (nested_serialization.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
 
 template <typename... Params, typename... Args>
@@ -853,9 +895,7 @@ void SerializationLowCardinality::deserializeImpl(
     auto & low_cardinality_column = getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    auto serialization = dictionary_type->getDefaultSerialization();
-    (serialization.get()->*func)(*temp_column, std::forward<Args>(args)...);
-
+    (nested_serialization.get()->*func)(*temp_column, std::forward<Args>(args)...);
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
 
@@ -866,8 +906,7 @@ bool SerializationLowCardinality::tryDeserializeImpl(
     auto & low_cardinality_column = getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    auto serialization = dictionary_type->getDefaultSerialization();
-    if (!(serialization.get()->*func)(*temp_column, std::forward<Args>(args)...))
+    if (!(nested_serialization.get()->*func)(*temp_column, std::forward<Args>(args)...))
         return false;
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);

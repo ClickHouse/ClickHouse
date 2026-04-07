@@ -303,6 +303,14 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
+void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    size_t nested_begin = offsetAt(begin);
+    size_t nested_end = offsetAt(end);
+    getData().updateHashWithValueRange(nested_begin, nested_end, hash);
+    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
+}
+
 WeakHash32 ColumnArray::getWeakHash32() const
 {
     auto s = offsets->size();
@@ -1647,19 +1655,28 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 
-    data->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+    data->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    data->takeDynamicStructureFromColumn(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
+    data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
+}
+
+void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
+    data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
 }

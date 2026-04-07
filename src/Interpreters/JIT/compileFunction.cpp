@@ -4,6 +4,7 @@
 
 #    include <AggregateFunctions/IAggregateFunction.h>
 #    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/Native.h>
@@ -68,6 +69,13 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
         const auto * string_column = assert_cast<const ColumnString *>(column);
         result.data = reinterpret_cast<const char *>(string_column->getChars().data());
         result.offset_data = reinterpret_cast<const char *>(string_column->getOffsets().data());
+    }
+    else if (WhichDataType(column->getDataType()).isFixedString())
+    {
+        /// Same as String: the JIT comparator computes byte offsets as row_index * n,
+        /// so the data pointer must be to the start of the chars array regardless of skip_rows.
+        const auto * fixed_string_column = assert_cast<const ColumnFixedString *>(column);
+        result.data = reinterpret_cast<const char *>(fixed_string_column->getChars().data());
     }
     else
     {

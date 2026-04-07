@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import random
@@ -46,7 +47,10 @@ def run_s3_mocks(started_cluster, args=[]):
 CATALOG_NAME = "test"
 
 BASE_URL = "http://glue:3000"
-BASE_URL_LOCAL_HOST = "http://localhost:3000"
+
+
+def get_glue_local_url(cluster):
+    return f"http://localhost:{cluster.glue_catalog_port}"
 
 def generate_decimal(precision=9, scale=2):
     max_value = 10**(precision - scale) - 1
@@ -98,9 +102,9 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_databases():
+def list_databases(started_cluster):
     client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
     )
     databases = client.get_databases()
     return databases
@@ -111,7 +115,7 @@ def load_catalog_impl(started_cluster):
         CATALOG_NAME,  # name is not important
         **{
             "type": "glue",
-            "glue.endpoint": BASE_URL_LOCAL_HOST,
+            "glue.endpoint": get_glue_local_url(started_cluster),
             "glue.region": "us-east-1",
             "s3.endpoint": f"http://{started_cluster.get_instance_ip('minio')}:9000",
             "s3.access-key-id": minio_access_key,
@@ -238,6 +242,9 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
 
+    show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
+    assert minio_secret_key not in show_result
+
 def drop_clickhouse_glue_table(
     node, database_name, table_name
 ):
@@ -258,7 +265,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=[],
+            main_configs=[
+                "configs/query_log.xml",
+                "configs/text_log.xml",
+            ],
             user_configs=[],
             stay_alive=True,
             with_glue_catalog=True,
@@ -283,6 +293,101 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def test_no_secrets_in_logs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    db_name = f"glue_query_log_{uuid.uuid4().hex}"
+    root_namespace = f"log_check_ns_{uuid.uuid4().hex}"
+    table_name = f"log_check_tbl_{uuid.uuid4().hex}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    db_settings = {
+        "catalog_type": "glue",
+        "warehouse": "test",
+        "storage_endpoint": "http://minio:9000/warehouse-glue",
+        "region": "us-east-1",
+    }
+
+    qid_db = uuid.uuid4().hex
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{BASE_URL}', '{minio_access_key}', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
+        query_id=qid_db,
+        settings={
+            "allow_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    table_settings = {
+        "storage_catalog_type": "glue",
+        "storage_warehouse": "test",
+        "object_storage_endpoint": "http://minio:9000/warehouse-glue",
+        "storage_region": "us-east-1",
+        "storage_catalog_url": BASE_URL,
+    }
+    qid_table = uuid.uuid4().hex
+    node.query(
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-glue/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+SETTINGS {",".join((k + "=" + repr(v) for k, v in table_settings.items()))}""",
+        query_id=qid_table,
+        settings={
+            "allow_experimental_database_glue_catalog": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+
+    qid_show_db = uuid.uuid4().hex
+    show_db_result = node.query(
+        f"SHOW CREATE DATABASE {db_name}", query_id=qid_show_db
+    )
+    assert minio_secret_key not in show_db_result
+    assert "[HIDDEN]" in show_db_result
+
+    qid_show_table = uuid.uuid4().hex
+    show_table_result = node.query(
+        f"SHOW CREATE TABLE {db_name}.`{root_namespace}.{table_name}`",
+        query_id=qid_show_table,
+    )
+    assert minio_secret_key not in show_table_result
+    assert "[HIDDEN]" in show_table_result
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    for qid in (qid_db, qid_table, qid_show_db, qid_show_table):
+        assert (
+            int(
+                node.query(
+                    f"SELECT count() FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+                ).strip()
+            )
+            >= 1
+        )
+        query_text = node.query(
+            f"SELECT arrayStringConcat(groupArray(query), '\\n') FROM system.query_log WHERE query_id = '{qid}' AND type = 'QueryFinish'"
+        ).strip()
+        assert minio_secret_key not in query_text
+
+    text_log_rows = node.query(
+        f"""
+SELECT message, value1, value2, value3, value4, value5, value6, value7, value8, value9, value10
+FROM system.text_log
+WHERE query_id IN ('{qid_db}', '{qid_table}', '{qid_show_db}', '{qid_show_table}')
+FORMAT JSONEachRow
+"""
+    ).strip()
+    assert text_log_rows
+    for line in text_log_rows.split("\n"):
+        row = json.loads(line)
+        for val in row.values():
+            if isinstance(val, str):
+                assert minio_secret_key not in val
 
 
 def test_list_tables(started_cluster):
@@ -739,7 +844,7 @@ def test_table_without_metadata_location(started_cluster):
     table.append(df)
 
     glue_client = boto3.client(
-        "glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
     )
 
     table_response = glue_client.get_table(
@@ -784,6 +889,67 @@ def test_table_without_metadata_location(started_cluster):
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
+
+def test_check_database(started_cluster):
+    """Test that CHECK DATABASE works with Glue catalog database."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_check_database_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    namespaces_to_create = [
+        root_namespace,
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
+    ]
+
+    catalog = load_catalog_impl(started_cluster)
+
+    # Create namespaces
+    for namespace in namespaces_to_create:
+        catalog.create_namespace(namespace)
+        assert len(catalog.list_tables(namespace)) == 0
+
+    # Create ClickHouse Glue database once
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    # Create tables in each namespace
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
+
+        num_rows = 10
+        df = generate_arrow_data(num_rows)
+        table.append(df)
+
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
+
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
+
+    # Verify database exists
+    assert CATALOG_NAME in node.query("SHOW DATABASES")
+
+    # Run CHECK DATABASE and verify it completes without error
+    node.query(f"CHECK DATABASE {CATALOG_NAME}")
+
+    try:
+        node.query(
+            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+        )
+    
+        assert "fault when checking database" in node.query_and_get_error(
+            f"CHECK DATABASE {CATALOG_NAME}"
+        )
+    finally:
+        node.query(
+            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+        )
 
 def test_sts_smoke(started_cluster):
     """Test that STS authentication works with Glue catalog using role_arn and role_session_name"""

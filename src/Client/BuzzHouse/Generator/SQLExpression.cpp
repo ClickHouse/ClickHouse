@@ -103,7 +103,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
                 const uint64_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested);
-                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type()));
+                auto tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
                 this->next_type_mask = type_mask_backup;
             }
         }
@@ -113,8 +113,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
             const uint64_t type_mask_backup = this->next_type_mask;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
-            auto tp = std::unique_ptr<SQLType>(
-                randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type()));
+            auto tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             this->next_type_mask = type_mask_backup;
         }
         if (nsuboption < 6)
@@ -156,7 +155,7 @@ void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelati
 
     if (!rel_col.rel_name.empty() && rg.nextMediumNumber() < 86)
     {
-        estc->mutable_table()->set_table(rel_col.rel_name);
+        estc->mutable_table()->set_value(rel_col.rel_name);
     }
     rel_col.AddRef(ecol);
     addFieldAccess(rg, expr, 6);
@@ -257,41 +256,38 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         }
         break;
         case LitOp::LitTime: {
-            const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+            const auto tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
             const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
             this->allow_not_deterministic &= complex;
             lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
             this->allow_not_deterministic = prev_allow_not_deterministic;
-            delete tp;
         }
         break;
         case LitOp::LitDate: {
-            const SQLType * tp;
+            std::unique_ptr<SQLType> tp;
             const bool prev_allow_not_deterministic = this->allow_not_deterministic;
             std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
 
             this->allow_not_deterministic &= complex;
             lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
             this->allow_not_deterministic = prev_allow_not_deterministic;
-            delete tp;
         }
         break;
         case LitOp::LitDateTime: {
-            const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+            const auto tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
             const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
             this->allow_not_deterministic &= complex;
             lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
             this->allow_not_deterministic = prev_allow_not_deterministic;
-            delete tp;
         }
         break;
         case LitOp::LitDecimal: {
-            const DecimalType * tp = static_cast<DecimalType *>(randomDecimalType(rg, std::numeric_limits<uint32_t>::max(), nullptr));
+            const auto tp_base = randomDecimalType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+            const DecimalType * tp = static_cast<const DecimalType *>(tp_base.get());
 
             lv->set_no_quote_str(DecimalType::appendDecimalValue(rg, complex && rg.nextSmallNumber() < 9, tp));
-            delete tp;
         }
         break;
         case LitOp::LitRandStr: {
@@ -657,7 +653,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
                 1, static_cast<uint32_t>(rg.nextLargeNumber() < 5 ? BinaryOperator_MAX : BinaryOperator::BINOP_LEEQGR));
 
             eany->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
-            eany->set_anyall(rg.nextBool());
+            eany->set_anyall(static_cast<AnyAllSome>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(AnyAllSome_MAX))));
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
             this->width++;
@@ -1178,8 +1174,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             casexpr->set_simple(rg.nextMediumNumber() < 16);
             this->depth++;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
-            auto tp = std::unique_ptr<SQLType>(
-                randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type()));
+            auto tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
             this->next_type_mask = type_mask_backup;
             this->generateExpression(rg, casexpr->mutable_expr());
             this->depth--;
@@ -1421,7 +1416,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                     filtered_relations.emplace_back(std::ref(entry));
                 }
             }
-            expr->mutable_comp_expr()->mutable_table()->set_table(rg.pickRandomly(filtered_relations).get().name);
+            expr->mutable_comp_expr()->mutable_table()->set_value(rg.pickRandomly(filtered_relations).get().name);
             break;
         case ExpOp::LambdaExpr: {
             const uint32_t nexprs = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 3));
@@ -1574,7 +1569,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             {
                 uint32_t col_counter = 0;
                 this->depth++;
-                const SQLType * subtype = this->randomNextType(rg, scalar_mask, col_counter, nullptr);
+                const auto subtype = this->randomNextType(rg, scalar_mask, col_counter, nullptr);
                 this->depth--;
                 const String type_name = subtype->typeName(true, false);
 
@@ -1604,8 +1599,6 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                     init_args = fmt::format("'{}', CAST({}, '{}')", func_name, subtype->appendRandomRawValue(rg, *this), type_name);
                     aggr_type = fmt::format("AggregateFunction({}, {})", func_name, type_name);
                 }
-                delete subtype;
-
                 expr->mutable_lit_val()->set_no_quote_str(
                     use_random_bytes
                         ? fmt::format("finalizeAggregation(CAST(unhex('{}'), '{}'))", hex_bytes, aggr_type)

@@ -376,6 +376,14 @@ public:
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
+    /// Update state of hash function with values in range [begin, end).
+    /// Used for deduplication: the hash must be the same for the same INSERT data producing
+    /// the same in-memory representation. It does NOT guarantee the same hash for logically
+    /// equivalent data stored differently in memory (e.g. different dynamic/shared path layout
+    /// in ColumnObject, or different variant layout in ColumnDynamic).
+    /// Default implementation calls updateHashWithValue for each element.
+    virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
+
     /// Get hash function value. Hash is calculated for each element.
     /// It's a fast weak hash function. Mainly need to scatter data between threads.
     /// WeakHash32 must have the same size as column.
@@ -721,17 +729,24 @@ public:
         return res;
     }
 
-    /// Checks if column has dynamic subcolumns.
+    /// Checks if column has dynamic internal structure (like JSON or Dynamic).
     virtual bool hasDynamicStructure() const { return false; }
 
-    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    /// For columns with dynamic structure checks if columns have equal dynamic structure.
     [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
-    /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
-    /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
-    /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
-    virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
-    /// For columns with dynamic subcolumns fix current dynamic structure so later inserts into this column won't change it.
+
+    /// Copies the exact dynamic structure from a single source column.
+    /// Used when we need to match an existing column's structure precisely
+    /// (e.g. taking structure from the first block during write, or during deserialization).
+    virtual void takeExactDynamicStructureFrom(const IColumn & /*source*/) {}
+
+    /// Determines the optimal dynamic structure for a merge by analyzing all source columns.
+    /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).
+    /// Unlike `takeExactDynamicStructureFrom`, this method actively selects the best structure.
+    /// Does NOT update statistics in the result — use `takeOrCalculateStatisticsFrom` for that.
+    virtual void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
+
+    /// For columns with dynamic structure fix current dynamic structure so later inserts into this column won't change it.
     virtual void fixDynamicStructure() {}
 
     /** Some columns can contain another columns inside.
@@ -811,6 +826,13 @@ public:
     /** Print column name, size, and recursively print all subcolumns.
       */
     [[nodiscard]] String dumpStructure() const;
+
+    virtual bool hasStatistics() const { return false; }
+
+    /// Merges/takes statistics from source columns. For multiple sources, computes merged statistics.
+    /// For ColumnObject/ColumnDynamic, must be called AFTER `chooseDynamicStructureForMerge` or `takeExactDynamicStructureFrom`,
+    /// because statistics placement depends on the dynamic structure (e.g. which paths are dynamic vs shared).
+    virtual void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<Ptr> & /*source_columns*/) {}
 
 protected:
     template <typename Compare, typename Sort, typename PartialSort>
