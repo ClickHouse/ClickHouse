@@ -1,3 +1,4 @@
+#include <limits>
 #include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -772,6 +773,15 @@ DeltaLakeHistory parseDeltaLakeHistory(
         UInt64 expected_history_size = 0;
         if (checkpoint_version.has_value())
         {
+            if (*checkpoint_version == std::numeric_limits<UInt64>::max())
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Malformed `_last_checkpoint` for {}: version {} is not supported",
+                    table_path,
+                    *checkpoint_version);
+            }
+
             if (max_history_records > 0 && *checkpoint_version >= max_history_records)
             {
                 throw Exception(
