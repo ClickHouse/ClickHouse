@@ -33,8 +33,8 @@ class Validator:
 
         if Settings.USE_CUSTOM_GH_AUTH:
             cls.evaluate_check_simple(
-                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
-                f"Setting SECRET_GH_APP_ID and SECRET_GH_APP_PEM_KEY must be provided with USE_CUSTOM_GH_AUTH == True",
+                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY and Settings.SECRET_GH_APP_INSTALLATION_ID,
+                f"Setting SECRET_GH_APP_ID, SECRET_GH_APP_PEM_KEY and SECRET_GH_APP_INSTALLATION_ID must be provided with USE_CUSTOM_GH_AUTH == True",
             )
 
         workflows = _get_workflows(_for_validation_check=True)
@@ -51,6 +51,12 @@ class Validator:
                 cls.evaluate_check(
                     bool(secret),
                     f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
+                    workflow.name,
+                )
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_INSTALLATION_ID)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_INSTALLATION_ID}] must be configured for workflow",
                     workflow.name,
                 )
 
