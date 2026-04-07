@@ -34,6 +34,12 @@ struct JSONInferenceInfo
     bool allow_merging_named_tuples = false;
 };
 
+/// Check whether a type can be wrapped into Nullable according to schema inference settings.
+/// Currently, only Tuple is setting-dependent:
+/// If `schema_inference_allow_nullable_tuple_type` is disabled, Tuple cannot be wrapped into Nullable.
+/// Otherwise this check is equivalent to type->canBeInsideNullable().
+bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatSettings & settings);
+
 /// Try to determine datatype of the value in buffer/string. If the type cannot be inferred, return nullptr.
 /// In general, it tries to parse a type using the following logic:
 /// If we see '[', we try to parse an array of values and recursively determine datatype for each element.

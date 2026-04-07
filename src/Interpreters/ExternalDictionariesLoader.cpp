@@ -5,9 +5,11 @@
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 #include "config.h"
@@ -251,6 +253,170 @@ ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractCon
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const ObjectConfig & config)
 {
     return getDictionaryStructure(*config.config, config.key_in_config);
+}
+
+
+void ExternalDictionariesLoader::reloadAllTriedToLoadInOrder() const
+{
+    auto all_names = getAllTriedToLoadNames();
+    if (all_names.empty())
+        return;
+
+    /// Create a filter matching all previously tried-to-load names
+    std::unordered_set<String> names_set(all_names.begin(), all_names.end());
+
+    /// Get load results with configs to extract dependency information
+    auto load_results = getLoadResults<LoadResults>(
+        [&names_set](const String & name) { return names_set.contains(name); });
+
+    /// Build mapping: QualifiedTableName -> loader_name
+    /// This allows resolving source table references back to loader names.
+    std::unordered_map<QualifiedTableName, String> qualified_name_to_loader;
+
+    struct DictInfo
+    {
+        String loader_name;
+        String database;
+        DictionaryConfigurationPtr config;
+    };
+
+    std::vector<DictInfo> dict_infos;
+    dict_infos.reserve(load_results.size());
+
+    for (const auto & result : load_results)
+    {
+        if (!result.config)
+            continue;
+
+        auto storage_id = StorageID::fromDictionaryConfig(*result.config->config, result.config->key_in_config);
+        QualifiedTableName qname{storage_id.database_name, storage_id.table_name};
+        qualified_name_to_loader[qname] = result.name;
+
+        dict_infos.push_back({result.name, storage_id.database_name, result.config->config});
+    }
+
+    /// Build dependency graph using reverse adjacency list for Kahn's algorithm.
+    /// dependents[A] contains all dictionaries that depend on A (i.e., source from A).
+    std::unordered_map<String, Strings> dependents;
+    std::unordered_map<String, size_t> in_degree;
+
+    for (const auto & name : all_names)
+        in_degree[name] = 0;
+
+    for (const auto & info : dict_infos)
+    {
+        DictionaryConfigurationPtr config_copy = info.config;
+        std::optional<ClickHouseDictionarySourceInfo> source_info;
+        try
+        {
+            source_info = getInfoIfClickHouseDictionarySource(config_copy, getContext());
+        }
+        catch (...)
+        {
+            LOG_WARNING(getLogger("ExternalDictionariesLoader"),
+                "Failed to parse source config for dictionary '{}', skipping dependency resolution: {}",
+                info.loader_name, getCurrentExceptionMessage(false));
+            continue;
+        }
+
+        if (!source_info || !source_info->is_local || source_info->table_name.table.empty())
+            continue;
+
+        /// Resolve source table to a loader name.
+        /// If source database is empty, try the dictionary's own database first.
+        String dep_name;
+        if (source_info->table_name.database.empty() && !info.database.empty())
+        {
+            QualifiedTableName with_own_db{info.database, source_info->table_name.table};
+            auto it = qualified_name_to_loader.find(with_own_db);
+            if (it != qualified_name_to_loader.end())
+                dep_name = it->second;
+        }
+
+        /// Try with the source database as-is (either explicitly specified or empty for XML dicts)
+        if (dep_name.empty())
+        {
+            auto it = qualified_name_to_loader.find(source_info->table_name);
+            if (it != qualified_name_to_loader.end())
+                dep_name = it->second;
+        }
+
+        if (!dep_name.empty() && dep_name != info.loader_name)
+        {
+            dependents[dep_name].push_back(info.loader_name);
+            in_degree[info.loader_name]++;
+        }
+    }
+
+    /// Kahn's algorithm: produce levels of dictionaries with equal depth
+    std::vector<Strings> levels;
+
+    Strings current_level;
+    for (const auto & name : all_names)
+    {
+        if (in_degree[name] == 0)
+            current_level.push_back(name);
+    }
+
+    std::unordered_set<String> processed;
+    while (!current_level.empty())
+    {
+        levels.push_back(current_level);
+        for (const auto & name : current_level)
+            processed.insert(name);
+
+        Strings next_level;
+        for (const auto & name : current_level)
+        {
+            auto it = dependents.find(name);
+            if (it == dependents.end())
+                continue;
+            for (const auto & dep : it->second)
+            {
+                if (--in_degree[dep] == 0)
+                    next_level.push_back(dep);
+            }
+        }
+
+        current_level = std::move(next_level);
+    }
+
+    /// Handle circular dependencies: add remaining unprocessed nodes to a final level
+    Strings circular;
+    for (const auto & name : all_names)
+    {
+        if (!processed.contains(name))
+            circular.push_back(name);
+    }
+
+    if (!circular.empty())
+    {
+        auto logger = getLogger("ExternalDictionariesLoader");
+        for (const auto & name : circular)
+            LOG_WARNING(logger, "Dictionary '{}' is part of a circular dependency chain, will be reloaded last", name);
+        levels.push_back(std::move(circular));
+    }
+
+    /// Reload level by level. Errors at one level don't block subsequent levels.
+    std::exception_ptr first_exception;
+    for (const auto & level : levels)
+    {
+        std::unordered_set<String> level_set(level.begin(), level.end());
+        auto level_filter = [&level_set](const String & name) { return level_set.contains(name); };
+
+        try
+        {
+            loadOrReload<LoadResults>(level_filter);
+        }
+        catch (...)
+        {
+            if (!first_exception)
+                first_exception = std::current_exception();
+        }
+    }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
 }
 
 

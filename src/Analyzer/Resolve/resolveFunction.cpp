@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/exists.h>
+#include <Columns/validateColumnType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
@@ -297,7 +298,7 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
   * they must be resolved.
   * 9. If function is suitable for constant folding, try to perform constant folding for function node.
   */
-ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, IdentifierResolveScope & scope, bool allow_niladic_functions)
 {
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
@@ -308,7 +309,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         function_node_ptr->getParametersNode(),
         scope,
         false /*allow_lambda_expression*/,
-        false /*allow_table_expression*/);
+        false /*allow_table_expression*/,
+        allow_niladic_functions);
 
     /// Convert function parameters into constant parameters array
 
@@ -334,7 +336,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     QueryTreeNodePtr lambda_expression_untyped;
     if (!function_node_ptr->isWindowFunction())
     {
-        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope);
+        auto function_lookup_result = tryResolveIdentifier({Identifier{function_name}, IdentifierLookupContext::FUNCTION}, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
         lambda_expression_untyped = function_lookup_result.resolved_identifier;
     }
 
@@ -414,7 +416,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto identifier = first_argument_identifier.getIdentifier();
 
         IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
-        auto resolve_result = tryResolveIdentifier(identifier_lookup, scope);
+        auto resolve_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
         if (resolve_result.isResolved())
         {
@@ -466,7 +468,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           */
         auto & if_function_arguments = function_node_ptr->getArguments().getNodes();
         auto if_function_condition = if_function_arguments[0];
-        resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/, allow_niladic_functions);
 
         auto constant_condition = tryExtractConstantFromConditionNode(if_function_condition);
 
@@ -493,9 +495,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 resolveExpressionNode(possibly_invalid_argument_node,
                     scope,
                     false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/);
+                    false /*allow_table_expression*/,
+                    allow_niladic_functions);
             }
-            catch (...)
+            catch (const Exception &)
             {
                 apply_constant_if_optimization = true;
             }
@@ -505,7 +508,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 auto result_projection_names = resolveExpressionNode(constant_if_result_node,
                     scope,
                     false /*allow_lambda_expression*/,
-                    false /*allow_table_expression*/);
+                    false /*allow_table_expression*/,
+                    allow_niladic_functions);
                 node = std::move(constant_if_result_node);
                 return result_projection_names;
             }
@@ -537,7 +541,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             in_first_argument,
             scope,
             true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/
+            true /*allow_table_expression*/,
+            allow_niladic_functions
         );
 
         if (!in_first_argument->as<ConstantNode>())
@@ -549,7 +554,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 in_second_argument,
                 scope,
                 true /*allow_lambda_expression*/,
-                true /*allow_table_expression*/
+                true /*allow_table_expression*/,
+                allow_niladic_functions
             );
 
             if (in_second_argument->as<QueryNode>())
@@ -679,7 +685,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             new_exists_argument,
             scope,
             true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/
+            true /*allow_table_expression*/,
+            allow_niladic_functions
         );
 
         if (new_exists_subquery->isCorrelated())
@@ -737,7 +744,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         function_node_ptr->getArgumentsNode(),
         scope,
         true /*allow_lambda_expression*/,
-        allow_table_expressions /*allow_table_expression*/);
+        allow_table_expressions /*allow_table_expression*/,
+        allow_niladic_functions);
 
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
@@ -1222,7 +1230,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
         {
             UNUSED(create_function_query);
-            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name);
+            function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
         }
     }
 
@@ -1544,13 +1552,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
-            if (column && column->getDataType() != result_type->getColumnType())
+            if (column && !columnMatchesType(*column, *result_type))
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Unexpected return type from {}. Expected {}. Got {}",
                     function->getName(),
-                    result_type->getColumnType(),
-                    column->getDataType());
+                    result_type->getName(),
+                    column->getName());
 
             const bool is_deterministic = all_arguments_are_deterministic && function->isDeterministic();
 

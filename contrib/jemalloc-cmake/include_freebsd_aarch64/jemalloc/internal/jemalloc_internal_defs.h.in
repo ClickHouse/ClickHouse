@@ -6,8 +6,8 @@
  * public APIs to be prefixed.  This makes it possible, with some care, to use
  * multiple allocators simultaneously.
  */
-/* #undef JEMALLOC_PREFIX */
-/* #undef JEMALLOC_CPREFIX */
+#define JEMALLOC_PREFIX "je_"
+#define JEMALLOC_CPREFIX ""
 
 /*
  * Define overrides for non-standard allocator-related functions if they are
@@ -412,7 +412,7 @@
 #define JEMALLOC_CONFIG_MALLOC_CONF "@JEMALLOC_CONFIG_MALLOC_CONF@"
 
 /* If defined, jemalloc takes the malloc/free/etc. symbol names. */
-#define JEMALLOC_IS_MALLOC
+/* #undef JEMALLOC_IS_MALLOC */
 
 /*
  * Defined if strerror_r returns char * if _GNU_SOURCE is defined.

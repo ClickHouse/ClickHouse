@@ -79,7 +79,13 @@ class Job:
 
         parameter: Any = None
 
-        # List of commands to call upon job completion
+        # Per-job secrets (exported only for this job, not all jobs in the workflow)
+        secrets: list = field(default_factory=list)
+
+        # List of commands to call before job starts
+        pre_hooks: List[str] = field(default_factory=list)
+
+        # List of commands to call after job completes
         post_hooks: List[str] = field(default_factory=list)
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
@@ -214,6 +220,11 @@ class Job:
             res.post_hooks = post_hooks
             return res
 
+        def set_timeout(self, timeout):
+            res = copy.deepcopy(self)
+            res.timeout = timeout
+            return res
+
         @staticmethod
         def get_job(job_configs, job_name):
             for job in job_configs:
@@ -270,7 +281,7 @@ class Job:
                 container_name = (
                     "praktika_"
                     + hashlib.sha1(
-                        Path(os.getcwd()).resolve().as_posix().encode()
+                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
                     ).hexdigest()[:12]
                 )
                 self.timeout_shell_cleanup = f"docker rm -f {container_name}"

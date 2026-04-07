@@ -264,6 +264,15 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(SparseGramsTokenizer::getName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
     factory.registerTokenizer(SparseGramsTokenizer::getBloomFilterIndexName(), ITokenizer::Type::SparseGrams, sparse_grams_creator);
+
+    auto ascii_cjk_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
+    {
+        assertParamsCount(args.size(), 0, AsciiCJKTokenizer::getExternalName());
+        return std::make_unique<AsciiCJKTokenizer>();
+    };
+
+    factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+    factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
 }
 
 }

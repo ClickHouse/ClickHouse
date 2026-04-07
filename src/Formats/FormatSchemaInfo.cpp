@@ -204,7 +204,7 @@ void FormatSchemaInfo::handleSchemaSourceQuery(
 
 String FormatSchemaInfo::querySchema(const String & query)
 {
-    auto current_query_context = CurrentThread::get().getQueryContext();
+    auto current_query_context = CurrentThread::get().tryGetQueryContext();
     if (!current_query_context)
         current_query_context = Context::getGlobalContextInstance();
 

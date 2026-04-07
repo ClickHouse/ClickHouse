@@ -1,4 +1,5 @@
 #include <Access/ViewDefinerDependencies.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -179,7 +180,7 @@ void StorageView::read(
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names);
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
@@ -353,6 +354,17 @@ void registerStorageView(StorageFactory & factory)
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
     });
+}
+
+ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)
+{
+    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    Settings view_settings = view_context->getSettingsCopy();
+    view_settings[Setting::max_result_rows] = 0;
+    view_settings[Setting::max_result_bytes] = 0;
+    view_settings[Setting::extremes] = false;
+    view_context->setSettings(view_settings);
+    return view_context;
 }
 
 }
