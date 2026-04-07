@@ -16,6 +16,7 @@
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/MaskOperations.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
