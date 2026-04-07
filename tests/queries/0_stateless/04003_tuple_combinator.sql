@@ -72,8 +72,36 @@ INSERT INTO test_tuple_agg_mt SELECT k, sumTupleState(t) AS s FROM (SELECT 1 AS 
 SELECT k, sumTupleMerge(s) FROM test_tuple_agg_mt GROUP BY k ORDER BY k;
 DROP TABLE test_tuple_agg_mt;
 
+-- Nullable tuple elements
+SELECT 'nullable elements';
+SELECT sumTuple(t) FROM (SELECT tuple(toNullable(toInt64(1)), toNullable(toFloat64(2.0))) AS t UNION ALL SELECT tuple(toNullable(toInt64(NULL)), toNullable(toFloat64(4.0))) UNION ALL SELECT tuple(toNullable(toInt64(5)), toNullable(toFloat64(NULL))));
+SELECT avgTuple(t) FROM (SELECT tuple(toNullable(toInt64(10)), toNullable(toFloat64(20.0))) AS t UNION ALL SELECT tuple(toNullable(toInt64(NULL)), toNullable(toFloat64(40.0))) UNION ALL SELECT tuple(toNullable(toInt64(30)), toNullable(toFloat64(NULL))));
+SELECT minTuple(t) FROM (SELECT tuple(toNullable(toInt64(5)), toNullable(toFloat64(3.0))) AS t UNION ALL SELECT tuple(toNullable(toInt64(NULL)), toNullable(toFloat64(1.0))) UNION ALL SELECT tuple(toNullable(toInt64(2)), toNullable(toFloat64(NULL))));
+
+-- Parametric aggregate function: quantileExactTuple
+SELECT 'quantileExactTuple';
+SELECT quantileExactTuple(0.5)(t) FROM (SELECT tuple(toFloat64(1.0), toFloat64(10.0)) AS t UNION ALL SELECT tuple(toFloat64(2.0), toFloat64(20.0)) UNION ALL SELECT tuple(toFloat64(3.0), toFloat64(30.0)));
+SELECT quantileExactTuple(0.9)(t) FROM (SELECT tuple(toFloat64(1.0), toFloat64(10.0)) AS t UNION ALL SELECT tuple(toFloat64(2.0), toFloat64(20.0)) UNION ALL SELECT tuple(toFloat64(3.0), toFloat64(30.0)));
+SELECT quantilesExactTuple(0.25, 0.5, 0.75)(t) FROM (SELECT tuple(toFloat64(number)) AS t FROM numbers(1, 4));
+
+-- Multiple nested combinators: sumTupleIf with Distinct (sumTupleDistinctIf is not valid combinator order, use sumDistinctTupleIf)
+-- Note: combinator order matters — Distinct must come before Tuple
+SELECT 'multiple nested combinators';
+SELECT sumTupleIf(t, cond) FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1);
+SELECT avgTupleIf(t, cond) FROM (SELECT tuple(toInt64(10), toFloat64(20.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(30), toFloat64(40.0)), 0 UNION ALL SELECT tuple(toInt64(50), toFloat64(60.0)), 1);
+SELECT minTupleIf(t, n % 2 = 0) FROM (SELECT tuple(toInt64(number), toFloat64(number) * 1.5) AS t, number AS n FROM numbers(1, 5));
+-- State + If + Merge chain
+SELECT sumTupleMerge(s) FROM (SELECT sumTupleStateIf(t, cond) AS s FROM (SELECT tuple(toInt64(1), toFloat64(2.0)) AS t, 1 AS cond UNION ALL SELECT tuple(toInt64(1), toFloat64(2.0)), 1 UNION ALL SELECT tuple(toInt64(3), toFloat64(4.0)), 0 UNION ALL SELECT tuple(toInt64(5), toFloat64(6.0)), 1));
+
+-- Multi-argument base function: error because Tuple combinator requires exactly one Tuple argument
+SELECT 'multi argument error';
+SELECT corrTuple(t1, t2) FROM (SELECT tuple(toFloat64(1.0)) AS t1, tuple(toFloat64(2.0)) AS t2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
 -- Error: argument is not a Tuple
 SELECT sumTuple(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Error: array instead of tuple
 SELECT sumTuple([1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Error: empty tuple
+SELECT sumTuple(tuple()); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

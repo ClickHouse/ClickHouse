@@ -38,3 +38,17 @@ StateIf/Merge roundtrip
 AggregatingMergeTree roundtrip
 1	(60,7.5,600)
 2	(70,8,700)
+nullable elements
+(6,6)
+(20,30)
+(2,1)
+quantileExactTuple
+(2,20)
+(3,30)
+([2,3,4])
+multiple nested combinators
+(7,10)
+(30,40)
+(2,3)
+(7,10)
+multi argument error
