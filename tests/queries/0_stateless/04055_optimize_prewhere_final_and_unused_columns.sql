@@ -1,6 +1,7 @@
 -- When `optimizePrewhere` pushes filters into prewhere and then removes unused columns,
 -- `ReadFromMergeTree` with FINAL may keep extra sort key columns needed for merging that
 -- the parent step didn't request, causing a header mismatch.
+SET query_plan_remove_unused_columns = 1;
 
 DROP TABLE IF EXISTS t;
 
@@ -26,7 +27,6 @@ WHERE (42 >= id)
 
 -- Test also with settings that caused the initial bug
 SET enable_analyzer = 1;
-SET query_plan_remove_unused_columns = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_move_to_prewhere_if_final = 1;
 
