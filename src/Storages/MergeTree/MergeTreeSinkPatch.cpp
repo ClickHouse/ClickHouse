@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/InsertDeduplication.h>
 #include <Common/ProfileEventsScope.h>
 
 namespace DB
@@ -37,15 +36,14 @@ void MergeTreeSinkPatch::finishDelayedChunk()
 
         auto & part = partition.temp_part->part;
 
-        const auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(part->info.getPartitionId(), storage.getDeduplicationLog() != nullptr);
+        const std::vector<String> block_ids = partition.deduplication_info->getBlockIds(part->info.getPartitionId(), storage.getDeduplicationLog() != nullptr);
 
-        auto conflicts = commitPart(part, deduplication_hashes);
+        auto conflicts = commitPart(part, block_ids);
 
         if (!conflicts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-        auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), block_ids);
         StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 

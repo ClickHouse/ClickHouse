@@ -28,11 +28,7 @@ class FunctionH3GetUnidirectionalEdge : public IFunction
 public:
     static constexpr auto name = "h3GetUnidirectionalEdge";
 
-    H3Validator validator;
-
-    explicit FunctionH3GetUnidirectionalEdge(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetUnidirectionalEdge>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetUnidirectionalEdge>(); }
 
     std::string getName() const override { return name; }
 
@@ -100,10 +96,11 @@ public:
         {
             const UInt64 origin = data_hindex_origin[row];
             const UInt64 dest = data_hindex_dest[row];
-            UInt64 res = 0;
 
-            if (validator.validateCell(origin) && validator.validateCell(dest))
-                res = getUnidirectionalEdge(origin, dest);
+            validateH3Cell(origin);
+            validateH3Cell(dest);
+
+            UInt64 res = getUnidirectionalEdge(origin, dest);
             dst_data[row] = res;
         }
 
@@ -115,9 +112,8 @@ public:
     /// 'NEW_DIGIT_III' defined in '../contrib/h3/src/h3lib/lib/algos.c:121:24
     __attribute__((no_sanitize_address)) static UInt64 getUnidirectionalEdge(const UInt64 origin, const UInt64 dest)
     {
-        H3Index edge = 0;
-        cellsToDirectedEdge(origin, dest, &edge);
-        return edge;
+        const UInt64 res = cellsToDirectedEdge(origin, dest);
+        return res;
     }
 };
 
@@ -125,21 +121,7 @@ public:
 
 REGISTER_FUNCTION(H3GetUnidirectionalEdge)
 {
-    FunctionDocumentation::Description description = R"(
-Returns a unidirectional edge H3 index for two adjacent H3 cell indices (origin and destination).
-    )";
-    FunctionDocumentation::Syntax syntax = "h3GetUnidirectionalEdge(origin, destination)";
-    FunctionDocumentation::Arguments arguments = {
-        {"origin", "The origin H3 cell index.", {"UInt64"}},
-        {"destination", "The destination H3 cell index.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the H3 unidirectional edge index.", {"UInt64"}};
-    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT h3GetUnidirectionalEdge(599686042433355775, 599686030622195711)", "1248204388774707199"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionH3GetUnidirectionalEdge>(documentation);
+    factory.registerFunction<FunctionH3GetUnidirectionalEdge>();
 }
 
 }

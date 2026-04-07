@@ -9,7 +9,6 @@
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
 #    include <llvm/IR/IRBuilder.h>
-#    include <base/extended_types.h>
 #endif
 
 #include <cstring>
@@ -812,9 +811,7 @@ void SingleValueDataFixed<T>::compileMinMax(llvm::IRBuilderBase & builder, llvm:
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
 
-    /// Use ClickHouse's is_signed_v which, unlike std::numeric_limits<T>::is_signed, is specialized
-    /// for Decimal and wide integer types.
-    constexpr bool is_signed = is_signed_v<T>;
+    constexpr auto is_signed = std::numeric_limits<T>::is_signed;
 
     llvm::Value * should_change_after_comparison = nullptr;
 
@@ -861,7 +858,7 @@ void SingleValueDataFixed<T>::compileMinMaxMerge(
     auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
     auto * if_should_change = llvm::BasicBlock::Create(head->getContext(), "if_should_change", head->getParent());
 
-    constexpr bool is_signed = is_signed_v<T>;
+    constexpr auto is_signed = std::numeric_limits<T>::is_signed;
 
     llvm::Value * should_change_after_comparison = nullptr;
 

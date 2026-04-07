@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <Common/QueryScope.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
@@ -60,7 +60,7 @@ struct BlockIO
     bool null_format = false;
 
     /// Needed to optionally detach from the thread group on destruction
-    QueryScope query_scope;
+    std::unique_ptr<CurrentThread::QueryScope> query_scope_holder;
 
     void onFinish(std::chrono::system_clock::time_point finish_time = std::chrono::system_clock::now());
     void onException(bool log_as_error=true);

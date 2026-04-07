@@ -13,13 +13,13 @@ struct AtomicBitSet
 
     bool set(size_t i, std::memory_order memory_order)
     {
-        UInt64 mask = 1ull << (i & 63);
+        UInt64 mask = 1ul << (i & 63);
         UInt64 x = a[i >> 6].fetch_or(mask, memory_order);
         return (x & mask) == 0;
     }
     bool unset(size_t i, std::memory_order memory_order)
     {
-        UInt64 mask = 1ull << (i & 63);
+        UInt64 mask = 1ul << (i & 63);
         UInt64 x = a[i >> 6].fetch_and(~mask, memory_order);
         return (x & mask) != 0;
     }
@@ -67,7 +67,6 @@ private:
     struct Task
     {
         ReadStage stage;
-        size_t step_idx = 0; /// 0 = main step, (>=1) = prewhere steps
         size_t row_group_idx;
         size_t row_subgroup_idx = UINT64_MAX;
         size_t column_idx = UINT64_MAX;
@@ -119,16 +118,15 @@ private:
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
-    void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
+    void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.
     /// Call sites should be careful to not call it from multiple threads in parallel.
     void clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff);
     void clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
     void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
-    void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
+    void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void flushMemoryUsageDiff(MemoryUsageDiff && diff);
-    std::string collectDeadlockDiagnostics();
 };
 
 }

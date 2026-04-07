@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -28,21 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int INCORRECT_DATA;
-}
-
-UInt128 SerializationArray::getHash(const SerializationPtr & nested_)
-{
-    SipHash hash;
-    hash.update("Array");
-    hash.update(nested_->getHash());
-    return hash.get128();
-}
-
-SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationArray(nested_));
-    return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -262,7 +246,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
 
 SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return SerializationArray::create(prev);
+    return std::make_shared<SerializationArray>(prev);
 }
 
 ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
@@ -279,9 +263,9 @@ void SerializationArray::enumerateStreams(
     const auto * column_array = data.column ? &assert_cast<const ColumnArray &>(*data.column) : nullptr;
     auto offsets = column_array ? column_array->getOffsetsPtr() : nullptr;
 
-    auto subcolumn_name = "size" + std::to_string(settings.array_level);
-    auto offsets_serialization = SerializationNamed::create(
-        SerializationArrayOffsets::create(),
+    auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
+    auto offsets_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -299,7 +283,6 @@ void SerializationArray::enumerateStreams(
     settings.path.back() = Substream::ArrayElements;
     settings.path.back().data = data;
     settings.path.back().creator = std::make_shared<SubcolumnCreator>(offsets);
-    ++settings.array_level;
 
     auto next_data = SubstreamData(nested)
         .withType(type_array ? type_array->getNestedType() : nullptr)
@@ -308,7 +291,6 @@ void SerializationArray::enumerateStreams(
         .withDeserializeState(data.deserialize_state);
 
     nested->enumerateStreams(settings, callback, next_data);
-    --settings.array_level;
     settings.path.pop_back();
 }
 
@@ -355,7 +337,7 @@ void SerializationArray::serializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             serializeArraySizesPositionIndependent(offsets_column, *stream, offset, limit);
         else
-            SerializationNumber<ColumnArray::Offset>::create()->serializeBinaryBulk(offsets_column, *stream, offset, limit);
+            SerializationNumber<ColumnArray::Offset>().serializeBinaryBulk(offsets_column, *stream, offset, limit);
     }
 }
 
@@ -435,7 +417,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(*offsets_column->assumeMutable(), *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
+            SerializationNumber<ColumnArray::Offset>().deserializeBinaryBulk(*offsets_column->assumeMutable(), *stream, 0, limit, 0);
 
         /// Verify offsets if the data comes over the network
         if (settings.native_format)
@@ -662,32 +644,6 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
     return ReturnType(true);
 }
 
-void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void()> && read_func)
-{
-    size_t initial_size = column.size();
-
-    try
-    {
-        read_func();
-    }
-    catch (...)
-    {
-        ColumnArray & column_array = assert_cast<ColumnArray &>(column);
-        ColumnArray::Offsets & offsets = column_array.getOffsets();
-        IColumn & nested_column = column_array.getData();
-
-        if (offsets.size() > initial_size)
-        {
-            chassert(offsets.size() - initial_size == 1);
-            offsets.pop_back();
-        }
-
-        if (nested_column.size() > offsets.back())
-            nested_column.popBack(nested_column.size() - offsets.back());
-
-        throw;
-    }
-}
 
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {

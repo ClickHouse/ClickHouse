@@ -159,7 +159,7 @@ CLOUD = CloudInfrastructure.Config(
 ##### Deploy
 
 ```bash
-praktika infrastructure --deploy
+praktika deploy
 ```
 
 ##### Environment Variables (AWS Parameter Store)

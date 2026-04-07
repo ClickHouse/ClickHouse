@@ -18,11 +18,6 @@ namespace Aws::Glue
     class GlueClient;
 }
 
-namespace Aws::Auth
-{
-    class AWSCredentialsProvider;
-}
-
 namespace DataLake
 {
 
@@ -69,20 +64,12 @@ public:
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
     void dropTable(const String & namespace_name, const String & table_name) const override;
 
-    /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
-    /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
-    /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.
-    static String resolveTimestampTypeFromMetadata(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        const String & column_name,
-        const String & glue_column_type);
-
 private:
     void createNamespaceIfNotExists(const String & namespace_name) const;
 
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
+    Aws::Auth::AWSCredentials credentials;
     std::string region;
     CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
@@ -93,8 +80,7 @@ private:
 
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
     /// This method allows to clarify the actual type of the timestamp column.
-    /// `glue_column_type` is the raw Glue type (`"timestamp"` or `"timestamp_nano"`) used as a fallback when the column is not found in Iceberg metadata.
-    String getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const;
+    bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
 
     String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 

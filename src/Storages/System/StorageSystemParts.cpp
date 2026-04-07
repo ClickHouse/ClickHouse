@@ -199,10 +199,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_columns_size().data_uncompressed);
         if (columns_mask[src_index++])
-        {
-            auto index_size = part->getIndexSizeFromFile();
-            columns[res_index++]->insert(index_size.data_compressed > 0 ? index_size.data_compressed : index_size.data_uncompressed);
-        }
+            columns[res_index++]->insert(part->getIndexSizeFromFile());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(get_columns_size().marks);
         if (columns_mask[src_index++])

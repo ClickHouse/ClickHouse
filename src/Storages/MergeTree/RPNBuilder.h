@@ -101,9 +101,6 @@ public:
     /// Is node constant
     bool isConstant() const;
 
-    /// Whether the node's result type is Nullable
-    bool isNullable() const;
-
     bool isSubqueryOrSet() const;
 
     /** Get constant as constant column.

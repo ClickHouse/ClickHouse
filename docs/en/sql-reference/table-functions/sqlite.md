@@ -47,4 +47,3 @@ Result:
 ## Related {#related}
 
 - [SQLite](../../engines/table-engines/integrations/sqlite.md) table engine
-- [SQLite database engine](../../engines/database-engines/sqlite.md) — Data types support section

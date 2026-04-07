@@ -42,7 +42,8 @@ public:
         size_t elements,
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
-        const IFileCachePriority::OriginInfo & origin_info,
+        bool is_dynamic_resize,
+        const IFileCachePriority::UserInfo & user,
         const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
@@ -50,13 +51,13 @@ public:
         size_t elements,
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
-        const OriginInfo & origin_info = {},
         bool best_effort = false) const override;
 
     IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
+        const UserInfo & user,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool is_startup = false) override;
@@ -70,7 +71,7 @@ public:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin_info,
+        const UserInfo & user,
         CachePriorityGuard &,
         CacheStateGuard &) override;
 
@@ -96,12 +97,6 @@ public:
         size_t max_elements_,
         double size_ratio_,
         const CacheStateGuard::Lock &) override;
-
-    EvictionInfoPtr collectEvictionInfoForResize(
-        size_t desired_max_size,
-        size_t desired_max_elements,
-        const OriginInfo & origin_info,
-        const CacheStateGuard::Lock & lock) override;
 
     FileCachePriorityPtr copy() const;
 
@@ -137,7 +132,7 @@ private:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin_info,
+        const UserInfo & user,
         CachePriorityGuard & cache_guard,
         CacheStateGuard & state_guard);
 

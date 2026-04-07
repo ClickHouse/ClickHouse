@@ -23,7 +23,7 @@ namespace DB
 class ReadBufferFromS3 : public ReadBufferFromFileBase
 {
 private:
-    mutable std::shared_ptr<const S3::Client> client_ptr;
+    std::shared_ptr<const S3::Client> client_ptr;
     String bucket;
     String key;
     String version_id;
@@ -42,8 +42,6 @@ private:
     LoggerPtr log = getLogger("ReadBufferFromS3");
 
 public:
-    using S3CredentialsRefreshCallback = std::function<std::unique_ptr<const S3::Client>()>;
-
     ReadBufferFromS3(
         std::shared_ptr<const S3::Client> client_ptr_,
         const String & bucket_,
@@ -55,9 +53,7 @@ public:
         size_t offset_ = 0,
         size_t read_until_position_ = 0,
         bool restricted_seek_ = false,
-        std::optional<size_t> file_size = std::nullopt,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;}
-        );
+        std::optional<size_t> file_size = std::nullopt);
 
     ~ReadBufferFromS3() override = default;
 
@@ -90,7 +86,7 @@ public:
 
     std::string getStopReason() const { return stop_reason; }
 
-    std::optional<size_t> getRemoteFileSize() const override;
+    size_t getObjectSizeFromS3() const;
 
 private:
     std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
@@ -101,8 +97,6 @@ private:
     /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
     /// Returns true if the error looks retriable.
     bool processException(size_t read_offset, size_t attempt) const;
-
-    size_t getObjectSizeFromS3() const;
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 
@@ -115,8 +109,6 @@ private:
     bool restricted_seek;
 
     bool read_all_range_successfully = false;
-
-    const S3CredentialsRefreshCallback credentials_refresh_callback;
 };
 
 }
