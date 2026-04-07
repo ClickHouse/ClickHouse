@@ -3,6 +3,8 @@ set serialize_query_plan = 0;
 set enable_analyzer=1;
 set enable_parallel_replicas=0;
 set prefer_localhost_replica=1;
+-- disable statistics-based part pruning to keep EXPLAIN output stable
+SET use_statistics_for_part_pruning = 0;
 set optimize_skip_unused_shards = 0;
 SET optimize_skip_unused_shards_rewrite_in = 1;
 SET query_plan_optimize_prewhere = 1;
