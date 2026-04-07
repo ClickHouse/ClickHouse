@@ -24,7 +24,6 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/SelectQueryInfo.h>
@@ -49,8 +48,6 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsUInt64 max_memory_usage_for_user;
-    extern const SettingsUInt64 max_skip_unavailable_shards_num;
-    extern const SettingsFloat max_skip_unavailable_shards_ratio;
     extern const SettingsUInt64 max_network_bandwidth;
     extern const SettingsUInt64 max_network_bytes;
     extern const SettingsMaxThreads max_threads;
@@ -454,16 +451,6 @@ void executeQuery(
             "_shard_count", Block{{DataTypeUInt32().createColumnConst(1, shards), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
         auto external_tables = context->getExternalTables();
 
-        UnavailableShardTrackerPtr unavailable_shard_tracker;
-        const auto & new_settings_ref = new_context->getSettingsRef();
-        if (new_settings_ref[Setting::skip_unavailable_shards])
-        {
-            size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
-            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
-        }
-
         auto plan = std::make_unique<QueryPlan>();
         auto read_from_remote = std::make_unique<ReadFromRemote>(
             std::move(remote_shards),
@@ -478,8 +465,7 @@ void executeQuery(
             log,
             shards,
             query_info.storage_limits,
-            not_optimized_cluster->getName(),
-            std::move(unavailable_shard_tracker));
+            not_optimized_cluster->getName());
 
         read_from_remote->setStepDescription("Read from remote replica");
         plan->addStep(std::move(read_from_remote));
@@ -513,10 +499,20 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// check hedged connections setting
     if (settings[Setting::use_hedged_requests].value)
     {
-        LOG_INFO(
-            logger,
-            "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. "
-            "Hedged connections are not used for parallel reading from replicas");
+        if (settings[Setting::use_hedged_requests].changed)
+        {
+            LOG_WARNING(
+                logger,
+                "Setting 'use_hedged_requests' explicitly with enabled 'enable_parallel_replicas' has no effect. "
+                "Hedged connections are not used for parallel reading from replicas");
+        }
+        else
+        {
+            LOG_INFO(
+                logger,
+                "Disabling 'use_hedged_requests' in favor of 'enable_parallel_replicas'. Hedged connections are "
+                "not used for parallel reading from replicas");
+        }
 
         /// disable hedged connections -> parallel replicas uses own logic to choose replicas
         context_mutable->setSetting("use_hedged_requests", Field{false});
@@ -700,7 +696,7 @@ void executeQueryWithParallelReplicas(
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
         auto [local_plan, with_parallel_replicas] = createLocalPlanForParallelReplicas(
-            query_tree,
+            query_ast,
             *header,
             new_context,
             processed_stage,
@@ -956,7 +952,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
     return false;
 }
 
-bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)
+bool isSuitableForParallelReplicas(const ASTPtr & select, const ContextPtr & context)
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 

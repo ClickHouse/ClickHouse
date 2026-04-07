@@ -388,15 +388,8 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     if (num_rows_to_subtract > rows_per_granule.back())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows "
-                        "(num_read_rows = {}, total_rows_per_granule = {}, rows_per_granule = [{}], "
-                        "debug: max_rows={}, rows_from_read={}, rows_from_finalize_loop={}, rows_from_finalize_post={}, "
-                        "ranges_processed={}, skipped_marks={}, use_query_condition_cache={}, can_read_incomplete_granules={})",
-                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, total_rows_per_granule,
-                        fmt::join(rows_per_granule, ", "),
-                        debug_max_rows, debug_rows_from_read_in_loop, debug_rows_from_finalize_in_loop,
-                        debug_rows_from_finalize_post_loop, debug_num_ranges_processed, debug_skipped_marks,
-                        debug_use_query_condition_cache, debug_can_read_incomplete_granules);
+                        "Can't adjust last granule because it has {} rows, but try to subtract {} rows (num_read_rows = {}, rows_per_granule = [{}])",
+                        rows_per_granule.back(), num_rows_to_subtract, num_read_rows, fmt::join(rows_per_granule, ", "));
     }
 
     rows_per_granule.back() -= num_rows_to_subtract;
@@ -1056,17 +1049,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// result.num_rows_read if the last granule in range also the last in part (so we have to adjust last granule).
     {
         bool use_query_condition_cache = merge_tree_reader->getMergeTreeReaderSettings().use_query_condition_cache;
-        result.debug_max_rows = max_rows;
-        result.debug_use_query_condition_cache = use_query_condition_cache;
-        result.debug_can_read_incomplete_granules = can_read_incomplete_granules;
         size_t space_left = max_rows;
         while (space_left && (!stream.isFinished() || !ranges.empty()))
         {
             if (stream.isFinished())
             {
-                size_t finalized = stream.finalize(result.columns);
-                result.debug_rows_from_finalize_in_loop += finalized;
-                result.addRows(finalized);
+                result.addRows(stream.finalize(result.columns));
                 if (current_mark && *current_mark < stream.last_mark)
                     result.addReadRange(MarkRange(*current_mark, stream.last_mark));
 
@@ -1074,14 +1062,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 result.addRange(ranges.front());
                 ranges.pop_front();
                 current_mark = stream.current_mark;
-                ++result.debug_num_ranges_processed;
             }
 
             if (merge_tree_reader->canSkipMark(currentMark(), stream.stream.currentTaskLastMark()))
             {
                 result.addGranule(0, {0, 0} /* unused when granule has no rows to read */);
                 stream.toNextMark();
-                ++result.debug_skipped_marks;
                 continue;
             }
 
@@ -1098,19 +1084,13 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             bool last = rows_to_read == space_left;
             UInt64 starting_offset = stream.currentPartOffset();
             UInt64 granule_offset = stream.current_mark;
-            size_t read_rows = stream.read(result.columns, rows_to_read, !last);
-            result.debug_rows_from_read_in_loop += read_rows;
-            result.addRows(read_rows);
+            result.addRows(stream.read(result.columns, rows_to_read, !last));
             result.addGranule(rows_to_read, {starting_offset, granule_offset});
             space_left = (rows_to_read > space_left ? 0 : space_left - rows_to_read);
         }
     }
 
-    {
-        size_t finalized = stream.finalize(result.columns);
-        result.debug_rows_from_finalize_post_loop += finalized;
-        result.addRows(finalized);
-    }
+    result.addRows(stream.finalize(result.columns));
     size_t last_mark = stream.isFinished() ? stream.last_mark : stream.current_mark;
     if (current_mark && current_mark < last_mark)
         result.addReadRange(MarkRange{*current_mark, last_mark});
@@ -1190,37 +1170,6 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
         fillDistanceColumnAndFilterForVectorSearch(columns, result, part_offsets_auto_column);
-    }
-
-    /// Always compute min/max part offset from granule offsets.
-    /// Patch parts reading (MergeTreePatchReaderMerge) requires these values
-    /// to determine which patches are relevant for the current block,
-    /// even when `_part_offset` column is not explicitly requested.
-    if (!result.min_part_offset.has_value())
-    {
-        if (result.granule_offsets.empty())
-        {
-            result.min_part_offset = 0;
-            result.max_part_offset = 0;
-        }
-        else if (result.total_rows_per_granule == 0)
-        {
-            result.min_part_offset = 0;
-            result.max_part_offset = 0;
-        }
-        else
-        {
-            result.min_part_offset = result.granule_offsets.front().starting_offset;
-
-            /// Find the last granule with non-zero rows to avoid unsigned underflow in `rows_per_granule[i] - 1`.
-            /// Zero-row granules can appear after `adjustLastGranule` subtracts all rows or after `clear`.
-            size_t last = result.rows_per_granule.size();
-            while (last > 0 && result.rows_per_granule[last - 1] == 0)
-                --last;
-
-            chassert(last > 0); /// total_rows_per_granule > 0 guarantees at least one non-zero granule
-            result.max_part_offset = result.granule_offsets[last - 1].starting_offset + result.rows_per_granule[last - 1] - 1;
-        }
     }
 }
 

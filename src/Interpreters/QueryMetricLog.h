@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/defines.h>
-#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>

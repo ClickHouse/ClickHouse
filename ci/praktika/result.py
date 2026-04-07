@@ -1,7 +1,6 @@
 import copy
 import dataclasses
 import datetime
-import errno
 import io
 import json
 import os
@@ -70,9 +69,6 @@ class Result(MetaClasses.Serializable):
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
         ERROR = "ERROR"
-        UNKNOWN = "UNKNOWN"
-        XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
-        XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
 
     class Label:
         OK_ON_RETRY = "retry_ok"
@@ -112,8 +108,11 @@ class Result(MetaClasses.Serializable):
                 "WARNING: No results and no status provided - setting status to error"
             )
             status = Result.Status.ERROR
-        if not name:
-            name = _Environment.get().JOB_NAME
+        # if not name:
+        #     name = _Environment.get().JOB_NAME
+        #     if not name:
+        #         print("ERROR: Failed to guess the .name")
+        #         raise
         start_time = None
         duration = None
         if not stopwatch:
@@ -143,7 +142,6 @@ class Result(MetaClasses.Serializable):
                     Result.Status.SKIPPED,
                     Result.StatusExtended.OK,
                     Result.StatusExtended.SKIPPED,
-                    Result.StatusExtended.XFAIL,
                 ):
                     continue
                 elif result.status in (
@@ -155,8 +153,6 @@ class Result(MetaClasses.Serializable):
                 elif result.status in (
                     Result.Status.FAILED,
                     Result.StatusExtended.FAIL,
-                    Result.StatusExtended.UNKNOWN,
-                    Result.StatusExtended.XPASS,
                 ):
                     result_status = Result.Status.FAILED
                 else:
@@ -212,14 +208,13 @@ class Result(MetaClasses.Serializable):
             Result.Status.SUCCESS,
             Result.StatusExtended.OK,
             Result.StatusExtended.SKIPPED,
-            Result.StatusExtended.XFAIL,
         )
 
     def is_success(self):
-        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK, Result.StatusExtended.XFAIL)
+        return self.status in (Result.Status.SUCCESS, Result.StatusExtended.OK)
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL, Result.StatusExtended.XPASS)
+        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
 
     def is_error(self):
         return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
@@ -227,27 +222,9 @@ class Result(MetaClasses.Serializable):
     def is_dropped(self):
         return self.status in (Result.Status.DROPPED,)
 
-    def _dump_if_persisted(self) -> "Result":
-        """Dump only if a result file already exists on disk.
-
-        Setters use this so that job-level results (already dumped by `complete_job`
-        or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
-        create their own files — avoiding `OSError: File name too long` when a result
-        name is derived from a long error message.
-        """
-        try:
-            exists = Path(self.file_name()).is_file()
-        except OSError as e:
-            if e.errno == errno.ENAMETOOLONG:
-                return self
-            raise
-        if exists:
-            self.dump()
-        return self
-
     def set_status(self, status) -> "Result":
         self.status = status
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_success(self) -> "Result":
@@ -261,7 +238,7 @@ class Result(MetaClasses.Serializable):
 
     def set_results(self, results: List["Result"]) -> "Result":
         self.results = results
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_files(self, files, strict=True) -> "Result":
@@ -281,7 +258,7 @@ class Result(MetaClasses.Serializable):
                 )
                 files.remove(file)
         self.files += files
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_on_error_hook(self, hook: str) -> "Result":
@@ -312,12 +289,12 @@ class Result(MetaClasses.Serializable):
         if self.info:
             self.info += "\n"
         self.info += info
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def set_link(self, link) -> "Result":
         self.links.append(link)
-        self._dump_if_persisted()
+        self.dump()
         return self
 
     def _add_job_summary_to_info(self):
@@ -334,7 +311,26 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def file_name_static(cls, name):
-        return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+        if not name:
+            return cls.experimental_file_name_static()
+        else:
+            return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
+
+    @classmethod
+    def experimental_file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/result_job.json"
+
+    @classmethod
+    def experimental_from_fs(cls, name):
+        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+        Shell.check(
+            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
+            verbose=True,
+        )
+        result = Result.from_fs(name)
+        result.name = name
+        result.dump()
+        return result
 
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
@@ -585,7 +581,6 @@ class Result(MetaClasses.Serializable):
                 self.Status.FAILED,
                 self.Status.DROPPED,
                 self.StatusExtended.FAIL,
-                self.StatusExtended.UNKNOWN,
             ):
                 has_failed = True
         if has_running:
@@ -1183,20 +1178,12 @@ class _ResultS3:
                 print(
                     f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel"
                 )
-                with ThreadPoolExecutor(max_workers=50) as executor:
-                    futures = {
-                        executor.submit(
-                            S3.upload_asset_streaming,
-                            asset,
-                            f"{base_s3_prefix}/{asset.relative_to(common_root)}",
-                        ): asset
-                        for asset in asset_paths
-                    }
-                for future, asset in futures.items():
-                    try:
-                        future.result()
-                    except Exception as e:
-                        print(f"ERROR: Failed to upload asset [{asset}]: {e}")
+                print(asset_paths)
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for asset in asset_paths:
+                        rel_path = asset.relative_to(common_root)
+                        s3_path = f"{base_s3_prefix}/{rel_path}"
+                        executor.submit(S3.upload_asset_streaming, asset, s3_path)
         result.assets = []
 
         if result.results:
@@ -1707,33 +1694,20 @@ class ResultTranslator:
                                         # Be resilient to unexpected shapes
                                         pass
 
-                            # In pytest 8.x, xfail outcomes are not reported via the
-                            # "outcome" field directly. Instead they appear as:
-                            #   xfailed: outcome="skipped" + wasxfail field present
-                            #   xpassed: outcome="passed"  + wasxfail field present
-                            # Normalize those here so the mapping below handles both
-                            # pytest 7.x ("xfailed"/"xpassed") and pytest 8.x.
-                            if entry.get("wasxfail") is not None:
-                                if outcome == "skipped":
-                                    outcome = "xfailed"
-                                elif outcome == "passed":
-                                    outcome = "xpassed"
-
                             # Map pytest outcome to Result status
                             status = {
                                 "passed": Result.StatusExtended.OK,
                                 "failed": Result.StatusExtended.FAIL,
                                 "skipped": Result.StatusExtended.SKIPPED,
-                                "xfailed": Result.StatusExtended.XFAIL,  # expected failure: OK
-                                "xpassed": Result.StatusExtended.XPASS,  # unexpected pass: fails job
+                                # "xfailed": Result.StatusExtended.OK,  # expected failure
+                                # "xpassed": Result.StatusExtended.FAIL,   # unexpected pass
                                 "error": Result.StatusExtended.ERROR,
                             }.get(outcome, Result.StatusExtended.ERROR)
 
-                            # Track failures by phase (XFAIL is not a failure)
+                            # Track failures by phase
                             if status in (
                                 Result.StatusExtended.FAIL,
                                 Result.StatusExtended.ERROR,
-                                Result.StatusExtended.XPASS,
                             ):
                                 if node_id not in test_failures:
                                     test_failures[node_id] = {}
@@ -1777,13 +1751,10 @@ class ResultTranslator:
                                 test_results[node_id].duration += duration
 
                                 # Always override with a failure, or keep existing failure
-                                _failure_statuses = (
-                                    Result.StatusExtended.FAIL,
-                                    Result.StatusExtended.XPASS,
-                                )
                                 if (
-                                    status in _failure_statuses
-                                    or test_results[node_id].status in _failure_statuses
+                                    status == Result.StatusExtended.FAIL
+                                    or test_results[node_id].status
+                                    == Result.StatusExtended.FAIL
                                 ):
                                     test_results[node_id].status = status
                                 # Update info if we now have traceback
@@ -1800,7 +1771,6 @@ class ResultTranslator:
                                 elif test_results[node_id].status not in (
                                     Result.StatusExtended.FAIL,
                                     Result.StatusExtended.ERROR,
-                                    Result.StatusExtended.XPASS,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
                                     if when == "call":
@@ -1825,11 +1795,8 @@ class ResultTranslator:
             R = Result.create_from(name=name, results=list(test_results.values()))
 
             if session_exitstatus == 0:
-                # pytest exit code 0 means all tests passed or xfailed (from pytest's perspective).
-                # We additionally treat XPASS as a failure, so FAILED is also valid here.
-                assert R.status in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
+                assert (
+                    R.status == Result.Status.SUCCESS
                 ), f"pytest session exit code 0 does not match autogenerated status [{R.status}]"
                 return R
 
