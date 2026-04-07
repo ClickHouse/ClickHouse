@@ -2,9 +2,11 @@
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
 #include <map>
+#include <utility>
 
 
 namespace DB
@@ -62,6 +64,9 @@ namespace Nested
     /// Nested tuples are recursively flattened: t Tuple(a Int32, b Tuple(c Int64, d String))
     ///   -> t.a Int32, t.b.c Int64, t.b.d String
     Block flattenTupleRecursive(const Block & block);
+
+    /// Same as above, but also flattens a set of column names in parallel.
+    std::pair<Block, Names> flattenTupleAndNameRecursive(const Block & block, const Names & names_to_flatten);
 
     /// All tuples are flattened recursively, regardless of whether they have explicit names.
     /// For example, [Int32, Tuple(field1 Int64, field2 String)] will be flattened to [Int32, Int64, String].

@@ -267,6 +267,32 @@ Block flattenTupleRecursive(const Block & block)
     return result;
 }
 
+std::pair<Block, Names> flattenTupleAndNameRecursive(const Block & block, const Names & names_to_flatten)
+{
+    NameSet names_set(names_to_flatten.begin(), names_to_flatten.end());
+
+    Block result;
+    Names flattened_names;
+
+    for (const auto & elem : block)
+    {
+        bool should_track_name = names_set.contains(elem.name);
+
+        flattenTupleRecursiveImpl(
+            elem.column,
+            elem.type,
+            [&result, &flattened_names, should_track_name](const ColumnPtr & col, const DataTypePtr & type, const String & name)
+            {
+                result.insert(ColumnWithTypeAndName(col, type, name));
+                if (should_track_name)
+                    flattened_names.push_back(name);
+            },
+            elem.name);
+    }
+
+    return {std::move(result), std::move(flattened_names)};
+}
+
 /// Count the number of leaf (non-tuple) columns after recursive flattening.
 static size_t countFlattenedColumnsRecursive(const DataTypePtr & data_type)
 {

@@ -19,3 +19,17 @@ Tuple before sort key - with FINAL:
 Tuple before sort key - after OPTIMIZE:
 1	(100,(210))
 2	(160,(250))
+=== Test 4: Explicit column_names_to_sum with nested Tuple ===
+Explicit nested col - with FINAL:
+1	(10,(50,30))	(100,200)	1000
+2	(8,(6,10))	(50,60)	500
+Explicit nested col - after OPTIMIZE:
+1	(10,(50,30))	(100,200)	1000
+2	(8,(6,10))	(50,60)	500
+=== Test 5: Explicit column_names_to_sum - only specified Tuple is coalesced ===
+Explicit mixed - with FINAL:
+1	(10,40)	(100,200)	1000
+2	(7,6)	(50,60)	500
+Explicit mixed - after OPTIMIZE (not_coalesced keeps first value):
+1	(10,40)	(100,200)	1000
+2	(7,6)	(50,60)	500

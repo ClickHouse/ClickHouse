@@ -123,7 +123,6 @@ static bool isInNames(const std::string & column_name, const Names & names)
     return is_in_partition_key != names.end();
 }
 
-
 using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
@@ -239,7 +238,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
 static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     const Block & header,
     const SortDescription & description,
-    const Names & column_names_to_sum,
+    const Names & column_names_to_sum_raw,
     const Names & partition_and_sorting_required_columns,
     const String & sum_function_name,
     const String & sum_function_map_name,
@@ -250,9 +249,12 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     SummingSortedAlgorithm::ColumnsDefinition def;
     def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
 
-    const Block header_flatten = allow_tuple_element_aggregation
-        ? Nested::flattenTupleRecursive(header)
-        : header;
+    auto [header_flatten, column_names_to_sum] = [&]() -> std::pair<Block, Names>
+    {
+        if (!allow_tuple_element_aggregation)
+            return {header, column_names_to_sum_raw};
+        return Nested::flattenTupleAndNameRecursive(header, column_names_to_sum_raw);
+    }();
     def.column_names = header_flatten.getNames();
     size_t num_columns = header_flatten.columns();
 
@@ -359,7 +361,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
                 def.column_numbers_not_to_aggregate.push_back(i);
                 continue;
             }
-
+            
             if (column_names_to_sum.empty() || isInNames(column.name, column_names_to_sum))
             {
                 // Create aggregator to sum this column
