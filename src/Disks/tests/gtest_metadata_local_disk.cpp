@@ -63,7 +63,7 @@ private:
 
         auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
         auto key_generator = DB::createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
-        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator);
+        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator, /*persist_removal_queue_=*/true, /*removal_log_compaction_threshold_=*/1000);
 
         return metadata;
     }
@@ -76,7 +76,7 @@ private:
 void verifyBlobsToRemove(const DB::MetadataStoragePtr & metadata, std::set<std::string> expected_blobs)
 {
     std::unordered_map<DB::Location, DB::LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
-    DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>(std::move(cluster_registry));
+    DB::ClusterConfigurationPtr cluster = std::make_shared<DB::ClusterConfiguration>("disk", std::move(cluster_registry));
     auto blobs_to_remove = metadata->getBlobsToRemove(cluster, 10000);
 
     std::set<std::string> remote_paths;

@@ -190,7 +190,7 @@ target_include_directories(_isal
 
 # Here must remove "-fno-sanitize=undefined" from COMPILE_OPTIONS.
 # Otherwise nasm compiler would fail to proceed due to unrecognition of "-fno-sanitize=undefined"
-if (SANITIZE STREQUAL "undefined")
+if (SANITIZE STREQUAL "undefined" OR SANITIZE STREQUAL "address,undefined")
     get_target_property(target_options _isal COMPILE_OPTIONS)
     list(REMOVE_ITEM target_options "-fno-sanitize=undefined")
     set_property(TARGET _isal PROPERTY COMPILE_OPTIONS ${target_options})

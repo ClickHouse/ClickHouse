@@ -24,3 +24,10 @@ all_1_1_0	[(1,2)]
 -- Set
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (8193, 16385));
 all_1_1_0	[(1,3)]
+-- Corner cases
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [materialize('all_1_1_0')]); -- { serverError BAD_ARGUMENTS }
+-- Constant expressions (non-literal) should be evaluated via evaluateConstantExpressionAsLiteral
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [concat('all', '_1_1_0')]);
+all_1_1_0	[(1,2)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, [toString('all_1_1_0')]);
+all_1_1_0	[(1,2)]
