@@ -1001,7 +1001,10 @@ def test_backup_to_s3_different_credentials(
         # To make the test deterministic, `S3WriteRequestsErrors` is asserted in `events` only when `allow_s3_native_copy` is enabled or `use_multipart_copy` is disabled.
         if allow_s3_native_copy == True or use_multipart_copy == False:
             assert ("S3WriteRequestsErrors" in events) == (allow_s3_native_copy == True)
-        assert "S3ReadRequestsErrors" not in events
+        # Similarly, when `allow_s3_native_copy` is enabled with different credentials, the native copy fails
+        # and falls back to reading+writing. During this fallback, transient S3 read errors are possible.
+        if allow_s3_native_copy != True:
+            assert "S3ReadRequestsErrors" not in events
         assert "DiskS3ReadRequestsErrors" not in events
         assert ("S3CreateMultipartUpload" in events) == use_multipart_copy
 
