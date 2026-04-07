@@ -44,9 +44,9 @@ public:
         LoadingStrictnessLevel mode,
         DataLakeStorageSettingsPtr datalake_settings_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
-        bool distributed_processing_ = false,
-        bool is_table_function_ = false,
-        bool lazy_init = false);
+        bool distributed_processing_,
+        bool is_table_function_,
+        bool lazy_init);
 
     String getName() const override;
 

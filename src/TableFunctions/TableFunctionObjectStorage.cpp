@@ -360,7 +360,9 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
                 /* mode */ LoadingStrictnessLevel::CREATE,
                 /* datalake_settings */ std::dynamic_pointer_cast<DataLakeStorageSettings>(settings),
                 /* catalog */ nullptr,
-                /* distributed_processing */ can_use_distributed_iterator);
+                /* distributed_processing */ can_use_distributed_iterator,
+                /* is_table_function */ true,
+                /* lazy_init */ false);
         }
     }
     else
@@ -379,7 +381,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             /* distributed_processing */ can_use_distributed_iterator,
             /* partition_by */ partition_by,
             /* order_by */ nullptr,
-            /* is_table_function */true);
+            /* is_table_function */ true,
+            /* lazy_init */ false);
     }
 
     storage->startup();

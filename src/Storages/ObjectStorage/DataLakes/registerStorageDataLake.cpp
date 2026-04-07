@@ -179,7 +179,10 @@ createStorageDataLake(const StorageFactory::Arguments & args, ObjectStorageType 
             format_settings,
             args.mode,
             storage_settings,
-            catalog);
+            catalog,
+            /* distributed_processing */ false,
+            /* is_table_function */ false,
+            /* lazy_init */ false);
     }
 }
 

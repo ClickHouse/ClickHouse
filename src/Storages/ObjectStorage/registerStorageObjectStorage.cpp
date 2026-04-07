@@ -78,7 +78,9 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, ObjectStorage
         args.mode,
         /* distributed_processing */ false,
         partition_by,
-        order_by);
+        order_by,
+        /* is_table_function */ false,
+        /* lazy_init */ false);
 }
 
 #endif
