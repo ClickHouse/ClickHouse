@@ -46,6 +46,8 @@ class StorageBuffer final : public IStorage, WithContext
 friend class BufferSource;
 friend class BufferSink;
 
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     struct Thresholds
     {
