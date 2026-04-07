@@ -20,10 +20,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnMap::Ptr ColumnMap::create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets)
+ColumnMap::Ptr ColumnMap::create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets, const StatisticsPtr & statistics_)
 {
     auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{keys, values}), offsets);
-    return ColumnMap::create(nested_column);
+    return ColumnMap::create(nested_column, statistics_);
 }
 
 std::string ColumnMap::getName() const
@@ -36,8 +36,8 @@ std::string ColumnMap::getName() const
     return res.str();
 }
 
-ColumnMap::ColumnMap(MutableColumnPtr && nested_)
-    : nested(std::move(nested_))
+ColumnMap::ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statistics_)
+    : nested(std::move(nested_)), statistics(statistics_)
 {
     const auto * column_array = typeid_cast<const ColumnArray *>(nested.get());
     if (!column_array)
@@ -57,12 +57,12 @@ ColumnMap::ColumnMap(MutableColumnPtr && nested_)
 
 MutableColumnPtr ColumnMap::cloneEmpty() const
 {
-    return ColumnMap::create(nested->cloneEmpty());
+    return ColumnMap::create(nested->cloneEmpty(), statistics);
 }
 
 MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 {
-    return ColumnMap::create(nested->cloneResized(new_size));
+    return ColumnMap::create(nested->cloneResized(new_size), statistics);
 }
 
 Field ColumnMap::operator[](size_t n) const
@@ -177,6 +177,11 @@ void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
     nested->updateHashWithValue(n, hash);
 }
 
+void ColumnMap::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    nested->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnMap::getWeakHash32() const
 {
     return nested->getWeakHash32();
@@ -219,7 +224,7 @@ void ColumnMap::doInsertRangeFrom(const IColumn & src, size_t start, size_t leng
 ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);
-    return ColumnMap::create(filtered);
+    return ColumnMap::create(filtered, statistics);
 }
 
 void ColumnMap::filter(const Filter & filt)
@@ -235,19 +240,19 @@ void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
 {
     auto permuted = nested->permute(perm, limit);
-    return ColumnMap::create(std::move(permuted));
+    return ColumnMap::create(std::move(permuted), statistics);
 }
 
 ColumnPtr ColumnMap::index(const IColumn & indexes, size_t limit) const
 {
     auto res = nested->index(indexes, limit);
-    return ColumnMap::create(std::move(res));
+    return ColumnMap::create(std::move(res), statistics);
 }
 
 ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
 {
     auto replicated = nested->replicate(offsets);
-    return ColumnMap::create(std::move(replicated));
+    return ColumnMap::create(std::move(replicated), statistics);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::scatter(size_t num_columns, const Selector & selector) const
@@ -256,7 +261,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnMap::scatter(size_t num_columns
     VectorWithMemoryTracking<MutableColumnPtr> res;
     res.reserve(num_columns);
     for (auto && scattered : scattered_columns)
-        res.push_back(ColumnMap::create(std::move(scattered)));
+        res.push_back(ColumnMap::create(std::move(scattered), statistics));
 
     return res;
 }
@@ -428,24 +433,66 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
     const auto byte_size = compressed->byteSize();
     /// The order of evaluation of function arguments is unspecified
     /// and could cause interacting with object in moved-from state
-    return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed)]
+    return ColumnCompressed::create(size(), byte_size, [my_compressed = std::move(compressed), my_statistics=statistics]
     {
-        return ColumnMap::create(my_compressed->decompress());
+        return ColumnMap::create(my_compressed->decompress(), my_statistics);
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnMap::Statistics::merge(const Statistics & other)
+{
+    if (other.count == 0)
+        return;
+
+    avg = avg + (other.avg - avg) * static_cast<Float64>(other.count) / static_cast<Float64>(count + other.count);
+    count += other.count;
+}
+
+void ColumnMap::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+    {
+        const auto & source_column_map = assert_cast<const ColumnMap &>(*source_column);
+        nested_source_columns.push_back(source_column_map.getNestedColumnPtr());
+    }
+    nested->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    nested->takeDynamicStructureFromColumn(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
+    const auto & source_map = assert_cast<const ColumnMap &>(source);
+    nested->takeExactDynamicStructureFrom(*source_map.getNestedColumnPtr());
+}
+
+ColumnMap::StatisticsPtr ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
+{
+    const auto & offsets = getNestedColumn().getOffsets();
+    size_t total_maps_size = offsets[ssize_t(end) - 1] - offsets[ssize_t(start) - 1];
+    return std::make_shared<Statistics>(start == end ? 0 : static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
+}
+
+ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
+{
+    if (statistics)
+        return statistics;
+    return calculateStatisticsForRange(0, size());
+}
+
+void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    auto new_statistics = std::make_shared<Statistics>();
+    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_map = assert_cast<const ColumnMap &>(*source_column);
+        new_statistics->merge(*source_map.getOrCalculateStatistics());
+        nested_source_columns.push_back(source_map.getNestedColumnPtr());
+    }
+    statistics = std::move(new_statistics);
+    nested->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
 

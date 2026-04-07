@@ -180,7 +180,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             zk_retry.retryLoop([&]
             {
                 auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
-                if (zk_retry.isRetry())
+                if (zk_retry.isRetry() || uncertain_commit)
                 {
                     /// It is possible that we fail "after operation",
                     /// e.g. we successfully removed the node, but did not get confirmation,

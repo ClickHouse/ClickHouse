@@ -46,6 +46,8 @@ class StorageBuffer final : public IStorage, WithContext
 friend class BufferSource;
 friend class BufferSink;
 
+    static VirtualColumnsDescription createVirtuals();
+
 public:
     struct Thresholds
     {
@@ -92,7 +94,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 

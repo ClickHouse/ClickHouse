@@ -134,17 +134,40 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
+    DECLARE(Bool, use_strict_insert_block_limits, false, R"(
+When enabled, strictly enforces both minimum and maximum insert block size limits.
+
+A block is emitted when:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached.
+- Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached.
+
+When disabled, a block is emitted when:
+- Min thresholds (OR):  min_insert_block_size_rows OR min_insert_block_size_bytes is reached.
+
+**Note**: If max settings are smaller than min settings, the max limits take precedence and blocks will be emitted before min thresholds are reached.
+
+**Note**: This setting is automatically disabled for async inserts, because async inserts attach per-entry deduplication tokens that are incompatible with block splitting that is needed for enforcement of strict limits.
+
+Disabled by default.
+)", 0) \
     DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
-This setting controls block formation in format parsing. When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) or Values format from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
-Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+This setting controls block formation in two contexts:
 
-A block is emitted when either condition is met:
-- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
-- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), blocks are emitted when:
+   - Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached, OR
+   - Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
 
-The default is slightly more than max_block_size. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
+   Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+
+2. INSERT operations: During INSERT queries and when data flows through materialized views, this setting's behavior depends on `use_strict_insert_block_limits`:
+
+    - When enabled: Blocks are emitted when:
+        - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+        - Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
+
+    - When disabled: Blocks are emitted when min_insert_block_size_rows OR min_insert_block_size_bytes is reached. The max_insert_block_size settings are not enforced.
 
 Possible values:
 - Positive integer.
@@ -163,15 +186,19 @@ The minimum size of blocks (in rows) to form for insertion into a table.
 
 This setting controls block formation in two contexts:
 
-1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
-Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
-2. INSERT operations: During INSERT...SELECT queries and when data flows through materialized views, blocks are squashed based on this setting before writing to storage.
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), blocks are emitted when:
+   - Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached, OR
+   - Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
 
-A block in format parsing is emitted when either condition is met:
-- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
-- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+   Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
 
-Smaller sized blocks for insert operation are squashed into bigger ones and emitted when one of min_insert_block_size_rows or min_insert_block_size_bytes is met.
+2. INSERT operations: During INSERT queries and when data flows through materialized views, this setting's behavior depends on `use_strict_insert_block_limits`:
+
+    - When enabled: Blocks are emitted when:
+        - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+        - Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
+
+    - When disabled (default): Blocks are emitted when min_insert_block_size_rows OR min_insert_block_size_bytes is reached. The max_insert_block_size settings are not enforced.
 
 Possible values:
 - Positive integer.
@@ -1666,6 +1693,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_part_pruning, true, R"(
+Use statistics to filter out parts during query execution.
+
+When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -2327,6 +2364,17 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
+When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
+When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
+This is intended for testing to find errors caused by different join orderings.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Bool, enable_join_transitive_predicates, false, R"(
+Infer transitive equi-join predicates from existing join conditions.
+For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
+is added so the join order optimizer can consider direct (A JOIN C) plans.
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
@@ -4468,6 +4516,9 @@ Move arithmetic operations out of aggregation functions
     DECLARE(Bool, optimize_redundant_functions_in_order_by, true, R"(
 Remove functions from ORDER BY if its argument is also in ORDER BY
 )", 0) \
+    DECLARE(Bool, optimize_truncate_order_by_after_group_by_keys, true, R"(
+Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix.
+)", 0) \
     DECLARE(Bool, optimize_if_chain_to_multiif, false, R"(
 Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not beneficial for numeric types.
 )", 0) \
@@ -4854,6 +4905,9 @@ Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
     DECLARE(Bool, enable_materialized_cte, false, R"(
 Enable materialized common table expressions, it will be preferred over enable_global_with_statement
+)", EXPERIMENTAL) \
+    DECLARE(Bool, analyzer_inline_views, false, R"(
+When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
@@ -5964,6 +6018,14 @@ Replace distance functions on `QBit` data type with equivalent ones that only re
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.
+
+Possible values:
+
+- Positive integer.
+)", 0) \
+    \
+    DECLARE(UInt64, highlight_max_matches_per_row, 10000, R"(
+Sets the maximum number of highlight matches per row in the [highlight](/sql-reference/functions/string-search-functions#highlight) function. Use it to protect against excessive memory usage when highlighting highly repetitive patterns in large texts.
 
 Possible values:
 

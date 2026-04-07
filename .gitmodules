@@ -33,7 +33,7 @@
 	url = https://github.com/ClickHouse/mariadb-connector-c
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
-	url = https://github.com/jemalloc/jemalloc
+	url = https://github.com/ClickHouse/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -139,7 +139,7 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/ClickHouse/rocksdb
+	url = https://github.com/facebook/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/xz-mirror/xz

@@ -34,7 +34,7 @@ Because data is in the binary format the delimiter after `FORMAT RowBinary` is s
 This format is less efficient than the [Native](../Native.md) format since it is row-based.
 :::
 
-### Data types wire format {#data-types-wire-format}
+## Data types wire format {#data-types-wire-format}
 
 :::tip
 Most of the queries provided in the examples can be executed with curl with a file output.

@@ -210,12 +210,6 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
     if (null_presence.has_nullable)
     {
-        if (input_rows_count == 0)
-        {
-            /// We are not sure if it is const column or not if has_nullable is true.
-            return result_type->createColumn();
-        }
-
         bool all_columns_constant = true;
         bool all_numeric_types = true;
         for (const auto & arg: args)
@@ -232,6 +226,16 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             WhichDataType which(removeNullable(arg.type));
             if (!which.isNumber() && !which.isEnum() && !which.isDateOrDate32OrDateTimeOrDateTime64() && !which.isInterval())
                 all_numeric_types = false;
+        }
+
+        if (input_rows_count == 0 && !all_columns_constant)
+        {
+            /// With 0 rows and non-constant columns, we cannot determine the result's constness,
+            /// so return a non-constant empty column. When all columns ARE constant, we fall through
+            /// to the normal paths (all_columns_constant or all_numeric_types) which correctly
+            /// produce a constant result, preserving constness consistency between
+            /// ExpressionActions::execute and ActionsDAG::updateHeader.
+            return result_type->createColumn();
         }
 
         if (all_columns_constant || all_numeric_types)
@@ -454,18 +458,18 @@ ColumnPtr IExecutableFunction::execute(
         /// If we have only constants and replicated columns with the same indexes
         /// we can execute function on nested columns and create replicated column
         /// from the result using common indexes.
+        DataTypesWithConstInfo argument_types;
         ColumnPtr common_replicated_indexes;
+        Columns nested_columns;
         bool has_full_columns = false;
-        size_t nested_column_size = 0;
         for (const auto & argument : arguments)
         {
+            argument_types.push_back({argument.type, isColumnConst(*argument.column)});
             if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
             {
+                nested_columns.push_back(column_replicated->getNestedColumn());
                 if (!common_replicated_indexes)
-                {
                     common_replicated_indexes = column_replicated->getIndexesColumn();
-                    nested_column_size = column_replicated->getNestedColumn()->size();
-                }
                 else if (common_replicated_indexes != column_replicated->getIndexesColumn())
                 {
                     common_replicated_indexes.reset();
@@ -486,11 +490,23 @@ ColumnPtr IExecutableFunction::execute(
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
         }
 
+        /// In case the function might throw an exception replicated columns must be compacted
+        // to avoid throwing on unused rows in the nested data.
+        if (canThrow(argument_types))
+        {
+            ColumnIndex column_index(common_replicated_indexes);
+            auto res = column_index.buildCompactIndexedColumns(nested_columns);
+            common_replicated_indexes = std::move(res.compact_indexes);
+            nested_columns = std::move(res.compact_indexed_columns);
+        }
+
+        size_t nested_column_size = nested_columns.empty() ? 0 : nested_columns[0]->size();
+        size_t col_idx = 0;
         for (auto & argument : arguments_without_replicated)
         {
-            /// Replace replicated columns to their nested columns.
-            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
-                argument.column = column_replicated->getNestedColumn();
+            /// Replace replicated columns to their filtered nested columns.
+            if (typeid_cast<const ColumnReplicated *>(argument.column.get()))
+                argument.column = nested_columns[col_idx++];
             /// Change size for constants.
             else if (const auto * column_const = checkAndGetColumn<ColumnConst>(argument.column.get()))
                 argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);

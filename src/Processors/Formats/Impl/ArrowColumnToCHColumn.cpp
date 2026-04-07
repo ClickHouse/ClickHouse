@@ -22,7 +22,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/IntervalKind.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
@@ -55,7 +57,6 @@
         M(arrow::Type::INT16, Int16) \
         M(arrow::Type::UINT64, UInt64) \
         M(arrow::Type::INT64, Int64) \
-        M(arrow::Type::DURATION, Int64) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -128,6 +129,42 @@ static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arr
         const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data()) + chunk->offset();
         column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
     }
+    return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+static ColumnWithTypeAndName readColumnWithDurationData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    const auto & duration_type = assert_cast<const arrow::DurationType &>(*(arrow_column->type()));
+
+    std::optional<IntervalKind::Kind> interval_kind;
+    switch (duration_type.unit())
+    {
+        case arrow::TimeUnit::SECOND: interval_kind = IntervalKind::Kind::Second; break;
+        case arrow::TimeUnit::MILLI:  interval_kind = IntervalKind::Kind::Millisecond; break;
+        case arrow::TimeUnit::MICRO:  interval_kind = IntervalKind::Kind::Microsecond; break;
+        case arrow::TimeUnit::NANO:   interval_kind = IntervalKind::Kind::Nanosecond; break;
+    }
+
+    if (!interval_kind)
+        throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported Arrow duration unit {}", static_cast<int>(duration_type.unit()));
+
+    auto internal_type = std::make_shared<DataTypeInterval>(IntervalKind(*interval_kind));
+    auto internal_column = internal_type->createColumn();
+    auto & column_data = assert_cast<ColumnVector<Int64> &>(*internal_column).getData();
+    column_data.reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
+        if (chunk->length() == 0)
+            continue;
+
+        /// buffers[0] is a null bitmap and buffers[1] are actual values
+        std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
+        const auto * raw_data = reinterpret_cast<const Int64 *>(buffer->data()) + chunk->offset();
+        column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
+    }
+
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
@@ -1480,6 +1517,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::TIME64:
         {
             return readColumnWithTime64Data(arrow_column, column_name);
+        }
+        case arrow::Type::DURATION:
+        {
+            /// Preserve interval semantics on round-trip from ClickHouse -> Arrow -> ClickHouse.
+            return readColumnWithDurationData(arrow_column, column_name);
         }
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?

@@ -363,6 +363,14 @@ void StorageMaterializedView::read(
         std::tie(storage, lock) = refresher->getAndLockTargetTable(getTargetTableId(), context);
     }
 
+    /// For datalake target tables (e.g. IcebergLocal), we must refresh external metadata
+    /// before reading. Without this call the storage snapshot will lack the
+    /// datalake_table_state, causing a LOGICAL_ERROR in iterate().
+    /// Normally updateExternalDynamicMetadataIfExists is called by the analyzer/interpreter
+    /// on the outermost storage, but for materialized views that is the view itself
+    /// (which is a no-op), not the target table.
+    storage->updateExternalDynamicMetadataIfExists(context);
+
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
@@ -848,12 +856,12 @@ Strings StorageMaterializedView::getDataPaths() const
     return {};
 }
 
-bool StorageMaterializedView::supportsDynamicSubcolumns() const
+bool StorageMaterializedView::supportsColumnsWithDynamicStructure() const
 {
     /// If target table was not created yet, we don't know if it supports dynamic subcolumns or not,
     /// but it will be checked during its future creation anyway, so we can return true here.
     auto target_table = tryGetTargetTable();
-    return target_table ? target_table->supportsDynamicSubcolumns() : true;
+    return target_table ? target_table->supportsColumnsWithDynamicStructure() : true;
 }
 
 void StorageMaterializedView::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)

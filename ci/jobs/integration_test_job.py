@@ -660,7 +660,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 args.test
             ), "--test must be provided for flaky or bugfix job flavor with local run"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 changed_test_modules = ["test_accept_invalid_certificate/test.py"]
             else:
@@ -706,9 +706,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(
-            clickhouse_path
-        )
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
         if not tests:
@@ -749,6 +747,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    if is_flaky_check or is_targeted_check:
+        # Sort by module file so all tests from the same file are consecutive.
+        # With --dist=each, pytest preserves CLI argument order and uses it as the
+        # collection order. If tests from different modules interleave (e.g. CIDB
+        # returns them sorted by failure time), pytest finalizes and re-enters
+        # module-scoped fixtures between them, breaking tests that call
+        # cluster.add_instance() inside the fixture.
+        # For regular jobs, preserve the duration-aware ordering from get_optimal_test_batch.
+        parallel_test_modules = sorted(parallel_test_modules, key=lambda t: t.split("::")[0])
+        sequential_test_modules = sorted(sequential_test_modules, key=lambda t: t.split("::")[0])
 
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
@@ -838,7 +847,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         parallel_workers = workers
         # Sequential tests cannot run in parallel, so we loop over them instead.
         # Run at least 3 times to have meaningful flakiness signal, at most workers times.
-        sequential_repeat_cnt = max(4, workers)
+        sequential_repeat_cnt = max(3, workers)
     else:
         parallel_dist = "--dist=loadfile"
         parallel_workers = workers
@@ -1008,7 +1017,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if has_error:
         R.set_error().set_info("\n".join(error_info))
 
-    if is_bugfix_validation and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         assert (
             is_llvm_coverage is False
         ), "Bugfix validation with LLVM coverage is not supported"
