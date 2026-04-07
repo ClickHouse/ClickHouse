@@ -1114,6 +1114,7 @@ StartupSystemTablesThreads
 StartupSystemTablesThreadsActive
 Stateful
 Stemmer
+Stemmers
 StochasticSimple
 StorageBufferBytes
 StorageBufferRows
@@ -3115,6 +3116,7 @@ startswith
 statbox
 stateful
 stemmer
+stemmers
 stateset
 stddev
 stddevPop
