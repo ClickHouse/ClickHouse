@@ -149,7 +149,7 @@ bool tryCalculatePermutationsCount(size_t n, size_t count_limit, size_t & result
     return true;
 }
 
-/// Returns true if P(n, k) / C(n, k) fits into count_limit and writes it to result.
+/// Returns true if P(n, k) or C(n, k) fits into count_limit and writes it to result.
 template <ArrayKCombinatoricsMode mode>
 bool tryCalculateKResultCount(size_t n, size_t k, size_t count_limit, size_t & result)
 {
