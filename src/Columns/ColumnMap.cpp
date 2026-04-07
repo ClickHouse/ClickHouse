@@ -177,6 +177,11 @@ void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
     nested->updateHashWithValue(n, hash);
 }
 
+void ColumnMap::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    nested->updateHashWithValueRange(begin, end, hash);
+}
+
 WeakHash32 ColumnMap::getWeakHash32() const
 {
     return nested->getWeakHash32();
