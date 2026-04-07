@@ -1783,7 +1783,7 @@ Expression ((Projection + Before ORDER BY))
 Works with tables in the MergeTree family.
 )", 0) \
     \
-    DECLARE(String, force_data_skipping_indices, "", R"(
+    DECLARE_WITH_ALIAS(String, force_data_skipping_indices, "", R"(
 Disables query execution if passed data skipping indices wasn't used.
 
 Consider the following example:
@@ -1808,7 +1808,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
-)", 0) \
+)", 0, force_data_skipping_indexes) \
     DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 )", 0) \
