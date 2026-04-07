@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "CREATE DATABASE rdb1_$
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "CREATE DATABASE rdb2_$CLICKHOUSE_DATABASE ON CLUSTER test_shard_localhost ENGINE=Replicated('/clickhouse/databases/{uuid}', '{shard}', '{replica}')";
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "RENAME DATABASE rdb2_$CLICKHOUSE_DATABASE to rdb3_$CLICKHOUSE_DATABASE ON CLUSTER test_shard_localhost"
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT --query_plan_merge_filter_into_join_condition 0 -q "
 SELECT
     db_name,
     t1.uuid = t2.uuid
