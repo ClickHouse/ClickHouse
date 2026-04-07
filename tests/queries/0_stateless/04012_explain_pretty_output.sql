@@ -5,6 +5,7 @@ SET query_plan_join_swap_table = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
 SET query_plan_join_shard_by_pk_ranges = 0;
+SET query_plan_optimize_join_order_limit = 10; -- needed for row count estimates and table[N] labels in EXPLAIN output
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
