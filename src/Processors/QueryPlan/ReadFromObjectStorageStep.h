@@ -56,6 +56,7 @@ private:
     const bool need_only_count;
     const size_t max_block_size;
     size_t num_streams;
+    const size_t max_num_streams;
     const bool distributed_processing;
 
     void createIterator();

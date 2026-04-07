@@ -59,33 +59,63 @@ def get_run_command(
     )
 
 
-def _test_name_to_basename(test_name: str) -> str:
-    return test_name[:-1] if test_name.endswith(".") else test_name
-
-
 def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    tests, relevant_tests_result = targeter.get_all_relevant_tests_with_info(f"{cwd}/ci/tmp")
 
-    logging.info("Found %d relevant tests for targeted AST fuzzer:", len(tests))
-    for test in sorted(tests):
-        logging.info("  %s", test)
+    # Step 1: changed/new test files in this PR
+    changed_tests = targeter.get_changed_tests()
+    logging.info("[targeted-fuzzer] Step 1 — changed/new tests (%d): %s",
+                 len(changed_tests), ", ".join(sorted(changed_tests)) or "(none)")
+
+    # Step 2: tests that failed in previous CI runs for this PR
+    try:
+        previously_failed = targeter.get_previously_failed_tests()
+    except Exception as e:
+        logging.warning("[targeted-fuzzer] Step 2 — failed to fetch previously-failed tests: %s", e)
+        previously_failed = []
+    logging.info("[targeted-fuzzer] Step 2 — previously failed tests (%d): %s",
+                 len(previously_failed), ", ".join(previously_failed) or "(none)")
+
+    # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
+    try:
+        relevant_tests, relevant_tests_result = targeter.get_most_relevant_tests()
+    except Exception as e:
+        logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
+        relevant_tests = []
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+    logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
+
+    # Merge all three sets preserving priority order (changed first)
+    seen: set = set()
+    tests: list = []
+    for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+        if t not in seen:
+            seen.add(t)
+            tests.append(t)
+    logging.info("[targeted-fuzzer] Total unique tests: %d", len(tests))
 
     stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
     available_queries: dict[str, list[str]] = {}
 
     for query_file in stateless_tests_dir.rglob("*.sql"):
-        base_name = query_file.name.removesuffix(".sql")
+        base_name = query_file.stem
         available_queries.setdefault(base_name, []).append(
             f"/repo/{query_file.relative_to(cwd)}"
         )
 
+    logging.debug("Indexed %d unique SQL query base names from %s", len(available_queries), stateless_tests_dir)
+
     targeted_queries: list[str] = []
     seen_queries = set()
     for test in tests:
-        base_name = _test_name_to_basename(test)
-        for query_path in available_queries.get(base_name, []):
+        base_name = Path(test).stem.rstrip(".")
+        matches = available_queries.get(base_name, [])
+        if matches:
+            logging.debug("  %s -> %s", test, matches)
+        else:
+            logging.debug("  %s -> no .sql file found (stem: %r)", test, base_name)
+        for query_path in matches:
             if query_path not in seen_queries:
                 seen_queries.add(query_path)
                 targeted_queries.append(query_path)
@@ -141,12 +171,15 @@ def run_fuzz_job(check_name: str):
     compatibility_setting: str | None = None
     if not buzzhouse:
         if is_old_compatibility:
-            compatibility_setting = "22.1"
+            # The minimum version is 24.3 because that's when enable_analyzer
+            # became enabled by default, and the fuzzer has a readonly constraint
+            # on enable_analyzer to avoid wasting cycles on the old interpreter.
+            compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
         else:
             compatibility_setting = (
-                f"{random.randint(22, 27)}.{random.randint(1, 12)}"
+                f"{random.randint(24, 27)}.{random.randint(1, 12)}"
             )
         if compatibility_setting:
             logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)

@@ -326,6 +326,7 @@ void IRowInputFormat::resetParser()
     IInputFormat::resetParser();
     total_rows = 0;
     num_errors = 0;
+    got_connection_exception = false;
     block_missing_values.clear();
 }
 

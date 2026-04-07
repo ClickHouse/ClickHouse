@@ -1,4 +1,6 @@
 #include <Server.h>
+#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
@@ -98,6 +100,7 @@
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Common/ReplicasReconnector.h>
@@ -127,6 +130,7 @@
 #include <unordered_set>
 
 #include <Common/Jemalloc.h>
+#include <Common/JemallocCacheArena.h>
 
 #include "config.h"
 #include <Common/config_version.h>
@@ -350,6 +354,7 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsBool use_separate_cache_arena;
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
@@ -375,6 +380,7 @@ namespace ServerSetting
     extern const ServerSettingsBool abort_on_logical_error;
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
+    extern const ServerSettingsUInt64 jemalloc_flush_profile_on_memory_exceeded_interval;
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt64 s3_credentials_provider_max_cache_size;
     extern const ServerSettingsUInt64 max_open_files;
@@ -531,11 +537,13 @@ enum StartupScriptsExecutionState : CurrentMetrics::Value
 };
 
 
-static std::string getCanonicalPath(std::string && path)
+static std::string getCanonicalPath(std::string && path, const std::string & base = {})
 {
     Poco::trimInPlace(path);
     if (path.empty())
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "path configuration parameter is empty");
+    if (!base.empty() && fs::path(path).is_relative())
+        path = fs::weakly_canonical(fs::path(base) / path);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -724,7 +732,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH), original_working_directory) + "cores";
 }
 
 void Server::defineOptions(Poco::Util::OptionSet & options)
@@ -789,7 +797,7 @@ int readNumber(const String & path)
 
 void sanityChecks(Server & server, const ServerSettings & server_settings)
 {
-    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]));
+    std::string data_path = getCanonicalPath(String(server_settings[ServerSetting::path]), server.getOriginalWorkingDirectory());
     std::string logs_path = server_settings[ServerSetting::logger_log];
 
     if (server.logger().is(Poco::Message::PRIO_TEST))
@@ -978,7 +986,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 startup_context->setCurrentQueryId("");
 
                 {
-                    auto query_scope = CurrentThread::QueryScope::create(startup_context);
+                    auto query_scope = QueryScope::create(startup_context);
                     executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
@@ -1011,7 +1019,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
-            auto query_scope = CurrentThread::QueryScope::create(startup_context);
+            auto query_scope = QueryScope::create(startup_context);
 
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
@@ -1326,7 +1334,7 @@ try
         PreformattedMessage::create("Server was built with {}. It will work slowly.", log_message));
 #endif
 
-#if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
+#if WITH_COVERAGE
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
@@ -1393,6 +1401,7 @@ try
 
     total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
     total_memory_tracker.setJemallocFlushProfileOnMemoryExceeded(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded]);
+    total_memory_tracker.setJemallocFlushProfileOnMemoryExceededSeconds(server_settings[ServerSetting::jemalloc_flush_profile_on_memory_exceeded_interval]);
 
     Poco::ThreadPool server_pool(
         /* minCapacity */3,
@@ -1628,7 +1637,7 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
-    std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]));
+    std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
 
     /// Check that the process user id matches the owner of the data.
@@ -1650,6 +1659,11 @@ try
 
     zkutil::validateZooKeeperConfig(config());
     bool has_zookeeper = zkutil::hasZooKeeperConfig(config());
+
+    if (has_zookeeper && config().getBool("keeper_server.standalone_keeper", false))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use standalone_keeper=true with a configured zookeeper client connection. "
+            "A standalone keeper should not have a <zookeeper> section in its config.");
 
     auto main_config_zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>([&] { return global_context->getZooKeeper(); });
     Coordination::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
@@ -1856,27 +1870,31 @@ try
       */
     {
         const auto & user_files_path_setting = server_settings[ServerSetting::user_files_path];
-        std::string user_files_path = user_files_path_setting.changed ? user_files_path_setting.value : String(path / "user_files/");
+        std::string user_files_path = user_files_path_setting.changed
+            ? getCanonicalPath(String(user_files_path_setting.value), path_str) : String(path / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
         const auto & dictionaries_lib_path_setting = server_settings[ServerSetting::dictionaries_lib_path];
-        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed ? dictionaries_lib_path_setting.value : String(path / "dictionaries_lib/");
+        std::string dictionaries_lib_path = dictionaries_lib_path_setting.changed
+            ? getCanonicalPath(String(dictionaries_lib_path_setting.value), path_str) : String(path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
     }
 
     {
         const auto & user_scripts_path_setting = server_settings[ServerSetting::user_scripts_path];
-        std::string user_scripts_path = user_scripts_path_setting.changed ? user_scripts_path_setting.value : String(path / "user_scripts/");
+        std::string user_scripts_path = user_scripts_path_setting.changed
+            ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : String(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
     /// top_level_domains_lists
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
-        const std::string & top_level_domains_path = top_level_domains_path_setting.changed ? top_level_domains_path_setting.value : String(path / "top_level_domains/");
+        std::string top_level_domains_path = top_level_domains_path_setting.changed
+            ? getCanonicalPath(String(top_level_domains_path_setting.value), path_str) : String(path / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
@@ -1924,6 +1942,8 @@ try
     global_context->updateInterserverCredentials(config());
 
     /// Set up caches.
+
+    JemallocCacheArena::setEnabled(server_settings[ServerSetting::use_separate_cache_arena]);
 
     const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
@@ -2299,7 +2319,13 @@ try
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
             if (config().has("keeper_server"))
+            {
+#if USE_NURAFT
+                if (config().getBool("keeper_server.standalone_keeper", false))
+                    KeeperContext::initializeKeeperMemorySoftLimit(config(), log);
+#endif
                 global_context->updateKeeperConfiguration(config());
+            }
 
             /// Reload the number of threads for global pools.
             /// Note: If you specified it in the top level config (not it config of default profile)
@@ -2421,15 +2447,29 @@ try
             global_context->updateStorageConfiguration(config());
             global_context->updateInterserverCredentials(config());
 
-            global_context->updateUncompressedCacheConfiguration(config());
-            global_context->updateMarkCacheConfiguration(config());
-            global_context->updatePrimaryIndexCacheConfiguration(config());
-            global_context->updateIndexUncompressedCacheConfiguration(config());
-            global_context->updateIndexMarkCacheConfiguration(config());
-            global_context->updateVectorSimilarityIndexCacheConfiguration(config());
-            global_context->updateMMappedFileCacheConfiguration(config());
-            global_context->updateQueryResultCacheConfiguration(config());
-            global_context->updateQueryConditionCacheConfiguration(config());
+            {
+                const size_t max_cache_size_in_bytes = static_cast<size_t>(
+                    static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
+
+                global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateVectorSimilarityIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateTextIndexTokensCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateTextIndexHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateTextIndexPostingsCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+#if USE_AVRO
+                global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
+#endif
+#if USE_PARQUET
+                global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
+#endif
+            }
 
 #if USE_SSL
             CertificateReloader::instance().tryReloadAll(config());
@@ -2678,7 +2718,8 @@ try
     else
     {
         const auto & tmp_path_setting = server_settings[ServerSetting::tmp_path];
-        std::string temporary_path = tmp_path_setting.changed ? tmp_path_setting.value : String(path / "tmp/");
+        std::string temporary_path = tmp_path_setting.changed
+            ? getCanonicalPath(String(tmp_path_setting.value), path_str) : String(path / "tmp/");
         global_context->setTemporaryStoragePath(temporary_path, server_settings[ServerSetting::max_temporary_data_on_disk_size]);
     }
 
@@ -2748,7 +2789,8 @@ try
 
     /// Set path for format schema files
     const auto & format_schema_path_setting = server_settings[ServerSetting::format_schema_path];
-    fs::path format_schema_path(format_schema_path_setting.changed ? fs::path(format_schema_path_setting.value) : path / "format_schemas/");
+    fs::path format_schema_path(format_schema_path_setting.changed
+        ? fs::path(getCanonicalPath(String(format_schema_path_setting.value), path_str)) : path / "format_schemas/");
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
@@ -2757,9 +2799,11 @@ try
         global_context->setGoogleProtosPath(fs::weakly_canonical(server_settings[ServerSetting::google_protos_path].value));
 
     /// Set path for filesystem caches
-    fs::path filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
-    if (!filesystem_caches_path.empty())
-        global_context->setFilesystemCachesPath(filesystem_caches_path);
+    {
+        String filesystem_caches_path = server_settings[ServerSetting::filesystem_caches_path].value;
+        if (!filesystem_caches_path.empty())
+            global_context->setFilesystemCachesPath(getCanonicalPath(std::move(filesystem_caches_path), path_str));
+    }
 
     /// NOTE: Do sanity checks after we loaded all possible substitutions (for the configuration) from ZK
     /// Additionally, making the check after the default profile is initialized.

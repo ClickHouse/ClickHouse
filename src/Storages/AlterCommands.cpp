@@ -1493,6 +1493,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
 
+            if (command.default_kind == ColumnDefaultKind::Ephemeral
+                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot add ephemeral column {}: it conflicts with a virtual column of the same name",
+                    backQuote(column_name));
+
             if (command.codec)
             {
                 const auto & settings = context->getSettingsRef();
@@ -1520,6 +1526,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (renamed_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "
                                                              "in a single ALTER query", backQuote(column_name));
+
+            if (command.default_kind == ColumnDefaultKind::Ephemeral
+                && virtuals->tryGet(column_name, VirtualsKind::Ephemeral))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot modify column {} to ephemeral: it conflicts with a virtual column of the same name",
+                    backQuote(column_name));
 
             if (command.codec)
             {
@@ -1733,6 +1745,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (virtuals->tryGet(command.rename_to, VirtualsKind::Persistent))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot rename to {}: this column name is reserved for persistent virtual column", backQuote(command.rename_to));
+
+            if (all_columns.get(command.column_name).default_desc.kind == ColumnDefaultKind::Ephemeral
+                && virtuals->tryGet(command.rename_to, VirtualsKind::Ephemeral))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot rename ephemeral column to {}: it conflicts with a virtual column of the same name",
+                    backQuote(command.rename_to));
 
             if (modified_columns.contains(column_name))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename and modify the same column {} "

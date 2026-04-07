@@ -12,12 +12,31 @@ class ColumnTuple;
  */
 class ColumnMap final : public COWHelper<IColumnHelper<ColumnMap>, ColumnMap>
 {
+public:
+    /// Statistics about the average number of key-value pairs per map row.
+    struct Statistics
+    {
+        Statistics() = default;
+        Statistics(Float64 avg_, UInt64 count_) : avg(avg_), count(count_) {}
+
+        /// Incrementally updates the running weighted average with statistics from another batch.
+        void merge(const Statistics & other);
+
+        /// Average number of key-value pairs across all map rows seen so far.
+        Float64 avg = 0;
+        /// Number of map rows that contributed to `avg`.
+        UInt64 count = 0;
+    };
+
+    using StatisticsPtr = std::shared_ptr<const Statistics>;
+
 private:
     friend class COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
     WrappedPtr nested;
+    StatisticsPtr statistics;
 
-    explicit ColumnMap(MutableColumnPtr && nested_);
+    explicit ColumnMap(MutableColumnPtr && nested_, const StatisticsPtr & statistics_ = {});
 
     ColumnMap(const ColumnMap &) = default;
 
@@ -27,14 +46,11 @@ public:
       */
     using Base = COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
-    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets);
+    static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets, const StatisticsPtr & statistics_ = {});
+    static Ptr create(const ColumnPtr & column, const StatisticsPtr & statistics_ = {}) { return ColumnMap::create(column->assumeMutable(), statistics_); }
+    static Ptr create(ColumnPtr && arg, const StatisticsPtr & statistics_ = {}) { return create(arg, statistics_); }
 
-    static Ptr create(const ColumnPtr & column) { return ColumnMap::create(column->assumeMutable()); }
-    static Ptr create(ColumnPtr && arg) { return create(arg); }
-
-    template <typename ... Args>
-    requires (IsMutableColumns<Args ...>::value)
-    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
+    static MutablePtr create(MutableColumnPtr && nested_, const StatisticsPtr & statistics_ = {}) { return Base::create(std::move(nested_), statistics_); }
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Map"; }
@@ -62,6 +78,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
@@ -81,7 +98,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #else
@@ -94,7 +111,7 @@ public:
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -125,9 +142,16 @@ public:
 
     bool hasDynamicStructure() const override { return nested->hasDynamicStructure(); }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested->fixDynamicStructure(); }
+
+    const StatisticsPtr & getStatistics() const { return statistics; }
+    StatisticsPtr getOrCalculateStatistics() const;
+    void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
+    StatisticsPtr calculateStatisticsForRange(size_t start, size_t end) const;
+    bool hasStatistics() const override { return true; }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 };
 
 }

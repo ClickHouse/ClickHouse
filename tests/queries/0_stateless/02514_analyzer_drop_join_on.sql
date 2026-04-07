@@ -18,9 +18,12 @@ INSERT INTO d VALUES (1, 1, 'a'), (2, 2, 'b'), (3, 3, 'c');
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 'false';
 SET enable_parallel_replicas = 0;
+SET query_plan_remove_unused_columns = 1; -- unused join-side columns must be pruned for stable EXPLAIN header output
 SET query_plan_optimize_join_order_limit = 2;
 SET optimize_empty_string_comparisons=0;
 SET enable_join_runtime_filters=0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 -- { echoOn }
 

@@ -48,6 +48,16 @@ if (SANITIZE)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
 
+    elseif (SANITIZE STREQUAL "address,undefined")
+        set (ASAN_UBSAN_FLAGS "-fsanitize=address,undefined -fsanitize-address-use-after-scope -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        if (ENABLE_FUZZING)
+            set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
+        endif()
+        set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fsanitize-ignorelist=${PROJECT_SOURCE_DIR}/tests/ubsan_ignorelist.txt")
+
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_UBSAN_FLAGS}")
+        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${ASAN_UBSAN_FLAGS}")
+
     else ()
         message (FATAL_ERROR "Unknown sanitizer type: ${SANITIZE}")
     endif ()
@@ -56,10 +66,51 @@ endif()
 # Default coverage instrumentation (dumping the coverage map on exit)
 option(WITH_COVERAGE "Instrumentation for code coverage with default implementation" OFF)
 
+option(WITH_COVERAGE_DEPTH "Shadow call-stack depth tracking via -finstrument-functions-after-inlining (requires WITH_COVERAGE)" OFF)
+
+option(WITH_COVERAGE_XRAY
+    "Use XRay instrumentation for exact call-depth tracking (requires WITH_COVERAGE and ENABLE_XRAY). Builds with -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1. XRay maps runtime function text addresses to LLVM profile records, solving the PIE FunctionPointer=0 limitation."
+    OFF)
+
 if (WITH_COVERAGE)
     message (STATUS "Enabled instrumentation for code coverage")
+
+    # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
     set (COVERAGE_FLAGS -fprofile-instr-generate -fcoverage-mapping)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+
+    if (WITH_COVERAGE_DEPTH)
+        # WITH_COVERAGE_DEPTH enables per-test collection (CoverageCollection.cpp,
+        # LLVMCoverageMapping.cpp, SYSTEM SET COVERAGE TEST).  All per-test-specific
+        # flags are gated here — not in the base WITH_COVERAGE block — so that the
+        # regular amd_llvm_coverage build (used for HTML coverage reports) is unchanged.
+        message (STATUS "Enabled per-test coverage instrumentation (WITH_COVERAGE_DEPTH)")
+        # Expose WITH_COVERAGE=1 as a C++ macro so that CoverageCollection.cpp,
+        # LLVMCoverageMapping.cpp, and SYSTEM SET COVERAGE TEST are compiled in.
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_COVERAGE=1")
+        set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -DWITH_COVERAGE=1")
+        message (STATUS "Enabled call-depth shadow stack via -finstrument-functions-after-inlining")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -finstrument-functions-after-inlining")
+        set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -finstrument-functions-after-inlining")
+        # -mllvm -enable-value-profiling=true activates indirect-call value profiling so that
+        # __llvm_profile_instrument_target() records virtual-dispatch targets at runtime.
+        # Without this flag, LLVMProfileData::Values is always NULL and indirect-call data
+        # cannot be collected. Only enabled for per-test coverage builds to avoid changing
+        # the regular amd_llvm_coverage build behaviour.
+        set (COVERAGE_FLAGS ${COVERAGE_FLAGS} -mllvm -enable-value-profiling=true)
+    endif()
+
+    if (WITH_COVERAGE_XRAY)
+        message (STATUS "Enabled XRay-based exact call-depth tracking for coverage")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1")
+        set (CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -DCLICKHOUSE_XRAY_INSTRUMENT_COVERAGE=1")
+    endif()
+
+    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping")
+    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping)
+else()
+    set (WITHOUT_COVERAGE_FLAGS "")
+    set (WITHOUT_COVERAGE_FLAGS_LIST "")
 endif()
 
 # Use our bundled compiler-rt headers (sanitizer/ and xray/ interfaces) instead of the ones
@@ -71,23 +122,3 @@ endif()
 # bundled path here ensures it takes precedence without disrupting #include_next chains (which
 # libcxx relies on to reach the compiler's own stddef.h, stdarg.h, etc.).
 include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
-
-option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
-
-if (SANITIZE_COVERAGE)
-    message (STATUS "Enabled instrumentation for code coverage")
-
-    # We set this define for whole build to indicate that at least some parts are compiled with coverage.
-    # And to expose it in system.build_options.
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSANITIZE_COVERAGE=1")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSANITIZE_COVERAGE=1")
-
-    # But the actual coverage will be enabled on per-library basis: for ClickHouse code, but not for 3rd-party.
-    set (COVERAGE_FLAGS "-fsanitize-coverage=trace-pc-guard,pc-table")
-
-    set (WITHOUT_COVERAGE_FLAGS "-fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table")
-    set (WITHOUT_COVERAGE_FLAGS_LIST -fno-profile-instr-generate -fno-coverage-mapping -fno-sanitize-coverage=trace-pc-guard,pc-table)
-else()
-    set (WITHOUT_COVERAGE_FLAGS "")
-    set (WITHOUT_COVERAGE_FLAGS_LIST "")
-endif()

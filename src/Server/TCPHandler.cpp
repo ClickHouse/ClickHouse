@@ -43,6 +43,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -491,9 +492,11 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
+            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, eof: {})", tcp_server.isOpen(), server.isCancelled(), in->eof());
+                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
+                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(),
+                    !in->isCanceled() && in->eof());
                 return;
             }
         }
@@ -515,7 +518,7 @@ void TCPHandler::runImpl()
 
         OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
-        std::optional<CurrentThread::QueryScope> query_scope;
+        std::optional<QueryScope> query_scope;
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
@@ -557,7 +560,7 @@ void TCPHandler::runImpl()
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
             /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
-            query_scope = CurrentThread::QueryScope::create(
+            query_scope = QueryScope::create(
                 query_state->query_context,
                 /* fatal_error_callback */
                 [tcp_protocol_version = this->client_tcp_protocol_version,
@@ -637,13 +640,21 @@ void TCPHandler::runImpl()
 
                 checkIfQueryCanceled(*query_state);
 
-                /// Get blocks of temporary tables
-                readTemporaryTables(*query_state);
+                try
+                {
+                    /// Get blocks of temporary tables
+                    readTemporaryTables(*query_state);
 
-                /// Reset the input stream, as we received an empty block while receiving external table data.
-                /// So, the stream has been marked as cancelled and we can't read from it anymore.
-                query_state->block_in.reset();
-                query_state->maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+                    /// Reset the input stream, as we received an empty block while receiving external table data.
+                    /// So, the stream has been marked as cancelled and we can't read from it anymore.
+                    query_state->block_in.reset();
+                    query_state->maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+                }
+                catch (...)
+                {
+                    query_state->stop_query = true;
+                    throw;
+                }
             });
 
             /// Send structure of columns to client for function input()
@@ -686,12 +697,20 @@ void TCPHandler::runImpl()
 
                 checkIfQueryCanceled(*query_state);
 
-                if (receivePacketsExpectData(*query_state))
-                    return query_state->block_for_input;
+                try
+                {
+                    if (receivePacketsExpectData(*query_state))
+                        return query_state->block_for_input;
 
-                query_state->block_in.reset();
-                query_state->maybe_compressed_in.reset();
-                return {};
+                    query_state->block_in.reset();
+                    query_state->maybe_compressed_in.reset();
+                    return {};
+                }
+                catch (...)
+                {
+                    query_state->stop_query = true;
+                    throw;
+                }
             });
 
             customizeContext(query_state->query_context);
@@ -706,15 +725,23 @@ void TCPHandler::runImpl()
 
                 checkIfQueryCanceled(*query_state);
 
-                sendReadTaskRequest();
+                try
+                {
+                    sendReadTaskRequest();
 
-                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
+                    ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSent);
 
-                auto res = receiveClusterFunctionReadTaskResponse(*query_state);
+                    auto res = receiveClusterFunctionReadTaskResponse(*query_state);
 
-                ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                    ProfileEvents::increment(ProfileEvents::ReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
 
-                return res;
+                    return res;
+                }
+                catch (...)
+                {
+                    query_state->stop_query = true;
+                    throw;
+                }
             });
 
             query_state->query_context->setMergeTreeAllRangesCallback([this, &query_state](InitialAllRangesAnnouncement announcement)
@@ -741,17 +768,25 @@ void TCPHandler::runImpl()
 
                     checkIfQueryCanceled(*query_state);
 
-                    sendMergeTreeReadTaskRequest(std::move(request));
+                    try
+                    {
+                        sendMergeTreeReadTaskRequest(std::move(request));
 
-                    fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
-                        throw NetException(
-                            ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
-                    });
+                        fiu_do_on(FailPoints::parallel_replicas_reading_response_timeout, {
+                            throw NetException(
+                                ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
+                        });
 
-                    ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
-                    auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
-                    ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-                    return res;
+                        ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSent);
+                        auto res = receivePartitionMergeTreeReadTaskResponse(*query_state);
+                        ProfileEvents::increment(ProfileEvents::MergeTreeReadTaskRequestsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+                        return res;
+                    }
+                    catch (...)
+                    {
+                        query_state->stop_query = true;
+                        throw;
+                    }
                 });
 
             query_state->query_context->setBlockMarshallingCallback(
@@ -1242,9 +1277,8 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
 
-        auto result_chunk = Squashing::squash(
-            squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true),
-            squashing.getHeader());
+        squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()});
+        auto result_chunk = Squashing::squash(squashing.generate(/*flush_if_enough_size*/ true), squashing.getHeader());
 
         {
             std::lock_guard lock(*callback_mutex);
@@ -1339,13 +1373,24 @@ void TCPHandler::processInsertQuery(QueryState & state)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
 
                 if (wait_status == std::future_status::timeout)
-                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded)", timeout_ms);
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", timeout_ms);
 
-                result.future.get();
+                auto progress_result = result.future.get();
+
+                /// Report the written rows/bytes as progress so that the client
+                /// and query_log reflect the actual insert stats.
+                if (auto process_list_elem = state.query_context->getProcessListElement())
+                {
+                    process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
+                    process_list_elem->updateProgressIn(Progress(ReadProgress(progress_result.rows, progress_result.bytes)));
+                }
             }
 
-            std::lock_guard lock(*callback_mutex);
-            sendInsertProfileEvents(state);
+            {
+                std::lock_guard lock(*callback_mutex);
+                sendProgress(state);
+                sendInsertProfileEvents(state);
+            }
             return;
         }
         if (result.status == AsynchronousInsertQueue::PushResult::TOO_MUCH_DATA)
@@ -1367,6 +1412,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
     }
 
     std::lock_guard lock(*callback_mutex);
+    sendProgress(state);
     sendInsertProfileEvents(state);
 }
 
@@ -1400,12 +1446,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
+                bool stop_read_return_partial_result = false;
                 {
                     std::lock_guard lock(*callback_mutex);
                     receivePacketsExpectCancel(state);
+                    stop_read_return_partial_result = state.stop_read_return_partial_result;
                 }
 
-                if (state.stop_read_return_partial_result)
+                if (stop_read_return_partial_result)
                 {
                     executor.cancelReading();
                 }
@@ -1557,7 +1605,7 @@ void TCPHandler::sendReadTaskRequest()
 void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRangesAnnouncement announcement)
 {
     writeVarUInt(Protocol::Server::MergeTreeAllRangesAnnouncement, *out);
-    announcement.serialize(*out, client_parallel_replicas_protocol_version);
+    announcement.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();
@@ -1567,7 +1615,7 @@ void TCPHandler::sendMergeTreeAllRangesAnnouncement(QueryState &, InitialAllRang
 void TCPHandler::sendMergeTreeReadTaskRequest(ParallelReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
-    request.serialize(*out, client_parallel_replicas_protocol_version);
+    request.serialize(*out, client_parallel_replicas_protocol_version, client_tcp_protocol_version);
 
     out->finishChunk();
     out->next();

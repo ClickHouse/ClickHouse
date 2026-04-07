@@ -69,6 +69,7 @@ namespace Setting
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
 RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
 {
@@ -305,14 +306,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
     }
 
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
-    {
-        return RelationStats{
-            .estimated_rows = join_step->getResultRowsEstimation(),
-            .column_stats = {},
-            .table_name = join_step->getReadableRelationName()};
-    }
-
     if (node.children.size() != 1)
         return {};
 
@@ -346,6 +339,14 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
         auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
         return aggregation_stats;
+    }
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+    {
+        return RelationStats{
+            .estimated_rows = join_step->getResultRowsEstimation(),
+            .column_stats = join_step->getResultColumnStats(),
+            .table_name = join_step->getReadableRelationName()};
     }
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
@@ -476,6 +477,7 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String dummy_stats;
+        UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -486,7 +488,9 @@ struct QueryGraphBuilder
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
-        {}
+            , effective_randomize_seed(optimization_settings_.query_plan_optimize_join_order_randomize)
+        {
+        }
     };
 
     std::shared_ptr<BuilderContext> context;
@@ -576,22 +580,40 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     if (isTrivialStep(node))
         node = node->children[0];
 
-    auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
-    if (child_join_step && !child_join_step->isOptimized())
     {
-        auto child_join_kind = child_join_step->getJoinOperator().kind;
-        bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
-        allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
-        if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(node->step.get());
+        if (child_join_step && !child_join_step->isOptimized())
         {
-            QueryGraphBuilder child_graph(graph.context);
-            buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
-            size_t count = child_graph.inputs.size();
-            uniteGraphs(graph, std::move(child_graph));
-            return count;
+            auto child_join_kind = child_join_step->getJoinOperator().kind;
+            bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
+            allow_child_join_kind = allow_child_join_kind && child_join_step->getJoinOperator().strictness == JoinStrictness::All;
+            if (graph.hasCompatibleSettings(*child_join_step) && join_steps_limit > 1 && allow_child_join_kind)
+            {
+                QueryGraphBuilder child_graph(graph.context);
+                buildQueryGraph(child_graph, *node, nodes, join_steps_limit);
+                size_t count = child_graph.inputs.size();
+                uniteGraphs(graph, std::move(child_graph));
+                return count;
+            }
+            /// Optimize child subplan before continuing to get size estimation
+            optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
         }
-        /// Optimize child subplan before continuing to get size estimation
-        optimizeJoinLogicalImpl(child_join_step, *node, nodes, graph.context->optimization_settings);
+    }
+
+    /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
+    /// those child Join to get proper statistics to use in the parent Join reordering.
+    {
+        auto * child_node = node;
+        while (child_node->children.size() == 1)
+        {
+            child_node = child_node->children[0];
+        }
+
+        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
+        if (child_join_step && !child_join_step->isOptimized())
+        {
+            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
+        }
     }
 
     graph.inputs.push_back(node);
@@ -603,6 +625,9 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
 
     if (!label.empty())
         stats.table_name = label;
+
+    if (UInt64 seed = graph.context->effective_randomize_seed)
+        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
         num_rows_from_cache.has_value() ? " (from cache)" : "",
@@ -1132,7 +1157,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             join_step->setInputLabels(std::move(left_label), std::move(right_label));
             relation_names[entry->relations] = join_step->getReadableRelationName();
 
-            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation);
+            join_step->setOptimized(entry->estimated_rows, lhs_estimation, rhs_estimation, entry->column_stats);
 
             auto right_table_key = query_graph_builder.context->statistics_context.getCachedKey(right_child_node);
             if (right_table_key)

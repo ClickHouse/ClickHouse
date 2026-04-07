@@ -274,6 +274,10 @@ public:
             Null    = 0,
             UInt64  = 1,
             Int64   = 2,
+            /// Note: there's no Float32. In theory, all Float32 values are exactly representable in
+            /// Float64. But in C++ if you static_cast back and forth, the result may change.
+            /// In particular, NaN may change to a different NaN, e.g. by cvtsd2ss instruction on x86.
+            /// So when a Float32 needs to be passed-through exactly, don't use Field.
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
@@ -839,6 +843,13 @@ void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
 String fieldToString(const Field & x);
+
+/// Check if a Field contains a NaN value.
+/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
+inline bool isNaNField(const Field & f)
+{
+    return f.isNaN();
+}
 
 }
 

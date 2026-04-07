@@ -21,6 +21,7 @@ namespace DB
 {
 
 class KeeperDispatcher;
+enum SnapshotVersion : uint8_t;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
@@ -67,6 +68,7 @@ public:
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
+    SnapshotVersion getWriteSnapshotVersion() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 
@@ -80,6 +82,8 @@ public:
 
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
+
+    static void initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     bool setShutdownCalled();
     const auto & isShutdownCalled() const
