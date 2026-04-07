@@ -60,38 +60,7 @@ public:
 
 REGISTER_FUNCTION(ToLowCardinality)
 {
-    /// toLowCardinality documentation
-    FunctionDocumentation::Description description = R"(
-Converts the input argument to the [LowCardinality](../data-types/lowcardinality.md) version of same data type.
-
-:::tip
-To convert from the `LowCardinality` data type to a regular data type, use the [CAST](#CAST) function.
-For example: `CAST(x AS String)`.
-:::
-    )";
-    FunctionDocumentation::Syntax syntax = "toLowCardinality(expr)";
-    FunctionDocumentation::Arguments arguments = {
-        {"expr", "Expression resulting in one of the supported data types.", {"String", "FixedString", "Date", "DateTime", "(U)Int*", "Float*"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the input value converted to the `LowCardinality` data type.", {"LowCardinality"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT toLowCardinality('1')
-        )",
-        R"(
-┌─toLowCardinality('1')─┐
-│ 1                     │
-└───────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionToLowCardinality>(documentation);
+    factory.registerFunction<FunctionToLowCardinality>();
 }
 
 }

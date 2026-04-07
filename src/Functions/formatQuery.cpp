@@ -80,7 +80,7 @@ public:
 
         ColumnUInt8::MutablePtr col_null_map;
         if (error_handling == ErrorHandling::Null)
-            col_null_map = ColumnUInt8::create(input_rows_count, false);
+            col_null_map = ColumnUInt8::create(input_rows_count, 0);
 
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
@@ -192,7 +192,6 @@ REGISTER_FUNCTION(formatQuery)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
 }
 
@@ -214,7 +213,6 @@ REGISTER_FUNCTION(formatQueryOrNull)
                  "    b\n"
                  "FROM tab\n"
                  "WHERE (a > 3) AND (b < 3)"}},
-            .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
 }
 
@@ -232,7 +230,6 @@ REGISTER_FUNCTION(formatQuerySingleLine)
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .introduced_in = {23, 10},
             .category = FunctionDocumentation::Category::Other});
 }
 
@@ -250,7 +247,6 @@ REGISTER_FUNCTION(formatQuerySingleLineOrNull)
                 {"multiline",
                  "SELECT formatQuerySingleLine('select a,    b FRom tab WHERE a > 3 and  b < 3');",
                  "SELECT a, b FROM tab WHERE (a > 3) AND (b < 3)"}},
-            .introduced_in = {23, 11},
             .category = FunctionDocumentation::Category::Other});
 }
 

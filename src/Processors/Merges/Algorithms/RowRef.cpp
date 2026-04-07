@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Core/SortCursor.h>
-#include <Common/StackTrace.h>
 
 namespace DB
 {

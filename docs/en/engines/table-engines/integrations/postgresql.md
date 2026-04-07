@@ -4,20 +4,17 @@ description: 'The PostgreSQL engine allows `SELECT` and `INSERT` queries on data
 sidebar_label: 'PostgreSQL'
 sidebar_position: 160
 slug: /engines/table-engines/integrations/postgresql
-title: 'PostgreSQL table Engine'
-doc_type: 'guide'
+title: 'PostgreSQL Table Engine'
 ---
-
-# PostgreSQL table engine
 
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
 
 :::note
-Currently, only PostgreSQL versions 12 and up are supported for the table engine.
+Currently, only PostgreSQL versions 12 and up are supported.
 :::
 
-:::tip
-Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed by NVMe storage that is physically co-located with compute, it delivers up to 10x faster performance for workloads that are disk-bound compared to alternatives using network-attached storage like EBS and allows you to replicate your Postgres data to ClickHouse using the Postgres CDC connector in ClickPipes.
+:::note
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Postgres data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
 
 ## Creating a table {#creating-a-table}
@@ -222,7 +219,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
 
 ## Related content {#related-content}
 

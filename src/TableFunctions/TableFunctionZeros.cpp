@@ -33,11 +33,7 @@ public:
     bool hasStaticStructure() const override { return true; }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's SystemZeros but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "SystemZeros"; }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
@@ -89,8 +85,7 @@ UInt64 TableFunctionZeros<multithreaded>::evaluateArgument(ContextPtr context, A
 
 void registerTableFunctionZeros(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionZeros<true>>(
-        {
+    factory.registerFunction<TableFunctionZeros<true>>({.documentation = {
             .description=R"(
                 Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
                 This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
@@ -101,10 +96,9 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
                 See also the `system.zeros` table.)",
             .examples={{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}},
             .category = FunctionDocumentation::Category::TableFunction
-    });
+    }});
 
-    factory.registerFunction<TableFunctionZeros<false>>(
-        {
+    factory.registerFunction<TableFunctionZeros<false>>({.documentation = {
             .description=R"(
                 Generates a stream of zeros (a table with one column 'zero' of type 'UInt8') of specified size.
                 This table function is used in performance tests, where you want to spend as little time as possible to data generation while testing some other parts of queries.
@@ -115,7 +109,7 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
                 See also the `system.zeros_mt` table.)",
             .examples={{"1", "SELECT count() FROM zeros_mt(1000000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}},
             .category = FunctionDocumentation::Category::TableFunction
-    });
+    }});
 }
 
 }

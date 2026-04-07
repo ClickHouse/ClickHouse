@@ -28,6 +28,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
+    extern const SettingsBool describe_extend_object_types;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -156,7 +157,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     auto current_context = getContext();
     TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression.table_function, current_context);
 
-    auto column_descriptions = table_function_ptr->getActualTableStructureWithAccess(current_context, /*is_insert_query*/ true);
+    auto column_descriptions = table_function_ptr->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);
 
@@ -176,8 +177,8 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
                 }
             }
 
-            auto common_virtuals = table->getCommonVirtuals(virtuals);
-            for (const auto & column : *common_virtuals)
+            const auto & common_virtuals = IStorage::getCommonVirtuals();
+            for (const auto & column : common_virtuals)
             {
                 if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                     virtual_columns.push_back(column);
@@ -194,9 +195,9 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 
+    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
-    table->updateExternalDynamicMetadataIfExists(query_context);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     const auto & column_descriptions = metadata_snapshot->getColumns();
@@ -216,13 +217,16 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
             }
         }
 
-        auto common_virtuals = table->getCommonVirtuals(virtuals);
-        for (const auto & column : *common_virtuals)
+        const auto & common_virtuals = IStorage::getCommonVirtuals();
+        for (const auto & column : common_virtuals)
         {
             if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                 virtual_columns.push_back(column);
         }
     }
+
+    if (settings[Setting::describe_extend_object_types])
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 }
 
 void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
@@ -230,10 +234,11 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
     size_t i = 0;
     res_columns[i++]->insert(column.name);
 
+    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
     if (settings[Setting::print_pretty_type_names])
-        res_columns[i++]->insert(column.type->getPrettyName());
+        res_columns[i++]->insert(type->getPrettyName());
     else
-        res_columns[i++]->insert(column.type->getName());
+        res_columns[i++]->insert(type->getName());
 
     if (!settings[Setting::describe_compact_output])
     {
@@ -270,6 +275,8 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
+    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
+
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -304,7 +311,7 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
         if (settings[Setting::describe_include_virtual_columns])
             res_columns[i++]->insert(is_virtual);
 
-    }, ISerialization::SubstreamData(column.type->getDefaultSerialization()).withType(column.type));
+    }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
 }
 
 void registerInterpreterDescribeQuery(InterpreterFactory & factory)

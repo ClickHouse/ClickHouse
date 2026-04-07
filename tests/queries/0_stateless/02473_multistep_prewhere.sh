@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-sanitizers, no-flaky-check, no-azure-blob-storage
-# ^ The test is heavy
+# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

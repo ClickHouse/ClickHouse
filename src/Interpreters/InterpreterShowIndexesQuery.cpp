@@ -122,11 +122,7 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    auto query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("");
-
-    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
