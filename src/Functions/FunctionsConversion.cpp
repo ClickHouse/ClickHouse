@@ -512,18 +512,21 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
 
             if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
             {
-#define GENERATE_DECIMAL_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
-    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
-        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>:: \
-            execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
-        break;
                 switch (settings.date_time_overflow_behavior)
                 {
-                    GENERATE_DECIMAL_OVERFLOW_MODE_CASE(Throw)
-                    GENERATE_DECIMAL_OVERFLOW_MODE_CASE(Ignore)
-                    GENERATE_DECIMAL_OVERFLOW_MODE_CASE(Saturate)
+                    case FormatSettings::DateTimeOverflowBehavior::Throw:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        break;
+                    case FormatSettings::DateTimeOverflowBehavior::Ignore:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        break;
+                    case FormatSettings::DateTimeOverflowBehavior::Saturate:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        break;
                 }
-#undef GENERATE_DECIMAL_OVERFLOW_MODE_CASE
             }
             else
             {
