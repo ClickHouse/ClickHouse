@@ -375,7 +375,6 @@ VirtualColumnsDescription StorageDistributed::createVirtuals()
 
     /// Add virtual columns from table with Merge engine.
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of database which the row comes from");
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
 
     return desc;
 }

@@ -21,10 +21,12 @@ Structure of the `users` section:
 <users>
     <!-- If user name was not specified, 'default' user is used. -->
     <user_name>
+        <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
-        <!-- Or -->
+        <!-- Or (exclusive) -->
         <password_sha256_hex></password_sha256_hex>
-
+ 
+        <!-- Or (exclusive) (N.B. multiple SSH keys are allowed for backwards compatibility) -->
         <ssh_keys>
             <ssh_key>
                 <type>ssh-ed25519</type>
@@ -39,6 +41,20 @@ Structure of the `users` section:
                 <base64_key>AAAAB3NzaC1yc2EAAAADAQABAAABgQCpgqL1SHhPVBOTFlOm0pu+cYBbADzC2jL41sPMawYCJHDyHuq7t+htaVVh2fRgpAPmSEnLEC2d4BEIKMtPK3bfR8plJqVXlLt6Q8t4b1oUlnjb3VPA9P6iGcW7CV1FBkZQEVx8ckOfJ3F+kI5VsrRlEDgiecm/C1VPl0/9M2llW/mPUMaD65cM9nlZgM/hUeBrfxOEqM11gDYxEZm1aRSbZoY4dfdm3vzvpSQ6lrCrkjn3X2aSmaCLcOWJhfBWMovNDB8uiPuw54g3ioZ++qEQMlfxVsqXDGYhXCrsArOVuW/5RbReO79BvXqdssiYShfwo+GhQ0+aLWMIW/jgBkkqx/n7uKLzCMX7b2F+aebRYFh+/QXEj7SnihdVfr9ud6NN3MWzZ1ltfIczlEcFLrLJ1Yq57wW6wXtviWh59WvTWFiPejGjeSjjJyqqB49tKdFVFuBnIU5u/bch2DXVgiAEdQwUrIp1ACoYPq22HFFAYUJrL32y7RxX3PGzuAv3LOc=</base64_key>
             </ssh_key>
         </ssh_keys>
+
+        <!-- Or (exclusive) for multiple authentication methods: -->
+        <auth_methods>
+            <method1>
+                <password></password>
+            </method1>
+            <method2>
+                <password_sha256_hex></password_sha256_hex>
+            </method2>
+            <!-- ... -->
+            <methodN>
+                <!-- ... -->
+            </methodN>
+        </auth_methods>
 
         <access_management>0|1</access_management>
 
@@ -180,6 +196,94 @@ The `ssh_key` element is expected to be
 ```
 
 Substitute `ssh-ed25519` with `ssh-rsa` or `ecdsa-sha2-nistp256` for the other supported algorithms.
+
+### Multiple Authentication Methods {#multiple-authentication-methods}
+
+A single user can be configured with multiple authentication methods using the `<auth_methods>` element. This allows a user to authenticate with any one of the listed methods — for example, a user could have both a password and an LDAP credential, and logging in with either one would succeed.
+
+Each child element of `<auth_methods>` is an arbitrarily-named wrapper that contains exactly one authentication type. The wrapper name (e.g. `<method1>`, `<primary>`, `<a1>`) does not matter; only the inner authentication element is used.
+
+**Example: multiple passwords**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <primary>
+                <password>password_one</password>
+            </primary>
+            <secondary>
+                <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+            </secondary>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+**Example: mixed authentication types**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>plaintext_pass</password>
+            </a1>
+            <a2>
+                <password_sha256_hex>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</password_sha256_hex>
+            </a2>
+            <a3>
+                <ldap>
+                    <server>my_ldap_server</server>
+                </ldap>
+            </a3>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+The following authentication types are supported inside `<auth_methods>`:
+
+- **`password`** — plaintext password
+- **`password_sha256_hex`** — SHA256 password hash
+- **`password_scram_sha256_hex`** — SCRAM-SHA-256 password hash
+- **`password_double_sha1_hex`** — double SHA1 password hash
+- **`ldap`** — LDAP server authentication
+- **`kerberos`** — Kerberos authentication
+- **`ssl_certificates`** — SSL certificate authentication
+- **`ssh_keys`** — SSH key authentication
+- **`http_authentication`** — HTTP authentication
+
+**Rules and restrictions:**
+
+- `<auth_methods>` **cannot** be used together with authentication methods specified at the user level. Use one style or the other, not both.
+- `<auth_methods>` must contain at least one authentication method.
+- Each wrapper element inside `<auth_methods>` must contain exactly one authentication type (with the exception of `<ssh_keys>`, which can contain multiple, for backwards compatibility).
+- TOTP (`<time_based_one_time_password>`) is specified at the user level (outside `<auth_methods>`) and applies to all password-based methods in the list. At least one password-based method is required when TOTP is enabled.
+
+**Example: `auth_methods` with TOTP**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>my_password</password>
+            </a1>
+            <a2>
+                <ldap>
+                    <server>ldap_server_1</server>
+                </ldap>
+            </a2>
+        </auth_methods>
+        <time_based_one_time_password>
+            <secret>JBSWY3DPEHPK3PXP</secret>
+        </time_based_one_time_password>
+    </my_user>
+</users>
+```
+
+In this example, TOTP verification is applied to the password-based method (`<password>`), while the LDAP method authenticates against the external server independently.
 
 ### access_management {#access_management-user-setting}
 
