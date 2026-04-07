@@ -131,7 +131,7 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensBatch(ColumnPtr tokens_c
         return tokens_column;
 
     size_t n_rows = tokens_column->size();
-    Block block{{ColumnWithTypeAndName(std::move(tokens_column), string_type, postprocessor_token_name)}};
+    Block block{{ColumnWithTypeAndName(tokens_column, string_type, postprocessor_token_name)}};
     actions->execute(block, n_rows);
     return block.safeGetByPosition(0).column;
 }
