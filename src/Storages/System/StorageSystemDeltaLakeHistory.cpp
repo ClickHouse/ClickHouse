@@ -37,7 +37,7 @@ extern const SettingsSeconds lock_acquire_timeout;
 
 namespace ErrorCodes
 {
-extern const int INCORRECT_DATA;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace
@@ -182,13 +182,9 @@ private:
                 }
                 catch (...)
                 {
-                    const auto exception_code = getCurrentExceptionCode();
-                    const auto exception_message = getCurrentExceptionMessage(false);
-
                     /// Propagate history materialization guard errors instead of silently skipping:
                     /// this is a deliberate safety limit, not a malformed-table parsing issue.
-                    if (exception_code == ErrorCodes::INCORRECT_DATA
-                        && exception_message.find("Refusing to materialize Delta Lake history") != String::npos)
+                    if (getCurrentExceptionCode() == ErrorCodes::LIMIT_EXCEEDED)
                         throw;
 
                     /// Broken external Delta tables are expected during broad system-table scans.
@@ -197,7 +193,7 @@ private:
                         getLogger("SystemDeltaLakeHistory"),
                         "Ignoring broken table {}: {}",
                         object_storage_table->getStorageID().getFullTableName(),
-                        exception_message);
+                        getCurrentExceptionMessage(false));
                 }
             }
 

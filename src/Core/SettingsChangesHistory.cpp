@@ -83,6 +83,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
+            {"delta_lake_history_max_records", 0, 1'000'000, "New setting to cap the number of Delta Lake history records materialized in memory."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

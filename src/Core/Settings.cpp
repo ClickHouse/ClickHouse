@@ -7035,6 +7035,11 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
+    DECLARE(UInt64, delta_lake_history_max_records, 1'000'000, R"(
+Maximum number of history records to materialize when querying Delta Lake table history.
+Tables whose version count exceeds this limit will raise an exception instead of
+consuming an unbounded amount of memory. Set to 0 to disable the limit.
+)", 0) \
     DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
 )", EXPERIMENTAL) \

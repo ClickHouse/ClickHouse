@@ -62,6 +62,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -69,6 +70,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_delta_kernel_rs;
+    extern const SettingsUInt64 delta_lake_history_max_records;
 }
 
 
@@ -743,7 +745,7 @@ DeltaLakeHistory parseDeltaLakeHistory(
 
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto metadata_file_suffix = ".json";
-    static constexpr UInt64 max_history_records = 1'000'000;
+    const UInt64 max_history_records = local_context->getSettingsRef()[Setting::delta_lake_history_max_records];
 
     try
     {
@@ -770,11 +772,12 @@ DeltaLakeHistory parseDeltaLakeHistory(
         UInt64 expected_history_size = 0;
         if (checkpoint_version.has_value())
         {
-            if (*checkpoint_version >= max_history_records)
+            if (max_history_records > 0 && *checkpoint_version >= max_history_records)
             {
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Refusing to materialize Delta Lake history for {}: checkpoint version {} exceeds hard cap {} records",
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "Refusing to materialize Delta Lake history for {}: checkpoint version {} exceeds limit {} "
+                    "(controlled by `delta_lake_history_max_records` setting, 0 to disable)",
                     table_path,
                     *checkpoint_version,
                     max_history_records);
@@ -784,11 +787,12 @@ DeltaLakeHistory parseDeltaLakeHistory(
             for (auto it = version_to_file.upper_bound(*checkpoint_version); it != version_to_file.end(); ++it)
             {
                 ++expected_history_size;
-                if (expected_history_size > max_history_records)
+                if (max_history_records > 0 && expected_history_size > max_history_records)
                 {
                     throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Refusing to materialize Delta Lake history for {}: expected {} records exceeds hard cap {}",
+                        ErrorCodes::LIMIT_EXCEEDED,
+                        "Refusing to materialize Delta Lake history for {}: expected {} records exceeds limit {} "
+                        "(controlled by `delta_lake_history_max_records` setting, 0 to disable)",
                         table_path,
                         expected_history_size,
                         max_history_records);
@@ -798,11 +802,12 @@ DeltaLakeHistory parseDeltaLakeHistory(
         else
         {
             expected_history_size = version_to_file.size();
-            if (expected_history_size > max_history_records)
+            if (max_history_records > 0 && expected_history_size > max_history_records)
             {
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Refusing to materialize Delta Lake history for {}: discovered {} metadata versions exceeds hard cap {}",
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "Refusing to materialize Delta Lake history for {}: discovered {} metadata versions exceeds limit {} "
+                    "(controlled by `delta_lake_history_max_records` setting, 0 to disable)",
                     table_path,
                     expected_history_size,
                     max_history_records);
@@ -864,7 +869,7 @@ DeltaLakeHistory parseDeltaLakeHistory(
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::INCORRECT_DATA)
+        if (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::LIMIT_EXCEEDED)
             throw;
         tryLogCurrentException(log, "Failed to get Delta Lake history");
     }
