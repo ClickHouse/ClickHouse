@@ -99,13 +99,58 @@ static absl::node_hash_map<String, PatchStatsMap> collectPatchStats(
             for (size_t i = 0; i < patch_ranges.size(); ++i)
             {
                 auto & stat = stats[patch_ranges[i]];
-                stat.block_number_stat = block_number_stats[i];
-                stat.block_offset_stat = block_offset_stats[i];
+                stat.block_number_stat = (*block_number_stats)[i];
+                stat.block_offset_stat = (*block_offset_stats)[i];
             }
         }
     }
 
     return patch_stats_by_name;
+}
+
+/// Filter patch ranges of a single data part by minmax overlap.
+/// Surviving ranges are inserted into `filtered_ranges_by_patch`.
+static void filterPatchRangesByOverlap(
+    const MergeTreeReadTaskInfo & info,
+    const RangesInPatchParts & ranges_in_patch_parts,
+    const absl::node_hash_map<String, PatchStatsMap> & patch_stats_by_name,
+    const std::vector<MinMaxStat> & data_block_number_ranges,
+    const std::vector<MinMaxStat> & data_block_offset_ranges,
+    absl::node_hash_map<String, std::set<MarkRange>> & filtered_ranges_by_patch)
+{
+    for (const auto & patch_part : info.patch_parts)
+    {
+        if (patch_part.mode != PatchMode::Join)
+            continue;
+
+        const auto & patch_name = patch_part.part->getPartName();
+        auto ranges_it = ranges_in_patch_parts.getRanges().find(patch_name);
+
+        if (ranges_it == ranges_in_patch_parts.getRanges().end())
+            continue;
+
+        const auto & patch_ranges = ranges_it->second;
+        auto stats_it = patch_stats_by_name.find(patch_name);
+
+        for (const auto & range : patch_ranges)
+        {
+            if (stats_it != patch_stats_by_name.end())
+            {
+                auto stat_it = stats_it->second.find(range);
+
+                if (stat_it != stats_it->second.end())
+                {
+                    if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
+                        continue;
+
+                    if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
+                        continue;
+                }
+            }
+
+            filtered_ranges_by_patch[patch_name].insert(range);
+        }
+    }
 }
 
 std::shared_ptr<Processors> buildPatchJoinCachePipeline(
@@ -138,15 +183,15 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
 
     /// 3. For each data part, read its minmax stats and filter patch ranges by per-part overlap.
     ///    Track global `_block_number` range for bucket assignment.
+    absl::node_hash_map<String, std::set<MarkRange>> filtered_ranges_by_patch;
     UInt64 global_min_block = std::numeric_limits<UInt64>::max();
     UInt64 global_max_block = 0;
-    absl::node_hash_map<String, std::set<MarkRange>> filtered_ranges_by_patch;
 
     for (const auto & part_idx : part_indexes_with_patches)
     {
+        const auto & info = *per_part_infos[part_idx];
         const auto & data_part = parts_ranges[part_idx].data_part;
         const auto & data_mark_ranges = parts_ranges[part_idx].ranges;
-        const auto & info = *per_part_infos[part_idx];
 
         std::vector<MinMaxStat> data_block_number_ranges;
         std::vector<MinMaxStat> data_block_offset_ranges;
@@ -170,37 +215,10 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         std::ranges::sort(data_block_number_ranges, [](const auto & lhs, const auto & rhs) { return lhs.min < rhs.min; });
         std::ranges::sort(data_block_offset_ranges, [](const auto & lhs, const auto & rhs) { return lhs.min < rhs.min; });
 
-        /// Filter patch ranges for each Join-mode patch of this data part.
-        for (size_t patch_idx = 0; patch_idx < info.patch_parts.size(); ++patch_idx)
-        {
-            if (info.patch_parts[patch_idx].mode != PatchMode::Join)
-                continue;
-
-            const auto & patch_name = info.patch_parts[patch_idx].part->getPartName();
-            auto ranges_it = ranges_in_patch_parts.getRanges().find(patch_name);
-            if (ranges_it == ranges_in_patch_parts.getRanges().end())
-                continue;
-
-            const auto & patch_ranges = ranges_it->second;
-            auto stats_it = patch_stats_by_name.find(patch_name);
-
-            for (const auto & range : patch_ranges)
-            {
-                if (stats_it != patch_stats_by_name.end())
-                {
-                    auto stat_it = stats_it->second.find(range);
-                    if (stat_it != stats_it->second.end())
-                    {
-                        if (!hasOverlapWithSortedRanges(data_block_number_ranges, stat_it->second.block_number_stat))
-                            continue;
-                        if (!hasOverlapWithSortedRanges(data_block_offset_ranges, stat_it->second.block_offset_stat))
-                            continue;
-                    }
-                }
-
-                filtered_ranges_by_patch[patch_name].insert(range);
-            }
-        }
+        filterPatchRangesByOverlap(
+            info, ranges_in_patch_parts, patch_stats_by_name,
+            data_block_number_ranges, data_block_offset_ranges,
+            filtered_ranges_by_patch);
     }
 
     if (global_min_block > global_max_block)
@@ -228,17 +246,12 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         std::vector<MarkRange> patch_ranges(filtered_ranges_set.begin(), filtered_ranges_set.end());
 
         /// Build MergeTreeReadTaskInfo for this patch part.
-        const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(
-            patch_info.patch_part.part.get());
+        const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(patch_info.patch_part.part.get());
         if (!loaded_part)
             continue;
 
         auto task_info = std::make_shared<MergeTreeReadTaskInfo>();
         task_info->data_part = loaded_part->getDataPart();
-        /// Use empty alter conversions to avoid type conversion in the readers chain.
-        /// The old code called performRequiredConversions conditionally; the readers chain
-        /// calls it unconditionally. Using empty conversions and the part's own column types
-        /// ensures performRequiredConversions is a no-op.
         task_info->alter_conversions = std::make_shared<AlterConversions>();
 
         /// Use column types from the patch part itself, not from the current schema.
@@ -246,10 +259,11 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         /// old and new types (e.g., String -> UInt64) which can fail.
         const auto & part_columns = loaded_part->getColumns();
         NamesAndTypesList resolved_columns;
-        for (const auto & col : patch_info.columns)
+
+        for (const auto & column : patch_info.columns)
         {
-            auto part_col = part_columns.tryGetByName(col.name);
-            resolved_columns.push_back(part_col ? *part_col : col);
+            auto part_column = part_columns.tryGetByName(column.name);
+            resolved_columns.push_back(part_column ? *part_column : column);
         }
 
         task_info->task_columns.columns = resolved_columns;
@@ -261,29 +275,36 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
 
         size_t block_number_pos = patch_header.getPositionByName(BlockNumberColumn::name);
         size_t num_sources = std::min(num_threads, patch_ranges.size());
+
         if (num_sources == 0)
             num_sources = 1;
 
         /// Create read pool for this patch.
         auto shared_header = std::make_shared<Block>(patch_header);
-        auto pool = std::make_shared<PatchJoinReadPool>(
-            patch_header, task_info, extras, std::move(patch_ranges),
-            MergeTreeReadTask::BlockSizeParams{
-                .max_block_size_rows = std::numeric_limits<UInt64>::max(),
-                .preferred_block_size_bytes = 0});
+
+        MergeTreeReadTask::BlockSizeParams block_size_params =
+        {
+            .max_block_size_rows = std::numeric_limits<UInt64>::max(),
+            .preferred_block_size_bytes = 0
+        };
+
+        auto pool = std::make_shared<PatchJoinReadPool>(patch_header, task_info, extras, std::move(patch_ranges), block_size_params);
 
         /// Create source processors.
         std::vector<IProcessor *> sources;
         for (size_t source_idx = 0; source_idx < num_sources; ++source_idx)
         {
             auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(source_idx);
+
             auto processor = std::make_unique<MergeTreeSelectProcessor>(
-                pool, std::move(algorithm),
+                pool,
+                std::move(algorithm),
                 /*row_level_filter=*/ nullptr,
                 /*prewhere_info=*/ nullptr,
                 /*index_read_tasks=*/ IndexReadTasks{},
                 ExpressionActionsSettings{},
                 reader_settings);
+
             auto source = std::make_shared<MergeTreeSource>(std::move(processor), "PatchJoinCacheBuild");
             sources.push_back(source.get());
             processors->push_back(std::move(source));
@@ -298,9 +319,11 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
             {
                 auto & inputs = resize->getInputs();
                 auto input_it = inputs.begin();
+
                 for (size_t source_idx = 0; source_idx < num_sources; ++source_idx, ++input_it)
                     connect(sources[source_idx]->getOutputs().front(), *input_it);
             }
+
             auto sink = std::make_shared<BuildPatchJoinCacheSink>(shared_header, entries[0]);
             connect(resize->getOutputs().front(), sink->getPort());
             processors->push_back(std::move(resize));
@@ -313,7 +336,12 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
         for (size_t source_idx = 0; source_idx < num_sources; ++source_idx)
         {
             auto scatter = std::make_shared<ScatterByRangeTransform>(
-                shared_header, num_buckets, block_number_pos, global_min_block, global_max_block);
+                shared_header,
+                num_buckets,
+                block_number_pos,
+                global_min_block,
+                global_max_block);
+
             connect(sources[source_idx]->getOutputs().front(), scatter->getInputs().front());
             scatters.push_back(scatter.get());
             processors->push_back(std::move(scatter));
@@ -325,6 +353,7 @@ std::shared_ptr<Processors> buildPatchJoinCachePipeline(
             auto resize = std::make_shared<ResizeProcessor>(shared_header, num_sources, 1);
             auto & inputs = resize->getInputs();
             auto input_it = inputs.begin();
+
             for (size_t source_idx = 0; source_idx < num_sources; ++source_idx, ++input_it)
             {
                 auto out_it = scatters[source_idx]->getOutputs().begin();
