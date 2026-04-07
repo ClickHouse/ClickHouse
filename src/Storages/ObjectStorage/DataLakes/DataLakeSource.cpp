@@ -173,6 +173,7 @@ Chunk DataLakeSource::generate()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
+                    .storage_id = storage_snapshot->storage.getStorageID(),
                     .size = object_metadata->size_bytes,
                     .filename = &filename,
                     .last_modified = object_metadata->last_modified,

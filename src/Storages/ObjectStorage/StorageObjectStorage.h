@@ -33,6 +33,7 @@ class StorageObjectStorage : public IStorage
 public:
     StorageObjectStorage(
         ObjectStorageConnectionConfigurationPtr configuration_,
+        StorageObjectStorageTableOptions table_options_,
         ObjectStoragePtr object_storage_,
         ContextPtr context_,
         const StorageID & table_id_,

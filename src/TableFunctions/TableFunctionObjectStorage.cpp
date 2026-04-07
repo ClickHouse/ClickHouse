@@ -367,6 +367,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     {
         storage = std::make_shared<StorageObjectStorage>(
             configuration,
+            std::move(table_options),
             current_object_storage,
             context,
             StorageID(getDatabaseName(), table_name),

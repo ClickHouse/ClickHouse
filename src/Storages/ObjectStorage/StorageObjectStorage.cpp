@@ -107,6 +107,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
 
 StorageObjectStorage::StorageObjectStorage(
     ObjectStorageConnectionConfigurationPtr configuration_,
+    StorageObjectStorageTableOptions table_options_,
     ObjectStoragePtr object_storage_,
     ContextPtr context,
     const StorageID & table_id_,
@@ -122,6 +123,7 @@ StorageObjectStorage::StorageObjectStorage(
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
+    , table_options(std::move(table_options_))
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
