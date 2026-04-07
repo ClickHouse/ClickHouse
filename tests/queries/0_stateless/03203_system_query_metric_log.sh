@@ -10,11 +10,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) SETTINGS enable_parallel_replicas=0 FORMAT Null" & # CI may inject enable_parallel_replicas=1; parallel replicas distribute sleep so initiator finishes quickly, producing too few metric log events
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0, enable_parallel_replicas=0 FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999, enable_parallel_replicas=0 FORMAT Null" &
 
 wait
 
