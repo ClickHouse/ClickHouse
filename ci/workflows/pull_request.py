@@ -67,7 +67,6 @@ workflow = Workflow.Config(
         JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
         JobConfigs.lightweight_functional_tests_job,
-        JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_merge_on_failure(),
