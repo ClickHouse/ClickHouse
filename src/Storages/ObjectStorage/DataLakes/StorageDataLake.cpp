@@ -200,10 +200,6 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    if constexpr (std::is_same_v<DataLakeMetadata, IcebergMetadata>)
-        supports_prewhere = format_supports_prewhere;
-    else
-        supports_prewhere = false;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
@@ -292,18 +288,6 @@ template <typename DataLakeMetadata>
 bool StorageDataLake<DataLakeMetadata>::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(table_options.format, context, format_settings);
-}
-
-template <typename DataLakeMetadata>
-bool StorageDataLake<DataLakeMetadata>::supportsPrewhere() const
-{
-    return supports_prewhere;
-}
-
-template <typename DataLakeMetadata>
-bool StorageDataLake<DataLakeMetadata>::canMoveConditionsToPrewhere() const
-{
-    return supports_prewhere;
 }
 
 template <typename DataLakeMetadata>

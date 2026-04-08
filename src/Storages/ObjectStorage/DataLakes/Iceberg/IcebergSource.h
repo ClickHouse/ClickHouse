@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+#ifdef USE_AVRO
+
 #include <optional>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/Context_fwd.h>
@@ -133,3 +136,5 @@ protected:
 };
 
 }
+
+#endif

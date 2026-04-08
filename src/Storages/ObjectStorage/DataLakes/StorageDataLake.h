@@ -90,9 +90,6 @@ public:
 
     bool supportsReplication() const override { return true; }
 
-    /// Things required for PREWHERE.
-    bool supportsPrewhere() const override;
-    bool canMoveConditionsToPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
     ColumnSizeByName getColumnSizes() const override;
 
@@ -121,7 +118,6 @@ protected:
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
-    bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
 

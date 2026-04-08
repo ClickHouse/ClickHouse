@@ -1,3 +1,6 @@
+#include "config.h"
+#ifdef USE_AVRO
+
 #include <memory>
 #include <optional>
 #include <Common/CurrentThread.h>
@@ -502,3 +505,5 @@ IcebergSource::ReaderHolder::operator=(ReaderHolder && other) noexcept
 }
 
 }
+
+#endif

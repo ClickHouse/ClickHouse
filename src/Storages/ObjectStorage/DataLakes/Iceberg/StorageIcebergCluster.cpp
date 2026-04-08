@@ -1,3 +1,6 @@
+#include "config.h"
+#ifdef USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIcebergCluster.h>
 
 #include <Common/Exception.h>
@@ -219,3 +222,5 @@ RemoteQueryExecutor::Extension StorageDataLakeCluster<IcebergMetadata>::getTaskI
 }
 
 }
+
+#endif

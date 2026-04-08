@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#ifdef USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/StorageDataLakeCluster.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 
@@ -62,4 +66,6 @@ private:
 
 using StorageIcebergCluster = StorageDataLakeCluster<IcebergMetadata>;
 
-}
+} // namespace DB
+
+#endif
