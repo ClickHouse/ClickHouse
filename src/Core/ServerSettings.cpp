@@ -1994,6 +1994,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "logfile",
         "errorlogfile",
 
+        /// Poco ServerApplication options (--daemon, --umask, --pidfile).
+        /// These are defined by Poco::Util::ServerApplication::defineOptions
+        /// and injected as top-level keys by argsToConfig.
+        "daemon",
+        "umask",
+
+        /// Server-defined CLI options (--help, --version).
+        "help",
+        "version",
+
         /// Poco option bindings (e.g., pid-file binds to "pid")
         "pid",
 
@@ -2002,11 +2012,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     };
 
     /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
-    /// We recognize them by known prefixes.
+    /// We recognize them by known prefixes: exact match or prefix followed by '_' separator.
+    /// This prevents typos like "graphite_rollupTypo" from silently passing.
     static const std::vector<String> known_prefixes = {
         "graphite_rollup",
         "http_handlers",
-        "users_",
+        "users",
     };
 
     /// Collect top-level keys referenced by config:// in http_handlers response_content/response_expression.
@@ -2060,7 +2071,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         bool matches_prefix = false;
         for (const auto & prefix : known_prefixes)
         {
-            if (key.starts_with(prefix))
+            if (key == prefix || (key.starts_with(prefix) && key.size() > prefix.size() && key[prefix.size()] == '_'))
             {
                 matches_prefix = true;
                 break;
