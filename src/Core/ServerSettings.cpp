@@ -1908,6 +1908,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "mqs",
         "kafka_consumer_hang",
 
+        /// Shared catalog (used in private builds)
+        "shared_database_catalog",
+
         /// Miscellaneous
         "core_dump",
         "core_path",
