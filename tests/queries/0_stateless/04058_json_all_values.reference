@@ -1,0 +1,23 @@
+Basic usage
+{"a":42}	['42']
+{"b":"Hello"}	['Hello']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+With max_dynamic_paths=1 (some paths go to shared data)
+{"a":42}	['42']
+{"b":"Hello"}	['Hello']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+With max_dynamic_paths=0 (all paths in shared data)
+{"a":42}	['42']
+{"b":"Hello"}	['Hello']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+With typed paths
+{"a":42,"b":"Hello"}	['42','Hello']
+{"a":0,"b":"World"}	['0','World']
+Empty JSON
+{}	[]
+Nested paths
+{"a":{"b":1,"c":2},"d":3}	['1','2','3']
+Multiple types in same path across rows
+{"a":42}	['42']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+{"b":"Hello"}	['Hello']
