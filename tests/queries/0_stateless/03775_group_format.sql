@@ -12,7 +12,6 @@ set output_format_json_quote_64bit_integers=1;
 select groupFormat('JSONEachRow')(number) from numbers(2);
 set output_format_json_quote_64bit_integers=0;
 
-select toTypeName(if(number = 0, NULL, number)) from numbers(1);
 select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
 
 select groupFormat('JSONEachRow')(number) from (select number from numbers(3) order by number desc);

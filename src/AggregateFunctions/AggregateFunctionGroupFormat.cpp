@@ -104,15 +104,6 @@ public:
         if (row_begin >= row_end)
             return;
 
-        if (argument_types.size() == 1 && argument_types.front()->isNullable())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`groupFormat` `addBatchSinglePlace` probe: destination type {}, source column {}",
-                argument_types.front()->getName(),
-                columns[0]->getName());
-        }
-
         auto & state = data(place);
 
         if (if_argument_pos >= 0)
@@ -139,10 +130,31 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        const UInt8 *,
+        const UInt8 * null_map,
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
+        if (argument_types.size() == 1 && argument_types.front()->isNullable())
+        {
+            auto & state = data(place);
+            const auto * filter = if_argument_pos >= 0
+                ? &assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData()
+                : nullptr;
+
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (filter && !(*filter)[row])
+                    continue;
+
+                if (null_map[row])
+                    state.columns[0]->insertDefault();
+                else
+                    state.columns[0]->insertFrom(*columns[0], row);
+            }
+
+            return;
+        }
+
         addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
     }
 
