@@ -79,6 +79,12 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`groupFormat` `create` probe: {} arguments, first argument type {}",
+            argument_types.size(),
+            argument_types.empty() ? String("n/a") : argument_types.front()->getName());
+
         new (place) GroupFormatData;
         auto & state = data(place);
         state.columns.reserve(argument_types.size());
@@ -223,14 +229,10 @@ public:
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & /*nested_function*/,
         const DataTypes & arguments,
-        const Array & /*params*/,
+        const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "`groupFormat` `getOwnNullAdapter` probe: {} arguments, first argument type {}",
-            arguments.size(),
-            arguments.empty() ? String("n/a") : arguments.front()->getName());
+        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
     }
 
     bool preservesNullablePayloadForIf() const override
