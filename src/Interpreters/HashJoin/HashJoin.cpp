@@ -744,6 +744,11 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
+        /// Track whether any ON-clause map received an insertion from this block.
+        /// We must not pop the block until all ON clauses have been checked, because
+        /// stored_columns->columns_info is shared across all maps — popping inside the
+        /// loop would leave stored_columns as a dangling pointer for later iterations.
+        size_t inserted_count = 0;
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
             ColumnRawPtrs key_columns;
@@ -817,6 +822,8 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                     });
             }
 
+            inserted_count += is_inserted;
+
             if (!flag_per_row && save_nullmap && is_inserted)
             {
                 auto & h = data->nullmaps.emplace_back(stored_columns, null_map_holder);
@@ -829,22 +836,25 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 data->nullmaps_allocated_size += h.allocatedBytes();
             }
 
-            if (!flag_per_row && !is_inserted)
-            {
-                doDebugAsserts();
-                LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
-                data->allocated_size -= data_allocated_bytes;
-                data->columns.pop_back();
-                doDebugAsserts();
-            }
-
             if (!check_limits)
-                return true;
+                break;
 
             /// TODO: Do not calculate them every time
             total_rows = getTotalRowCount();
             total_bytes = getTotalByteCount();
         }
+
+        if (!flag_per_row && inserted_count == 0)
+        {
+            doDebugAsserts();
+            LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
+            data->allocated_size -= data_allocated_bytes;
+            data->columns.pop_back();
+            doDebugAsserts();
+        }
+
+        if (!check_limits)
+            return true;
     }
     data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
