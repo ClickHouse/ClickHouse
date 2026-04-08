@@ -10,6 +10,8 @@ SET use_statistics = 1;
 SET enable_analyzer = 1;
 
 SET materialize_statistics_on_insert = 0;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET allow_reorder_prewhere_conditions = 1; -- CI may inject False; statistics-based reordering of prewhere conditions suppressed → b,a stays instead of being reordered to a,b after statistics are built
 
 CREATE TABLE tab
 (

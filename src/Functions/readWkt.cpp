@@ -17,10 +17,25 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace
 {
+
+template <typename T>
+void readWKT(const String & str, T & out)
+{
+    try
+    {
+        boost::geometry::read_wkt(str, out);
+    }
+    catch (std::exception & e)
+    {
+        /// Rethrow a more convenient exception type.
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse WKT string: {}", e.what());
+    }
+}
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
 class FunctionReadWKT : public IFunction
@@ -62,7 +77,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const std::string str{column_string.getDataAt(i)};
-            boost::geometry::read_wkt(str, geometry);
+            readWKT(str, geometry);
             serializer.add(geometry);
         }
 
@@ -145,7 +160,7 @@ public:
                     [&]
                     {
                         CartesianPoint point;
-                        boost::geometry::read_wkt(str, point);
+                        readWKT(str, point);
                         point_serializer.add(point);
                     },
                     str, "point", WKTTypes::Point))
@@ -155,7 +170,7 @@ public:
                     [&]
                     {
                         LineString<CartesianPoint> linestring;
-                        boost::geometry::read_wkt(str, linestring);
+                        readWKT(str, linestring);
                         linestring_serializer.add(linestring);
                     },
                     str, "linestring", WKTTypes::LineString))
@@ -165,7 +180,7 @@ public:
                     [&]
                     {
                         Polygon<CartesianPoint> polygon;
-                        boost::geometry::read_wkt(str, polygon);
+                        readWKT(str, polygon);
                         polygon_serializer.add(polygon);
                     },
                     str, "polygon", WKTTypes::Polygon))
@@ -175,7 +190,7 @@ public:
                     [&]
                     {
                         MultiLineString<CartesianPoint> multilinestring;
-                        boost::geometry::read_wkt(str, multilinestring);
+                        readWKT(str, multilinestring);
                         multilinestring_serializer.add(multilinestring);
                     },
                     str, "multilinestring", WKTTypes::MultiLineString))
@@ -185,7 +200,7 @@ public:
                     [&]
                     {
                         MultiPolygon<CartesianPoint> multipolygon;
-                        boost::geometry::read_wkt(str, multipolygon);
+                        readWKT(str, multipolygon);
                         multipolygon_serializer.add(multipolygon);
                     },
                     str, "multipolygon", WKTTypes::MultiPolygon))
@@ -195,7 +210,7 @@ public:
                     [&]
                     {
                         Ring<CartesianPoint> ring;
-                        boost::geometry::read_wkt(str, ring);
+                        readWKT(str, ring);
                         ring_serializer.add(ring);
                     },
                     str, "ring", WKTTypes::Ring))

@@ -248,6 +248,8 @@ namespace FailPoints
     extern const char rmt_merge_selecting_task_no_free_threads[];
     extern const char rmt_merge_selecting_task_max_part_size[];
     extern const char rmt_delay_execute_drop_range[];
+    extern const char replicated_table_remove_zk_before_get_children[];
+    extern const char replicated_table_remove_zk_before_final_multi[];
 }
 
 namespace ErrorCodes
@@ -675,7 +677,7 @@ bool StorageReplicatedMergeTree::checkFixedGranularityInZookeeper(const ZooKeepe
     {
         auto zookeeper = getZooKeeper();
         String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-        auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+        auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseRaw(metadata_str);
         fixed_granularity = (metadata_from_zk.index_granularity_bytes == 0);
     };
 
@@ -1614,16 +1616,25 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
         LOG_WARNING(logger, "Cannot quickly remove nodes without children: {} (table: {}). Will remove recursively.",
                     code, zookeeper_path);
 
+    FailPointInjection::pauseFailPoint(FailPoints::replicated_table_remove_zk_before_get_children);
+
     Strings children;
     code = zookeeper->tryGetChildren(zookeeper_path, children);
     if (code == Coordination::Error::ZNONODE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+    {
+        /// It is possible if ZooKeeper session expired and ephemeral drop lock was deleted,
+        /// allowing another process to complete the removal. The table is completely gone.
+        LOG_WARNING(logger, "Table {} was already removed from ZooKeeper, looks like a concurrent operation removed it", zookeeper_path);
+        return true;
+    }
 
     for (const auto & child : children)
     {
         if (child != "dropped")
             zookeeper->tryRemoveRecursive(fs::path(zookeeper_path) / child);
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::replicated_table_remove_zk_before_final_multi);
 
     ops.clear();
     Coordination::Responses responses;
@@ -1634,9 +1645,11 @@ bool StorageReplicatedMergeTree::removeTableNodesFromZooKeeper(zkutil::ZooKeeper
 
     if (code == Coordination::Error::ZNONODE)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of replicated table. It's a bug");
+        /// It is possible if ZooKeeper session expired and the ephemeral drop lock was deleted,
+        /// allowing another process to complete the removal or create a new table.
+        LOG_WARNING(logger, "Table {} was not completely removed from ZooKeeper, some nodes were already removed by a concurrent operation", zookeeper_path);
     }
-    if (code == Coordination::Error::ZNOTEMPTY)
+    else if (code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_ERROR(
             logger,
@@ -1699,7 +1712,11 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
-    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        metadata_str, metadata_snapshot->getColumns(),
+        metadata_snapshot->add_minmax_index_for_numeric_columns,
+        metadata_snapshot->add_minmax_index_for_string_columns,
+        getContext());
     bool is_metadata_equal = old_metadata.checkEquals(metadata_from_zk, metadata_snapshot->getColumns(), getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true, strict_check, log.load());
 
     if (metadata_version)
@@ -2440,7 +2457,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
-                profile_events_scope.getSnapshot());
+                profile_events_scope.getSnapshot(), {}, {});
 
             return true;
         }
@@ -5364,7 +5381,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            profile_events_scope.getSnapshot(), {}, {});
     };
 
     auto is_zero_copy_part = [&settings_ptr](const auto & data_part)
@@ -5642,7 +5659,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
-            profile_events_scope.getSnapshot());
+            profile_events_scope.getSnapshot(), {}, {});
     };
 
     std::function<MutableDataPartPtr()> get_part;
@@ -6503,7 +6520,11 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     auto zookeeper = getZooKeeper();
 
     auto columns_from_entry = ColumnsDescription::parse(entry.columns_str);
-    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(entry.metadata_str);
+    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        entry.metadata_str, columns_from_entry,
+        current_metadata->add_minmax_index_for_numeric_columns,
+        current_metadata->add_minmax_index_for_string_columns,
+        getContext());
 
     MergeTreeData::DataParts parts;
 
@@ -11391,9 +11412,12 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         /// Try to adjust the create query using values from ZooKeeper.
         auto zookeeper = getZooKeeper();
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parse(zookeeper->get(fs::path(zookeeper_path) / "metadata"));
-
         auto current_metadata = getInMemoryMetadataPtr();
+        auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+            zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
+            current_metadata->add_minmax_index_for_numeric_columns,
+            current_metadata->add_minmax_index_for_string_columns,
+            getContext());
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->getColumns(), getStorageID().getNameForLogs(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, getContext(), *current_metadata);

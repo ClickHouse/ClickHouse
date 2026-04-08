@@ -3,7 +3,6 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
-#include <Core/ColumnNumbers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 
@@ -30,7 +29,6 @@ protected:
 private:
     Operator current_operator;
 
-    ColumnNumbers key_columns_pos;
     std::optional<SetVariants> data;
     Sizes key_sizes;
 

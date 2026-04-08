@@ -1,3 +1,4 @@
+from datetime import datetime
 import glob
 import json as json_module
 import os
@@ -5,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+import threading
 import traceback
 import uuid
 from collections import defaultdict
@@ -19,6 +21,7 @@ from ci.praktika.utils import Shell, Utils
 
 repo_dir = Utils.cwd()
 temp_dir = f"{repo_dir}/ci/tmp"
+p_temp_dir = Path(temp_dir)
 
 LOG_EXPORT_CONFIG_TEMPLATE = """
 remote_servers:
@@ -36,14 +39,6 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    BACKUPS_XML = """
-<clickhouse>
-    <backups>
-        <type>local</type>
-        <path>{CH_RUNTIME_DIR}/var/lib/clickhouse/disks/backups/</path>
-    </backups>
-</clickhouse>
-"""
     MINIO_LOG = f"{temp_dir}/minio.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
@@ -57,13 +52,18 @@ class ClickHouseProc:
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
 
     def __init__(
-        self, fast_test=False, is_db_replicated=False, is_shared_catalog=False
+        self,
+        is_db_replicated=False,
+        is_shared_catalog=False,
+        is_per_test_coverage=False,
+        ch_config_dir="/etc/clickhouse-server",
+        ch_var_lib_dir="/var/lib/clickhouse",
     ):
-        self.fast_test = fast_test
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
-        self.ch_config_dir = f"/etc/clickhouse-server"
-        self.ch_var_lib_dir = f"/var/lib/clickhouse"
+        self.is_per_test_coverage = is_per_test_coverage
+        self.ch_config_dir = ch_config_dir
+        self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
         self.run_path1 = f"{temp_dir}/run_r1"
         self.run_path2 = f"{temp_dir}/run_r2"
@@ -100,10 +100,6 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        # Fast test runs lightweight SQL tests that are not CPU-bound,
-        # so we can use more parallelism than the default cpu_count/2.
-        nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc_fast} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -119,18 +115,32 @@ class ClickHouseProc:
             "CLICKHOUSE_SCHEMA_FILES", f"{self.ch_var_lib_dir}/format_schemas"
         )
         Utils.set_env("CLICKHOUSE_USER_FILES", f"{self.user_files_path}")
-        # if not fast_test:
-        #     with open(f"{self.ch_config_dir}/config.d/backups.xml", "w") as file:
-        #         file.write(self.BACKUPS_XML)
-        self.clean_logs()
+        Utils.clean_dir(Path(self.log_dir))
 
-    def clean_logs(self):
-        Shell.check(
-            f"rm -rf {self.log_dir}",
-            verbose=True,
-        )
-        Shell.check(f"mkdir -p {self.log_dir}", verbose=True, strict=True)
-        return self
+    # there should be one install and one start method instead of many for each job
+    # job specifics should be a part of the job
+    def install_configs(self):
+        Path(f"{self.ch_config_dir}/config.d").mkdir(parents=True, exist_ok=True)
+        with open(f"{self.ch_config_dir}/config.d/storage_conf_backups.xml", "w") as file:
+            file.write(f"""
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>{self.ch_var_lib_dir}/disks/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+""")
+        with open(f"{self.ch_config_dir}/config.d/filesystem_caches_path.xml", "w") as file:
+            file.write(f"""
+<clickhouse>
+    <filesystem_caches_path>{self.ch_var_lib_dir}/filesystem_caches/</filesystem_caches_path>
+    <custom_cached_disks_base_directory replace="replace">{self.ch_var_lib_dir}/filesystem_caches/</custom_cached_disks_base_directory>
+</clickhouse>
+""")
 
     def start_minio(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
@@ -156,13 +166,13 @@ class ClickHouseProc:
 
     def start_azurite(self):
         command = (
-            f"cd {temp_dir} && azurite-rs --host 0.0.0.0 --blob-port 10000 --silent --in-memory",
+            f"cd {temp_dir} && azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --silent --inMemoryPersistence",
         )
         with open(self.AZURITE_LOG, "w") as log_file:
             self.azurite_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT, shell=True
             )
-        print(f"Started azurite-rs asynchronously with PID {self.azurite_proc.pid}")
+        print(f"Started azurite asynchronously with PID {self.azurite_proc.pid}")
         return True
 
     def start_kafka(self):
@@ -196,37 +206,36 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
-        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
-        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
+        os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "10000"
+        os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.05"
+        os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "10000"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "1"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = (
-            "1"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "1"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY"] = "0.5"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY"] = "0.5"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.001"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = "0.0005"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = "0.0005"
 
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY"] = (
-            "0.001"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = (
-            "10000"
-        )
-        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = (
-            "10000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX"] = "1000"
+        os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "1000"
+
+    @staticmethod
+    def set_memory_ratio(ratio):
+        config = f"""<clickhouse>
+    <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+"""
+        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
+        with open(file_path, "w") as f:
+            f.write(config)
+        print(
+            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
         )
 
     def _install_light(self):
@@ -251,6 +260,7 @@ class ClickHouseProc:
             res = res and Shell.check(command, verbose=True)
         if not res:
             print("Failed to install ClickHouse config")
+
         return res
 
     def start_light(self):
@@ -435,26 +445,19 @@ profiles:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
-        Shell.check(f"rm {pid_file}")
-        Shell.check(
-            f"rm -rf {run_path} && mkdir -p {run_path}",
-            verbose=True,
-            strict=True,
-        )
-
-        Shell.check(
-            f"rm -rf {temp_dir}/jemalloc_profiles && mkdir -p {temp_dir}/jemalloc_profiles",
-            verbose=True,
-            strict=True,
-        )
+        Path(pid_file).unlink(missing_ok=True)
+        Utils.clean_dir(Path(run_path))
+        Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
 
         replicas = 3 if self.is_db_replicated else 1
         tsan_memory_limit_mb = (
             Utils.physical_memory() * 65 // 100 // 1024 // 1024 // replicas
         )
 
-        # set profile file for the server
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+        # set profile file for the server (not needed for per-test coverage,
+        # which uses system.coverage_log instead of .profraw files)
+        if not self.is_per_test_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -695,7 +698,11 @@ MAX_EXECUTION_TIME=1800
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < ./tests/docker_scripts/create.sql
+bash ./tests/docker_scripts/create_tpcds.sh
+bash ./tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE test"
 clickhouse-client --query "SHOW TABLES FROM test"
@@ -711,6 +718,7 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
     clickhouse-client --max_estimated_execution_time 0 --max_execution_time "$MAX_EXECUTION_TIME" --max_memory_usage 25G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
     clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
     clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+    # Note: `tpcds` and `tpch` databases are NOT dropped here as they are used by stateful tests.
 else
     clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
     clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
@@ -741,13 +749,43 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         else:
             return False
 
-    def run_fast_test(self, test=""):
-        if Path(self.test_output_file).exists():
-            Path(self.test_output_file).unlink()
-        exit_code = Shell.run(self.fast_test_command.format(TEST=test), verbose=True)
-        return exit_code == 0
+    def run_test(self, cmd, timeout=7200):
+        print(f"Run test: [{cmd}]")
+        with open(self.test_output_file, "w") as f:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,  # line-buffered
+                shell=True,
+                text=True,
+                errors="ignore",
+                start_new_session=True,
+            )
 
-    def terminate(self):
+            def _reader():
+                for line in process.stdout:
+                    # we generally want timestamps for any test, not just a fast test
+                    ts_line = f"{datetime.now():%Y-%m-%d %H:%M:%S} {line}"
+                    print(ts_line, end="")
+                    f.write(ts_line)
+
+            reader_thread = threading.Thread(target=_reader)
+            reader_thread.start()
+
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                print(f"ERROR: fast test timed out after {timeout}s, killing process group")
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                process.wait()
+                reader_thread.join()
+                return False
+
+            reader_thread.join()
+            return process.returncode == 0
+
+    def terminate(self, force=False):
         if self.minio_proc:
             # remove the webhook so it doesn't spam with errors once we stop ClickHouse
             Shell.check(
@@ -780,23 +818,28 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             (self.proc_2, self.pid_file_replica_2, self.pid_2, self.run_path2),
         ):
             if proc and pid:
-                if self.fast_test:
-                    # Use --force (SIGKILL) for fast test to avoid waiting for
-                    # graceful shutdown, which can take over a minute.
-                    # Graceful shutdown is not needed here because we already
-                    # flushed system logs above and don't need to preserve data.
-                    Shell.check(
-                        f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --force >/dev/null",
-                        verbose=True,
-                    )
-                elif not Shell.check(
+                if force:
+                    # Use clickhouse stop --force when this issue is fixed
+                    # https://github.com/ClickHouse/ClickHouse/issues/99142
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                        continue
+                    except subprocess.TimeoutExpired:
+                        pass
+                elif Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
-                    print(
-                        "Failed to stop ClickHouse process gracefully - send ABRT signal to generate core file"
-                    )
-                    Shell.check(f"kill -ABRT {pid}")
+                    continue
+                print(
+                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+                )
+                proc.send_signal(signal.SIGTRAP)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
         return self
 
@@ -843,7 +886,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return res
 
     def _collect_core_dumps(self) -> List[str]:
-        cores = list(Path(temp_dir).glob("run_r*/core.*"))[:3]
+        cores = list(p_temp_dir.glob("run_r*/core.*"))[:3]
         return [
             Utils.encrypt(Utils.compress_zst(f), f"{repo_dir}/ci/defs/public.pem", self.aes_key)
             for f in cores
@@ -949,6 +992,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
+            f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
+            f'grep -a -v "False positive error reports may follow" | '
+            f'grep -a -v "For details see https://github.com/google/sanitizers" | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
@@ -1085,9 +1131,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         command_args_post = f"-- --zookeeper.implementation=testkeeper"
 
-        Shell.check(
-            f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"
-        )
+        Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
 
         self.restore_system_metadata_files_from_remote_database_disk()

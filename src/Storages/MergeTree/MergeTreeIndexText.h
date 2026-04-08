@@ -315,6 +315,17 @@ public:
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, PostingListPtr postings);
 
+    /// Pattern support for LIKE queries.
+    void addPatternTokenInfo(const String & token, TokenPostingsInfoPtr token_info);
+    void matchPatternTokensToQueries(const MergeTreeIndexConditionText & condition_text);
+    void addPatternTokenPostings(const String & token, PostingListPtr postings);
+
+    const TokenToPostingsInfosMap & getPatternTokenInfos() const { return pattern_token_infos; }
+    PostingListPtr getPatternTokenPostings(std::string_view token) const;
+    const std::vector<String> & getPatternTokensForQuery(const TextSearchQuery & query) const;
+    bool canUseLikeDictionaryScan() const { return can_use_like_dictionary_scan; }
+    void setCanUseLikeDictionaryScan(bool value) { can_use_like_dictionary_scan = value; }
+
 private:
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
@@ -327,6 +338,15 @@ private:
     NameSet tokens_with_postings;
     TokenToPostingsInfosMap token_infos;
     bool has_failed_queries = false;
+
+    /// Pattern tokens discovered by scanning the dictionary for LIKE patterns.
+    TokenToPostingsInfosMap pattern_token_infos;
+    /// Actual posting lists for pattern tokens (embedded or single-block).
+    absl::flat_hash_map<String, PostingListPtr> pattern_token_postings;
+    /// Pattern tokens per query (query hash -> matched token names).
+    std::unordered_map<UInt128, std::vector<String>> pattern_tokens_per_query;
+    /// Whether the dictionary scan for patterns completed successfully.
+    bool can_use_like_dictionary_scan = false;
 };
 
 /// Text index granule created on reading of the index.
@@ -351,6 +371,7 @@ public:
 
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
+    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
 
@@ -364,7 +385,9 @@ public:
 
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
-    void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Reads dictionary blocks and analyzes them for patterns.
+    void analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Fills tokens and their infos from the cache.
     /// Returns tokens that are not in the cache and need to be read from the dictionary file.
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
@@ -376,7 +399,7 @@ private:
     bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
-    /// Analyzer for the text index.
+    /// Analyzer for the text index. Tracks regular tokens, pattern tokens, and per-query state.
     std::optional<TextIndexAnalyzer> analyzer;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;

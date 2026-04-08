@@ -256,11 +256,7 @@ public:
     SystemTable & operator=(const SystemTable & c) = default;
     SystemTable & operator=(SystemTable && c) noexcept = default;
 
-    void setName(ExprSchemaTable * est) const
-    {
-        est->mutable_database()->set_database(schema_name);
-        est->mutable_table()->set_table(table_name);
-    }
+    void setName(ExprSchemaTable * est) const;
 };
 
 struct DiskInfo
@@ -274,12 +270,22 @@ struct DiskInfo
     bool is_cached = false; /// true when cache_path != '' in system.disks
 };
 
+/// Escape a string for embedding inside a single-quoted SQL literal (doubles single quotes).
+String escapeSQLString(const String & s, char escape_char = '\'');
+
+/// Percent-encode a string for use as a URL query parameter value.
+/// Spaces are encoded as '+'; all other non-unreserved characters as %XX.
+String urlEncodeQueryParam(const String & s);
+
 class FuzzConfig
 {
 private:
     DB::ClientBase * cb = nullptr;
 
 public:
+    static const constexpr String oracleUser = "buzzhouse_oracle_user";
+    static const constexpr String oracleRole = "buzzhouse_oracle_role";
+
     LoggerPtr log;
     std::ofstream outf;
     DB::Strings collations;
@@ -342,8 +348,10 @@ public:
     bool allow_health_check = true;
     bool enable_compatibility_settings = false;
     bool enable_memory_settings = false;
+    bool enable_sync_settings = false;
     bool enable_backups = true;
     bool enable_renames = true;
+    bool allow_nasty_identifiers = false;
 
     uint64_t seed = 0;
     uint64_t min_insert_rows = 1;
@@ -361,6 +369,7 @@ public:
     uint32_t max_tables = 10;
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
+    uint32_t max_policies = 8;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;

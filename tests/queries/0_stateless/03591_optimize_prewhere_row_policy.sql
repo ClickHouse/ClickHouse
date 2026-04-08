@@ -3,12 +3,14 @@
 SET use_query_condition_cache = 0;
 SET enable_parallel_replicas = 0;
 SET use_statistics = 0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS 03591_test;
 
 DROP ROW POLICY IF EXISTS 03591_rp ON 03591_test;
 
-CREATE TABLE 03591_test (a Int32, b Int32) ENGINE=MergeTree ORDER BY tuple();
+CREATE TABLE 03591_test (a Int32, b Int32) ENGINE=MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 INSERT INTO 03591_test VALUES (3, 1), (2, 2), (3, 2);
 
@@ -27,8 +29,8 @@ EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_mo
 SELECT * FROM 03591_test WHERE throwIf(b=1, 'Should not throw because b=1 is not visible to this user due to the b=2 row policy') SETTINGS optimize_move_to_prewhere = 1;
 
 -- Print plan with actions to make sure a > 0, b = 2 and a = 3 are present in the prewhere section
-EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, additional_table_filters={'03591_test': 'a=3'}, allow_experimental_analyzer = 1;
-EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, additional_table_filters={'03591_test': 'a=3'}, allow_experimental_analyzer = 0;
+EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, additional_table_filters={'03591_test': 'a=3'}, allow_experimental_analyzer = 1, query_plan_merge_filters = 1; -- CI may inject False; additional filter not merged with WHERE, not pushed to prewhere
+EXPLAIN PLAN actions=1 SELECT * FROM 03591_test WHERE a > 0 SETTINGS optimize_move_to_prewhere = 1, additional_table_filters={'03591_test': 'a=3'}, allow_experimental_analyzer = 0, query_plan_merge_filters = 1; -- CI may inject False; additional filter not merged with WHERE, not pushed to prewhere
 
 DROP ROW POLICY 03591_rp ON 03591_test;
 

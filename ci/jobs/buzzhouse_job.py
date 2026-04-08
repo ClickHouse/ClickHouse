@@ -176,6 +176,8 @@ def main():
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
         "max_dictionaries": random.randint(0, 10),
+        "max_functions": random.randint(0, 8),
+        "max_policies": random.randint(0, 8),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),
@@ -199,12 +201,14 @@ def main():
         "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
-        "test_with_fill": random.randint(1, 7) == 1,
+        "test_with_fill": random.randint(1, 10) == 1,
         "compare_success_results": False,  # This can give false positives, so disable it
-        "allow_infinite_tables": random.randint(1, 7) == 1,
+        "allow_infinite_tables": random.randint(1, 10) == 1,
         "allow_health_check": False,  # I have to test this first
+        "allow_nasty_identifiers": random.randint(1, 8) == 1,
         "enable_compatibility_settings": random.randint(1, 4) == 1,
         "enable_memory_settings": random.randint(1, 4) == 1,
+        "enable_sync_settings": random.randint(1, 4) == 1,
         "enable_backups": random.randint(1, 4) == 1,
         "enable_renames": random.randint(1, 4) == 1,
         "allow_hardcoded_inserts": allow_hardcoded_inserts,

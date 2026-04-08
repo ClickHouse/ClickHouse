@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3591
+personal_ws-1.1 en 3617
 AArch
 ABIs
 ACLs
@@ -300,6 +300,7 @@ DockerHub
 DoubleDelta
 Doxygen
 Dresseler
+DuckDB
 Durre
 ECMA
 ETag
@@ -786,6 +787,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1278,6 +1280,7 @@ VIEWs
 Vadim
 Valgrind
 ValueType
+VarUInt
 VectorScan
 Vectorized
 VersionBadge
@@ -1525,6 +1528,7 @@ basename
 bcrypt
 bcrypt's
 bech
+beeterty
 benchmarked
 benchmarking
 bfloat
@@ -1532,6 +1536,7 @@ bigrams
 binlog
 bitAnd
 bitCount
+bitfield
 bitHammingDistance
 bitNot
 bitOr
@@ -1832,6 +1837,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+defragmentation
 delim
 deltaLake
 deltaLakeCluster
@@ -2235,6 +2241,7 @@ initialQueryStartTime
 initializeAggregation
 injective
 inlined
+inlines
 innogames
 inodes
 insertio
@@ -2941,8 +2948,8 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remerge
-removeDiacriticsUTF
 remoteSecure
+removeDiacriticsUTF
 repivot
 replaceAll
 replaceOne
@@ -3128,6 +3135,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+strikethrough
 stringBytesEntropy
 stringBytesUniq
 stringCompare
@@ -3457,6 +3465,7 @@ unencoded
 unencrypted
 unescaped
 unescaping
+unfreed
 unhex
 unicode
 unidimensional
@@ -3527,7 +3536,6 @@ varpop
 varpopstable
 varsamp
 varsampstable
-VarUInt
 vectorized
 vectorscan
 vendoring
@@ -3599,3 +3607,14 @@ znodes
 zookeeperSessionUptime
 zstd
 zxid
+assignees
+Assignees
+backport
+Backport
+backporting
+backports
+Distributable
+PR's
+PyGithub
+PyPI
+rollout

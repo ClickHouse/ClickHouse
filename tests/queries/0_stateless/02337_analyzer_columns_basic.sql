@@ -70,32 +70,32 @@ DROP TABLE test_table;
 
 SELECT 'Table access with database and table name qualification';
 
-DROP DATABASE IF EXISTS 02337_db;
-CREATE DATABASE 02337_db;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
-DROP TABLE IF EXISTS 02337_db.test_table;
-CREATE TABLE 02337_db.test_table
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.test_table;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_table
 (
     id UInt64,
     value String
 ) ENGINE=TinyLog;
 
-INSERT INTO 02337_db.test_table VALUES (0, 'Value');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.test_table VALUES (0, 'Value');
 
 SELECT '--';
 
-DESCRIBE (SELECT test_table.id, test_table.value FROM 02337_db.test_table);
-SELECT test_table.id, test_table.value FROM 02337_db.test_table;
+DESCRIBE (SELECT test_table.id, test_table.value FROM {CLICKHOUSE_DATABASE_1:Identifier}.test_table);
+SELECT test_table.id, test_table.value FROM {CLICKHOUSE_DATABASE_1:Identifier}.test_table;
 
 SELECT '--';
 
-DESCRIBE (SELECT 02337_db.test_table.id, 02337_db.test_table.value FROM 02337_db.test_table);
-SELECT 02337_db.test_table.id, 02337_db.test_table.value FROM 02337_db.test_table;
+DESCRIBE (SELECT {CLICKHOUSE_DATABASE_1:Identifier}.test_table.id, {CLICKHOUSE_DATABASE_1:Identifier}.test_table.value FROM {CLICKHOUSE_DATABASE_1:Identifier}.test_table);
+SELECT {CLICKHOUSE_DATABASE_1:Identifier}.test_table.id, {CLICKHOUSE_DATABASE_1:Identifier}.test_table.value FROM {CLICKHOUSE_DATABASE_1:Identifier}.test_table;
 
 SELECT '--';
 
-DESCRIBE (SELECT test_table.id, test_table.value FROM 02337_db.test_table AS test_table);
-SELECT test_table.id, test_table.value FROM 02337_db.test_table AS test_table;
+DESCRIBE (SELECT test_table.id, test_table.value FROM {CLICKHOUSE_DATABASE_1:Identifier}.test_table AS test_table);
+SELECT test_table.id, test_table.value FROM {CLICKHOUSE_DATABASE_1:Identifier}.test_table AS test_table;
 
-DROP TABLE 02337_db.test_table;
-DROP DATABASE 02337_db;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.test_table;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
