@@ -4,6 +4,9 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Interpreters/ExpressionActions.h>
+
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <roaring/roaring.hh>
 
@@ -51,6 +54,16 @@ private:
     /// Removes blocks with max value less than the given range.
     void cleanupPostingsBlocks(const RowsRange & range);
 
+    /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
+    /// default expression (the original search predicate) on the physical columns.
+    /// Used when the dictionary scan was cut short and pattern tokens are incomplete.
+    void fillColumnFallback(
+        IColumn & column,
+        const String & column_name,
+        const Block & physical_block,
+        size_t offset,
+        size_t num_rows) const;
+
     std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
     MergeTreeDataPartPtr getDataPart() const;
 
@@ -65,6 +78,18 @@ private:
     MergeTreeIndexWithCondition index;
     MergeTreeIndexGranulePtr granule;
     PostingsBlocksMap postings_blocks;
+
+    /// Fallback reader for the physical columns required by the fallback expressions.
+    /// Used when the pattern dictionary scan is cut short.
+    MergeTreeReaderPtr fallback_reader;
+    /// Physical columns that fallback_reader reads (union across all fallback expressions).
+    NamesAndTypesList fallback_columns_list;
+    /// Per-virtual-column compiled expression of the original search predicate.
+    /// Executed on the physical columns when use_fallback[i] is true.
+    absl::flat_hash_map<String, ExpressionActionsPtr> fallback_expressions;
+    /// Per-virtual-column flag: true if this column's query was abandoned during the scan
+    /// and the predicate must be evaluated directly via fallback_expressions.
+    std::vector<bool> use_fallback;
 
     /// True if the reader is allowed to skip marks.
     /// Otherwise it only fills virtual columns.

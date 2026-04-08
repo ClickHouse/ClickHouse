@@ -301,15 +301,22 @@ int64_t MetadataStorageFromDisk::recordAsRemoved(const StoredObjects & blobs)
     /// Persist REMOVED entries to WAL before erasing from in-memory queue,
     /// so that on WAL failure the blobs remain tracked and will be retried.
     if (persist_removal_queue && !blobs.empty())
-    {
         appendToRemovalLog(RemovalLogEntryType::REMOVED, blobs);
-        removal_log_stale_entries += blobs.size();
 
+    /// Erase from in-memory queue before compaction, so that `compactRemovalLog`
+    /// (which snapshots the queue via `takeFirst(0)`) does not re-add these blobs
+    /// as ADD entries in the compacted file — otherwise a restart after compaction
+    /// would resurrect them as zombie pending-removal entries.
+    auto removed_count = objects_to_remove.markAsRemoved(blobs);
+
+    if (persist_removal_queue && !blobs.empty())
+    {
+        removal_log_stale_entries += blobs.size();
         if (removal_log_stale_entries >= removal_log_compaction_threshold)
             compactRemovalLog();
     }
 
-    return objects_to_remove.markAsRemoved(blobs);
+    return removed_count;
 }
 
 bool MetadataStorageFromDisk::hasPendingRemovalBlobs(const StoredObjects & blobs) const
