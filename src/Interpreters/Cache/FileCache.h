@@ -109,6 +109,8 @@ public:
 
     const String & getBasePath() const;
 
+    bool skipCacheOnDiskFailure() const;
+
     static const FileCacheOriginInfo & getCommonOrigin();
 
     static const OriginInfo & getInternalOrigin();
@@ -265,6 +267,8 @@ private:
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
+
+    const bool skip_cache_on_disk_failure;
 
     String name;
     LoggerPtr log;

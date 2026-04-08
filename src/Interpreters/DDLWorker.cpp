@@ -331,6 +331,10 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// NOTE: It does not protect from all cases of query duplication, see also comments in processTask(...)
     if (reinitialized)
     {
+        /// We are reloading the queue after connection loss, so reset the flag.
+        /// It will be set back to true once we successfully initialize a new task.
+        queue_fully_loaded_after_initialization_debug_helper = false;
+
         if (current_tasks.empty())
             LOG_TRACE(log, "Don't have unfinished tasks after restarting");
         else
@@ -466,6 +470,14 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             /// If connection was lost during queue loading
             /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
+            return false;
+        }
+
+        if (first_failed_task_name.has_value())
+        {
+            /// During reinitialization, begin_node is moved back to first_failed_task_name.
+            /// With parallel execution, tasks after first_failed_task_name may already be
+            /// completed or still in current_tasks — that's expected, not a violation.
             return false;
         }
 
@@ -1021,6 +1033,13 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             /// Now we can safely delete entry
             LOG_INFO(log, "Task {} is outdated, deleting it", node_name);
 
+            /// Ensure node_path/finished exists to prevent staled hosts from processing this entry.
+            /// If a host calls createStatusDirs and finds that it created node_path/active
+            /// but node_path/finished already exists, it will detect concurrent deletion and back off.
+            /// This also handles the rare case when the initiator lost connection after enqueueing the entry
+            /// and never created status dirs (node_path/finished didn't exist).
+            zookeeper->tryCreate(fs::path(node_path) / "finished", {}, zkutil::CreateMode::Persistent);
+
             /// We recursively delete all nodes except node_path/finished to prevent staled hosts from
             /// creating node_path/active node (see createStatusDirs(...))
             zookeeper->tryRemoveChildrenRecursive(node_path, /* probably_flat */ false, zkutil::RemoveException{"finished"});
@@ -1036,16 +1055,6 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
             if (rm_entry_res == Coordination::Error::ZNONODE)
             {
                 /// Most likely both node_path/finished and node_path were removed concurrently.
-                bool entry_removed_concurrently = res[0]->error == Coordination::Error::ZNONODE;
-                if (entry_removed_concurrently)
-                    continue;
-
-                /// Possible rare case: initiator node has lost connection after enqueueing entry and failed to create status dirs.
-                /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
-                /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
-                chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
-                rm_entry_res = zookeeper->tryRemove(node_path);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-                chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
             zkutil::KeeperMultiException::check(rm_entry_res, ops, res);

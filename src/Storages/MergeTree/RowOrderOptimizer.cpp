@@ -134,7 +134,7 @@ void updatePermutationInEqualRange(
     auto cmp = [&](size_t lhs, size_t rhs) -> bool { return cardinalities[lhs] < cardinalities[rhs]; };
     stable_sort(column_order.begin(), column_order.end(), cmp);
 
-    std::vector<EqualRange> ranges = {equal_range};
+    EqualRanges ranges = {equal_range};
     LOG_TEST(log, "equal_range: .from: {}, .to: {}", equal_range.from, equal_range.to);
     for (size_t i : column_order)
     {

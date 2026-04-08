@@ -52,6 +52,7 @@ namespace ErrorCodes
     DECLARE(Bool, write_cache_per_user_id_directory, false, "Internal ClickHouse Cloud setting", 0) \
     DECLARE(Bool, allow_dynamic_cache_resize, false, "Allow dynamic resize of filesystem cache", 0) \
     DECLARE(Double, max_size_ratio_to_total_space, 0, "Ratio of `max_size` to total disk space", 0) \
+    DECLARE(Bool, skip_cache_on_disk_failure, false, "If true, bypass filesystem cache operations silently on disk IO errors. If false (default), disk IO errors are propagated as startup failures.", 0) \
     DECLARE(Bool, use_split_cache, false, "Use separation of files to system/data.", 0) \
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
@@ -249,6 +250,14 @@ void FileCacheSettings::validate()
 
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
+    if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`boundary_alignment` ({}) must not exceed `max_file_segment_size` ({}): "
+            "each file segment must be large enough to cover the alignment window",
+            settings[FileCacheSetting::boundary_alignment].value,
+            settings[FileCacheSetting::max_file_segment_size].value);
 
     if (settings[FileCacheSetting::max_size_ratio_to_total_space].changed)
     {

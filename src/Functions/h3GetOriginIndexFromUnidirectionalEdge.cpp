@@ -80,7 +80,9 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            const UInt64 res = getDirectedEdgeOrigin(edge);
+            H3Index origin = 0;
+            getDirectedEdgeOrigin(edge, &origin);
+            const UInt64 res = origin;
             dst_data[row] = res;
         }
 

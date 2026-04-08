@@ -65,6 +65,7 @@ namespace ObjectStorageQueueSetting
 namespace FailPoints
 {
     extern const char object_storage_queue_fail_in_the_middle_of_file[];
+    extern const char object_storage_queue_fail_commit_after_success[];
 }
 
 namespace ErrorCodes
@@ -1002,7 +1003,17 @@ Chunk ObjectStorageQueueSource::generate()
     }
 
     if (!chunk && commit_once_processed)
-        commit(true);
+    {
+        try
+        {
+            commit(true);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Failed to commit data: {}", getCurrentExceptionMessage(false));
+            throw;
+        }
+    }
 
     return chunk;
 }
@@ -1244,8 +1255,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
+                    .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .last_modified = object_metadata->last_modified,
                 },
                 getContext());
 
@@ -1469,6 +1481,12 @@ void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     }
 }
 
+void ObjectStorageQueueSource::setUncertainCommit()
+{
+    for (auto & file : processed_files)
+        file.metadata->setUncertainCommit();
+}
+
 void ObjectStorageQueueSource::finalizeCommit(
     bool insert_succeeded,
     UInt64 commit_id,
@@ -1568,6 +1586,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         exception_message);
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
+    if (requests.empty() && successful_objects.empty())
+        return;
+
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
@@ -1598,10 +1619,20 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         }
         ++try_num;
         code = zk_client->tryMulti(requests, responses);
+        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+            if (code == Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromMessage(
+                    Coordination::Error::ZCONNECTIONLOSS,
+                    "Simulated connection loss after successful commit");
+        });
     });
 
     if (code != Coordination::Error::ZOK)
+    {
+        if (try_num > 1)
+            setUncertainCommit();
         throw zkutil::KeeperMultiException(code, requests, responses);
+    }
 
     const auto commit_id = StorageObjectStorageQueue::generateCommitID();
     const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

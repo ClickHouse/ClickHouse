@@ -35,7 +35,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE |
     grep -v 'src/Storages/System/StorageSystemDashboards.cpp' |
     grep -vP $EXCLUDE_DOCS |
-    xargs grep $@ -n -P '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*override)?\s*))\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' |
+    xargs grep $@ -n -P '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
     grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
@@ -199,6 +199,7 @@ find "$ROOT_PATH"/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
 
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
+    src/Columns
     src/Dictionaries
 )
 

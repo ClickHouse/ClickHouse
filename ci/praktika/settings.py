@@ -65,6 +65,7 @@ class _Settings:
     USE_CUSTOM_GH_AUTH: bool = False
     SECRET_GH_APP_ID: str = ""
     SECRET_GH_APP_PEM_KEY: str = ""
+    SECRET_GH_APP_INSTALLATION_ID: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
     WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
@@ -101,6 +102,8 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
+    KEEPER_STRESS_METRICS_DB_NAME = "keeper_stress_tests"
+    KEEPER_STRESS_METRICS_TABLE_NAME = "keeper_metrics_ts"
     CI_DB_INSERT_TIMEOUT_SEC = 20
     CI_DB_QUERY_TIMEOUT_SEC = 60
 
@@ -157,10 +160,13 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_CI_DB_PASSWORD",
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
+    "KEEPER_STRESS_METRICS_DB_NAME",
+    "KEEPER_STRESS_METRICS_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
+    "SECRET_GH_APP_INSTALLATION_ID",
     "MAIN_BRANCH",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",

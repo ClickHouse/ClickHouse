@@ -12,6 +12,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsTierType.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
@@ -133,17 +134,40 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
+    DECLARE(Bool, use_strict_insert_block_limits, false, R"(
+When enabled, strictly enforces both minimum and maximum insert block size limits.
+
+A block is emitted when:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached.
+- Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached.
+
+When disabled, a block is emitted when:
+- Min thresholds (OR):  min_insert_block_size_rows OR min_insert_block_size_bytes is reached.
+
+**Note**: If max settings are smaller than min settings, the max limits take precedence and blocks will be emitted before min thresholds are reached.
+
+**Note**: This setting is automatically disabled for async inserts, because async inserts attach per-entry deduplication tokens that are incompatible with block splitting that is needed for enforcement of strict limits.
+
+Disabled by default.
+)", 0) \
     DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
-This setting controls block formation in format parsing. When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) or Values format from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
-Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+This setting controls block formation in two contexts:
 
-A block is emitted when either condition is met:
-- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
-- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), blocks are emitted when:
+   - Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached, OR
+   - Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
 
-The default is slightly more than max_block_size. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
+   Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+
+2. INSERT operations: During INSERT queries and when data flows through materialized views, this setting's behavior depends on `use_strict_insert_block_limits`:
+
+    - When enabled: Blocks are emitted when:
+        - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+        - Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
+
+    - When disabled: Blocks are emitted when min_insert_block_size_rows OR min_insert_block_size_bytes is reached. The max_insert_block_size settings are not enforced.
 
 Possible values:
 - Positive integer.
@@ -162,15 +186,19 @@ The minimum size of blocks (in rows) to form for insertion into a table.
 
 This setting controls block formation in two contexts:
 
-1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
-Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
-2. INSERT operations: During INSERT...SELECT queries and when data flows through materialized views, blocks are squashed based on this setting before writing to storage.
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), blocks are emitted when:
+   - Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached, OR
+   - Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
 
-A block in format parsing is emitted when either condition is met:
-- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
-- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+   Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
 
-Smaller sized blocks for insert operation are squashed into bigger ones and emitted when one of min_insert_block_size_rows or min_insert_block_size_bytes is met.
+2. INSERT operations: During INSERT queries and when data flows through materialized views, this setting's behavior depends on `use_strict_insert_block_limits`:
+
+    - When enabled: Blocks are emitted when:
+        - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+        - Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
+
+    - When disabled (default): Blocks are emitted when min_insert_block_size_rows OR min_insert_block_size_bytes is reached. The max_insert_block_size settings are not enforced.
 
 Possible values:
 - Positive integer.
@@ -259,6 +287,9 @@ Higher values will lead to higher memory usage.
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 
 Cloud default value: `50`.
+)", 0) \
+    DECLARE(Bool, finalize_projection_parts_synchronously, false, R"(
+When enabled, projection parts are finalized synchronously during INSERT, reducing peak memory usage at the cost of reduced S3 upload parallelism. By default, each projection's output stream is kept alive until the entire part (including all projections) is finalized, which allows overlapping S3 uploads but increases peak memory proportional to the number of projections. This setting only affects the INSERT path; merge and mutation already finalize projections synchronously.
 )", 0) \
     DECLARE(MaxThreads, max_final_threads, 0, R"(
 Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
@@ -1662,6 +1693,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_part_pruning, true, R"(
+Use statistics to filter out parts during query execution.
+
+When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 
@@ -2323,6 +2364,17 @@ DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
+When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
+When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
+This is intended for testing to find errors caused by different join orderings.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(Bool, enable_join_transitive_predicates, false, R"(
+Infer transitive equi-join predicates from existing join conditions.
+For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
+is added so the join order optimizer can consider direct (A JOIN C) plans.
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
@@ -4464,6 +4516,9 @@ Move arithmetic operations out of aggregation functions
     DECLARE(Bool, optimize_redundant_functions_in_order_by, true, R"(
 Remove functions from ORDER BY if its argument is also in ORDER BY
 )", 0) \
+    DECLARE(Bool, optimize_truncate_order_by_after_group_by_keys, true, R"(
+Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix.
+)", 0) \
     DECLARE(Bool, optimize_if_chain_to_multiif, false, R"(
 Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not beneficial for numeric types.
 )", 0) \
@@ -4848,6 +4903,12 @@ Allow to execute alters which affects not only tables metadata, but also data on
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
+    DECLARE(Bool, enable_materialized_cte, false, R"(
+Enable materialized common table expressions, it will be preferred over enable_global_with_statement
+)", EXPERIMENTAL) \
+    DECLARE(Bool, analyzer_inline_views, false, R"(
+When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
 If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
 
@@ -5957,6 +6018,14 @@ Replace distance functions on `QBit` data type with equivalent ones that only re
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.
+
+Possible values:
+
+- Positive integer.
+)", 0) \
+    \
+    DECLARE(UInt64, highlight_max_matches_per_row, 10000, R"(
+Sets the maximum number of highlight matches per row in the [highlight](/sql-reference/functions/string-search-functions#highlight) function. Use it to protect against excessive memory usage when highlighting highly repetitive patterns in large texts.
 
 Possible values:
 
@@ -7129,6 +7198,12 @@ Uses replicas from cluster_for_parallel_replicas.
 - [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
 - [distributed_index_analysis_min_indexes_bytes_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_bytes_to_activate)
 )", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_index_analysis_only_on_coordinator, false, R"(
+If enabled, distributed index analysis runs only on the coordinator.
+This prevents O(N^2) spawned queries when the predicate contains subqueries (e.g., `IN (SELECT ...)`),
+because each follower replica would otherwise independently trigger its own distributed index analysis,
+but makes distributed index analysis less efficient if large tables are used in the subqueries.
+)", 0) \
     DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
 Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0) \
@@ -7552,6 +7627,20 @@ Allow to add hint (additional predicate) for filtering built from the inverted t
 )", 0) \
     DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
 Maximal selectivity of the filter to use the hint built from the inverted text index.
+)", 0) \
+    DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
+Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
+)", 0) \
+    DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
+Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern required to use the text index LIKE evaluation by the dictionary scan.
+Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0) \
+    DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
+Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(Bool, use_text_index_tokens_cache, false, R"(
 Whether to use a cache of deserialized text index token infos.

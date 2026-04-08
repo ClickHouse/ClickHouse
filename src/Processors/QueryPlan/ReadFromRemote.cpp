@@ -529,7 +529,8 @@ void ReadFromRemote::addLazyPipe(
     }
 
     auto lazily_create_stream = [
-            my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
+            my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
+            query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
@@ -632,6 +633,7 @@ void ReadFromRemote::addLazyPipe(
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+        remote_query_executor->setDistributedFanout(my_distributed_fanout);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -724,6 +726,7 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+            remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
             remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
@@ -753,6 +756,7 @@ void ReadFromRemote::addPipe(
             stage_to_use,
             shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setDistributedFanout(shards.size());
         remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
         if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
@@ -1052,6 +1056,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
+    remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);

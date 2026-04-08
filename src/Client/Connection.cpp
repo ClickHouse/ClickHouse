@@ -1117,7 +1117,7 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out, server_parallel_replicas_protocol_version);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
     out->finishChunk();
     out->next();
 }

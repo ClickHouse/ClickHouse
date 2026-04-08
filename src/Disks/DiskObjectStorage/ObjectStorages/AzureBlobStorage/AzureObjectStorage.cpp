@@ -1,3 +1,4 @@
+#include <exception>
 #include <optional>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Common/ObjectStorageKeyGenerator.h>
@@ -370,14 +371,93 @@ void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, client.get(), true, std::move(blob_storage_log));
 }
 
+void AzureObjectStorage::removeObjectsBatchIfExists(
+    const StoredObjects & objects,
+    const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+    BlobStorageLogWriterPtr blob_storage_log)
+{
+    /// https://github.com/Azure/azure-sdk-for-python/issues/22821#issuecomment-1024753986
+    static constexpr size_t AZURE_BATCH_MAX_SUBREQUESTS = 256;
+
+    const String & container = connection_params.getContainer();
+    const bool is_disk = client_ptr->IsClientForDisk();
+    const auto add_log_entry = [&](const StoredObject & object, size_t elapsed_mu, int32_t error_code = 0, const std::string & error_message = "")
+    {
+        if (!blob_storage_log)
+            return;
+
+        try
+        {
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Delete,
+                container, object.remote_path, object.local_path, object.bytes_size,
+                elapsed_mu, error_code, error_message);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+    };
+
+    StoredObjectsSpan rest_objects = objects;
+    while (!rest_objects.empty())
+    {
+        auto object_batch = rest_objects.first(std::min(rest_objects.size(), AZURE_BATCH_MAX_SUBREQUESTS));
+        SCOPE_EXIT({ rest_objects = rest_objects.last(rest_objects.size() - object_batch.size()); });
+
+        Stopwatch watch;
+        AzureBlobStorage::BlobContainerBatch requests = client_ptr->CreateBatch();
+        std::vector<AzureBlobStorage::DeleteBlobResultDeferredResponse> responses;
+        for (const auto & object : object_batch)
+            responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
+
+        client_ptr->SubmitBatch(requests);
+
+        ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
+        if (is_disk)
+            ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
+
+        size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
+        std::exception_ptr throw_at_end;
+        for (const auto [object, deferred_response] : std::views::zip(object_batch, responses))
+        {
+            try
+            {
+                deferred_response.GetResponse();
+                add_log_entry(object, avg_elapsed_us);
+            }
+            catch (const Azure::Storage::StorageException & e)
+            {
+                if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                {
+                    add_log_entry(object, avg_elapsed_us);
+                }
+                else
+                {
+                    add_log_entry(object, avg_elapsed_us, static_cast<Int32>(e.StatusCode), e.Message);
+
+                    if (!throw_at_end)
+                        throw_at_end = std::current_exception();
+
+                    continue;
+                }
+            }
+        }
+
+        if (throw_at_end)
+            std::rethrow_exception(throw_at_end);
+    }
+}
+
 void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
+    if (objects.empty())
+        return;
+
     auto client_ptr = client.get();
     auto blob_storage_log = BlobStorageLogWriter::create(name);
-    for (const auto & object : objects)
-    {
-        removeObjectImpl(object, client_ptr, true, blob_storage_log);
-    }
+
+    removeObjectsBatchIfExists(objects, client_ptr, blob_storage_log);
 }
 
 static void setAzureBlobTag(

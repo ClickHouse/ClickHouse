@@ -50,6 +50,7 @@ SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 USE_CUSTOM_GH_AUTH = True
 SECRET_GH_APP_ID: str = "woolenwolf_gh_app.clickhouse-app-id"
 SECRET_GH_APP_PEM_KEY: str = "woolenwolf_gh_app.clickhouse-app-key"
+SECRET_GH_APP_INSTALLATION_ID: str = "woolenwolf_gh_app.installation_id"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 

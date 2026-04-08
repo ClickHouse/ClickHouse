@@ -4049,7 +4049,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 
     for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
     {
-        MutableColumns scattered_columns = source[column_idx]->scatter(num_buckets, selector);
+        auto scattered_columns = source[column_idx]->scatter(num_buckets, selector);
 
         for (UInt32 bucket = 0, size = num_buckets; bucket < size; ++bucket)
         {

@@ -90,8 +90,8 @@ MergeTreeReadTask::MergeTreeReadTask(
         {
             chassert(updater);
             const auto & part_columns = info->data_part->getColumns();
-            const auto & column_sizes = info->data_part->getColumnSizes();
-            updater->recordInputColumns(columns, part_columns, column_sizes, read_bytes, should_continue_sampling);
+            auto column_sizes = info->data_part->getColumnSizes();
+            updater->recordInputColumns(columns, part_columns, *column_sizes, read_bytes, should_continue_sampling);
         };
     }
 }

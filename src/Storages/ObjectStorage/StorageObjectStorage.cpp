@@ -3,6 +3,8 @@
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
+#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -57,14 +59,35 @@ namespace ErrorCodes
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
+    const auto path = configuration->getRawPath();
+
+    /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
+    /// (not a path from the distributed task queue), so force distributed_processing to false.
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        local_distributed_processing = false;
+
+    /// For non-glob paths, return directly without any S3 API calls.
+    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
+        return path.path;
+
+    /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
+    /// we can expand the glob locally and return the first path without making any S3 API calls.
+    /// This avoids a redundant HeadObject request that would otherwise be issued by
+    /// creating a file iterator just to get a sample path string.
+    /// Archives are excluded because they need the file iterator to return paths from inside
+    /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
+    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    {
+        auto expanded = expandSelectionGlob(path.path);
+        if (!expanded.empty())
+            return expanded.front();
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
-
-    bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        local_distributed_processing = false;
 
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -83,11 +106,6 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// This iterator is used only to get a sample path for hive partitioning,
     /// not for actual data reading, so do not emit ProfileEvents.
     file_iterator->setEmitProfileEvents(false);
-
-    const auto path = configuration->getRawPath();
-
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -136,7 +154,7 @@ StorageObjectStorage::StorageObjectStorage(
         is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
     bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
-            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
 
     if (!is_table_function && is_delta_lake_cdf)
     {
@@ -469,7 +487,7 @@ void StorageObjectStorage::read(
                 return;
             }
         }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
                  end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
             throw DB::Exception(

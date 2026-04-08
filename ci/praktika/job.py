@@ -82,7 +82,10 @@ class Job:
         # Per-job secrets (exported only for this job, not all jobs in the workflow)
         secrets: list = field(default_factory=list)
 
-        # List of commands to call upon job completion
+        # List of commands to call before job starts
+        pre_hooks: List[str] = field(default_factory=list)
+
+        # List of commands to call after job completes
         post_hooks: List[str] = field(default_factory=list)
 
         def parametrize(self, *param_sets: "Job.ParamSet"):
@@ -215,6 +218,11 @@ class Job:
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
             res.post_hooks = post_hooks
+            return res
+
+        def set_timeout(self, timeout):
+            res = copy.deepcopy(self)
+            res.timeout = timeout
             return res
 
         @staticmethod
