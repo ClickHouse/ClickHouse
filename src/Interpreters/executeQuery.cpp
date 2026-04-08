@@ -405,10 +405,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_table_functions = factories_info.table_functions;
         element.used_executable_user_defined_functions = factories_info.executable_user_defined_functions;
         element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
+        element.used_index_types = factories_info.index_types;
     }
-
-    /// Collect used index types
-    element.used_index_types = context_ptr->getUsedIndexTypes();
 
     element.async_read_counters = context_ptr->getAsyncReadCounters();
     addPrivilegesInfoToQueryLogElement(element, context_ptr);

@@ -78,6 +78,7 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -843,10 +844,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
-    /// Track whether primary key and skip indexes were used for this query
-    std::atomic<bool> primary_key_used = false;
-    std::atomic<bool> skip_indexes_used = false;
-
     std::vector<std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>> parts_top_k_granules(
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
@@ -924,12 +921,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     pk_stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 pk_stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
 
-                /// Track that primary key was used for filtering when ranges were actually analyzed
-                if (metadata_snapshot->hasPrimaryKey() && (total_marks_count > ranges.ranges.getNumberOfMarks() || !ranges.ranges.empty()))
-                {
-                    primary_key_used.store(true, std::memory_order_relaxed);
-                    context->insertUsedIndexType("primary");
-                }
             }
 
             sum_marks_pk.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1028,10 +1019,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                     stat.elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
-
-                    /// Track that this skip index was used
-                    context->insertUsedIndexType(index_and_condition.index->index.name);
-                    skip_indexes_used.store(true, std::memory_order_relaxed);
                 }
 
                 if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
@@ -1063,9 +1050,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
                     min_max_granules->getTopKMarks(top_k_filter_info->limit_n, top_k_handle_ties, parts_top_k_granules[part_index]);
-                    /// Track that minmax index was used for top-K optimization
-                    context->insertUsedIndexType(skip_indexes.skip_index_for_top_k_filtering->index.name);
-                    skip_indexes_used.store(true, std::memory_order_relaxed);
                 }
                 top_k_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
             }
@@ -1256,6 +1240,20 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             top_k_elapsed_us.load() / 1000,
             num_threads);
     }
+
+    /// Record used index types in the query log.
+    if (context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
+    {
+        if (metadata_snapshot->hasPrimaryKey() && key_condition && !key_condition->alwaysUnknownOrTrue())
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::IndexType, "primary");
+
+        for (const auto & index_and_condition : skip_indexes.useful_indices)
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::IndexType, index_and_condition.index->index.type);
+
+        if (skip_indexes.skip_index_for_top_k_filtering)
+            context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::IndexType, skip_indexes.skip_index_for_top_k_filtering->index.type);
+    }
+
     /// Skip empty ranges.
     std::erase_if(
         parts_with_ranges,
