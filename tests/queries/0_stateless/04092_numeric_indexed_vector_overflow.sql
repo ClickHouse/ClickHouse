@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- Regression test for UBSan: float-to-Int64 overflow in initializeFromVectorAndValue
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=100881&sha=341df970a65dbe1925c658ad88c44e9fe1a3f005&name_0=PR&name_1=AST%20fuzzer%20%28arm_asan_ubsan%29
 
