@@ -327,8 +327,9 @@ void updateTTL(
     auto overflow_check = ttl_entry.buildOverflowCheckExpression(context);
     if (overflow_check)
     {
-        for (auto & subquery : overflow_check.expression_and_sets.sets->getSubqueries())
-            subquery->buildSetInplace(context);
+        if (overflow_check.expression_and_sets.sets)
+            for (auto & subquery : overflow_check.expression_and_sets.sets->getSubqueries())
+                subquery->buildSetInplace(context);
 
         auto widened_column = ITTLAlgorithm::executeExpressionAndGetColumn(
             overflow_check.expression_and_sets.expression, block, overflow_check.result_column);

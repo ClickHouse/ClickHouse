@@ -72,6 +72,17 @@ TTLTransform::TTLTransform(
             getExpressions(rows_ttl, subqueries_for_sets, context), rows_ttl,
             old_ttl_infos.table_ttl, current_time_, force_);
 
+        auto overflow_check = rows_ttl.buildOverflowCheckExpression(context);
+        if (overflow_check)
+        {
+            if (overflow_check.expression_and_sets.sets)
+            {
+                auto check_queries = overflow_check.expression_and_sets.sets->getSubqueries();
+                subqueries_for_sets.insert(subqueries_for_sets.end(), check_queries.begin(), check_queries.end());
+            }
+            algorithm->setOverflowCheck(overflow_check.expression_and_sets.expression, overflow_check.result_column);
+        }
+
         /// Skip all data if table ttl is expired for part
         if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
             all_data_dropped = true;
@@ -81,9 +92,24 @@ TTLTransform::TTLTransform(
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
-        algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
+    {
+        auto where_algorithm = std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
-            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_);
+
+        auto overflow_check = where_ttl.buildOverflowCheckExpression(context);
+        if (overflow_check)
+        {
+            if (overflow_check.expression_and_sets.sets)
+            {
+                auto check_queries = overflow_check.expression_and_sets.sets->getSubqueries();
+                subqueries_for_sets.insert(subqueries_for_sets.end(), check_queries.begin(), check_queries.end());
+            }
+            where_algorithm->setOverflowCheck(overflow_check.expression_and_sets.expression, overflow_check.result_column);
+        }
+
+        algorithms.emplace_back(std::move(where_algorithm));
+    }
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(

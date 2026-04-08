@@ -248,7 +248,7 @@ TTLDescription::OverflowCheckExpression TTLDescription::buildOverflowCheckExpres
     overflow_context->setSetting("date_time_overflow_behavior", String("throw"));
 
     OverflowCheckExpression result;
-    result.result_column = ast->getColumnName();
+    result.result_column = ast->formatWithSecretsOneLine();
     result.expression_and_sets = buildExpressionAndSets(ast, expression_columns, overflow_context);
     return result;
 }
