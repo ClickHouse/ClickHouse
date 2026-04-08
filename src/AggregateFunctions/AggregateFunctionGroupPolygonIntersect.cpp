@@ -231,6 +231,11 @@ public:
         {
             UInt64 chunk_count;
             readVarUInt(chunk_count, buf);
+            if (chunk_count == 0)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Corrupted state of aggregate function {}: mode is NonEmpty but chunk count is 0",
+                    getName());
             if (chunk_count > MAX_CHUNKS_PER_STATE)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
