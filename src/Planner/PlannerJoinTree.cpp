@@ -1354,6 +1354,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
                         auto expression_step = std::make_unique<ExpressionStep>(data_header, std::move(adding_column_dag));
+                        expression_step->setStepDescription("Materializing _table column");
                         query_plan.addStep(std::move(expression_step));
                     }
                 }
