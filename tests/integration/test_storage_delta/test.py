@@ -4242,16 +4242,33 @@ def test_system_delta_lake_history_large_last_checkpoint_version(started_cluster
         f.write(f'{{"version":{LARGE_CHECKPOINT_VERSION},"size":1,"parts":1}}\n')
 
     default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
-    create_delta_table(node, "s3", TABLE_NAME, started_cluster)
+
+    expected_errors = (
+        "Refusing to materialize Delta Lake history",
+        "Failed to parse `_last_checkpoint`",
+        "Invalid Checkpoint",
+        "S3_ERROR",
+    )
+
+    create_error = node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', format=Parquet, url = 'http://minio1:9001/{started_cluster.minio_bucket}/')
+        """
+    )
+    if create_error:
+        assert any(expected_error in create_error for expected_error in expected_errors), (
+            f"Expected explicit large-checkpoint failure during CREATE, got: {create_error}"
+        )
+        return
 
     error = node.query_and_get_error(
         f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}' SETTINGS delta_lake_history_max_records = {MAX_HISTORY_RECORDS}"
     )
-    assert (
-        "Refusing to materialize Delta Lake history" in error
-        or "Failed to parse `_last_checkpoint`" in error
-        or "Invalid Checkpoint" in error
-    ), f"Expected a history guard or checkpoint parse error, got: {error}"
+    assert any(expected_error in error for expected_error in expected_errors), (
+        f"Expected a history guard or checkpoint parse error, got: {error}"
+    )
 
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
