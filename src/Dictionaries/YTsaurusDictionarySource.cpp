@@ -72,7 +72,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
 {
     #if USE_YTSAURUS
     auto create_dictionary_source = [](
-        const String& name,
+        const String & name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & root_config_prefix,
