@@ -391,6 +391,7 @@ private:
         DataTypePtr key_column_type;
         Field value;
         DataTypePtr type;
+        bool is_injective = false;
     };
 
     BoolMask checkInRange(
@@ -454,6 +455,26 @@ private:
         std::function<bool(const IFunctionBase &, const IDataType &)> allow_key_function,
         bool allow_modulo_legacy) const;
 
+    /// Transform a constant through all applicable deterministic key-expression DAGs.
+    std::vector<TransformedConstant> transformConstantByDeterministicFunctions(
+        const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
+        const Field & value,
+        const DataTypePtr & type) const;
+
+    struct DeterministicKeyDag
+    {
+        size_t key_column_num = 0;
+        DataTypePtr key_column_type;
+        DeterministicKeyTransformDag dag;
+    };
+
+    /// Extract deterministic sub-DAGs for ALL key columns that can be computed from `expr_name`.
+    std::vector<DeterministicKeyDag> extractAllDeterministicFunctionsDagsFromKey(
+        const String & expr_name,
+        const BuildInfo & info) const;
+
+    /// Convenience wrapper: returns the first match only (used by `canSetValuesBeWrappedByDeterministicFunctions`).
     bool extractDeterministicFunctionsDagFromKey(
         const String & expr_name,
         const BuildInfo & info,

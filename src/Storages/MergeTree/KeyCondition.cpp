@@ -1318,7 +1318,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantFo
     return result;
 }
 
-/// Returns true if a deterministic sub-DAG can be extracted to compute one of the key columns
+/// Returns deterministic sub-DAGs that can be extracted to compute key columns
 /// from a single key subexpression (`expr_name`), without depending on any other inputs.
 /// Assumes `expr_name` matches a key subexpression name (checked by the caller).
 /// This is used to "push" a constant/IN-set through deterministic key functions so that index
@@ -1329,12 +1329,11 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantFo
 /// This is not limited to a linear function chain; the extracted sub-DAG can represent any
 /// deterministic expression over `expr_name` (e.g. nested functions or tuples), as long as it does
 /// not depend on other inputs. For example, for `ORDER BY left(key, length(key) - length(substringIndex(key, '-', -1)) - 1)`
-bool KeyCondition::extractDeterministicFunctionsDagFromKey(
+///
+/// This variant collects ALL matching key columns (not just the first).
+std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::extractAllDeterministicFunctionsDagsFromKey(
     const String & expr_name,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    DeterministicKeyTransformDag & out) const
+    const BuildInfo & info) const
 {
     const auto & dag = info.key_expr->getActionsDAG();
     const auto & sample_block = info.key_expr->getSampleBlock();
@@ -1345,7 +1344,7 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
             expr_nodes.push_back(&node);
 
     if (expr_nodes.empty())
-        return false;
+        return {};
 
     const ActionsDAG::Node * rename_node = expr_nodes.front();
 
@@ -1392,6 +1391,8 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
         return uses_expr;
     };
 
+    std::vector<DeterministicKeyDag> result;
+
     for (const auto & key_node : dag.getNodes())
     {
         auto it = key_columns.find(key_node.result_name);
@@ -1410,17 +1411,37 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
         if (sub.hasNonDeterministic() || sub.hasStatefulFunctions() || sub.hasArrayJoin())
             continue;
 
-        out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(key_node.result_name).type;
+        DeterministicKeyTransformDag transform_dag;
+        transform_dag.actions = std::make_shared<ExpressionActions>(std::move(sub));
+        transform_dag.output_name = key_node.result_name;
+        transform_dag.input_type = required.front().type;
+        transform_dag.input_name = required.front().name;
 
-        out.actions = std::make_shared<ExpressionActions>(std::move(sub));
-        out.output_name = key_node.result_name;
-        out.input_type = required.front().type;
-        out.input_name = required.front().name;
-        return true;
+        result.push_back(DeterministicKeyDag{
+            .key_column_num = it->second,
+            .key_column_type = sample_block.getByName(key_node.result_name).type,
+            .dag = std::move(transform_dag)});
     }
 
-    return false;
+    return result;
+}
+
+/// Convenience wrapper: returns the first match only.
+bool KeyCondition::extractDeterministicFunctionsDagFromKey(
+    const String & expr_name,
+    const BuildInfo & info,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    DeterministicKeyTransformDag & out) const
+{
+    auto all = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+    if (all.empty())
+        return false;
+
+    out_key_column_num = all.front().key_column_num;
+    out_key_column_type = std::move(all.front().key_column_type);
+    out = std::move(all.front().dag);
+    return true;
 }
 
 
@@ -1688,6 +1709,55 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     };
 
     return dfs(output_node, dfs).injective;
+}
+
+std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicFunctions(
+    const RPNBuilderTreeNode & node,
+    const BuildInfo & info,
+    const Field & value,
+    const DataTypePtr & type) const
+{
+    String expr_name = node.getColumnName();
+
+    if (!info.key_subexpr_names.contains(expr_name))
+    {
+        expr_name = node.getColumnNameWithModuloLegacy();
+        if (!info.key_subexpr_names.contains(expr_name))
+            return {};
+    }
+
+    if (value.isNull())
+        return {};
+
+    auto dags = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
+    if (dags.empty())
+        return {};
+
+    std::vector<TransformedConstant> result;
+    result.reserve(dags.size());
+
+    for (auto & candidate : dags)
+    {
+        bool is_injective = isDeterministicTransformInjective(
+            candidate.dag.actions->getActionsDAG(), expr_name, candidate.dag.output_name);
+
+        auto const_column = type->createColumnConst(1, value);
+
+        ColumnPtr transformed_const_column;
+        DataTypePtr transformed_const_type;
+        if (!applyDeterministicDagToColumn(
+                const_column, type, expr_name, candidate.dag, transformed_const_column, transformed_const_type))
+            continue;
+
+        result.push_back(TransformedConstant{
+            .key_column_num = candidate.key_column_num,
+            .key_column_type = std::move(candidate.key_column_type),
+            .value = (*transformed_const_column)[0],
+            .type = transformed_const_type,
+            .is_injective = is_injective});
+    }
+
+    return result;
 }
 
 
@@ -3432,16 +3502,11 @@ bool KeyCondition::extractBinaryComparisonAtoms(
 
     if (candidates.empty() && (original_func_name == "equals" || original_func_name == "notEquals"))
     {
-        auto transformed_candidates = transformConstantForKeyColumns(
-            key_arg,
-            info,
-            const_value,
-            const_type,
-            [](const IFunctionBase & func_base, const IDataType &) { return func_base.isDeterministic(); },
-            /*allow_modulo_legacy*/ true);
+        auto transformed_candidates = transformConstantByDeterministicFunctions(
+            key_arg, info, const_value, const_type);
 
         for (const auto & transformed : transformed_candidates)
-            add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
+            add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ !transformed.is_injective);
     }
 
     if (candidates.empty())
@@ -3481,7 +3546,6 @@ bool KeyCondition::extractBinaryComparisonAtoms(
         else
             key_expr_type_not_null = key_expr_type;
 
-        /// Native integers and DateTime are accurately compared without cast.
         /// Native integers and DateTime/DateTime64 are accurately compared without cast.
         bool cast_not_needed
             = (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
