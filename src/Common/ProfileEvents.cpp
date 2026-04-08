@@ -1080,9 +1080,14 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheReconnectsAfterTimeout, "Distributed Cache read buffer event. The number of reconnects after timeout", ValueType::Number) \
-    M(DistrCacheServerUpdates, "Distributed Cache read buffer event. The number of server updates because server is not longer registered in keeper", ValueType::Number) \
+    M(DistrCacheServerUpdates, "Distributed Cache event. The number of server switches during read or write because the hash-chosen server changed (e.g. due to server deregistration)", ValueType::Number) \
     M(DistrCacheReadErrors, "Distributed Cache read buffer event. Number of distributed cache errors during read", ValueType::Number) \
     M(DistrCacheWriteErrors, "Distributed Cache write buffer event. Number of distributed cache errors during write", ValueType::Number) \
+    M(DistrCacheWriteReconnectsAfterTimeout, "Distributed Cache write buffer event. The number of reconnects after timeout", ValueType::Number) \
+    M(DistrCacheWriteMicroseconds, "Distributed Cache write buffer event. Time spent in WriteBufferFromDistributedCache::writeToFileSegment", ValueType::Microseconds) \
+    M(DistrCacheWriteBytes, "Distributed Cache write buffer event. Number of bytes written to distributed cache", ValueType::Bytes) \
+    M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
+    M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
     M(DistrCacheMakeRequestErrors, "Distributed Cache client event. Number of distributed cache errors when making a request", ValueType::Number) \
