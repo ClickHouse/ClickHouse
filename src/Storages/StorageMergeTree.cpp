@@ -896,6 +896,11 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     return pipeline;
 }
 
+bool StorageMergeTree::hasLightweightDeletedMask() const
+{
+    return has_lightweight_delete_parts.load(std::memory_order_relaxed);
+}
+
 namespace
 {
 
