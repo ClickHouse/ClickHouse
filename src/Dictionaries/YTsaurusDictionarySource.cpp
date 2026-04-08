@@ -52,7 +52,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_ytsaurus_dictionary_source;
 }
 
-template<typename T>
+template <typename T>
 static VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunkSize(const VectorWithMemoryTracking<T>& vec, size_t chunk_size)
 {
     if (!chunk_size)
