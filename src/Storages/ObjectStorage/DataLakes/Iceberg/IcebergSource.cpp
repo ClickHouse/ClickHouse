@@ -1,5 +1,5 @@
 #include "config.h"
-#ifdef USE_AVRO
+#if USE_AVRO
 
 #include <memory>
 #include <optional>

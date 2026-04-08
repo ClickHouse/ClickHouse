@@ -1,5 +1,5 @@
 #include "config.h"
-#ifdef USE_AVRO
+#if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIcebergCluster.h>
 

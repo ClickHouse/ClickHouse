@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#ifdef USE_AVRO
+#if USE_AVRO
 
 #include <optional>
 #include <boost/noncopyable.hpp>
