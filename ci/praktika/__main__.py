@@ -172,8 +172,8 @@ def create_parser():
     _infra_parser.add_argument(
         "--only",
         help=(
-            "Process only specified components (e.g. html report ImageBuilder LaunchTemplate AutoScalingGroup Lambda DedicatedHost EC2Instance). "
-            "With --deploy: deploys only these components or uploads html/report pages. "
+            "Process only specified components (e.g. html ImageBuilder LaunchTemplate AutoScalingGroup Lambda DedicatedHost EC2Instance). "
+            "With --deploy: deploys only these components or uploads html report. "
             "With --shutdown: releases DedicatedHost or terminates EC2Instance."
         ),
         nargs="+",
@@ -204,25 +204,17 @@ def main():
             )
 
         if args.deploy:
-            # Check if html or report is in the only list (case-insensitive)
+            # Check if html is in the only list (case-insensitive)
             normalized_only = (
                 [c.strip().lower() for c in args.only] if args.only else []
             )
-
-            # Handle html deployment
             if normalized_only and "html" in normalized_only:
                 Html.prepare(args.test)
-
-            # Handle report deployment
-            if normalized_only and "report" in normalized_only:
-                Html.prepare_report(args.test)
-
-            # Remove html and report from the list for subsequent infrastructure deployment
-            if normalized_only:
+                # Remove html from the list for subsequent infrastructure deployment
                 remaining_components = [
                     c
                     for c, normalized in zip(args.only, normalized_only)
-                    if normalized not in ("html", "report")
+                    if normalized != "html"
                 ]
                 if remaining_components:
                     from .mangle import _get_infra_config
@@ -231,7 +223,7 @@ def main():
                         all=args.all,
                         only=remaining_components,
                     )
-            elif not normalized_only:
+            else:
                 from .mangle import _get_infra_config
 
                 _get_infra_config().deploy(
