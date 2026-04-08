@@ -10,12 +10,12 @@
 #include <Storages/MergeTree/MergeList.h>
 
 #if defined(OS_LINUX)
-#    include <dlfcn.h>
 #    include <Common/Jemalloc.h>
 #    include <sys/mman.h>
 #    include <sys/types.h>
 #    include <sys/wait.h>
-#    include <signal.h>
+#    include <csignal>
+#    include <cstdint>
 #    include <unistd.h>
 #    include <fcntl.h>
 #    include <sys/syscall.h>
@@ -25,11 +25,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_FORK;
-}
 
 OOMCanary::OOMCanary(ContextMutablePtr context_)
     : context(std::move(context_))
@@ -129,9 +124,9 @@ bool OOMCanary::isRunning() const
 
 pid_t OOMCanary::spawnCanary(size_t size_bytes)
 {
-    /// Get child parameters before `vfork`, because the child must stay in the
+    /// Get child parameters before `fork`, because the child must stay in the
     /// async-signal-safe subset until it either `exec`s or calls `_exit`.
-    long page_size = ::sysconf(_SC_PAGESIZE);
+    int64_t page_size = ::sysconf(_SC_PAGESIZE);
     if (page_size <= 0)
         page_size = 4096;
 
@@ -139,24 +134,11 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     if (max_fd < 0 || max_fd > 65536)
         max_fd = 65536;
 
-#if !defined(USE_MUSL)
-    /// Resolve `vfork` ahead of time to avoid lazy symbol lookup in the child.
-    static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
-#else
-    static void * real_vfork = reinterpret_cast<void *>(&vfork);
-#endif
-
-    if (!real_vfork)
-    {
-        LOG_WARNING(log, "Cannot resolve `vfork` for OOM canary");
-        return -1;
-    }
-
-    pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
+    pid_t pid = ::fork();
 
     if (pid < 0)
     {
-        LOG_WARNING(log, "vfork() failed for OOM canary: {}", errnoToString());
+        LOG_WARNING(log, "fork() failed for OOM canary: {}", errnoToString());
         return -1;
     }
 
@@ -171,7 +153,7 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
     return pid;
 }
 
-[[noreturn]] void OOMCanary::childMain(size_t size_bytes, long page_size, int max_fd)
+[[noreturn]] void OOMCanary::childMain(size_t size_bytes, int64_t page_size, int max_fd)
 {
     /// Close all inherited file descriptors (3..max_fd)
     /// Prefer close_range syscall (Linux 5.9+) for efficiency,
@@ -188,7 +170,10 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
         {
             /// Fallback: iterate through all possible fds
             for (int fd = 3; fd < max_fd; ++fd)
-                ::close(fd);
+            {
+                if (::close(fd) != 0 && errno != EBADF)
+                    {} /// Best effort — nothing we can do in the child
+            }
         }
     }
 
@@ -200,7 +185,8 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
             const char * score = "1000";
             ssize_t written = ::write(fd, score, 4);
             (void)written; /// Best effort; warning is in parent process log
-            ::close(fd);
+            if (::close(fd) != 0)
+                {} /// Best effort
         }
         /// D-05: If write fails, continue running the canary
     }
@@ -223,15 +209,15 @@ pid_t OOMCanary::spawnCanary(size_t size_bytes)
 
     /// Wait for a signal (the parent will SIGKILL us to stop, or OOM killer will SIGKILL us)
     sigset_t mask;
-    ::sigfillset(&mask);
-    ::sigprocmask(SIG_SETMASK, &mask, nullptr);
+    ::sigfillset(&mask); // NOLINT(concurrency-mt-unsafe)
+    ::sigprocmask(SIG_SETMASK, &mask, nullptr); // NOLINT(concurrency-mt-unsafe)
 
     /// Block all signals and wait — sigsuspend atomically unblocks and waits
     sigset_t empty_mask;
-    ::sigemptyset(&empty_mask);
+    ::sigemptyset(&empty_mask); // NOLINT(concurrency-mt-unsafe)
 
     for (;;)
-        ::sigsuspend(&empty_mask);
+        ::sigsuspend(&empty_mask); // NOLINT(concurrency-mt-unsafe)
 }
 
 void OOMCanary::monitorThread()

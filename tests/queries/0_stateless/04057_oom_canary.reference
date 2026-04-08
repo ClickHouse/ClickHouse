@@ -1,4 +1,5 @@
 canary found
 server alive after canary kill
-crash_log entry found
+fatal log entry found
 canary relaunched
+relaunch log entry found
