@@ -201,7 +201,7 @@ private:
                         && isExplicitlyRequestedTable(db_name, tbl_name))
                         throw;
 
-                    LOG_WARNING(
+                    LOG_DEBUG(
                         getLogger("SystemDeltaLakeHistory"),
                         "Skipping table {}: {}",
                         object_storage_table->getStorageID().getFullTableName(),
