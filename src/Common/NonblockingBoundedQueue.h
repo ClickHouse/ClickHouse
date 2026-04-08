@@ -57,7 +57,7 @@ class NonblockingBoundedQueue
 {
 public:
     NonblockingBoundedQueue() = default; // must call init() before using
-    NonblockingBoundedQueue(size_t min_capacity)
+    explicit NonblockingBoundedQueue(size_t min_capacity)
     {
         init(min_capacity);
     }
