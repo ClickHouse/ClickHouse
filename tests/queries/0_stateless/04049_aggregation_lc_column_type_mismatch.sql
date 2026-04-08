@@ -1,16 +1,6 @@
 -- Tags: zookeeper, no-random-settings, no-random-merge-tree-settings
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/100175
---
--- When ALTER TABLE MODIFY COLUMN changes a partition key column to/from
--- LowCardinality on ReplicatedMergeTree, the replica applies the change via
--- ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata, which previously
--- failed to rebuild minmax_count_projection with the new column types.
--- A subsequent SELECT GROUP BY the partition key would use the stale
--- minmax_count_projection (only_merge path), producing columns with the old
--- type while the aggregation hash method expected the new type — triggering
--- an "Invalid aggregation key type for HashMethodSingleLowCardinalityColumn"
--- exception.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
