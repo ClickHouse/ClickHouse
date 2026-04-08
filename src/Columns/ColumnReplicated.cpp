@@ -297,7 +297,6 @@ void ColumnReplicated::insertManyDefaults(size_t length)
 void ColumnReplicated::popBack(size_t n)
 {
     indexes.popBack(n);
-    nested_column = indexes.removeUnusedRowsInIndexedData(std::move(nested_column));
 }
 
 ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint) const
@@ -306,8 +305,7 @@ ColumnPtr ColumnReplicated::filter(const Filter & filt, ssize_t result_size_hint
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
 
     auto filtered_indexes = ColumnIndex(indexes.getIndexes()->filter(filt, result_size_hint));
-    auto filtered_nested_column = filtered_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(filtered_indexes));
+    return create(nested_column, std::move(filtered_indexes));
 }
 
 void ColumnReplicated::filter(const Filter & filt)
@@ -316,8 +314,6 @@ void ColumnReplicated::filter(const Filter & filt)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size());
 
     indexes.getIndexesPtr()->filter(filt);
-    auto mutable_nested = nested_column->assumeMutable();
-    indexes.removeUnusedRowsInIndexedData(mutable_nested);
     insertion_cache.clear();
 }
 
@@ -332,15 +328,13 @@ ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) cons
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), size());
 
     auto permuted_indexes = ColumnIndex(indexes.getIndexes()->permute(perm, limit));
-    auto filtered_nested_column = permuted_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(permuted_indexes));
+    return create(nested_column, std::move(permuted_indexes));
 }
 
 ColumnPtr ColumnReplicated::index(const IColumn & res_indexes, size_t limit) const
 {
     auto indexed_indexes = ColumnIndex(indexes.getIndexes()->index(res_indexes, limit));
-    auto filtered_nested_column = indexed_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(indexed_indexes));
+    return create(nested_column, std::move(indexed_indexes));
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -513,8 +507,7 @@ void ColumnReplicated::protect()
 ColumnPtr ColumnReplicated::replicate(const Offsets & offsets) const
 {
     auto replicated_indexes = ColumnIndex(indexes.getIndexes()->replicate(offsets));
-    auto filtered_nested_column = replicated_indexes.removeUnusedRowsInIndexedData(nested_column);
-    return create(filtered_nested_column, std::move(replicated_indexes));
+    return create(nested_column, std::move(replicated_indexes));
 }
 
 void ColumnReplicated::updateHashWithValue(size_t n, SipHash & hash) const
@@ -674,20 +667,6 @@ void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrack
             nested_source_columns.push_back(source_column);
     }
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
-}
-
-ColumnPtr ColumnReplicated::indexKeepUnusedRows(const IColumn & res_indexes, size_t limit) const
-{
-    auto nested_column_ptr = nested_column;
-    auto indexed_indexes = ColumnIndex(indexes.getIndexes()->index(res_indexes, limit));
-    return create(nested_column_ptr, std::move(indexed_indexes));
-}
-
-ColumnPtr ColumnReplicated::replicateKeepUnusedRows(const Offsets & offsets) const
-{
-    auto nested_column_ptr = nested_column;
-    auto replicated_indexes = ColumnIndex(indexes.getIndexes()->replicate(offsets));
-    return create(nested_column_ptr, std::move(replicated_indexes));
 }
 
 namespace

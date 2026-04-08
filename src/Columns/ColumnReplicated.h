@@ -52,7 +52,7 @@ public:
         return Base::create(std::move(nested_column_), std::move(indexes_));
     }
 
-    static Ptr create(ColumnPtr & nested_column_, ColumnIndex && indexes_)
+    static Ptr create(const ColumnPtr & nested_column_, ColumnIndex && indexes_)
     {
         return Base::create(nested_column_->assumeMutable(), std::move(indexes_));
     }
@@ -189,9 +189,6 @@ public:
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
-
-    ColumnPtr indexKeepUnusedRows(const IColumn & res_indexes, size_t limit) const;
-    ColumnPtr replicateKeepUnusedRows(const Offsets & offsets) const;
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }

@@ -116,20 +116,3 @@ TEST(ColumnReplicated, Replicate)
     auto replicated_column = column->replicate(offsets);
     checkColumn(*replicated_column, {"s1", "s3"}, {1, 1, 0, 0});
 }
-
-TEST(ColumnReplicated, IndexKeepUnusedRows)
-{
-    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
-    auto index_column = ColumnUInt64::create();
-    index_column->getData() = {3, 4};
-    auto filtered_column = column->indexKeepUnusedRows(*index_column, 0);
-    checkColumn(*filtered_column, {"s1", "s2", "s3"}, {2, 0});
-}
-
-TEST(ColumnReplicated, ReplicateKeepUnusedRows)
-{
-    auto column = createColumn({"s1", "s2", "s3"}, {2, 1, 1, 2, 0, 0, 1, 2, 0});
-    IColumn::Offsets offsets = {0, 0, 0, 2, 4, 4, 4, 4, 4};
-    auto replicated_column = column->replicateKeepUnusedRows(offsets);
-    checkColumn(*replicated_column, {"s1", "s2", "s3"}, {2, 2, 0, 0});
-}

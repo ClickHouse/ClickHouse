@@ -299,8 +299,8 @@ struct ScatteredBlock : private boost::noncopyable
         auto indexes_col = selector.getIndexes().getPtr();
         auto columns = block.getColumns();
         for (auto & col : columns)
-            if (const auto * replicated = typeid_cast<const ColumnReplicated *>(col.get()))
-                col = replicated->indexKeepUnusedRows(selector.getIndexes(), /*limit*/ 0);
+            if (col->isReplicated())
+                col = col->index(selector.getIndexes(), /*limit*/ 0);
             else
                 col = ColumnReplicated::create(col, indexes_col);
 

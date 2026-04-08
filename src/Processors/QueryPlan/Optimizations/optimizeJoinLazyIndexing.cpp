@@ -18,13 +18,15 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
     if (node.children.size() != 1)
         return;
 
-    // Enable lazy columns indexing on reachable join operators
+    /// Enable lazy columns indexing on reachable join operators.
     auto * child = node.children.front();
     while (child)
     {
         if (auto * join_step = typeid_cast<JoinStep *>(child->step.get()))
         {
-            join_step->getJoin()->setEnableLazyColumnsIndexing(true);
+            /// Only enable lazy columns indexing if there are more than 3 probe side columns.
+            if (child->children.size() >= 1 && child->children.front()->step->getOutputHeader()->columns() >= 3)
+                join_step->getJoin()->setEnableLazyColumnsIndexing(true);
             break;
         }
 
