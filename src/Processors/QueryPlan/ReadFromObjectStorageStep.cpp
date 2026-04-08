@@ -173,7 +173,22 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
 
 bool ReadFromObjectStorageStep::requestReadingInOrder() const
 {
-    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    auto metadata = storage_snapshot->metadata;
+
+    /// For datalake configurations, ensure datalake_table_state is present in the metadata
+    /// before calling isDataSortedBySortingKey(). Same rationale as in createFileIterator().
+    if (configuration->isDataLakeConfiguration()
+        && metadata && !metadata->datalake_table_state.has_value())
+    {
+        if (auto state = configuration->getTableStateSnapshot(getContext()))
+        {
+            auto fixed_metadata = std::make_shared<StorageInMemoryMetadata>(*metadata);
+            fixed_metadata->setDataLakeTableState(*state);
+            metadata = std::move(fixed_metadata);
+        }
+    }
+
+    return configuration->isDataSortedBySortingKey(metadata, getContext());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
