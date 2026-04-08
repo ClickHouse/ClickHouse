@@ -1,5 +1,9 @@
 #pragma once
 
+#include "config.h"
+
+#if USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/StorageDataLake.h>
 #include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -32,7 +36,7 @@ public:
         DataLakeStorageSettingsPtr datalake_settings_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         bool distributed_processing_,
-        bool if_no_exists,
+        bool if_not_exists,
         ASTPtr partition_by_,
         ASTPtr order_by_,
         bool is_table_function_,
@@ -147,3 +151,5 @@ protected:
 using StorageIceberg = StorageDataLake<IcebergMetadata>;
 
 }
+
+#endif

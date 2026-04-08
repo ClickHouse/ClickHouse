@@ -190,7 +190,7 @@ createStorageDataLake(const StorageFactory::Arguments & args, ObjectStorageType 
 
 #endif
 
-[[maybe_unused]] static DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
+[[maybe_unused]] DataLakeStorageSettingsPtr getDataLakeStorageSettings(const ASTStorage & storage_def)
 {
     auto storage_settings = std::make_shared<DataLakeStorageSettings>();
     if (storage_def.settings)

@@ -1,3 +1,6 @@
+#include "config.h"
+
+#if USE_AVRO
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StorageIceberg.h>
 
 #include <Common/Exception.h>
@@ -387,3 +390,5 @@ void StorageDataLake<IcebergMetadata>::checkAlterIsPossible(const AlterCommands 
 }
 
 }
+
+#endif
