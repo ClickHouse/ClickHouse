@@ -606,6 +606,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time64:
             return "long";
         case TypeIndex::Float32:
             return "float";

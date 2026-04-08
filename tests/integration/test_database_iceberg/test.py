@@ -1015,10 +1015,16 @@ def test_partitioning_by_time(started_cluster, storage_type):
     )
 
     table = create_table(catalog, namespace, table_name, schema=schema, partition_spec=partition_spec)
-    data = [{"key": dtime(12,0,0), "value": "test"}]
+    data = [{"key": dtime(12,0,0), "value": "test1"},
+            {"key": dtime(13,0,0), "value": "test2"},
+            {"key": dtime(14,0,0), "value": "test3"},
+            ]
     df = pa.Table.from_pylist(data)
     table.append(df)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}`") == "12:00:00.000000\ttest\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` ORDER BY key") == "12:00:00.000000\ttest1\n13:00:00.000000\ttest2\n14:00:00.000000\ttest3\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE key = '13:00:00.000000' ORDER BY key") == "13:00:00.000000\ttest2\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE key >= '13:00:00.000000' ORDER BY key") == "13:00:00.000000\ttest2\n14:00:00.000000\ttest3\n"
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` WHERE key <= '13:00:00.000000' ORDER BY key") == "12:00:00.000000\ttest1\n13:00:00.000000\ttest2\n"

@@ -477,6 +477,49 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
         case TypeIndex::Decimal128: decimal(16, getDecimalPrecision(*type), getDecimalScale(*type)); break;
         case TypeIndex::Decimal256: decimal(32, getDecimalPrecision(*type), getDecimalScale(*type)); break;
 
+        case TypeIndex::Time: types(T::INT32, C::UINT_32, int_type(32, false)); break;
+
+        case TypeIndex::Time64:
+        {
+            std::optional<parq::ConvertedType::type> converted;
+            parq::TimeUnit unit;
+            const auto & dt = assert_cast<const DataTypeTime64 &>(*type);
+            UInt32 scale = dt.getScale();
+            UInt32 converted_scale;
+            if (scale <= 3)
+            {
+                converted = parq::ConvertedType::TIME_MILLIS;
+                unit.__set_MILLIS({});
+                converted_scale = 3;
+            }
+            else if (scale <= 6)
+            {
+                converted = parq::ConvertedType::TIME_MICROS;
+                unit.__set_MICROS({});
+                converted_scale = 6;
+            }
+            else if (scale <= 9)
+            {
+                unit.__set_NANOS({});
+                converted_scale = 9;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected Time64 scale: {}", scale);
+            }
+
+            parq::TimeType tt;
+            /// (Shouldn't we check the Time64's timezone parameter here? No, the actual number
+            /// in Time64 column is always in UTC, regardless of the timezone parameter.)
+            tt.__set_isAdjustedToUTC(true);
+            tt.__set_unit(unit);
+            parq::LogicalType t;
+            t.__set_TIME(tt);
+            types(T::INT64, converted, t);
+            state.datetime_multiplier = DataTypeTime64::getScaleMultiplier(converted_scale - scale);
+            break;
+        }
+
         default:
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of column '{}' is not supported for conversion into Parquet data format.", type->getFamilyName(), name);
     }
