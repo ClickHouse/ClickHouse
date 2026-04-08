@@ -3662,6 +3662,18 @@ bool KeyCondition::extractBinaryComparisonAtoms(
         if (!normalized)
             continue;
 
+        /// If normalize_candidate folded the comparison to ALWAYS_TRUE/ALWAYS_FALSE
+        /// (e.g., via float-to-integer rewriting), emit the element directly without
+        /// passing it through atom_map (which would overwrite the function).
+        if (normalized->element.function == RPNElement::ALWAYS_TRUE
+            || normalized->element.function == RPNElement::ALWAYS_FALSE)
+        {
+            out.emplace_back(std::move(normalized->element));
+            if (candidate.key_column_num < has_atom_for_key_column.size())
+                has_atom_for_key_column[candidate.key_column_num] = true;
+            continue;
+        }
+
         auto atom_it_for_candidate = atom_map.find(normalized->func_name);
         if (atom_it_for_candidate == atom_map.end())
             continue;
