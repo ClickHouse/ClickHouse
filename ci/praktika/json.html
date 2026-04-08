@@ -607,8 +607,8 @@
     // Function to determine status class based on value
     function getStatusClass(status) {
         const lowerStatus = status.toLowerCase();
-        if (lowerStatus === 'xfail') return 'status-success';  // expected failure: green
-        if (lowerStatus === 'xpass') return 'status-fail';     // unexpected pass: red
+        if (lowerStatus === 'xfail') return 'status-other';  // expected failure: gray (known, not alarming)
+        if (lowerStatus === 'xpass') return 'status-fail';    // unexpected pass: red
         if (lowerStatus.includes('success') || lowerStatus === 'ok') return 'status-success';
         if (lowerStatus.includes('fail')) return 'status-fail';
         if (lowerStatus.includes('pending')) return 'status-pending';

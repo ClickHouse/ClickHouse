@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3602
+personal_ws-1.1 en 3617
 AArch
 ABIs
 ACLs
@@ -1280,6 +1280,7 @@ VIEWs
 Vadim
 Valgrind
 ValueType
+VarUInt
 VectorScan
 Vectorized
 VersionBadge
@@ -1527,6 +1528,7 @@ basename
 bcrypt
 bcrypt's
 bech
+beeterty
 benchmarked
 benchmarking
 bfloat
@@ -1534,6 +1536,7 @@ bigrams
 binlog
 bitAnd
 bitCount
+bitfield
 bitHammingDistance
 bitNot
 bitOr
@@ -2945,8 +2948,8 @@ reinterpretAsString
 reinterpretAsUInt
 reinterpretAsUUID
 remerge
-removeDiacriticsUTF
 remoteSecure
+removeDiacriticsUTF
 repivot
 replaceAll
 replaceOne
@@ -3462,6 +3465,7 @@ unencoded
 unencrypted
 unescaped
 unescaping
+unfreed
 unhex
 unicode
 unidimensional
@@ -3532,7 +3536,6 @@ varpop
 varpopstable
 varsamp
 varsampstable
-VarUInt
 vectorized
 vectorscan
 vendoring
@@ -3604,3 +3607,14 @@ znodes
 zookeeperSessionUptime
 zstd
 zxid
+assignees
+Assignees
+backport
+Backport
+backporting
+backports
+Distributable
+PR's
+PyGithub
+PyPI
+rollout

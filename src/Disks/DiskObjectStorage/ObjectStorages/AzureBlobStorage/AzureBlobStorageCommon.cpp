@@ -364,7 +364,6 @@ BlobClientOptions getClientOptions(
     if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
     {
         request_throttler.get_throttler = std::make_shared<Throttler>(
-            "azure_get_rps",
             settings[Setting::azure_max_get_rps],
             settings[Setting::azure_max_get_burst],
             ProfileEvents::AzureGetRequestThrottlerCount,
@@ -383,7 +382,6 @@ BlobClientOptions getClientOptions(
     if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
     {
         request_throttler.put_throttler = std::make_shared<Throttler>(
-            "azure_put_rps",
             settings[Setting::azure_max_put_rps],
             settings[Setting::azure_max_put_burst],
             ProfileEvents::AzurePutRequestThrottlerCount,

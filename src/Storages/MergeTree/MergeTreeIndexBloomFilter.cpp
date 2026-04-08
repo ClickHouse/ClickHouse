@@ -19,6 +19,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 
@@ -427,6 +428,25 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
     return traverseFunction(node, out, nullptr /*parent*/);
 }
 
+namespace
+{
+
+/// Hash the JSON path string and append a predicate entry for bloom filter index.
+void fillJSONPathBloomPredicate(
+    const JSONSubcolumnIndexInfo & json_info,
+    const Block & header,
+    MergeTreeIndexConditionBloomFilter::RPNElement & out)
+{
+    const DataTypePtr & index_type = header.getByPosition(json_info.header_position).type;
+    const auto actual_type = BloomFilter::getPrimitiveType(index_type);
+    Field path_field(json_info.path);
+    out.predicate.emplace_back(std::make_pair(
+        json_info.header_position,
+        BloomFilterHash::hashWithField(actual_type.get(), path_field)));
+}
+
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
     if (!node.isFunction())
@@ -444,6 +464,25 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
             auto argument = function.getArgumentAt(i);
             if (traverseFunction(argument, out, &node))
                 return true;
+        }
+    }
+
+    /// Handle isNotNull for JSON subcolumns: isNotNull(json.some.path)
+    /// When a JSON path is absent, the value is NULL (for Dynamic/Nullable types),
+    /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
+    if (function_name == "isNotNull" && arguments_size == 1)
+    {
+        auto arg = function.getArgumentAt(0);
+        if (auto json_info = tryMatchNodeToJSONIndex(arg, header))
+        {
+            auto arg_type = arg.getDAGNode()->result_type;
+            /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
+            if (!canContainNull(*arg_type))
+                return false;
+
+            fillJSONPathBloomPredicate(*json_info, header, out);
+            out.function = RPNElement::FUNCTION_HAS;
+            return true;
         }
     }
 
@@ -529,6 +568,38 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         if (function_name == "notIn"  || function_name == "globalNotIn")
             out.function = RPNElement::FUNCTION_NOT_IN;
+
+        return true;
+    }
+
+    /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
+    /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
+    /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header))
+    {
+        if (function_name != "in" && function_name != "globalIn")
+            return false;
+
+        if (!prepared_set)
+            return false;
+
+        auto key_type = key_node.getDAGNode()->result_type;
+
+        /// Check safety: if key type is non-Nullable and the set contains the default value,
+        /// we cannot skip granules where the path is absent.
+        if (!canContainNull(*key_type))
+        {
+            auto default_column_to_check = key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, key_type, ""};
+            ColumnsWithTypeAndName default_columns_with_type_to_check = {default_column_with_type_to_check};
+            auto result = prepared_set->execute(default_columns_with_type_to_check, false);
+            const auto & result_data = assert_cast<const ColumnUInt8 &>(*result).getData();
+            if (result_data[0])
+                return false;
+        }
+
+        fillJSONPathBloomPredicate(*json_info, header, out);
+        out.function = RPNElement::FUNCTION_IN;
 
         return true;
     }
@@ -795,6 +866,24 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
         }
+
+        return true;
+    }
+
+    /// Try to match the column name to a JSONAllPaths index for JSON subcolumn filtering.
+    /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions
+    /// like `json.some.path = value`, `json.some.path.:Type = value`, or `json.path::Type = value`.
+    if (auto json_info = tryMatchNodeToJSONIndex(key_node, header))
+    {
+        if (function_name != "equals")
+            return false;
+
+        auto key_type = key_node.getDAGNode()->result_type;
+        if (!isJSONPathFilterSafe(key_type, value_field))
+            return false;
+
+        out.function = RPNElement::FUNCTION_EQUALS;
+        fillJSONPathBloomPredicate(*json_info, header, out);
 
         return true;
     }

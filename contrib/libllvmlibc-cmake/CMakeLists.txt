@@ -62,7 +62,7 @@ set(LLVMLIBC_DEFS_COMMON
     LIBC_MATH_HAS_NO_ERRNO=1
     LIBC_MATH_HAS_NO_EXCEPT=1
     LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1
-    LIBC_ERRNO_MODE=6
+    LIBC_ERRNO_MODE=6 # Needed to make building with -O0 work. Details in https://github.com/ClickHouse/ClickHouse/pull/100023
 )
 
 if (ARCH_AMD64)
