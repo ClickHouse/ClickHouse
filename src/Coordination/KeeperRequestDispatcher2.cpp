@@ -284,8 +284,14 @@ bool KeeperRequestDispatcher2::putRequest(const Coordination::ZooKeeperRequestPt
         }
     }
 
-    /// requests_queue_bytes may briefly become negative if the other thread popped the request and
-    /// decreased requests_queue_bytes before we got here.
+    /// We increment requests_queue_bytes after adding it to queue rather than before. So
+    ///  * it may briefly become negative if the other thread popped the request and decreased the
+    ///     counter very quickly,
+    ///  * we may go a little over the limit if multiple threads check the counter simultaneously,
+    ///     then increment it before seeing each other's changes.
+    /// This is all fine. Alternatively, we could pre-increment the counter and have these problems instead:
+    ///  * can get stuck if multiple threads try to enqueue requests whose total size is above the limit,
+    ///  * have to un-increment if failed to enqueue.
     requests_queue_bytes.fetch_add(int64_t(getRequestBytesCost(*request)));
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
 
