@@ -107,9 +107,9 @@ bool SLRUFileCachePriority::canFit( /// NOLINT
     const CacheStateGuard::Lock & lock,
     IteratorPtr reservee,
     const OriginInfo &,
-    bool best_effort) const
+    bool is_initial_load) const
 {
-    if (best_effort)
+    if (is_initial_load)
         return probationary_queue.canFit(size, elements, lock) || protected_queue.canFit(size, elements, lock);
 
     if (reservee)
@@ -128,10 +128,10 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
     size_t size,
     const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock * state_lock,
-    bool is_startup)
+    bool is_initial_load)
 {
     bool is_protected = false;
-    if (is_startup)
+    if (is_initial_load)
     {
         chassert(size);
         if (!state_lock)
