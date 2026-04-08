@@ -6,6 +6,7 @@ SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
+SET cross_to_inner_join_rewrite = 0;
 
 -- =====================================================================
 -- 1. Disconnected graph: two independent 2-table components.
