@@ -195,6 +195,7 @@ struct TokenPostingsInfo
     absl::InlinedVector<RowsRange, 1> ranges;
     PostingListPtr embedded_postings;
 
+    bool hasLargePostings() const { return offsets.size() > 1; }
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
     size_t bytesAllocated() const;
@@ -281,6 +282,8 @@ struct TextIndexSerialization
     static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, PostingsSerialization * postings_serialization);
 };
 
+using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
+
 class TextIndexAnalyzer
 {
 public:
@@ -302,13 +305,13 @@ public:
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
 
-    bool hasFailedQueries() const { return has_failed_queries; }
+    bool alwaysFalse() const { return always_false; }
     const TokenToPostingsInfosMap & getTokenInfos() const { return token_infos; }
     const NameSet & getMissingTokens() const { return missing_tokens; }
     const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     bool isTokenNeeded(std::string_view token) const { return query_count_by_token.at(token) > 0; }
-    bool hasPostingsForToken(const String & token) const { return tokens_with_postings.contains(token); }
+    bool hasReadPostings(const String & token);
 
     void addMissingToken(std::string_view token);
     void addLargePostings(std::string_view token);
@@ -334,10 +337,10 @@ private:
     std::unordered_map<std::string_view, size_t> query_count_by_token;
     std::unordered_map<std::string_view, std::vector<UInt128>> queries_by_token;
 
+    bool always_false = false;
     NameSet missing_tokens;
-    NameSet tokens_with_postings;
     TokenToPostingsInfosMap token_infos;
-    bool has_failed_queries = false;
+    TokenToPostingsMap small_postings;
 
     /// Pattern tokens discovered by scanning the dictionary for LIKE patterns.
     TokenToPostingsInfosMap pattern_token_infos;

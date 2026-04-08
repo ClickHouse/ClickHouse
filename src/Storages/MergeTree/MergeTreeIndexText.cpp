@@ -460,8 +460,6 @@ void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPt
     });
 
     token_infos[token] = token_info;
-    if (token_info->embedded_postings)
-        tokens_with_postings.emplace(token);
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
@@ -471,7 +469,16 @@ void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr posti
         query_builder.addPostings(postings);
     });
 
-    tokens_with_postings.emplace(token);
+    small_postings[String(token)] = std::move(postings);
+}
+
+bool TextIndexAnalyzer::hasReadPostings(const String & token)
+{
+    if (small_postings.contains(token))
+        return true;
+
+    auto it = token_infos.find(token);
+    return it != token_infos.end() && it->second->embedded_postings;
 }
 
 template <typename Operation>
@@ -489,7 +496,10 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
         if (query_builder.is_failed)
         {
-            has_failed_queries = true;
+            if (query_builder.query->search_mode == TextSearchMode::All)
+            {
+                always_false = true;
+            }
 
             for (const auto & other_token : query_builder.query->tokens)
             {
@@ -586,7 +596,6 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     if (sparse_index->empty())
         return;
 
-    auto global_search_mode = condition_text.getGlobalSearchMode();
     auto tokens_cache = condition_text.tokensCache();
     cardinalities_cache->sortTokens(tokens_to_read);
 
@@ -636,7 +645,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
             analyzer->addMissingToken(token);
         }
 
-        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        if (analyzer->alwaysFalse())
         {
             cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
             return;
@@ -657,7 +666,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
             analyzer->addTokenInfo(token, infos[i]);
         }
 
-        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        if (analyzer->alwaysFalse())
         {
             cardinalities_cache->update(analyzer->getTokenInfos(), analyzer->getMissingTokens(), state.part.rows_count);
             return;
@@ -846,13 +855,10 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
     using enum PostingsSerialization::Flags;
     const auto & token_infos = analyzer->getTokenInfos();
 
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    const auto & global_search_mode = condition_text.getGlobalSearchMode();
-
     /// Process regular tokens.
     for (const auto & [token, token_info] : token_infos)
     {
-        if (!analyzer->isTokenNeeded(token) || analyzer->hasPostingsForToken(token))
+        if (!analyzer->isTokenNeeded(token) || analyzer->hasReadPostings(token))
             continue;
 
         if (!(token_info->header & SingleBlock))
@@ -866,7 +872,7 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
             analyzer->addPostings(token, std::move(block));
         }
 
-        if (global_search_mode == TextSearchMode::All && analyzer->hasFailedQueries())
+        if (analyzer->alwaysFalse())
             break;
     }
 

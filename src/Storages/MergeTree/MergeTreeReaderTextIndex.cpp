@@ -296,10 +296,8 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
     for (const auto & [token, token_info] : token_infos)
     {
-        if (analyzer.hasPostingsForToken(token) || !analyzer.isTokenNeeded(token) || !useful_tokens.contains(token))
-            continue;
-
-        large_postings_streams.emplace(token, make_stream());
+        if (useful_tokens.contains(token) && token_info->hasLargePostings())
+            large_postings_streams.emplace(token, make_stream());
     }
 
     for (const auto & [token, token_info] : analyzer.getPatternTokenInfos())
