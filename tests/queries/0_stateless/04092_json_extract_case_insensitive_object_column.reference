@@ -1,6 +1,8 @@
-JSONExtractStringCaseInsensitive	value
-JSONExtractStringCaseInsensitive upper	value
-JSONExtractIntCaseInsensitive	42
-JSONExtractRawCaseInsensitive	"value"
-JSONExtractString exact	value
-JSONExtractString wrong case	
+string lower	value
+string upper	value
+int nested	42
+raw	"value"
+exact match	value
+wrong case	
+multi-key match	1
+multi-key int match	1

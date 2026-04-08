@@ -1,21 +1,22 @@
--- Tags: no-fasttest
 SET allow_experimental_json_type = 1;
 
-DROP TABLE IF EXISTS test_ci_json_obj;
-CREATE TABLE test_ci_json_obj (data JSON) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO test_ci_json_obj VALUES ('{"Key": "value"}');
-INSERT INTO test_ci_json_obj VALUES ('{"Nested": {"InnerKey": 42}}');
-
 -- Case-insensitive extraction should find keys regardless of case
-SELECT 'JSONExtractStringCaseInsensitive', JSONExtractStringCaseInsensitive(data, 'key') FROM test_ci_json_obj ORDER BY data LIMIT 1;
-SELECT 'JSONExtractStringCaseInsensitive upper', JSONExtractStringCaseInsensitive(data, 'KEY') FROM test_ci_json_obj ORDER BY data LIMIT 1;
-SELECT 'JSONExtractIntCaseInsensitive', JSONExtractIntCaseInsensitive(data, 'nested', 'innerkey') FROM test_ci_json_obj ORDER BY data DESC LIMIT 1;
-SELECT 'JSONExtractRawCaseInsensitive', JSONExtractRawCaseInsensitive(data, 'key') FROM test_ci_json_obj ORDER BY data LIMIT 1;
+SELECT 'string lower', JSONExtractStringCaseInsensitive('{"Key": "value", "other": "x"}'::JSON, 'key');
+SELECT 'string upper', JSONExtractStringCaseInsensitive('{"Key": "value", "other": "x"}'::JSON, 'KEY');
+SELECT 'int nested', JSONExtractIntCaseInsensitive('{"Nested": {"InnerKey": 42}, "z": 0}'::JSON, 'nested', 'innerkey');
+SELECT 'raw', JSONExtractRawCaseInsensitive('{"Key": "value", "other": "x"}'::JSON, 'key');
 
 -- Case-sensitive extraction with exact case should still work
-SELECT 'JSONExtractString exact', JSONExtractString(data, 'Key') FROM test_ci_json_obj ORDER BY data LIMIT 1;
+SELECT 'exact match', JSONExtractString('{"Key": "value"}'::JSON, 'Key');
 
 -- Case-sensitive extraction with wrong case should return empty
-SELECT 'JSONExtractString wrong case', JSONExtractString(data, 'key') FROM test_ci_json_obj ORDER BY data LIMIT 1;
+SELECT 'wrong case', JSONExtractString('{"Key": "value"}'::JSON, 'key');
 
-DROP TABLE test_ci_json_obj;
+-- Multiple keys differing only in case: the result is non-deterministic,
+-- but must be one of the matching values, not an unrelated key.
+SELECT 'multi-key match',
+    JSONExtractStringCaseInsensitive('{"Name": "alice", "NAME": "bob", "name": "charlie", "age": "30"}'::JSON, 'name')
+    IN ('alice', 'bob', 'charlie');
+SELECT 'multi-key int match',
+    JSONExtractIntCaseInsensitive('{"Val": 1, "VAL": 2, "other": 99}'::JSON, 'val')
+    IN (1, 2);
