@@ -23,22 +23,22 @@ INSERT INTO fb_c SELECT number FROM numbers(4);
 INSERT INTO fb_d SELECT number, number % 4 FROM numbers(8);
 
 -- dphyp alone fails.
-SELECT count() FROM fb_a a, fb_b b, fb_c c, fb_d d
+SELECT count(a.id) FROM fb_a a, fb_b b, fb_c c, fb_d d
 WHERE a.id = b.a_id AND c.id = d.c_id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
 
 -- dphyp,greedy succeeds.
-SELECT count() FROM fb_a a, fb_b b, fb_c c, fb_d d
+SELECT count(a.id) FROM fb_a a, fb_b b, fb_c c, fb_d d
 WHERE a.id = b.a_id AND c.id = d.c_id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp,greedy';
 
 -- dphyp,dpsize also fails on disconnected graph.
-SELECT count() FROM fb_a a, fb_b b, fb_c c, fb_d d
+SELECT count(a.id) FROM fb_a a, fb_b b, fb_c c, fb_d d
 WHERE a.id = b.a_id AND c.id = d.c_id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp,dpsize'; -- { serverError EXPERIMENTAL_FEATURE_ERROR }
 
 -- Full triple chain: dphyp,dpsize,greedy succeeds.
-SELECT count() FROM fb_a a, fb_b b, fb_c c, fb_d d
+SELECT count(a.id) FROM fb_a a, fb_b b, fb_c c, fb_d d
 WHERE a.id = b.a_id AND c.id = d.c_id
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp,dpsize,greedy';
 
