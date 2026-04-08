@@ -883,6 +883,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         global_ctx->merging_skip_indexes.clear();
         global_ctx->skip_indexes_by_column.clear();
+        global_ctx->text_indexes_to_merge.clear();
     }
 
     bool use_adaptive_granularity = global_ctx->new_data_part->index_granularity_info.mark_type.adaptive;
@@ -1195,8 +1196,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Blo
 
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
+        projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()});
         Chunk squashed_chunk = Squashing::squash(
-            projection_squash_plan.add({block_to_squash.getColumns(), block_to_squash.rows()}),
+            projection_squash_plan.generate(),
             projection_squash_plan.getHeader());
 
         if (squashed_chunk)
