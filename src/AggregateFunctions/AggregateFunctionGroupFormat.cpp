@@ -79,7 +79,7 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if (argument_types.size() == 1 && !argument_types.empty())
+        if (argument_types.size() == 1 && !argument_types.empty() && argument_types.front()->isNullable())
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
