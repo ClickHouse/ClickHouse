@@ -165,12 +165,13 @@ KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
 
 void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noexcept
 {
+    int64_t session_id = response.session_id;
     if (!responses_queue.push(std::move(response)))
     {
         ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
         LOG_WARNING(log,
             "Failed to push response with session id {} to the queue, probably because of shutdown",
-            response.session_id);
+            session_id);
     }
 }
 

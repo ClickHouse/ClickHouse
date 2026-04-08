@@ -67,7 +67,7 @@ namespace ErrorCodes
 
 static size_t getSubrequestCount(const Coordination::ZooKeeperRequest & request)
 {
-    if (auto multi = typeid_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
+    if (const auto * multi = typeid_cast<const Coordination::ZooKeeperMultiRequest *>(&request))
         return multi->requests.size();
     else
         return 1;
@@ -148,7 +148,7 @@ KeeperRequestDispatcher2::KeeperRequestDispatcher2(KeeperServer * server_)
     , keeper_context(server->getKeeperContext())
     , log(getLogger("KeeperRequestDispatcher2"))
 {
-    auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
     /// TODO: We could add a setting for this 3.0 multiplier, but here's a better idea.
@@ -545,7 +545,7 @@ void KeeperRequestDispatcher2::dispatchThread()
 
             /// Pick a batch of requests.
 
-            auto & coordination_settings = keeper_context->getCoordinationSettings();
+            const auto & coordination_settings = keeper_context->getCoordinationSettings();
             uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
             size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
             bool quorum_reads = coordination_settings[CoordinationSetting::quorum_reads];
@@ -689,6 +689,8 @@ void KeeperRequestDispatcher2::dispatchThread()
                         batch_bytes += getRequestBytesCost(*request.request);
                         requests.push_back(std::move(request));
                     }
+
+                    request = {}; // suppress clang-tidy false positive
                 } while (check_batch_size_limits() && tryPopRequest(request));
 
                 flush_deferred_reads();
