@@ -17,7 +17,8 @@ drop table if exists table_map;
 create table table_map (a Map(String, String), b String) engine = MergeTree() order by a SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into table_map values ({'name':'zhangsan', 'gender':'male'}, 'name'), ({'name':'lisi', 'gender':'female'}, 'gender');
 select a[b] from table_map;
-select b from table_map where a = map('name','lisi', 'gender', 'female');
+-- Use mapSort to compare maps up to key order (bucketed serialization may reorder keys)
+select b from table_map where mapSort(a) = mapSort(map('name','lisi', 'gender', 'female'));
 drop table if exists table_map;
 
 -- Big Integer type

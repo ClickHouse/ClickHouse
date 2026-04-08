@@ -643,12 +643,12 @@ def kill_process_group(pgid, fatal_log):
         # created by timeout(1), since it also creates new process
         # group. But this should not be a problem with default
         # options, since the default time for each test is 10min,
-        # and this is way more bigger then the timeout for each
+        # and this is way bigger than the timeout for each
         # timeout(1) invocation.
         #
         # But as a workaround we are sending SIGTERM first, and
         # only after SIGKILL, that way timeout(1) will have an
-        # ability to terminate childrens (though not always since
+        # ability to terminate children (though not always since
         # signals are asynchronous).
         os.killpg(pgid, signal.SIGTERM)
         # We need minimal delay to let processes handle SIGTERM - 0.1 (this may
@@ -1120,7 +1120,7 @@ class FailureReason(enum.Enum):
     S3_STORAGE = "s3-storage"
     AZURE_BLOB_STORAGE = "azure-blob-storage"
     BUILD = "not running for current build"
-    NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
+    NO_PARALLEL_REPLICAS = "smth is not supported with parallel replicas"
     NO_ASYNC_INSERT = "test is not supported with async inserts enabled"
     NO_LLVM_COVERAGE = "test is not supported with llvm coverage enabled"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
@@ -1335,7 +1335,7 @@ class SettingsRandomizer:
         "max_parsing_threads": lambda: random.choice([0, 1, 10]),
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
-        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmfull for some tests
+        "query_plan_join_swap_table": lambda: random.choice(["auto", "false"]), # true forces swap, which is harmful for some tests
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
@@ -3713,7 +3713,7 @@ def run_tests_array(
                     break
                 restarted_tests.append(test_result)
 
-            # First print the description, than invoke the check result logic
+            # First print the description, then invoke the check result logic
             description += test_result.description
 
             if description and not description.endswith("\n"):
@@ -3894,7 +3894,7 @@ def check_server_started(args):
             break
         except Exception as e:
             print(
-                "\nUexpected exception, will not retry: ",
+                "\nUnexpected exception, will not retry: ",
                 type(e).__name__,
                 ": ",
                 str(e),
@@ -4928,7 +4928,13 @@ ORDER BY (test_name, callee_offset)
         except Exception as e:
             print(f"Coverage indirect calls stats check failed: {e}")
 
-    if int(clickhouse_execute(args, "EXISTS system.trace_log")):
+    try:
+        has_trace_log = int(clickhouse_execute(args, "EXISTS system.trace_log"))
+    except Exception as e:
+        print(f"Failed to check trace_log existence: {e}")
+        has_trace_log = 0
+
+    if has_trace_log:
         try:
             clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
 
@@ -4959,7 +4965,7 @@ ORDER BY (test_name, callee_offset)
                 - AllocatorWithMemoryTracking
                 """)
         except Exception as e:
-            print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
+            print(f"Failed to get MemoryAllocatedWithoutCheck events from trace_log: {e}")
 
     if args.report_logs_stats:
         try:
@@ -5369,7 +5375,7 @@ def parse_args():
     group.add_argument(
         "--upgrade-check",
         action="store_true",
-        help="Run tests for further server upgrade testing by ignoring all"
+        help="Run tests for further server upgrade testing by ignoring all "
         "drop queries in tests for collecting data from new version of server",
     )
     parser.add_argument(
@@ -5622,7 +5628,7 @@ if __name__ == "__main__":
 
     if args.extract_from_config:
         print(
-            "WARNING: --extract_from_config option is deprecated and will be removed the the future",
+            "WARNING: --extract_from_config option is deprecated and will be removed in the future",
             file=sys.stderr,
         )
     args.extract_from_config = find_clickhouse_command(

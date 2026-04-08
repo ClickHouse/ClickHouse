@@ -23,6 +23,8 @@ struct IcebergObjectSerializableInfo
     String file_format;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
+    std::optional<Int64> record_count;
+    std::optional<Int64> file_size_in_bytes;
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
