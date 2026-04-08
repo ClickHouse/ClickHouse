@@ -233,7 +233,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
             collect_filters = true;
             break;
         }
-        if (typeid_cast<const StorageObjectStorageCluster *>(storage.get()))
+        if (dynamic_cast<const IStorageCluster *>(storage.get()))
         {
             collect_filters = true;
             break;
