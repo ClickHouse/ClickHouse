@@ -3,7 +3,9 @@
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IndexDescription.h>
 #include <string_view>
+#include <optional>
 #include <variant>
 
 namespace DB
@@ -103,9 +105,8 @@ public:
     virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeActions(FormatSettings & /*settings*/) const {}
 
-    /// Get detailed description of read-from-storage step indexes (if any). Shown in with options `indexes = 1`.
-    virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
-    virtual void describeIndexes(FormatSettings & /*settings*/) const {}
+    /// Get index description struct for formatting by EXPLAIN. Shown with options `indexes = 1`.
+    virtual std::optional<IndexesDescription> getIndexesDescription() const { return std::nullopt; }
 
     /// Get detailed description of read-from-storage step projections (if any). Shown in with options `projections = 1`.
     virtual void describeProjections(JSONBuilder::JSONMap & /*map*/) const {}

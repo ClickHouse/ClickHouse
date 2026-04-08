@@ -227,7 +227,313 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     return last_pipeline;
 }
 
-static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const ExplainPlanOptions & options)
+static void formatIndexes(const IndexesDescription & desc, IQueryPlanStep::FormatSettings & format_settings)
+{
+    const auto & index_stats = desc.index_stats;
+
+    if (index_stats.empty())
+        return;
+
+    if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
+        return;
+
+    const std::string & prefix = format_settings.detail_prefix;
+    std::string indent(format_settings.base_indent, format_settings.indent_char);
+    format_settings.out << prefix << "Indexes:\n";
+
+    for (size_t i = 0; i < index_stats.size(); ++i)
+    {
+        const auto & stat = index_stats[i];
+        if (stat.type == IndexType::None)
+            continue;
+
+        format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
+
+        if (!stat.name.empty())
+            format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
+
+        if (!stat.description.empty())
+            format_settings.out << prefix << indent << indent << "Description: " << stat.description << '\n';
+
+        if (!stat.used_keys.empty())
+        {
+            format_settings.out << prefix << indent << indent << "Keys:" << '\n';
+            for (const auto & used_key : stat.used_keys)
+                format_settings.out << prefix << indent << indent << indent << used_key << '\n';
+        }
+
+        if (!stat.condition.empty())
+            format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
+
+        format_settings.out << prefix << indent << indent << "Parts: " << stat.num_parts_after;
+        if (i)
+            format_settings.out << '/' << index_stats[i - 1].num_parts_after;
+        format_settings.out << '\n';
+
+        format_settings.out << prefix << indent << indent << "Granules: " << stat.num_granules_after;
+        if (i)
+            format_settings.out << '/' << index_stats[i - 1].num_granules_after;
+        format_settings.out << '\n';
+
+        auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+        if (!search_algorithm.empty())
+            format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
+
+        if (!stat.distributed.empty())
+        {
+            format_settings.out << prefix << indent << indent << "Distributed:" << '\n';
+
+            if (format_settings.compact)
+            {
+                size_t total_parts_send = 0;
+                size_t total_parts_received = 0;
+                size_t total_granules_send = 0;
+                size_t total_granules_received = 0;
+                for (const auto & node_stat : stat.distributed)
+                {
+                    total_parts_send += node_stat.num_parts_send;
+                    total_parts_received += node_stat.num_parts_received;
+                    total_granules_send += node_stat.num_granules_send;
+                    total_granules_received += node_stat.num_granules_received;
+                }
+                format_settings.out << prefix << indent << indent << indent << "Replicas: " << stat.distributed.size() << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Parts send: " << total_parts_send << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Parts received: " << total_parts_received << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Granules send: " << total_granules_send << '\n';
+                format_settings.out << prefix << indent << indent << indent << "Granules received: " << total_granules_received << '\n';
+            }
+            else
+            {
+                for (const auto & node_stat : stat.distributed)
+                {
+                    format_settings.out << prefix << indent << indent << indent << "Address: " << node_stat.address << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Parts send: " << node_stat.num_parts_send << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Parts received: " << node_stat.num_parts_received << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Granules send: " << node_stat.num_granules_send << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Granules received: " << node_stat.num_granules_received << '\n';
+                }
+            }
+        }
+    }
+
+    if (desc.tables_count > 1)
+        format_settings.out << prefix << indent << "Tables: " << desc.tables_count << '\n';
+    format_settings.out << prefix << indent << "Ranges: " << desc.selected_ranges << '\n';
+}
+
+static void formatIndexes(const IndexesDescription & desc, JSONBuilder::JSONMap & map, bool compact)
+{
+    const auto & index_stats = desc.index_stats;
+
+    if (index_stats.empty())
+        return;
+
+    if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
+        return;
+
+    auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (size_t i = 0; i < index_stats.size(); ++i)
+    {
+        const auto & stat = index_stats[i];
+        if (stat.type == IndexType::None)
+            continue;
+
+        auto index_map = std::make_unique<JSONBuilder::JSONMap>();
+
+        index_map->add("Type", indexTypeToString(stat.type));
+
+        if (!stat.name.empty())
+            index_map->add("Name", stat.name);
+
+        if (!stat.description.empty())
+            index_map->add("Description", stat.description);
+
+        if (!stat.used_keys.empty())
+        {
+            auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & used_key : stat.used_keys)
+                keys_array->add(used_key);
+
+            index_map->add("Keys", std::move(keys_array));
+        }
+
+        if (!stat.condition.empty())
+            index_map->add("Condition", stat.condition);
+
+        auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+        if (!search_algorithm.empty())
+            index_map->add("Search Algorithm", search_algorithm);
+
+        if (i)
+            index_map->add("Initial Parts", index_stats[i - 1].num_parts_after);
+        index_map->add("Selected Parts", stat.num_parts_after);
+
+        if (i)
+            index_map->add("Initial Granules", index_stats[i - 1].num_granules_after);
+        index_map->add("Selected Granules", stat.num_granules_after);
+
+        if (!stat.distributed.empty())
+        {
+            if (compact)
+            {
+                auto distributed_map = std::make_unique<JSONBuilder::JSONMap>();
+                size_t total_parts_send = 0;
+                size_t total_parts_received = 0;
+                size_t total_granules_send = 0;
+                size_t total_granules_received = 0;
+                for (const auto & node_stat : stat.distributed)
+                {
+                    total_parts_send += node_stat.num_parts_send;
+                    total_parts_received += node_stat.num_parts_received;
+                    total_granules_send += node_stat.num_granules_send;
+                    total_granules_received += node_stat.num_granules_received;
+                }
+                distributed_map->add("Replicas", stat.distributed.size());
+                distributed_map->add("Parts send", total_parts_send);
+                distributed_map->add("Parts received", total_parts_received);
+                distributed_map->add("Granules send", total_granules_send);
+                distributed_map->add("Granules received", total_granules_received);
+                index_map->add("Distributed", std::move(distributed_map));
+            }
+            else
+            {
+                auto distributed_index_array = std::make_unique<JSONBuilder::JSONArray>();
+
+                for (const auto & node_stat : stat.distributed)
+                {
+                    auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
+                    node_stat_map->add("Address", node_stat.address);
+                    node_stat_map->add("Parts send", node_stat.num_parts_send);
+                    node_stat_map->add("Parts received", node_stat.num_parts_received);
+                    node_stat_map->add("Granules send", node_stat.num_granules_send);
+                    node_stat_map->add("Granules received", node_stat.num_granules_received);
+                    distributed_index_array->add(std::move(node_stat_map));
+                }
+
+                index_map->add("Distributed", std::move(distributed_index_array));
+            }
+        }
+
+        indexes_array->add(std::move(index_map));
+    }
+
+    map.add("Indexes", std::move(indexes_array));
+
+    if (desc.tables_count > 1)
+        map.add("Tables", desc.tables_count);
+}
+
+static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDescription> & result)
+{
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        size_t next_child = 0;
+    };
+
+    if (!plan.isInitialized())
+        return;
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = plan.getRootNode()});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push(Frame{.node = frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+        else
+        {
+            if (auto desc = frame.node->step->getIndexesDescription())
+                result.push_back(std::move(*desc));
+
+            auto child_plans = frame.node->step->getChildPlans();
+            for (auto * child_plan : child_plans)
+                collectIndexesFromPlan(*child_plan, result);
+
+            stack.pop();
+        }
+    }
+}
+
+static IndexesDescription aggregateIndexes(const std::vector<IndexesDescription> & descriptions, size_t table_count)
+{
+    IndexesDescription aggregated;
+    aggregated.selected_ranges = 0;
+
+    /// Aggregate by index type, summing only numeric fields (parts, granules,
+    /// distributed stats). Per-instance metadata (name, condition, keys, etc.)
+    /// is intentionally not carried over — different child tables may have
+    /// different skip indexes or conditions for the same index type, so
+    /// showing any single one would be misleading.
+    ///
+    /// Note: the "Parts: X/Y" ratio in the output (current step vs previous
+    /// step) can be misleading for heterogeneous index chains. For example,
+    /// if table A has [PartitionMinMax, PrimaryKey] and table B has only
+    /// [PrimaryKey], the aggregated PartitionMinMax count reflects only
+    /// table A, while PrimaryKey reflects both — the ratio between them
+    /// doesn't represent a true filtering step. This is acceptable for
+    /// compact mode since Merge tables typically have uniform schemas.
+    std::vector<IndexType> type_order;
+    std::unordered_map<uint8_t, IndexStat> by_type;
+
+    for (const auto & desc : descriptions)
+    {
+        /// Within a single description (one table), the same index type can
+        /// appear multiple times (e.g. several Skip indexes). Each successive
+        /// entry further reduces parts/granules. We need only the last (final)
+        /// value per type from each table, then sum those across tables.
+        /// Find the last index of each type, then iterate in original order
+        /// (None → PrimaryKey → Skip) skipping non-last duplicates.
+        std::unordered_map<uint8_t, size_t> last_index;
+        for (size_t j = 0; j < desc.index_stats.size(); ++j)
+            last_index[static_cast<uint8_t>(desc.index_stats[j].type)] = j;
+
+        for (size_t j = 0; j < desc.index_stats.size(); ++j)
+        {
+            const auto & stat = desc.index_stats[j];
+            auto key = static_cast<uint8_t>(stat.type);
+
+            if (last_index[key] != j)
+                continue;
+
+            auto it = by_type.find(key);
+            if (it == by_type.end())
+            {
+                type_order.push_back(stat.type);
+                auto & entry = by_type[key];
+                entry.type = stat.type;
+                entry.num_parts_after = stat.num_parts_after;
+                entry.num_granules_after = stat.num_granules_after;
+                entry.distributed = stat.distributed;
+            }
+            else
+            {
+                it->second.num_parts_after += stat.num_parts_after;
+                it->second.num_granules_after += stat.num_granules_after;
+                it->second.distributed.insert(it->second.distributed.end(),
+                    stat.distributed.begin(), stat.distributed.end());
+            }
+        }
+
+        aggregated.selected_ranges += desc.selected_ranges;
+    }
+
+    for (auto type : type_order)
+        aggregated.index_stats.push_back(std::move(by_type[static_cast<uint8_t>(type)]));
+
+    aggregated.tables_count = table_count;
+
+    return aggregated;
+}
+
+static void explainStep(IQueryPlanStep & step, JSONBuilder::JSONMap & map, const ExplainPlanOptions & options)
 {
     map.add("Node Type", step.getName());
     map.add("Node Id", step.getUniqID());
@@ -279,15 +585,45 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
         step.describeActions(map);
 
     if (options.indexes)
-        step.describeIndexes(map);
+    {
+        if (auto desc = step.getIndexesDescription())
+            formatIndexes(*desc, map, options.compact);
+    }
 
     if (options.projections)
         step.describeProjections(map);
 }
 
+static QueryPlan::Node * skipExpressions(QueryPlan::Node * node)
+{
+    while (node->step->getName() == "Expression" && !node->children.empty())
+        node = node->children[0];
+    return node;
+}
+
 JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) const
 {
     checkInitialized();
+
+    if (options.compact && options.indexes)
+    {
+        auto * node = skipExpressions(root);
+        auto node_map = std::make_unique<JSONBuilder::JSONMap>();
+        auto header_options = options;
+        header_options.indexes = false;
+        explainStep(*node->step, *node_map, header_options);
+
+        std::vector<IndexesDescription> descriptions;
+        collectIndexesFromPlan(*this, descriptions);
+
+        if (!descriptions.empty())
+        {
+            auto aggregated = aggregateIndexes(descriptions, descriptions.size());
+            formatIndexes(aggregated, *node_map, options.compact);
+        }
+
+        return node_map;
+    }
 
     struct Frame
     {
@@ -449,7 +785,10 @@ static void explainStep(
         step.describeActions(settings);
 
     if (options.indexes)
-        step.describeIndexes(settings);
+    {
+        if (auto desc = step.getIndexesDescription())
+            formatIndexes(*desc, settings);
+    }
 
     if (options.projections)
         step.describeProjections(settings);
@@ -556,12 +895,6 @@ void QueryPlan::explainPlan(
         .pretty = options.pretty
     };
 
-    auto skip_expressions = [&](Node * node) -> Node * {
-        while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
-            node = node->children[0];
-        return node;
-    };
-
     std::deque<ExplainPlan::Frame> stack;
 
     if (settings.pretty && parent_tree_prefix.empty())
@@ -570,9 +903,28 @@ void QueryPlan::explainPlan(
         settings.out << '\n';
     }
 
-    /// Skip the expression steps if we are in the compact mode
-    auto * first_node = skip_expressions(root);
+    /// In compact mode, collect all indexes from the entire plan tree
+    /// (including child plans like Merge table sub-plans), aggregate them,
+    /// and print a flat summary after the reading step header.
+    if (options.compact && options.indexes)
+    {
+        auto * reading_node = skipExpressions(root);
+        auto header_options = options;
+        header_options.indexes = false;
+        explainStep(*reading_node->step, settings, header_options, max_description_length);
 
+        std::vector<IndexesDescription> descriptions;
+        collectIndexesFromPlan(*this, descriptions);
+
+        if (!descriptions.empty())
+        {
+            auto aggregated = aggregateIndexes(descriptions, descriptions.size());
+            formatIndexes(aggregated, settings);
+        }
+        return;
+    }
+
+    auto * first_node = options.compact ? skipExpressions(root) : root;
     stack.push_back(ExplainPlan::Frame{
         .node = first_node,
     });
@@ -598,8 +950,7 @@ void QueryPlan::explainPlan(
 
             bool has_child_plans_below = !frame.node->step->getChildPlans().empty();
             bool is_last = (frame.next_child + 1) == (frame.node->children.size()) && !has_child_plans_below;
-            /// Skip the expression steps if we are in the compact mode
-            auto * next_node = skip_expressions(frame.node->children[child_idx]);
+            auto * next_node = options.compact ? skipExpressions(frame.node->children[child_idx]) : frame.node->children[child_idx];
 
             stack.push_back(ExplainPlan::Frame{
                 .node = next_node,

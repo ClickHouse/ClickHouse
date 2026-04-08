@@ -80,46 +80,10 @@ struct TopKFilterInfo
 class ReadFromMergeTree final : public SourceStepWithFilter
 {
 public:
-    enum class IndexType : uint8_t
-    {
-        None,
-        PartitionMinMax,
-        Partition,
-        PrimaryKey,
-        Skip,
-        PrimaryKeyExpand,
-        Statistics
-    };
-
-    struct DistributedIndexStat
-    {
-        std::string address;
-        size_t num_parts_send;
-        size_t num_parts_received;
-        size_t num_granules_send;
-        size_t num_granules_received;
-        /// Note, probably need to include the following as well:
-        /// - search_algorithm
-    };
-
-    /// This is a struct with information about applied indexes.
-    /// Is used for introspection only, in EXPLAIN query.
-    struct IndexStat
-    {
-        IndexType type;
-        std::string name = {};
-        std::string part_name = {};
-        std::string description = {};
-        std::string condition = {};
-        std::vector<std::string> used_keys = {};
-        size_t num_parts_after;
-        size_t num_granules_after;
-        MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
-
-        std::vector<DistributedIndexStat> distributed = {};
-    };
-
-    using IndexStats = std::vector<IndexStat>;
+    using IndexType = DB::IndexType;
+    using DistributedIndexStat = DB::DistributedIndexStat;
+    using IndexStat = DB::IndexStat;
+    using IndexStats = DB::IndexStats;
 
     /// Information about used projections.
     struct ProjectionStat
@@ -251,12 +215,12 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(FormatSettings & format_settings) const override;
-    void describeIndexes(FormatSettings & format_settings) const override;
     void describeProjections(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
-    void describeIndexes(JSONBuilder::JSONMap & map) const override;
     void describeProjections(JSONBuilder::JSONMap & map) const override;
+
+    std::optional<IndexesDescription> getIndexesDescription() const override;
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
