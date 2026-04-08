@@ -1,51 +1,83 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+
+#include <array>
+#include <unordered_map>
 
 namespace DB
 {
 
-const size_t MAX_DATA_TYPES_ELEMENTS = 16;
+/// Cache of simple (parameterless) data types and their serializations,
+/// pre-filled at construction time. Avoids repeated DataTypeFactory lookups
+/// and shared_ptr allocations for commonly used types.
+/// Thread-safe: immutable after construction.
+class SimpleDataTypesCache
+{
+public:
+    struct Element
+    {
+        String name;
+        DataTypePtr type;
+        SerializationPtr serialization;
+    };
 
-/// Simple cache of data types and their serializations to avoid creating
-/// them from String using FormatFactory or creating shared_ptr explicitly.
-/// It is helpful when we need to create the same data types multiple times
-/// (for example in Dynamic data type).
+    static const SimpleDataTypesCache & instance();
+
+    bool hasElement(BinaryTypeIndex index) const;
+
+    /// O(1) lookup by BinaryTypeIndex. Returns the cached element.
+    const Element & getElement(BinaryTypeIndex index) const;
+
+    /// O(1) lookup by BinaryTypeIndex. Returns pre-cached type.
+    DataTypePtr getType(BinaryTypeIndex index) const;
+
+    /// O(1) lookup by BinaryTypeIndex. Returns pre-cached serialization.
+    SerializationPtr getSerialization(BinaryTypeIndex index) const;
+
+    /// Lookup by type name. Returns pre-cached element for simple types, nullptr otherwise.
+    const Element * findByName(const String & type_name) const;
+
+    /// Lookup by type name. Returns pre-cached type for simple types,
+    /// falls back to DataTypeFactory for others.
+    DataTypePtr getType(const String & type_name) const;
+
+    /// Lookup serialization by type name. Returns pre-cached serialization
+    /// for simple types, falls back to DataTypeFactory for others.
+    SerializationPtr getSerialization(const String & type_name) const;
+
+private:
+    SimpleDataTypesCache();
+    void addSimpleType(BinaryTypeIndex index, const String & type_name);
+
+    std::array<Element, BINARY_TYPE_INDEX_SIZE> by_index{};
+    std::unordered_map<String, Element> by_name;
+};
+
+/// Return the singleton instance of the simple data type cache.
+const SimpleDataTypesCache & getSimpleDataTypesCache();
+
+/// Thread-local cache for data type lookups by name.
+/// Checks the global SimpleDataTypesCache first; only caches
+/// non-simple types (e.g. DateTime64(9), Variant types) in its own map.
 class DataTypesCache
 {
 public:
+    DataTypePtr getType(const String & type_name);
+    SerializationPtr getSerialization(const String & type_name);
+
+private:
+    static constexpr size_t MAX_ELEMENTS = 16;
+
     struct Element
     {
         DataTypePtr type;
         SerializationPtr serialization;
     };
 
-    DataTypePtr getType(const String & type_name)
-    {
-        return getCacheElement(type_name).type;
-    }
+    const Element & getCacheElement(const String & type_name);
 
-    SerializationPtr getSerialization(const String & type_name)
-    {
-        return getCacheElement(type_name).serialization;
-    }
-
-private:
-    const Element & getCacheElement(const String & type_name)
-    {
-        auto it = cache.find(type_name);
-        if (it != cache.end())
-            return it->second;
-
-        /// If cache is full, just clear it.
-        if (cache.size() >= MAX_DATA_TYPES_ELEMENTS)
-            cache.clear();
-
-        auto type = DataTypeFactory::instance().get(type_name);
-        it = cache.emplace(type_name, Element{type, type->getDefaultSerialization()}).first;
-        return it->second;
-    }
     std::unordered_map<String, Element> cache;
 };
 
