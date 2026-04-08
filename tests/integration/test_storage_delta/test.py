@@ -4186,9 +4186,10 @@ def test_system_delta_lake_history_sparse_versions_without_checkpoint(started_cl
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
 
-def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster, use_delta_kernel):
     """A too-large checkpoint should trigger the history materialization guard."""
-    node = get_node(started_cluster, "0")
+    node = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_history_guard_checkpoint")
     TOO_LARGE_CHECKPOINT = 1_000_000

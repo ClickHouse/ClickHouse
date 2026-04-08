@@ -643,7 +643,7 @@ static std::optional<UInt64> extractVersionFromFilename(const String & path)
 }
 
 /// Helper: read _last_checkpoint file and return the checkpoint version.
-/// Returns std::nullopt when no checkpoint exists or it cannot be parsed.
+/// Returns std::nullopt when no checkpoint exists.
 static std::optional<UInt64> readLastCheckpointVersion(
     ObjectStoragePtr object_storage,
     const String & table_path,
@@ -667,8 +667,10 @@ static std::optional<UInt64> readLastCheckpointVersion(
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to read _last_checkpoint");
-        return std::nullopt;
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Failed to parse `_last_checkpoint` for {}",
+            table_path);
     }
 }
 
