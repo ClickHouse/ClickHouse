@@ -9,6 +9,7 @@
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/BinaryRow.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
@@ -39,6 +40,7 @@ public:
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const ObjectStorageConnectionConfigurationWeakPtr & configuration,
+        const DataLakeStorageSettingsPtr & datalake_settings,
         const ContextPtr & local_context);
 
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override;

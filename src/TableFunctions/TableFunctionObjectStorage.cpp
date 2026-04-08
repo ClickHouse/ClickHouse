@@ -246,16 +246,16 @@ ColumnsDescription TableFunctionObjectStorage<
             /// (e.g. Paimon/DeltaLake/Iceberg store schema in their own metadata files).
             using MetadataType = typename Definition::MetadataType;
             NamesAndTypesList schema;
+            auto dl_settings = settings ? std::dynamic_pointer_cast<DataLakeStorageSettings>(settings) : std::make_shared<DataLakeStorageSettings>();
             if constexpr (std::is_same_v<MetadataType, IcebergMetadata>)
             {
-                auto dl_settings = settings ? std::dynamic_pointer_cast<DataLakeStorageSettings>(settings) : std::make_shared<DataLakeStorageSettings>();
                 auto format_for_create = table_options.format == "auto" ? String("Parquet") : table_options.format;
                 auto metadata = MetadataType::create(storage, configuration, dl_settings, context, format_for_create);
                 schema = metadata->getTableSchema(context);
             }
             else
             {
-                auto metadata = MetadataType::create(storage, configuration, context);
+                auto metadata = MetadataType::create(storage, configuration, dl_settings, context);
                 schema = metadata->getTableSchema(context);
             }
             if (!schema.empty())
@@ -273,15 +273,15 @@ ColumnsDescription TableFunctionObjectStorage<
                 /// to find actual data files and infer schema from one of them.
                 using MetadataType = typename Definition::MetadataType;
                 ObjectIterator iter;
+                auto dl_settings = settings ? std::dynamic_pointer_cast<DataLakeStorageSettings>(settings) : std::make_shared<DataLakeStorageSettings>();
                 if constexpr (std::is_same_v<MetadataType, IcebergMetadata>)
                 {
-                    auto dl_settings = settings ? std::dynamic_pointer_cast<DataLakeStorageSettings>(settings) : std::make_shared<DataLakeStorageSettings>();
                     auto dl_metadata = MetadataType::create(storage, configuration, dl_settings, context, table_options.format);
                     iter = dl_metadata->iterate(nullptr, nullptr, 1, nullptr, context);
                 }
                 else
                 {
-                    auto dl_metadata = MetadataType::create(storage, configuration, context);
+                    auto dl_metadata = MetadataType::create(storage, configuration, dl_settings, context);
                     iter = dl_metadata->iterate(nullptr, nullptr, 1, nullptr, context);
                 }
 

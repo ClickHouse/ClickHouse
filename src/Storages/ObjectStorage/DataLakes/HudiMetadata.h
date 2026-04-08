@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
@@ -32,7 +33,7 @@ public:
     }
 
     static DataLakeMetadataPtr
-    create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context)
+    create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, const DataLakeStorageSettingsPtr & /* datalake_settings */, ContextPtr local_context)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
     }

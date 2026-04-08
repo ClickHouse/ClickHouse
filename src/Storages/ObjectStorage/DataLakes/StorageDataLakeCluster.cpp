@@ -44,7 +44,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::ensureMetadataInitialized(Context
 {
     if (current_metadata)
         return;
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 template <typename DataLakeMetadata>
@@ -55,7 +55,7 @@ void StorageDataLakeCluster<DataLakeMetadata>::updateMetadata(ContextPtr context
         current_metadata->update(context);
         return;
     }
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 template <typename DataLakeMetadata>
@@ -90,7 +90,7 @@ StorageDataLakeCluster<DataLakeMetadata>::StorageDataLakeCluster(
     /// so no lazy initialization is allowed.
     configuration->update(object_storage, context_);
 
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context_);
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, datalake_settings, context_);
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;

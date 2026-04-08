@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -61,7 +62,7 @@ public:
 
     void modifyFormatSettings(FormatSettings & format_settings, const Context &) const override;
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration)
+    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage_, ObjectStorageConnectionConfigurationWeakPtr configuration, const DataLakeStorageSettingsPtr & /* datalake_settings */)
     {
         auto configuration_ptr = configuration.lock();
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage_, configuration);

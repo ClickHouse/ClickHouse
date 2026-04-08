@@ -636,12 +636,12 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
 }
 
 DataLakeMetadataPtr DeltaLakeMetadata::create(
-    ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context)
+    ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, const DataLakeStorageSettingsPtr & datalake_settings, ContextPtr local_context)
 {
 #if USE_DELTA_KERNEL_RS
     if (isDeltaKernelEnabled(local_context, configuration.lock()->getType()))
     {
-        return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration);
+        return DeltaLakeMetadataDeltaKernel::create(object_storage, configuration, datalake_settings);
     }
 #endif
     return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);

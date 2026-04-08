@@ -54,6 +54,7 @@ extern const SettingsBool use_paimon_partition_pruning;
 DataLakeMetadataPtr PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,
     const ObjectStorageConnectionConfigurationWeakPtr & configuration,
+    const DataLakeStorageSettingsPtr & /* datalake_settings */,
     const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();

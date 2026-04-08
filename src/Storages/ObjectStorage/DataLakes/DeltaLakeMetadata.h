@@ -9,6 +9,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/JSON/Object.h>
@@ -55,7 +56,7 @@ public:
     static bool supportsTotalBytes(ContextPtr, ObjectStorageType);
 
     static DataLakeMetadataPtr
-    create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, ContextPtr local_context);
+    create(ObjectStoragePtr object_storage, ObjectStorageConnectionConfigurationWeakPtr configuration, const DataLakeStorageSettingsPtr & datalake_settings, ContextPtr local_context);
 
     static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
     static DataTypePtr getSimpleTypeByName(const String & type_name);

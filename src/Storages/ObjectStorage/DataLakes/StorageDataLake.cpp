@@ -255,7 +255,7 @@ void StorageDataLake<DataLakeMetadata>::ensureMetadataInitialized(ContextPtr con
     if (current_metadata)
         return;
     configuration->update(object_storage, context);
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 template <typename DataLakeMetadata>
@@ -267,7 +267,7 @@ void StorageDataLake<DataLakeMetadata>::updateMetadata(ContextPtr context) const
         current_metadata->update(context);
         return;
     }
-    current_metadata = DataLakeMetadata::create(object_storage, configuration, context);
+    current_metadata = DataLakeMetadata::create(object_storage, configuration, datalake_settings, context);
 }
 
 template <typename DataLakeMetadata>
