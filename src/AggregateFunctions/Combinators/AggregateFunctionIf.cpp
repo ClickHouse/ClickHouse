@@ -477,7 +477,7 @@ public:
         if (num_arguments == 0)
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Aggregate function {} require at least one argument",
+                "Aggregate function {} requires at least one argument",
                 getName());
 
         filter_is_nullable = arguments.back()->isNullable();

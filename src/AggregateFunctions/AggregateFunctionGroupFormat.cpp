@@ -135,27 +135,8 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (argument_types.size() == 1 && argument_types.front()->isNullable())
-        {
-            auto & state = data(place);
-            const auto * filter = if_argument_pos >= 0
-                ? &assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData()
-                : nullptr;
-
-            for (size_t row = row_begin; row < row_end; ++row)
-            {
-                if (filter && !(*filter)[row])
-                    continue;
-
-                if (null_map[row])
-                    state.columns[0]->insertDefault();
-                else
-                    state.columns[0]->insertFrom(*columns[0], row);
-            }
-
-            return;
-        }
-
+        /// null_map is ignored: this function preserves nullable payload,
+        /// so nulls should be included in the output rather than skipped.
         addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
     }
 
@@ -352,34 +333,49 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (argument_types.size() == 1 && argument_types.front()->isNullable())
+        /// Reconstruct nullable columns from the unwrapped columns and null_map,
+        /// then forward to the nested function which stores them in state directly.
+        /// Non-nullable columns are also copied to keep row counts consistent.
+        const size_t num_args = argument_types.size();
+        MutableColumns temp_columns;
+        temp_columns.reserve(num_args);
+        for (size_t i = 0; i < num_args; ++i)
+            temp_columns.emplace_back(argument_types[i]->createColumn());
+
+        const auto * filter = if_argument_pos >= 0
+            ? &assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData()
+            : nullptr;
+
+        for (size_t row = row_begin; row < row_end; ++row)
         {
-            auto temp_column = argument_types.front()->createColumn();
-            auto & nullable_column = assert_cast<ColumnNullable &>(*temp_column);
-            const auto * filter = if_argument_pos >= 0
-                ? &assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData()
-                : nullptr;
+            if (filter && !(*filter)[row])
+                continue;
 
-            for (size_t row = row_begin; row < row_end; ++row)
+            for (size_t i = 0; i < num_args; ++i)
             {
-                if (filter && !(*filter)[row])
-                    continue;
-
-                if (null_map[row])
-                    nullable_column.insertDefault();
+                if (argument_types[i]->isNullable())
+                {
+                    auto & nullable_column = assert_cast<ColumnNullable &>(*temp_columns[i]);
+                    if (null_map[row])
+                        nullable_column.insertDefault();
+                    else
+                        nullable_column.insertFromNotNullable(*columns[i], row);
+                }
                 else
-                    nullable_column.insertFromNotNullable(*columns[0], row);
+                {
+                    temp_columns[i]->insertFrom(*columns[i], row);
+                }
             }
-
-            if (temp_column->empty())
-                return;
-
-            const IColumn * temp_column_ptr = temp_column.get();
-            nested_function->addBatchSinglePlace(0, temp_column->size(), place, &temp_column_ptr, arena, -1);
-            return;
         }
 
-        nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+        if (temp_columns.front()->empty())
+            return;
+
+        std::vector<const IColumn *> rebuilt_columns(num_args);
+        for (size_t i = 0; i < num_args; ++i)
+            rebuilt_columns[i] = temp_columns[i].get();
+
+        nested_function->addBatchSinglePlace(0, temp_columns.front()->size(), place, rebuilt_columns.data(), arena, -1);
     }
 
     void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override

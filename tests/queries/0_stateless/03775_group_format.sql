@@ -28,5 +28,13 @@ select groupFormatIf('JSONEachRow')(
     if(number = 1, CAST(NULL, 'Nullable(UInt8)'), toUInt8(number != 2)))
 from numbers(4);
 
+-- Verify that nullable payload is preserved when the optimizer could try to rewrite f(if(..., NULL, x)) to fIf(x, cond).
+set optimize_rewrite_aggregate_function_with_if = 1;
+select groupFormat('JSONEachRow')(if(number = 0, NULL, number)) from numbers(2);
+set optimize_rewrite_aggregate_function_with_if = 0;
+
+-- Multi-arg nullable: both nullable and non-nullable columns mixed.
+select groupFormat('JSONEachRow')(if(number = 0, NULL, number), toString(number)) from numbers(3);
+
 select groupFormat(123)(number) from numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select groupFormat() from numbers(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
