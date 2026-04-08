@@ -136,11 +136,13 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     show_result = node.query(f"SHOW DATABASE {name}")
     assert minio_secret_key not in show_result
@@ -149,23 +151,16 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 def create_clickhouse_iceberg_table(
     started_cluster, node, database_name, table_name, schema, additional_settings={}
 ):
-    settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url" : BASE_URL,
-    }
-
-    settings.update(additional_settings)
-
+    settings_suffix = "" if len(additional_settings) == 0 else f"SETTINGS {",".join((k+"="+repr(v) for k, v in additional_settings.items()))}"
     node.query(
         f"""
-SET allow_experimental_database_iceberg=true;
-SET write_full_path_in_iceberg_metadata=1;
 CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+{settings_suffix}
+    """,
+        settings={
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
 
 def drop_clickhouse_iceberg_table(
@@ -487,17 +482,9 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in db_settings.items()))}""",
         },
     )
 
-    table_settings = {
-        "storage_catalog_type": "rest",
-        "storage_warehouse": "demo",
-        "object_storage_endpoint": "http://minio:9000/warehouse-rest",
-        "storage_region": "us-east-1",
-        "storage_catalog_url": BASE_URL,
-    }
     qid_table = uuid.uuid4().hex
     node.query(
-        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
-SETTINGS {",".join((k + "=" + repr(v) for k, v in table_settings.items()))}""",
+        f"""CREATE TABLE {db_name}.`{root_namespace}.{table_name}` (x String) ENGINE = IcebergS3('http://minio:9000/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')""",
         query_id=qid_table,
         settings={
             "allow_experimental_database_iceberg": 1,
@@ -836,11 +823,13 @@ def test_not_specified_catalog_type(started_cluster):
     node.query(
         f"""
     DROP DATABASE IF EXISTS {CATALOG_NAME};
-    SET allow_database_iceberg=true;
-    SET write_full_path_in_iceberg_metadata=1;
     CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
     SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
-    """
+    """,
+        settings={
+            "allow_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
     )
     assert "" == node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
@@ -933,12 +922,7 @@ def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
     node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
-    node.query(
-        f"""
-        DROP DATABASE IF EXISTS {CATALOG_NAME};
-        SET allow_database_iceberg = 1;
-        """
-    )
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME};")
 
     with pytest.raises(Exception) as err:
         node.query(
@@ -948,6 +932,7 @@ def test_gcs(started_cluster):
             SETTINGS
                 catalog_type = 'rest',
                 warehouse = 'demo',
-            """
+            """,
+            settings={"allow_database_iceberg": 1},
         )
         assert "Google cloud storage converts to S3" in str(err.value)
