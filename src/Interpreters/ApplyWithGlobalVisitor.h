@@ -1,27 +1,17 @@
 #pragma once
 
-#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <map>
 
 namespace DB
 {
 
-class ASTSelectWithUnionQuery;
-class ASTSelectQuery;
-class ASTSelectIntersectExceptQuery;
-
-/// Pull out the WITH statement from the first child of ASTSelectWithUnion query if any.
+/// Pull out the WITH clause from the first SELECT of a UNION query and wrap the
+/// UNION in an outer `SELECT * FROM (UNION)` that carries the WITH clause.
+/// This lets every branch of the UNION resolve CTEs through the parent scope.
 class ApplyWithGlobalVisitor
 {
 public:
     static void visit(ASTPtr & ast);
-
-private:
-    static void visit(ASTSelectWithUnionQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
-    static void visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
-    static void visit(ASTSelectIntersectExceptQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list);
 };
 
 }

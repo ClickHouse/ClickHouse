@@ -1,124 +1,99 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/checkStackSize.h>
 
 
 namespace DB
 {
 
-void ApplyWithGlobalVisitor::visit(ASTSelectQuery & select, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
+/// Build: ASTTablesInSelectQuery → ASTTablesInSelectQueryElement → ASTTableExpression → ASTSubquery(inner_union)
+static ASTPtr buildFromSubquery(ASTPtr inner_union)
 {
-    auto with = select.with();
-    if (with)
-    {
-        std::set<String> current_names;
-        for (const auto & child : with->children)
-        {
-            if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(child.get()))
-                current_names.insert(ast_with_alias->alias);
-        }
-        for (const auto & with_alias : exprs)
-        {
-            if (!current_names.contains(with_alias.first))
-                with->children.push_back(with_alias.second->clone());
-        }
-    }
-    else
-        select.setExpression(ASTSelectQuery::Expression::WITH, with_expression_list->clone());
-}
+    auto subquery = make_intrusive<ASTSubquery>(std::move(inner_union));
 
-void ApplyWithGlobalVisitor::visit(
-    ASTSelectWithUnionQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
-{
-    for (auto & select : selects.list_of_selects->children)
-    {
-        if (ASTSelectWithUnionQuery * node_union = select->as<ASTSelectWithUnionQuery>())
-        {
-            visit(*node_union, exprs, with_expression_list);
-        }
-        else if (ASTSelectQuery * node_select = select->as<ASTSelectQuery>())
-        {
-            visit(*node_select, exprs, with_expression_list);
-        }
-        else if (ASTSelectIntersectExceptQuery * node_intersect_except = select->as<ASTSelectIntersectExceptQuery>())
-        {
-            visit(*node_intersect_except, exprs, with_expression_list);
-        }
-    }
-}
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = subquery;
+    table_expression->children.push_back(table_expression->subquery);
 
-void ApplyWithGlobalVisitor::visit(
-    ASTSelectIntersectExceptQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
-{
-    auto selects_list = selects.getListOfSelects();
-    for (auto & select : selects_list)
-    {
-        if (ASTSelectWithUnionQuery * node_union = select->as<ASTSelectWithUnionQuery>())
-        {
-            visit(*node_union, exprs, with_expression_list);
-        }
-        else if (ASTSelectQuery * node_select = select->as<ASTSelectQuery>())
-        {
-            visit(*node_select, exprs, with_expression_list);
-        }
-        else if (ASTSelectIntersectExceptQuery * node_intersect_except = select->as<ASTSelectIntersectExceptQuery>())
-        {
-            visit(*node_intersect_except, exprs, with_expression_list);
-        }
-    }
+    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    table_element->table_expression = table_expression;
+    table_element->children.push_back(table_element->table_expression);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(table_element));
+
+    return tables;
 }
 
 void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
     checkStackSize();
 
-    if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
+    if (auto * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
-        if (auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get()))
+        if (node_union->list_of_selects->children.size() > 1)
         {
-            ASTPtr with_expression_list = first_select->with();
-            if (with_expression_list)
+            if (auto * first_select = node_union->list_of_selects->children[0]->as<ASTSelectQuery>())
             {
-                std::map<String, ASTPtr> exprs;
-                for (auto & child : with_expression_list->children)
+                ASTPtr with_expression_list = first_select->with();
+                if (with_expression_list)
                 {
-                    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
-                        exprs[ast_with_alias->alias] = child;
-                }
-                for (auto it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
-                {
-                    if (auto * union_child = (*it)->as<ASTSelectWithUnionQuery>())
-                        visit(*union_child, exprs, with_expression_list);
-                    else if (auto * select_child = (*it)->as<ASTSelectQuery>())
-                        visit(*select_child, exprs, with_expression_list);
-                    else if (auto * intersect_except_child = (*it)->as<ASTSelectIntersectExceptQuery>())
-                        visit(*intersect_except_child, exprs, with_expression_list);
+                    /// Remove WITH from first SELECT — it moves to the wrapper.
+                    first_select->setExpression(ASTSelectQuery::Expression::WITH, nullptr);
+
+                    /// Move original children into a subquery for the wrapper's FROM clause.
+                    auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
+                    std::swap(inner_union->list_of_selects, node_union->list_of_selects);
+                    inner_union->children.push_back(inner_union->list_of_selects);
+                    inner_union->union_mode = node_union->union_mode;
+                    inner_union->list_of_modes = std::move(node_union->list_of_modes);
+                    inner_union->set_of_modes = std::move(node_union->set_of_modes);
+                    inner_union->is_normalized = node_union->is_normalized;
+
+                    /// Build wrapper: WITH ... SELECT * FROM (inner_union)
+                    auto wrapper = make_intrusive<ASTSelectQuery>();
+                    wrapper->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
+
+                    auto select_list = make_intrusive<ASTExpressionList>();
+                    select_list->children.push_back(make_intrusive<ASTAsterisk>());
+                    wrapper->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+                    wrapper->setExpression(ASTSelectQuery::Expression::TABLES, buildFromSubquery(std::move(inner_union)));
+
+                    /// Mutate the original node in place: replace its children with
+                    /// the single wrapper SELECT. This preserves node identity so
+                    /// parent named fields (e.g. ASTExplainQuery::query) stay valid,
+                    /// and keeps FORMAT / INTO OUTFILE on the ASTQueryWithOutput node.
+                    node_union->list_of_selects = make_intrusive<ASTExpressionList>();
+                    node_union->list_of_selects->children.push_back(std::move(wrapper));
+                    node_union->children.clear();
+                    node_union->children.push_back(node_union->list_of_selects);
+                    node_union->union_mode = SelectUnionMode::UNION_ALL;
+                    node_union->list_of_modes.clear();
+                    node_union->set_of_modes.clear();
+                    node_union->is_normalized = true;
                 }
             }
         }
+    }
 
-        /*
-         * We need to visit all children recursively because the WITH statement may appear in the subquery at the nested level.
-         * Behavior of `WITH ... UNION ALL ...` should be the same at the top level and inside the subquery.
-         *
-         * For example:
-         * SELECT * FROM (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
-         *                ^^^^^^^^^^^^     should be visited     ^^^^^^^^^^^^^^^^
-         * or inside `WHERE .. IN` clause:
-         * SELECT * FROM ... WHERE x IN (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
-         */
-        for (auto & child : node_union->list_of_selects->children)
-            visit(child);
-    }
-    else
-    {
-        // Other non-SELECT queries that contains SELECT children, such as EXPLAIN or INSERT
-        for (auto & child : ast->children)
-            visit(child);
-    }
+    /*
+        * We need to visit all children recursively because the WITH statement may appear in the subquery at the nested level.
+        * Behavior of `WITH ... UNION ALL ...` should be the same at the top level and inside the subquery.
+        *
+        * For example:
+        * SELECT * FROM (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
+        *                ^^^^^^^^^^^^     should be visited     ^^^^^^^^^^^^^^^^
+        * or inside `WHERE .. IN` clause:
+        * SELECT * FROM ... WHERE x IN (WITH (SELECT ... ) AS t SELECT ... UNION ALL SELECT ...)
+        */
+    for (auto & child : ast->children)
+        visit(child);
 }
 
 }
