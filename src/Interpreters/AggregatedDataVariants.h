@@ -245,6 +245,25 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
+    /// Variants that use `AggregationMethodSerialized` — these serialize all GROUP BY key
+    /// columns into a contiguous byte sequence (via `serializeValueIntoArena`), stored in
+    /// the Arena and keyed in a `StringHashMap`. Add a variant here if its
+    /// `AggregationMethod` type is `AggregationMethodSerialized` (or its nullable/prealloc aliases).
+    /// NOLINTNEXTLINE
+    #define APPLY_FOR_VARIANTS_WITH_SERIALIZED_KEYS(M) \
+        M(serialized)                        \
+        M(nullable_serialized)               \
+        M(prealloc_serialized)               \
+        M(nullable_prealloc_serialized)      \
+        M(serialized_hash64)                 \
+        M(nullable_serialized_hash64)        \
+        M(prealloc_serialized_hash64)        \
+        M(nullable_prealloc_serialized_hash64) \
+        M(serialized_two_level)              \
+        M(nullable_serialized_two_level)     \
+        M(prealloc_serialized_two_level)     \
+        M(nullable_prealloc_serialized_two_level) \
+
     /// NOLINTNEXTLINE
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
         APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -316,6 +335,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     bool isConvertibleToTwoLevel() const;
     void convertToTwoLevel();
     bool isLowCardinality() const;
+    /// Whether the aggregation method uses `AggregationMethodSerialized` (multi-column keys serialized into a byte sequence).
+    static bool usesSerializedKeys(Type type);
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
 
 };
