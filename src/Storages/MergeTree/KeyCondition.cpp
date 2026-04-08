@@ -2020,6 +2020,15 @@ bool KeyCondition::tryPrepareSetAtomsForIn(
         info,
         set_is_relaxed);
 
+    /// If no direct key mapping was found AND no extra candidates are possible
+    /// (the left arg is not a key subexpression), return early to avoid building the set
+    /// unnecessarily
+    if (indexes_mapping.empty()
+        && !(
+            left_args_count == 1 && allow_constant_transformation
+            && !getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names).empty()))
+        return false;
+
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
