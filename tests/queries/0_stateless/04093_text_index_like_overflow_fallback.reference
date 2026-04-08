@@ -1,0 +1,12 @@
+LIKE with overflow
+3995
+3995
+NOT LIKE with overflow
+96005
+96005
+broad LIKE with overflow
+100000
+100000
+LIKE without overflow
+3995
+3995

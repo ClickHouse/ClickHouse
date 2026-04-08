@@ -525,7 +525,7 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
             analyzer->addTokenInfo(token, infos[i]);
         }
 
-        if (postings_to_read >= max_postings_to_read)
+        if (postings_to_read > max_postings_to_read)
         {
             /// Too many large-posting tokens matched.
             /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.

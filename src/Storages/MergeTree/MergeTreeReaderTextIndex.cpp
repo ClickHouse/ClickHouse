@@ -228,12 +228,18 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
         const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
-        /// Always return true for empty needles.
-        if (query_builder.tokens.empty())
+        if (search_query->tokens.empty() && search_query->patterns.empty())
         {
+            /// Always return true for empty needles.
             is_always_true[i] = true;
         }
-        else if (analyzer.isBypassed(*search_query))
+        else if (query_builder.is_failed)
+        {
+            /// Query is definitely false (e.g. a required token in All mode is missing).
+            /// Don't mark as always_true; buildPostingsForQuery will return empty postings.
+            continue;
+        }
+        else if (query_builder.is_bypassed)
         {
             if (!fallback_reader)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "The fallback reader for patterns is not initialized.");

@@ -114,7 +114,7 @@ const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const
     auto it = query_builders.find(hash);
 
     if (it == query_builders.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query builder not found for text search  query with function '{}'", query.function_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query builder not found for text search query with function '{}'", query.function_name);
 
     return it->second;
 }
@@ -167,12 +167,6 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
     }
 
     return added;
-}
-
-bool TextIndexAnalyzer::isBypassed(const TextSearchQuery & query) const
-{
-    auto it = query_builders.find(query.getHash().get128());
-    return it != query_builders.end() && it->second.is_bypassed;
 }
 
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const

@@ -46,7 +46,6 @@ public:
     void addPostings(std::string_view token, PostingListPtr postings);
 
     bool addTokenToPatterns(std::string_view token);
-    bool isBypassed(const TextSearchQuery & query) const;
     void bypassPatternQueries();
 
 private:
