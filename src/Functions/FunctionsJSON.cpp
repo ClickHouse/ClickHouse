@@ -189,7 +189,8 @@ public:
         /// - Extract subobject subcolumn (json.^`path`) for nested objects
         /// - Merge them row-by-row, preferring literal over subobject
         /// - Cast the result to the function's return type
-        template <typename TName, template <typename> typename TImpl, bool ci = false>
+        /// Named `is_case_insensitive` (not `case_insensitive`) to avoid shadowing the enclosing Executor's template parameter.
+        template <typename TName, template <typename> typename TImpl, bool is_case_insensitive = false>
         static ColumnPtr runForObjectColumn(
             const ColumnsWithTypeAndName & arguments,
             const DataTypePtr & result_type,
@@ -254,9 +255,9 @@ public:
 
             /// For case-insensitive functions, resolve the user-provided path to
             /// the actual path stored in the column by comparing case-insensitively.
-            if constexpr (ci)
+            if constexpr (is_case_insensitive)
             {
-                auto matches_ci = [](std::string_view a, std::string_view b) -> bool
+                auto match_case_insensitive = [](std::string_view a, std::string_view b) -> bool
                 {
                     if (a.size() != b.size())
                         return false;
@@ -271,7 +272,7 @@ public:
                 /// Check typed paths.
                 for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
                 {
-                    if (matches_ci(typed_path, path))
+                    if (match_case_insensitive(typed_path, path))
                     {
                         resolved = typed_path;
                         break;
@@ -283,7 +284,7 @@ public:
                 {
                     for (const auto & [dynamic_path, _] : col_object->getDynamicPaths())
                     {
-                        if (matches_ci(dynamic_path, path))
+                        if (match_case_insensitive(dynamic_path, path))
                         {
                             resolved = dynamic_path;
                             break;
@@ -298,7 +299,7 @@ public:
                     for (size_t i = 0; i < shared_paths->size(); ++i)
                     {
                         auto sp = shared_paths->getDataAt(i);
-                        if (matches_ci(sp, path))
+                        if (match_case_insensitive(sp, path))
                         {
                             resolved = String(sp);
                             break;
