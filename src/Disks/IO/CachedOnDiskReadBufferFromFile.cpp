@@ -1163,7 +1163,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
 #endif
         }
 
-        if (object_size.has_value() && *object_size == offset)
+        if (object_size.has_value() && *object_size == file_offset_of_buffer_end)
         {
             /// The remote object is smaller than file_size_ indicated, e.g. the object was
             /// overwritten with shorter content between listing and reading.
@@ -1172,11 +1172,11 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 log,
                 "Remote object is smaller than expected: read {} bytes but expected to read until position {}. "
                 "Actual object size: {}, expected size: {}, stop reason: {}. Treating as EOF.",
-                offset, info.read_until_position, *object_size, file_size_,
+                file_offset_of_buffer_end, read_until_position, *object_size, file_size_,
                 impl_read_stop_reason ? *impl_read_stop_reason : "None");
             if (file_segment.isDownloader())
                 file_segment.setDownloadFinishedWithoutContinuation();
-            info.read_until_position = offset;
+            read_until_position = file_offset_of_buffer_end;
             return 0;
         }
 
