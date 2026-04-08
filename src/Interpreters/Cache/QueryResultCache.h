@@ -159,6 +159,7 @@ public:
 
     void clear(const std::optional<String> & tag);
 
+    size_t maxSizeInBytes() const;
     size_t sizeInBytes() const;
     size_t count() const;
 

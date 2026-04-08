@@ -459,7 +459,7 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
             /// Keep the original order of conditions in prewhere_conditions.
             position = condition_positions[&(*cond_it)];
             auto prewhere_it = prewhere_conditions.begin();
-            while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+            while (prewhere_it != prewhere_conditions.end() && condition_positions[&(*prewhere_it)] < position)
                 ++prewhere_it;
             prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
         }

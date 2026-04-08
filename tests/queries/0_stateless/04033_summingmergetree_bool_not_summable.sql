@@ -26,4 +26,7 @@ OPTIMIZE TABLE test_summing_bool FINAL;
 -- Before the fix, flag was summed to 2 (true+false+true = 1+0+1)
 SELECT id, count, flag FROM test_summing_bool;
 
+-- Before the fix, this query returned 0, which is incorrect. After the fix, it should return 1.
+SELECT count() FROM test_summing_bool where flag = true;
+
 DROP TABLE test_summing_bool;

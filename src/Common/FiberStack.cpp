@@ -44,7 +44,7 @@ FiberStack::FiberStack(size_t stack_size_)
 {
 }
 
-boost::context::stack_context FiberStack::allocate()
+boost::context::stack_context FiberStack::allocate() const
 {
     size_t num_pages = 1 + (stack_size - 1) / page_size;
 
@@ -80,10 +80,6 @@ boost::context::stack_context FiberStack::allocate()
     /// the fiber. Unpoisoning is safe because MSan's per-variable lifetime tracking
     /// (__lifetime.start / __lifetime.end) still properly detects real uninitialized variables.
     __msan_unpoison(data, num_bytes);
-
-    /// Remember the allocation for ASan unpoisoning in beforeResume().
-    stack_base = data;
-    stack_allocation_size = num_bytes;
 
     boost::context::stack_context sctx;
     sctx.size = num_bytes;

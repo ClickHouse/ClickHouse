@@ -173,8 +173,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of dynamic subcolumns.
-    virtual bool supportsDynamicSubcolumns() const { return false; }
+    /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
+    virtual bool supportsColumnsWithDynamicStructure() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
@@ -244,7 +244,10 @@ public:
     NamesAndTypesList getVirtualsList() const { return virtuals.get()->getNamesAndTypesList(); }
     Block getVirtualsHeader() const { return virtuals.get()->getSampleBlock(); }
 
-    static const VirtualColumnsDescription & getCommonVirtuals() { return common_virtuals; }
+    VirtualsDescriptionPtr getCommonVirtuals(VirtualsDescriptionPtr cur_virtuals) const
+    {
+        return std::make_unique<VirtualColumnsDescription>(createCommonVirtuals(*cur_virtuals));
+    }
 
     Names getAllRegisteredNames() const override;
 
@@ -320,10 +323,7 @@ private:
     /// Description of virtual columns. Optional, may be set in constructor.
     MultiVersionVirtualsDescriptionPtr virtuals;
 
-    /// Description of common virtual columns.
-    static const VirtualColumnsDescription common_virtuals;
-
-    static VirtualColumnsDescription createCommonVirtuals();
+    static VirtualColumnsDescription createCommonVirtuals(const VirtualColumnsDescription & storage_virtuals);
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(

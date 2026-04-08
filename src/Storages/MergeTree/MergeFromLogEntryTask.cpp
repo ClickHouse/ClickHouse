@@ -82,7 +82,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
         storage.writePartLog(
             PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot));
+            entry.new_part_name, part, parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
+            {}, this->projections_merge_time);
     };
 
     if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_merged_part])
@@ -358,7 +359,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
-        entry.new_part_name, part, parts, merge_mutate_entry.get(), {});
+        entry.new_part_name, part, parts, merge_mutate_entry.get(), {}, {}, {});
 
     transaction_ptr = std::make_unique<MergeTreeData::Transaction>(storage, NO_TRANSACTION_RAW);
 
@@ -394,6 +395,7 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     part = merge_task->getFuture().get();
     auto cached_marks = merge_task->releaseCachedMarks();
     auto cached_index_marks = merge_task->releaseCachedIndexMarks();
+    projections_merge_time = merge_task->grabProjectionsMergeTime();
 
     storage.merger_mutator.renameMergedTemporaryPart(part, parts, NO_TRANSACTION_PTR, *transaction_ptr);
     /// Why we reset task here? Because it holds shared pointer to part and tryRemovePartImmediately will

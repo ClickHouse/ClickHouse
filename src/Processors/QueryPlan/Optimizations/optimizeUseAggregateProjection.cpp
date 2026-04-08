@@ -362,8 +362,9 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    bool can_use_minmax_projection = allow_implicit_projections
+        && metadata->minmax_count_projection
+        && !reading.getMergeTreeData().hasLightweightDeletedMask();
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -693,6 +694,7 @@ std::optional<String> optimizeUseAggregateProjections(
 
                 auto projection_query_info = query_info;
                 projection_query_info.prewhere_info = nullptr;
+                projection_query_info.row_level_filter = nullptr;
                 projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(candidate.dag.clone());
 
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
@@ -856,6 +858,7 @@ std::optional<String> optimizeUseAggregateProjections(
         auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
+        projection_query_info.row_level_filter = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
 
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);

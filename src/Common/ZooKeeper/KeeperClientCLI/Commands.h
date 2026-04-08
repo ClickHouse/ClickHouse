@@ -41,7 +41,7 @@ class LSCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    String getHelpMessage() const override { return "{} [path] -- Lists the nodes for the given path (default: cwd)"; }
+    String getHelpMessage() const override { return "{} [path] [watch_id] -- Lists the nodes for the given path (default: cwd). Optionally sets a watch"; }
 };
 
 class CDCommand : public IKeeperClientCommand
@@ -99,7 +99,7 @@ class GetCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Returns the node's value"; }
+    String getHelpMessage() const override { return "{} <path> [watch_id] -- Returns the node's value. Optionally sets a watch"; }
 };
 
 class ExistsCommand : public IKeeperClientCommand
@@ -110,7 +110,7 @@ class ExistsCommand : public IKeeperClientCommand
 
     void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
 
-    String getHelpMessage() const override { return "{} <path> -- Returns `1` if node exists, `0` otherwise"; }
+    String getHelpMessage() const override { return "{} <path> [watch_id] -- Returns `1` if node exists, `0` otherwise. Optionally sets a watch"; }
 };
 
 class GetStatCommand : public IKeeperClientCommand
@@ -321,6 +321,17 @@ class MVRCommand : public IKeeperClientCommand
     {
         return "{} <src> <dest> -- Moves 'src' node subtree to 'dest' path.";
     }
+};
+
+class WaitWatchCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "watch"; }
+
+    bool parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClientBase * client) const override;
+
+    String getHelpMessage() const override { return "{} <watch_id> [timeout_seconds] -- Waits for watch event and prints the response"; }
 };
 
 class GetAclCommand : public IKeeperClientCommand

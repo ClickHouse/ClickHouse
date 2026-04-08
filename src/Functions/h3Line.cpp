@@ -108,12 +108,13 @@ public:
                 continue;
             }
 
-            auto size = gridPathCellsSize(start, end);
-            if (size < 0)
+            int64_t size = 0;
+            H3Error err = gridPathCellsSize(start, end, &size);
+            if (err)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Line cannot be computed between start H3 index {} and end H3 index {}",
-                    start, end);
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
 
             current_offset += size;
             dst_offsets[row] = current_offset;
