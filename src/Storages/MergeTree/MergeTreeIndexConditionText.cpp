@@ -1,9 +1,16 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include <Common/StringUtils.h>
+#include <Common/OptimizedRegularExpression.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/hasAnyAllTokens.h>
+#include <IO/WriteBufferFromString.h>
+#include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -14,10 +21,8 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/OptimizedRegularExpression.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
-#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -35,13 +40,16 @@ namespace Setting
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
     extern const SettingsUInt64 max_memory_usage;
+    extern const SettingsBool use_text_index_like_evaluation_by_dictionary_scan;
+    extern const SettingsUInt64 text_index_like_min_pattern_length;
 }
 
-TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_)
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
+    , patterns(std::move(patterns_))
 {
     std::sort(tokens.begin(), tokens.end());
 }
@@ -52,12 +60,34 @@ SipHash TextSearchQuery::getHash() const
     hash.update(function_name);
     hash.update(search_mode);
     hash.update(direct_read_mode);
-    hash.update(tokens.size());
 
+    hash.update(tokens.size());
     for (const auto & token : tokens)
     {
         hash.update(token.size());
         hash.update(token);
+    }
+
+    if (!patterns.empty())
+    {
+        hash.update(patterns.size());
+        for (const auto & pattern : patterns)
+        {
+            if (const auto & re2 = pattern.getRE2())
+            {
+                hash.update(re2->pattern());
+            }
+            else
+            {
+                std::string required_substring;
+                bool is_trivial;
+                bool required_substring_is_prefix;
+                pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+                hash.update(required_substring);
+                hash.update(is_trivial);
+                hash.update(required_substring_is_prefix);
+            }
+        }
     }
 
     return hash;
@@ -117,6 +147,9 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         {
             all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
             all_search_queries[search_query->getHash().get128()] = search_query;
+
+            for (const auto & pattern : search_query->patterns)
+                all_search_patterns.push_back(&pattern);
         }
 
         if (requiresReadingAllTokens(element))
@@ -139,6 +172,7 @@ bool MergeTreeIndexConditionText::requiresReadingAllTokens(const RPNElement & el
         }
         case RPNElement::FUNCTION_AND:
         case RPNElement::FUNCTION_EQUALS:
+        case RPNElement::FUNCTION_LIKE:
         case RPNElement::FUNCTION_HAS_ALL_TOKENS:
         case RPNElement::FUNCTION_UNKNOWN:
         case RPNElement::ALWAYS_TRUE:
@@ -166,6 +200,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "mapContainsValueLike"
         || function_name == "has"
         || function_name == "like"
+        || function_name == "ilike"
         || function_name == "hasTokenOrNull"
         || function_name == "startsWith"
         || function_name == "endsWith"
@@ -230,7 +265,7 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.tokens.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
+    if (query.tokens.empty() && query.patterns.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
@@ -262,6 +297,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_LIKE,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_MATCH});
 }
@@ -280,6 +316,14 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_LIKE)
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAnyQueryPatterns(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+
         }
         else if (element.function == RPNElement::FUNCTION_HAS_ANY_TOKENS)
         {
@@ -483,11 +527,87 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     return tokenizer->compactTokens(tokens);
 }
 
+std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
+{
+    /// Only handles the pure '%value%' form: one leading '%', a non-empty alphanumeric token immediately following,
+    /// then one trailing '%' immediately after the token, and nothing else.
+    /// Returns a single-element vector on success, empty on anything more complex.
+    /// Only this form is eligible for direct read mode.
+
+    const String value = preprocessor->processConstant(field.safeGet<String>());
+    if (value.empty())
+        return {};
+
+    const char * data = value.data();
+    const size_t length = value.size();
+    size_t pos = 0;
+
+    const auto is_token_char = [](unsigned char c) { return isASCII(c) && isAlphaNumericASCII(static_cast<char>(c)); };
+
+    const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
+
+    /// Must start with at least one '%'.
+    if (data[pos] != '%')
+        return {};
+
+    while (pos < length && data[pos] == '%')
+        ++pos;
+
+    /// Alphanumeric content must follow immediately.
+    if (pos >= length || !is_token_char(static_cast<unsigned char>(data[pos])))
+        return {};
+
+    const size_t start = pos;
+
+    while (pos < length && is_token_char(static_cast<unsigned char>(data[pos])))
+        ++pos;
+
+    const size_t end = pos;
+
+    /// Reject short needles: it might match too many dictionary tokens.
+    if (end - start < min_pattern_length)
+        return {};
+
+    /// Trailing '%' must follow immediately after the content.
+    if (pos >= length || data[pos] != '%')
+        return {};
+
+    while (pos < length && data[pos] == '%')
+        ++pos;
+
+    /// Nothing else may follow.
+    if (pos < length)
+        return {};
+
+    String pattern;
+    pattern += '%';
+    pattern.append(data + start, end - start);
+    pattern += '%';
+
+    std::vector<OptimizedRegularExpression> patterns;
+    if (case_insensitive)
+        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+    else
+        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+    return patterns;
+}
+
+/// Converts a Field value to its text representation using `serializeText`,
+/// matching the format produced by `JSONAllValues`.
+static String serializeFieldAsText(const Field & value, const DataTypePtr & type)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    WriteBufferFromOwnString buf;
+    type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
+    return buf.str();
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
-    const DataTypePtr & value_type,
-    const Field & value_field,
+    DataTypePtr value_type,
+    Field value_field,
     RPNElement & out) const
 {
     const String function_name = function_node.getFunctionName();
@@ -505,6 +625,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
+    }
+    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    {
+        has_index_column = true;
+        direct_read_mode = getHintOrNoneMode();
+        bool is_special_text_index_function = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
+
+        /// Convert non-string values to their text representation to match the format produced by `JSONAllValues`.
+        /// Keep array values as-is for special text index functions.
+        if (!is_special_text_index_function && !WhichDataType(value_type).isStringOrFixedString())
+        {
+            value_field = serializeFieldAsText(value_field, value_type);
+            value_type = std::make_shared<DataTypeString>();
+        }
     }
 
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
@@ -529,6 +663,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
+
+    const auto & settings = getContext()->getSettingsRef();
 
     if (has_map_keys_column || has_map_values_column)
     {
@@ -629,11 +765,56 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && tokenizer->supportsStringLike())
     {
-        std::vector<String> tokens = stringLikeToTokens(value_field);
+        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
+        /// like/notLike optimization is only supported for the SplitByNonAlpha tokenizer.
+        /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
+        /// the index dictionary for pattern-matching tokens has non-trivial overhead.
+        if (tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan]
+            && !has_preprocessor)
+        {
+            /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
+            /// Add support for multiple patterns later with hint mode:
+            /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
+            /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
+            /// 3. Fall-back to the brute-force search for short patterns e.g. %a% -> reading postings for tokens containing 'a' is expensive.
+            /// 4. Fall-back to the brute-force search for other cases for now.
+            /// Follow-up:
+            /// 1. Handle more complex patterns e.g. %foo%bar% -> (postings_pattern(%foo%) && postings_pattern(%bar%)) || postings_pattern(%foo%bar%)
+            auto patterns = stringLikeToPatterns(value_field, false);
+            if (patterns.size() == 1)
+            {
+                out.function = RPNElement::FUNCTION_LIKE;
+                out.text_search_queries.emplace_back(
+                    std::make_shared<TextSearchQuery>(
+                        function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+                return true;
+            }
+        }
+
+        std::vector<String> exact_tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(exact_tokens)));
         return true;
+    }
+    /// Currently, only SplitByNonAlpha tokenizer is supported with ilike/notilike functions for the like optimization.
+    if (function_name == "ilike" && tokenizer->getType() == ITokenizer::Type::SplitByNonAlpha
+        && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
+    {
+        const bool has_preprocessor = preprocessor && preprocessor->hasActions();
+        if (has_preprocessor && !preprocessor->isLowerOrUpper())
+            return false;
+
+        auto patterns = stringLikeToPatterns(value_field, true);
+        if (patterns.size() == 1)
+        {
+            out.function = RPNElement::FUNCTION_LIKE;
+            out.text_search_queries.emplace_back(
+                std::make_shared<TextSearchQuery>(
+                    function_name, TextSearchMode::All, TextIndexDirectReadMode::Exact, std::vector<String>(), std::move(patterns)));
+            return true;
+        }
+        return false;
     }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
@@ -841,7 +1022,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     auto output_column_name = outputs.front()->result_name;
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
-    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header);
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths");
     if (!json_info)
         return false;
 
@@ -892,6 +1073,13 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 {
     std::optional<size_t> set_key_position;
 
+    auto has_index = [&](const RPNBuilderTreeNode & node)
+    {
+        return header.has(node.getColumnName())
+            || hasIndexForMapElementValue(node)
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+    };
+
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
     {
         const auto function = lhs.toFunctionNode();
@@ -900,7 +1088,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
-            if (header.has(argument.getColumnName()) || hasIndexForMapElementValue(argument))
+
+            if (has_index(argument))
             {
                 /// Text index support only one index column.
                 if (set_key_position.has_value())
@@ -912,7 +1101,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     }
     else
     {
-        if (header.has(lhs.getColumnName()) || hasIndexForMapElementValue(lhs))
+        if (has_index(lhs))
             set_key_position = 0;
     }
 
