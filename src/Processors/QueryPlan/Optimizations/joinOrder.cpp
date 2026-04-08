@@ -849,9 +849,11 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
                 fmt::join(left_rels, ","), fmt::join(right_rels, ","));
     }
 
-    /// Original DPhyp guarantees that left_rels and right_rels are connected via the hyperedge graph.
-    /// We omit connectivity check in some cases before calling emitCsgCmp because we check it here anyway.
-    if (connecting_predicates.empty())
+    /// When no explicit predicate connects the two sides, check transitive connectivity
+    /// via column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key).
+    /// `cleanupJoinPredicates` will synthesize the missing predicate after optimization.
+    if (connecting_predicates.empty()
+        && !query_graph.areTransitivelyConnected(left_rels, right_rels))
         return;
 
     evaluateJoin(left_entry->second, right_entry->second, *join_kind, connecting_predicates);
@@ -888,8 +890,8 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
 }
 
 /// Build the hyperedge representation of the join graph used by DPhyp.
-/// Each join predicate is split into (left_rels, right_rels) endpoint sets.
-/// For a simple binary predicate A.x = B.y, left_rels = {A} and right_rels = {B}.
+/// Each join predicate becomes a hyperedge (left_rels, right_rels).
+/// Column equivalence classes add synthetic edges for transitively-connected pairs.
 /// The adjacency index `node_to_edge_ids` maps each relation to the hyperedges that touch it.
 void JoinOrderOptimizer::buildHyperedges()
 {
@@ -897,15 +899,32 @@ void JoinOrderOptimizer::buildHyperedges()
     node_to_edge_ids.assign(num_relations, {});
     hyperedges.clear();
 
-    for (const auto & edge : query_graph.edges)
+    auto add_hyperedge = [&](const BitSet & left_rels, const BitSet & right_rels)
     {
-        if (!edge)
+        size_t hyperedge_id = hyperedges.size();
+        hyperedges.push_back({left_rels, right_rels});
+
+        for (auto rel : left_rels)
+            if (rel < num_relations)
+                node_to_edge_ids[rel].push_back(hyperedge_id);
+        for (auto rel : right_rels)
+            if (rel < num_relations && !left_rels.test(rel))
+                node_to_edge_ids[rel].push_back(hyperedge_id);
+    };
+
+    /// Phase 1: create hyperedges from explicit join predicates.
+    /// Duplicate edges for the same relation pair (e.g. A.x=B.x AND A.y=B.y) are harmless:
+    /// `getNeighborhood` ORs results into a BitSet, and `tryJoin` collects predicates
+    /// from `query_graph.edges`, not from hyperedges.
+    for (const auto & predicate : query_graph.edges)
+    {
+        if (!predicate)
             continue;
 
         BitSet left_rels;
         BitSet right_rels;
 
-        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
         if (op != JoinConditionOperator::Unknown && lhs && rhs)
         {
             left_rels  = lhs.getSourceRelations();
@@ -914,22 +933,72 @@ void JoinOrderOptimizer::buildHyperedges()
         else
         {
             /// Non-binary predicate: treat the full source set as both endpoints.
-            left_rels  = edge.getSourceRelations();
-            right_rels = edge.getSourceRelations();
+            left_rels  = predicate.getSourceRelations();
+            right_rels = predicate.getSourceRelations();
         }
 
         if (!left_rels.any() || !right_rels.any())
             continue;
 
-        size_t hyperedge_id = hyperedges.size();
-        hyperedges.push_back({left_rels, right_rels});
+        add_hyperedge(left_rels, right_rels);
+    }
 
-        for (auto node : left_rels)
-            if (node < num_relations)
-                node_to_edge_ids[node].push_back(hyperedge_id);
-        for (auto node : right_rels)
-            if (node < num_relations && !left_rels.test(node))
-                node_to_edge_ids[node].push_back(hyperedge_id);
+    /// Phase 2: add synthetic hyperedges for transitively-connected relation pairs.
+    /// Column equivalence classes (e.g. A.key=B.key AND B.key=C.key implies A.key=C.key)
+    /// connect relations that have no direct predicate. Without these edges DPhyp's
+    /// neighborhood traversal would never discover the pair.
+
+    /// Build a connectivity matrix from explicit edges to avoid duplicating them.
+    std::vector<BitSet> connected_rels(num_relations);
+    for (const auto & hyperedge : hyperedges)
+    {
+        auto left_rel = hyperedge.left.getSingleBit();
+        auto right_rel = hyperedge.right.getSingleBit();
+        if (left_rel && right_rel)
+        {
+            connected_rels[*left_rel].set(*right_rel);
+            connected_rels[*right_rel].set(*left_rel);
+        }
+    }
+
+    using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
+    std::unordered_set<ConstClassPtr> processed_classes;
+
+    for (const auto & [member, equiv_class] : query_graph.column_equivalences.getMemberToClassMap())
+    {
+        if (!equiv_class || !processed_classes.insert(equiv_class).second)
+            continue;
+
+        /// Collect all distinct relations in this equivalence class.
+        BitSet seen_rels;
+        std::vector<size_t> class_rels;
+        for (const auto & column : *equiv_class)
+        {
+            auto relation = column.getSourceRelations().getSingleBit();
+            if (relation && *relation < num_relations && !seen_rels.test(*relation))
+            {
+                seen_rels.set(*relation);
+                class_rels.push_back(*relation);
+            }
+        }
+
+        for (size_t i = 0; i < class_rels.size(); ++i)
+        {
+            for (size_t j = i + 1; j < class_rels.size(); ++j)
+            {
+                if (connected_rels[class_rels[i]].test(class_rels[j]))
+                    continue;
+
+                connected_rels[class_rels[i]].set(class_rels[j]);
+                connected_rels[class_rels[j]].set(class_rels[i]);
+
+                BitSet left_singleton;
+                BitSet right_singleton;
+                left_singleton.set(class_rels[i]);
+                right_singleton.set(class_rels[j]);
+                add_hyperedge(left_singleton, right_singleton);
+            }
+        }
     }
 }
 
