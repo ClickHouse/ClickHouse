@@ -834,7 +834,19 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
     for (auto * predicate : applicable_predicates)
     {
         if (connects(predicate, left_rels, right_rels))
+        {
             connecting_predicates.push_back(predicate);
+            continue;
+        }
+
+        /// Predicates spanning 2+ relations were already applied in a sub-join.
+        /// Safety check that single-table or constant predicates are not silently lost.
+        if (predicate->getSourceRelations().count() < 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Single-table predicate in DPhyp join edges would be lost: {} (sources: {{ {} }}) "
+                "for join between {{ {} }} and {{ {} }}",
+                predicate->dump(), fmt::join(predicate->getSourceRelations(), ","),
+                fmt::join(left_rels, ","), fmt::join(right_rels, ","));
     }
 
     /// Original DPhyp guarantees that left_rels and right_rels are connected via the hyperedge graph.
