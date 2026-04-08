@@ -5,7 +5,7 @@ title: 'UNIQUE'
 doc_type: 'reference'
 ---
 
-# UNIQUE
+# UNIQUE {#unique}
 
 The `UNIQUE` predicate tests whether a subquery result contains no duplicate rows. It returns `1` if all rows are distinct, and `0` if any duplicates exist. An empty subquery is considered vacuously unique and returns `1`.
 
