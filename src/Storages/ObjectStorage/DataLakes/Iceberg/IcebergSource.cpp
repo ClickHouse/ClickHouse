@@ -45,6 +45,20 @@ namespace CurrentMetrics
 namespace DB
 {
 
+void logIcebergFileStats(IcebergDataObjectInfoPtr object_info, const LoggerPtr & log)
+{
+#if USE_AVRO
+    const auto & info = object_info->info;
+    if (info.record_count.has_value())
+        LOG_TEST(log, "Iceberg record_count for '{}': {}", object_info->getPath(), *info.record_count);
+    if (info.file_size_in_bytes.has_value())
+        LOG_TEST(log, "Iceberg file_size_in_bytes for '{}': {}", object_info->getPath(), *info.file_size_in_bytes);
+#else
+    UNUSED(object_info);
+    UNUSED(log);
+#endif
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_download_buffer_size;
@@ -268,7 +282,7 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
     bool need_only_count,
     IcebergMetadata * metadata)
 {
-    ObjectInfoPtr object_info = file_iterator->next(processor);
+    IcebergDataObjectInfoPtr object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(file_iterator->next(processor));
 
     if (!object_info || object_info->getPath().empty())
         return {};
@@ -432,6 +446,9 @@ IcebergSource::ReaderHolder IcebergSource::createReader(
                     return std::make_shared<AddingDefaultsTransform>(header, read_from_format_info.columns_description, *input_format, context_);
                 });
         }
+
+        logIcebergFileStats(object_info, log);
+
 
         source = input_format;
     }

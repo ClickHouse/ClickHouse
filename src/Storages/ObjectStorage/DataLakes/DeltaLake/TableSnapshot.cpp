@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 
+#include <Common/StackTrace.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
@@ -732,7 +733,7 @@ void TableSnapshot::initOrUpdateSnapshot() const
 
     ProfileEvents::increment(ProfileEvents::DeltaLakeSnapshotInitializations);
 
-    LOG_TEST(log, "Initializing snapshot");
+    LOG_DEBUG(log, "Initializing snapshot, stacktrace:\n{}", StackTrace().toString());
 
     kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
 

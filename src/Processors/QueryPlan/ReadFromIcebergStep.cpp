@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergSource.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
 #include <Formats/FormatFactory.h>
@@ -161,6 +162,18 @@ void ReadFromIcebergStep::createIterator()
             query_settings.list_object_keys_size,
             storage_snapshot->metadata,
             context);
+
+        /// Apply virtual column (_path, _file) filtering to skip files before reading.
+        if (filter_actions_dag)
+        {
+            iterator_wrapper = std::make_shared<ObjectIteratorWithPathAndFileFilter>(
+                iterator_wrapper,
+                *filter_actions_dag,
+                virtual_columns,
+                NamesAndTypesList{},
+                configuration->getNamespace(),
+                context);
+        }
     }
 }
 

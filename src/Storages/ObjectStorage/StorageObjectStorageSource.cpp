@@ -92,23 +92,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
-{
-#if USE_AVRO
-    if (auto iceberg_object = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
-    {
-        const auto & info = iceberg_object->info;
-        if (info.record_count.has_value())
-            LOG_TEST(log, "Iceberg record_count for '{}': {}", object_info->getPath(), *info.record_count);
-        if (info.file_size_in_bytes.has_value())
-            LOG_TEST(log, "Iceberg file_size_in_bytes for '{}': {}", object_info->getPath(), *info.file_size_in_bytes);
-    }
-#else
-    UNUSED(object_info);
-    UNUSED(log);
-#endif
-}
-
 StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
@@ -584,8 +567,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_info->getPath(),
             object_info->getObjectMetadata()->size_bytes,
             table_options.format);
-
-        logIcebergFileStats(object_info, log);
 
         bool use_native_reader_v3 = format_settings.has_value()
             ? format_settings->parquet.use_native_reader_v3

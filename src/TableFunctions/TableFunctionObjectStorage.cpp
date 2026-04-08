@@ -35,6 +35,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
+#include <Formats/ReadSchemaUtils.h>
 
 
 namespace DB
@@ -261,6 +263,34 @@ ColumnsDescription TableFunctionObjectStorage<
 
             if (table_options.format == "auto")
                 table_options.format = "Parquet";
+        }
+
+        if constexpr (is_data_lake)
+        {
+            if (columns.empty())
+            {
+                /// Metadata didn't provide a schema (e.g. Hudi). Use metadata's file iterator
+                /// to find actual data files and infer schema from one of them.
+                using MetadataType = typename Definition::MetadataType;
+                ObjectIterator iter;
+                if constexpr (std::is_same_v<MetadataType, IcebergMetadata>)
+                {
+                    auto dl_settings = settings ? std::dynamic_pointer_cast<DataLakeStorageSettings>(settings) : std::make_shared<DataLakeStorageSettings>();
+                    auto dl_metadata = MetadataType::create(storage, configuration, dl_settings, context, table_options.format);
+                    iter = dl_metadata->iterate(nullptr, nullptr, 1, nullptr, context);
+                }
+                else
+                {
+                    auto dl_metadata = MetadataType::create(storage, configuration, context);
+                    iter = dl_metadata->iterate(nullptr, nullptr, 1, nullptr, context);
+                }
+
+                ObjectInfos read_keys;
+                auto buf_iter = createReadBufferIteratorFromFileIterator(
+                    storage, configuration, table_options.format, table_options.compression_method,
+                    /* format_settings */ std::nullopt, std::move(iter), read_keys, context);
+                columns = readSchemaFromFormat(table_options.format, /* format_settings */ std::nullopt, *buf_iter, context);
+            }
         }
 
         if (columns.empty())

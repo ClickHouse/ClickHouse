@@ -269,6 +269,21 @@ std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
         format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
 }
 
+std::unique_ptr<ReadBufferIterator> createReadBufferIteratorFromFileIterator(
+    const ObjectStoragePtr & object_storage,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
+    const String & format,
+    const String & compression_method,
+    const std::optional<FormatSettings> & format_settings,
+    ObjectIterator file_iterator,
+    ObjectInfos & read_keys,
+    const ContextPtr & context)
+{
+    return std::make_unique<ReadBufferIterator>(
+        object_storage, configuration, format, compression_method, std::move(file_iterator),
+        format_settings, getSchemaCache(context, configuration->getTypeName()), read_keys, context);
+}
+
 ColumnsDescription resolveSchemaFromData(
     const ObjectStoragePtr & object_storage,
     const ObjectStorageConnectionConfigurationPtr & configuration,

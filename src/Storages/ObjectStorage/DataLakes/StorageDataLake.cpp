@@ -22,6 +22,7 @@
 
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
@@ -98,7 +99,10 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
                 user_files_path);
     }
 
-    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (table_options.format == "auto");
+    if (table_options.format == "auto")
+        table_options.format = "Parquet";
+
+    const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format;
 
     LOG_DEBUG(
@@ -111,14 +115,7 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
         || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
 
     if (!is_table_function && is_delta_lake_cdf)
-    {
-#if USE_PARQUET
-        if constexpr (!std::is_same_v<DataLakeMetadata, DeltaLakeMetadata>)
-#endif
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
-        }
-    }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
 
     try
     {
@@ -160,7 +157,19 @@ StorageDataLake<DataLakeMetadata>::StorageDataLake(
                 columns = ColumnsDescription(std::move(schema));
         }
 
-        if (columns.empty() || table_options.format == "auto")
+        if (columns.empty() && current_metadata)
+        {
+            /// Metadata didn't provide a schema (e.g. Hudi). Use metadata's file iterator
+            /// to find actual data files and infer schema from one of them.
+            auto iter = current_metadata->iterate(nullptr, nullptr, 1, nullptr, context);
+            ObjectInfos read_keys;
+            auto buf_iter = createReadBufferIteratorFromFileIterator(
+                object_storage, configuration, table_options.format, table_options.compression_method,
+                format_settings, std::move(iter), read_keys, context);
+            columns = readSchemaFromFormat(table_options.format, format_settings, *buf_iter, context);
+            sample_path = buf_iter->getLastFilePath();
+        }
+        if (columns.empty())
             resolveSchemaAndFormat(columns, table_options.format, table_options.compression_method, object_storage, configuration, format_settings, sample_path, context);
     }
     else
@@ -312,7 +321,7 @@ IStorage::ColumnSizeByName StorageDataLake<DataLakeMetadata>::getColumnSizes() c
 template <typename DataLakeMetadata>
 IDataLakeMetadata * StorageDataLake<DataLakeMetadata>::getExternalMetadata(ContextPtr query_context)
 {
-    updateMetadata(query_context);
+    ensureMetadataInitialized(query_context);
     return current_metadata.get();
 }
 

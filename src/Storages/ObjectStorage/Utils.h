@@ -105,4 +105,16 @@ std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
     ObjectInfos & read_keys,
     const ContextPtr & context);
 
+/// Like createReadBufferIterator, but uses an existing file iterator (e.g. from data lake metadata)
+/// instead of creating one from configuration paths.
+std::unique_ptr<ReadBufferIterator> createReadBufferIteratorFromFileIterator(
+    const ObjectStoragePtr & object_storage,
+    const ObjectStorageConnectionConfigurationPtr & configuration,
+    const String & format,
+    const String & compression_method,
+    const std::optional<FormatSettings> & format_settings,
+    ObjectIterator file_iterator,
+    ObjectInfos & read_keys,
+    const ContextPtr & context);
+
 }

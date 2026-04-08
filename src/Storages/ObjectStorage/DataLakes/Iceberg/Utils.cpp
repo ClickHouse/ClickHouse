@@ -140,9 +140,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             path);
     }
     String version_str;
-    /// v<V>.metadata.json
+    /// v<V>.metadata.json or v<V>-<random-uuid>.metadata.json
     if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of(".-"));
     /// <V>-<random-uuid>.metadata.json
     else
         version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));

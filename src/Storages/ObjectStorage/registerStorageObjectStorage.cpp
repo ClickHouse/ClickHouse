@@ -34,6 +34,8 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, ObjectStorage
     auto [configuration, table_options]
         = ObjectStorageConnectionConfiguration::initialize(type, args.engine_args, context, false, &args.table_id);
 
+    configuration->check(context);
+
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
     // session and user are ignored.

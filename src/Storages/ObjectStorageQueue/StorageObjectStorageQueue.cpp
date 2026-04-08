@@ -296,6 +296,9 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 {
     auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::StorageObjectStorageQueue");
     table_options.adjustReadPathForQueue();
+    /// Sync the adjusted path (with glob) back to the configuration so that
+    /// ObjectStorageQueueSource can find it via configuration->getRawPath().
+    configuration->setRawPath(ObjectStorageConnectionConfiguration::Path(table_options.getPathForRead().path));
 
     const bool is_attach = mode > LoadingStrictnessLevel::CREATE;
     validateSettings(*queue_settings_, is_attach);
