@@ -1,3 +1,8 @@
+- Scalar inputs.
+-- String input.
+bless
+disguis
+run
 given
 combinatori
 collect
@@ -19,3 +24,85 @@ dépass
 intens
 étudi
 peuvent
+-- FixedString input produces String output.
+bless	String
+-- String trailing \\0 bytes are binary-safe (not trimmed, unlike FixedString padding).
+1
+-- Nullable(String) input preserves nullability.
+bless
+\N
+Nullable(String)
+-- Nullable(FixedString) input.
+bless
+Nullable(String)
+-- LowCardinality(String) input.
+bless
+LowCardinality(String)
+-- LowCardinality(FixedString) input.
+bless
+- Array inputs.
+-- Array(String) input.
+['bless','disguis','run']
+Array(String)
+-- Array(FixedString) input produces Array(String) output.
+['bless','disguis']
+Array(String)
+-- Array(Nullable(String)) input preserves nulls.
+['bless',NULL,'run']
+Array(Nullable(String))
+-- Array(LowCardinality(String)) input.
+['bless','run']
+Array(String)
+-- Array(Nullable(FixedString)) input.
+['bless',NULL,'run']
+Array(Nullable(String))
+- Multiple rows.
+-- Multiple rows from a String column.
+bless
+disguis
+run
+-- Multiple rows from an Array(String) column.
+['bless','disguis']
+['run','faster']
+-- Multiple rows from a Nullable(String) column.
+bless
+\N
+run
+- Table tests.
+-- Table with a String column.
+bless
+disguis
+faster
+run
+-- Table with a FixedString column.
+bless
+disguis
+run
+-- Table with a Nullable(String) column.
+bless
+run
+\N
+-- Table with an Array(String) column.
+['bless','disguis']
+['run','faster']
+-- Table with an Array(Nullable(String)) column.
+['bless',NULL,'run']
+['faster',NULL]
+-- Table with a LowCardinality(String) column.
+bless
+bless
+disguis
+- Negative tests.
+-- Whitespace in a String input raises BAD_ARGUMENTS.
+-- Whitespace in an Array element raises BAD_ARGUMENTS.
+-- Whitespace in a FixedString input raises BAD_ARGUMENTS.
+-- Whitespace inside Array(Nullable(String)) raises BAD_ARGUMENTS.
+-- Unsupported language raises ILLEGAL_TYPE_OF_ARGUMENT.
+-- Wrong type for first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
+-- Wrong type for second argument raises ILLEGAL_TYPE_OF_ARGUMENT.
+-- Tab character in a String input raises BAD_ARGUMENTS.
+-- Newline character in a String input raises BAD_ARGUMENTS.
+-- Array(UInt32) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
+-- Array(Nullable(UInt32)) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
+-- Array(Array(String)) as first argument raises ILLEGAL_TYPE_OF_ARGUMENT.
+-- Calling without the experimental setting raises SUPPORT_IS_DISABLED.
