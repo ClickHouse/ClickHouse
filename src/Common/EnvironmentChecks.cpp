@@ -9,7 +9,7 @@
 
 #include <tuple>
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <unistd.h>
 
 namespace
