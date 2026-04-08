@@ -284,80 +284,14 @@ struct TextIndexSerialization
 
 using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
 
-class TextIndexAnalyzer
-{
-public:
-    struct QueryBuilder
-    {
-        TextSearchQueryPtr query;
-        std::optional<PostingList> postings;
-        std::optional<RowsRange> rows_range;
-
-        bool is_failed = false;
-        bool has_large_postings = false;
-
-        void markFailed();
-        void addMissingToken();
-        void addLargePostings() { has_large_postings = true; }
-        void addRowsRange(RowsRange token_rows_range);
-        void addPostings(PostingListPtr token_postings);
-    };
-
-    explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
-
-    bool alwaysFalse() const { return always_false; }
-    const TokenToPostingsInfosMap & getTokenInfos() const { return token_infos; }
-    const NameSet & getMissingTokens() const { return missing_tokens; }
-    const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
-
-    bool isTokenNeeded(std::string_view token) const { return query_count_by_token.at(token) > 0; }
-    bool hasReadPostings(const String & token);
-
-    void addMissingToken(std::string_view token);
-    void addLargePostings(std::string_view token);
-    void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
-    void addPostings(std::string_view token, PostingListPtr postings);
-
-    /// Pattern support for LIKE queries.
-    void addPatternTokenInfo(const String & token, TokenPostingsInfoPtr token_info);
-    void matchPatternTokensToQueries(const MergeTreeIndexConditionText & condition_text);
-    void addPatternTokenPostings(const String & token, PostingListPtr postings);
-
-    const TokenToPostingsInfosMap & getPatternTokenInfos() const { return pattern_token_infos; }
-    PostingListPtr getPatternTokenPostings(std::string_view token) const;
-    const std::vector<String> & getPatternTokensForQuery(const TextSearchQuery & query) const;
-    bool canUseLikeDictionaryScan() const { return can_use_like_dictionary_scan; }
-    void setCanUseLikeDictionaryScan(bool value) { can_use_like_dictionary_scan = value; }
-
-private:
-    template <typename Operation>
-    void processTokenOperation(std::string_view token, Operation && operation);
-
-    std::unordered_map<UInt128, QueryBuilder> query_builders;
-    std::unordered_map<std::string_view, size_t> query_count_by_token;
-    std::unordered_map<std::string_view, std::vector<UInt128>> queries_by_token;
-
-    bool always_false = false;
-    NameSet missing_tokens;
-    TokenToPostingsInfosMap token_infos;
-    TokenToPostingsMap small_postings;
-
-    /// Pattern tokens discovered by scanning the dictionary for LIKE patterns.
-    TokenToPostingsInfosMap pattern_token_infos;
-    /// Actual posting lists for pattern tokens (embedded or single-block).
-    absl::flat_hash_map<String, PostingListPtr> pattern_token_postings;
-    /// Pattern tokens per query (query hash -> matched token names).
-    std::unordered_map<UInt128, std::vector<String>> pattern_tokens_per_query;
-    /// Whether the dictionary scan for patterns completed successfully.
-    bool can_use_like_dictionary_scan = false;
-};
+class TextIndexAnalyzer;
 
 /// Text index granule created on reading of the index.
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_, PostingListCodecPtr posting_list_codec_);
-    ~MergeTreeIndexGranuleText() override = default;
+    ~MergeTreeIndexGranuleText() override;
 
     const MergeTreeIndexTextParams & getParams() const { return params; }
 
@@ -369,12 +303,13 @@ public:
     size_t memoryUsageBytes() const override;
 
     bool hasAnyQueryTokens(const TextSearchQuery & query) const;
+    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
+
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
-    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
 
@@ -387,6 +322,8 @@ public:
         const String & index_id_for_caches);
 
 private:
+    bool hasAnyTokensImpl(const TextSearchQuery & query) const;
+
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionaryForTokens(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for patterns.
@@ -403,7 +340,7 @@ private:
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     /// Analyzer for the text index. Tracks regular tokens, pattern tokens, and per-query state.
-    std::optional<TextIndexAnalyzer> analyzer;
+    std::unique_ptr<TextIndexAnalyzer> analyzer;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
     std::optional<RowsRange> current_range;
     /// Unique identifier for text index in the current data part.

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
@@ -347,210 +348,7 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 
 }
 
-void TextIndexAnalyzer::QueryBuilder::markFailed()
-{
-    is_failed = true;
-    rows_range.reset();
-    postings.reset();
-}
-
-void TextIndexAnalyzer::QueryBuilder::addMissingToken()
-{
-    if (query->search_mode == TextSearchMode::All)
-        markFailed();
-}
-
-void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
-{
-    if (is_failed)
-        return;
-
-    if (!rows_range)
-    {
-        rows_range = token_rows_range;
-    }
-    else if (query->search_mode == TextSearchMode::Any)
-    {
-        rows_range = rows_range->unionWith(token_rows_range);
-    }
-    else if (query->search_mode == TextSearchMode::All)
-    {
-        rows_range = rows_range->intersectWith(token_rows_range);
-
-        if (!rows_range)
-            markFailed();
-    }
-}
-
-void TextIndexAnalyzer::QueryBuilder::addPostings(PostingListPtr token_postings)
-{
-    if (is_failed)
-        return;
-
-    if (!postings)
-    {
-        postings = *token_postings;
-    }
-    else if (query->search_mode == TextSearchMode::Any)
-    {
-        *postings |= *token_postings;
-    }
-    else
-    {
-        *postings &= *token_postings;
-
-        if (postings->cardinality() == 0)
-            markFailed();
-    }
-}
-
-TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text)
-{
-    for (const auto & [hash, query] : condition_text.getAllSearchQueries())
-    {
-        query_builders[hash].query = query;
-
-        for (const auto & token : query->tokens)
-        {
-            query_count_by_token[token]++;
-            queries_by_token[token].push_back(hash);
-        }
-    }
-}
-
-const TextIndexAnalyzer::QueryBuilder & TextIndexAnalyzer::getQueryBuilder(const TextSearchQuery & query) const
-{
-    auto hash = query.getHash().get128();
-    auto it = query_builders.find(hash);
-
-    if (it == query_builders.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query builder not found for text search  query with function '{}'", query.function_name);
-
-    return it->second;
-}
-
-void TextIndexAnalyzer::addMissingToken(std::string_view token)
-{
-    missing_tokens.emplace(token);
-
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addMissingToken();
-    });
-}
-
-void TextIndexAnalyzer::addLargePostings(std::string_view token)
-{
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addLargePostings();
-    });
-}
-
-void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
-{
-    chassert(!token_info->ranges.empty());
-    RowsRange rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
-
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addRowsRange(rows_range);
-        if (token_info->embedded_postings)
-            query_builder.addPostings(token_info->embedded_postings);
-    });
-
-    token_infos[token] = token_info;
-}
-
-void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
-{
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addPostings(postings);
-    });
-
-    small_postings[String(token)] = std::move(postings);
-}
-
-bool TextIndexAnalyzer::hasReadPostings(const String & token)
-{
-    if (small_postings.contains(token))
-        return true;
-
-    auto it = token_infos.find(token);
-    return it != token_infos.end() && it->second->embedded_postings;
-}
-
-template <typename Operation>
-void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
-{
-    const auto & token_queries = queries_by_token.at(token);
-
-    for (const auto & query_hash : token_queries)
-    {
-        auto & query_builder = query_builders[query_hash];
-        if (query_builder.is_failed)
-            continue;
-
-        operation(query_builder);
-
-        if (query_builder.is_failed)
-        {
-            if (query_builder.query->search_mode == TextSearchMode::All)
-            {
-                always_false = true;
-            }
-
-            for (const auto & other_token : query_builder.query->tokens)
-            {
-                chassert(query_count_by_token[other_token] > 0);
-                --query_count_by_token[other_token];
-            }
-        }
-    }
-}
-
-void TextIndexAnalyzer::addPatternTokenInfo(const String & token, TokenPostingsInfoPtr token_info)
-{
-    if (token_info->embedded_postings)
-        pattern_token_postings[token] = token_info->embedded_postings;
-
-    pattern_token_infos[token] = std::move(token_info);
-}
-
-void TextIndexAnalyzer::matchPatternTokensToQueries(const MergeTreeIndexConditionText & condition_text)
-{
-    for (const auto & [token, _] : pattern_token_infos)
-    {
-        for (const auto & [query_hash, query] : condition_text.getAllSearchQueries())
-        {
-            if (query->patterns.empty())
-                continue;
-
-            if (std::ranges::any_of(
-                    query->patterns, [&](const OptimizedRegularExpression & pattern) { return pattern.match(token.data(), token.size()); }))
-                pattern_tokens_per_query[query_hash].push_back(token);
-        }
-    }
-}
-
-void TextIndexAnalyzer::addPatternTokenPostings(const String & token, PostingListPtr postings)
-{
-    pattern_token_postings[token] = std::move(postings);
-}
-
-PostingListPtr TextIndexAnalyzer::getPatternTokenPostings(std::string_view token) const
-{
-    auto it = pattern_token_postings.find(token);
-    return it == pattern_token_postings.end() ? nullptr : it->second;
-}
-
-const std::vector<String> & TextIndexAnalyzer::getPatternTokensForQuery(const TextSearchQuery & query) const
-{
-    static const std::vector<String> empty;
-    auto it = pattern_tokens_per_query.find(query.getHash().get128());
-    return it == pattern_tokens_per_query.end() ? empty : it->second;
-}
+MergeTreeIndexGranuleText::~MergeTreeIndexGranuleText() = default;
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
@@ -570,7 +368,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     is_empty = false;
-    analyzer.emplace(typeid_cast<const MergeTreeIndexConditionText &>(*state.condition));
+    analyzer = std::make_unique<TextIndexAnalyzer>(typeid_cast<const MergeTreeIndexConditionText &>(*state.condition));
 
     analyzeDictionaryForTokens(*index_stream, *dictionary_stream, state);
     analyzeDictionaryForPatterns(*index_stream, *dictionary_stream, state);
@@ -679,20 +477,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    const auto & all_search_patterns = condition_text.getAllSearchPatterns();
-
-    if (all_search_patterns.empty())
-    {
-        analyzer->setCanUseLikeDictionaryScan(true);
+    if (!condition_text.hasSearchPatterns())
         return;
-    }
 
     auto sparse_index = loadSparseIndex(header_stream, state);
     if (sparse_index->empty())
-    {
-        analyzer->setCanUseLikeDictionaryScan(true);
         return;
-    }
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
 
@@ -714,10 +504,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
         for (size_t token_idx = 0; token_idx < num_tokens; ++token_idx)
         {
             const auto & token = block_tokens.getDataAt(token_idx);
-            if (std::ranges::any_of(all_search_patterns, [&](const auto * pattern) { return pattern->match(token.data(), token.size()); }))
-            {
+            if (analyzer->addTokenToPatterns(token))
                 matched_indices.emplace_back(token_idx);
-            }
         }
 
         if (matched_indices.empty())
@@ -734,19 +522,17 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
         {
             String token(block_tokens.getDataAt(matched_indices[i]));
             postings_to_read += !(infos[i]->header & PostingsSerialization::Flags::EmbeddedPostings);
-            analyzer->addPatternTokenInfo(token, infos[i]);
+            analyzer->addTokenInfo(token, infos[i]);
         }
 
         if (postings_to_read >= max_postings_to_read)
         {
             /// Too many large-posting tokens matched.
             /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
+            analyzer->bypassPatternQueries();
             return;
         }
     }
-
-    analyzer->matchPatternTokensToQueries(condition_text);
-    analyzer->setCanUseLikeDictionaryScan(true);
 }
 
 std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
@@ -875,22 +661,6 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
         if (analyzer->alwaysFalse())
             break;
     }
-
-    /// Process pattern tokens (from LIKE dictionary scan).
-    for (const auto & [token, token_info] : analyzer->getPatternTokenInfos())
-    {
-        /// Embedded postings are already handled in addPatternTokenInfo.
-        if (analyzer->getPatternTokenPostings(token))
-            continue;
-
-        if (token_info->header & SingleBlock)
-        {
-            chassert(token_info->offsets.size() == 1);
-            auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
-            analyzer->addPatternTokenPostings(token, std::move(block));
-        }
-        /// Multi-block pattern tokens are read on demand from large_postings_streams in the reader.
-    }
 }
 
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
@@ -904,6 +674,19 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
     if (query.tokens.empty())
         return false;
 
+    return hasAnyTokensImpl(query);
+}
+
+bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
+{
+    if (query.patterns.empty())
+        return false;
+
+    return hasAnyTokensImpl(query);
+}
+
+bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) const
+{
     const auto & query_builder = analyzer->getQueryBuilder(query);
     if (!current_range.has_value())
         return !query_builder.is_failed;
@@ -961,60 +744,6 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     return true;
-}
-
-bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
-{
-    if (query.patterns.empty())
-        return false;
-
-    /// If the dictionary scan was cut short (too many large-posting tokens), the set of
-    /// matched pattern tokens is incomplete. Conservatively assume the pattern may match.
-    if (!analyzer->canUseLikeDictionaryScan())
-        return true;
-
-    const auto & query_tokens = analyzer->getPatternTokensForQuery(query);
-
-    if (!current_range.has_value())
-        return !query_tokens.empty();
-
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-    /// Union all postings from this query's pattern-matched tokens.
-    PostingList union_posting;
-    const auto & pattern_token_infos = analyzer->getPatternTokenInfos();
-
-    for (const auto & token : query_tokens)
-    {
-        auto it = pattern_token_infos.find(token);
-        if (it == pattern_token_infos.end())
-            continue;
-
-        const auto & token_info = *it->second;
-
-        bool has_any_range = std::ranges::any_of(token_info.ranges, [this](const auto & range)
-        {
-            return current_range->intersects(range);
-        });
-
-        if (!has_any_range)
-            continue;
-
-        /// We read postings only for tokens that have embedded or single-block postings.
-        /// Otherwise, assume that the token is useful for filtering.
-        if (auto postings = analyzer->getPatternTokenPostings(token))
-        {
-            union_posting |= (*postings & range_posting);
-        }
-        else
-        {
-            /// Token has multiple blocks, conservatively assume it's present.
-            return true;
-        }
-    }
-
-    return union_posting.cardinality() > 0;
 }
 
 

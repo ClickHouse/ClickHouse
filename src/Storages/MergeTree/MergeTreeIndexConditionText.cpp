@@ -144,9 +144,6 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         {
             all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
             all_search_queries[search_query->getHash().get128()] = search_query;
-
-            for (const auto & pattern : search_query->patterns)
-                all_search_patterns.push_back(&pattern);
         }
 
         if (requiresReadingAllTokens(element))
@@ -425,6 +422,11 @@ std::string MergeTreeIndexConditionText::getDescription() const
 
     description += "])";
     return description;
+}
+
+bool MergeTreeIndexConditionText::hasSearchPatterns() const
+{
+    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->patterns.empty(); });
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const

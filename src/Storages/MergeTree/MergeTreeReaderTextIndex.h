@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -51,8 +52,6 @@ private:
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
     PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range);
-    /// Returns union of postings for pattern-matched tokens (LIKE queries).
-    PostingList buildPostingsForPatternQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range);
     /// Reads and unions all posting list blocks for a large-posting token within the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.

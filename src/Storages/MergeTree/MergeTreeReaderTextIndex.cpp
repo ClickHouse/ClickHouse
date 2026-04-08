@@ -1,6 +1,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
@@ -91,9 +92,9 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
-
     const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    if (!condition_text.getAllSearchPatterns().empty())
+
+    if (condition_text.hasSearchPatterns())
     {
         /// Build a fallback evaluation path for when the dictionary scan is cut short
         /// (too many pattern-matching tokens exceed text_index_like_max_postings_to_read).
@@ -130,8 +131,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
                 continue;
 
             dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
-            auto actions = std::make_shared<ExpressionActions>(
-                std::move(*dag), ExpressionActionsSettings(context_copy->getSettingsRef()));
+            auto actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context_copy->getSettingsRef()));
 
             /// Collect the physical columns this expression requires.
             for (const auto & req : actions->getRequiredColumnsWithTypes())
@@ -232,21 +232,12 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         {
             is_always_true[i] = true;
         }
-        else if (!search_query->patterns.empty())
+        else if (analyzer.isBypassed(*search_query))
         {
-            if (!analyzer.canUseLikeDictionaryScan())
-            {
-                if (!fallback_reader)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "The fallback reader for patterns is not initialized.");
+            if (!fallback_reader)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The fallback reader for patterns is not initialized.");
 
-                use_fallback[i] = true;
-            }
-            else
-            {
-                const auto & pattern_tokens = analyzer.getPatternTokensForQuery(*search_query);
-                for (const auto & token : pattern_tokens)
-                    useful_tokens.insert(token);
-            }
+            use_fallback[i] = true;
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
         {
@@ -298,14 +289,6 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
     {
         if (useful_tokens.contains(token) && token_info->hasLargePostings())
             large_postings_streams.emplace(token, make_stream());
-    }
-
-    for (const auto & [token, token_info] : analyzer.getPatternTokenInfos())
-    {
-        if (analyzer.getPatternTokenPostings(token) || !useful_tokens.contains(token))
-            continue;
-
-        large_postings_streams.emplace(token, make_stream());
     }
 }
 
@@ -579,10 +562,6 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     const TextIndexAnalyzer & analyzer,
     const RowsRange & range)
 {
-    /// Handle pattern queries (LIKE) — always uses union semantics.
-    if (!query.patterns.empty())
-        return buildPostingsForPatternQuery(query, analyzer, range);
-
     const auto & query_builder = analyzer.getQueryBuilder(query);
     const auto & token_infos = analyzer.getTokenInfos();
 
@@ -640,56 +619,6 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     return result.value_or(PostingList{});
 }
 
-PostingList MergeTreeReaderTextIndex::buildPostingsForPatternQuery(
-    const TextSearchQuery & query,
-    const TextIndexAnalyzer & analyzer,
-    const RowsRange & range)
-{
-    PostingList range_posting;
-    range_posting.addRangeClosed(static_cast<UInt32>(range.begin), static_cast<UInt32>(range.end));
-
-    PostingList union_posting;
-    const auto & pattern_tokens = analyzer.getPatternTokensForQuery(query);
-    const auto & pattern_token_infos = analyzer.getPatternTokenInfos();
-
-    for (const auto & token : pattern_tokens)
-    {
-        if (!useful_tokens.contains(token))
-            continue;
-
-        auto it = pattern_token_infos.find(token);
-        if (it == pattern_token_infos.end())
-            continue;
-
-        const auto & token_info = *it->second;
-
-        bool has_any_range = std::ranges::any_of(token_info.ranges, [&range](const auto & r)
-        {
-            return range.intersects(r);
-        });
-
-        if (!has_any_range)
-            continue;
-
-        /// Try embedded or single-block postings first.
-        if (auto postings = analyzer.getPatternTokenPostings(token))
-        {
-            union_posting |= (*postings & range_posting);
-            continue;
-        }
-
-        /// Read from large postings streams for multi-block tokens.
-        if (!large_postings_streams.contains(token))
-            continue;
-
-        auto read_blocks = readPostingsBlocksForToken(token, token_info, range);
-        for (const auto & block : read_blocks)
-            union_posting |= (*block & range_posting);
-    }
-
-    return union_posting;
-}
-
 std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range)
 {
     auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
@@ -726,24 +655,18 @@ void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
     const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
     const auto & analyzer = granule_text.getAnalyzer();
 
-    const auto cleanup_postings = [&](const String & token, const TokenPostingsInfoPtr & token_info)
+    for (const auto & [token, token_info] : analyzer.getTokenInfos())
     {
         auto it = postings_blocks.find(token);
         if (it == postings_blocks.end())
-            return;
+            continue;
 
         for (size_t i = 0; i < token_info->ranges.size(); ++i)
         {
             if (!token_info->ranges[i].intersects(range))
                 it->second.erase(i);
         }
-    };
-
-    for (const auto & [token, token_info] : analyzer.getTokenInfos())
-        cleanup_postings(token, token_info);
-
-    for (const auto & [token, token_info] : analyzer.getPatternTokenInfos())
-        cleanup_postings(token, token_info);
+    }
 }
 
 void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows)
