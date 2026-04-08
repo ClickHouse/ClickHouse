@@ -2031,7 +2031,17 @@ bool KeyCondition::tryPrepareSetAtomsForIn(
     };
 
     if (auto atom = try_build_atom(indexes_mapping, set_transforming_dags, data_types, left_args_count))
+    {
+        /// Propagate relaxation from analyzeKeyExpressionForSetIndex (non-injective deterministic transforms).
+        if (set_is_relaxed)
+            atom->relaxed = true;
         out.emplace_back(std::move(*atom));
+    }
+
+    /// Propagate to KeyCondition-level relaxed flag.
+    for (const auto & element : out)
+        if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
+            relaxed = true;
 
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
     for (const auto & element : out)
@@ -2223,7 +2233,17 @@ bool KeyCondition::tryPrepareSetAtomsForHas(
     };
 
     if (auto atom = try_build_atom(indexes_mapping, set_transforming_dags, data_types, key_args_count))
+    {
+        /// Propagate relaxation from analyzeKeyExpressionForSetIndex (non-injective deterministic transforms).
+        if (set_is_relaxed)
+            atom->relaxed = true;
         out.emplace_back(std::move(*atom));
+    }
+
+    /// Propagate to KeyCondition-level relaxed flag.
+    for (const auto & element : out)
+        if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
+            relaxed = true;
 
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
     for (const auto & element : out)
@@ -2852,6 +2872,22 @@ KeyCondition::RPNElement::RPNElement(Function function_, std::vector<size_t> key
 
 /** This helper rewrites comparisons of the form "integer_key <op> Float64_literal" into semantically equivalent
   * integer-key predicates so that pruning can stay exact.
+  *
+  * Typical rewrites are:
+  *   integral_col < 100000.5   => integral_col <= 100000
+  *   integral_col > 100000.5   => integral_col >= 100001
+  *   integral_col = 100000.5   => ALWAYS_FALSE
+  *   integral_col != 100000.5  => ALWAYS_TRUE
+  *
+  * Additionally, if the literal is outside the representable range of the integer key, we can fold the predicate to a constant:
+  *   UInt8_col < -0.5          => ALWAYS_FALSE
+  *   UInt8_col >= -0.5         => ALWAYS_TRUE
+  *   UInt8_col < 256.0         => ALWAYS_TRUE
+  *   UInt8_col >= 256.0        => ALWAYS_FALSE
+  *
+  * Returns true when we rewrote const_value/const_type/func_name, or set out.function to ALWAYS_TRUE/FALSE.
+  * Returns false when this comparison is not handled by this helper
+  * (for example, non-integer key, non-Float64 literal, NULL/NaN literal, or unsupported operator).
   */
 static bool tryRewriteFloatLiteralForIntKeyComparison(
     const DataTypePtr & key_type, Field & const_value, DataTypePtr & const_type, std::string & func_name, KeyCondition::RPNElement & out)
@@ -3351,7 +3387,7 @@ bool KeyCondition::extractBinaryComparisonAtoms(
         std::optional<size_t> argument_num_of_space_filling_curve;
         MonotonicFunctionsChain chain;
 
-        const bool assume_function_monotonicity = single_point && original_func_name == "equals";
+        const bool assume_function_monotonicity = single_point;
         if (isKeyPossiblyWrappedByMonotonicFunctions(
                 key_arg,
                 info,
@@ -3394,7 +3430,7 @@ bool KeyCondition::extractBinaryComparisonAtoms(
             add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
     }
 
-    if (candidates.empty() && single_point && original_func_name == "equals")
+    if (candidates.empty() && (original_func_name == "equals" || original_func_name == "notEquals"))
     {
         auto transformed_candidates = transformConstantForKeyColumns(
             key_arg,
