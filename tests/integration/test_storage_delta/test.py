@@ -4273,6 +4273,59 @@ def test_system_delta_lake_history_large_last_checkpoint_version(started_cluster
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
 
+def test_system_delta_lake_history_malformed_metadata_version(started_cluster):
+    """Malformed per-version metadata should not be silently skipped in history."""
+    node = get_node(started_cluster, "0")
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_history_malformed_metadata")
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 1, 2),
+        f"/{TABLE_NAME}",
+        mode="append",
+    )
+
+    malformed_metadata_path = f"/{TABLE_NAME}/_delta_log/00000000000000000001.json"
+    with open(malformed_metadata_path, "w", encoding="utf-8") as f:
+        f.write('{"commitInfo":\n')
+
+    default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+
+    expected_errors = (
+        "Failed to parse Delta Lake metadata file",
+        "INCORRECT_DATA",
+    )
+
+    create_error = node.query_and_get_error(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', format=Parquet, url = 'http://minio1:9001/{started_cluster.minio_bucket}/')
+        """
+    )
+    if create_error:
+        assert any(expected_error in create_error for expected_error in expected_errors), (
+            f"Expected malformed-metadata error during CREATE, got: {create_error}"
+        )
+        return
+
+    error = node.query_and_get_error(
+        f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+    )
+    assert any(expected_error in error for expected_error in expected_errors), (
+        f"Expected malformed-metadata error, got: {error}"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_3(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526

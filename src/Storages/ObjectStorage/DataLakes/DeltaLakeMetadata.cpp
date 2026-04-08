@@ -852,8 +852,37 @@ DeltaLakeHistory parseDeltaLakeHistory(
 
                 history.push_back(std::move(record));
             }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::LIMIT_EXCEEDED)
+                    throw;
+
+                if (metadata_file_path)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Failed to parse Delta Lake metadata file {} for version {} in {}: {}",
+                        *metadata_file_path,
+                        version,
+                        table_path,
+                        getCurrentExceptionMessage(false));
+                }
+
+                tryLogCurrentException(log, fmt::format("Failed to process version {}", version));
+            }
             catch (...)
             {
+                if (metadata_file_path)
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Failed to parse Delta Lake metadata file {} for version {} in {}: {}",
+                        *metadata_file_path,
+                        version,
+                        table_path,
+                        getCurrentExceptionMessage(false));
+                }
+
                 tryLogCurrentException(log, fmt::format("Failed to process version {}", version));
             }
         };
