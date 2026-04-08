@@ -245,10 +245,7 @@ public:
         const AggregateFunctionPtr & /*nested_function*/,
         const DataTypes & arguments,
         const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
-    {
-        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
-    }
+        const AggregateFunctionProperties & /*properties*/) const override;
 
     bool preservesNullablePayloadForIf() const override
     {
@@ -262,6 +259,187 @@ private:
     Block header;
     UInt64 serialization_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
 };
+
+class AggregateFunctionGroupFormatNullAdapter final : public IAggregateFunctionHelper<AggregateFunctionGroupFormatNullAdapter>
+{
+public:
+    AggregateFunctionGroupFormatNullAdapter(
+        const DataTypes & arguments,
+        const Array & params,
+        String format_name,
+        FormatSettings format_settings,
+        ContextPtr context)
+        : IAggregateFunctionHelper<AggregateFunctionGroupFormatNullAdapter>(arguments, params, std::make_shared<DataTypeString>())
+        , nested_function(std::make_shared<AggregateFunctionGroupFormat>(
+            arguments,
+            params,
+            std::move(format_name),
+            std::move(format_settings),
+            std::move(context)))
+    {
+    }
+
+    String getName() const override
+    {
+        return nested_function->getName();
+    }
+
+    void create(AggregateDataPtr __restrict place) const override
+    {
+        nested_function->create(place);
+    }
+
+    void destroy(AggregateDataPtr __restrict place) const noexcept override
+    {
+        nested_function->destroy(place);
+    }
+
+    bool hasTrivialDestructor() const override
+    {
+        return nested_function->hasTrivialDestructor();
+    }
+
+    size_t sizeOfData() const override
+    {
+        return nested_function->sizeOfData();
+    }
+
+    size_t alignOfData() const override
+    {
+        return nested_function->alignOfData();
+    }
+
+    bool allocatesMemoryInArena() const override
+    {
+        return nested_function->allocatesMemoryInArena();
+    }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        nested_function->add(place, columns, row_num, arena);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        nested_function->addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (argument_types.size() == 1 && argument_types.front()->isNullable())
+        {
+            auto temp_column = argument_types.front()->createColumn();
+            auto & nullable_column = assert_cast<ColumnNullable &>(*temp_column);
+            const auto * filter = if_argument_pos >= 0
+                ? &assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData()
+                : nullptr;
+
+            for (size_t row = row_begin; row < row_end; ++row)
+            {
+                if (filter && !(*filter)[row])
+                    continue;
+
+                if (null_map[row])
+                    nullable_column.insertDefault();
+                else
+                    nullable_column.insertFromNotNullable(*columns[0], row);
+            }
+
+            if (temp_column->empty())
+                return;
+
+            const IColumn * temp_column_ptr = temp_column.get();
+            nested_function->addBatchSinglePlace(0, temp_column->size(), place, &temp_column_ptr, arena, -1);
+            return;
+        }
+
+        nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
+    }
+
+    void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+    {
+        nested_function->addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
+
+    void addBatchSparseSinglePlace(size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const override
+    {
+        nested_function->addBatchSparseSinglePlace(row_begin, row_end, place, columns, arena);
+    }
+
+    void addBatchSparse(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
+    {
+        nested_function->addBatchSparse(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        nested_function->addManyDefaults(place, columns, length, arena);
+    }
+
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    {
+        nested_function->merge(place, rhs, arena);
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    {
+        nested_function->serialize(place, buf, version);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    {
+        nested_function->deserialize(place, buf, version, arena);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_function->insertResultInto(place, to, arena);
+    }
+
+    void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
+    {
+        nested_function->insertMergeResultInto(place, to, arena);
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(
+        const AggregateFunctionPtr & nested,
+        const DataTypes & arguments,
+        const Array & params,
+        const AggregateFunctionProperties & properties) const override
+    {
+        return nested_function->getOwnNullAdapter(nested, arguments, params, properties);
+    }
+
+    bool preservesNullablePayloadForIf() const override
+    {
+        return true;
+    }
+
+private:
+    AggregateFunctionPtr nested_function;
+};
+
+AggregateFunctionPtr AggregateFunctionGroupFormat::getOwnNullAdapter(
+    const AggregateFunctionPtr & /*nested_function*/,
+    const DataTypes & arguments,
+    const Array & params,
+    const AggregateFunctionProperties & /*properties*/) const
+{
+    return std::make_shared<AggregateFunctionGroupFormatNullAdapter>(arguments, params, format_name, format_settings, context);
+}
 
 AggregateFunctionPtr createAggregateFunctionGroupFormat(
     const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
