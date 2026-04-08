@@ -43,5 +43,5 @@ SELECT * FROM system.delta_lake_history;
 
 ## See Also {#system-delta-lake-history-see-also}
 
-- [Delta Lake Table Engine](/docs/en/engines/table-engines/integrations/deltalake.md)
+- [Delta Lake Table Engine](/docs/engines/table-engines/integrations/deltalake)
 - [system.iceberg_history](iceberg_history.md) — Similar table for Iceberg tables
