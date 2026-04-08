@@ -1,13 +1,18 @@
--- Regression test for use-after-free in HashJoin::addBlockToJoin with disjunctive ON clause.
+-- Regression test for use-after-free in `HashJoin::addBlockToJoin` with disjunctive ON clause.
 --
 -- When a JOIN has multiple ON clauses (A OR B), each clause has its own hash map.
 -- If a right-side block has no new keys for maps[0] (!is_inserted), the code used to call
--- data->columns.pop_back() inside the onexpr_idx loop, leaving stored_columns as a dangling
--- pointer for subsequent iterations. Rows inserted into maps[1..N] in later iterations then
--- carried RowRefs pointing to freed memory, causing a LOGICAL_ERROR during probe.
+-- `data->columns.pop_back()` inside the `onexpr_idx` loop, leaving `stored_columns` as a
+-- dangling pointer for subsequent iterations. Rows inserted into maps[1..N] in later iterations
+-- then carried RowRefs pointing to freed memory.
+--
+-- The bug does not reliably produce wrong output in release builds because `pop_back()` destroys
+-- the `ScatteredColumns` object but does not zero the backing memory, so the dangling pointer
+-- often still reads valid-looking data. This test is a reliable reproducer only under ASan,
+-- where the use-after-free is detected immediately.
 --
 -- Two separate INSERTs into a Memory table create two separate blocks, ensuring that the
--- second block (k1=1 duplicate) triggers the !is_inserted path for maps[0].
+-- second block (k1=1 duplicate) triggers the `!is_inserted` path for maps[0].
 
 DROP TABLE IF EXISTS t_join_or_left;
 DROP TABLE IF EXISTS t_join_or_right;
