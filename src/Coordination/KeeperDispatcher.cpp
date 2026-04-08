@@ -950,11 +950,6 @@ catch (...)
     return result;
 }
 
-uint64_t KeeperDispatcher::SessionAndXIDHash::operator()(std::pair<int64_t, Coordination::XID> p) const
-{
-    return CityHash_v1_0_2::Hash128to64({uint64_t(p.first), uint64_t(p.second)});
-}
-
 
 void KeeperDispatcher::cleanResources()
 {

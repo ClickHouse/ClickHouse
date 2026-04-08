@@ -2,7 +2,6 @@
 
 #if USE_NURAFT
 
-#include <Coordination/KeeperDispatcher.h>
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
 
@@ -853,7 +852,7 @@ void KeeperRequestDispatcher::finishSession(int64_t session_id)
     }
 }
 
-void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads)
+void KeeperRequestDispatcher::addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error, bool may_have_dependent_reads)
 {
     KeeperRequestsForSessions dependent_reads;
 
@@ -912,6 +911,11 @@ nuraft::ptr<nuraft::buffer> KeeperRequestDispatcher::forceWaitAndProcessResult(
         requests_for_sessions.clear();
 
     return result_buf;
+}
+
+uint64_t KeeperRequestDispatcher::SessionAndXIDHash::operator()(std::pair<int64_t, Coordination::XID> p) const
+{
+    return CityHash_v1_0_2::Hash128to64({uint64_t(p.first), uint64_t(p.second)});
 }
 
 }
