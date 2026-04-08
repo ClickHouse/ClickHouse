@@ -306,7 +306,10 @@ public:
     PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_);
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
-    std::pair<Int32, String> getLastestTableSchemaInfo();
+    /// Get schema meta info (id, path) for the latest schema file.
+    std::pair<Int32, String> getLatestTableSchemaInfo();
+    /// Get schema meta info for a specific schema_id.
+    std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
     std::optional<std::pair<Int64, String>> getLastestTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
