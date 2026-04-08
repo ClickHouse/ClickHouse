@@ -6,7 +6,6 @@
 
 SYSTEM DROP QUERY CONDITION CACHE;
 
-SET enable_join_runtime_filters = 0;
 SET use_query_condition_cache = 1;
 SET query_plan_join_shard_by_pk_ranges = 1;
 
