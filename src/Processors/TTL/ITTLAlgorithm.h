@@ -41,6 +41,11 @@ public:
     static ColumnPtr executeExpressionAndGetColumn(
         const ExpressionActionsPtr & expression, const Block & block, const String & result_column);
 
+    static void checkTTLExpressionOverflow(
+        const ColumnPtr & original_column,
+        const ColumnPtr & widened_column,
+        const String & expression_str);
+
 protected:
     bool isTTLExpired(time_t ttl) const;
     Int64 getTimestampByIndex(const IColumn * column, size_t index) const;

@@ -60,6 +60,16 @@ struct TTLDescription
     /// Expression actions evaluated from AST
     ExpressionAndSets buildExpression(const ContextPtr & context) const;
 
+    struct OverflowCheckExpression
+    {
+        ExpressionAndSets expression_and_sets;
+        String result_column;
+
+        explicit operator bool() const { return expression_and_sets.expression != nullptr; }
+    };
+
+    OverflowCheckExpression buildOverflowCheckExpression(const ContextPtr & context) const;
+
     /// Result column of this TTL expression
     String result_column;
 

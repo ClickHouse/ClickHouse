@@ -27,6 +27,8 @@ public:
         {
             TTLExpressions expressions;
             TTLDescription description;
+            ExpressionActionsPtr overflow_check_expression;
+            String overflow_check_result_column;
         };
         std::vector<Entry> entries;
         bool all_data_dropped = false;

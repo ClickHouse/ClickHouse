@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 ITTLAlgorithm::ITTLAlgorithm(
@@ -48,6 +49,52 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     expression->execute(block_copy, num_rows);
 
     return block_copy.getByName(result_column).column;
+}
+
+static Int64 getTimestampFromColumn(const IColumn * column, size_t index, const DateLUTImpl & date_lut)
+{
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
+        return date_lut.fromDayNum(DayNum(column_date->getData()[index]));
+    if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+        return column_date_time->getData()[index];
+    if (const ColumnInt32 * column_date_32 = typeid_cast<const ColumnInt32 *>(column))
+        return date_lut.fromDayNum(ExtendedDayNum(column_date_32->getData()[index]));
+    if (const ColumnDateTime64 * column_date_time_64 = typeid_cast<const ColumnDateTime64 *>(column))
+        return column_date_time_64->getData()[index] / intExp10OfSize<Int64>(column_date_time_64->getScale());
+    if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(column))
+        return getTimestampFromColumn(&column_const->getDataColumn(), 0, date_lut);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+}
+
+void ITTLAlgorithm::checkTTLExpressionOverflow(
+    const ColumnPtr & original_column,
+    const ColumnPtr & widened_column,
+    const String & expression_str)
+{
+    if (!original_column || !widened_column)
+        return;
+
+    const auto & date_lut = DateLUT::instance();
+    size_t rows = original_column->size();
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        Int64 original_ts = getTimestampFromColumn(original_column.get(), i, date_lut);
+        Int64 widened_ts = getTimestampFromColumn(widened_column.get(), i, date_lut);
+
+        if (original_ts != widened_ts)
+        {
+            throw Exception(
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                "TTL expression overflow detected while evaluating '{}': "
+                "date/time arithmetic produced a value outside the representable range. "
+                "This can corrupt TTL min/max metadata and lead to unexpected deletion of rows or whole parts. "
+                "Rewrite the TTL expression so it stays within the range of `Date`/`DateTime`, "
+                "or use wider types such as `Date32`/`DateTime64` in the TTL expression",
+                expression_str);
+        }
+    }
 }
 
 /// TODO: This per-row type dispatch is inefficient when called in a loop.

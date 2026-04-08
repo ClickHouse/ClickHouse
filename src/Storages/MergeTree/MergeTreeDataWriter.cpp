@@ -323,6 +323,18 @@ void updateTTL(
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
     /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
     ttl_column = ttl_column->convertToFullColumnIfSparse();
+
+    auto overflow_check = ttl_entry.buildOverflowCheckExpression(context);
+    if (overflow_check)
+    {
+        for (auto & subquery : overflow_check.expression_and_sets.sets->getSubqueries())
+            subquery->buildSetInplace(context);
+
+        auto widened_column = ITTLAlgorithm::executeExpressionAndGetColumn(
+            overflow_check.expression_and_sets.expression, block, overflow_check.result_column);
+        ITTLAlgorithm::checkTTLExpressionOverflow(ttl_column, widened_column, ttl_entry.result_column);
+    }
+
     ColumnPtr where_column;
 
     if (ttl_entry.where_expression_ast)

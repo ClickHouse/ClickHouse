@@ -20,7 +20,14 @@ static bool isTTLExpired(time_t ttl, time_t current_time)
     return ttl && (ttl <= current_time);
 }
 
-static TTLExpressions buildTTLExpressions(
+struct TTLExpressionsWithOverflowCheck
+{
+    TTLExpressions expressions;
+    ExpressionActionsPtr overflow_check_expression;
+    String overflow_check_result_column;
+};
+
+static TTLExpressionsWithOverflowCheck buildTTLExpressions(
     const TTLDescription & ttl_descr,
     PreparedSets::Subqueries & subqueries_for_sets,
     const ContextPtr & context)
@@ -36,7 +43,23 @@ static TTLExpressions buildTTLExpressions(
         subqueries_for_sets.insert(subqueries_for_sets.end(), where_expr_queries.begin(), where_expr_queries.end());
     }
 
-    return {expr.expression, where_expr.expression};
+    TTLExpressionsWithOverflowCheck result;
+    result.expressions = {expr.expression, where_expr.expression};
+
+    auto overflow_check = ttl_descr.buildOverflowCheckExpression(context);
+    if (overflow_check)
+    {
+        if (overflow_check.expression_and_sets.sets)
+        {
+            auto check_queries = overflow_check.expression_and_sets.sets->getSubqueries();
+            subqueries_for_sets.insert(subqueries_for_sets.end(), check_queries.begin(), check_queries.end());
+        }
+
+        result.overflow_check_expression = overflow_check.expression_and_sets.expression;
+        result.overflow_check_result_column = overflow_check.result_column;
+    }
+
+    return result;
 }
 
 SharedHeader TTLDeleteFilterTransform::transformHeader(const SharedHeader & header)
@@ -65,12 +88,12 @@ TTLDeleteFilterTransform::build(
 
         if (force || isTTLExpired(old_ttl_infos.table_ttl.min, current_time))
         {
-            auto expressions = buildTTLExpressions(rows_ttl, subqueries, context);
+            auto result = buildTTLExpressions(rows_ttl, subqueries, context);
 
             if (isTTLExpired(old_ttl_infos.table_ttl.max, current_time) && !rows_ttl.where_expression_ast)
                 state->all_data_dropped = true;
 
-            state->entries.push_back({std::move(expressions), rows_ttl});
+            state->entries.push_back({std::move(result.expressions), rows_ttl, std::move(result.overflow_check_expression), std::move(result.overflow_check_result_column)});
         }
     }
 
@@ -86,8 +109,8 @@ TTLDeleteFilterTransform::build(
             if (!force && !isTTLExpired(old_ttl_info.min, current_time))
                 continue;
 
-            auto expressions = buildTTLExpressions(where_ttl, subqueries, context);
-            state->entries.push_back({std::move(expressions), where_ttl});
+            auto result = buildTTLExpressions(where_ttl, subqueries, context);
+            state->entries.push_back({std::move(result.expressions), where_ttl, std::move(result.overflow_check_expression), std::move(result.overflow_check_result_column)});
         }
     }
 
@@ -183,6 +206,14 @@ void TTLDeleteFilterTransform::transform(Chunk & chunk)
         /// Phase 1: extract typed TTL column into a flat Int64 timestamp array.
         auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(
             entry.expressions.expression, block, entry.description.result_column);
+
+        if (entry.overflow_check_expression)
+        {
+            auto widened_column = ITTLAlgorithm::executeExpressionAndGetColumn(
+                entry.overflow_check_expression, block, entry.overflow_check_result_column);
+            ITTLAlgorithm::checkTTLExpressionOverflow(ttl_column, widened_column, entry.description.result_column);
+        }
+
         extractTimestamps(ttl_column.get(), num_rows);
 
         /// Phase 2: apply TTL expiration and WHERE filter to produce the filter mask.

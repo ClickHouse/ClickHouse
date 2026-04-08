@@ -14,6 +14,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
 
@@ -211,6 +212,45 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     }
 
     return {};
+}
+
+static void widenDateColumnsInAST(ASTPtr & node, const NamesAndTypesList & columns)
+{
+    if (!node)
+        return;
+
+    for (auto & child : node->children)
+    {
+        if (const auto * identifier = child->as<ASTIdentifier>())
+        {
+            auto col = columns.tryGetByName(identifier->name());
+            if (!col)
+                continue;
+
+            if (isDate(col->type))
+                child = makeASTFunction("toDate32", child->clone());
+            else if (isDateTime(col->type))
+                child = makeASTFunction("toDateTime64", child->clone(), make_intrusive<ASTLiteral>(Field(UInt64(0))));
+        }
+        else
+        {
+            widenDateColumnsInAST(child, columns);
+        }
+    }
+}
+
+TTLDescription::OverflowCheckExpression TTLDescription::buildOverflowCheckExpression(const ContextPtr & context) const
+{
+    auto ast = expression_ast->clone();
+    widenDateColumnsInAST(ast, expression_columns);
+
+    auto overflow_context = Context::createCopy(context);
+    overflow_context->setSetting("date_time_overflow_behavior", String("throw"));
+
+    OverflowCheckExpression result;
+    result.result_column = ast->getColumnName();
+    result.expression_and_sets = buildExpressionAndSets(ast, expression_columns, overflow_context);
+    return result;
 }
 
 TTLDescription TTLDescription::getTTLFromAST(
