@@ -29,6 +29,11 @@ struct S3StorageSettings;
 struct AzureStorageSettings;
 struct HDFSStorageSettings;
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 /// Get the ObjectStorageType for a disk by name. Defined in TableFunctionObjectStorage.cpp.
 ObjectStorageType getObjectStorageTypeForDisk(const String & disk_name, const ContextPtr & context);
 

@@ -17,11 +17,6 @@ struct StorageID;
 struct StorageParsedArguments;
 struct StorageObjectStorageTableOptions;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 
 struct StorageObjectStorageQuerySettings
 {

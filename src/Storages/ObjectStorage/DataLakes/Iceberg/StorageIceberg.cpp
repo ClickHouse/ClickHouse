@@ -37,9 +37,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-    extern const int PATH_ACCESS_DENIED;
+extern const int NOT_IMPLEMENTED;
+extern const int PATH_ACCESS_DENIED;
 }
 
 StorageDataLake<IcebergMetadata>::StorageDataLake(
