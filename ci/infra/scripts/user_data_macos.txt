@@ -72,14 +72,13 @@ else
     wget \
     unzip
 
-  # Install Python packages
-  echo "Installing Python packages..."
-  # Note: Skip pip upgrade as it's managed by Homebrew
-  if [ "$EUID" -eq 0 ]; then
-    sudo -u "$USER" -i bash -c 'pip3 install --break-system-packages boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt 2>/dev/null || pip3 install --user boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt'
-  else
-    pip3 install --break-system-packages boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt 2>/dev/null || pip3 install --user boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt
-  fi
+  # Install Python packages into a virtual environment using Homebrew Python
+  echo "Installing Python packages into venv..."
+  sudo -u "$USER" -i bash -c '$(brew --prefix python@3)/bin/python3 -m venv ~/venv && ~/venv/bin/pip install boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt'
+
+  # Add venv/bin to PATH for both bash and zsh login shells
+  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:\$PATH\"' >> ~/.bash_profile"
+  sudo -u "$USER" -i bash -c "echo 'export PATH=\"\$HOME/venv/bin:\$PATH\"' >> ~/.zprofile"
 
   # Download and install CloudWatch agent
   echo "Installing Amazon CloudWatch agent..."
@@ -137,4 +136,5 @@ fi
 # Download and execute cloud-init script
 INIT_ENVIRONMENT=${INIT_ENVIRONMENT:-macos}
 aws s3 cp "s3://github-runners-data/cloud-init/${INIT_ENVIRONMENT}.py" /tmp/runner-init.py
-exec python3 /tmp/runner-init.py --environment "$INIT_ENVIRONMENT"
+sudo -u ec2-user -i bash -c "/Users/ec2-user/venv/bin/python /tmp/runner-init.py --environment \"$INIT_ENVIRONMENT\""
+reboot
