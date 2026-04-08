@@ -7,6 +7,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
 
 #include <Core/Settings.h>
 
@@ -111,7 +112,7 @@ public:
 
             /// For JSON/Object type input: use subcolumn extraction (constant string keys only).
             if (is_object_input)
-                return runForObjectColumn<Name, Impl>(arguments, result_type, input_rows_count, format_settings);
+                return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
 
             /// String input: parse JSON and extract values.
             const ColumnPtr & arg_json = first_column.column;
@@ -188,7 +189,7 @@ public:
         /// - Extract subobject subcolumn (json.^`path`) for nested objects
         /// - Merge them row-by-row, preferring literal over subobject
         /// - Cast the result to the function's return type
-        template <typename TName, template <typename> typename TImpl>
+        template <typename TName, template <typename> typename TImpl, bool ci = false>
         static ColumnPtr runForObjectColumn(
             const ColumnsWithTypeAndName & arguments,
             const DataTypePtr & result_type,
@@ -250,6 +251,64 @@ public:
             /// Root case (no path specified) return defaults for most functions.
             if (path.empty())
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+
+            /// For case-insensitive functions, resolve the user-provided path to
+            /// the actual path stored in the column by comparing case-insensitively.
+            if constexpr (ci)
+            {
+                auto matches_ci = [](std::string_view a, std::string_view b) -> bool
+                {
+                    if (a.size() != b.size())
+                        return false;
+                    for (size_t i = 0; i < a.size(); ++i)
+                        if (!equalsCaseInsensitive(a[i], b[i]))
+                            return false;
+                    return true;
+                };
+
+                String resolved;
+
+                /// Check typed paths.
+                for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
+                {
+                    if (matches_ci(typed_path, path))
+                    {
+                        resolved = typed_path;
+                        break;
+                    }
+                }
+
+                /// Check dynamic paths.
+                if (resolved.empty())
+                {
+                    for (const auto & [dynamic_path, _] : col_object->getDynamicPaths())
+                    {
+                        if (matches_ci(dynamic_path, path))
+                        {
+                            resolved = dynamic_path;
+                            break;
+                        }
+                    }
+                }
+
+                /// Check shared data paths.
+                if (resolved.empty())
+                {
+                    const auto [shared_paths, _] = col_object->getSharedDataPathsAndValues();
+                    for (size_t i = 0; i < shared_paths->size(); ++i)
+                    {
+                        auto sp = shared_paths->getDataAt(i);
+                        if (matches_ci(sp, path))
+                        {
+                            resolved = String(sp);
+                            break;
+                        }
+                    }
+                }
+
+                if (!resolved.empty())
+                    path = std::move(resolved);
+            }
 
             /// Use combined `@` subcolumn that merges literal value and sub-object.
             /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic

@@ -1,0 +1,6 @@
+JSONExtractStringCaseInsensitive	value
+JSONExtractStringCaseInsensitive upper	value
+JSONExtractIntCaseInsensitive	42
+JSONExtractRawCaseInsensitive	"value"
+JSONExtractString exact	value
+JSONExtractString wrong case	
