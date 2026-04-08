@@ -684,23 +684,11 @@ SYSTEM UNLOAD PRIMARY KEY [db.]name
 SYSTEM UNLOAD PRIMARY KEY
 ```
 
-## Managing Refreshable Materialized Views {#refreshable-materialized-views}
+## Managing Refreshable Materialized Views {#managing-refreshable-materialized-views}
 
 Commands to control background tasks performed by [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view)
 
 Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
-
-### SYSTEM REFRESH VIEW {#refresh-view}
-
-Trigger an immediate out-of-schedule refresh of a given view.
-
-```sql
-SYSTEM REFRESH VIEW [db.]name
-```
-
-### SYSTEM WAIT VIEW {#wait-view}
-
-Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
 ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
@@ -733,15 +721,15 @@ SYSTEM START VIEW [db.]name
 SYSTEM START VIEWS
 ```
 
-### SYSTEM CANCEL VIEW {#cancel-view}
+### SYSTEM REFRESH VIEW {#refresh-view}
 
-If there's a refresh in progress for the given view on the current replica, interrupt and cancel it. Otherwise do nothing.
+Trigger an immediate out-of-schedule refresh of a given view.
 
 ```sql
-SYSTEM CANCEL VIEW [db.]name
+SYSTEM REFRESH VIEW [db.]name
 ```
 
-### SYSTEM WAIT VIEW {#system-wait-view}
+### SYSTEM WAIT VIEW {#wait-view}
 
 Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
 
@@ -751,4 +739,12 @@ If the view is in a Replicated or Shared database, and refresh is running on ano
 
 ```sql
 SYSTEM WAIT VIEW [db.]name
+```
+
+### SYSTEM CANCEL VIEW {#cancel-view}
+
+If there's a refresh in progress for the given view on the current replica, interrupt and cancel it. Otherwise do nothing.
+
+```sql
+SYSTEM CANCEL VIEW [db.]name
 ```
