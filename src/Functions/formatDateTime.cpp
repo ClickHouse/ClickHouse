@@ -830,7 +830,7 @@ private:
             /// (e.g. fractional_second=5, scale=3 gives "5" but we need "005").
             /// Without this, the buffer would be left partially uninitialized.
             if (str.size() < scale)
-                str.insert(0, scale - str.size(), '0');
+                str.insert(0ul, scale - str.size(), '0');
             if (min_represent_digits > scale)
             {
                 for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
