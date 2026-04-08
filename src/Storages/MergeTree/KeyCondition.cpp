@@ -2094,9 +2094,6 @@ bool KeyCondition::tryPrepareSetAtomsForIn(
         if (adjusted_indexes_mapping.size() < atom_set_types.size())
             element.relaxed = true;
 
-        if (element.set_index->size() > 1 || element.relaxed)
-            element.relaxed = true;
-
         return element;
     };
 
@@ -2108,7 +2105,10 @@ bool KeyCondition::tryPrepareSetAtomsForIn(
         out.emplace_back(std::move(*atom));
     }
 
-    /// Propagate to KeyCondition-level relaxed flag.
+    /// Propagate to KeyCondition-level relaxed flag (NOT element-level).
+    /// A multi-element set or relaxed atom means the KeyCondition as a whole is relaxed,
+    /// but the individual atom's `relaxed` flag should only reflect semantic inexactness
+    /// (e.g., non-injective transform, size mismatch).
     for (const auto & element : out)
         if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
             relaxed = true;
@@ -2296,9 +2296,6 @@ bool KeyCondition::tryPrepareSetAtomsForHas(
         if (adjusted_indexes_mapping.size() < atom_set_types.size())
             element.relaxed = true;
 
-        if (element.set_index->size() > 1 || element.relaxed)
-            element.relaxed = true;
-
         return element;
     };
 
@@ -2310,7 +2307,7 @@ bool KeyCondition::tryPrepareSetAtomsForHas(
         out.emplace_back(std::move(*atom));
     }
 
-    /// Propagate to KeyCondition-level relaxed flag.
+    /// Propagate to KeyCondition-level relaxed flag (NOT element-level).
     for (const auto & element : out)
         if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
             relaxed = true;
