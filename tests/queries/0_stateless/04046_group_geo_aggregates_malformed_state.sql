@@ -29,7 +29,17 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 4. groupPolygonUnion: reject oversized polygon count (varint 100000)
+-- 4. groupPolygonIntersection: reject NonEmpty mode with zero chunks
+SELECT 'intersect_nonempty_zero_chunks';
+SELECT groupPolygonIntersectionMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '01',  -- version
+        '01',  -- mode = NonEmpty
+        '00'   -- 0 chunks
+    )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
+); -- { serverError INCORRECT_DATA }
+
+-- 5. groupPolygonUnion: reject oversized polygon count (varint 100000)
 SELECT 'union_oversized_polygons';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
@@ -40,7 +50,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 5. groupPolygonUnion: reject oversized inner ring count (varint 100000)
+-- 6. groupPolygonUnion: reject oversized inner ring count (varint 100000)
 SELECT 'union_oversized_rings';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
@@ -53,7 +63,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 6. groupPolygonUnion: reject oversized point count per ring (varint 10000001)
+-- 7. groupPolygonUnion: reject oversized point count per ring (varint 10000001)
 SELECT 'union_oversized_points';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
@@ -65,7 +75,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 7. groupConvexHull: reject oversized point count (varint 100000001)
+-- 8. groupConvexHull: reject oversized point count (varint 100000001)
 SELECT 'convex_hull_oversized_points';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
@@ -75,7 +85,7 @@ SELECT groupConvexHullMerge(state) FROM (
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 8. groupPolygonUnion: reject NaN coordinate in deserialized state
+-- 9. groupPolygonUnion: reject NaN coordinate in deserialized state
 SELECT 'union_nan_coordinate';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
@@ -89,7 +99,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 9. groupConvexHull: reject +Inf coordinate in deserialized state
+-- 10. groupConvexHull: reject +Inf coordinate in deserialized state
 SELECT 'convex_hull_inf_coordinate';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
