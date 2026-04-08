@@ -54,6 +54,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_inline_views", false, false, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"semi_join_compatibility", false, false, "New setting to restrict SEMI JOIN column access to the preserved side except in JOIN ON expressions"},
+            {"anti_join_compatibility", false, false, "New setting to restrict ANTI JOIN column access to the preserved side except in JOIN ON expressions"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -77,8 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"webassembly_udf_max_instances", 32, 32, "New setting to limit the number of parallel WebAssembly UDF instances per function."},
             {"mysql_datatypes_support_level", "", "decimal,datetime64,date2Date32", "Enable modern MySQL type mappings by default."},
             {"allow_experimental_json_lazy_type_hints", false, false, "New experimental setting for lazy JSON type hints"},
-            {"semi_join_compatibility", false, false, "New setting to restrict SEMI JOIN column access to the preserved side except in JOIN ON expressions"},
-            {"anti_join_compatibility", false, false, "New setting to restrict ANTI JOIN column access to the preserved side except in JOIN ON expressions"},
             {"allow_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_statistics", false, true, "Column statistics are now GA"},
             {"allow_experimental_expire_snapshots", false, false, "New setting."},

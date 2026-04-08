@@ -4,7 +4,8 @@
 -- from the joined result, including:
 -- 1. SELECT clause (SELECT *, qualified matchers like t2.*)
 -- 2. PREWHERE and WHERE clauses
--- 3. HAVING and ORDER BY clauses
+-- 3. GROUP BY, HAVING, and QUALIFY clauses
+-- 4. LIMIT BY and ORDER BY clauses
 --
 -- Preserved side:
 -- - LEFT SEMI/ANTI JOIN: left side preserved, right side not accessible
@@ -121,7 +122,7 @@ SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RI
 -- t3 is on the preserved right of the outer RIGHT SEMI JOIN -- must be allowed.
 SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
 
--- Additional clause coverage: PREWHERE, HAVING, and ORDER BY
+-- Additional clause coverage: PREWHERE, GROUP BY, HAVING, QUALIFY, LIMIT BY, and ORDER BY
 
 -- 'PREWHERE';
 DROP TABLE IF EXISTS semi_anti_prewhere_left;
@@ -138,6 +139,18 @@ DROP TABLE semi_anti_prewhere_right;
 -- 'HAVING';
 SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a HAVING t1.a = 1;
+
+-- 'GROUP BY';
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true GROUP BY t1.a;
+
+-- 'QUALIFY';
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true QUALIFY row_number() OVER () = 1 AND t2.b = 2; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t1.a FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true QUALIFY row_number() OVER () = 1 AND t1.a = 1;
+
+-- 'LIMIT BY';
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false LIMIT 1 BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false LIMIT 1 BY t1.a;
 
 -- 'ORDER BY';
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ORDER BY t2.b; -- { serverError UNKNOWN_IDENTIFIER }

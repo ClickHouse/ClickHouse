@@ -33,7 +33,6 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
-#include <iostream>
 #include <ranges>
 
 
@@ -1031,7 +1030,7 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
         const char * join_type_str = is_semi ? "SEMI" : "ANTI";
         const char * side_str = skip_right ? "right" : "left";
         throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-            "Cannot access columns from the {} side of {} JOIN using qualified matcher {}. In scope {}",
+            "Cannot access columns from the {} side of {} JOIN in this context. Expression {} is not available. In scope {}",
             side_str,
             join_type_str,
             node_for_error_message.formatASTForErrorMessage(),
