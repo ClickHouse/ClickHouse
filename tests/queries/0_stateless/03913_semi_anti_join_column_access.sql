@@ -121,6 +121,11 @@ SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LE
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
 -- t3 is on the preserved right of the outer RIGHT SEMI JOIN -- must be allowed.
 SELECT t3.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
+-- (t1 LEFT SEMI JOIN t2) CROSS JOIN t3: t2 remains non-preserved due to the inner LEFT SEMI JOIN
+-- and must stay inaccessible even when wrapped by CROSS JOIN at the root.
+SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CROSS JOIN (SELECT 1 AS c) t3; -- { serverError UNKNOWN_IDENTIFIER }
+-- t1 is preserved by the inner LEFT SEMI JOIN and should remain accessible.
+SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CROSS JOIN (SELECT 1 AS c) t3;
 
 -- Additional clause coverage: PREWHERE, GROUP BY, HAVING, QUALIFY, LIMIT BY, and ORDER BY
 

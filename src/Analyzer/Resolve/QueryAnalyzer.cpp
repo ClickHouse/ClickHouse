@@ -1767,6 +1767,16 @@ void checkSemiAntiJoinTableAccess(
         const auto * current = stack.top();
         stack.pop();
 
+        if (const auto * cross_join_node = const_cast<IQueryTreeNode *>(current)->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+            {
+                if (isFromJoinTree(table_expression_node.get(), table_expression.get()))
+                    stack.push(table_expression.get());
+            }
+            continue;
+        }
+
         const auto * join_node = const_cast<IQueryTreeNode *>(current)->as<JoinNode>();
         if (!join_node)
             continue;
