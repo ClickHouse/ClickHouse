@@ -241,8 +241,10 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         }
         else if (query_builder.is_bypassed)
         {
-            if (!fallback_reader)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "The fallback reader for patterns is not initialized.");
+            if (!fallback_reader || !fallback_expressions.contains(column.name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "The fallback reader or expression for pattern virtual column '{}' is not initialized",
+                    column.name);
 
             use_fallback[i] = true;
         }

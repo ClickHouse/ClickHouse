@@ -658,8 +658,13 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
 
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
-    /// TODO: Implement memory usage calculation.
-    return sizeof(*this);
+    size_t result = sizeof(*this);
+
+    if (analyzer)
+        result += analyzer->memoryUsageBytes();
+
+    result += index_id_for_caches.capacity();
+    return result;
 }
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const

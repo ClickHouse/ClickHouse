@@ -35,7 +35,7 @@ public:
 
     bool alwaysFalse() const { return always_false; }
     const TokenToPostingsInfosMap & getTokenInfos() const { return token_infos; }
-    const NameSet & getMissingTokens() const { return missing_tokens; }
+    const absl::flat_hash_set<String> & getMissingTokens() const { return missing_tokens; }
     const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
     bool isTokenNeeded(std::string_view token) const;
@@ -47,6 +47,8 @@ public:
 
     bool addTokenToPatterns(std::string_view token);
     void bypassPatternQueries();
+
+    size_t memoryUsageBytes() const;
 
 private:
     using QueryHashes = absl::flat_hash_set<UInt128>;
@@ -62,7 +64,7 @@ private:
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
 
     TokenToPostingsInfosMap token_infos;
-    NameSet missing_tokens;
+    absl::flat_hash_set<String> missing_tokens;
     absl::flat_hash_set<String> tokens_with_postings;
 };
 

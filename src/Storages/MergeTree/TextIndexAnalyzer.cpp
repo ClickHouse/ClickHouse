@@ -197,7 +197,10 @@ void TextIndexAnalyzer::bypassPatternQueries()
 template <typename Operation>
 void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation && operation)
 {
-    const auto & token_queries = queries_by_token.at(token);
+    /// Copy the set of query hashes before iterating, because
+    /// erasing a failed query from queries_by_token below may
+    /// mutate this very set (when query_token == token).
+    auto token_queries = queries_by_token.at(token);
 
     for (const auto & query_hash : token_queries)
     {
@@ -216,6 +219,58 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
                 queries_by_token[query_token].erase(query_hash);
         }
     }
+}
+
+/// Estimate memory footprint of an absl::flat_hash_map/set.
+/// absl flat containers use open addressing with one control byte per slot.
+template <typename Container>
+static size_t estimateAbslFlatContainerBytes(const Container & c)
+{
+    return c.empty() ? 0 : c.capacity() * (sizeof(typename Container::value_type) + 1);
+}
+
+size_t TextIndexAnalyzer::memoryUsageBytes() const
+{
+    size_t result = sizeof(*this);
+
+    /// query_builders: map<UInt128, QueryBuilder>, each QueryBuilder has tokens map and optional postings.
+    result += estimateAbslFlatContainerBytes(query_builders);
+    for (const auto & [_, query_builder] : query_builders)
+    {
+        result += estimateAbslFlatContainerBytes(query_builder.tokens);
+        if (query_builder.postings)
+            result += query_builder.postings->getSizeInBytes();
+    }
+
+    /// queries_by_token: map<String, QueryHashes>.
+    result += estimateAbslFlatContainerBytes(queries_by_token);
+    for (const auto & [key, hashes] : queries_by_token)
+    {
+        result += key.capacity();
+        result += estimateAbslFlatContainerBytes(hashes);
+    }
+
+    /// queries_by_pattern: map<ptr, QueryHashes>.
+    result += estimateAbslFlatContainerBytes(queries_by_pattern);
+    for (const auto & [_, hashes] : queries_by_pattern)
+        result += estimateAbslFlatContainerBytes(hashes);
+
+    /// token_infos: map<String, TokenPostingsInfoPtr>.
+    result += estimateAbslFlatContainerBytes(token_infos);
+    for (const auto & [key, _] : token_infos)
+        result += key.capacity();
+
+    /// missing_tokens: set<String>.
+    result += estimateAbslFlatContainerBytes(missing_tokens);
+    for (const auto & token : missing_tokens)
+        result += token.capacity();
+
+    /// tokens_with_postings: set<String>.
+    result += estimateAbslFlatContainerBytes(tokens_with_postings);
+    for (const auto & token : tokens_with_postings)
+        result += token.capacity();
+
+    return result;
 }
 
 }

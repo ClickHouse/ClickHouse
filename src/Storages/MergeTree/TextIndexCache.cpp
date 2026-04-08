@@ -10,7 +10,7 @@ TokensCardinalitiesCache::TokensCardinalitiesCache(std::vector<String> all_searc
         cardinalities.emplace(token, CardinalityAggregate{});
 }
 
-void TokensCardinalitiesCache::update(const TokenToPostingsInfosMap & token_infos, const NameSet & missing_tokens, size_t total_rows)
+void TokensCardinalitiesCache::update(const TokenToPostingsInfosMap & token_infos, const absl::flat_hash_set<String> & missing_tokens, size_t total_rows)
 {
     std::lock_guard lock(mutex);
 

@@ -147,7 +147,7 @@ class TokensCardinalitiesCache
 public:
     explicit TokensCardinalitiesCache(std::vector<String> all_search_tokens_);
 
-    void update(const TokenToPostingsInfosMap & token_infos, const NameSet & missing_tokens, size_t total_rows);
+    void update(const TokenToPostingsInfosMap & token_infos, const absl::flat_hash_set<String> & missing_tokens, size_t total_rows);
     void sortTokens(std::vector<String> & tokens) const;
 
 private:
