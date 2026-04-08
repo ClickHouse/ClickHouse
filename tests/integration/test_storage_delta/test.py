@@ -4192,7 +4192,7 @@ def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster, u
     node = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_history_guard_checkpoint")
-    TOO_LARGE_CHECKPOINT = 1_000_000
+    MAX_HISTORY_RECORDS = 10
 
     write_delta_from_df(
         spark,
@@ -4201,15 +4201,20 @@ def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster, u
         mode="overwrite",
     )
 
-    last_checkpoint_path = f"/{TABLE_NAME}/_delta_log/_last_checkpoint"
-    with open(last_checkpoint_path, "w", encoding="utf-8") as f:
-        f.write(f'{{"version":{TOO_LARGE_CHECKPOINT},"size":1,"parts":1}}\n')
+    # Create enough versions so Delta emits a real checkpoint.
+    for i in range(1, 25):
+        write_delta_from_df(
+            spark,
+            generate_data(spark, i, i + 1),
+            f"/{TABLE_NAME}",
+            mode="append",
+        )
 
     default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
     create_delta_table(node, "s3", TABLE_NAME, started_cluster)
 
     error = node.query_and_get_error(
-        f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}'"
+        f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}' SETTINGS delta_lake_history_max_records = {MAX_HISTORY_RECORDS}"
     )
     assert "Refusing to materialize Delta Lake history" in error
 
