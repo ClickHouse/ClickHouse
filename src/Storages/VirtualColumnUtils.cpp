@@ -30,7 +30,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Columns/ColumnSet.h>
-#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -44,8 +43,10 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
