@@ -196,7 +196,7 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
-    extern const SettingsBool automatic_fill_on_cluster_mode;
+    extern const SettingsBool allow_experimental_automatic_fill_on_cluster_mode;
     extern const SettingsString cluster_for_automatic_fill_mode;
 }
 
@@ -1427,7 +1427,7 @@ static BlockIO executeQueryImpl(
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
-        if (settings[Setting::automatic_fill_on_cluster_mode]
+        if (settings[Setting::allow_experimental_automatic_fill_on_cluster_mode]
             && !settings[Setting::cluster_for_automatic_fill_mode].toString().empty()
             && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
@@ -1439,7 +1439,7 @@ static BlockIO executeQueryImpl(
                     query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
                     normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
-                    context->setSetting("ignore_on_cluster_for_replicated_database", true);
+                    context->setAutoFillOnCluster(true);
                 }
             }
         }

@@ -54,6 +54,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_inline_views", false, false, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"allow_experimental_automatic_fill_on_cluster_mode", false, false, "New setting"},
+            {"cluster_for_automatic_fill_mode", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -160,8 +162,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
-            {"automatic_fill_on_cluster_mode", false, false, "New setting"},
-            {"cluster_for_automatic_fill_mode", "", "", "New setting"}
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

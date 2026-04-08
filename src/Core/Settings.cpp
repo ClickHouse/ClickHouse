@@ -2515,8 +2515,8 @@ Ignore ON CLUSTER clause for replicated access entities management queries.
 Ignore ON CLUSTER clause for replicated named collections management queries.
 )", 0) \
     /** Settings for auto fill on cluster */ \
-    DECLARE(Bool, automatic_fill_on_cluster_mode, false, R"(
-Allow query to fill ON CLUSTER value automatically when missing.
+    DECLARE(Bool, allow_experimental_automatic_fill_on_cluster_mode, false, R"(
+Allow query to fill ON CLUSTER value automatically when missing. This is an experimental feature.
 )", 0) \
     DECLARE(String, cluster_for_automatic_fill_mode, "", R"(
 Default ON CLUSTER value automatically to fill when missing.
