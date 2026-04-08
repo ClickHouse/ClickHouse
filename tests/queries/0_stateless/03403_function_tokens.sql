@@ -123,6 +123,10 @@ SELECT tokens('abc def cba', 'sparseGrams') AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams', 4, 10) AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams', 4, 10, 6) AS tokenized;
 
+SELECT arrayAll(t -> length(t) >= 5, tokens('hello world', 'sparseGrams', 5, 5));
+SELECT arrayAll(t -> length(t) <= 5, tokens('hello world', 'sparseGrams', 5, 5));
+SELECT tokens('abcde', 'sparseGrams', 5, 5) AS tokenized;
+
 SELECT 'asciiCJK tokenizer';
 
 SELECT tokens('', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);

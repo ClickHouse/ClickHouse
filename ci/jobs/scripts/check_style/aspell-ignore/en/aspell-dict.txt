@@ -1009,6 +1009,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+ReplicatedCoalescingMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -1669,6 +1670,7 @@ cli
 clickcache
 clickcat
 clickhouse
+clickhousectl
 clickhousedb
 clickhousex
 clickmate
