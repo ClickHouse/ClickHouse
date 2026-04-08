@@ -154,17 +154,9 @@ if (OS_LINUX)
     # - The main clickhouse binary does not use dlopen,
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
-
-    if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
-        # Fold identical code and data sections to reduce binary size.
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
-    endif ()
 endif ()
 
 if (OS_DARWIN)
-    # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
-
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
@@ -176,7 +168,7 @@ else ()
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
 endif ()
 
-if (NOT WITH_COVERAGE
+if (NOT (SANITIZE_COVERAGE OR WITH_COVERAGE)
     AND (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
         OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL"))
@@ -287,22 +279,6 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
 
-# Put each function and data item into its own section so that the linker can
-# remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
-# Sanitizer and coverage builds do not benefit from these size optimizations
-# and the extra sections hurt instruction-cache locality in hot loops,
-# causing timing-sensitive tests to fail.
-if (NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -ffunction-sections -fdata-sections")
-    # -faddrsig emits an address-significance table that lets lld's ICF
-    # distinguish address-taken symbols from non-address-taken ones.
-    # Only useful on Linux where we use lld with --icf=all; Darwin's ld64
-    # does not consume these sections.
-    if (OS_LINUX)
-        set(COMPILER_FLAGS "${COMPILER_FLAGS} -faddrsig")
-    endif ()
-endif()
-
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
     # which makes benchmark results more stable.
@@ -363,7 +339,7 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-absolute-paths")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-absolute-paths")
 
-if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND OS_LINUX)
+if (NOT ENABLE_TESTS AND NOT ENABLE_CLANG_TIDY AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND OS_LINUX)
     # https://clang.llvm.org/docs/ThinLTO.html
     # Applies to clang and linux only.
     # Disabled when building with tests or sanitizers.
@@ -381,10 +357,6 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
-
-    if(LINKER_NAME MATCHES "lld")
-        set(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -Wl,--lto-whole-program-visibility")
-    endif()
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
@@ -395,11 +367,6 @@ else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
 set(MAX_LINKER_MEMORY 5000)
-if (ENABLE_FUZZING)
-    # Fuzzer builds produce many large ASan-instrumented binaries.
-    # Each linker instance needs significantly more memory than the default.
-    set(MAX_LINKER_MEMORY 16000)
-endif()
 include(cmake/limit_jobs.cmake)
 
 
@@ -407,7 +374,7 @@ include(cmake/limit_jobs.cmake)
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
 # Don't use the system compiler-rt library even if it is available. Instead build it directly
-option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" OFF)
+option(USE_SYSTEM_COMPILER_RT "Use the system compiler-rt if available. If disabled it will be built from sources (supported for Linux and FreeBSD)" ON)
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
 if (USE_MUSL)
@@ -540,6 +507,29 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
+    # Wrap the malloc/free and other C-style functions with our own ones
+    # to inject memory tracking mechanism into them.
+    # Sanitizers have their own way of intercepting the
+    # allocations and deallocations, so we skip this step for them.
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD OR OS_SUNOS))
+        target_link_options(${target} PRIVATE
+            "LINKER:--wrap=malloc"
+            "LINKER:--wrap=free"
+            "LINKER:--wrap=calloc"
+            "LINKER:--wrap=realloc"
+            "LINKER:--wrap=aligned_alloc"
+            "LINKER:--wrap=posix_memalign"
+            "LINKER:--wrap=valloc"
+            "LINKER:--wrap=memalign"
+            "LINKER:--wrap=reallocarray"
+        )
+        if (NOT USE_MUSL)
+            target_link_options(${target} PRIVATE
+                "LINKER:--wrap=pvalloc"
+            )
+        endif()
+    endif()
+
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
         target_link_libraries (${target} PUBLIC clickhouse_new_delete)
@@ -594,7 +584,7 @@ if (ENABLE_RUST)
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
-    AND NOT SANITIZE AND NOT ENABLE_FUZZING
+    AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT ENABLE_FUZZING
     AND OMIT_HEAVY_DEBUG_SYMBOLS AND OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(CHECK_LARGE_OBJECT_SIZES_DEFAULT ON)
 else ()

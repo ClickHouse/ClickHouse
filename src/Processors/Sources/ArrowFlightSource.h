@@ -5,7 +5,6 @@
 #if USE_ARROWFLIGHT
 #include <Processors/ISource.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
 #include <arrow/flight/types.h>
 
 
@@ -15,27 +14,25 @@ class ArrowFlightConnection;
 
 class ArrowFlightSource : public ISource
 {
-    void initializeEndpoints(const String & dataset_name_);
-    bool nextEndpoint();
-    void initializeSchema();
-    Block fillVirtualColumns(Block result_block);
-
 public:
-    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, const Block & virtual_header_, StorageID storage_id_, ContextPtr context_);
-    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_);
-    ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_, ContextPtr context_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, ContextPtr context_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_);
+    ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_);
+
+    ~ArrowFlightSource() override;
+    String getName() const override { return "ArrowFlightSource"; }
 
 protected:
-    String getName() const override { return "ArrowFlightSource"; }
     Chunk generate() override;
 
 private:
+    void initializeEndpoints(const String & dataset_name_, ContextPtr context);
+    bool nextEndpoint();
+    void initializeSchema();
+
     std::shared_ptr<ArrowFlightConnection> connection;
 
     Block sample_block;
-    Block virtual_header;
-    StorageID storage_id;
-    ContextPtr context;
     std::vector<arrow::flight::FlightEndpoint> endpoints;
     size_t current_endpoint = 0;
     std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;

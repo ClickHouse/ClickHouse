@@ -49,7 +49,7 @@ struct MergeTreeIndexFormat
     explicit operator bool() const { return version != 0; }
 };
 
-using MergeTreeIndexWriterStream = MergeTreeWriterStream;
+using MergeTreeIndexWriterStream = MergeTreeWriterStream<false>;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
