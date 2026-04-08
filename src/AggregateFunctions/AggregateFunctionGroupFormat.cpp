@@ -79,15 +79,6 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        if (argument_types.size() == 1 && !argument_types.empty() && argument_types.front()->isNullable())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "`groupFormat` `create` probe: {} arguments, first argument type {}",
-                argument_types.size(),
-                argument_types.front()->getName());
-        }
-
         new (place) GroupFormatData;
         auto & state = data(place);
         state.columns.reserve(argument_types.size());
@@ -112,6 +103,15 @@ public:
     {
         if (row_begin >= row_end)
             return;
+
+        if (argument_types.size() == 1 && argument_types.front()->isNullable())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`groupFormat` `addBatchSinglePlace` probe: destination type {}, source column {}",
+                argument_types.front()->getName(),
+                columns[0]->getName());
+        }
 
         auto & state = data(place);
 
