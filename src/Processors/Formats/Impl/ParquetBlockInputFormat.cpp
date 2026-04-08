@@ -1365,6 +1365,17 @@ std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
     return metadata->num_rows();
 }
 
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
+{
+    std::vector<size_t> filtered;
+    for (size_t rg : row_group_ids)
+        if (std::find(matching_row_groups.begin(), matching_row_groups.end(), rg) != matching_row_groups.end())
+            filtered.push_back(rg);
+    if (filtered.empty())
+        return nullptr;
+    return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
+}
+
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
     std::atomic<int> is_stopped = false;
@@ -1396,9 +1407,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 
     std::vector<FileBucketInfoPtr> result;
     for (const auto & bucket : buckets)
-    {
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
-    }
     return result;
 }
 
