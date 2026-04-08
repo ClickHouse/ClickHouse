@@ -109,17 +109,17 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     /// Do not throw any exceptions from global pool. Just log a warning and silently return.
     if (new_threads_count < threads_count)
     {
-        LOG_WARNING(log, "Loaded new threads count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_threads_count, threads_count);
+        LOG_WARNING(log, "Loaded new threads count for {}Executor from top level config, but new value ({}) is not greater than current {}", toString(name), new_threads_count, threads_count);
         return;
     }
 
     if (new_max_tasks_count < max_tasks_count.load(std::memory_order_relaxed))
     {
-        LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_max_tasks_count, max_tasks_count.load());
+        LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", toString(name), new_max_tasks_count, max_tasks_count.load());
         return;
     }
 
-    LOG_INFO(log, "Loaded new threads count ({}) and max tasks count ({}) for {}Executor", new_threads_count, new_max_tasks_count, name);
+    LOG_INFO(log, "Loaded new threads count ({}) and max tasks count ({}) for {}Executor", new_threads_count, new_max_tasks_count, toString(name));
 
     pending.setCapacity(new_max_tasks_count);
     active.set_capacity(new_max_tasks_count);
@@ -289,7 +289,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
                 LOG_WARNING(log,
                     "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}",
                     elapsed_ms,
-                    name,
+                    toString(name),
                     captured_storage_id.value_or("unknown"),
                     captured_query_id.value_or("unknown"));
             }

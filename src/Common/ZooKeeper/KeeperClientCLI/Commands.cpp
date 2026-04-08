@@ -1,10 +1,14 @@
 
 #include <algorithm>
+#include <chrono>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
+#include <future>
 #include <queue>
+#include <expected>
 
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -25,7 +29,30 @@ bool LSCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> &
         return true;
 
     node->args.push_back(std::move(path));
+
+    String watch_id;
+    if (parseKeeperArg(pos, expected, watch_id))
+        node->args.push_back(std::move(watch_id));
+
     return true;
+}
+
+namespace
+{
+template <typename Result, typename Callback>
+std::expected<Result, String> withWatch(const String & watch_id, KeeperClientBase * client, Callback && call)
+{
+    if (client->watches.contains(watch_id))
+        return std::unexpected(fmt::format("Watch '{}' already exists", watch_id));
+
+    auto promise = std::make_shared<std::promise<Coordination::WatchResponse>>();
+    auto fut = promise->get_future();
+    auto res
+        = call(std::make_shared<Coordination::WatchCallback>([p = std::move(promise)](const auto & response) { p->set_value(response); }));
+
+    client->watches.emplace(watch_id, std::move(fut));
+    return res;
+}
 }
 
 void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
@@ -36,7 +63,24 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
     else
         path = client->cwd;
 
-    auto children = client->zookeeper->getChildren(path);
+    Strings children;
+    if (query->args.size() == 2)
+    {
+        auto watch_id = query->args[1].safeGet<String>();
+        auto res = withWatch<Strings>(
+            watch_id, client, [&](auto watch) { return client->zookeeper->getChildrenWatch(path, nullptr, std::move(watch)); });
+
+        if (!res)
+        {
+            client->cerr << res.error() << "\n";
+            return;
+        }
+
+        children = res.value();
+    }
+    else
+        children = client->zookeeper->getChildren(path);
+
     std::sort(children.begin(), children.end());
 
     bool need_space = false;
@@ -169,12 +213,34 @@ bool GetCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> 
         return false;
     node->args.push_back(std::move(path));
 
+    String watch_id;
+    if (parseKeeperArg(pos, expected, watch_id))
+        node->args.push_back(std::move(watch_id));
+
     return true;
 }
 
 void GetCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
 {
-    client->cout << client->zookeeper->get(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    String value;
+    if (query->args.size() == 2)
+    {
+        auto watch_id = query->args[1].safeGet<String>();
+        auto res
+            = withWatch<String>(watch_id, client, [&](auto watch) { return client->zookeeper->getWatch(path, nullptr, std::move(watch)); });
+
+        if (!res)
+        {
+            client->cerr << res.error() << "\n";
+            return;
+        }
+
+        value = res.value();
+    }
+    else
+        value = client->zookeeper->get(path);
+    client->cout << value << "\n";
 }
 
 bool ExistsCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, DB::Expected & expected) const
@@ -184,12 +250,100 @@ bool ExistsCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuer
         return false;
     node->args.push_back(std::move(path));
 
+    String watch_id;
+    if (parseKeeperArg(pos, expected, watch_id))
+        node->args.push_back(std::move(watch_id));
+
     return true;
 }
 
 void ExistsCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClientBase * client) const
 {
-    client->cout << client->zookeeper->exists(client->getAbsolutePath(query->args[0].safeGet<String>())) << "\n";
+    auto path = client->getAbsolutePath(query->args[0].safeGet<String>());
+    bool result;
+    if (query->args.size() == 2)
+    {
+        auto watch_id = query->args[1].safeGet<String>();
+        auto res = withWatch<bool>(
+            watch_id, client, [&](auto watch) { return client->zookeeper->existsWatch(path, nullptr, std::move(watch)); });
+
+        if (!res)
+        {
+            client->cerr << res.error() << "\n";
+            return;
+        }
+
+        result = res.value();
+    }
+    else
+        result = client->zookeeper->exists(path);
+    client->cout << result << "\n";
+}
+
+namespace
+{
+
+String watchEventTypeToString(int32_t type)
+{
+    switch (type)
+    {
+        case Coordination::CREATED: return "CREATED";
+        case Coordination::DELETED: return "DELETED";
+        case Coordination::CHANGED: return "CHANGED";
+        case Coordination::CHILD: return "CHILD";
+        case Coordination::SESSION: return "SESSION";
+        case Coordination::NOTWATCHING: return "NOTWATCHING";
+        default: return "UNKNOWN(" + std::to_string(type) + ")";
+    }
+}
+
+}
+
+bool WaitWatchCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const
+{
+    String watch_id;
+    if (!parseKeeperArg(pos, expected, watch_id))
+        return false;
+    node->args.push_back(std::move(watch_id));
+
+    ASTPtr timeout;
+    if (ParserNumber{}.parse(pos, timeout, expected))
+        node->args.push_back(timeout->as<ASTLiteral &>().value);
+
+    return true;
+}
+
+void WaitWatchCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client) const
+{
+    auto watch_id = query->args[0].safeGet<String>();
+    auto it = client->watches.find(watch_id);
+    if (it == client->watches.end())
+    {
+        client->cerr << "No watch with id '" << watch_id << "'\n";
+        return;
+    }
+
+    if (!it->second.valid())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Stale future for watch '{}'", watch_id);
+
+    if (query->args.size() == 2)
+    {
+        double timeout_seconds = applyVisitor(FieldVisitorConvertToNumber<Float64>(), query->args[1]);
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(timeout_seconds));
+        if (it->second.wait_for(duration) == std::future_status::timeout)
+        {
+            client->cerr << "Watch '" << watch_id << "' timed out\n";
+            return; /// watch stays in the map and can be checked by the command later
+        }
+    }
+
+    auto fut = std::move(it->second);
+    client->watches.erase(it);
+
+    auto response = fut.get();
+
+    client->cout << "path: " << response.path << "\n";
+    client->cout << "type: " << watchEventTypeToString(response.type) << "\n";
 }
 
 bool GetStatCommand::parse(IParser::Pos & pos, boost::intrusive_ptr<ASTKeeperQuery> & node, Expected & expected) const

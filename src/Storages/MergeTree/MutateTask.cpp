@@ -86,6 +86,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace FailPoints
@@ -633,6 +634,7 @@ getColumnsForNewDataPart(
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
             serialization_infos.getSettings().nullable_serialization_version,
+            serialization_infos.getSettings().map_serialization_version,
             serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
         };
     }
@@ -646,6 +648,7 @@ getColumnsForNewDataPart(
             (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
             (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
         };
     }
@@ -1581,9 +1584,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
                     continue;
 
                 projection_squashes[i].setHeader(block_to_squash.cloneEmpty());
-                squashed_chunk = Squashing::squash(
-                    projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()}),
-                    projection_squashes[i].getHeader());
+                projection_squashes[i].add({block_to_squash.getColumns(), block_to_squash.rows()});
+                squashed_chunk = Squashing::squash(projection_squashes[i].generate(), projection_squashes[i].getHeader());
             }
 
             if (squashed_chunk)

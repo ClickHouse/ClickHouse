@@ -11,7 +11,7 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Core/Field.h>
-#include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -775,7 +775,10 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     auto disk = getLatestSnapshotDisk();
+    LOG_DEBUG(log, "Receiving snapshot {} to {} disk", up_to_log_idx, isLocalDisk(*disk) ? "local" : "remote");
 
+    /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
+    /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
     {
         auto buf = disk->writeFile(tmp_snapshot_file_name);
         buf->finalize();
@@ -787,11 +790,11 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     const size_t bytes_written = plain_buf->count();
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
 
+    plain_buf->finalize();
+
     Stopwatch watch;
     plain_buf->sync();
     ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
-
-    plain_buf->finalize();
 
     disk->removeFile(tmp_snapshot_file_name);
 
@@ -799,6 +802,56 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
     existing_snapshots.emplace(up_to_log_idx, snapshot_file_info);
     removeOutdatedSnapshotsIfNeeded();
     moveSnapshotsIfNeeded();
+
+    return snapshot_file_info;
+}
+
+template<typename Storage>
+std::unique_ptr<SnapshotReceiveCtx> KeeperSnapshotManager<Storage>::beginSnapshotReceiveToDisk(uint64_t up_to_log_idx)
+{
+    auto disk = getLatestSnapshotDisk();
+    LOG_DEBUG(log, "Receiving snapshot {} to {} disk", up_to_log_idx, isLocalDisk(*disk) ? "local" : "remote");
+    auto snapshot_file_name = getSnapshotFileName(up_to_log_idx, compress_snapshots_zstd);
+
+    const auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
+
+    /// Create an empty tmp_ marker file. On restart, if both tmp_<name> and <name> exist,
+    /// the snapshot is treated as incomplete and both are removed (see constructor).
+    {
+        auto buf = disk->writeFile(tmp_snapshot_file_name);
+        buf->finalize();
+    }
+
+    auto write_buf = disk->writeFile(snapshot_file_name);
+    return std::make_unique<SnapshotReceiveCtx>(std::move(write_buf), disk, std::move(snapshot_file_name), up_to_log_idx);
+}
+
+template<typename Storage>
+SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::finalizeSnapshotReceiveToDisk(SnapshotReceiveCtx & ctx)
+{
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, ctx.write_buf->count());
+
+    ctx.write_buf->finalize();
+
+    Stopwatch watch;
+    ctx.write_buf->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
+    ctx.write_buf.reset();
+    ctx.disk->removeFile("tmp_" + ctx.snapshot_file_name);
+
+    auto snapshot_file_info = std::make_shared<SnapshotFileInfo>(ctx.snapshot_file_name, ctx.disk);
+    existing_snapshots.emplace(ctx.log_idx, snapshot_file_info);
+    try
+    {
+        removeOutdatedSnapshotsIfNeeded();
+        moveSnapshotsIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        chassert(false);
+    }
 
     return snapshot_file_info;
 }
@@ -965,6 +1018,8 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     auto tmp_snapshot_file_name = "tmp_" + snapshot_file_name;
 
     auto disk = getLatestSnapshotDisk();
+    /// Create empty marker: if both tmp_<name> and <name> exist on restart, the snapshot
+    /// is treated as incomplete and both are removed (see KeeperSnapshotManager constructor).
     {
         auto buf = disk->writeFile(tmp_snapshot_file_name);
         buf->finalize();

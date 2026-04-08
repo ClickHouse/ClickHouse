@@ -234,7 +234,17 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
         storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
     Strings parts_in_zk = storage.getZooKeeper()->getChildren(replica_path + "/parts");
-    storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, {});
+
+    /// Compute parts_to_fetch: parts that exist in ZooKeeper but don't have
+    /// an active containing part locally. These parts are expected to be fetched,
+    /// so they should not trigger the paranoid check assertion even if they are
+    /// covered by another part in ZooKeeper and missing from disk.
+    Strings parts_to_fetch;
+    for (const auto & part_name : parts_in_zk)
+        if (!storage.getActiveContainingPart(part_name))
+            parts_to_fetch.push_back(part_name);
+
+    storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, parts_to_fetch);
 
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,

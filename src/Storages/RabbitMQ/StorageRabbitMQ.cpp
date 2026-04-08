@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -266,7 +267,7 @@ VirtualColumnsDescription StorageRabbitMQ::createVirtuals(StreamingHandleErrorMo
     desc.addEphemeral("_redelivered", std::make_shared<DataTypeUInt8>(), "");
     desc.addEphemeral("_message_id", std::make_shared<DataTypeString>(), "");
     desc.addEphemeral("_timestamp", std::make_shared<DataTypeUInt64>(), "");
-
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {

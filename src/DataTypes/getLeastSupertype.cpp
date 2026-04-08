@@ -281,6 +281,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
     Strings element_names;
     size_t element_size = 0;
     std::vector<DataTypes> element_types;
+    bool initialized = false;
 
     bool have_nullable = false;
 
@@ -298,7 +299,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
         if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
         {
             const auto & current_elements = type_tuple->getElements();
-            if (element_types.empty())
+            if (!initialized)
             {
                 element_size = current_elements.size();
                 element_types.resize(element_size);
@@ -306,6 +307,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
                     element_types[i].reserve(types.size());
                 if (type_tuple->hasExplicitNames())
                     element_names = type_tuple->getElementNames();
+                initialized = true;
             }
 
             if (element_size != type_tuple->getElements().size())

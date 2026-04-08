@@ -123,11 +123,11 @@ SELECT tokens('abc def cba', 'sparseGrams') AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams', 4, 10) AS tokenized;
 SELECT tokens('abc def cba', 'sparseGrams', 4, 10, 6) AS tokenized;
 
-SELECT 'unicodeWord tokenizer';
+SELECT 'asciiCJK tokenizer';
 
-SELECT tokens('', 'unicodeWord') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('hello world', 'unicodeWord') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('hello_world', 'unicodeWord') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('你好世界', 'unicodeWord') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('错误503', 'unicodeWord') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
-SELECT tokens('hello，world', 'unicodeWord') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('hello world', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('hello_world', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('你好世界', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('错误503', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+SELECT tokens('hello，world', 'asciiCJK') AS tokenized, toTypeName(tokenized), isConstant(tokenized);

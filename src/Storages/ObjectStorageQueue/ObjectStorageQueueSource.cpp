@@ -1255,8 +1255,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 read_from_format_info.requested_virtual_columns,
                 {
                     .path = path,
+                    .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
+                    .last_modified = object_metadata->last_modified,
                 },
                 getContext());
 
