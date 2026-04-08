@@ -25,6 +25,8 @@ Columns:
 - `last_error_message` ([String](../../sql-reference/data-types/string.md)) — Message for the last error.
 - `last_error_query_id` ([String](../../sql-reference/data-types/string.md)) — Id of a query that caused the last error (if available).
 - `last_error_trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A stack trace that represents a list of physical addresses where the called methods are stored.
+- `last_error_symbols` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) — Demangled symbol names corresponding to `last_error_trace`.
+- `last_error_lines` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)) — File names with line numbers corresponding to `last_error_trace`.
 
 **Example**
 
