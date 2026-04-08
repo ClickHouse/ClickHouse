@@ -7,6 +7,8 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET cross_to_inner_join_rewrite = 0;
+SET query_plan_merge_filter_into_join_condition = 0;
+SET query_plan_optimize_join_order_limit = 10;
 
 -- =====================================================================
 -- 1. Disconnected graph: two independent 2-table components.
