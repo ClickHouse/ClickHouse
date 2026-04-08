@@ -721,8 +721,9 @@ std::string LRUFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lock
 {
     return fmt::format(
         "size: {}/{}, elements: {}/{}, hold size: {}, hold elements: {}, description: {}",
-        getSize(lock), max_size.load(), getElementsCount(lock),
-        total_hold_size.load(), total_hold_elements.load(), max_elements.load(), description);
+        getSize(lock), max_size.load(),
+        getElementsCount(lock), max_elements.load(),
+        total_hold_size.load(), total_hold_elements.load(), description);
 }
 
 std::string LRUFileCachePriority::getApproxStateInfoForLog() const

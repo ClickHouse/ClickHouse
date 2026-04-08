@@ -495,7 +495,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
             result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column), mode);
         else
         {
-            column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
+            column = removeNullable(assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType())->createColumn();
             result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column), mode), result_type);
         }
     }

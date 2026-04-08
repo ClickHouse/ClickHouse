@@ -125,7 +125,13 @@ public:
     };
 
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options) const;
-    void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t offset = 0, size_t max_description_length = 0) const;
+    void explainPlan(
+        WriteBuffer & buffer,
+        const ExplainPlanOptions & options,
+        size_t offset = 0,
+        size_t max_description_length = 0,
+        const std::string & parent_tree_prefix = "",
+        bool is_last_child_plan = true) const;
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options) const;
     void explainEstimate(MutableColumns & columns) const;
 
