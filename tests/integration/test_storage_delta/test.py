@@ -4221,9 +4221,10 @@ def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster, u
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
 
-def test_system_delta_lake_history_large_last_checkpoint_version(started_cluster):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_system_delta_lake_history_large_last_checkpoint_version(started_cluster, use_delta_kernel):
     """Large _last_checkpoint versions should not be truncated to 32-bit values."""
-    node = get_node(started_cluster, "0")
+    node = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_history_large_last_checkpoint")
     LARGE_CHECKPOINT_VERSION = 4_294_967_296
@@ -4249,6 +4250,7 @@ def test_system_delta_lake_history_large_last_checkpoint_version(started_cluster
     assert (
         "Refusing to materialize Delta Lake history" in error
         or "Failed to parse `_last_checkpoint`" in error
+        or "Invalid Checkpoint" in error
     ), f"Expected a history guard or checkpoint parse error, got: {error}"
 
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
