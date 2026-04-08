@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
@@ -52,6 +53,8 @@ public:
 
     static void replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_query, ASTPtr & view_name, bool parameterized_view);
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
+
+    static ContextPtr getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot);
 
 protected:
     bool is_parameterized_view;

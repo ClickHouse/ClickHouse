@@ -78,10 +78,17 @@ SECRETS = [
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="woolenwolf_gh_app.installation_id",
+        type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
 ]
 

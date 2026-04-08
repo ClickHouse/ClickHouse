@@ -640,6 +640,8 @@ class ClickHouseCluster:
         self.instances: dict[str, ClickHouseInstance] = {}
         self.with_arrowflight = False
         self.arrowflight_host = "arrowflight1"
+        self._arrowflight_port = 0
+        self._arrowflight_auth_port = 0
         self.with_zookeeper = False
         self.with_zookeeper_secure = False
         self.with_mysql_client = False
@@ -1058,6 +1060,20 @@ class ClickHouseCluster:
             return self._nats_port
         self._nats_port = self.port_pool.get_port()
         return self._nats_port
+
+    @property
+    def arrowflight_port(self):
+        if self._arrowflight_port:
+            return self._arrowflight_port
+        self._arrowflight_port = self.port_pool.get_port()
+        return self._arrowflight_port
+
+    @property
+    def arrowflight_auth_port(self):
+        if self._arrowflight_auth_port:
+            return self._arrowflight_auth_port
+        self._arrowflight_auth_port = self.port_pool.get_port()
+        return self._arrowflight_auth_port
 
     @property
     def ytsaurus_port(self):
@@ -1698,6 +1714,10 @@ class ClickHouseCluster:
 
     def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_arrowflight = True
+        env_variables["ARROWFLIGHT_EXTERNAL_PORT"] = str(self.arrowflight_port)
+        env_variables["ARROWFLIGHT_AUTH_EXTERNAL_PORT"] = str(
+            self.arrowflight_auth_port
+        )
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
         )

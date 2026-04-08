@@ -29,7 +29,7 @@ from .utils import Shell, TeePopen, Utils
 _GH_authenticated = False
 
 
-def _GH_Auth(workflow):
+def _GH_Auth():
     global _GH_authenticated
     if _GH_authenticated:
         return
@@ -38,9 +38,7 @@ def _GH_Auth(workflow):
     from .gh_auth import GHAuth
 
     if not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+        GHAuth.auth_from_settings()
     _GH_authenticated = True
 
 
@@ -294,7 +292,7 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            _GH_Auth(workflow=workflow)
+            _GH_Auth()
 
         print("INFO: disk status before running a job:")
         Shell.run("df -h")
@@ -443,15 +441,6 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        # Clean up stale experimental result file before starting the subprocess.
-        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
-        # the process — if the subprocess completes during that sleep (common for
-        # fast native jobs like Finish Workflow in backport PRs), deleting the file
-        # afterwards would remove the subprocess's own output, causing a spurious
-        # "Job killed or terminated" error.
-        if Path((Result.experimental_file_name_static())).exists():
-            Path(Result.experimental_file_name_static()).unlink()
-
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -461,15 +450,6 @@ class Runner:
             start_time = Utils.timestamp()
 
             exit_code = process.wait()
-
-            if Path(Result.experimental_file_name_static()).exists():
-                result = Result.experimental_from_fs(job.name)
-                if not result.start_time:
-                    print(
-                        "WARNING: no start_time set by the job - set job start_time/duration"
-                    )
-                    result.start_time = start_time
-                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
@@ -747,7 +727,7 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                _GH_Auth(workflow)
+                _GH_Auth()
                 GH.post_commit_status(
                     name=workflow.name,
                     status=GH.convert_to_gh_status(status_updated),
@@ -781,7 +761,7 @@ class Runner:
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
-            _GH_Auth(workflow)
+            _GH_Auth()
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -799,7 +779,7 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            _GH_Auth(workflow)
+            _GH_Auth()
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
@@ -819,7 +799,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                _GH_Auth(workflow)
+                _GH_Auth()
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
