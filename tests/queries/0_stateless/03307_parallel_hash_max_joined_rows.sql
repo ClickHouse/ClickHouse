@@ -2,7 +2,7 @@
 -- no sanitizers -- memory consumption is unpredicatable with sanitizers
 
 drop table if exists t;
-
+--asdqwe
 create table t(s String, n UInt8) Engine = MergeTree order by tuple();
 insert into t select repeat('x', 100) as s, number from numbers_mt(3e5);
 
