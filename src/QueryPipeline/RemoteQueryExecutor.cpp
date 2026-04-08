@@ -41,6 +41,7 @@ namespace ProfileEvents
     extern const Event ReadTaskRequestsReceived;
     extern const Event MergeTreeReadTaskRequestsReceived;
     extern const Event ParallelReplicasAvailableCount;
+    extern const Event SendExternalTablesMicroseconds;
 }
 
 namespace DB
@@ -886,6 +887,11 @@ void RemoteQueryExecutor::sendScalars()
 
 void RemoteQueryExecutor::sendExternalTables()
 {
+    Stopwatch watch;
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::SendExternalTablesMicroseconds, watch.elapsedMicroseconds());
+    });
+
     size_t count = connections->size();
 
     {
