@@ -131,7 +131,7 @@ public:
         size_t row_end,
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
-        const UInt8 * null_map,
+        const UInt8 * /* null_map */,
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
