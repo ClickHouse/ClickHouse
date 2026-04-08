@@ -2502,7 +2502,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     if constexpr (is_division_or_null)
                     {
                         if (result_nullmap)
-                            result_nullmap->assign(col_left_const->size(),
+                            result_nullmap->resize_fill(col_left_const->size(),
                                 divisionLeadsToFPE(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
                     }
 
