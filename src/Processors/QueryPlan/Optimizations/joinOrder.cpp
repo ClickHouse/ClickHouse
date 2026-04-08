@@ -1057,11 +1057,7 @@ static void forEachNonEmptySubset(const BitSet & mask, F && func)
     const size_t num_bits = bit_positions.size();
     if (num_bits == 0)
         return;
-    /// With num_bits >= 64, there are at least 2^64 − 1 subsets to enumerate, which is infeasible.
-    /// In practice, neighborhood sizes are tiny (≤ ~10), but guard against accidental infinite loops.
-    if (num_bits >= 64)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "forEachNonEmptySubset: mask has {} bits set, subset enumeration is infeasible", num_bits);
+    chassert(num_bits < 64);
 
     const UInt64 num_subsets = 1ULL << num_bits;
     for (UInt64 subset_mask = 1; subset_mask < num_subsets; ++subset_mask)
@@ -1074,8 +1070,22 @@ static void forEachNonEmptySubset(const BitSet & mask, F && func)
     }
 }
 
-/// Emit a CSG-CP (connected subgraph / complement partition) pair.
-/// Both `left_csg` and `right_csg` are disjoint connected subgraphs
+/// The four functions below implement the core DPhyp enumeration from
+/// "Dynamic Programming Strikes Back" (Moerkotte & Neumann, SIGMOD 2008), Section 3.
+///
+/// `emitCsg` (paper: EmitCsg, Sec 3.3) -- given a connected subgraph S1, generates all
+///     complement seeds S2 = {v} from the neighborhood and extends them via `enumerateCmpRec`.
+/// `enumerateCmpRec` (paper: EnumerateCmpRec, Sec 3.4) -- recursively extends complement S2
+///     by adding neighboring nodes, emitting each valid csg-cmp pair.
+/// `enumerateCsgRec` (paper: EnumerateCsgRec, Sec 3.2) -- recursively extends the primary
+///     connected subgraph S1 by adding neighboring nodes.
+/// `emitCsgCmp` (paper: EmitCsgCmp, Sec 3.5) -- evaluates a (S1, S2) pair for plan construction.
+///
+/// Deviation from the paper: EmitCsg checks connectivity (existence of a hyperedge
+/// connecting S1 and S2) before calling EmitCsgCmp. We skip this check here and let
+/// `tryJoin` handle it, which avoids duplicating the connectivity logic.
+
+/// Evaluate a csg-cmp pair for plan construction.
 void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & right_csg)
 {
     LOG_TEST(log, "DPhyp: emitCsgCmp({{ {} }}, {{ {} }})",
@@ -1083,6 +1093,8 @@ void JoinOrderOptimizer::emitCsgCmp(const BitSet & left_csg, const BitSet & righ
     tryJoin(left_csg, right_csg);
 }
 
+/// Recursively extend complement S2 by adding subsets of its neighborhood.
+/// `exclusion` (paper: X) prevents revisiting already-processed nodes.
 void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & complement, const BitSet & exclusion)
 {
     LOG_TEST(log, "DPhyp: enumerateCmpRec(csg={{ {} }}, cmp={{ {} }}, excl={{ {} }})",
@@ -1095,26 +1107,36 @@ void JoinOrderOptimizer::enumerateCmpRec(const BitSet & csg, const BitSet & comp
     LOG_TEST(log, "DPhyp: enumerateCmpRec neighborhood={{ {} }}",
         fmt::join(complement_neighborhood, ","));
 
+    /// First pass: emit pairs for every connected extension of the complement.
     forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
     {
         BitSet extended_complement = complement | extension;
         if (dp_table.contains(extended_complement))
-            emitCsgCmp(csg, extended_complement);   /// emitCsgCmp will check if there is a connection
+            emitCsgCmp(csg, extended_complement);
     });
 
+    /// Second pass: recurse with extended exclusion (paper: X = X | N(S2, X)).
     BitSet incremental_exclusion = exclusion | complement_neighborhood;
     forEachNonEmptySubset(complement_neighborhood, [&](const BitSet & extension)
     {
-        BitSet extended_complement = complement | extension;
-        enumerateCmpRec(csg, extended_complement, incremental_exclusion);
+        enumerateCmpRec(csg, complement | extension, incremental_exclusion);
     });
 }
 
+/// Generate all complement seeds for a given connected subgraph S1.
+/// Seeds are single neighbor nodes, processed in descending index order so that
+/// `enumerateCmpRec` only extends complements toward higher-indexed nodes,
+/// ensuring each (S1, S2) pair is enumerated exactly once.
+///
+/// `exclusion` (paper: X) = S1 | B_min(S1), where B_min(S1) = {v : v < min(S1)}.
+/// B_min excludes all relations ordered before the smallest relation in S1.
+/// This is the key mechanism that prevents generating symmetric pairs:
+/// the complement can only contain relations ordered after the CSG's minimum.
 void JoinOrderOptimizer::emitCsg(const BitSet & csg)
 {
     LOG_TEST(log, "DPhyp: emitCsg({{ {} }})", fmt::join(csg, ","));
 
-    /// Build the initial exclusion: csg itself plus all lower-indexed relations.
+    /// exclusion = csg | {all relations with index < min(csg)}
     BitSet exclusion = csg;
     {
         size_t min_relation_idx = *exclusion.begin();
@@ -1142,6 +1164,9 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
     }
 }
 
+/// Recursively extend connected subgraph S1 by adding subsets of its neighborhood.
+/// `exclusion` (paper: X) prevents revisiting already-processed nodes.
+/// For each connected extension found in dp_table, calls `emitCsg` to generate complements.
 void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & exclusion)
 {
     checkLimits();
@@ -1156,6 +1181,7 @@ void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & excl
     LOG_TEST(log, "DPhyp: enumerateCsgRec neighborhood={{ {} }}",
         fmt::join(neighborhood, ","));
 
+    /// First pass: emit complements for every connected extension of S1.
     forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
     {
         BitSet extended_csg = csg | extension;
@@ -1163,6 +1189,7 @@ void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & excl
             emitCsg(extended_csg);
     });
 
+    /// Second pass: recurse with extended exclusion (paper: X = X | N(S1, X)).
     BitSet extended_exclusion = exclusion | neighborhood;
     forEachNonEmptySubset(neighborhood, [&](const BitSet & extension)
     {
@@ -1173,6 +1200,14 @@ void JoinOrderOptimizer::enumerateCsgRec(const BitSet & csg, const BitSet & excl
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
 {
     const size_t num_relations = query_graph.relation_stats.size();
+
+    /// DPhyp's subset enumeration uses a 64-bit bitmask, so it cannot handle neighborhoods
+    /// larger than 63 relations. Bail out gracefully so the fallback algorithm chain can continue.
+    if (num_relations >= 64)
+    {
+        LOG_TRACE(log, "Too many relations ({}) for DPhyp, falling back", num_relations);
+        return nullptr;
+    }
 
     /// Initialize dp_table with a leaf entry for each base relation.
     dp_table.clear();
@@ -1190,9 +1225,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
         LOG_TEST(log, "DPhyp: hyperedge {}: ({{ {} }}, {{ {} }})", e,
             fmt::join(hyperedges[e].left, ","), fmt::join(hyperedges[e].right, ","));
 
-    /// Main DPhyp loop: seed with each single-relation CSG in reverse index order.
-    /// Processing in reverse ensures the exclusion set always covers lower-indexed seeds,
-    /// so each unordered CSG pair is considered exactly once.
+    /// Main DPhyp loop (paper: Solve, Sec 3.1).
+    /// Seed with each single-relation CSG in descending index order.
+    /// For each seed {v}, `emitCsg` finds complements (the other side of the join),
+    /// and `enumerateCsgRec` grows {v} into larger connected subgraphs.
+    /// The exclusion set B_v = {w : w < v} | {v} ensures each unordered (S1, S2) pair
+    /// is considered exactly once (the side with the smaller min-index is always S1).
     BitSet exclusion = BitSet::allSet(num_relations);
     for (int i = static_cast<int>(num_relations) - 1; i >= 0; --i)
     {
@@ -1201,7 +1239,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
 
         LOG_TEST(log, "DPhyp: === seed {} ===", i);
         emitCsg(seed);
-        /// Exclusion: all relations with index smaller than `i`.
         exclusion.set(i, false);
         enumerateCsgRec(seed, exclusion);
     }
@@ -1210,6 +1247,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPhyp()
     if (best != dp_table.end())
         return best->second;
 
+    /// DPhyp cannot produce a plan for disconnected graphs (no cross products).
+    /// The caller's fallback chain (e.g. dphyp,greedy) handles this.
     LOG_TRACE(log, "Failed to find best plan using DPhyp algorithm");
     return nullptr;
 }
