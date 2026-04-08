@@ -35,6 +35,7 @@ public:
         std::optional<std::string> object;
         std::optional<std::string> file;
         std::optional<UInt64> line;
+        std::optional<UInt64> column;
     };
 
     using Frames = std::array<Frame, FRAMEPOINTER_CAPACITY>;
@@ -86,6 +87,10 @@ protected:
 };
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
+
+std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
+std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
+std::string getSignalCodeDescription(int sig, int si_code);
 
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler

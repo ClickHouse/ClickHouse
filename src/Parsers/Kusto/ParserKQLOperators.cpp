@@ -115,18 +115,18 @@ void rebuildSubqueryForInOperator(ASTPtr & node, bool useLowerCase)
 
     if (useLowerCase)
     {
-        auto args = std::make_shared<ASTExpressionList>();
+        auto args = make_intrusive<ASTExpressionList>();
         args->children.push_back(selectColumns->children[0]);
-        auto func_lower = std::make_shared<ASTFunction>();
+        auto func_lower = make_intrusive<ASTFunction>();
         func_lower->name = "lower";
-        func_lower->children.push_back(selectColumns->children[0]);
         func_lower->arguments = args;
+        func_lower->children.push_back(func_lower->arguments);
         if (selectColumns->children[0]->as<ASTIdentifier>())
             func_lower->alias = std::move(selectColumns->children[0]->as<ASTIdentifier>()->alias);
         else if (selectColumns->children[0]->as<ASTFunction>())
             func_lower->alias = std::move(selectColumns->children[0]->as<ASTFunction>()->alias);
 
-        auto funcs = std::make_shared<ASTExpressionList>();
+        auto funcs = make_intrusive<ASTExpressionList>();
         funcs->children.push_back(func_lower);
         selectColumns->children[0] = std::move(funcs);
     }

@@ -262,8 +262,8 @@ public:
                                         TargetSpecific::Default::FunctionMortonEncode>();
 
 #if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::AVX2,
-                                        TargetSpecific::AVX2::FunctionMortonEncode>();
+        selector.registerImplementation<TargetArch::x86_64_v3,
+                                        TargetSpecific::x86_64_v3::FunctionMortonEncode>();
 #endif
     }
 

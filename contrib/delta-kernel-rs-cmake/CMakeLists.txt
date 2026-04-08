@@ -8,8 +8,7 @@ set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
 # MSAN: Disabled because ring does not generate the appropriate symbols
 # NO_ARMV81_OR_HIGHER: Disabled because ring assumes that Neon is available with ARM
-# Darwin: Issues with reqwest -> system-configuration (requires other frameworks)
-if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
+if (NOT ENABLE_LIBRARIES OR (NOT OS_LINUX AND NOT OS_DARWIN) OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
@@ -42,4 +41,12 @@ corrosion_set_env_vars(delta_kernel_ffi
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
 add_dependencies(_cargo-build_delta_kernel_ffi OpenSSL::Crypto OpenSSL::SSL)
+
+# macOS frameworks required by reqwest's system-configuration dependency
+if (OS_DARWIN)
+    target_link_libraries(delta_kernel_ffi INTERFACE "-framework SystemConfiguration")
+    target_link_libraries(delta_kernel_ffi INTERFACE "-framework CoreFoundation")
+    target_link_libraries(delta_kernel_ffi INTERFACE "-framework Security")
+endif()
+
 add_library(ch_rust::delta_kernel_rs ALIAS delta_kernel_ffi)

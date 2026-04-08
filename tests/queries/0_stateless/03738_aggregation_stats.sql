@@ -6,8 +6,10 @@ INSERT INTO t2 SELECT number%10 AS key1, number%3 AS key2, number%17 AS key3, nu
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 SET enable_parallel_replicas = 0;
+SET enable_join_runtime_filters = 0;
+SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0; chooseJoinOrder skipped → cardinality estimates not computed → ResultRows: unknown and no [N] row counts in join EXPLAIN output
 
 SELECT '====== Aggregation by 1 column ======';
 SELECT explain FROM

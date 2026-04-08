@@ -81,7 +81,7 @@ public:
         const auto leading_zeros_count = getLeadingZeroBits(hilbert_code);
         const auto used_bits = std::numeric_limits<UInt64>::digits - leading_zeros_count;
 
-        auto [current_shift, state] = getInitialShiftAndState(used_bits);
+        auto [current_shift, state] = getInitialShiftAndState(static_cast<UInt8>(used_bits));
 
         while (current_shift >= 0)
         {
@@ -113,7 +113,7 @@ private:
     // hilbert code is double size of input values
     static constexpr UInt8 getHilbertShift(UInt8 shift)
     {
-        return shift << 1;
+        return static_cast<UInt8>(shift << 1);
     }
 
     static std::pair<Int8, UInt8> getInitialShiftAndState(UInt8 used_bits)

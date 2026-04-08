@@ -145,7 +145,7 @@ MODIFY REFRESH
 @pytest.fixture(scope="module", autouse=True)
 def module_setup_tables(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS test_db")
-    node.query(f"CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER default")
+    node.query(f"CREATE DATABASE test_db ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS test_db.test_rmv ON CLUSTER default")
     node.query("DROP TABLE IF EXISTS src1 ON CLUSTER default")
@@ -345,6 +345,8 @@ def get_rmv_info(
                 if wait_status
                 else (lambda r: r.iloc[0]["status"] != "Scheduling")
             ),
+            retry_count=max_attempts,
+            sleep_time=delay,
             parse=True,
         ).to_dict("records")[0]
 
@@ -436,7 +438,9 @@ def test_long_query_cancel(fn_setup_tables):
     get_rmv_info(node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Running")
 
     node.query("SYSTEM CANCEL VIEW test_rmv")
-    rmv = get_rmv_info(node, "test_rmv", wait_status="Scheduled")
+    rmv = get_rmv_info(
+        node, "test_rmv", delay=0.1, max_attempts=1000, wait_status="Scheduled"
+    )
     assert rmv["status"] == "Scheduled"
     assert rmv["exception"] == "cancelled"
     assert rmv["last_success_time"] is None

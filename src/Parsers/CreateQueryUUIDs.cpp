@@ -180,7 +180,7 @@ void CreateQueryUUIDs::copyToQuery(ASTCreateQuery & query) const
     if (!targets_inner_uuids.empty())
     {
         if (!query.targets)
-            query.set(query.targets, std::make_shared<ASTViewTargets>());
+            query.set(query.targets, make_intrusive<ASTViewTargets>());
 
         for (const auto & [kind, inner_uuid] : targets_inner_uuids)
         {

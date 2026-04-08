@@ -19,7 +19,7 @@ DOCKER_BUILD_ARM_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
 DOCKER_BUILD_AMD_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
 
 CACHE_S3_PATH = f"{S3_BUCKET_NAME}/ci_ch_cache"
-HTML_S3_PATH = S3_REPORT_BUCKET_NAME
+S3_REPORT_BUCKET = S3_REPORT_BUCKET_NAME
 S3_BUCKET_TO_HTTP_ENDPOINT = {
     S3_BUCKET_NAME: S3_BUCKET_HTTP_ENDPOINT,
     S3_REPORT_BUCKET_NAME: S3_REPORT_BUCKET_HTTP_ENDPOINT,
@@ -50,11 +50,13 @@ SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 USE_CUSTOM_GH_AUTH = True
 SECRET_GH_APP_ID: str = "woolenwolf_gh_app.clickhouse-app-id"
 SECRET_GH_APP_PEM_KEY: str = "woolenwolf_gh_app.clickhouse-app-key"
+SECRET_GH_APP_INSTALLATION_ID: str = "woolenwolf_gh_app.installation_id"
+SECRET_GH_APP_REGION: str = "us-east-1"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 
 DISABLED_WORKFLOWS = [
-    "new_pull_request.py",
+    # ""
 ]
 
 DEFAULT_LOCAL_TEST_WORKFLOW = "pull_request.py"
@@ -62,6 +64,10 @@ READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
 
 CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
+
+EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
+CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
+AWS_REGION = "us-east-1"
 
 # Substrings used to classify and categorize test failures based on error output.
 # Use the following query to find test failures NOT covered by current patterns:

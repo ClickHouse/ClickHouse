@@ -1,12 +1,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnVariant.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -45,7 +43,7 @@ public:
         return arguments[0];
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         const ColumnWithTypeAndName & arg = arguments[0];
 
@@ -62,12 +60,7 @@ public:
 
         ColumnPtr result;
 
-        /// Handle Geometry (Variant) type
-        if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(column.get()))
-        {
-            result = executeForVariant(column_variant, result_type);
-        }
-        else if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
+        if (checkAndGetDataType<DataTypeTuple>(arg.type.get()))
         {
             result = executeForPoint(column);
         }
@@ -91,62 +84,6 @@ public:
     }
 
 private:
-    ColumnPtr executeForVariant(const ColumnVariant * column_variant, const DataTypePtr & result_type) const
-    {
-        const auto * variant_type = typeid_cast<const DataTypeVariant *>(result_type.get());
-        if (!variant_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Expected Variant result type for Geometry");
-
-        /// Create a result Variant column with the same structure
-        auto result_column = result_type->createColumn();
-        auto & result_variant = assert_cast<ColumnVariant &>(*result_column);
-
-        const auto & variant_types = variant_type->getVariants();
-
-        /// Process each variant type and flip its coordinates
-        const auto & variants = column_variant->getVariants();
-        MutableColumns result_variants;
-        result_variants.reserve(variants.size());
-
-        for (size_t i = 0; i < variants.size(); ++i)
-        {
-            const auto & variant_column = variants[i];
-            auto global_discr = column_variant->globalDiscriminatorByLocal(i);
-            const auto & variant_data_type = variant_types[global_discr];
-
-            ColumnPtr flipped_variant;
-            if (checkAndGetDataType<DataTypeTuple>(variant_data_type.get()))
-            {
-                flipped_variant = executeForPoint(variant_column);
-            }
-            else if (const auto * array_type = checkAndGetDataType<DataTypeArray>(variant_data_type.get()))
-            {
-                flipped_variant = executeForArray(variant_column, array_type);
-            }
-            else
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Unexpected variant type {} in Geometry",
-                    variant_data_type->getName());
-            }
-            result_variants.push_back(flipped_variant->assumeMutable());
-        }
-
-        /// Share discriminators and offsets from the input variant since they don't change.
-        result_variant.getLocalDiscriminatorsPtr() = column_variant->getLocalDiscriminatorsPtr();
-        result_variant.getOffsetsPtr() = column_variant->getOffsetsPtr();
-
-        /// Set the variant columns in the result
-        auto & result_variant_columns = result_variant.getVariants();
-        for (size_t i = 0; i < result_variants.size(); ++i)
-        {
-            result_variant_columns[i] = std::move(result_variants[i]);
-        }
-
-        return result_column;
-    }
-
     ColumnPtr executeForPoint(const ColumnPtr & column) const
     {
         const auto * column_tuple = checkAndGetColumn<ColumnTuple>(column.get());

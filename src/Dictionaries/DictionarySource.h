@@ -1,10 +1,12 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <memory>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
 #include <Dictionaries/IDictionary.h>
+#include <boost/noncopyable.hpp>
 
 
 namespace DB
@@ -88,11 +90,11 @@ private:
 
     const SharedHeader & getHeader() const { return header; }
 
-    const std::vector<std::string> & getAttributesNamesToRead() const { return attributes_names_to_read; }
+    const Strings & getAttributesNamesToRead() const { return attributes_names_to_read; }
 
-    const std::vector<DataTypePtr> & getAttributesTypesToRead() const { return attributes_types_to_read; }
+    const DataTypes & getAttributesTypesToRead() const { return attributes_types_to_read; }
 
-    const std::vector<ColumnPtr> & getAttributesDefaultValuesColumns() const { return attributes_default_values_columns; }
+    const Columns & getAttributesDefaultValuesColumns() const { return attributes_default_values_columns; }
 
     const ReadColumnsFunc & getReadColumnsFunc() const { return read_columns_func; }
 
@@ -109,9 +111,9 @@ private:
 
     SharedHeader header;
 
-    std::vector<std::string> attributes_names_to_read;
-    std::vector<DataTypePtr> attributes_types_to_read;
-    std::vector<ColumnPtr> attributes_default_values_columns;
+    Strings attributes_names_to_read;
+    DataTypes attributes_types_to_read;
+    Columns attributes_default_values_columns;
 
     const size_t max_block_size;
     ReadColumnsFunc read_columns_func;
