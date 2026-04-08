@@ -100,11 +100,12 @@ void MergePlainMergeTreeTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, {}, {});
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        auto projections_duration_ms = merge_task ? merge_task->grabProjectionsMergeTime() : std::map<String, UInt64>{};
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
@@ -113,7 +114,9 @@ void MergePlainMergeTreeTask::prepare()
             new_part,
             future_part->parts,
             merge_list_entry.get(),
-            std::move(profile_counters_snapshot));
+            std::move(profile_counters_snapshot),
+            {},
+            projections_duration_ms);
     };
 
     transfer_profile_counters_to_initial_query = [this, query_thread_group = CurrentThread::getGroup()] ()

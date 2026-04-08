@@ -2356,7 +2356,7 @@ SELECT cosineDistance((1, 2), (2, 3));
 └────────────────────────────────┘
             )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {1, 1};
+    FunctionDocumentation::IntroducedIn introduced_in_cosine_distance = {21, 11};
     FunctionDocumentation::Category category_cosine_distance = FunctionDocumentation::Category::Distance;
     FunctionDocumentation documentation_cosine_distance = {description_cosine_distance, syntax_cosine_distance, arguments_cosine_distance, {}, returned_value_cosine_distance, examples_cosine_distance, introduced_in_cosine_distance, category_cosine_distance};
 

@@ -45,7 +45,7 @@ AS SELECT
     table_collation      AS TABLE_COLLATION,
     table_comment        AS TABLE_COMMENT
 FROM system.tables t
-LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table)
+LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table AND p.active = 1)
 GROUP BY
     t.database,
     t.name,

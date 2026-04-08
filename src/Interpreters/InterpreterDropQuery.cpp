@@ -665,6 +665,22 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             tables_to_truncate.push_back(storage_id);
         }
 
+        /// Pre-cancel merges for all matching tables simultaneously.
+        /// This ensures all merges start stopping at time 0, so that by the time
+        /// a thread-pool thread reaches stopMergesAndWait() for each table,
+        /// the merge is already stopping or done.
+        std::vector<ActionLock> pre_merge_blockers;
+        pre_merge_blockers.reserve(tables_to_truncate.size());
+        for (const auto & table_id : tables_to_truncate)
+        {
+            if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, table_context))
+            {
+                auto lock = table->getActionLock(ActionLocks::PartsMerge);
+                if (!lock.expired())
+                    pre_merge_blockers.push_back(std::move(lock));
+            }
+        }
+
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),

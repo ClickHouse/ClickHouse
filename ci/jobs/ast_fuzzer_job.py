@@ -62,11 +62,38 @@ def get_run_command(
 def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    tests, relevant_tests_result = targeter.get_all_relevant_tests_with_info(f"{cwd}/ci/tmp")
 
-    logging.info("Found %d relevant tests for targeted AST fuzzer:", len(tests))
-    for test in sorted(tests):
-        logging.info("  %s", test)
+    # Step 1: changed/new test files in this PR
+    changed_tests = targeter.get_changed_tests()
+    logging.info("[targeted-fuzzer] Step 1 — changed/new tests (%d): %s",
+                 len(changed_tests), ", ".join(sorted(changed_tests)) or "(none)")
+
+    # Step 2: tests that failed in previous CI runs for this PR
+    try:
+        previously_failed = targeter.get_previously_failed_tests()
+    except Exception as e:
+        logging.warning("[targeted-fuzzer] Step 2 — failed to fetch previously-failed tests: %s", e)
+        previously_failed = []
+    logging.info("[targeted-fuzzer] Step 2 — previously failed tests (%d): %s",
+                 len(previously_failed), ", ".join(previously_failed) or "(none)")
+
+    # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
+    try:
+        relevant_tests, relevant_tests_result = targeter.get_most_relevant_tests()
+    except Exception as e:
+        logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
+        relevant_tests = []
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+    logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
+
+    # Merge all three sets preserving priority order (changed first)
+    seen: set = set()
+    tests: list = []
+    for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+        if t not in seen:
+            seen.add(t)
+            tests.append(t)
+    logging.info("[targeted-fuzzer] Total unique tests: %d", len(tests))
 
     stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
     available_queries: dict[str, list[str]] = {}

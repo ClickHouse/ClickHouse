@@ -176,8 +176,8 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
                 }
             }
 
-            const auto & common_virtuals = IStorage::getCommonVirtuals();
-            for (const auto & column : common_virtuals)
+            auto common_virtuals = table->getCommonVirtuals(virtuals);
+            for (const auto & column : *common_virtuals)
             {
                 if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                     virtual_columns.push_back(column);
@@ -216,8 +216,8 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
             }
         }
 
-        const auto & common_virtuals = IStorage::getCommonVirtuals();
-        for (const auto & column : common_virtuals)
+        auto common_virtuals = table->getCommonVirtuals(virtuals);
+        for (const auto & column : *common_virtuals)
         {
             if (!column_descriptions.has(column.name) && !column_names.contains(column.name))
                 virtual_columns.push_back(column);

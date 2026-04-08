@@ -97,7 +97,7 @@ namespace DB::Setting
 
 /// Hard to imagine a hint file larger than 10 MB
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
-static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
 namespace DB::Iceberg
 {
@@ -1140,9 +1140,10 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool force_fetch_latest_metadata)
+    bool force_fetch_latest_metadata,
+    bool ignore_explicit_metadata_file_path)
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
         if (explicit_metadata_path.find('\0') != String::npos)
