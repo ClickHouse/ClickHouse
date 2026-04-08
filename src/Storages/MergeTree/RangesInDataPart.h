@@ -24,9 +24,14 @@ struct RangesInDataPartDescription
     size_t rows = 0;
     String projection_name;
 
-    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
+    /// Initiator-provided hint for task sizing on replicas. Technically, all replicas send this value with the
+    /// initial announcement request, but we always use the value from the replica local to the coordinator.
+    /// The initiator computes this per part after PK analysis and propagates back to replicas in read request responses.
+    size_t min_marks_per_task = 0;
+
+    void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
+    void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
     String getPartOrProjectionName() const;
 };
 
@@ -34,9 +39,9 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
 {
     using std::deque<RangesInDataPartDescription>::deque;
 
-    void serialize(WriteBuffer & out, UInt64 parallel_protocol_version) const;
+    void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 parallel_protocol_version);
+    void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
 
     void merge(const RangesInDataPartsDescription & other);
 };
@@ -93,6 +98,12 @@ struct RangesInDataPart
     MarkRanges ranges;
     MarkRanges exact_ranges;
     RangesInDataPartReadHints read_hints;
+
+    /// The above "ranges" member is the selected ranges after index analysis.
+    /// Index analysis has 2 steps : 1) Filter by primary key   2) Filter by skip indexes
+    /// Below member saves a snapshot of the selected ranges after primary key analysis (optional),
+    /// currently done only for use_skip_indexes_if_final_exact_mode=1
+    std::optional<MarkRanges> ranges_snapshot_after_pk_analysis;
 
     /// Offset ranges from parent part, used during projection index reading.
     PartOffsetRanges parent_ranges;

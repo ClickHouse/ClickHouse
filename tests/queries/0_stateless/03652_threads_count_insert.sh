@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-object-storage, no-parallel, no-fasttest
-
 # no-object-storage: s3 has 20 more threads
 # no-parallel: it checks the number of threads, which can be lowered in presence of other queries
-
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -45,7 +43,7 @@ for max_threads in 1 7; do
         cat <<EOF | $CLICKHOUSE_CLIENT
 select
     if(peak_threads_usage >= 6, 7, peak_threads_usage),
-from system.query_log where
+from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase() and
     type != 'QueryStart' and
     query_id = '$QUERY_ID'

@@ -37,7 +37,7 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY x ASC
+    ORDER BY number AS x ASC
 )
 QUERY id: 0
   PROJECTION COLUMNS
@@ -71,7 +71,7 @@ FROM
 (
     SELECT number AS x
     FROM numbers(3)
-    ORDER BY x ASC
+    ORDER BY number AS x ASC
 )
 QUERY id: 0
   PROJECTION COLUMNS
@@ -106,8 +106,8 @@ FROM
     SELECT number AS x
     FROM numbers(3)
     ORDER BY
-        exp(x) ASC,
-        x ASC
+        exp(number AS x) ASC,
+        number AS x ASC
 )
 QUERY id: 0
   PROJECTION COLUMNS
@@ -342,8 +342,8 @@ FROM
     SELECT number AS x
     FROM numbers(3)
     ORDER BY
-        x ASC,
-        exp(x) ASC
+        number AS x ASC,
+        exp(number AS x) ASC
 )
 SELECT groupArray(x)
 FROM
@@ -351,8 +351,8 @@ FROM
     SELECT number AS x
     FROM numbers(3)
     ORDER BY
-        x ASC,
-        exp(exp(x)) ASC
+        number AS x ASC,
+        exp(exp(number AS x)) ASC
 )
 SELECT groupArray(x)
 FROM
@@ -360,8 +360,8 @@ FROM
     SELECT number AS x
     FROM numbers(3)
     ORDER BY
-        exp(x) ASC,
-        x ASC
+        exp(number AS x) ASC,
+        number AS x ASC
 )
 SELECT
     key,

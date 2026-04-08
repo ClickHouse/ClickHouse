@@ -62,20 +62,20 @@ void ExecutionSpeedLimits::throttle(
 
         if (elapsed_seconds > 0)
         {
-            auto rows_per_second = read_rows / elapsed_seconds;
-            if (min_execution_rps && rows_per_second < min_execution_rps)
+            auto rows_per_second = static_cast<double>(read_rows) / elapsed_seconds;
+            if (min_execution_rps && rows_per_second < static_cast<double>(min_execution_rps))
                 throw Exception(
                     ErrorCodes::TOO_SLOW,
                     "Query is executing too slow: {} rows/sec., minimum: {}",
-                    read_rows / elapsed_seconds,
+                    rows_per_second,
                     min_execution_rps);
 
-            auto bytes_per_second = read_bytes / elapsed_seconds;
-            if (min_execution_bps && bytes_per_second < min_execution_bps)
+            auto bytes_per_second = static_cast<double>(read_bytes) / elapsed_seconds;
+            if (min_execution_bps && bytes_per_second < static_cast<double>(min_execution_bps))
                 throw Exception(
                     ErrorCodes::TOO_SLOW,
                     "Query is executing too slow: {} bytes/sec., minimum: {}",
-                    read_bytes / elapsed_seconds,
+                    bytes_per_second,
                     min_execution_bps);
 
             /// If the predicted execution time is longer than `max_estimated_execution_time`.
@@ -87,7 +87,7 @@ void ExecutionSpeedLimits::throttle(
                 const double time_threshold = max_estimated_execution_time.totalSeconds() / 100.0;
                 if (read_rows > rows_threshold || elapsed_seconds > time_threshold)
                 {
-                    double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / read_rows);
+                    double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / static_cast<double>(read_rows));
 
                     if (estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
                         throw Exception(
@@ -101,10 +101,10 @@ void ExecutionSpeedLimits::throttle(
                 }
             }
 
-            if (max_execution_rps && rows_per_second >= max_execution_rps)
+            if (max_execution_rps && rows_per_second >= static_cast<double>(max_execution_rps))
                 limitProgressingSpeed(read_rows, max_execution_rps, total_elapsed_microseconds);
 
-            if (max_execution_bps && bytes_per_second >= max_execution_bps)
+            if (max_execution_bps && bytes_per_second >= static_cast<double>(max_execution_bps))
                 limitProgressingSpeed(read_bytes, max_execution_bps, total_elapsed_microseconds);
         }
     }

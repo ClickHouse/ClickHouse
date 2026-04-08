@@ -4,13 +4,14 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <base/range.h>
-#include <Common/StrictContainers.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <list>
 
@@ -301,7 +302,7 @@ private:
     UInt8 getEventLevelNonStrictOnce(const AggregateFunctionWindowFunnelData<T>::TimestampEvents & events_list) const
     {
         /// events_timestamp stores the timestamp of the first and previous i-th level event happen within time window
-        StrictVector<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
+        VectorWithMemoryTracking<std::optional<std::pair<UInt64, UInt64>>> events_timestamp(events_size);
         bool first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
         {
@@ -320,7 +321,16 @@ private:
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
             {
-                return events_list[i - 1].second;
+                /// A duplicate event was found — return the current max level reached.
+                /// The old code incorrectly returned events_list[i-1].second which is just
+                /// the condition index of the previous event in the sorted list, not the
+                /// actual max funnel level. See #37177.
+                for (size_t event = events_timestamp.size(); event > 0; --event)
+                {
+                    if (events_timestamp[event - 1].has_value())
+                        return static_cast<UInt8>(event);
+                }
+                return 0;
             }
             else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
             {
@@ -376,7 +386,7 @@ private:
         /// For example: for events 'start', 'a', 'b', 'a', 'end'.
         /// The second occurrence of 'a' should be counted only once in one sequence.
         /// However, we do not know in advance if the next event will be 'b' or 'end', so we try to keep both paths.
-        std::vector<StrictList<EventMatchTimeWindow>> event_sequences(events_size);
+        VectorWithMemoryTracking<ListWithMemoryTracking<EventMatchTimeWindow>> event_sequences(events_size);
 
         bool has_first_event = false;
         for (size_t i = 0; i < events_list.size(); ++i)
@@ -401,7 +411,14 @@ private:
             }
             else if (strict_deduplication && !event_sequences[event_idx].empty())
             {
-                return events_list[i - 1].event_type;
+                /// Same fix as in getEventLevelNonStrictOnce — return actual max level,
+                /// not the previous event's type. See #37177.
+                for (size_t event = event_sequences.size(); event > 0; --event)
+                {
+                    if (!event_sequences[event - 1].empty())
+                        return static_cast<UInt8>(event);
+                }
+                return 0;
             }
             else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
             {
@@ -626,7 +643,7 @@ createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & 
 
 void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("windowFunnel", createAggregateFunctionWindowFunnel);
+    factory.registerFunction("windowFunnel", {createAggregateFunctionWindowFunnel, {}});
 }
 
 }

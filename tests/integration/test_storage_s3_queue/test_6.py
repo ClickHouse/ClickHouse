@@ -12,6 +12,7 @@ from helpers.s3_queue_common import (
     create_mv,
     generate_random_string,
 )
+from helpers.test_tools import wait_condition
 
 
 @pytest.fixture(autouse=True)
@@ -159,14 +160,16 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
             for expected_line in expected_data:
                 assert data.count(expected_line) == 1, f"Expected exacly one element '{expected_line}', got: {data}"
 
-    def wait_for_data(dst_table_name, expected_count):
-        for i in range(10):
-            count = 0
+    def wait_for_data(dst_table_name, expected_data, columns="column1, column2, column3"):
+        for i in range(60):
+            data = ""
             for node in instances:
-                count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
-            print(f"{count}/{expected_count}")
-            if count >= expected_count:
+                data += node.query(f"SELECT {columns} FROM {dst_table_name} ORDER BY {columns} FORMAT CSV")
+            data_lines = data.strip().split("\n")
+            missing = [row for row in expected_data if row not in data_lines]
+            if not missing:
                 break
+            print(f"{len(expected_data) - len(missing)}/{len(expected_data)}")
             time.sleep(1)
 
     expected_data = [
@@ -177,7 +180,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         '3,1,1,"2025-01-03","Amsterdam"',
         '3,1,3,"2025-01-03","Amsterdam"',
     ]
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data, "column1, column2, column3, date, city")
 
     data = ""
     for node in instances:
@@ -205,7 +208,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "3,1,3",
         "3,1,4",
     ]
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
 
     # With buckets we can get some files from the middle, if those files are last in bucket, but not global last.
     # It depends of hashes of file paths.
@@ -230,7 +233,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "2,1,2",
     ]
     expected_data.sort()
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
     if not is_single_thread:
         time.sleep(10)
 
@@ -259,7 +262,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "2,1,3",
     ]
     expected_data.sort()
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
 
     if not is_single_thread:
         time.sleep(10)
@@ -371,14 +374,16 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
             for expected_line in expected_data:
                 assert data.count(expected_line) == 1, f"Expected exactly one element '{expected_line}', got: {data}"
 
-    def wait_for_data(dst_table_name, expected_count):
-        for i in range(10):
-            count = 0
+    def wait_for_data(dst_table_name, expected_data, columns="column1, column2, column3"):
+        for i in range(60):
+            data = ""
             for node in instances:
-                count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
-            print(f"{count}/{expected_count}")
-            if count >= expected_count:
+                data += node.query(f"SELECT {columns} FROM {dst_table_name} ORDER BY {columns} FORMAT CSV")
+            data_lines = data.strip().split("\n")
+            missing = [row for row in expected_data if row not in data_lines]
+            if not missing:
                 break
+            print(f"{len(expected_data) - len(missing)}/{len(expected_data)}")
             time.sleep(1)
 
     # Step 1: Verify initial 6 rows
@@ -390,7 +395,7 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
         "3,1,1",
         "3,1,3",
     ]
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
 
     data = ""
     for node in instances:
@@ -419,7 +424,7 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
         "3,1,3",
         "3,1,4",
     ]
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
 
     if not is_single_thread:
         time.sleep(10)
@@ -440,7 +445,7 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
         "2,1,2",
     ]
     expected_data.sort()
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
 
     if not is_single_thread:
         time.sleep(10)
@@ -470,7 +475,7 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
         "2,1,3",
     ]
     expected_data.sort()
-    wait_for_data(dst_table_name, len(expected_data))
+    wait_for_data(dst_table_name, expected_data)
 
     if not is_single_thread:
         time.sleep(10)
@@ -599,21 +604,25 @@ def test_ordered_mode_with_regex_partitioning_large_num_files(started_cluster, e
 
     assert actual_sum == expected_sum, f"Expected sum {expected_sum}, got {actual_sum}"
 
-    # Verify all partitions were created in ZooKeeper
+    # Verify all partitions were created in ZooKeeper.
+    # Note: ZooKeeper metadata is committed after data insertion,
+    # so we need to retry to allow the last batch's ZK commit to complete.
     zk = started_cluster.get_kazoo_client("zoo1")
-    processed_nodes = []
-    for i in range(buckets):
-        if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
-            continue
-        bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
-        for node in bucket_nodes:
-            if node not in processed_nodes:
-                processed_nodes.append(node)
+    expected_partition_keys = sorted([f"server-{i}" for i in range(1, num_hosts + 1)])
 
-    processed_nodes.sort()
-    expected_partition_keys = [f"server-{i}" for i in range(1, num_hosts + 1)]
-    expected_partition_keys.sort()  # Sort lexicographically to match processed_nodes sorting
-    assert processed_nodes == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {processed_nodes}"
+    for attempt in range(30):
+        processed_nodes = set()
+        for i in range(buckets):
+            if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
+                continue
+            bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
+            processed_nodes.update(bucket_nodes)
+
+        if sorted(processed_nodes) == expected_partition_keys:
+            break
+        time.sleep(1)
+
+    assert sorted(processed_nodes) == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {sorted(processed_nodes)}"
 
 
 @pytest.mark.parametrize("bucketing_mode", ["path", "partition"])
@@ -758,21 +767,35 @@ def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bu
     # Check bucket distribution in ZooKeeper
     zk = started_cluster.get_kazoo_client("zoo1")
 
-    # Map: partition_key -> bucket_id
-    partition_to_buckets = {}
-    buckets_used = set()
+    # Wait for ZooKeeper nodes to be populated
+    # There can be a delay between data being processed and ZK metadata being written
+    def get_partition_to_buckets():
+        partition_to_buckets = {}
+        buckets_used = set()
 
-    for bucket_id in range(buckets):
-        bucket_path = f"{keeper_path}/buckets/{bucket_id}/processed"
-        if not zk.exists(bucket_path):
-            continue
+        for bucket_id in range(buckets):
+            bucket_path = f"{keeper_path}/buckets/{bucket_id}/processed"
+            if not zk.exists(bucket_path):
+                continue
 
-        buckets_used.add(bucket_id)
-        partition_keys = zk.get_children(bucket_path)
-        for partition_key in partition_keys:
-            if partition_key not in partition_to_buckets:
-                partition_to_buckets[partition_key] = []
-            partition_to_buckets[partition_key].append(bucket_id)
+            buckets_used.add(bucket_id)
+            partition_keys = zk.get_children(bucket_path)
+            for partition_key in partition_keys:
+                if partition_key not in partition_to_buckets:
+                    partition_to_buckets[partition_key] = []
+                partition_to_buckets[partition_key].append(bucket_id)
+
+        return partition_to_buckets, buckets_used
+
+    # Wait for all partitions to appear in ZooKeeper
+    wait_condition(
+        get_partition_to_buckets,
+        lambda result: len(result[0]) == num_hostnames,
+        max_attempts=20,
+        delay=0.5,
+    )
+
+    partition_to_buckets, buckets_used = get_partition_to_buckets()
 
     if bucketing_mode == "partition":
         # All 3 hostnames should be present as partition keys

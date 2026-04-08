@@ -8,6 +8,7 @@
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -21,6 +22,7 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int CANNOT_PACK_ARCHIVE;
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -714,6 +716,40 @@ TEST(TarArchiveReaderAndWriterTest, AdaptiveBufferMaxCapacity)
     }
 }
 
+TEST(TarArchiveReaderAndWriterTest, EmptyFileWithKnownSize)
+{
+    /// This test exercises the code path where writeFile(filename, size) is called
+    /// with size=0 and no data is written. Previously, expected_size was uninitialized
+    /// in this case, causing a MSan use-of-uninitialized-value in closeFile.
+    String archive_path = "archive.tar";
+    {
+        auto writer = createArchiveWriter(archive_path);
+        {
+            auto out = writer->writeFile("empty.txt", 0);
+            out->finalize();
+        }
+        {
+            auto out = writer->writeFile("non_empty.txt", 4);
+            writeString("test", *out);
+            out->finalize();
+        }
+        writer->finalize();
+    }
+    /// The empty file won't appear in the archive because writeEntry is only called
+    /// when data is actually written. The important thing is that finalizing the empty
+    /// file's buffer does not trigger any undefined behavior (MSan).
+    auto reader = createArchiveReader(archive_path);
+    ASSERT_FALSE(reader->fileExists("empty.txt"));
+    ASSERT_TRUE(reader->fileExists("non_empty.txt"));
+    {
+        auto in = reader->readFile("non_empty.txt", /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, "test");
+    }
+    fs::remove(archive_path);
+}
+
 TEST(SevenZipArchiveReaderTest, FileExists)
 {
     String archive_path = "archive.7z";
@@ -776,6 +812,109 @@ TEST(SevenZipArchiveReaderTest, ReadTwoFiles)
     readStringUntilEOF(str, *in);
     EXPECT_EQ(str, contents2);
     fs::remove(archive_path);
+}
+
+TEST(SevenZipArchiveReaderTest, ReadFromReadBuffer)
+{
+    /// Create a 7z archive on disk, then read it into memory and verify
+    /// that reading via ReadArchiveFunction works (simulates object storage).
+    String archive_path = "archive_stream.7z";
+    String file1 = "file1.txt";
+    String contents1 = "hello from 7z stream";
+    String file2 = "dir/file2.txt";
+    String contents2 = "second file in 7z";
+    bool created = createArchiveWithFiles<ArchiveType::SevenZip>(archive_path, {{file1, contents1}, {file2, contents2}});
+    EXPECT_EQ(created, true);
+
+    /// Read the archive file into a string to simulate in-memory / object storage access.
+    String archive_in_memory;
+    {
+        ReadBufferFromFile buf(archive_path);
+        readStringUntilEOF(archive_in_memory, buf);
+    }
+    fs::remove(archive_path);
+
+    /// Create reader using ReadArchiveFunction (same path as S3/object storage).
+    auto read_archive_func
+        = [&]() -> std::unique_ptr<SeekableReadBuffer> { return std::make_unique<ReadBufferFromString>(archive_in_memory); };
+    auto reader = createArchiveReader(archive_path, read_archive_func, archive_in_memory.size());
+
+    ASSERT_TRUE(reader->fileExists(file1));
+    ASSERT_TRUE(reader->fileExists(file2));
+
+    {
+        auto in = reader->readFile(file1, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents1);
+    }
+
+    {
+        auto in = reader->readFile(file2, /*throw_on_not_found=*/true);
+        String str;
+        readStringUntilEOF(str, *in);
+        EXPECT_EQ(str, contents2);
+    }
+
+    /// Test getAllFiles.
+    auto files = reader->getAllFiles();
+    EXPECT_EQ(files.size(), 2);
+}
+
+
+/// A WriteBuffer that throws after a specified number of bytes, simulating a disk-full condition.
+class ThrowAfterNBytesWriteBuffer : public WriteBufferFromFileBase
+{
+public:
+    explicit ThrowAfterNBytesWriteBuffer(size_t throw_after_bytes_)
+        : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+        , throw_after_bytes(throw_after_bytes_)
+    {
+    }
+
+    void sync() override { }
+    std::string getFileName() const override { return "ThrowAfterNBytesWriteBuffer"; }
+
+private:
+    void nextImpl() override
+    {
+        size_t to_write = offset();
+        if (bytes_written + to_write > throw_after_bytes)
+            throw Exception(ErrorCodes::CANNOT_PACK_ARCHIVE, "Simulated disk full error after {} bytes", bytes_written);
+        bytes_written += to_write;
+    }
+
+    size_t throw_after_bytes;
+    size_t bytes_written = 0;
+};
+
+
+/// Test that write errors in the underlying buffer during archive creation produce
+/// a proper exception instead of std::terminate (which happens if C++ exceptions
+/// propagate through C library code like minizip or libarchive).
+TEST_P(ArchiveReaderAndWriterTest, WriteErrorProducesException)
+{
+    /// Allow writing some data so the archive header gets created, then fail.
+    auto failing_buffer = std::make_unique<ThrowAfterNBytesWriteBuffer>(1024);
+    auto writer = createArchiveWriter(getPathToArchive(), std::move(failing_buffer));
+
+    auto out = writer->writeFile("a.txt");
+    /// Write enough random (incompressible) data to trigger the underlying buffer flush failure.
+    /// Using random data ensures that compressed formats (bz2, lzma, zst, xz) also exceed
+    /// the byte threshold, since repetitive data compresses to nearly nothing.
+    String large_content = getRandomASCIIString(1024 * 1024);
+    EXPECT_THROW(
+        {
+            writeString(large_content, *out);
+            out->finalize();
+            writer->finalize();
+        },
+        Exception);
+
+    /// Clean up after the expected exception: the writer was not finalized,
+    /// so we must cancel it to avoid the chassert in the destructor.
+    out.reset();
+    writer->cancel();
 }
 
 

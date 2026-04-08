@@ -8,7 +8,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -99,7 +101,8 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    pipeline.addSimpleTransform([&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
     {
         /// Build the filter only from the main stream
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
@@ -117,7 +120,8 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             pass_ratio_threshold_for_disabling,
             blocks_to_skip_before_reenabling,
             max_ratio_of_set_bits_in_bloom_filter,
-            allow_to_use_not_exact_filter);
+            allow_to_use_not_exact_filter,
+            query_context);
     });
 }
 
@@ -164,7 +168,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes];
     const UInt64 bloom_filter_hash_functions = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions];
     const Float64 pass_ratio_threshold_for_disabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling];
-    const Float64 blocks_to_skip_before_reenabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling];
+    const Float64 blocks_to_skip_before_reenabling = static_cast<Float64>(ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling]);
     const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
 
     return std::make_unique<BuildRuntimeFilterStep>(
@@ -188,7 +192,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
 
 void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     format_settings.out
         << prefix << "Filter id: " << filter_name << '\n'
         << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';

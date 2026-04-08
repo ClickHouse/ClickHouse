@@ -12,9 +12,11 @@ namespace DB
     }
     StorageLoop::StorageLoop(
             const StorageID & table_id_,
-            StoragePtr inner_storage_)
+            StoragePtr inner_storage_,
+            ASTPtr inner_table_function_ast_)
             : IStorage(table_id_)
             , inner_storage(std::move(inner_storage_))
+            , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
         StorageInMemoryMetadata storage_metadata = inner_storage->getInMemoryMetadata();
         setInMemoryMetadata(storage_metadata);
@@ -40,7 +42,8 @@ namespace DB
         query_info.optimize_trivial_count = false;
 
         query_plan.addStep(std::make_unique<ReadFromLoopStep>(
-                column_names, query_info, storage_snapshot, context, processed_stage, inner_storage, max_block_size, num_streams
+                column_names, query_info, storage_snapshot, context, processed_stage, inner_storage,
+                inner_table_function_ast, max_block_size, num_streams
         ));
     }
 

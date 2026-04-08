@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
+#include <chrono>
 #include <cstddef>
 
 namespace DB
@@ -19,7 +20,7 @@ class QueryPlan;
 
 struct QueryPlanOptimizationSettings
 {
-    explicit QueryPlanOptimizationSettings(
+    QueryPlanOptimizationSettings(
         const Settings & from,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
@@ -70,6 +71,11 @@ struct QueryPlanOptimizationSettings
     std::optional<bool> join_swap_table;
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
+    /// When non-zero, randomize statistics for join reordering using this value as seed
+    UInt64 query_plan_optimize_join_order_randomize = 0;
+
+    /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
+    bool enable_join_transitive_predicates = false;
 
     /// --- Second-pass optimizations
     bool optimize_prewhere;
@@ -79,12 +85,12 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
-    bool query_condition_cache_store_conditions_as_plaintext;
     bool read_in_order_through_join;
     bool correlated_subqueries_use_in_memory_buffer;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
+    bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
@@ -163,16 +169,20 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    bool parallel_replicas_enabled;
-    size_t max_parallel_replicas;
+    size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
+    size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+
+    bool query_plan_optimize_primary_key = true;
 
     bool keep_logical_steps;
 
     bool is_explain;
 
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+
+    bool parallel_replicas_filter_pushdown = false;
 };
 
 }

@@ -1,4 +1,5 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <Common/Exception.h>
 
 namespace DB
 {

@@ -27,7 +27,11 @@ class FunctionH3ToParent : public IFunction
 public:
     static constexpr auto name = "h3ToParent";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToParent>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ToParent(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToParent>(context); }
 
     std::string getName() const override { return name; }
 
@@ -104,8 +108,13 @@ public:
                     getName(),
                     toString(MAX_H3_RES));
 
-            validateH3Cell(hindex);
-            UInt64 res = cellToParent(hindex, resolution);
+            UInt64 res = 0;
+            if (validator.validateCell(hindex))
+            {
+                H3Index parent = 0;
+                if (!cellToParent(hindex, resolution, &parent))
+                    res = parent;
+            }
 
             dst_data[row] = res;
         }

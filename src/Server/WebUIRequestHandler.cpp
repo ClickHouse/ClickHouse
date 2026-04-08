@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <ClickStackResources.generated.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -37,6 +38,10 @@ constexpr unsigned char resource_merges_html[] =
 {
 #embed "../../programs/server/merges.html"
 };
+constexpr unsigned char resource_jemalloc_html[] =
+{
+#embed "../../programs/server/jemalloc.html"
+};
 
 
 namespace DB
@@ -46,7 +51,8 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
                    std::unordered_map<String, String> http_response_headers_override = {})
 {
     applyHTTPResponseHeaders(response, http_response_headers_override);
-    response.setContentType("text/html; charset=UTF-8");
+    if (response.getContentType().empty())
+        response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
@@ -105,6 +111,78 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
         *response.send() << "Not found.\n";
     }
+}
+
+void JemallocWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(resource_jemalloc_html), std::size(resource_jemalloc_html)}, http_response_headers_override);
+}
+
+std::string ClickStackUIRequestHandler::getResourcePath(const std::string & uri) const
+{
+    std::string_view path = uri;
+    if (path.starts_with("/clickstack"))
+        path.remove_prefix(11); // length of "/clickstack"
+
+    if (!path.empty() && path[0] == '/')
+        path.remove_prefix(1);
+
+    // Remove query parameters and fragments
+    auto query_pos = path.find('?');
+    if (query_pos != std::string_view::npos)
+        path = path.substr(0, query_pos);
+
+    auto fragment_pos = path.find('#');
+    if (fragment_pos != std::string_view::npos)
+        path = path.substr(0, fragment_pos);
+
+    // Remove trailing slash
+    if (!path.empty() && path.back() == '/')
+        path.remove_suffix(1);
+
+    // Handle clean URLs - map page routes to .html files
+    // If path is empty or just "/", serve index.html
+    if (path.empty())
+        return "index.html";
+
+    std::string path_str(path);
+    if (path_str.find('.') != std::string::npos)
+        return path_str;
+
+    // assuming a path with no "." is an html page
+    return path_str + ".html";
+}
+
+void ClickStackUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    // Get the resource path from URI
+    std::string resource_path = getResourcePath(request.getURI());
+
+    // Binary search in the sorted embedded_resources array
+    auto it = std::lower_bound(
+        ClickStack::embedded_resources.begin(),
+        ClickStack::embedded_resources.end(),
+        resource_path,
+        [](const ClickStack::EmbeddedResource & resource, const std::string & path)
+        {
+            return resource.path < path;
+        });
+
+    // Check if resource was found
+    if (it == ClickStack::embedded_resources.end() || it->path != resource_path)
+    {
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        *response.send() << "Not found.\n";
+        return;
+    }
+
+    response.setContentType(std::string(it->mime_type));
+
+    // Add Content-Encoding header since all clickstack resources are pre-gzipped
+    auto headers_with_encoding = http_response_headers_override;
+    headers_with_encoding["Content-Encoding"] = "gzip";
+
+    handle(request, response, {reinterpret_cast<const char *>(it->data), it->size}, headers_with_encoding);
 }
 
 }

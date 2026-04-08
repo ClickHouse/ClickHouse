@@ -85,8 +85,10 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
+            auto hive_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+            hive_format_settings.allow_number_leading_zeros = true;
             if (const auto type = tryInferDataTypeByEscapingRule(
-                    value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
+                    value, hive_format_settings, FormatSettings::EscapingRule::Raw))
             {
                 if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
                 {
@@ -129,7 +131,9 @@ void addPartitionColumnsToChunk(
                 path);
         }
 
-        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(it->second), *column.type))->convertToFullColumnIfConst();
+        FormatSettings hive_format_settings;
+        hive_format_settings.allow_number_leading_zeros = true;
+        auto chunk_column = column.type->createColumnConst(chunk.getNumRows(), convertFieldToType(Field(String(it->second)), *column.type, nullptr, hive_format_settings))->convertToFullColumnIfConst();
         chunk.addColumn(std::move(chunk_column));
     }
 }

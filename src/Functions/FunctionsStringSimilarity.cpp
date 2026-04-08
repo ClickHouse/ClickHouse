@@ -296,9 +296,9 @@ struct NgramDistanceImpl
             size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats.get(), distance, nullptr);
             /// For !symmetric version we should not use first_size.
             if constexpr (symmetric)
-                res = distance * 1.f / std::max(first_size + second_size, 1uz);
+                res = static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(first_size + second_size, 1uz));
             else
-                res = 1.f - distance * 1.f / std::max(second_size, 1uz);
+                res = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(second_size, 1uz));
         }
         else
         {
@@ -364,9 +364,9 @@ struct NgramDistanceImpl
 
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
+                    res[i] = static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(haystack_stats_size + needle_stats_size, 1uz));
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
+                    res[i] = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(needle_stats_size, 1uz));
             }
             else
             {
@@ -435,7 +435,7 @@ struct NgramDistanceImpl
                     for (size_t j = 0; j < needle_stats_size; ++j)
                         --common_stats[needle_ngram_storage[j]];
 
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
+                    res[i] = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(needle_stats_size, 1uz));
                 }
                 else
                 {
@@ -483,9 +483,9 @@ struct NgramDistanceImpl
                     ngram_storage.get());
                 /// For !symmetric version we should not use haystack_stats_size.
                 if constexpr (symmetric)
-                    res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, 1uz);
+                    res[i] = static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(haystack_stats_size + needle_stats_size, 1uz));
                 else
-                    res[i] = 1.f - distance * 1.f / std::max(needle_stats_size, 1uz);
+                    res[i] = 1.f - static_cast<Float32>(distance) * 1.f / static_cast<Float32>(std::max(needle_stats_size, 1uz));
             }
             else
             {

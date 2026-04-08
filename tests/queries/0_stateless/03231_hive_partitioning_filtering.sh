@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT --query "
 for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
         current_database = currentDatabase() and type='QueryFinish';" )
     if [[ "$count" == "1" ]]; then
         echo "1"
@@ -40,7 +40,7 @@ $CLICKHOUSE_CLIENT --query "
 for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
         current_database = currentDatabase() and type='QueryFinish';" )
     if [[ "$count" == "1" ]]; then
         echo "1"
@@ -60,7 +60,7 @@ $CLICKHOUSE_CLIENT --query "
 for _ in {1..5}; do
     count=$( $CLICKHOUSE_CLIENT --query "
         SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME' AND 
         current_database = currentDatabase() and type='QueryFinish';" )
     if [[ "$count" == "1" ]]; then
         echo "1"

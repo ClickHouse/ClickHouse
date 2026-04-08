@@ -8,8 +8,8 @@ CreatingSets (Create sets before main query execution)
       ReadFromObjectStorage
 Expression ((Project names + Projection))
   Aggregating
-    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
-      ReadFromObjectStorage
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Change remote column names to local column names))))
+      ReadFromCluster
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)

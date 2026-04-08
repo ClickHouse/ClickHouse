@@ -1,6 +1,9 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -190,7 +193,24 @@ void FilterTransform::doTransform(Chunk & chunk)
         filter_column = filter_column->convertToFullColumnIfConst();
 
     if (filter_column->isSparse())
-        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+    {
+        /// SparseFilterDescription only supports Sparse(UInt8) and Sparse(Nullable(UInt8)).
+        /// For other types (e.g. Float64 when WHERE uses sin(col)), fall back to the
+        /// regular FilterDescription which converts any numeric type to a boolean filter.
+        const auto * column_sparse = typeid_cast<const ColumnSparse *>(filter_column.get());
+        const auto & values_column = column_sparse->getValuesColumn();
+        if (typeid_cast<const ColumnUInt8 *>(&values_column)
+            || (typeid_cast<const ColumnNullable *>(&values_column)
+                && typeid_cast<const ColumnUInt8 *>(&assert_cast<const ColumnNullable &>(values_column).getNestedColumn())))
+        {
+            filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+        }
+        else
+        {
+            filter_column = filter_column->convertToFullColumnIfSparse();
+            filter_description = std::make_unique<FilterDescription>(*filter_column);
+        }
+    }
     else
         filter_description = std::make_unique<FilterDescription>(*filter_column);
 

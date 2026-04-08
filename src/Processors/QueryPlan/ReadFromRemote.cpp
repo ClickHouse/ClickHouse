@@ -64,8 +64,10 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ErrorCodes
@@ -169,7 +171,7 @@ static void enforceAggregationInOrder(
     }
 }
 
-static String formattedAST(const ASTPtr & ast)
+static String formattedAST(const ASTPtr & ast, bool enable_analyzer)
 {
     if (!ast)
         return {};
@@ -177,6 +179,8 @@ static String formattedAST(const ASTPtr & ast)
     WriteBufferFromOwnString buf;
     IAST::FormatSettings ast_format_settings(
         /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+    if (!enable_analyzer)
+        ast_format_settings.collapse_identical_nodes_to_aliases = true;
     ast->format(buf, ast_format_settings);
     return buf.str();
 }
@@ -194,7 +198,8 @@ ReadFromRemote::ReadFromRemote(
     LoggerPtr log_,
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
-    const String & cluster_name_)
+    const String & cluster_name_,
+    UnavailableShardTrackerPtr unavailable_shard_tracker_)
     : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
     , stage(stage_)
@@ -208,6 +213,7 @@ ReadFromRemote::ReadFromRemote(
     , log(log_)
     , shard_count(shard_count_)
     , cluster_name(cluster_name_)
+    , unavailable_shard_tracker(std::move(unavailable_shard_tracker_))
 {
 }
 
@@ -523,7 +529,8 @@ void ReadFromRemote::addLazyPipe(
     }
 
     auto lazily_create_stream = [
-            my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
+            my_shard = shard, my_shard_count = shard_count, my_distributed_fanout = shards.size(),
+            query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
@@ -618,13 +625,15 @@ void ReadFromRemote::addLazyPipe(
         /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
         if (pushed_down_filters)
             addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
-        String query_string = formattedAST(query);
+        bool enable_analyzer = current_settings[Setting::allow_experimental_analyzer];
+        String query_string = formattedAST(query, enable_analyzer);
         auto stage_to_use = my_shard.query_plan ? QueryProcessingStage::QueryPlan : my_stage;
 
         my_scalars["_shard_num"] = Block{
             {DataTypeUInt32().createColumnConst(1, my_shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::move(connections), query_string, header, my_context, my_throttler, my_scalars, my_external_tables, stage_to_use, my_shard.query_plan);
+        remote_query_executor->setDistributedFanout(my_distributed_fanout);
 
         auto pipe = createRemoteSourcePipe(
             remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -674,6 +683,8 @@ void ReadFromRemote::addPipe(
         context->setSetting("cluster_for_parallel_replicas", cluster_name);
     }
 
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
     /// parallel replicas custom key case
     if (shard.shard_filter_generator)
     {
@@ -691,7 +702,7 @@ void ReadFromRemote::addPipe(
                 select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(shard_filter));
             }
 
-            const String query_string = formattedAST(query);
+            const String query_string = formattedAST(query, enable_analyzer);
 
             if (!priority_func_factory.has_value())
                 priority_func_factory = GetPriorityForLoadBalancing(LoadBalancing::ROUND_ROBIN, randomSeed());
@@ -715,6 +726,8 @@ void ReadFromRemote::addPipe(
                 priority_func);
             remote_query_executor->setLogger(log);
             remote_query_executor->setPoolMode(PoolMode::GET_ONE);
+            remote_query_executor->setDistributedFanout(shards.size() * shard.shard_info.per_replica_pools.size());
+            remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
             if (!table_func_ptr)
                 remote_query_executor->setMainTable(shard.main_table ? shard.main_table : main_table);
@@ -729,12 +742,22 @@ void ReadFromRemote::addPipe(
         if (filter_actions_dag)
             addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
 
-        const String query_string = formattedAST(shard.query);
+        const String query_string = formattedAST(shard.query, enable_analyzer);
         auto stage_to_use = shard.query_plan ? QueryProcessingStage::QueryPlan : stage;
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.shard_info.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage_to_use, shard.query_plan);
+            shard.shard_info.pool,
+            query_string,
+            shard.header,
+            context,
+            throttler,
+            scalars,
+            external_tables,
+            stage_to_use,
+            shard.query_plan);
         remote_query_executor->setLogger(log);
+        remote_query_executor->setDistributedFanout(shards.size());
+        remote_query_executor->setUnavailableShardTracker(unavailable_shard_tracker);
 
         if (context->canUseTaskBasedParallelReplicas() || parallel_replicas_disabled)
         {
@@ -804,7 +827,7 @@ static ASTPtr makeExplain(const ExplainPlanOptions & options, ASTPtr query)
 
 static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes)
 {
-    String prefix(settings.offset + settings.indent, settings.indent_char);
+    String prefix(settings.offset + settings.base_indent, settings.indent_char);
     for (auto & pipe : pipes)
     {
         QueryPipeline pipeline(std::move(pipe));
@@ -834,7 +857,7 @@ void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const Ex
     {
         if (shard.query_plan)
         {
-            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
         }
         else
         {
@@ -874,7 +897,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover_,
+    std::shared_ptr<const QueryPlan> query_plan_)
     : SourceStepWithFilterBase(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
@@ -892,6 +916,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     , pools_to_use(std::move(pools_to_use_))
     , exclude_pool_index(exclude_pool_index_)
     , connection_pool_with_failover(connection_pool_with_failover_)
+    , query_plan(std::move(query_plan_))
 {
     chassert(cluster->getShardCount() == 1);
 
@@ -906,7 +931,8 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
         replicas.push_back(pools_to_use[i]->getAddress());
     }
 
-    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast, enable_analyzer), fmt::join(replicas, ", "));
     setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
@@ -922,7 +948,7 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (filter_actions_dag)
+    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
@@ -1009,11 +1035,9 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
     bool async_query_sending = context->getSettingsRef()[Setting::async_query_sending_for_remote];
+    bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
 
-    String query_string = formattedAST(ast);
-
-    if (ast->as<ASTExplainQuery>() == nullptr)
-        assert(stage != QueryProcessingStage::Complete);
+    String query_string = formattedAST(ast, enable_analyzer);
 
     assert(output_header);
 
@@ -1025,12 +1049,14 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         throttler,
         scalars,
         external_tables,
-        stage,
+        query_plan ? QueryProcessingStage::QueryPlan : stage,
         RemoteQueryExecutor::Extension{.parallel_reading_coordinator = coordinator, .replica_info = std::move(replica_info)},
-        connection_pool_with_failover);
+        connection_pool_with_failover,
+        query_plan);
 
     remote_query_executor->setLogger(log);
     remote_query_executor->setMainTable(storage_id);
+    remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
@@ -1040,10 +1066,18 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
 void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
-    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
-    auto explain_query = makeExplain(options, query_ast);
-    formatExplain(settings, addPipes(explain_query, header));
+    if (query_plan)
+    {
+        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.base_indent, 1) + 1);
+    }
+    else
+    {
+        auto explain_query = makeExplain(options, query_ast);
+        formatExplain(settings, addPipes(explain_query, header));
+    }
 }
 
 }

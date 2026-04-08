@@ -126,8 +126,9 @@ try
                     std::cerr << "Watch (list) on /, Error: " << errorMessage(response.error) << '\n';
                 else
                     std::cerr << "Watch (list) on /, path: " << response.path << ", type: " << response.type << '\n';
-            })
-        );
+            }),
+        false,
+        false);
 
     //event.wait();
 

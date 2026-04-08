@@ -11,16 +11,15 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
@@ -309,35 +308,12 @@ boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMat
     auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 
     column_declaration->name = std::move(name);
-    column_declaration->type = makeASTDataType(type);
+    column_declaration->setType(makeASTDataType(type));
 
-    column_declaration->default_specifier = "MATERIALIZED";
-    column_declaration->default_expression = make_intrusive<ASTLiteral>(default_value);
-
-    column_declaration->children.emplace_back(column_declaration->type);
-    column_declaration->children.emplace_back(column_declaration->default_expression);
+    column_declaration->default_specifier = ColumnDefaultSpecifier::Materialized;
+    column_declaration->setDefaultExpression(make_intrusive<ASTLiteral>(default_value));
 
     return column_declaration;
-}
-
-
-ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
-{
-    WhichDataType which(data_type);
-
-    if (which.isNullable())
-        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-
-    if (which.isArray())
-        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
-
-    if (which.isDateTime64())
-        return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(static_cast<UInt32>(6)));
-
-    if (which.isDecimal())
-        return makeASTDataType("Decimal", make_intrusive<ASTLiteral>(getDecimalPrecision(*data_type)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
-
-    return makeASTDataType(data_type->getName());
 }
 
 
@@ -350,12 +326,12 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
         const auto & column_declaration = make_intrusive<ASTColumnDeclaration>();
 
         column_declaration->name = name;
-        column_declaration->type = getColumnDeclaration(type);
+        column_declaration->setType(dataTypeToAST(type));
 
         if (auto it = defaults.find(name); it != defaults.end())
         {
-            column_declaration->default_expression = it->second;
-            column_declaration->default_specifier = "DEFAULT";
+            column_declaration->setDefaultExpression(std::move(it->second));
+            column_declaration->default_specifier = ColumnDefaultSpecifier::Default;
         }
 
         columns_expression_list->children.emplace_back(column_declaration);
@@ -430,7 +406,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     for (const auto & child : columns->children)
                     {
                         const auto * column_declaration = child->as<ASTColumnDeclaration>();
-                        auto type = DataTypeFactory::instance().get(column_declaration->type);
+                        auto type = DataTypeFactory::instance().get(column_declaration->getType());
                         ordinary_columns_and_types.emplace_back(NameAndTypePair(column_declaration->name, type));
                     }
                 }
@@ -568,9 +544,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");
 
         if (args.storage_def->primary_key)
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
         else
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->order_by), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(

@@ -828,7 +828,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     {
         auto column_window = make_intrusive<ASTColumnDeclaration>();
         column_window->name = window_id_name;
-        column_window->type = makeASTDataType("UInt32");
+        column_window->setType(makeASTDataType("UInt32"));
         columns_list->children.push_back(column_window);
     }
 
@@ -1627,11 +1627,6 @@ void StorageWindowView::writeIntoWindowView(
     {
         // Can't move chunk_infos here, that function could be called several times
         return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
-    });
-
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(stream_header);
     });
 
     builder.addSimpleTransform([&](const SharedHeader & stream_header)

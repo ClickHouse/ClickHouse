@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 #if USE_PARQUET
@@ -246,7 +247,7 @@ void ParquetBlockOutputFormat::finalizeImpl()
             }
         }
 
-        if (file_state.completed_row_groups.empty())
+        if (file_state.offset == 0)
         {
             base_offset = out.count();
             writeFileHeader(file_state, out);
@@ -365,9 +366,9 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
         }
 
-        // Writing page index is disabled by default.
-        if (format_settings.parquet.write_page_index)
-            builder.enable_write_page_index();
+        // Writing page index is enabled by default.
+        if (!format_settings.parquet.write_page_index)
+            builder.disable_write_page_index();
 
         parquet::ArrowWriterProperties::Builder writer_props_builder;
         if (format_settings.parquet.output_compliant_nested_types)
@@ -405,7 +406,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
             chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
             options, &columns_to_write);
 
-    if (file_state.completed_row_groups.empty())
+    if (file_state.offset == 0)
     {
         base_offset = out.count();
         writeFileHeader(file_state, out);
@@ -467,7 +468,7 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
 
         lock.unlock();
 
-        if (file_state.completed_row_groups.empty())
+        if (file_state.offset == 0)
         {
             base_offset = out.count();
             writeFileHeader(file_state, out);

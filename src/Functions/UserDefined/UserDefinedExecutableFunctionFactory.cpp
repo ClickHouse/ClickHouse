@@ -3,12 +3,13 @@
 #include <filesystem>
 #include <iomanip>
 
-#include <Common/CurrentThread.h>
-#include <Common/filesystemHelpers.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <DataTypes/FieldToDataType.h>
+#include <Common/CurrentThread.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -267,7 +268,7 @@ private:
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;
     String command_with_parameters;
-    std::vector<String> command_arguments_with_parameters;
+    VectorWithMemoryTracking<String> command_arguments_with_parameters;
 };
 
 }
@@ -286,7 +287,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::get(const Stri
 
     if (CurrentThread::isInitialized())
     {
-        auto query_context = CurrentThread::get().getQueryContext();
+        auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
     }
@@ -306,7 +307,7 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
 
         if (CurrentThread::isInitialized())
         {
-            auto query_context = CurrentThread::get().getQueryContext();
+            auto query_context = CurrentThread::get().tryGetQueryContext();
             if (query_context && query_context->getSettingsRef()[Setting::log_queries])
                 query_context->addQueryFactoriesInfo(Context::QueryLogFactories::ExecutableUserDefinedFunction, function_name);
         }

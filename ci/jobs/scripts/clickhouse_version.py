@@ -51,52 +51,12 @@ SET(VERSION_STRING {string})
         version = cls.get_release_version_as_dict()
         info = Info()
         try:
-            # Check if the commit is directly on the first-parent chain
-            is_on_first_parent = Shell.get_output(
-                f"git rev-list --first-parent HEAD | grep -q {version['githash']} && echo 'yes' || echo 'no'",
-                verbose=True,
-            ).strip()
-
-            if is_on_first_parent == "yes":
-                # Commit is directly on the first-parent chain (upstream scenario)
-                # Use simple first-parent counting
-                tweak = int(
-                    Shell.get_output(
-                        f"git rev-list --count --first-parent {version['githash']}..HEAD",
-                        verbose=True,
-                    )
-                )
-            else:
-                # Commit is not on first-parent chain (fork with sync scenario)
-                # Find the merge commit where this commit entered the first-parent chain
-                # Iterate backwards to find the last commit that has target as ancestor (the merge point)
-                merge_commit = Shell.get_output(
-                    f"commits=$(git rev-list --first-parent HEAD); "
-                    f"prev=''; "
-                    f"for commit in $commits; do "
-                    f"if git merge-base --is-ancestor {version['githash']} $commit 2>/dev/null; then "
-                    f"prev=$commit; "
-                    f"else "
-                    f"echo $prev; break; "
-                    f"fi; done",
+            tweak = int(
+                Shell.get_output(
+                    f"git rev-list --count --first-parent {version['githash']}..HEAD",
                     verbose=True,
-                ).strip()
-
-                if merge_commit:
-                    tweak = int(
-                        Shell.get_output(
-                            f"git rev-list --count --first-parent {merge_commit}..HEAD",
-                            verbose=True,
-                        )
-                    )
-                else:
-                    # Fallback if we can't find the merge point
-                    tweak = int(
-                        Shell.get_output(
-                            f"git rev-list --count --first-parent {version['githash']}..HEAD",
-                            verbose=True,
-                        )
-                    )
+                )
+            )
         except (ValueError, Exception):
             # Shallow checkout or other error
             tweak = 1
@@ -134,10 +94,9 @@ SET(VERSION_STRING {string})
         return cls.get_release_version_as_dict()["githash"]
 
     @classmethod
-    def store_version_data_in_ci_pipeline(cls):
-        version = cls.get_current_version_as_dict()
+    def store_version_data_in_ci_pipeline(cls, version):
         print(f"Store version in pipeline kv data: [version={version}]")
-        Info().store_kv_data("version", cls.get_current_version_as_dict())
+        Info().store_kv_data("version", version)
 
 
 if __name__ == "__main__":
