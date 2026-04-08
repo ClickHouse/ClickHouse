@@ -1,8 +1,13 @@
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -90,6 +95,8 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
+    extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
+    extern const SettingsBool enable_join_transitive_predicates;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
@@ -143,6 +150,16 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+    query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
+    if (query_plan_optimize_join_order_randomize == 1)
+    {
+        query_plan_optimize_join_order_randomize = randomSeed();
+    }
+    if (query_plan_optimize_join_order_randomize)
+    {
+        LOG_DEBUG(getLogger("QueryPlanOptimizationSettings"), "Using random seed {} for randomizing join order optimizations", query_plan_optimize_join_order_randomize);
+    }
+    enable_join_transitive_predicates = from[Setting::enable_join_transitive_predicates];
 
     join_swap_table = from[Setting::query_plan_join_swap_table].is_auto
         ? std::nullopt

@@ -76,7 +76,7 @@ def parse_args():
 def run_tests(
     batch_num: int,
     batch_total: int,
-    tests: list[str] = None,
+    tests: list[str] | None = None,
     extra_args="",
     rerun_count=1,
     random_order=False,
@@ -92,18 +92,15 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    global_time_limit_option = (
-        f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
-    )
     memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
-                {extra_args} {global_time_limit_option} \
+                {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(command, verbose=True)
+    Shell.run(command, verbose=True, timeout=global_time_limit if global_time_limit > 0 else None)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -265,7 +262,12 @@ def main():
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
         # random settings per TestCase; --max-failures 5 stops early on broken PRs.
-        rerun_count = 100
+        rerun_count = 50
+
+    if is_flaky_check:
+        # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
+        # Derived from rerun_count so the ratio stays stable as policy evolves.
+        runner_options += f" --sequential-test-runs {rerun_count // 2}"
 
 
     if not info.is_local_run:
@@ -382,7 +384,7 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
             elif is_flaky_check:
@@ -682,7 +684,7 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
-    if is_bugfix_validation and test_result and Labels.PR_BUGFIX in info.pr_labels:
+    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
         has_failure = False
         for r in test_result.results:
             r.set_label("xfail")
@@ -717,10 +719,6 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if is_flaky_check:
-        # Flaky-check exits normally via --global_time_limit or --max-failures.
-        # Both are expected stopping conditions; do not block the pipeline.
-        force_ok_exit = True
     if "parallel" in test_options and test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
