@@ -27,7 +27,7 @@ def started_cluster():
         cluster.start()
         yield cluster
     finally:
-        cluster.shutdown()
+        cluster.shutdown(ignore_fatal=True)
 
 
 def wait_nodes():

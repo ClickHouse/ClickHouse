@@ -63,13 +63,13 @@ inline UInt64 intHash64(UInt64 x)
 inline UInt64 intHashCRC32(UInt64 x)
 {
 #ifdef __SSE4_2__
-    return _mm_crc32_u64(-1ULL, x);
+    return _mm_crc32_u64(static_cast<uint64_t>(-1ULL), x);
 #elif defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
     return __crc32cd(-1U, x);
 #elif (defined(__PPC64__) || defined(__powerpc64__)) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    return crc32_ppc(-1U, reinterpret_cast<const unsigned char *>(&x), sizeof(x));
+    return crc32_ppc(static_cast<uint64_t>(-1U), reinterpret_cast<const unsigned char *>(&x), sizeof(x));
 #elif defined(__s390x__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return s390x_crc32c(-1U, x);
+    return s390x_crc32c(static_cast<uint64_t>(-1U), x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     /// NOTE: consider using intHash32()
@@ -182,7 +182,7 @@ inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_va
                 UNREACHABLE();
         }
 
-        reinterpret_cast<unsigned char *>(&value)[7] = size;
+        reinterpret_cast<unsigned char *>(&value)[7] = static_cast<unsigned char>(size);
         return static_cast<UInt32>(intHashCRC32(value, updated_value));
     }
 
@@ -199,7 +199,7 @@ inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_va
     {
         /// If string size is not divisible by 8.
         /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
-        UInt8 tail_size = end - pos;
+        UInt8 tail_size = static_cast<UInt8>(end - pos);
         /// Load tailing 8 bytes. Word is 'defghXYZ'.
         auto word = unalignedLoadLittleEndian<UInt64>(end - 8);
         /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.

@@ -5,7 +5,6 @@
 #include <expected>
 
 #include <Common/ActionBlocker.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -19,6 +18,8 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+
 
 namespace DB
 {
@@ -165,6 +166,9 @@ private:
     /// Mapping from znode path to Mutations Status
     std::map<String, MutationStatus> mutations_by_znode;
 
+    /// Mapping from part name to postpone reason
+    mutable std::map<String, String> current_parts_postpone_reasons;
+
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
@@ -278,6 +282,12 @@ private:
     /// block_number > part_info.getDataVersion()
     /// and block_number <= new_part_info.getMutationVersion()
     void removePartInProgressFromMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
+
+    /// Add part postpone reason into current_parts_postpone_reasons
+    void addPartsPostponeReasons(const String & part_name, const String & postpone_reason) const;
+
+    /// Clear current_parts_postpone_reasons
+    void clearPartsPostponeReasons() const;
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
@@ -461,6 +471,7 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
+
     MutationCounters getMutationCounters() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time

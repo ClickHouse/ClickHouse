@@ -31,23 +31,49 @@ if __name__ == "__main__":
         )
         commits = raw.splitlines()
 
-        for sha in commits:
-            if sha == info.sha:
-                break
+        while commits and commits[0] != info.sha:
             commits.pop(0)
 
-        info.store_kv_data("previous_commits_sha", commits)
+        info.store_kv_data("master_track_commits_sha", commits)
 
-    # Unshallow repo to retrieve required info from git.
-    # If commit is a mere-commit - both parents need to be unshallowed. In PRs we might need commits from master to calculate CH version.
-    Shell.check(
-        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
-        verbose=True,
-        strict=True,
-    )
+    if info.pr_number > 0:
+        # store merge base between master and current branch
+        try:
+            # Get the merge base commit using git
+            merge_base_commit_sha = Shell.get_output(
+                f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
+                verbose=True,
+            ).strip()
+            info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
+
+        except Exception as e:
+            print(f"Failed to get merge base via git: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
+        # store master side commits for perf tests comparison
+        # In PR CI, HEAD is a merge commit; HEAD^1 is the master parent (first parent)
+        master_parent = Shell.get_output(
+            "git rev-parse HEAD^1", verbose=True
+        ).strip()
+        if master_parent:
+            master_parent_commits = [
+                s.strip()
+                for s in Shell.get_output(
+                    f"git rev-list --first-parent --max-count=30 {master_parent}", verbose=True
+                ).splitlines()
+                if s.strip()
+            ]
+            if master_parent_commits:
+                info.store_kv_data("master_track_commits_sha", master_parent_commits)
+                print(
+                    f"Stored {len(master_parent_commits)} master parent commits for perf test comparison, starting from {master_parent}"
+                )
+        else:
+            print(
+                "WARNING: Could not find master parent commit (HEAD^1), skipping perf test commit storage"
+            )
+
         file_diff = {}
         for file in changed_files:
             if file.startswith("tests/integration/test") and file.endswith(".py"):
@@ -57,23 +83,23 @@ if __name__ == "__main__":
                 )
         info.store_kv_data("file_diff", file_diff)
 
-    # store commit sha of release branch base to find binary for performance comparison in the job script later
-    # if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
-    release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
-    print(f"Release branch base sha: {release_branch_base_sha}")
-    assert release_branch_base_sha
-    release_branch_base_sha_with_predecessors = [
-        s.strip()
-        for s in Shell.get_output(
-            f"git rev-list --max-count=20 {release_branch_base_sha}", verbose=True
-        ).splitlines()
-    ]
-    assert all(len(s) == 40 for s in release_branch_base_sha_with_predecessors)
-    assert release_branch_base_sha_with_predecessors[0] == release_branch_base_sha
-    info.store_kv_data(
-        "release_branch_base_sha_with_predecessors",
-        release_branch_base_sha_with_predecessors,
-    )
-    print(
-        f"Found base commit sha for latest release branch with its predecessors: [{release_branch_base_sha_with_predecessors}]"
-    )
+    elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
+        # store commit sha of release branch base to find binary for performance comparison in the job script later
+        release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
+        print(f"Release branch base sha: {release_branch_base_sha}")
+        assert release_branch_base_sha
+        release_branch_base_sha_with_predecessors = [
+            s.strip()
+            for s in Shell.get_output(
+                f"git rev-list --max-count=20 {release_branch_base_sha}", verbose=True
+            ).splitlines()
+        ]
+        assert all(len(s) == 40 for s in release_branch_base_sha_with_predecessors)
+        assert release_branch_base_sha_with_predecessors[0] == release_branch_base_sha
+        info.store_kv_data(
+            "release_branch_base_sha_with_predecessors",
+            release_branch_base_sha_with_predecessors,
+        )
+        print(
+            f"Found base commit sha for latest release branch with its predecessors: [{release_branch_base_sha_with_predecessors}]"
+        )

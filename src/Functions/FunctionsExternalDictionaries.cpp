@@ -1080,7 +1080,7 @@ R"(
     {
         FunctionDocumentation::Description description =
 R"(
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/index.md#hierarchical-dictionaries).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 )";
         FunctionDocumentation::Syntax syntax = "dictGetHierarchy(dict_name, key)";
         FunctionDocumentation::Arguments arguments = {

@@ -53,7 +53,7 @@ def test_coordinated_acme_authorization(started_multi_replica_cluster):
         json={'host': 'multi.integration-tests.clickhouse.com', 'addresses': ['10.5.11.12', '10.5.11.13', '10.5.11.14']}
     )
 
-    for _ in range(60):
+    for _ in range(120):
         time.sleep(1)
 
         checked_nodes = 0

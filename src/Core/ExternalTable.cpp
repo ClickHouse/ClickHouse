@@ -36,20 +36,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-/// Parsing a list of types with `,` as separator. For example, `Int, Enum('foo'=1,'bar'=2), Double`
-/// Used in `parseStructureFromTypesField`
-class ParserTypeList : public IParserBase
-{
-protected:
-    const char * getName() const override { return "type pair list"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-    {
-        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-        .parse(pos, node, expected);
-    }
-};
-
 ExternalTableDataPtr BaseExternalTable::getData(ContextPtr context)
 {
     initReadBuffer();

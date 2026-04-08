@@ -142,7 +142,7 @@ public:
 
     size_t getSize() const override { return size; }
 
-    double getLoadFactor() const override { return static_cast<double>(size) / configuration.max_size_in_cells; }
+    double getLoadFactor() const override { return static_cast<double>(size) / static_cast<double>(configuration.max_size_in_cells); }
 
     size_t getBytesAllocated() const override
     {
@@ -589,7 +589,7 @@ private:
     template<typename ValueType>
     using ContainerType = std::conditional_t<
         std::is_same_v<ValueType, Field> || std::is_same_v<ValueType, Array>,
-        std::vector<ValueType>,
+        VectorWithMemoryTracking<ValueType>,
         PaddedPODArray<ValueType>>;
 
     struct Attribute
@@ -747,7 +747,7 @@ private:
 
     ArenaWithFreeLists arena;
 
-    std::vector<Attribute> attributes;
+    VectorWithMemoryTracking<Attribute> attributes;
 
     void setCellDeadline(Cell & cell, TimePoint now)
     {

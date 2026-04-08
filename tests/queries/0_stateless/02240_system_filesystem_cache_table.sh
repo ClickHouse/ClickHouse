@@ -23,20 +23,20 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path'")
 
     drop_filesystem_cache $cache_name
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES test_02240_storage_policy"
     ${CLICKHOUSE_CLIENT} --enable_filesystem_cache_on_write_operations=0 --query "INSERT INTO test_02240_storage_policy SELECT number, toString(number) FROM numbers(100)"
 
     echo 'Expect cache'
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_02240_storage_policy FORMAT Null"
     ${CLICKHOUSE_CLIENT} --query "SELECT state, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '$cache_name' ORDER BY file_segment_range_begin, file_segment_range_end, size"
     ${CLICKHOUSE_CLIENT} --query "SELECT uniqExact(key) FROM system.filesystem_cache WHERE cache_name = '$cache_name'";
 
     echo 'Expect cache'
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_02240_storage_policy FORMAT Null"
     ${CLICKHOUSE_CLIENT} --query "SELECT state, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '$cache_name' ORDER BY file_segment_range_begin, file_segment_range_end, size"
     ${CLICKHOUSE_CLIENT} --query "SELECT uniqExact(key) FROM system.filesystem_cache WHERE cache_name = '$cache_name'";
@@ -46,7 +46,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     ${CLICKHOUSE_CLIENT} --query "SELECT file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     echo 'Expect cache'
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP MARK CACHE"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR MARK CACHE"
     ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_02240_storage_policy FORMAT Null"
     ${CLICKHOUSE_CLIENT} --query "SELECT state, file_segment_range_begin, file_segment_range_end, size FROM system.filesystem_cache WHERE cache_name = '$cache_name' ORDER BY file_segment_range_begin, file_segment_range_end, size"
     ${CLICKHOUSE_CLIENT} --query "SELECT uniqExact(key) FROM system.filesystem_cache WHERE cache_name = '$cache_name'";

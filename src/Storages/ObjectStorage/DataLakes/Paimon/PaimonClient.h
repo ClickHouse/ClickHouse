@@ -266,19 +266,22 @@ struct PaimonManifestEntry
         const size_t row_num,
         const PaimonTableSchema & table_schema_,
         const String & partition_default_name_)
-        : kind(
-            toKind(avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_KIND}), TypeIndex::Int32)
-                       .safeGet<Int8>()))
+        : kind(toKind(
+              static_cast<int8_t>(
+                  avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_KIND}), TypeIndex::Int32)
+                      .safeGet<Int8>())))
         , partition(
               avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_PARTITION}), TypeIndex::String)
                   .safeGet<String>())
-        , bucket(static_cast<Int32>(
-              avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_BUCKET}), TypeIndex::Int32)
-                  .safeGet<Int32>()))
-        , total_buckets(static_cast<Int32>(
-              avro_deserializer
-                  .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_TOTAL_BUCKETS}), TypeIndex::Int32)
-                  .safeGet<Int32>()))
+        , bucket(
+              static_cast<Int32>(
+                  avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_BUCKET}), TypeIndex::Int32)
+                      .safeGet<Int32>()))
+        , total_buckets(
+              static_cast<Int32>(
+                  avro_deserializer
+                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_TOTAL_BUCKETS}), TypeIndex::Int32)
+                      .safeGet<Int32>()))
         , file(
               avro_deserializer,
               concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE}),

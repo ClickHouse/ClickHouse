@@ -20,7 +20,7 @@ Filter column: like(__table1.text, \'%v322%\'_String) (removed)
 Granules: 196/196
 Granules: 196/196
 1
-After MATERIALIZIZE INDEX idx_text
+After MATERIALIZE INDEX idx_text
 1
 111
 Filter column: like(__table1.text, \'%v322%\'_String) (removed)

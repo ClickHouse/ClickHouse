@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-flaky-check, no-parallel, deadlock, long, replica
+# Tags: no-fasttest, no-flaky-check, no-parallel, deadlock, long, replica, no-msan
 #  no-fasttest, no-flaky-check: test can run up to 10 minutes with sanitizers
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

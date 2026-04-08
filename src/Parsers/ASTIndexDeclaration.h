@@ -28,7 +28,7 @@ public:
     ASTPtr clone() const override;
 
     ASTPtr getExpression() const;
-    std::shared_ptr<ASTFunction> getType() const;
+    boost::intrusive_ptr<ASTFunction> getType() const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
@@ -39,6 +39,6 @@ private:
 };
 
 class ASTFunction;
-UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity);
+UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity);
 
 }

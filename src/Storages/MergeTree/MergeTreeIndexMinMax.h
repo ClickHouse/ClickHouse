@@ -62,6 +62,8 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
 
+    std::string getDescription() const override;
+
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
     DataTypes index_data_types;
@@ -121,10 +123,12 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     /// Constructor for Aggregate mode
     explicit MergeTreeIndexBulkGranulesMinMax(const Block & index_sample_block_);
 
+
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
-    static void getTopKMarks(int direction, size_t n, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
+    void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result);
+    static void getTopKMarks(int direction, size_t n, size_t index_granularity, bool handle_ties,
+                                const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
     /// For TopK mode: per-granule values
     std::vector<MinMaxGranule> granules;
@@ -133,6 +137,12 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     /// For Aggregate mode: aggregated min and max across all granules, one Range per column
     std::vector<Range> hyperrectangle;
 private:
+    template<bool handle_ties>
+    void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
+
+    template<bool handle_ties>
+    static void getTopKMarks(int direction, size_t n, size_t index_granularity, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
+
     Serializations serializations;
     [[maybe_unused]] const String & index_name;
     const Block & index_sample_block;

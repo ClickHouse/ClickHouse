@@ -185,6 +185,18 @@ class FTResultsProcessor:
             )
         elif s.server_died:
             state = Result.Status.FAILED
+            failed_results = [r for r in test_results if r.is_failure()]
+            if len(failed_results) > 1:
+                # Multiple tests failed when the server died - this is a parallel
+                # run where we can't tell which test (if any) caused the crash.
+                # Mark them all as UNKNOWN so they don't pollute failure reports.
+                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
+                # entry added from the server log.
+                for result in failed_results:
+                    result.status = Result.StatusExtended.UNKNOWN
+            elif len(failed_results) == 1:
+                # Single test failed - sequential run, this test is the culprit.
+                failed_results[0].status = Result.StatusExtended.ERROR
             test_results.append(Result("Server died", "FAIL", info="Server died"))
         elif not s.success_finish:
             state = Result.Status.ERROR
@@ -215,8 +227,9 @@ class FTResultsProcessor:
                 "Timeout": 2,
                 "NOT_FAILED": 3,
                 "BROKEN": 4,
-                "OK": 5,
-                "SKIPPED": 6,
+                "UNKNOWN": 5,
+                "OK": 6,
+                "SKIPPED": 7,
             }
             result.results.sort(key=lambda x: order.get(x.status, -1))
 

@@ -2,6 +2,7 @@ import pytest
 
 from helpers.iceberg_utils import (
     default_upload_directory,
+    additional_upload_directory,
     default_download_directory,
     write_iceberg_from_df,
     generate_data,
@@ -18,7 +19,7 @@ from helpers.config_cluster import minio_secret_key
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_cluster_table_function(started_cluster_iceberg_with_spark, format_version, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
@@ -49,6 +50,19 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
         )
 
         logging.info(f"Adding another dataframe. result files: {files}")
+
+        if storage_type == "local":
+            # For local storage we need to upload data to each node
+            for node_name, replica in started_cluster_iceberg_with_spark.instances.items():
+                if node_name == "node1":
+                    continue
+                additional_upload_directory(
+                    started_cluster_iceberg_with_spark,
+                    node_name,
+                    storage_type,
+                    f"/iceberg_data/default/{TABLE_NAME}/",
+                    f"/iceberg_data/default/{TABLE_NAME}/",
+                )
 
         return files
 
@@ -190,7 +204,7 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
     assert len(select_cluster) == 600
 
     create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster_iceberg_with_spark, "(a Int32, b String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_insert_into_iceberg": 1})
 
     assert instance.query(f"SELECT * FROM {table_function_expr_cluster}") == instance.query(f"SELECT * FROM {TABLE_NAME_2}")
 
@@ -305,7 +319,7 @@ def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     TABLE_NAME = "test_empty_parquet_file_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_experimental_insert_into_iceberg":1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_insert_into_iceberg":1})
 
     table_function_expr_cluster = get_creation_expression(
         storage_type,

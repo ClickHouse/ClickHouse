@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -156,6 +157,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
     LOG_DEBUG(log, "Started watching thread");
     DB::setThreadName(ThreadName::USER_DEFINED_WATCH);
 
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue");
     while (watching_flag)
     {
         try
@@ -196,6 +198,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::stopWatching()
 
 void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::reloadObjects");
     auto zookeeper = getZooKeeper();
     refreshAllObjects(zookeeper);
     startWatchingThread();
@@ -204,6 +207,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::reloadObjects()
 
 void UserDefinedSQLObjectsZooKeeperStorage::reloadObject(UserDefinedSQLObjectType object_type, const String & object_name)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::reloadObject");
     auto zookeeper = getZooKeeper();
     refreshObject(zookeeper, object_type, object_name);
 }
@@ -224,6 +228,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
     bool replace_if_exists,
     const Settings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl");
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Storing user-defined object {} at zk path {}", backQuote(object_name), path);
 
@@ -275,6 +280,7 @@ bool UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl(
     const String & object_name,
     bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("UserDefinedSQLObjectsZooKeeperStorage::removeObjectImpl");
     String path = getNodePath(zookeeper_path, object_type, object_name);
     LOG_DEBUG(log, "Removing user-defined object {} at zk path {}", backQuote(object_name), path);
 

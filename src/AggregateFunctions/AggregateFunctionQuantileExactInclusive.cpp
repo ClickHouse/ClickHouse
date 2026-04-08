@@ -102,12 +102,12 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, {}, documentation });
+    factory.registerFunction(NameQuantileExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantileExactInclusive>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the inclusive method.
 
-This function is equivalent to [`quantileExactInclusive`](/sql-reference/aggregate-functions/reference/quantileexactinclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactInclusive`](/sql-reference/aggregate-functions/reference/quantileExactInclusive) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
 
 This function uses the inclusive method for calculating quantiles, as described in the [R-7 method](https://en.wikipedia.org/wiki/Quantile#Estimating_quantiles_from_a_sample).
 This is equivalent to [PERCENTILE.INC](https://support.microsoft.com/en-us/office/percentile-inc-function-680f9539-45eb-410b-9a5e-c1355e5fe2ed) Excel function.
@@ -143,7 +143,7 @@ SELECT quantilesExactInclusive(0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 0.999)(number) 
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactInclusive>, properties, documentation_quantiles });
+    factory.registerFunction(NameQuantilesExactInclusive::name, { createAggregateFunctionQuantile<FuncQuantilesExactInclusive>, documentation_quantiles, properties });
 }
 
 }

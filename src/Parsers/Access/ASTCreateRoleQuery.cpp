@@ -47,13 +47,13 @@ String ASTCreateRoleQuery::getID(char) const
 
 ASTPtr ASTCreateRoleQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateRoleQuery>(*this);
+    auto res = make_intrusive<ASTCreateRoleQuery>(*this);
 
     if (settings)
-        res->settings = std::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
+        res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
 
     if (alter_settings)
-        res->alter_settings = std::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
+        res->alter_settings = boost::static_pointer_cast<ASTAlterSettingsProfileElements>(alter_settings->clone());
 
     return res;
 }

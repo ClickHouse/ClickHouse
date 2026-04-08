@@ -206,7 +206,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (sum_rows_in_blocks > limit * 1.5)))
+        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (static_cast<double>(sum_rows_in_blocks) > static_cast<double>(limit) * 1.5)))
     {
         remerge();
     }
@@ -338,7 +338,7 @@ void MergeSortingTransform::remerge()
     LOG_DEBUG(log, "Memory usage is lowered from {} to {}", ReadableSize(sum_bytes_in_blocks), ReadableSize(new_sum_bytes_in_blocks));
 
     /// If the memory consumption was not lowered enough - we will not perform remerge anymore.
-    if (remerge_lowered_memory_bytes_ratio > 0.0 && (new_sum_bytes_in_blocks * remerge_lowered_memory_bytes_ratio > sum_bytes_in_blocks))
+    if (remerge_lowered_memory_bytes_ratio > 0.0 && (static_cast<double>(new_sum_bytes_in_blocks) * remerge_lowered_memory_bytes_ratio > static_cast<double>(sum_bytes_in_blocks)))
     {
         remerge_is_useful = false;
         LOG_DEBUG(log, "Re-merging is not useful (memory usage was not lowered by remerge_sort_lowered_memory_bytes_ratio={})", remerge_lowered_memory_bytes_ratio);
