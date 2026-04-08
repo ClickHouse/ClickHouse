@@ -583,9 +583,9 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
 
     std::vector<OptimizedRegularExpression> patterns;
     if (case_insensitive)
-        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+        patterns.emplace_back(Regexps::createRegexp<true, false, true, true>(pattern));
     else
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+        patterns.emplace_back(Regexps::createRegexp<true, false, true, false>(pattern));
     return patterns;
 }
 
