@@ -20,6 +20,7 @@ type H3Error = u32;
 
 const E_SUCCESS: H3Error = 0;
 const E_FAILED: H3Error = 1;
+const E_MEMORY_BOUNDS: H3Error = 14;
 const MAX_CELL_BNDRY_VERTS: usize = 10;
 
 #[repr(C)]
@@ -480,11 +481,15 @@ pub unsafe extern "C" fn h3ToString(h: H3Index, str_ptr: *mut c_char, sz: usize)
     if str_ptr.is_null() || sz == 0 {
         return E_FAILED;
     }
+    // H3 indexes are 16 hex chars + NUL = 17 bytes minimum.
+    // Match the C API behavior: return E_MEMORY_BOUNDS if buffer is too small.
+    if sz < 17 {
+        return E_MEMORY_BOUNDS;
+    }
     let hex = format!("{:x}", h);
     let bytes = hex.as_bytes();
-    let copy_len = bytes.len().min(sz - 1);
-    std::ptr::copy_nonoverlapping(bytes.as_ptr(), str_ptr as *mut u8, copy_len);
-    *str_ptr.add(copy_len) = 0; // null terminator
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), str_ptr as *mut u8, bytes.len());
+    *str_ptr.add(bytes.len()) = 0; // null terminator
     E_SUCCESS
 }
 
