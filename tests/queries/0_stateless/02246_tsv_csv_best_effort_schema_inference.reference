@@ -68,12 +68,12 @@ c1	Nullable(String)
 [42.42sometrash, 42.42]
 
 CSV
-c1	Nullable(String)					
+c1	Nullable(Int64)					
 c2	Nullable(String)					
 c3	Array(Nullable(Int64))					
 c4	Array(Tuple(Nullable(Int64), Nullable(Int64), Nullable(Int64)))					
 42	Some string	[1,2,3,4]	[(1,2,3)]
-42\\	abcd	[]	[(4,5,6)]
+42	abcd	[]	[(4,5,6)]
 c1	Nullable(String)					
 [({\'key\' : 42.42}, [\'String\', \'String2\'], 42.42), ({}, [], -42), ({\'key2\' : NULL}, [NULL], NULL)]
 []
