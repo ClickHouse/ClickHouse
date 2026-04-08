@@ -30,6 +30,24 @@ void TextIndexAnalyzer::QueryBuilder::addMissingToken()
         markFailed();
 }
 
+void TextIndexAnalyzer::QueryBuilder::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
+{
+    if (is_failed)
+        return;
+
+    tokens[token] = token_info;
+
+    chassert(!token_info->ranges.empty());
+    RowsRange token_rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
+    addRowsRange(token_rows_range);
+
+    if (token_info->embedded_postings)
+        addPostings(token_info->embedded_postings);
+
+    if (token_info->ranges.size() > 1)
+        has_large_postings = true;
+}
+
 void TextIndexAnalyzer::QueryBuilder::addRowsRange(RowsRange token_rows_range)
 {
     if (is_failed)
@@ -83,15 +101,10 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         query_builders[hash].query = query;
 
         for (const auto & token : query->tokens)
-        {
-            query_count_by_token[token]++;
-            queries_by_token[token].push_back(hash);
-        }
+            queries_by_token[token].insert(hash);
 
         for (const auto & pattern : query->patterns)
-        {
-            queries_by_pattern[&pattern].push_back(hash);
-        }
+            queries_by_pattern[&pattern].insert(hash);
     }
 }
 
@@ -116,37 +129,26 @@ void TextIndexAnalyzer::addMissingToken(std::string_view token)
     });
 }
 
-void TextIndexAnalyzer::addLargePostings(std::string_view token)
-{
-    processTokenOperation(token, [&](QueryBuilder & query_builder)
-    {
-        query_builder.addLargePostings();
-    });
-}
-
 void TextIndexAnalyzer::addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info)
 {
-    chassert(!token_info->ranges.empty());
-    RowsRange rows_range(token_info->ranges.front().begin, token_info->ranges.back().end);
+    token_infos[token] = token_info;
+    if (token_info->embedded_postings)
+        tokens_with_postings.emplace(token);
 
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
-        query_builder.addRowsRange(rows_range);
-        if (token_info->embedded_postings)
-            query_builder.addPostings(token_info->embedded_postings);
+        query_builder.addTokenInfo(token, token_info);
     });
-
-    token_infos[token] = token_info;
 }
 
 void TextIndexAnalyzer::addPostings(std::string_view token, PostingListPtr postings)
 {
+    tokens_with_postings.emplace(token);
+
     processTokenOperation(token, [&](QueryBuilder & query_builder)
     {
         query_builder.addPostings(postings);
     });
-
-    small_postings[String(token)] = std::move(postings);
 }
 
 bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
@@ -159,11 +161,8 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
         {
             added = true;
 
-            String token_str(token);
-            query_count_by_token[token_str]++;
-
             for (const auto & query_hash : query_hashes)
-                queries_by_token[token_str].push_back(query_hash);
+                queries_by_token[token].emplace(query_hash);
         }
     }
 
@@ -176,36 +175,28 @@ bool TextIndexAnalyzer::isBypassed(const TextSearchQuery & query) const
     return it != query_builders.end() && it->second.is_bypassed;
 }
 
-bool TextIndexAnalyzer::hasReadPostings(std::string_view token)
-{
-    if (small_postings.contains(token))
-        return true;
-
-    auto it = token_infos.find(token);
-    return it != token_infos.end() && it->second->embedded_postings;
-}
-
 bool TextIndexAnalyzer::isTokenNeeded(std::string_view token) const
 {
-    auto it = query_count_by_token.find(token);
-    return it != query_count_by_token.end() && it->second > 0;
+    auto it = queries_by_token.find(token);
+    return it != queries_by_token.end() && !it->second.empty();
 }
 
 void TextIndexAnalyzer::bypassPatternQueries()
 {
-    for (const auto & [pattern, query_hashes] : queries_by_pattern)
+    QueryHashes all_pattern_queries;
+    for (const auto & [_, query_hashes] : queries_by_pattern)
     {
         for (const auto & query_hash : query_hashes)
-        {
-            auto & query_builder = query_builders[query_hash];
-            if (query_builder.is_failed || query_builder.is_bypassed)
-                continue;
+            all_pattern_queries.insert(query_hash);
+    }
 
-            query_builder.markBypassed();
+    for (const auto & query_hash : all_pattern_queries)
+    {
+        auto & query_builder = query_builders[query_hash];
+        query_builder.markBypassed();
 
-            if (query_builder.is_bypassed)
-                decrementQueryCount(*query_builder.query);
-        }
+        for (const auto & [query_token, _] : query_builder.tokens)
+            queries_by_token[query_token].erase(query_hash);
     }
 }
 
@@ -227,17 +218,9 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
             if (global_search_mode == TextSearchMode::All)
                 always_false = true;
 
-            decrementQueryCount(*query_builder.query);
+            for (const auto & [query_token, _] : query_builder.tokens)
+                queries_by_token[query_token].erase(query_hash);
         }
-    }
-}
-
-void TextIndexAnalyzer::decrementQueryCount(const TextSearchQuery & query)
-{
-    for (const auto & token : query.tokens)
-    {
-        chassert(query_count_by_token[token] > 0);
-        --query_count_by_token[token];
     }
 }
 

@@ -226,9 +226,10 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
     {
         const auto & column = columns_to_read[i];
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
+        const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
         /// Always return true for empty needles.
-        if (search_query->tokens.empty() && search_query->patterns.empty())
+        if (query_builder.tokens.empty())
         {
             is_always_true[i] = true;
         }
@@ -241,7 +242,8 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
         {
-            useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
+            for (const auto & [token, _] : query_builder.tokens)
+                useful_tokens.insert(token);
         }
         else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
         {
@@ -252,7 +254,9 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
 
             if (cardinality <= static_cast<double>(num_rows_in_part) * selectivity_threshold)
             {
-                useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
+                for (const auto & [token, _] : query_builder.tokens)
+                    useful_tokens.insert(token);
+
                 ProfileEvents::increment(ProfileEvents::TextIndexUseHint);
             }
             else
@@ -563,7 +567,6 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     const RowsRange & range)
 {
     const auto & query_builder = analyzer.getQueryBuilder(query);
-    const auto & token_infos = analyzer.getTokenInfos();
 
     if (query_builder.is_failed)
         return {};
@@ -578,24 +581,12 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     if (!query_builder.has_large_postings)
         return result.value_or(PostingList{});
 
-    for (const auto & token : query.tokens)
+    for (const auto & [token, token_info] : query_builder.tokens)
     {
-        if (query.search_mode == TextSearchMode::All && result && result->cardinality() == 0)
-            return {};
-
         if (!large_postings_streams.contains(token))
             continue;
 
-        auto it = token_infos.find(token);
-        if (it == token_infos.end())
-        {
-            if (query.search_mode == TextSearchMode::All)
-                return {};
-            else
-                continue;
-        }
-
-        auto read_blocks = readPostingsBlocksForToken(token, *it->second, range);
+        auto read_blocks = readPostingsBlocksForToken(token, *token_info, range);
         if (read_blocks.empty())
         {
             if (query.search_mode == TextSearchMode::All)
@@ -614,6 +605,9 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
             *result &= large_postings;
         else if (query.search_mode == TextSearchMode::Any)
             *result |= large_postings;
+
+        if (query.search_mode == TextSearchMode::All && result && result->cardinality() == 0)
+            return {};
     }
 
     return result.value_or(PostingList{});

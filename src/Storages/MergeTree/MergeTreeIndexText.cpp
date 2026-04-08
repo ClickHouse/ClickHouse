@@ -644,14 +644,7 @@ void MergeTreeIndexGranuleText::analyzePostings(MergeTreeIndexReaderStream & str
     /// Process regular tokens.
     for (const auto & [token, token_info] : token_infos)
     {
-        if (!analyzer->isTokenNeeded(token) || analyzer->hasReadPostings(token))
-            continue;
-
-        if (!(token_info->header & SingleBlock))
-        {
-            analyzer->addLargePostings(token);
-        }
-        else
+        if (token_info->hasSmallPostings() && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
         {
             chassert(token_info->offsets.size() == 1);
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
@@ -688,6 +681,9 @@ bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & quer
 bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) const
 {
     const auto & query_builder = analyzer->getQueryBuilder(query);
+    if (query_builder.is_bypassed)
+        return true;
+
     if (!current_range.has_value())
         return !query_builder.is_failed;
 
@@ -724,6 +720,9 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
+    if (query_builder.is_bypassed)
+        return true;
+
     if (!current_range.has_value())
         return !query_builder.is_failed;
 

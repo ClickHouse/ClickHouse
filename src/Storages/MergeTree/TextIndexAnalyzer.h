@@ -14,6 +14,8 @@ public:
     struct QueryBuilder
     {
         TextSearchQueryPtr query;
+        TokenToPostingsInfosMap tokens;
+
         std::optional<PostingList> postings;
         std::optional<RowsRange> rows_range;
 
@@ -24,7 +26,7 @@ public:
         void markFailed();
         void markBypassed();
         void addMissingToken();
-        void addLargePostings() { has_large_postings = true; }
+        void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(PostingListPtr token_postings);
     };
@@ -36,11 +38,10 @@ public:
     const NameSet & getMissingTokens() const { return missing_tokens; }
     const QueryBuilder & getQueryBuilder(const TextSearchQuery & query) const;
 
-    bool hasReadPostings(std::string_view token);
     bool isTokenNeeded(std::string_view token) const;
+    bool hasReadPostings(std::string_view token) const { return tokens_with_postings.contains(token); }
 
     void addMissingToken(std::string_view token);
-    void addLargePostings(std::string_view token);
     void addTokenInfo(std::string_view token, TokenPostingsInfoPtr token_info);
     void addPostings(std::string_view token, PostingListPtr postings);
 
@@ -49,20 +50,21 @@ public:
     void bypassPatternQueries();
 
 private:
+    using QueryHashes = absl::flat_hash_set<UInt128>;
+
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
-    void decrementQueryCount(const TextSearchQuery & query);
 
     TextSearchMode global_search_mode;
-    absl::flat_hash_map<UInt128, QueryBuilder> query_builders;
-    absl::flat_hash_map<String, size_t> query_count_by_token;
-    absl::flat_hash_map<String, std::vector<UInt128>> queries_by_token;
-    absl::flat_hash_map<const OptimizedRegularExpression *, std::vector<UInt128>> queries_by_pattern;
-
     bool always_false = false;
-    NameSet missing_tokens;
+
+    absl::flat_hash_map<UInt128, QueryBuilder> query_builders;
+    absl::flat_hash_map<String, QueryHashes> queries_by_token;
+    absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
+
     TokenToPostingsInfosMap token_infos;
-    TokenToPostingsMap small_postings;
+    NameSet missing_tokens;
+    absl::flat_hash_set<String> tokens_with_postings;
 };
 
 }
