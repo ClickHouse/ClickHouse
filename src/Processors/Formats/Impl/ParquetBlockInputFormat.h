@@ -60,10 +60,8 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     void serialize(WriteBuffer & buffer) override;
     void deserialize(ReadBuffer & buffer) override;
     String getIdentifier() const override;
-    String getFormatName() const override
-    {
-        return "Parquet";
-    }
+    String getFormatName() const override { return "Parquet"; }
+    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 

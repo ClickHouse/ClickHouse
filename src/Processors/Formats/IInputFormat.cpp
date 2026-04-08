@@ -10,6 +10,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
 
@@ -77,6 +83,11 @@ void IInputFormat::onFinish()
 
 void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
 {
+}
+
+std::vector<size_t> IInputFormat::getMatchedBuckets() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getUnmatchedBuckets is not implemented for this format");
 }
 
 }
