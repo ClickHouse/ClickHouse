@@ -53,7 +53,7 @@ namespace Setting
 }
 
 template<typename T>
-VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunkSize(const VectorWithMemoryTracking<T>& vec, size_t chunk_size)
+static VectorWithMemoryTracking<VectorWithMemoryTracking<T>> divideVectorByChunkSize(const VectorWithMemoryTracking<T>& vec, size_t chunk_size)
 {
     if (!chunk_size)
         return {vec};
