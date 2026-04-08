@@ -5,14 +5,17 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/WebAssembly/WasmEngine.h>
-#include <Functions/IFunction.h>
 
 #include <Parsers/IAST_fwd.h>
 
 #include <Common/SharedMutex.h>
+#include <Common/StopToken.h>
 
 namespace DB
 {
+
+class IFunctionOverloadResolver;
+using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 enum class WasmAbiVersion : uint8_t
 {
@@ -36,7 +39,7 @@ private:
 class UserDefinedWebAssemblyFunction
 {
 public:
-    virtual MutableColumnPtr executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows) const = 0;
+    virtual MutableColumnPtr executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows, StopToken stop_token) const = 0;
 
     virtual ~UserDefinedWebAssemblyFunction() = default;
 
@@ -84,7 +87,7 @@ public:
     std::shared_ptr<UserDefinedWebAssemblyFunction> addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager);
 
     bool has(const String & function_name);
-    FunctionOverloadResolverPtr get(const String & function_name);
+    FunctionOverloadResolverPtr get(const String & function_name, ContextPtr context);
 
     /// Returns true if function was removed
     bool dropIfExists(const String & function_name);

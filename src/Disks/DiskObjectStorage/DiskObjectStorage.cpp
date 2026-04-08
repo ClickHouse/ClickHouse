@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -28,18 +29,22 @@
 #include <DistributedCache/Utils.h>
 #endif
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <base/sleep.h>
-
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool disk_transaction_wait_for_blob_removal;
+}
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_DISK_INDEX;
     extern const int CANNOT_RMDIR;
 }
-
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
@@ -55,7 +60,7 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
-    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages);
+    return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, wait_blob_removal);
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
@@ -68,20 +73,23 @@ DiskObjectStorage::DiskObjectStorage(
     ClusterConfigurationPtr cluster_,
     MetadataStoragePtr metadata_storage_,
     ObjectStorageRouterPtr object_storages_,
+    DiskObjectStorageConstPtr wrapped_disk_,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
+    , wrapped_disk(std::move(wrapped_disk_))
     , log(getLogger("DiskObjectStorage(" + name + ")"))
     , cluster(std::move(cluster_))
     , metadata_storage(std::move(metadata_storage_))
     , object_storages(std::move(object_storages_))
-    , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
+    , blob_killer(std::make_shared<BlobKillerThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages, wrapped_disk ? wrapped_disk->blob_killer : nullptr))
     , blob_copier(std::make_shared<BlobCopierThread>(name, Context::getGlobalContextInstance(), cluster, metadata_storage, object_storages))
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
     , use_fake_transaction(use_fake_transaction_)
+    , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
     /// TODO: change description to cover multiple object storages
@@ -188,6 +196,7 @@ DiskObjectStorage::DiskObjectStorage(
             if (old_write_resource != new_write_resource)
                 LOG_INFO(log, "Using resource '{}' instead of '{}' for WRITE", new_write_resource, old_write_resource);
         });
+    cluster->applyNewSettings(config, config_prefix);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }
@@ -714,7 +723,7 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 {
     if (read_resource_name.empty() && write_resource_name.empty())
         return settings;
-    if (auto query_context = CurrentThread::getQueryContext())
+    if (auto query_context = CurrentThread::tryGetQueryContext())
     {
         Settings result(settings);
         if (!read_resource_name.empty())
@@ -938,6 +947,11 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
     transaction->commit();
 }
 
+void DiskObjectStorage::waitBlobsCleanup()
+{
+    blob_killer->triggerAndWait();
+}
+
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
 {
     IDisk::applyNewSettings(config, context, config_prefix, map);
@@ -960,6 +974,7 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     }
 
     remove_shared_recursive_file_limit = config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT);
+    wait_blob_removal = config.getBool(config_prefix + ".wait_for_blob_removal", context->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]);
     blob_killer->applyNewSettings(config, config_prefix + ".data_background_cleanup");
     blob_copier->applyNewSettings(config, config_prefix + ".data_background_replication");
 }

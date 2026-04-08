@@ -1,4 +1,4 @@
-from praktika import Artifact, Docker, Job, Secret
+from praktika import Artifact, Docker, Secret
 from praktika.utils import MetaClasses, Utils
 
 # i.e. "ClickHouse/ci/tmp"
@@ -29,7 +29,7 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "arm_macos_small"]
+    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
     MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
     STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
@@ -78,10 +78,17 @@ SECRETS = [
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="woolenwolf_gh_app.installation_id",
+        type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
     ),
 ]
 
@@ -297,14 +304,17 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
     AMD_BINARY = "amd_binary"
-    AMD_ASAN = "amd_asan"
+    AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
-    AMD_UBSAN = "amd_ubsan"
     ARM_RELEASE = "arm_release"
-    ARM_ASAN = "arm_asan"
+    ARM_DEBUG = "arm_debug"
+    ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
+    ARM_MSAN = "arm_msan"
+    ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
+    PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
@@ -327,6 +337,8 @@ class JobNames:
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
     PR_BODY = "PR formatter"
+    CODE_REVIEW = "Code Review"
+    CI_RESULTS_REVIEW = "CI Results Review"
     FAST_TEST = "Fast test"
     SMOKE_TEST_MACOS = "Smoke test (amd_darwin)"
     BUILD = "Build"
@@ -374,20 +386,22 @@ class ArtifactNames:
     CH_AMD_LLVM_COVERAGE_BUILD = (
         "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
     )
-    LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
-    LLVM_COVERAGE_HTML_REPORT = (
-        "LLVM_COVERAGE_HTML_REPORT"  # .tar.gz file with html report
+    CH_AMD_PER_TEST_COVERAGE_BUILD = (
+        "CH_AMD_PER_TEST_COVERAGE_BUILD"  # build with LLVM coverage + per-test depth instrumentation
     )
+    LLVM_COVERAGE_FILE = "LLVM_COVERAGE_FILE"  # .profdata file
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
-    CH_AMD_ASAN = "CH_AMD_ASAN"
+    CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
-    CH_AMD_UBSAN = "CH_AMD_UBSAN"
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
-    CH_ARM_ASAN = "CH_ARM_ASAN"
+    CH_ARM_DEBUG = "CH_ARM_DEBUG"
+    CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
+    CH_ARM_MSAN = "CH_ARM_MSAN"
+    CH_ARM_UBSAN = "CH_ARM_UBSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
@@ -404,20 +418,22 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
-    UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
+    UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
-    UNITTEST_AMD_UBSAN = "UNITTEST_AMD_UBSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN = "DEB_AMD_ASAN"
+    DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAN = "DEB_AMD_MSAM"
-    DEB_AMD_UBSAN = "DEB_AMD_UBSAN"
+    DEB_AMD_MSAN = "DEB_AMD_MSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_ASAN = "DEB_ARM_ASAN"
+    DEB_ARM_DEBUG = "DEB_ARM_DEBUG"
+    DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
+    DEB_ARM_TSAN = "DEB_ARM_TSAN"
+    DEB_ARM_MSAN = "DEB_ARM_MSAN"
+    DEB_ARM_UBSAN = "DEB_ARM_UBSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -436,18 +452,29 @@ class ArtifactNames:
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 5
 LLVM_FT_ARTIFACTS_LIST = [
-    # default.profraw files for 3 batches from Stateless(Functional) tests
+    # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
     for total_batches in (LLVM_FT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+]
+
 LLVM_IT_ARTIFACTS_LIST = [
-    # default.profraw files for 5 batches from Integration tests
+    # default.profdata files for 5 batches from Integration tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
     for total_batches in (LLVM_IT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
+
 LLVM_ARTIFACTS_LIST = (
     LLVM_FT_ARTIFACTS_LIST + LLVM_IT_ARTIFACTS_LIST + [ArtifactNames.LLVM_COVERAGE_FILE]
 )
@@ -455,14 +482,16 @@ LLVM_ARTIFACTS_LIST = (
 BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_AMD_DEBUG,
     ArtifactNames.CH_AMD_RELEASE,
-    ArtifactNames.CH_AMD_ASAN,
+    ArtifactNames.CH_AMD_ASAN_UBSAN,
     ArtifactNames.CH_AMD_TSAN,
     ArtifactNames.CH_AMD_MSAN,
-    ArtifactNames.CH_AMD_UBSAN,
     ArtifactNames.CH_AMD_BINARY,
     ArtifactNames.CH_ARM_RELEASE,
-    ArtifactNames.CH_ARM_ASAN,
+    ArtifactNames.CH_ARM_DEBUG,
+    ArtifactNames.CH_ARM_ASAN_UBSAN,
     ArtifactNames.CH_ARM_TSAN,
+    ArtifactNames.CH_ARM_MSAN,
+    ArtifactNames.CH_ARM_UBSAN,
 ]
 
 
@@ -475,15 +504,18 @@ class ArtifactConfigs:
         names=[
             ArtifactNames.CH_AMD_DEBUG,
             ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD,
+            ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD,
             ArtifactNames.CH_AMD_RELEASE,
-            ArtifactNames.CH_AMD_ASAN,
+            ArtifactNames.CH_AMD_ASAN_UBSAN,
             ArtifactNames.CH_AMD_TSAN,
             ArtifactNames.CH_AMD_MSAN,
-            ArtifactNames.CH_AMD_UBSAN,
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
-            ArtifactNames.CH_ARM_ASAN,
+            ArtifactNames.CH_ARM_DEBUG,
+            ArtifactNames.CH_ARM_ASAN_UBSAN,
             ArtifactNames.CH_ARM_TSAN,
+            ArtifactNames.CH_ARM_MSAN,
+            ArtifactNames.CH_ARM_UBSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -507,11 +539,6 @@ class ArtifactConfigs:
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
-    llvm_coverage_html_report = Artifact.Config(
-        name=ArtifactNames.LLVM_COVERAGE_HTML_REPORT,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/llvm_coverage_html_report.tar.gz",
-    )
     llvm_coverage_info_file = Artifact.Config(
         name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         type=Artifact.Type.S3,
@@ -525,12 +552,15 @@ class ArtifactConfigs:
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
             ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_ASAN,
+            ArtifactNames.DEB_AMD_ASAN_UBSAN,
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAN,
-            ArtifactNames.DEB_AMD_UBSAN,
             ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_ASAN,
+            ArtifactNames.DEB_ARM_DEBUG,
+            ArtifactNames.DEB_ARM_ASAN_UBSAN,
+            ArtifactNames.DEB_ARM_TSAN,
+            ArtifactNames.DEB_ARM_MSAN,
+            ArtifactNames.DEB_ARM_UBSAN,
         ]
     )
     clickhouse_rpms = Artifact.Config(
@@ -560,10 +590,9 @@ class ArtifactConfigs:
         compress_zst=True,
     ).parametrize(
         names=[
-            ArtifactNames.UNITTEST_AMD_ASAN,
+            ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
-            ArtifactNames.UNITTEST_AMD_UBSAN,
             ArtifactNames.UNITTEST_LLVM_COVERAGE,
         ]
     )

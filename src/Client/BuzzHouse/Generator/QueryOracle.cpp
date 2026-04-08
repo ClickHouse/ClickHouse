@@ -20,7 +20,7 @@ const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
 static void finishSettings(SettingValues * svs)
 {
     /// Wait for mutations to finish
-    static const std::unordered_map<String, String> & toSet
+    static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},
@@ -37,8 +37,7 @@ static void finishSettings(SettingValues * svs)
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
-/// or
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
+/// (GROUP BY / HAVING variant is TODO — see `combination` below)
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -94,8 +93,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 }
 
 /// SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
-/// or
-/// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
+/// (or ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY … when sq1 has a GROUP BY,
+///  but that path is currently unreachable because combination=0 in generateCorrectnessTestFirstQuery)
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -134,6 +133,369 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+}
+
+/// Roundtrip oracle
+/// Query 1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline: non-null rows)
+/// Query 2: SELECT count() FROM <from_clause> WHERE roundtrip(col) = col  (must equal query 1)
+///
+/// Detects bugs where an encoding/encryption function fails to preserve data through a
+/// round-trip: if roundtrip(col) != col for any non-null row the counts diverge.
+///
+/// Roundtrip predicates evaluate to NULL when col IS NULL (NULL = x is NULL, not TRUE),
+/// so sq2's WHERE naturally excludes NULL rows just like sq1's IS NOT NULL filter.
+/// This makes the oracle correct for Nullable columns without special-casing.
+///
+/// For non-String types the predicate wraps the value in `toString` so that hex/base64
+/// functions always receive a String argument. When the column type is unknown (subquery
+/// columns have tp == nullptr), `toString` is applied unconditionally.
+void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    can_test_success = false; /// Don't compare query success, queries are different
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    gen.resetAliasCounter();
+    gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+
+    TopSelect * ts1 = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    SelectIntoFile * sif1 = ts1->mutable_intofile();
+    Select * sel1 = ts1->mutable_sel();
+    SelectStatementCore * ssc1 = sel1->mutable_select_core();
+
+    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc1->mutable_from());
+    UNUSED(u);
+
+    /// Collect all columns from all available relations and pick one for the predicate
+    String val;
+    String col_ref;
+    std::vector<const SQLRelationCol *> all_cols;
+
+    for (const auto & rel : gen.levels[gen.current_level].rels)
+        for (const auto & c : rel.cols)
+            all_cols.push_back(&c);
+    if (!all_cols.empty())
+    {
+        const SQLRelationCol & rel_col = *rg.pickRandomly(all_cols);
+
+        /// Build a backtick-quoted SQL column reference from the SQLRelationCol
+        if (!rel_col.rel_name.empty())
+            col_ref = fmt::format("`{}`.", escapeSQLString(rel_col.rel_name, '`'));
+        for (size_t i = 0; i < rel_col.path.size(); ++i)
+        {
+            if (i > 0)
+                col_ref += ".";
+            col_ref += "`" + escapeSQLString(rel_col.path[i], '`') + "`";
+        }
+
+        /// For String/FixedString: apply roundtrip directly.
+        /// For all other types (or unknown type): wrap in `toString` so hex/base64 receive a String.
+        const bool is_string = rel_col.tp != nullptr && rel_col.tp->getTypeClass() == SQLTypeClass::STRING;
+        val = is_string ? col_ref : fmt::format("toString({})", col_ref);
+    }
+    else
+    {
+        col_ref = val = "1";
+    }
+    gen.levels.clear();
+    gen.ctes.clear();
+
+    /// Choose roundtrip function pair
+    String roundtrip_pred;
+    switch (rg.randomInt<uint32_t>(0, 3))
+    {
+        case 0:
+            /// hex/unhex — exercises hex encoding path
+            roundtrip_pred = fmt::format("unhex(hex({0})) = {0}", val);
+            break;
+        case 1:
+            /// baseEncode/Decode
+            roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
+            break;
+        case 2:
+            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal (must use matching pair)
+            {
+                const String rev = rg.nextBool() ? "UTF8" : "";
+                roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
+            }
+            break;
+        default: {
+            /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
+            struct CipherSpec
+            {
+                const char * name;
+                uint32_t key_bytes; /// 16 = aes-128, 24 = aes-192, 32 = aes-256
+                uint32_t iv_bytes; /// 0 = ECB (no IV), 16 = CBC/CFB128/OFB, 12 = GCM
+            };
+            static const std::vector<CipherSpec> ciphers = {
+                {"aes-128-ecb", 16, 0},
+                {"aes-192-ecb", 24, 0},
+                {"aes-256-ecb", 32, 0},
+                {"aes-128-cbc", 16, 16},
+                {"aes-192-cbc", 24, 16},
+                {"aes-256-cbc", 32, 16},
+                {"aes-128-cfb128", 16, 16},
+                {"aes-192-cfb128", 24, 16},
+                {"aes-256-cfb128", 32, 16},
+                {"aes-128-ofb", 16, 16},
+                {"aes-192-ofb", 24, 16},
+                {"aes-256-ofb", 32, 16},
+                {"aes-128-gcm", 16, 12},
+                {"aes-192-gcm", 24, 12},
+                {"aes-256-gcm", 32, 12},
+            };
+            const CipherSpec & spec = rg.pickRandomly(ciphers);
+
+            auto gen_hex = [&](uint32_t bytes) -> String
+            {
+                String hex;
+                for (uint32_t i = 0; i < bytes; i++)
+                    hex += fmt::format("{:02x}", rg.randomInt<uint8_t>(0, 255));
+                return hex;
+            };
+            const String key_hex = gen_hex(spec.key_bytes);
+
+            if (spec.iv_bytes == 0)
+            {
+                roundtrip_pred
+                    = fmt::format("decrypt('{2}', encrypt('{2}', {0}, unhex('{1}')), unhex('{1}')) = {0}", val, key_hex, spec.name);
+            }
+            else
+            {
+                const String iv_hex = gen_hex(spec.iv_bytes);
+                roundtrip_pred = fmt::format(
+                    "decrypt('{3}', encrypt('{3}', {0}, unhex('{1}'), unhex('{2}')), unhex('{1}'), unhex('{2}')) = {0}",
+                    val,
+                    key_hex,
+                    iv_hex,
+                    spec.name);
+            }
+            break;
+        }
+    }
+
+    /// Build sq1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
+    ssc1->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
+        FUNCcount);
+    ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
+    finishSettings(sel1->mutable_setting_values());
+    ts1->set_format(OutFormat::OUT_CSV);
+    const auto err1 = std::filesystem::remove(qcfile);
+    UNUSED(err1);
+    sif1->set_path(qcfile.generic_string());
+    sif1->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+
+    /// Build sq2: SELECT count() FROM <from_clause> WHERE col IS NOT NULL AND roundtrip(col) = col
+    /// The explicit IS NOT NULL guard is necessary because for Dynamic columns toString(NULL) returns ''
+    /// rather than NULL, so the roundtrip predicate would evaluate to TRUE for NULL rows and diverge
+    /// from sq1's IS NOT NULL baseline.  For Nullable columns this guard is redundant but harmless.
+    /// CopyFrom clones the FROM clause, format, and output file from sq1.
+    sq2.CopyFrom(sq1);
+    {
+        SelectStatementCore * ssc
+            = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+        ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(
+            fmt::format("{} IS NOT NULL AND {}", col_ref, roundtrip_pred));
+    }
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+}
+
+/// Row policy correctness oracle.
+///
+/// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+///
+/// Query 1 (sq1):
+///   SELECT count() FROM db.t [FINAL] INTO OUTFILE qcfile TRUNCATE FORMAT CSV
+///   Run after "EXECUTE AS oracleUser" → row policy active → filtered count.
+///
+/// Query 2 (sq2):
+///   SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE qcfile TRUNCATE FORMAT CSV
+///   Run as admin (after reconnect) → explicit WHERE equivalent to policy filter.
+///
+/// The two counts must be equal: the policy USING pred must be semantically identical to
+/// an explicit WHERE pred.  No setup or teardown — the policy already exists in the catalog.
+void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    /// Don't compare error codes: EXECUTE AS may introduce different failure modes
+    can_test_success = false;
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    gen.resetAliasCounter();
+
+    // ---- Build sq2: SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ----
+    // (run as admin with explicit WHERE predicate matching the policy's USING clause)
+    TopSelect * ts2 = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    Select * sel2 = ts2->mutable_sel();
+    SelectStatementCore * ssc2 = sel2->mutable_select_core();
+    // FROM db.t [FINAL]
+    JoinedTableOrFunction * jtf2 = ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+    /// Pick an existing row policy with a USING predicate on a suitable table
+    const SQLPolicy & policy = rg.pickRandomly(gen.filterCollection<SQLPolicy>(gen.row_policies_for_oracle));
+    if (gen.hasTable(policy.table_key))
+    {
+        const SQLTable & t = gen.lookupTable(policy.table_key);
+
+        t.setName(jtf2->mutable_tof()->mutable_est(), false);
+        jtf2->set_final(t.supportsFinal());
+    }
+    else
+    {
+        /// The policy's table is gone — this can happen if the policy is detached but not dropped, or if the table was dropped without detaching the policy.
+        /// In either case we can't generate a valid oracle query, so we build a dummy query that selects from system.one with a constant WHERE to produce a predictable result (1 row).
+        jtf2->mutable_tof()->mutable_est()->mutable_database()->set_value("system");
+        jtf2->mutable_tof()->mutable_est()->mutable_table()->set_value("one");
+    }
+    // count() result column
+    ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
+        FUNCcount);
+    // WHERE pred — copied from the stored USING predicate of the catalog policy.
+    // In the fallback path (table gone, querying system.one) we cannot reuse column references
+    // from the original table; use a constant TRUE predicate instead so the result is always 1.
+    if (gen.hasTable(policy.table_key))
+        ssc2->mutable_where()->CopyFrom(policy.where_expr.value());
+    else
+        ssc2->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE);
+
+    finishSettings(sel2->mutable_setting_values());
+    ts2->set_format(OutFormat::OUT_CSV);
+    const auto err2 = std::filesystem::remove(qcfile);
+    UNUSED(err2);
+    ts2->mutable_intofile()->set_path(qcfile.generic_string());
+    ts2->mutable_intofile()->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+
+    // ---- Build sq1: EXECUTE AS oracleUser; SELECT count() FROM db.t [FINAL] INTO OUTFILE ----
+    // so the session switches to the oracle user before the SELECT runs (row policy applies).
+    sq1.CopyFrom(sq2);
+    sq1.mutable_single_query()
+        ->mutable_explain()
+        ->mutable_inner_query()
+        ->mutable_select()
+        ->mutable_sel()
+        ->mutable_select_core()
+        ->clear_where();
+
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+}
+
+/// ifNull(COUNT(DISTINCT expr), 0) consistency oracle — first query
+/// SELECT ifNull(COUNT(DISTINCT expr), 0) FROM <from_clause>
+void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq)
+{
+    TopSelect * ts = sq.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    SelectIntoFile * sif = ts->mutable_intofile();
+    Select * sel = ts->mutable_sel();
+    SelectStatementCore * ssc = sel->mutable_select_core();
+
+    can_test_oracle_result = fc.compare_success_results && rg.nextBool();
+    can_test_success = false;
+    gen.setAllowEngineUDF(!can_test_oracle_result);
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    gen.resetAliasCounter();
+    gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+
+    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+    UNUSED(u);
+
+    /// Disable aggregates to avoid nested aggregation inside ifNull(COUNT(DISTINCT <expr>), 0)
+    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+    gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
+    SQLFuncCall * sfc1 = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    sfc1->mutable_func()->set_catalog_func(FUNCifNull);
+    sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+        SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
+    sfc2->mutable_func()->set_catalog_func(FUNCcount);
+    sfc2->set_distinct(true);
+    gen.generateExpression(rg, sfc2->add_args()->mutable_expr());
+    gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
+    gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
+
+    gen.levels.clear();
+    gen.ctes.clear();
+    gen.setAllowNotDetermistic(true);
+    gen.enforceFinal(false);
+    gen.setAllowEngineUDF(true);
+
+    SettingValues * svs = sel->mutable_setting_values();
+    /// Use exact count distinct implementation to avoid discrepancies between different implementations (e.g. HyperLogLog gives an approximation)
+    SetValue * sv = svs->mutable_set_value();
+    sv->set_property("count_distinct_implementation");
+    sv->set_value("'uniqExact'");
+    finishSettings(svs);
+    ts->set_format(OutFormat::OUT_CSV);
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
+    sif->set_path(qcfile.generic_string());
+    sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+}
+
+/// ifNull(COUNT(DISTINCT expr), 0) consistency oracle — second query
+/// SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause> WHERE isNotNull(expr)) AS sub
+///
+/// COUNT(DISTINCT expr) skips NULLs, so the inner DISTINCT subquery filters them out
+/// with WHERE isNotNull(expr) to keep the outer COUNT(*) equivalent.
+/// Moves the FROM clause and expression out of sq1 to build sq2,
+/// mirroring the pattern used by `generateCorrectnessTestSecondQuery`.
+void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
+{
+    SelectStatementCore & ssc1
+        = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+    TopSelect * ts2 = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    SelectIntoFile * sif2 = ts2->mutable_intofile();
+    Select * sel2 = ts2->mutable_sel();
+    SelectStatementCore * outer_ssc = sel2->mutable_select_core();
+
+    outer_ssc->add_result_columns()
+        ->mutable_eca()
+        ->mutable_expr()
+        ->mutable_comp_expr()
+        ->mutable_func_call()
+        ->mutable_func()
+        ->set_catalog_func(FUNCcount);
+
+    JoinedTableOrFunction * outer_jtf
+        = outer_ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+
+    ExplainQuery * inner_explain = outer_jtf->mutable_tof()->mutable_select();
+    SelectStatementCore * inner_ssc = inner_explain->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+    inner_ssc->set_s_or_d(AllOrDistinct::DISTINCT);
+    inner_ssc->set_allocated_from(ssc1.release_from());
+    Expr * arg_expr = ssc1.mutable_result_columns(0)
+                          ->mutable_eca()
+                          ->mutable_expr()
+                          ->mutable_comp_expr()
+                          ->mutable_func_call()
+                          ->mutable_args(0)
+                          ->mutable_expr()
+                          ->mutable_comp_expr()
+                          ->mutable_func_call()
+                          ->mutable_args(0)
+                          ->release_expr();
+    ExprColAlias * eca = inner_ssc->add_result_columns()->mutable_eca();
+    eca->set_allocated_expr(arg_expr);
+    eca->mutable_col_alias()->set_column("cx");
+
+    /// ifNull(COUNT(DISTINCT expr), 0) skips NULLs; filter them from the inner DISTINCT subquery
+    /// to keep COUNT(*) equivalent:  WHERE isNotNull(expr)
+    ExprNullTests * null_test = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_expr_null_tests();
+    null_test->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column("cx");
+    null_test->set_not_(true);
+
+    outer_jtf->mutable_table_alias()->set_value("sub");
+    finishSettings(sel2->mutable_setting_values());
+    ts2->set_format(sq1.single_query().explain().inner_query().select().format());
+    const auto err = std::filesystem::remove(qcfile);
+    UNUSED(err);
+    sif2->set_path(qcfile.generic_string());
+    sif2->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
 void QueryOracle::insertOnTableOrCluster(
@@ -442,7 +804,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             SettingValues * rsett = nullptr;
             BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
             const String dname = t.getDatabaseName();
-            const String tname = t.getTableName();
+            const String tname = t.getBaseName();
             const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
             bac->set_command(BackupRestore_BackupCommand_BACKUP);
@@ -460,10 +822,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
-            gen.setBackupDestination(rg, bac);
-            res->set_backup_number(bac->backup_number());
-            res->set_out(bac->out());
-            res->mutable_params()->CopyFrom(bac->params());
+            gen.setBackupOut(rg, bac->mutable_out());
+            res->mutable_out()->CopyFrom(bac->out());
             res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
@@ -793,7 +1153,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_col()
             ->set_column("explain");
         fcall2->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'^\\ *(Parts|Granules|Ranges):'");
-        jtf->mutable_table_alias()->set_table("ex");
+        jtf->mutable_table_alias()->set_value("ex");
         jtf->add_col_aliases()->set_column("explain");
 
         query = eq->mutable_inner_query()->mutable_select()->mutable_sel();
@@ -848,6 +1208,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
 
 void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules)
 {
+    bool handled = false;
     const google::protobuf::Descriptor * desc = message.GetDescriptor();
     const google::protobuf::Reflection * refl = message.GetReflection();
 
@@ -857,8 +1218,14 @@ void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::v
         if (rh.predicate(message))
         {
             /// If this message itself is the target type, mutate it.
-            rh.handler(message);
+            /// If the handler returns true, it consumed the node — skip recursion into children
+            /// to avoid double-replacing nested sub-messages created by the handler itself.
+            handled |= rh.handler(message);
         }
+    }
+    if (handled)
+    {
+        return;
     }
     const int field_count = desc->field_count();
     for (int i = 0; i < field_count; ++i)
@@ -906,8 +1273,7 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
             MatchHandler{
                 .predicate
                 = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrFunction"; },
-                .handler =
-                    [&](google::protobuf::Message & message)
+                .handler = [&](google::protobuf::Message & message) -> bool
                 {
                     TableOrFunction * tf = dynamic_cast<TableOrFunction *>(&message);
 
@@ -916,17 +1282,16 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
                     {
                         const ExprSchemaTable & est = tf->est();
 
-                        if ((!est.has_database()
-                             || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                                 && est.database().database() != "information_schema"))
-                            && est.table().table().at(0) == 't')
+                        if (!est.has_database()
+                            || (est.database().value() != "system" && est.database().value() != "INFORMATION_SCHEMA"
+                                && est.database().value() != "information_schema"))
                         {
-                            const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+                            const String tkey = StatementGenerator::getNameFromProto(est.table().value());
 
-                            if (gen.tables.contains(tname))
+                            if (gen.tables.contains(tkey))
                             {
                                 /// Replace table with table function call
-                                const SQLTable & t = gen.tables.at(tname);
+                                const SQLTable & t = gen.tables.at(tkey);
 
                                 gen.setAllowNotDetermistic(false);
                                 if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
@@ -938,9 +1303,13 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
                                     gen.setTableFunction(rg, TableFunctionUsage::RemoteCall, t, tf->mutable_tfunc());
                                 }
                                 gen.setAllowNotDetermistic(true);
+                                /// Stop recursion: the replacement created a new inner tof->est that
+                                /// would otherwise be visited and replaced again (producing nested remote calls).
+                                return true;
                             }
                         }
                     }
+                    return false;
                 }});
         iterateQuery(nsel, rules);
     }
@@ -986,8 +1355,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     rules.push_back(
         MatchHandler{
             .predicate = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrSubquery"; },
-            .handler =
-                [&](google::protobuf::Message & message)
+            .handler = [&](google::protobuf::Message & message) -> bool
             {
                 TableOrSubquery * tos = dynamic_cast<TableOrSubquery *>(&message);
 
@@ -1002,16 +1370,15 @@ void QueryOracle::replaceQueryWithTablePeers(
                     {
                         const ExprSchemaTable & est = tf.est();
 
-                        if ((!est.has_database()
-                             || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                                 && est.database().database() != "information_schema"))
-                            && est.table().table().at(0) == 't')
+                        if (!est.has_database()
+                            || (est.database().value() != "system" && est.database().value() != "INFORMATION_SCHEMA"
+                                && est.database().value() != "information_schema"))
                         {
-                            const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+                            const String tkey = StatementGenerator::getNameFromProto(est.table().value());
 
-                            if (gen.tables.contains(tname))
+                            if (gen.tables.contains(tkey))
                             {
-                                const SQLTable & t = gen.tables.at(tname);
+                                const SQLTable & t = gen.tables.at(tkey);
 
                                 if (t.hasDatabasePeer())
                                 {
@@ -1019,7 +1386,7 @@ void QueryOracle::replaceQueryWithTablePeers(
                                     {
                                         insertOnTableOrCluster(rg, gen, t, true, &tf);
                                     }
-                                    found_tables.insert(tname);
+                                    found_tables.insert(tkey);
                                     res = !t.hasClickHousePeer();
                                     can_test_oracle_result &= t.hasClickHousePeer();
                                 }
@@ -1029,6 +1396,7 @@ void QueryOracle::replaceQueryWithTablePeers(
                     /// Remove final for MySQL and PostgreSQL calls
                     jtf.set_final(jtf.final() && !res);
                 }
+                return false;
             }});
     iterateQuery(nsel, rules);
 
@@ -1093,7 +1461,7 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
-    can_test_oracle_result = fc.compare_success_results;
+    can_test_oracle_result = can_test_success = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
@@ -1127,7 +1495,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
 {
     if (other_steps_success && can_test_oracle_result)
     {
-        if (((first_errcode && !errcode) || (!first_errcode && errcode))
+        if (can_test_success && ((first_errcode && !errcode) || (!first_errcode && errcode))
             && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(

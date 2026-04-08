@@ -41,8 +41,8 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
-    /// True if we read stream for structure of Dynamic/Object type.
-    bool is_dynamic_or_object_structure = false;
+    /// True if we read stream that contains some metadata and will be read as a whole at once.
+    bool is_metadata_file = false;
     /// True if data may be compressed by different codecs in one stream.
     bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
@@ -123,6 +123,10 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSerializationVersion object_serialization_version;
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     size_t object_shared_data_buckets = 1;
+    size_t max_buckets_in_map = 1;
+    MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
+    double map_buckets_coefficient = 1.0;
+    size_t map_buckets_min_avg_size = 0;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
     size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;

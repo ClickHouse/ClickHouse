@@ -86,7 +86,10 @@ void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline,
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
 
     UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
+
+    Chunk chunk;
+    if (num_rows > 0)
+        chunk = Chunk(std::move(res_columns), num_rows);
 
     pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk))));
 }

@@ -2,7 +2,7 @@
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
 SET mutations_sync = 2;
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 DROP TABLE IF EXISTS t_alter_auto_statistics SYNC;
 
 CREATE TABLE t_alter_auto_statistics

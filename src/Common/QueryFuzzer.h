@@ -5,11 +5,12 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
+#include <Core/Names.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IAST_fwd.h>
 #include <Parsers/IASTHash.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
@@ -26,6 +27,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTIndexDeclaration;
+class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
@@ -61,6 +64,10 @@ public:
 
     /// Returns the total number of accumulated AST fragments (column-like + table-like).
     size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
+
+    /// Returns query parameters collected/generated during the last fuzzMain() call.
+    /// Callers should pass these to the execution context via setQueryParameters().
+    const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
 
     void setSeed(const UInt64 new_seed)
     {
@@ -200,6 +207,11 @@ private:
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
     std::set<IASTHash> created_tables_hashes;
 
+    /// Populated by fuzzMain(): name → string-serialized value for every {name:type} param in the fuzzed query.
+    NameToNameMap last_query_parameters;
+    /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
+    uint32_t param_counter = 0;
+
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
@@ -213,11 +225,15 @@ private:
     void fuzzColumnLikeExpressionList(IAST * ast);
     NullsAction fuzzNullsAction(NullsAction action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
+    void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
+    void fuzzIndexDeclaration(ASTIndexDeclaration & index);
+    void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
+    void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
@@ -228,12 +244,14 @@ private:
     ASTPtr addArrayJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
+    void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+    String generateParamValue();
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);

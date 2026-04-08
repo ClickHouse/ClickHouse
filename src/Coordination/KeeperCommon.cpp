@@ -5,6 +5,7 @@
 #include <thread>
 
 #include <Common/logger_useful.h>
+#include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/CoordinationSettings.h>
@@ -17,6 +18,11 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 disk_move_retries_during_init;
     extern const CoordinationSettingsUInt64 disk_move_retries_wait_ms;
+}
+
+bool isLocalDisk(const IDisk & disk)
+{
+    return dynamic_cast<const DiskLocal *>(&disk) != nullptr;
 }
 
 void moveFileBetweenDisks(

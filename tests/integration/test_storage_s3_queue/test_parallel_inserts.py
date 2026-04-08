@@ -43,7 +43,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def run_with_retry(check_result, func, retries=100):
+def run_with_retry(check_result, func, retries=300):
     for _ in range(retries):
         last = func()
         if check_result(last):

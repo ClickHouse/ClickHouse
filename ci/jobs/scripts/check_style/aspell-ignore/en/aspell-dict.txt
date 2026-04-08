@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3588 
+personal_ws-1.1 en 3617
 AArch
 ABIs
 ACLs
@@ -300,6 +300,7 @@ DockerHub
 DoubleDelta
 Doxygen
 Dresseler
+DuckDB
 Durre
 ECMA
 ETag
@@ -494,6 +495,7 @@ JOINed
 JOINs
 JSONAllPaths
 JSONAllPathsWithTypes
+JSONAllValues
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -735,6 +737,7 @@ NEKUDOTAYIM
 NEWDATE
 NEWDECIMAL
 NFKC
+NFKCCasefold
 NFKD
 NOAA
 NULLIF
@@ -785,6 +788,7 @@ OKLab
 OLAP
 OLTP
 ORCCompression
+ORMs
 OSCPUVirtualTimeMicroseconds
 OSCPUWaitMicroseconds
 OSContextSwitches
@@ -1006,6 +1010,7 @@ ReferenceKeyed
 Refreshable
 RegexpTree
 RemoteRead
+ReplicatedCoalescingMergeTree
 ReplacingMergeTree
 ReplicasMaxAbsoluteDelay
 ReplicasMaxInsertsInQueue
@@ -1132,6 +1137,8 @@ Subcolumns
 Subexpression
 Submodules
 Subqueries
+Subrequest
+Subrequests
 Substrings
 SummingMergeTree
 SuperSet
@@ -1275,6 +1282,7 @@ VIEWs
 Vadim
 Valgrind
 ValueType
+VarUInt
 VectorScan
 Vectorized
 VersionBadge
@@ -1492,6 +1500,7 @@ authType
 authenticatedUser
 authenticator
 authenticators
+autocomplete
 autocompletion
 autodetect
 autodetected
@@ -1521,6 +1530,7 @@ basename
 bcrypt
 bcrypt's
 bech
+beeterty
 benchmarked
 benchmarking
 bfloat
@@ -1528,6 +1538,7 @@ bigrams
 binlog
 bitAnd
 bitCount
+bitfield
 bitHammingDistance
 bitNot
 bitOr
@@ -1604,6 +1615,7 @@ capnproto
 cardinalities
 cardinality
 cartesian
+caseFoldUTF
 caseWithExpression
 cashflow
 cashflows
@@ -1659,6 +1671,7 @@ cli
 clickcache
 clickcat
 clickhouse
+clickhousectl
 clickhousedb
 clickhousex
 clickmate
@@ -1827,6 +1840,7 @@ defaultProfiles
 defaultRoles
 defaultValueOfArgumentType
 defaultValueOfTypeName
+defragmentation
 delim
 deltaLake
 deltaLakeCluster
@@ -1849,6 +1863,7 @@ dereference
 deserialization
 deserialize
 deserialized
+deserializer
 deserializing
 dest
 destructor
@@ -1857,7 +1872,6 @@ detectCharset
 detectLanguage
 detectLanguageMixed
 detectLanguageUnknown
-detectProgrammingLanguage
 detectTonality
 determinator
 deterministically
@@ -2230,6 +2244,7 @@ initialQueryStartTime
 initializeAggregation
 injective
 inlined
+inlines
 innogames
 inodes
 insertio
@@ -2802,6 +2817,7 @@ protocol
 protos
 proxied
 prql
+pseudocode
 pseudorandom
 pseudorandomize
 pseudoterminal
@@ -2936,6 +2952,7 @@ reinterpretAsUInt
 reinterpretAsUUID
 remerge
 remoteSecure
+removeDiacriticsUTF
 repivot
 replaceAll
 replaceOne
@@ -3121,6 +3138,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+strikethrough
 stringBytesEntropy
 stringBytesUniq
 stringCompare
@@ -3166,6 +3184,7 @@ subqueries
 subquery
 subranges
 subreddits
+subrequest
 subsecond
 subseconds
 subsequence
@@ -3376,6 +3395,7 @@ tokenizer
 tokenizers
 tokenizes
 tokenizing
+tokensForLikePattern
 toml
 toolchain
 toolset
@@ -3448,6 +3468,7 @@ unencoded
 unencrypted
 unescaped
 unescaping
+unfreed
 unhex
 unicode
 unidimensional
@@ -3589,3 +3610,14 @@ znodes
 zookeeperSessionUptime
 zstd
 zxid
+assignees
+Assignees
+backport
+Backport
+backporting
+backports
+Distributable
+PR's
+PyGithub
+PyPI
+rollout

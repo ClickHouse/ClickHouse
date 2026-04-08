@@ -289,10 +289,12 @@ public class KeeperJavaClientTest
         {
             ensurePath(zk, path);
 
-            // Add a persistent watch
+            // Add a persistent watch — only count data change events,
+            // not watch removal notifications from the client
             AtomicInteger watchCount = new AtomicInteger(0);
             Watcher testWatcher = event -> {
-                watchCount.incrementAndGet();
+                if (event.getType() == Watcher.Event.EventType.NodeDataChanged)
+                    watchCount.incrementAndGet();
             };
             zk.addWatch(path, testWatcher, AddWatchMode.PERSISTENT);
 

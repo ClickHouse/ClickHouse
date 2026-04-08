@@ -21,6 +21,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
+#include <Common/FailPoint.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
@@ -34,6 +35,11 @@
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char drop_database_before_exclusive_ddl_lock[];
+}
+
 namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
@@ -57,6 +63,11 @@ namespace ErrorCodes
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
+}
+
+namespace FailPoints
+{
+    extern const char truncate_database_tables_pause[];
 }
 
 static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
@@ -188,7 +199,15 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_id.getNameForLogs());
 
         bool secondary_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        if (!secondary_query && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
+
+        /// Don't ignore DROP for refreshable materialized views: TRUNCATE doesn't stop
+        /// the periodic refresh task, so the orphaned view would keep refreshing indefinitely,
+        /// consuming background pool threads and potentially overwhelming the server.
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        bool is_refreshable_view = materialized_view && materialized_view->isRefreshable();
+
+        if (!secondary_query && !is_refreshable_view
+            && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
         {
             ast_drop_query.sync = false;
@@ -337,7 +356,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
 
         db = database;
-        uuid_to_wait = table_id.uuid;
+        /// Truncate does not enqueue the table for dropping.
+        if (query.kind != ASTDropQuery::Kind::Truncate)
+            uuid_to_wait = table_id.uuid;
     }
 
     return {};
@@ -611,6 +632,9 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
             for (const auto & table : tables_to_drop)
             {
+                if (auto query_status = getContext()->getProcessListElementSafe())
+                    query_status->throwIfKilled();
+
                 query_for_table.setTable(table.first.getTableName());
                 query_for_table.is_dictionary = table.second;
                 query_for_table.kind = original_kind;
@@ -649,6 +673,22 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             tables_to_truncate.push_back(storage_id);
         }
 
+        /// Pre-cancel merges for all matching tables simultaneously.
+        /// This ensures all merges start stopping at time 0, so that by the time
+        /// a thread-pool thread reaches stopMergesAndWait() for each table,
+        /// the merge is already stopping or done.
+        std::vector<ActionLock> pre_merge_blockers;
+        pre_merge_blockers.reserve(tables_to_truncate.size());
+        for (const auto & table_id : tables_to_truncate)
+        {
+            if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, table_context))
+            {
+                auto lock = table->getActionLock(ActionLocks::PartsMerge);
+                if (!lock.expired())
+                    pre_merge_blockers.push_back(std::move(lock));
+            }
+        }
+
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),
@@ -663,6 +703,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             /// uuids_to_wait: Outlives runner
             runner.enqueueAndKeepTrack([this, table_id, &query, &table_context, &mutex_for_uuids, &uuids_to_wait]()
             {
+                // Pause here (for testing) BEFORE the kill check, so `SYSTEM WAIT FAILPOINT ... PAUSE`
+                // synchronises the test: the kill flag is set while we are paused, then
+                // `SYSTEM DISABLE FAILPOINT` wakes us up and `throwIfKilled` fires deterministically.
+                FailPointInjection::pauseFailPoint(FailPoints::truncate_database_tables_pause);
+
+                if (auto query_status = getContext()->getProcessListElementSafe())
+                    query_status->throwIfKilled();
+
                 // Create a proper AST for a single-table TRUNCATE query.
                 auto sub_query_ptr = make_intrusive<ASTDropQuery>();
                 auto & sub_query = sub_query_ptr->as<ASTDropQuery &>();
@@ -697,6 +745,11 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (const auto & table_uuid : uuids_to_wait)
             database->waitDetachedTableNotInUse(table_uuid);
     }
+
+    /// Allow tests to pause here: all tables have been processed but the database has not yet
+    /// been detached. A concurrent DROP TABLE can add table UUIDs to tables_marked_dropped_ids
+    /// while this query's implicit transaction still holds StoragePtrs, reproducing RC2a.
+    FailPointInjection::pauseFailPoint(FailPoints::drop_database_before_exclusive_ddl_lock);
 
     /// Protects from concurrent CREATE TABLE queries
     auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);

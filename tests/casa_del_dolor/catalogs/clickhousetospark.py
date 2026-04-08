@@ -25,6 +25,13 @@ try:
 except ImportError:
     HAS_VARIANT_TYPE = False
 
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    HAS_TIMESTAMP_NTZ = True
+except ImportError:
+    HAS_TIMESTAMP_NTZ = False
+
 
 class ClickHouseMapping(Enum):
     Unkown = 0
@@ -220,12 +227,18 @@ class ClickHouseTypeMapper:
 
                 self.increment()
                 if cname:
+                    # Sanitize non-identifier names (e.g. "1" from "`1`") so that
+                    # StructField names are valid SQL identifiers.  Spark's DDL
+                    # serialiser emits struct<1:...> without backticks, which then
+                    # fails to re-parse on Delta write operations.
+                    if not (cname[0].isalpha() or cname[0] == "_"):
+                        cname = f"col_{cname}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem_type, False, mapping
                     )
                     spark_elements.append(f"{cname}: {next_tp}")
                 else:
-                    cname = f"{i + 1}"
+                    cname = f"col{i + 1}"
                     next_tp, next_null, next_spark = self.clickhouse_to_spark(
                         elem, False, mapping
                     )
@@ -327,6 +340,13 @@ class ClickHouseTypeMapper:
         # Handle DateTime and Time
         for val in ["DateTime", "Time"]:
             if ch_type.startswith(val):
+                if (
+                    HAS_TIMESTAMP_NTZ
+                    and val == "DateTime"
+                    and mapping == ClickHouseMapping.Spark
+                    and random.randint(1, 2) == 1
+                ):
+                    return ("TIMESTAMP_NTZ", inside_nullable, TimestampNTZType())
                 return ("TIMESTAMP", inside_nullable, module.TimestampType())
 
         # Handle LowCardinality wrapper
@@ -471,8 +491,18 @@ class ClickHouseTypeMapper:
         - "name Type"
         - "name Tuple(Type1, Type2)"
         - "name Array(Nested(Type))"
+        - "`quoted_name` Type"  (backtick-quoted identifiers from ClickHouse)
         """
-        # Find the last space that's not inside parentheses
+        # Handle backtick-quoted identifiers at the start (e.g. "`1` Array(Int32)")
+        if element.startswith("`"):
+            end_bt = element.find("`", 1)
+            if end_bt > 0 and end_bt + 1 < len(element) and element[end_bt + 1] == " ":
+                name = element[1:end_bt]
+                elem_type = element[end_bt + 2 :].strip()
+                if name:
+                    return name, elem_type
+
+        # Find the last space that's not inside parentheses or quotes
         depth = 0
         last_space_pos = -1
         in_quotes = False
@@ -480,7 +510,7 @@ class ClickHouseTypeMapper:
 
         for i, char in enumerate(element):
             if not in_quotes:
-                if char in "\"'":
+                if char in "\"'`":
                     in_quotes = True
                     quote_char = char
                 elif char in "(<":
@@ -497,8 +527,8 @@ class ClickHouseTypeMapper:
         if last_space_pos > 0:
             name = element[:last_space_pos].strip()
             elem_type = element[last_space_pos + 1 :].strip()
-            # Validate that name is a valid identifier
-            if name and name[0].isalpha() or name[0] == "_":
+            # Validate that name is a valid identifier (alpha or underscore start)
+            if name and (name[0].isalpha() or name[0] == "_"):
                 return name, elem_type
         return None, element
 
@@ -573,6 +603,8 @@ class ClickHouseTypeMapper:
             "DATE",
             "TIMESTAMP",
         ]
+        if HAS_TIMESTAMP_NTZ:
+            primitive_types.append("TIMESTAMP_NTZ")
 
         # If we've reached max depth or complex types not allowed, return primitive
         if current_depth >= max_depth or not allow_complex:
@@ -602,7 +634,7 @@ class ClickHouseTypeMapper:
             num_fields = random.randint(1, 3)
             fields = []
             for i in range(num_fields):
-                field_name = f"`{i}`"
+                field_name = f"col{i}"
                 field_type = self.generate_random_spark_sql_type(
                     max_depth=max_depth,
                     current_depth=current_depth + 1,
@@ -635,6 +667,8 @@ class ClickHouseTypeMapper:
             lambda: sp.CharType(length=random.randint(1, 100)),
             lambda: sp.VarcharType(length=random.randint(1, 100)),
         ]
+        if HAS_TIMESTAMP_NTZ:
+            primitive_factories.append(TimestampNTZType)
         roll = random.randint(1, 100)
 
         # At max depth only emit primitives

@@ -1,10 +1,13 @@
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/TokenizerFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -12,11 +15,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 class FunctionNgrams : public IFunction
 {
@@ -40,22 +38,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto ngram_input_argument_type = WhichDataType(arguments[0].type);
-        if (!ngram_input_argument_type.isStringOrFixedString())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String or FixedString. Actual {}",
-                getName(),
-                arguments[0].type->getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", &isStringOrFixedString, nullptr, "String or FixedString"},
+            {"N", &isNativeUInt, &isColumnConst, "const UInt8/16/32/64"}
+        };
 
-        const auto & column_with_type = arguments[1];
-        const auto & ngram_argument_column = arguments[1].column;
-        auto ngram_argument_type = WhichDataType(column_with_type.type);
-
-        if (!ngram_argument_type.isNativeUInt() || !ngram_argument_column || !isColumnConst(*ngram_argument_column))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} second argument type should be constant UInt. Actual {}",
-                getName(),
-                arguments[1].type->getName());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
@@ -66,18 +54,20 @@ public:
 
         Field ngram_argument_value;
         arguments[1].column->get(0, ngram_argument_value);
-        auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        NgramsTokenizer tokenizer(ngram_value);
+        FieldVector params;
+        params.push_back(ngram_argument_value);
+
+        auto ngram_tokenizer = TokenizerFactory::instance().get(NgramsTokenizer::getExternalName(), params);
 
         auto result_column_string = ColumnString::create();
 
         auto input_column = arguments[0].column;
 
         if (const auto * column_string = checkAndGetColumn<ColumnString>(input_column.get()))
-            executeImpl(tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(*ngram_tokenizer, *column_string, *result_column_string, *column_offsets, input_rows_count);
         else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(input_column.get()))
-            executeImpl(tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
+            executeImpl(*ngram_tokenizer, *column_fixed_string, *result_column_string, *column_offsets, input_rows_count);
 
         return ColumnArray::create(std::move(result_column_string), std::move(column_offsets));
     }

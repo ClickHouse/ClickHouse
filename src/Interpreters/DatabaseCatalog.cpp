@@ -1,4 +1,5 @@
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/CurrentThread.h>
 
 #include <Access/ContextAccess.h>
 
@@ -18,6 +19,7 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -103,7 +105,7 @@ public:
 
     Names getAllRegisteredNames() const override
     {
-        auto context = CurrentThread::getQueryContext();
+        auto context = CurrentThread::tryGetQueryContext();
         if (!context)
             return {};
 
@@ -399,7 +401,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             return {};
         }
         /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (!analyzer)
+        else if (analyzer)
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
@@ -1020,6 +1022,35 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
     return view_dependencies.getDependencies(source_table_id);
 }
 
+std::vector<StorageID> DatabaseCatalog::getReadyDependentViews(const StorageID & source_table_id, const ContextPtr & query_context) const
+{
+    /// During server startup, not all dependent views may be registered yet.
+    /// Return empty to prevent streaming engines from processing with a
+    /// partial dependency graph, which would permanently lose data for
+    /// views not yet loaded.
+    auto global_context = Context::getGlobalContextInstance();
+    if (global_context->getApplicationType() == Context::ApplicationType::SERVER
+        && !global_context->isServerCompletelyStarted())
+        return {};
+
+    auto view_ids = getDependentViews(source_table_id);
+    if (view_ids.empty())
+        return {};
+
+    for (const auto & view_id : view_ids)
+    {
+        auto view = tryGetTable(view_id, query_context);
+        if (!view)
+            return {};
+
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return {};
+    }
+
+    return view_ids;
+}
+
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table, const IDatabase * expected_database)
 {
     if (database.empty())
@@ -1082,7 +1113,7 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 {
     std::optional<Exception> exc;
     auto table = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc).second :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }).second :
         getTableImpl(table_id, local_context, &exc).second;
     if (!table)
         throw Exception(*exc);
@@ -1092,7 +1123,7 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr loca
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
 {
     return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr).second :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }).second :
         getTableImpl(table_id, local_context, nullptr).second;
 }
 
@@ -1100,7 +1131,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 {
     std::optional<Exception> exc;
     auto res = local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }, &exc) :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, &exc); }) :
         getTableImpl(table_id, local_context, &exc);
     if (!res.second)
         throw Exception(*exc);
@@ -1110,7 +1141,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
 {
     return local_context->hasQueryContext() ?
-        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }, nullptr) :
+        local_context->getQueryContext()->getOrCacheStorage(table_id, [&](){ return getTableImpl(table_id, local_context, nullptr); }) :
         getTableImpl(table_id, local_context, nullptr);
 }
 

@@ -42,6 +42,7 @@ def started_cluster():
 def run_java_test(test_name):
     """Copy JAR to container and run a specific Java test."""
     instance_id = cluster.get_instance_docker_id("node")
+    instance_ip = cluster.get_instance_ip("node")
     jar_path = os.path.join(SCRIPT_DIR, "java_client", "keeper-java-client-test.jar")
 
     run_and_check(
@@ -57,8 +58,9 @@ def run_java_test(test_name):
 
     result = run_and_check(
         [
-            'docker exec {cont_id} bash -lc "java -jar /tmp/keeper-java-client-test.jar localhost:9181 {test}"'.format(
+            'docker exec {cont_id} bash -lc "java -jar /tmp/keeper-java-client-test.jar {ip}:9181 {test}"'.format(
                 cont_id=instance_id,
+                ip=instance_ip,
                 test=test_name,
             )
         ],

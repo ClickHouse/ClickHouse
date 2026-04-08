@@ -37,13 +37,27 @@ namespace DB
     }
 
     bool parsed_table = false;
+    bool children_already_added = false;
     if (allow_string_literal)
     {
         ASTPtr ast;
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
-            res->setTable(ast->as<ASTLiteral &>().value.safeGet<String>());
+            String name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            /// The string literal may contain 'database.table', split it
+            /// to match what parseDatabaseAndTableAsAST would produce.
+            auto dot_pos = name.find('.');
+            if (dot_pos != String::npos)
+            {
+                res->setDatabase(name.substr(0, dot_pos));
+                res->setTable(name.substr(dot_pos + 1));
+            }
+            else
+            {
+                res->setTable(name);
+            }
             parsed_table = true;
+            children_already_added = true; /// setDatabase/setTable already push to children
         }
     }
 
@@ -59,10 +73,13 @@ namespace DB
 
     res->cluster = cluster;
 
-    if (res->database)
-        res->children.push_back(res->database);
-    if (res->table)
-        res->children.push_back(res->table);
+    if (!children_already_added)
+    {
+        if (res->database)
+            res->children.push_back(res->database);
+        if (res->table)
+            res->children.push_back(res->table);
+    }
 
     return true;
 }
@@ -264,6 +281,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
+            {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
             {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
             {"DROP DISK METADATA CACHE", Type::CLEAR_DISK_METADATA_CACHE},
@@ -372,6 +390,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -421,6 +446,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::CLEAR_DISK_METADATA_CACHE:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
@@ -644,12 +671,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
-        case Type::CLEAR_DISK_METADATA_CACHE:
-        {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }

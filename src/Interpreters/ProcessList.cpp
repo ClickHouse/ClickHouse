@@ -781,6 +781,25 @@ void ProcessList::killAllQueries()
 
 }
 
+bool QueryStatus::updateProgressIn(const Progress & value)
+{
+    CurrentThread::updateProgressIn(value);
+    progress_in.incrementPiecewiseAtomically(value);
+
+    if (priority_handle)
+        priority_handle->waitIfNeed();
+
+    return !is_killed.load(std::memory_order_relaxed);
+}
+
+bool QueryStatus::updateProgressOut(const Progress & value)
+{
+    CurrentThread::updateProgressOut(value);
+    progress_out.incrementPiecewiseAtomically(value);
+
+    return !is_killed.load(std::memory_order_relaxed);
+}
+
 
 QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_events, bool get_settings) const
 {

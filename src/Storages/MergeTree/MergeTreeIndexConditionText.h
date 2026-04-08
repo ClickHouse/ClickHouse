@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Common/OptimizedRegularExpression.h>
 
 namespace DB
 {
@@ -37,12 +38,13 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_);
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
 
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
+    std::vector<OptimizedRegularExpression> patterns;
 
     SipHash getHash() const;
 };
@@ -74,6 +76,8 @@ public:
     std::string getDescription() const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
+    const std::vector<const OptimizedRegularExpression *> & getAllSearchPatterns() const { return all_search_patterns; }
+    const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
@@ -98,12 +102,11 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
-            FUNCTION_NOT_EQUALS,
             FUNCTION_IN,
-            FUNCTION_NOT_IN,
             FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
+            FUNCTION_LIKE,
             /// Can take any value
             FUNCTION_UNKNOWN,
             /// Operators
@@ -126,17 +129,24 @@ private:
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & index_column_node,
-        const DataTypePtr & value_type,
-        const Field & value_field,
+        DataTypePtr value_type,
+        Field value_field,
         RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
+
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
+    bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+
+    /// Returns true if the node represents `arrayElement(map_col, 'key')`
+    /// and there is a text index built on `mapValues(map_col)`.
+    bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     std::vector<String> stringLikeToTokens(const Field & field) const;
+    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
@@ -154,6 +164,8 @@ private:
     std::vector<String> all_search_tokens;
     /// Search queries from all RPN elements
     std::unordered_map<UInt128, TextSearchQueryPtr> all_search_queries;
+    /// Search patterns from all RPN elements (for LIKE/NOT_LIKE queries).
+    std::vector<const OptimizedRegularExpression *> all_search_patterns;
     /// Mapping from virtual column (optimized for direct read from text index) to search query.
     std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.

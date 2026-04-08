@@ -137,7 +137,7 @@ public:
     {
         LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
 
-        auto context = CurrentThread::getQueryContext();
+        auto context = CurrentThread::tryGetQueryContext();
         if (!context)
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();

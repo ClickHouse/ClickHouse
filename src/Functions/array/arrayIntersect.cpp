@@ -495,7 +495,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
             result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column), mode);
         else
         {
-            column = assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType()->createColumn();
+            column = removeNullable(assert_cast<const DataTypeArray &>(*return_type_with_nulls).getNestedType())->createColumn();
             result_column = castRemoveNullable(execute<StringMap, IColumn, false>(arrays, std::move(column), mode), result_type);
         }
     }
@@ -804,7 +804,7 @@ arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference,
 arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference;
 )", R"(
 ┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
-│ []                         │ [3]                            │
+│ []                         │ [3,2]                          │
 └────────────────────────────┴────────────────────────────────┘
 )"}};
     FunctionDocumentation::IntroducedIn symdiff_introduced_in = {25, 4};

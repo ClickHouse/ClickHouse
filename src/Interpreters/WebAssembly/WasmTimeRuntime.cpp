@@ -131,7 +131,9 @@ struct WasmTimeRuntime::Impl
     {
         wasmtime::Config config;
         config.consume_fuel(true);
+        config.epoch_interruption(true);
         config.signals_based_traps(false);
+        config.wasm_exceptions(true);
         return config;
     }
 
@@ -153,34 +155,46 @@ void WasmTimeRuntime::setLogLevel(LogsLevel)
 class WasmTimeCompartment : public WasmCompartment
 {
 public:
-    explicit WasmTimeCompartment(wasmtime::Store && wasm_store, wasmtime::Instance && instance_, WasmModule::Config cfg_)
-        : store(std::move(wasm_store))
+    explicit WasmTimeCompartment(const wasmtime::Engine & engine_, wasmtime::Store && wasm_store, wasmtime::Instance && instance_, WasmModule::Config cfg_)
+        : engine(engine_)
+        , store(std::move(wasm_store))
         , instance(std::move(instance_))
         , cfg(std::move(cfg_))
     {
         store.context().set_data(this);
+        store.context().set_epoch_deadline(1);
+        store.epoch_deadline_callback(
+            [](wasmtime::Store::Context ctx, uint64_t & epoch_deadline_delta) -> wasmtime::Result<wasmtime::DeadlineKind>
+            {
+                epoch_deadline_delta += 1;
+                const auto & ctx_data = ctx.get_data();
+                const auto * compartment_ptr = ctx_data.has_value() ? std::any_cast<WasmTimeCompartment *>(ctx_data) : nullptr;
+                if (compartment_ptr && compartment_ptr->stop_requested.load())
+                    return wasmtime::Error("WASM execution was stopped by request");
+                return wasmtime::DeadlineKind::Continue;
+            }
+        );
     }
 
     void setLastException(Exception e) { last_exception = std::move(e); }
 
-    uint8_t * getMemory(WasmPtr ptr, WasmSizeT size) override
+    std::span<uint8_t> getMemory(WasmPtr ptr, WasmSizeT size) override
     {
         auto memory_span = getMemory().data(store);
-        if (ptr + size >= memory_span.size())
+        if (size > memory_span.size() || ptr > memory_span.size() - size)
         {
             throw Exception(
                 ErrorCodes::WASM_ERROR,
                 "Cannot get memory at offset {} and size {} from wasm compartment memory with size {}",
                 ptr, size, memory_span.size());
         }
-        return &memory_span[ptr];
+        return memory_span.subspan(ptr, size);
     }
 
-    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) override
+    std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params, StopToken stop_token) override
     {
-        if (cfg.fuel_limit)
         {
-            auto result = store.context().set_fuel(cfg.fuel_limit);
+            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
             if (!result)
                 throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
         }
@@ -213,6 +227,14 @@ public:
         {
             last_exception.reset();
 
+            stop_requested = false;
+            StopCallback stop_callback(stop_token, [this, function_name]
+            {
+                LOG_DEBUG(log, "Stop requested for function '{}'", function_name);
+                stop_requested = true;
+                engine.increment_epoch();
+            });
+
             ProfileEventTimeIncrement<Microseconds> timer(ProfileEvents::WasmGuestExecuteMicroseconds);
             auto call_results = wasm_func.call(store, params_values);
 
@@ -241,8 +263,11 @@ public:
     }
 
 private:
+    const wasmtime::Engine & engine;
     wasmtime::Store store;
     wasmtime::Instance instance;
+
+    std::atomic_bool stop_requested{false};
 
     std::optional<Exception> last_exception;
 
@@ -311,7 +336,7 @@ wasmtime::Result<std::monostate, wasmtime::Trap> callHostFunction(
 }
 }
 
-WasmFunctionDeclaration buildFunctionDeclaration(std::string_view function_name, wasmtime::FuncType::Ref function_info)
+WasmFunctionDeclaration buildFunctionDeclaration(std::string_view module_name, std::string_view function_name, wasmtime::FuncType::Ref function_info)
 {
     if (function_info.results().size() > 1)
         throw Exception(ErrorCodes::WASM_ERROR, "Function '{}' has more than one return value", function_name);
@@ -329,15 +354,16 @@ WasmFunctionDeclaration buildFunctionDeclaration(std::string_view function_name,
         argument_types.emplace_back(fromWasmTimeValKind(function_argument.kind()));
     }
 
-    return WasmFunctionDeclaration(function_name, std::move(argument_types), return_type);
+    return WasmFunctionDeclaration(module_name, function_name, std::move(argument_types), return_type);
 }
 
 class WasmTimeModule : public WasmModule
 {
 public:
-    explicit WasmTimeModule(wasmtime::Engine engine_, wasmtime::Module && module_)
+    explicit WasmTimeModule(std::string_view module_name_, wasmtime::Engine engine_, wasmtime::Module && module_)
         : engine(std::move(engine_))
         , module(std::move(module_))
+        , module_name(module_name_)
     {
         all_exports_list = module.exports();
         if (all_exports_list.size() >= 512)
@@ -356,14 +382,6 @@ public:
         if (all_imports_list.size() >= 512)
             throw Exception(ErrorCodes::WASM_ERROR, "Module has too many imports");
 
-        for (auto import_type : all_imports_list)
-        {
-            auto import_info = wasmtime::ExternType::from_import(import_type);
-            if (auto * import_func = std::get_if<wasmtime::FuncType::Ref>(&import_info))
-            {
-                function_imports_map.insert({std::string(import_type.name()), *import_func});
-            }
-        }
     }
 
     std::unique_ptr<WasmCompartment> instantiate(Config cfg) const override
@@ -371,11 +389,11 @@ public:
         wasmtime::Store store(engine);
         if (cfg.memory_limit)
             store.limiter(cfg.memory_limit, -1, -1, -1, -1);
-        if (cfg.fuel_limit)
+
         {
-            auto result = store.context().set_fuel(cfg.fuel_limit);
+            auto result = store.context().set_fuel(cfg.fuel_limit ? cfg.fuel_limit : std::numeric_limits<uint64_t>::max());
             if (!result)
-                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel to wasm instance: {}", result.err().message());
+                throw Exception(ErrorCodes::WASM_ERROR, "Failed to set fuel for wasm module instantiation: {}", result.err().message());
         }
 
         wasmtime::Linker linker(engine);
@@ -410,18 +428,21 @@ public:
         if (!instantination_result)
             throw Exception(ErrorCodes::WASM_ERROR, "Failed to instantiate wasm module: {}", instantination_result.err().message());
 
-        return std::make_unique<WasmTimeCompartment>(std::move(store), std::move(instantination_result.ok()), std::move(cfg));
+        return std::make_unique<WasmTimeCompartment>(engine, std::move(store), std::move(instantination_result.ok()), std::move(cfg));
     }
 
 
     std::vector<WasmFunctionDeclaration> getImports() const override
     {
         std::vector<WasmFunctionDeclaration> result;
-        result.reserve(function_imports_map.size());
 
-        for (const auto & [function_name, function_info] : function_imports_map)
+        for (auto import_type : all_imports_list)
         {
-            result.emplace_back(buildFunctionDeclaration(function_name, function_info));
+            auto import_info = wasmtime::ExternType::from_import(import_type);
+            if (auto * import_func = std::get_if<wasmtime::FuncType::Ref>(&import_info))
+            {
+                result.emplace_back(buildFunctionDeclaration(import_type.module(), import_type.name(), *import_func));
+            }
         }
 
         return result;
@@ -437,7 +458,7 @@ public:
         auto export_it = function_exports_map.find(function_name);
         if (export_it == function_exports_map.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function '{}' is not found in module exports", function_name);
-        return buildFunctionDeclaration(function_name, export_it->second);
+        return buildFunctionDeclaration(module_name, function_name, export_it->second);
     }
 
 private:
@@ -448,14 +469,15 @@ private:
     std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_exports_map;
 
     wasmtime::ImportType::List all_imports_list;
-    std::map<std::string, wasmtime::FuncType::Ref, std::less<>> function_imports_map;
+
+    std::string module_name;
 
     std::vector<WasmHostFunction> host_functions;
 
     LoggerPtr log = getLogger("WasmTimeModule");
 };
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view wasm_code) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view module_name, std::string_view wasm_code) const
 {
     std::span<uint8_t> bytes(reinterpret_cast<uint8_t *>(const_cast<char *>(wasm_code.data())), wasm_code.size());
     auto compilation_result = wasmtime::Module::compile(impl->engine, bytes);
@@ -465,7 +487,7 @@ std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view wasm
     }
     auto module = compilation_result.ok();
 
-    return std::make_unique<WasmTimeModule>(impl->engine, std::move(module));
+    return std::make_unique<WasmTimeModule>(module_name, impl->engine, std::move(module));
 };
 
 WasmTimeRuntime::~WasmTimeRuntime() = default;
@@ -489,7 +511,7 @@ struct WasmTimeRuntime::Impl
 
 WasmTimeRuntime::WasmTimeRuntime() : impl(std::make_unique<Impl>()) { }
 
-std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* wasm_code */) const
+std::unique_ptr<WasmModule> WasmTimeRuntime::compileModule(std::string_view /* module_name */, std::string_view /* wasm_code */) const
 {
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Wasmtime support is disabled");
 }

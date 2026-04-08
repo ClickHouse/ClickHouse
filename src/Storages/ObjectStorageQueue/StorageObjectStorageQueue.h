@@ -134,7 +134,7 @@ private:
     mutable std::mutex streaming_mutex;
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> streaming_file_iterator;
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
-    std::vector<size_t> max_files_override_per_task;
+    std::atomic<size_t> max_files_override{0};
 
     LoggerPtr log;
 
@@ -144,7 +144,7 @@ private:
     bool supportsSubsetOfColumns(const ContextPtr & context_) const;
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 

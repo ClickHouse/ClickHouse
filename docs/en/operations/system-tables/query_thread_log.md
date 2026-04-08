@@ -61,13 +61,13 @@ Columns:
 - `interface` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Interface that the query was initiated from. Possible values:
   - 1 — TCP.
   - 2 — HTTP.
-- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/cli.md).
-- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
-- `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
-- `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
-- `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
-- `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
-- `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
+- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/client.md).
+- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/client.md) or another TCP client is run.
+- `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/client.md) or another TCP client name.
+- `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/client.md) or another TCP client.
+- `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/client.md) or another TCP client.
+- `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/client.md) or another TCP client.
+- `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/client.md) or another TCP client version.
 - `http_method` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — HTTP method that initiated the query. Possible values:
   - 0 — The query was launched from the TCP interface.
   - 1 — `GET` method was used.

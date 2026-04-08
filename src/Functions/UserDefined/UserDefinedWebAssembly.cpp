@@ -9,11 +9,13 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/formatBlock.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/WasmModuleManager.h>
 #include <Interpreters/WebAssembly/HostApi.h>
@@ -21,6 +23,7 @@
 
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <Interpreters/castColumn.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
@@ -35,7 +38,6 @@
 #include <fmt/ranges.h>
 #include <Poco/String.h>
 #include <Common/transformEndianness.h>
-#include <Columns/ColumnString.h>
 #include <base/extended_types.h>
 #include <base/arithmeticOverflow.h>
 
@@ -57,6 +59,14 @@ namespace DB
 {
 
 using namespace WebAssembly;
+
+namespace Setting
+{
+extern const SettingsUInt64 webassembly_udf_max_fuel;
+extern const SettingsUInt64 webassembly_udf_max_memory;
+extern const SettingsUInt64 webassembly_udf_max_input_block_size;
+extern const SettingsUInt64 webassembly_udf_max_instances;
+}
 
 namespace ErrorCodes
 {
@@ -84,6 +94,61 @@ UserDefinedWebAssemblyFunction::UserDefinedWebAssemblyFunction(
     , settings(std::move(function_settings_))
 {
 }
+
+/// Maps ClickHouse numeric types to their WASM storage type.
+/// Small integer types (Int8, UInt8, Int16, UInt16) are widened to uint32_t (i32).
+/// All other supported types map 1:1 via NativeToWasmType.
+template <typename T>
+struct WasmStorageType
+{
+    using Type = typename NativeToWasmType<T>::Type;
+};
+
+template <> struct WasmStorageType<Int8>   { using Type = uint32_t; };
+template <> struct WasmStorageType<UInt8>  { using Type = uint32_t; };
+template <> struct WasmStorageType<Int16>  { using Type = uint32_t; };
+template <> struct WasmStorageType<UInt16> { using Type = uint32_t; };
+
+template <typename T>
+constexpr WasmValKind wasmKindFor()
+{
+    return WasmValTypeToKind<typename WasmStorageType<T>::Type>::value;
+}
+
+template <typename Callable, typename... Args>
+static bool tryExecuteForNumericTypes(Callable && callable, Args &&... args)
+{
+    return (
+        callable.template operator()<Int8>(args...)
+        || callable.template operator()<UInt8>(args...)
+        || callable.template operator()<Int16>(args...)
+        || callable.template operator()<UInt16>(args...)
+        || callable.template operator()<Int32>(args...)
+        || callable.template operator()<UInt32>(args...)
+        || callable.template operator()<Int64>(args...)
+        || callable.template operator()<UInt64>(args...)
+        || callable.template operator()<Float32>(args...)
+        || callable.template operator()<Float64>(args...)
+        || callable.template operator()<Int128>(args...)
+        || callable.template operator()<UInt128>(args...)
+    );
+}
+
+static std::optional<WasmValKind> wasmKindForDataType(const IDataType * type)
+{
+    std::optional<WasmValKind> kind;
+    tryExecuteForNumericTypes([type, &kind]<typename T>()
+    {
+        if (typeid_cast<const DataTypeNumber<T> *>(type))
+        {
+            kind = wasmKindFor<T>();
+            return true;
+        }
+        return false;
+    });
+    return kind;
+}
+
 
 class UserDefinedWebAssemblyFunctionSimple : public UserDefinedWebAssemblyFunction
 {
@@ -125,25 +190,10 @@ public:
     }
 
 
-    template <typename Callable, typename... Args>
-    static bool tryExecuteForColumnTypes(Callable && callable, Args &&... args)
-    {
-        return (
-            callable.template operator()<Int32>(args...)
-            || callable.template operator()<UInt32>(args...)
-            || callable.template operator()<Int64>(args...)
-            || callable.template operator()<UInt64>(args...)
-            || callable.template operator()<Float32>(args...)
-            || callable.template operator()<Float64>(args...)
-            || callable.template operator()<Int128>(args...)
-            || callable.template operator()<UInt128>(args...)
-        );
-    }
-
     static void checkDataTypeWithWasmValKind(const IDataType * type, WasmValKind kind)
     {
-        bool is_data_type_compatible = tryExecuteForColumnTypes(
-            [type, kind]<typename T>() { return typeid_cast<const DataTypeNumber<T> *>(type) && WasmValTypeToKind<T>::value == kind; });
+        bool is_data_type_compatible = tryExecuteForNumericTypes(
+            [type, kind]<typename T>() { return typeid_cast<const DataTypeNumber<T> *>(type) && wasmKindFor<T>() == kind; });
         if (!is_data_type_compatible)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -153,7 +203,7 @@ public:
     }
 
     MutableColumnPtr
-    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr, size_t num_rows) const override
+    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr, size_t num_rows, StopToken stop_token) const override
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
@@ -161,7 +211,7 @@ public:
         {
             if (auto * column_typed = checkAndGetColumn<ColumnVector<T>>(column))
             {
-                val = std::bit_cast<typename NativeToWasmType<T>::Type>(column_typed->getElement(row_idx));
+                val = static_cast<typename WasmStorageType<T>::Type>(column_typed->getElement(row_idx));
                 return true;
             }
             return false;
@@ -172,8 +222,8 @@ public:
         {
             if (auto * column_typed = typeid_cast<ColumnVector<T> *>(result_column.get()))
             {
-                auto value = compartment->invoke<typename NativeToWasmType<T>::Type>(function_name, args);
-                column_typed->insertValue(std::bit_cast<T>(value));
+                auto value = compartment->invoke<typename WasmStorageType<T>::Type>(function_name, args, stop_token);
+                column_typed->insertValue(static_cast<T>(value));
                 return true;
             }
             return false;
@@ -186,11 +236,11 @@ public:
             for (size_t col_idx = 0; col_idx < num_columns; ++col_idx)
             {
                 const auto & column = block.getByPosition(col_idx);
-                if (!tryExecuteForColumnTypes(get_column_element, column.column.get(), row_idx, wasm_args[col_idx]))
+                if (!tryExecuteForNumericTypes(get_column_element, column.column.get(), row_idx, wasm_args[col_idx]))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot convert {} to WebAssembly type", column.type->getName());
             }
 
-            if (!tryExecuteForColumnTypes(invoke_and_set_column, wasm_args))
+            if (!tryExecuteForNumericTypes(invoke_and_set_column, wasm_args))
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot get value of type {} from result of WebAssembly function {}",
@@ -217,20 +267,25 @@ public:
     constexpr static std::string_view allocate_function_name = "clickhouse_create_buffer";
     constexpr static std::string_view deallocate_function_name = "clickhouse_destroy_buffer";
 
-    static WasmFunctionDeclaration allocateFunctionDeclaration() { return {allocate_function_name, {WasmValKind::I32}, WasmValKind::I32}; }
-    static WasmFunctionDeclaration deallocateFunctionDeclaration() { return {deallocate_function_name, {WasmValKind::I32}, std::nullopt}; }
+    static WasmFunctionDeclaration allocateFunctionDeclaration() { return {"", allocate_function_name, {WasmValKind::I32}, WasmValKind::I32}; }
+    static WasmFunctionDeclaration deallocateFunctionDeclaration() { return {"", deallocate_function_name, {WasmValKind::I32}, std::nullopt}; }
 
-    explicit WasmMemoryManagerV01(WasmCompartment * compartment_) : compartment(compartment_) { }
+    explicit WasmMemoryManagerV01(WasmCompartment * compartment_, StopToken stop_token_)
+        : compartment(compartment_)
+        , stop_token(stop_token_)
+    {
+    }
 
-    WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}); }
-    void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}); }
+    WasmPtr createBuffer(WasmSizeT size) const override { return compartment->invoke<WasmPtr>(allocate_function_name, {size}, stop_token); }
+    void destroyBuffer(WasmPtr handle) const override { compartment->invoke<void>(deallocate_function_name, {handle}, stop_token); }
 
     std::span<uint8_t> getMemoryView(WasmPtr handle) const override
     {
         if (handle == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wasm buffer is nullptr");
 
-        const auto * raw_buffer_ptr = compartment->getMemory(handle, sizeof(WasmBuffer));
+        auto raw_buffer_span = compartment->getMemory(handle, sizeof(WasmBuffer));
+        const auto * raw_buffer_ptr = raw_buffer_span.data();
         WasmBuffer buffer;
         if (reinterpret_cast<uintptr_t>(raw_buffer_ptr) % alignof(WasmBuffer) != 0)
         {
@@ -241,11 +296,12 @@ public:
             buffer = *reinterpret_cast<const WasmBuffer *>(raw_buffer_ptr);
         }
 
-        return {compartment->getMemory(buffer.ptr, buffer.size), buffer.size};
+        return compartment->getMemory(buffer.ptr, buffer.size);
     }
 
 private:
     WasmCompartment * compartment;
+    StopToken stop_token;
 };
 
 class UserDefinedWebAssemblyFunctionBufferedV1 : public UserDefinedWebAssemblyFunction
@@ -264,7 +320,7 @@ public:
 
     void checkSignature() const
     {
-        checkFunction(WasmFunctionDeclaration(function_name, {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32));
+        checkFunction(WasmFunctionDeclaration("", function_name, {WasmValKind::I32, WasmValKind::I32}, WasmValKind::I32));
         checkFunction(WasmMemoryManagerV01::allocateFunctionDeclaration());
         checkFunction(WasmMemoryManagerV01::deallocateFunctionDeclaration());
     }
@@ -296,7 +352,7 @@ public:
     }
 
     MutableColumnPtr
-    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows) const override
+    executeOnBlock(WebAssembly::WasmCompartment * compartment, const Block & block, ContextPtr context, size_t num_rows, StopToken stop_token) const override
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
@@ -307,23 +363,13 @@ public:
         if (num_rows >= std::numeric_limits<WasmSizeT>::max())
             throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large number of rows: {}", num_rows);
 
-        auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment);
+        auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
 
         WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
             StringWithMemoryTracking input_data;
-
-            std::vector<const ColumnString *> string_columns;
-            for (const auto & col : block)
-            {
-                const auto * string_col = checkAndGetColumn<ColumnString>(col.column.get());
-                if (string_col && col.type->equals(DataTypeString()))
-                    string_columns.push_back(string_col);
-                else
-                    string_columns.clear();
-            }
 
             {
                 WriteBufferFromStringWithMemoryTracking buf(input_data);
@@ -343,7 +389,7 @@ public:
             std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
         }
 
-        auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)});
+        auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)}, stop_token);
         if (result_ptr == 0)
             throw Exception(ErrorCodes::WASM_ERROR, "WebAssembly function '{}' returned nullptr", function_name);
 
@@ -446,30 +492,32 @@ private:
 };
 
 
-WebAssembly::WasmModule::Config getWasmModuleConfigFromFunctionSettings(const WebAssemblyFunctionSettings & function_settings)
+WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context)
 {
     WebAssembly::WasmModule::Config cfg;
 
-    UInt64 max_fuel = function_settings.getValue("max_fuel").safeGet<UInt64>();
+    UInt64 max_fuel = context->getSettingsRef()[Setting::webassembly_udf_max_fuel];
     if (common::mulOverflow(max_fuel, 1024, cfg.fuel_limit))
         cfg.fuel_limit = std::numeric_limits<UInt64>::max();
 
-    cfg.memory_limit = function_settings.getValue("max_memory").safeGet<UInt64>();
+    cfg.memory_limit = context->getSettingsRef()[Setting::webassembly_udf_max_memory];
+
     return cfg;
 }
 
 class FunctionUserDefinedWasm : public IFunction
 {
 public:
-    FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_)
+    FunctionUserDefinedWasm(String function_name_, std::shared_ptr<UserDefinedWebAssemblyFunction> udf_, ContextPtr context_)
         : user_defined_function(std::move(udf_))
         , wasm_module(user_defined_function->getModule())
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
+        , context(std::move(context_))
         , compartment_pool(
-              static_cast<UInt32>(user_defined_function->getSettings().getValue("max_instances").safeGet<UInt64>()),
+              static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
               wasm_module,
-              getWasmModuleConfigFromFunctionSettings(user_defined_function->getSettings()))
+              getWasmModuleConfig(context))
     {
     }
 
@@ -492,6 +540,14 @@ public:
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             if (arguments[i]->equals(*expected_arguments[i]))
+                continue;
+
+            /// Allow implicit coercion between types that map to the same WASM kind
+            /// (e.g. Int8/UInt8/Int16/UInt16/Int32 all map to i32, so they are interchangeable).
+            /// Pairs with different WASM kinds (e.g. Float64 vs Int32) are rejected.
+            auto actual_kind = wasmKindForDataType(arguments[i].get());
+            auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
+            if (actual_kind && expected_kind && *actual_kind == *expected_kind)
                 continue;
 
             auto get_type_names = std::views::transform([](const auto & arg) { return arg->getName(); });
@@ -524,20 +580,25 @@ public:
         return result_column;
     }
 
+    void cancelExecution() const override
+    {
+        interrupt_source.request_stop();
+    }
+
 private:
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
-        size_t block_size = user_defined_function->getSettings().getValue("max_input_block_size").safeGet<UInt64>();
+        size_t block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
         if (block_size == 0)
             block_size = input_rows_count;
 
-        auto context = Context::getGlobalContextInstance();
         for (size_t start_idx = 0; start_idx < input_rows_count; start_idx += block_size)
         {
             size_t current_block_size = std::min(block_size, input_rows_count - start_idx);
             auto current_input_block = getArgumentsBlock(arguments, start_idx, current_block_size);
-            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size);
+            auto stop_token = interrupt_source.get_token();
+            auto current_column = user_defined_function->executeOnBlock(compartment, current_input_block, context, current_block_size, stop_token);
 
             if (!result_column->structureEquals(*current_column))
                 throw Exception(
@@ -556,12 +617,19 @@ private:
 
     Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
     {
+        const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             ColumnPtr column = arguments[i].column->convertToFullColumnIfConst()->cut(start_idx, length);
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
-            arguments_block.insert(ColumnWithTypeAndName(column, arguments[i].type, column_name));
+            /// Cast to the declared type so serialization uses the correct width.
+            /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
+            /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
+            const DataTypePtr & declared_type = declared_arguments[i];
+            if (!arguments[i].type->equals(*declared_type))
+                column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
+            arguments_block.insert(ColumnWithTypeAndName(column, declared_type, column_name));
         }
         return arguments_block;
     }
@@ -570,7 +638,9 @@ private:
     std::shared_ptr<WebAssembly::WasmModule> wasm_module;
     String function_name;
     Strings argument_names;
+    ContextPtr context;
 
+    mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
 };
 
@@ -624,7 +694,7 @@ bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name)
     return registry.contains(function_name);
 }
 
-FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name)
+FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const String & function_name, ContextPtr context)
 {
     std::shared_ptr<UserDefinedWebAssemblyFunction> wasm_func = nullptr;
     {
@@ -641,7 +711,7 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
         wasm_func = it->second;
     }
 
-    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func));
+    auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }
 
@@ -671,29 +741,6 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         std::function<void(std::string_view, const Field &)> check;
     };
 
-    struct SettingUInt64Range
-    {
-        SettingDefinition withDefault(UInt64 default_value) const
-        {
-            return SettingDefinition(
-                [min_ = this->min, max_ = this->max](std::string_view name, const Field & value) // NOLINT
-                {
-                    if (value.getType() != Field::Types::UInt64)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected UInt64, got '{}'", value.getTypeName());
-                    UInt64 val = value.safeGet<UInt64>();
-                    if (min_ > val || val > max_)
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Value {} for setting '{}' is out of range [{}, {}]",
-                            val, name, min_, max_ == std::numeric_limits<UInt64>::max() ? "inf" : std::to_string(max_));
-                },
-                Field(default_value));
-        }
-
-        UInt64 min = 0;
-        UInt64 max = std::numeric_limits<UInt64>::max();
-    };
-
     struct SettingStringFromSet
     {
         SettingDefinition withDefault(String default_value) const
@@ -717,16 +764,8 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
     };
 
     const std::unordered_map<String, SettingDefinition> settings_def = {
-        /// Fuel limit for a single instance
-        {"max_fuel", SettingUInt64Range{}.withDefault(100'000)},
-        /// Memory limit for a single instance
-        {"max_memory", SettingUInt64Range{64_KiB, 4_GiB}.withDefault(100_MiB)},
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary"}}.withDefault("MsgPack")},
-        /// Limit for the number of rows in a single block
-        {"max_input_block_size", SettingUInt64Range{0, DEFAULT_BLOCK_SIZE * 10}.withDefault(0)},
-        /// Maximum number of instances of the webassembly module can be run in parallel for a single function
-        {"max_instances", SettingUInt64Range{1, 1024}.withDefault(128)},
     };
 
     std::vector<String> getAllRegisteredNames() const override
