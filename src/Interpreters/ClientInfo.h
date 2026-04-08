@@ -60,6 +60,8 @@ public:
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
+    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
+
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
@@ -137,16 +139,6 @@ public:
     bool collaborate_with_initiator{false};
     UInt64 obsolete_count_participating_replicas{0};
     UInt64 number_of_current_replica{0};
-
-    enum class BackgroundOperationType : uint8_t
-    {
-        NOT_A_BACKGROUND_OPERATION = 0,
-        MERGE = 1,
-        MUTATION = 2,
-    };
-
-    /// It's ClientInfo and context created for background operation (not real query)
-    BackgroundOperationType background_operation_type{BackgroundOperationType::NOT_A_BACKGROUND_OPERATION};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

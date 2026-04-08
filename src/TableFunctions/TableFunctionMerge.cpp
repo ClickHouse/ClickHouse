@@ -160,13 +160,11 @@ void registerTableFunctionMerge(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMerge>(
         {
-            .documentation = {
-                .description = "Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.",
-                .examples = {{"merge", "SELECT * FROM merge(db, '^table_.*')", ""}},
-                .category = FunctionDocumentation::Category::TableFunction
-            },
-            .allow_readonly = true,
-        }
+            .description = "Creates a temporary Merge table. The structure will be derived from underlying tables by using a union of their columns and by deriving common types.",
+            .examples = {{"merge", "SELECT * FROM merge(db, '^table_.*')", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = true}
     );
 }
 

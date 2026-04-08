@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationTime64.h>
 
 #include <Columns/ColumnVector.h>
@@ -28,6 +29,15 @@ SerializationTime64::SerializationTime64(UInt32 scale_)
 SerializationTime64::SerializationTime64(UInt32 scale_, const DataTypeTime64 & /*time_type*/)
     : SerializationDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_)
 {
+}
+
+
+UInt128 SerializationTime64::getHash(UInt32 scale_)
+{
+    SipHash hash;
+    hash.update("Time64");
+    hash.update(scale_);
+    return hash.get128();
 }
 
 void SerializationTime64::serializeText(
@@ -90,6 +100,16 @@ static inline bool tryReadText(
     const DateLUTImpl & /*utc_time_zone*/)
 {
     return tryReadTime64Text(x, scale, istr);
+}
+
+SerializationPtr SerializationTime64::create(UInt32 scale_)
+{
+    return ISerialization::pooled(getHash(scale_), [=] { return new SerializationTime64(scale_); });
+}
+
+SerializationPtr SerializationTime64::create(UInt32 scale_, const DataTypeTime64 & time_type)
+{
+    return ISerialization::pooled(getHash(scale_), [&] { return new SerializationTime64(scale_, time_type); });
 }
 
 

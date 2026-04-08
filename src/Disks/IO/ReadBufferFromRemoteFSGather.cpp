@@ -1,4 +1,5 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Common/CurrentThread.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>

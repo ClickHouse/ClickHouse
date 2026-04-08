@@ -67,7 +67,7 @@ ASTPtr ASTIdentifier::getParam() const
 
 ASTPtr ASTIdentifier::clone() const
 {
-    auto ret = std::make_shared<ASTIdentifier>(*this);
+    auto ret = make_intrusive<ASTIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
     ret->cloneChildren();
     return ret;
@@ -167,10 +167,10 @@ void ASTIdentifier::restoreTable()
     }
 }
 
-std::shared_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
+boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
 {
-    if (name_parts.size() == 1) return std::make_shared<ASTTableIdentifier>(name_parts[0]);
-    if (name_parts.size() == 2) return std::make_shared<ASTTableIdentifier>(name_parts[0], name_parts[1]);
+    if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
+    if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
     return nullptr;
 }
 
@@ -202,7 +202,7 @@ ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const Strin
 
 ASTPtr ASTTableIdentifier::clone() const
 {
-    auto ret = std::make_shared<ASTTableIdentifier>(*this);
+    auto ret = make_intrusive<ASTTableIdentifier>(*this);
     ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
     ret->cloneChildren();
     return ret;
@@ -225,17 +225,17 @@ ASTPtr ASTTableIdentifier::getTable() const
     if (name_parts.size() == 2)
     {
         if (!name_parts[1].empty())
-            return std::make_shared<ASTIdentifier>(name_parts[1]);
+            return make_intrusive<ASTIdentifier>(name_parts[1]);
 
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[1]->clone());
-        return std::make_shared<ASTIdentifier>("", children[0]->clone());
+            return make_intrusive<ASTIdentifier>("", children[1]->clone());
+        return make_intrusive<ASTIdentifier>("", children[0]->clone());
     }
     if (name_parts.size() == 1)
     {
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        return std::make_shared<ASTIdentifier>(name_parts[0]);
+            return make_intrusive<ASTIdentifier>("", children[0]->clone());
+        return make_intrusive<ASTIdentifier>(name_parts[0]);
     }
     return {};
 }
@@ -245,15 +245,15 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     if (name_parts.size() == 2)
     {
         if (name_parts[0].empty())
-            return std::make_shared<ASTIdentifier>("", children[0]->clone());
-        return std::make_shared<ASTIdentifier>(name_parts[0]);
+            return make_intrusive<ASTIdentifier>("", children[0]->clone());
+        return make_intrusive<ASTIdentifier>(name_parts[0]);
     }
     return {};
 }
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
-    auto identifier = std::make_shared<ASTTableIdentifier>(database_name, table_name);
+    auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;

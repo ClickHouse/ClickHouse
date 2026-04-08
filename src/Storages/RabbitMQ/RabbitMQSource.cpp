@@ -4,11 +4,11 @@
 #include <Core/Settings.h>
 #include <Common/DateLUT.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <base/sleep.h>
 #include <Common/logger_useful.h>
 
 
@@ -267,17 +267,18 @@ Chunk RabbitMQSource::generateImpl()
                 virtual_columns[3]->insert(message.redelivered);
                 virtual_columns[4]->insert(message.message_id);
                 virtual_columns[5]->insert(message.timestamp);
+                virtual_columns[6]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
-                        virtual_columns[6]->insertData(message.message);
-                        virtual_columns[7]->insertData(*exception_message);
+                        virtual_columns[7]->insertData(message.message);
+                        virtual_columns[8]->insertData(*exception_message);
                     }
                     else
                     {
-                        virtual_columns[6]->insertDefault();
                         virtual_columns[7]->insertDefault();
+                        virtual_columns[8]->insertDefault();
                     }
                 }
             }

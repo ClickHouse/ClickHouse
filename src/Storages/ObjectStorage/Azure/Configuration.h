@@ -13,6 +13,16 @@ namespace DB
 {
 class BackupFactory;
 
+/// Constructs Azure connection parameters from individual components.
+AzureBlobStorage::ConnectionParams getAzureConnectionParams(
+    const String & connection_url,
+    const String & container_name,
+    const std::optional<String> & account_name,
+    const std::optional<String> & account_key,
+    const std::optional<String> & client_id,
+    const std::optional<String> & tenant_id,
+    ContextPtr context);
+
 struct AzureStorageParsedArguments : private StorageParsedArguments
 {
     using Path = StorageObjectStorageConfiguration::Path;
@@ -88,6 +98,7 @@ public:
     std::string getEngineName() const override { return engine_name; }
 
     Path getRawPath() const override { return blob_path; }
+    void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
     const Paths & getPaths() const override { return blobs_paths; }
@@ -99,7 +110,7 @@ public:
 
     void check(ContextPtr context) override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
+    ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback refresh_credentials_callback) override;
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args,

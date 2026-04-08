@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTTimeInterval::clone() const
 {
-    return std::make_shared<ASTTimeInterval>(*this);
+    return make_intrusive<ASTTimeInterval>(*this);
 }
 
 void ASTTimeInterval::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked frame) const

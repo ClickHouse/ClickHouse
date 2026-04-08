@@ -52,7 +52,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool use_variant_default_implementation_for_comparisons;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
+
+FormatSettings getFormatSettings(const ContextPtr & context);
 
 namespace ErrorCodes
 {
@@ -151,7 +155,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -178,27 +182,15 @@ struct NumComparisonImpl
     static void NO_INLINE vectorVector(const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorVectorImplAVX512BW(a, b, c);
+            vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorVectorImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorVectorImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorVectorImplSSE42(a, b, c);
+            vectorVectorImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -207,7 +199,7 @@ struct NumComparisonImpl
     }
 
 
-    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -227,27 +219,15 @@ struct NumComparisonImpl
     static void NO_INLINE vectorConstant(const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
-            vectorConstantImplAVX512BW(a, b, c);
+            vectorConstantImpl_x86_64_v4(a, b, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX512F))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
-            vectorConstantImplAVX512F(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorConstantImplAVX2(a, b, c);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorConstantImplSSE42(a, b, c);
+            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -718,11 +698,17 @@ struct ComparisonParams
 {
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
+    bool use_variant_default_implementation = true;
+    FormatSettings format_settings;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-    {}
+        , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
+        , format_settings(getFormatSettings(context))
+    {
+        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    }
 
     ComparisonParams() = default;
 };
@@ -738,6 +724,7 @@ public:
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
     bool ALWAYS_INLINE  useDefaultImplementationForNulls() const override { return is_null_safe_cmp_mode ? false : true; }
+    bool ALWAYS_INLINE  useDefaultImplementationForVariant() const override { return is_null_safe_cmp_mode ? false : params.use_variant_default_implementation; }
 private:
     const ComparisonParams params;
 
@@ -994,7 +981,7 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
@@ -1039,6 +1026,25 @@ private:
 
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
+        /// comparisons would produce ColumnNothing which doesn't match the declared
+        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
+        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
+        /// and the element-wise null-safe comparison handles Nothing types correctly.
+        if constexpr (!is_null_safe_cmp_mode)
+        {
+            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
+            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
+                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
+                {
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                }
+            }
+        }
 
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
@@ -1310,16 +1316,16 @@ public:
                 has_nothing = has_nothing || isNothing(element_type);
             }
 
-            if (has_nothing)
-                return std::make_shared<DataTypeNothing>();
-
-            // In null-safe cmp mode, return DataTypeUInt8
+            // In null-safe cmp mode, return DataTypeUInt8 (null-safe comparison always produces a definite result)
             if (is_null_safe_cmp_mode)
                 return std::make_shared<DataTypeUInt8>();
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
             if (has_null)
-                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+                return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
             if (has_nullable)
                 return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
         }
@@ -1455,8 +1461,8 @@ public:
         }
         if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // Comparing Date/Date32 and DateTime64 requires implicit conversion,
-            if (date_and_time_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            /// Comparing different date/time types requires implicit conversion to a common type
+            if (date_and_time_datetime)
             {
                 DataTypePtr common_type = getLeastSupertype(DataTypes{left_type, right_type});
                 ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
