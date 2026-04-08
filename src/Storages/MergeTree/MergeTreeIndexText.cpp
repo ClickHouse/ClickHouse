@@ -472,8 +472,10 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
         return;
     }
 
-    auto sparse_index = loadSparseIndex(header_stream, state);
-    if (sparse_index->empty())
+    auto sparse_index_data = loadSparseIndex(header_stream, state);
+    const auto & sparse_index = sparse_index_data->sparse_index;
+
+    if (sparse_index.empty())
     {
         can_use_like_dictionary_scan = true;
         return;
@@ -483,10 +485,10 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(MergeTreeIndexReade
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
-    for (size_t block_idx = 0; block_idx < sparse_index->size(); ++block_idx)
+    for (size_t block_idx = 0; block_idx < sparse_index.size(); ++block_idx)
     {
         /// TODO(ahmadov): Include the byte size of token infos into dictionary block to avoid multi-seek.
-        UInt64 offset_in_file = sparse_index->getOffsetInFile(block_idx);
+        UInt64 offset_in_file = sparse_index.getOffsetInFile(block_idx);
         dictionary_stream.seekToMark({offset_in_file, 0});
         auto * data_buffer = dictionary_stream.getDataBuffer();
 

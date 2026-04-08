@@ -820,13 +820,13 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     size_t old_size = column_data.size();
     column_data.resize_fill(old_size + num_rows, 0);
 
-    if (search_query->tokens.empty())
+    if (search_query->tokens.empty() && search_query->patterns.empty())
         return;
 
-    if (use_lazy_mode)
+    if (use_lazy_mode && search_query->patterns.empty())
     {
-        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
-        const auto & remaining_tokens = granule_text.getRemainingTokens();
+        const auto & granule_text_for_lazy = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
+        const auto & remaining_tokens = granule_text_for_lazy.getRemainingTokens();
 
         /// Build `PostingListCursorMap` for query tokens from immutable handles.
         /// Handles are cached, while per-call cursors own only ephemeral iteration state.
@@ -869,11 +869,14 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
             else if (search_query->search_mode == TextSearchMode::All)
                 lazyIntersectPostingLists(column, cursor_map, search_query->tokens, old_size, row_offset, num_rows, lazy_density_threshold);
         }
+        return;
+    }
+
     if (!search_query->patterns.empty())
     {
-        const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
+        const auto & granule_text_for_patterns = assert_cast<const MergeTreeIndexGranuleText &>(*granule);
         std::vector<String> matched_tokens;
-        for (const auto & token : granule_text.getPatternTokensForTextQuery(*search_query))
+        for (const auto & token : granule_text_for_patterns.getPatternTokensForTextQuery(*search_query))
             if (postings.contains(token))
                 matched_tokens.push_back(String(token));
 
@@ -886,11 +889,7 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
     if (postings.empty())
         return;
 
-    if (search_query->tokens.empty())
-    {
-        return;
-    }
-    else if (search_query->search_mode == TextSearchMode::Any)
+    if (search_query->search_mode == TextSearchMode::Any)
     {
         applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
     }
