@@ -131,6 +131,14 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     return implementation_buffer;
 }
 
+const IObjectStorage & CachedObjectStorage::getObjectStorageWithoutCache() const
+{
+    /// In case of layered cache.
+    if (object_storage->supportsCache())
+        return object_storage->getObjectStorageWithoutCache();
+    return *object_storage;
+}
+
 void CachedObjectStorage::removeCacheIfExists(const std::string & path_key_for_cache)
 {
     if (path_key_for_cache.empty())
