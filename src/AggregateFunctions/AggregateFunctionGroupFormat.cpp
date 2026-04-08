@@ -18,6 +18,8 @@
 #include <Common/assert_cast.h>
 #include <Common/CurrentThread.h>
 
+#include <absl/container/inlined_vector.h>
+
 
 namespace DB
 {
@@ -371,7 +373,7 @@ public:
         if (temp_columns.front()->empty())
             return;
 
-        std::vector<const IColumn *> rebuilt_columns(num_args);
+        absl::InlinedVector<const IColumn *, 5> rebuilt_columns(num_args);
         for (size_t i = 0; i < num_args; ++i)
             rebuilt_columns[i] = temp_columns[i].get();
 
