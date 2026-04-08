@@ -4221,6 +4221,39 @@ def test_system_delta_lake_history_guard_for_large_checkpoint(started_cluster, u
     node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
 
+def test_system_delta_lake_history_large_last_checkpoint_version(started_cluster):
+    """Large _last_checkpoint versions should not be truncated to 32-bit values."""
+    node = get_node(started_cluster, "0")
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_history_large_last_checkpoint")
+    LARGE_CHECKPOINT_VERSION = 4_294_967_296
+    MAX_HISTORY_RECORDS = 1000
+
+    write_delta_from_df(
+        spark,
+        generate_data(spark, 0, 1),
+        f"/{TABLE_NAME}",
+        mode="overwrite",
+    )
+
+    last_checkpoint_path = f"/{TABLE_NAME}/_delta_log/_last_checkpoint"
+    with open(last_checkpoint_path, "w", encoding="utf-8") as f:
+        f.write(f'{{"version":{LARGE_CHECKPOINT_VERSION},"size":1,"parts":1}}\n')
+
+    default_upload_directory(started_cluster, "s3", f"/{TABLE_NAME}", "")
+    create_delta_table(node, "s3", TABLE_NAME, started_cluster)
+
+    error = node.query_and_get_error(
+        f"SELECT count() FROM system.delta_lake_history WHERE table = '{TABLE_NAME}' SETTINGS delta_lake_history_max_records = {MAX_HISTORY_RECORDS}"
+    )
+    assert (
+        "Refusing to materialize Delta Lake history" in error
+        or "Failed to parse `_last_checkpoint`" in error
+    ), f"Expected a history guard or checkpoint parse error, got: {error}"
+
+    node.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+
 @pytest.mark.parametrize("cluster", [False, True])
 def test_partition_columns_3(started_cluster, cluster):
     """Test for bug https://github.com/ClickHouse/ClickHouse/issues/95526
