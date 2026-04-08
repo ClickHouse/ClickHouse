@@ -7,7 +7,7 @@ from ci.praktika.cidb import CIDB
 from ci.praktika.result import Result
 from ci.praktika.s3 import S3
 from ci.praktika.utils import Shell
-from ci.settings.settings import S3_REPORT_BUCKET_NAME
+from ci.praktika.settings import Settings
 
 # Job collects overall CI statistics per each job
 
@@ -196,13 +196,13 @@ if __name__ == "__main__":
             )
             _ = S3.copy_file_to_s3(
                 local_path=archive_name,
-                s3_path=f"{S3_REPORT_BUCKET_NAME}/statistics",
+                s3_path=f"{Settings.S3_REPORT_BUCKET}/statistics",
                 content_type="application/json",
                 content_encoding="gzip",
             )
             statistics_link = S3.copy_file_to_s3(
                 local_path=archive_name_with_date,
-                s3_path=f"{S3_REPORT_BUCKET_NAME}/statistics",
+                s3_path=f"{Settings.S3_REPORT_BUCKET}/statistics",
                 content_type="application/json",
                 content_encoding="gzip",
             )
