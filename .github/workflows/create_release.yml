@@ -68,6 +68,10 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
     runs-on: [self-hosted, release-maker]
+    outputs:
+      release_tag: ${{ steps.export_info.outputs.release_tag }}
+      is_latest: ${{ steps.export_info.outputs.is_latest }}
+      should_build_docker: ${{ steps.export_info.outputs.should_build_docker }}
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -207,148 +211,253 @@ jobs:
         shell: bash
         run: |
           python3 ./tests/ci/artifactory.py --test-debian ${{ inputs.dry-run == true && '--dry-run' || '' }}
-      - name: Docker clickhouse/clickhouse-server building
-        if: ${{ inputs.type == 'patch' && inputs.dry-run != true }}
+      - name: Export release info for downstream jobs
+        id: export_info
         shell: bash
         run: |
-          cd "./tests/ci"
-          python3 ./create_release.py --set-progress-started --progress "docker server release"
-          export DOCKER_IMAGE="clickhouse/clickhouse-server"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "is_latest=${IS_LATEST}" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.type }}" == "patch" ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+            echo "should_build_docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build_docker=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload release info
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-info
+          path: /tmp/release_info.json
 
-          # We must use docker file from the release commit
-          git checkout "${{ env.RELEASE_TAG }}"
+  DockerBuild:
+    needs: CreateRelease
+    if: ${{ needs.CreateRelease.outputs.should_build_docker == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: '["self-hosted", "release-maker"]'
+            arch: amd64
+          - platform: linux/arm64
+            runner: '["self-hosted", "style-checker-aarch64"]'
+            arch: arm64
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    env:
+      GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          fetch-depth: 0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Prepare version info
+        id: version
+        env:
+          RELEASE_TAG: ${{ needs.CreateRelease.outputs.release_tag }}
+        shell: bash
+        run: |
+          git checkout "$RELEASE_TAG"
+          cd tests/ci
           python3 ./version_helper.py --export > /tmp/version.sh
           . /tmp/version.sh
-
-          if [[ $CLICKHOUSE_VERSION_STRING =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ClickHouse version: $CLICKHOUSE_VERSION_STRING"
-          else
+          if [[ ! $CLICKHOUSE_VERSION_STRING =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Invalid version string: $CLICKHOUSE_VERSION_STRING"
             exit 1
           fi
-          CLICKHOUSE_VERSION_MINOR=${CLICKHOUSE_VERSION_STRING%.*}
-          CLICKHOUSE_VERSION_MAJOR=${CLICKHOUSE_VERSION_MINOR%.*}
-
-          # Define build configurations
+          echo "version=$CLICKHOUSE_VERSION_STRING" >> "$GITHUB_OUTPUT"
+      - name: Build and push clickhouse-server images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          DOCKER_IMAGE="clickhouse/clickhouse-server"
           configs=(
-            "ubuntu:../../docker/server/Dockerfile.ubuntu"
-            "alpine:../../docker/server/Dockerfile.alpine"
-            "distroless:../../docker/server/Dockerfile.distroless"
+            "ubuntu:docker/server/Dockerfile.ubuntu"
+            "alpine:docker/server/Dockerfile.alpine"
+            "distroless:docker/server/Dockerfile.distroless"
           )
-
           for config in "${configs[@]}"; do
-            # Split the config into variant and Dockerfile path
             variant=${config%%:*}
             dockerfile=${config##*:}
-
             if [ ! -f "$dockerfile" ]; then
               echo "Skipping $variant: $dockerfile not found at this tag"
               continue
             fi
-
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
-            LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
-            TAGS=(
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
-            )
-
-            if [ "$IS_LATEST" = "1" ]; then
-              TAGS+=("--tag=${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
-            fi
-
-            echo "Following tags will be created: ${TAGS[*]}"
-
-            # shellcheck disable=SC2086,SC2048
+            TEMP_TAG="${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}-${{ matrix.arch }}"
+            echo "Building $variant for ${{ matrix.platform }} -> $TEMP_TAG"
             docker buildx build \
-              --platform=linux/amd64,linux/arm64 \
-              --provenance=true  \
+              --platform=${{ matrix.platform }} \
+              --provenance=true \
               --sbom=true \
               --output=type=registry \
-              --label=com.clickhouse.build.version="$LABEL_VERSION" \
-              ${TAGS[*]} \
-              --build-arg=VERSION="$CLICKHOUSE_VERSION_STRING" \
+              --label=com.clickhouse.build.version="${VERSION}${VERSION_SUFFIX}" \
+              --tag="$TEMP_TAG" \
+              --build-arg=VERSION="$VERSION" \
               --progress=plain \
               --file="$dockerfile" \
-              ../../docker/server
+              docker/server
           done
-
-          git checkout -
-          python3 ./create_release.py --set-progress-completed
-      - name: Docker clickhouse/clickhouse-keeper building
-        if: ${{ inputs.type == 'patch' && inputs.dry-run != true }}
+      - name: Build and push clickhouse-keeper images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
-          cd "./tests/ci"
-          python3 ./create_release.py --set-progress-started --progress "docker keeper release"
-          
-          export DOCKER_IMAGE="clickhouse/clickhouse-keeper"
-
-          # We must use docker file from the release commit
-          git checkout "${{ env.RELEASE_TAG }}"
-          python3 ./version_helper.py --export > /tmp/version.sh
-          . /tmp/version.sh
-
-          if [[ $CLICKHOUSE_VERSION_STRING =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ClickHouse version: $CLICKHOUSE_VERSION_STRING"
-          else
-            echo "Invalid version string: $CLICKHOUSE_VERSION_STRING"
-            exit 1
-          fi
-          CLICKHOUSE_VERSION_MINOR=${CLICKHOUSE_VERSION_STRING%.*}
-          CLICKHOUSE_VERSION_MAJOR=${CLICKHOUSE_VERSION_MINOR%.*}
-
-          # Define build configurations
+          DOCKER_IMAGE="clickhouse/clickhouse-keeper"
           configs=(
-            "ubuntu:../../docker/keeper/Dockerfile.ubuntu"
-            "alpine:../../docker/keeper/Dockerfile.alpine"
-            "distroless:../../docker/keeper/Dockerfile.distroless"
+            "ubuntu:docker/keeper/Dockerfile.ubuntu"
+            "alpine:docker/keeper/Dockerfile.alpine"
+            "distroless:docker/keeper/Dockerfile.distroless"
           )
-
           for config in "${configs[@]}"; do
-            # Split the config into variant and Dockerfile path
             variant=${config%%:*}
             dockerfile=${config##*:}
-
             if [ ! -f "$dockerfile" ]; then
               echo "Skipping $variant: $dockerfile not found at this tag"
               continue
             fi
-
             VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
-            LABEL_VERSION="${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
-            TAGS=(
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_STRING}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MINOR}${VERSION_SUFFIX}"
-              "--tag=${DOCKER_IMAGE}:${CLICKHOUSE_VERSION_MAJOR}${VERSION_SUFFIX}"
-            )
-
-            if [ "$IS_LATEST" = "1" ]; then
-              TAGS+=("--tag=${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
-            fi
-
-            echo "Following tags will be created: ${TAGS[*]}"
-
-            # shellcheck disable=SC2086,SC2048
+            TEMP_TAG="${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}-${{ matrix.arch }}"
+            echo "Building $variant for ${{ matrix.platform }} -> $TEMP_TAG"
             docker buildx build \
-              --platform=linux/amd64,linux/arm64 \
-              --provenance=true  \
+              --platform=${{ matrix.platform }} \
+              --provenance=true \
               --sbom=true \
               --output=type=registry \
-              --label=com.clickhoghuse.build.version="$LABEL_VERSION" \
-              ${TAGS[*]} \
-              --build-arg=VERSION="$CLICKHOUSE_VERSION_STRING" \
+              --label=com.clickhouse.build.version="${VERSION}${VERSION_SUFFIX}" \
+              --tag="$TEMP_TAG" \
+              --build-arg=VERSION="$VERSION" \
               --progress=plain \
               --file="$dockerfile" \
-              ../../docker/keeper
+              docker/keeper
           done
 
-          git checkout -
-          python3 ./create_release.py --set-progress-completed
-      # check out back if previous steps failed
+  DockerManifest:
+    needs: [CreateRelease, DockerBuild]
+    runs-on: [self-hosted, release-maker]
+    env:
+      GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          fetch-depth: 0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Prepare version info
+        id: version
+        env:
+          RELEASE_TAG: ${{ needs.CreateRelease.outputs.release_tag }}
+        shell: bash
+        run: |
+          git checkout "$RELEASE_TAG"
+          cd tests/ci
+          python3 ./version_helper.py --export > /tmp/version.sh
+          . /tmp/version.sh
+          CLICKHOUSE_VERSION_MINOR="${CLICKHOUSE_VERSION_STRING%.*}"
+          CLICKHOUSE_VERSION_MAJOR="${CLICKHOUSE_VERSION_MINOR%.*}"
+          echo "version=$CLICKHOUSE_VERSION_STRING" >> "$GITHUB_OUTPUT"
+          echo "version_minor=$CLICKHOUSE_VERSION_MINOR" >> "$GITHUB_OUTPUT"
+          echo "version_major=$CLICKHOUSE_VERSION_MAJOR" >> "$GITHUB_OUTPUT"
+      - name: Create multi-arch manifests for clickhouse-server
+        env:
+          IS_LATEST: ${{ needs.CreateRelease.outputs.is_latest }}
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_MINOR: ${{ steps.version.outputs.version_minor }}
+          VERSION_MAJOR: ${{ steps.version.outputs.version_major }}
+        shell: bash
+        run: |
+          DOCKER_IMAGE="clickhouse/clickhouse-server"
+          for variant in ubuntu alpine distroless; do
+            VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
+            SRC_AMD64="${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}-amd64"
+            SRC_ARM64="${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}-arm64"
+
+            # Skip if platform images were not built (e.g., Dockerfile missing at this tag)
+            if ! docker buildx imagetools inspect "$SRC_AMD64" > /dev/null 2>&1; then
+              echo "Skipping $variant manifest: $SRC_AMD64 not found"
+              continue
+            fi
+            if ! docker buildx imagetools inspect "$SRC_ARM64" > /dev/null 2>&1; then
+              echo "Skipping $variant manifest: $SRC_ARM64 not found"
+              continue
+            fi
+
+            TAGS=(
+              "--tag" "${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}"
+              "--tag" "${DOCKER_IMAGE}:${VERSION_MINOR}${VERSION_SUFFIX}"
+              "--tag" "${DOCKER_IMAGE}:${VERSION_MAJOR}${VERSION_SUFFIX}"
+            )
+            if [ "$IS_LATEST" = "1" ]; then
+              TAGS+=("--tag" "${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
+            fi
+
+            echo "Creating manifest for $variant: ${TAGS[*]}"
+            docker buildx imagetools create \
+              "${TAGS[@]}" \
+              "$SRC_AMD64" \
+              "$SRC_ARM64"
+          done
+      - name: Create multi-arch manifests for clickhouse-keeper
+        env:
+          IS_LATEST: ${{ needs.CreateRelease.outputs.is_latest }}
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_MINOR: ${{ steps.version.outputs.version_minor }}
+          VERSION_MAJOR: ${{ steps.version.outputs.version_major }}
+        shell: bash
+        run: |
+          DOCKER_IMAGE="clickhouse/clickhouse-keeper"
+          for variant in ubuntu alpine distroless; do
+            VERSION_SUFFIX=$([ "$variant" = "ubuntu" ] && echo "" || echo "-$variant")
+            SRC_AMD64="${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}-amd64"
+            SRC_ARM64="${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}-arm64"
+
+            if ! docker buildx imagetools inspect "$SRC_AMD64" > /dev/null 2>&1; then
+              echo "Skipping $variant manifest: $SRC_AMD64 not found"
+              continue
+            fi
+            if ! docker buildx imagetools inspect "$SRC_ARM64" > /dev/null 2>&1; then
+              echo "Skipping $variant manifest: $SRC_ARM64 not found"
+              continue
+            fi
+
+            TAGS=(
+              "--tag" "${DOCKER_IMAGE}:${VERSION}${VERSION_SUFFIX}"
+              "--tag" "${DOCKER_IMAGE}:${VERSION_MINOR}${VERSION_SUFFIX}"
+              "--tag" "${DOCKER_IMAGE}:${VERSION_MAJOR}${VERSION_SUFFIX}"
+            )
+            if [ "$IS_LATEST" = "1" ]; then
+              TAGS+=("--tag" "${DOCKER_IMAGE}:latest${VERSION_SUFFIX}")
+            fi
+
+            echo "Creating manifest for $variant: ${TAGS[*]}"
+            docker buildx imagetools create \
+              "${TAGS[@]}" \
+              "$SRC_AMD64" \
+              "$SRC_ARM64"
+          done
+
+  Finalize:
+    needs: [CreateRelease, DockerManifest]
+    if: ${{ !cancelled() }}
+    runs-on: [self-hosted, release-maker]
+    env:
+      GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+    steps:
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          fetch-depth: 0
+      - name: Download release info
+        uses: actions/download-artifact@v4
+        with:
+          name: release-info
+          path: /tmp/
       - name: Checkout back
-        if: ${{ ! cancelled() }}
         shell: bash
         run: |
           git checkout ${{ github.ref }}
