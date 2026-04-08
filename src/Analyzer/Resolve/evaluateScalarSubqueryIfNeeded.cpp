@@ -145,6 +145,13 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
 
+        /// Scalar subqueries may reference materialized CTEs that haven't been populated yet.
+        /// Force CTE materialization in the sub-plan so that the pipeline execution
+        /// populates the CTE StorageMemory tables before the scalar subquery reads from them.
+        /// This is analogous to addBuildSubqueriesForSetsStepIfNeeded using forceMaterializeCTE()
+        /// for set subqueries that reference CTEs.
+        options.forceMaterializeCTE();
+
         QueryTreePassManager query_tree_pass_manager(subquery_context);
         addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
         query_tree_pass_manager.run(query_tree);
