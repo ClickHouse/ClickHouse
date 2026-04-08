@@ -1,5 +1,6 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
 
 #include <base/scope_guard.h>
@@ -47,6 +48,7 @@
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -57,6 +59,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/SystemLogDefaultFlushPolicy.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -88,63 +91,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ActionLocks
 {
     extern const StorageActionBlockType PartsMerge;
-}
-
-namespace
-{
-    class StorageWithComment : public IAST
-    {
-    public:
-        ASTPtr storage;
-        ASTPtr comment;
-
-        String getID(char) const override { return "Storage with comment definition"; }
-
-        ASTPtr clone() const override
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
-        }
-
-    protected:
-        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
-        {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
-        }
-    };
-
-    class ParserStorageWithComment : public IParserBase
-    {
-    protected:
-        const char * getName() const override { return "storage definition with comment"; }
-        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
-        {
-            ParserStorage storage_p{ParserStorage::TABLE_ENGINE};
-            ASTPtr storage;
-
-            if (!storage_p.parse(pos, storage, expected))
-                return false;
-
-            ParserKeyword s_comment(Keyword::COMMENT);
-            ParserStringLiteral string_literal_parser;
-            ASTPtr comment;
-
-            if (s_comment.ignore(pos, expected))
-                string_literal_parser.parse(pos, comment, expected);
-
-            auto storage_with_comment = make_intrusive<StorageWithComment>();
-            storage_with_comment->storage = std::move(storage);
-            storage_with_comment->comment = std::move(comment);
-
-            node = storage_with_comment;
-            return true;
-        }
-    };
 }
 
 namespace
@@ -478,6 +429,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -520,6 +473,8 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
+            if (should_prepare_tables_anyway)
+                log->setManualFlushTargetIndex(last_log_index);
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
@@ -563,9 +518,36 @@ void SystemLogs::shutdown()
 
 void SystemLogs::handleCrash()
 {
+    /// Flush crash_log first since it's the most important log during a crash.
+    /// Other logs with flush_on_crash (e.g. query_log) can consume significant
+    /// time budget from the signal handler's 303-second timeout, potentially
+    /// preventing crash_log from being flushed if stack symbolization was slow.
+    /// Use try/catch so that a timeout in one log does not prevent flushing others.
+    if (crash_log)
+    {
+        try
+        {
+            crash_log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
     auto logs = getAllLogs();
     for (auto & log : logs)
-        log->handleCrash();
+    {
+        try
+        {
+            if (log != crash_log.get())
+                log->handleCrash();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 template <typename LogElement>
@@ -578,8 +560,9 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
+    , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>())
 {
+    create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
 
@@ -632,12 +615,14 @@ void SystemLog<LogElement>::savingThreadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end)
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemLog::flushImpl");
     Stopwatch stopwatch;
     UInt64 prepare_table_time = 0;
     UInt64 prepare_insert_data_to_block = 0;
     UInt64 execute_insert_time = 0;
     UInt64 confirm_time = 0;
     size_t flush_size = to_flush.size();
+    bool is_manual_flush = flush_policy->isManualFlush(to_flush_end);
 
     try
     {
@@ -703,11 +688,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         executor.start();
         executor.push(block);
         executor.finish();
+
+        flush_policy->afterFlush(io, is_manual_flush, flush_size);
         execute_insert_time = stopwatch.elapsedMilliseconds();
         stopwatch.restart();
     }
     catch (...)
     {
+        if (is_manual_flush)
+            flush_policy->cancelManualFlush();
         ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
@@ -740,6 +729,7 @@ StoragePtr SystemLog<LogElement>::getStorage() const
 template <typename LogElement>
 void SystemLog<LogElement>::prepareTable()
 {
+    auto component_guard = Coordination::setCurrentComponent("SystemLog::prepareTable");
     String description = table_id.getNameForLogs();
 
     auto table = getStorage();
@@ -832,6 +822,7 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
     {
         /// We always want to deliver the data to the original table regardless of the MVs
         mutable_context->setSetting("materialized_views_ignore_errors", true);
+        flush_policy->addInsertSettings(mutable_context);
     }
     else if (query_kind == IAST::QueryKind::Rename)
     {
@@ -852,11 +843,12 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    ordinary_columns.setAliases(alias_columns);
+    /// S3-backed engines do not support alias columns; `shouldSkipAliasColumns` returns
+    /// `true` for `SharedSystemLogFlushPolicy` and `false` for `DefaultSystemLogFlushPolicy`.
+    if (!flush_policy->shouldSkipAliasColumns())
+        ordinary_columns.setAliases(alias_columns);
 
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
-
-    create->set(create->columns_list, new_columns_list);
 
     ParserStorageWithComment storage_parser;
 
@@ -869,9 +861,40 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     create->set(create->storage, storage_with_comment.storage);
     create->set(create->comment, storage_with_comment.comment);
 
+    const auto & engine = create->storage->engine->as<ASTFunction &>();
+
+    /// Add secondary indexes (minmax on time columns) for MergeTree engines only,
+    /// since other engines (e.g. Null) do not support skipping indices.
+    if (endsWith(engine.name, "MergeTree"))
+    {
+        auto indices = make_intrusive<ASTExpressionList>();
+
+        auto add_index = [&](const char * definition)
+        {
+            ParserIndexDeclaration parser;
+            ASTPtr ast = parseQuery(parser, definition, definition + strlen(definition),
+                "index declaration for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            indices->children.push_back(ast);
+        };
+
+        if (ordinary_columns.has("event_time"))
+            add_index("event_time_index event_time TYPE minmax GRANULARITY 1");
+        if (ordinary_columns.has("event_time_microseconds"))
+            add_index("event_time_microseconds_index event_time_microseconds TYPE minmax GRANULARITY 1");
+
+        if (ordinary_columns.has("query_id"))
+            add_index("query_id_index query_id TYPE bloom_filter(0.001) GRANULARITY 1");
+        if (ordinary_columns.has("initial_query_id"))
+            add_index("initial_query_id_index initial_query_id TYPE bloom_filter(0.001) GRANULARITY 1");
+
+        if (!indices->children.empty())
+            new_columns_list->set(new_columns_list->indices, indices);
+    }
+
+    create->set(create->columns_list, new_columns_list);
+
     /// Write additional (default) settings for MergeTree engine to make it make it possible to compare ASTs
     /// and recreate tables on settings changes.
-    const auto & engine = create->storage->engine->as<ASTFunction &>();
     if (endsWith(engine.name, "MergeTree"))
     {
         auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());

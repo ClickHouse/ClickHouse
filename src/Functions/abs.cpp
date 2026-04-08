@@ -78,10 +78,17 @@ struct FunctionUnaryArithmeticMonotonicity<NameAbs>
     static bool has() { return true; }
     static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
-        Float64 left_float
-            = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
-        Float64 right_float
-            = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+        /// abs(NULL) = NULL stays at the bottom of the sort order instead of
+        /// following the numeric pattern, breaking monotonicity claims.
+        if (left.isNull() || right.isNull())
+            return {};
+
+        Float64 left_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+
+        /// NaN breaks monotonicity logic (NaN comparisons are always false).
+        if (std::isnan(left_float) || std::isnan(right_float))
+            return {};
 
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
@@ -102,8 +109,8 @@ REGISTER_FUNCTION(Abs)
     FunctionDocumentation::ReturnedValue returned_value = {"The absolute value of `x`"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT abs(-0.5)", "0.5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
+    FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionAbs>(documentation, FunctionFactory::Case::Insensitive);
 }

@@ -215,7 +215,7 @@ def _post_dm(user_id: str, user_email: str, s3_path: str, text: str) -> None:
         print(f"chat.postMessage error: {e}")
 
 
-def format_event_text(event, pr_status, indent="", include_related_prs: bool = True):
+def format_event_text(event, pr_status, indent=""):
     """Format event text with optional indentation for linked events."""
     # PR status emoji
     pr_status_emoji = ":pr_open:" if pr_status == "open" else ":pr_merged:"
@@ -331,35 +331,6 @@ def format_event_text(event, pr_status, indent="", include_related_prs: bool = T
         elif report_url_text:
             event_text += f"\n{indent}{report_url_text}"
 
-        # Add related PRs if available (only for parent events)
-        if include_related_prs and not indent:
-            related_prs = event.ext.get("related_prs", [])
-            if related_prs:
-                event_text += "\n\n*Related PRs:*"
-                for pr_num in related_prs:
-                    pr_info = {}
-                    if hasattr(event, "result") and event.result:
-                        result_ext = event.result.get("ext", {})
-                        related_pr_info = result_ext.get("related_pr_info", {})
-                        pr_info = related_pr_info.get(pr_num, {})
-
-                    pr_title = pr_info.get("pr_title", "")
-                    pr_change_url = pr_info.get("change_url", "")
-                    pr_report_url = pr_info.get("report_url", "")
-
-                    if pr_change_url:
-                        pr_link_text = f"<{pr_change_url}|#{pr_num}>"
-                    else:
-                        pr_link_text = f"#{pr_num}"
-
-                    pr_line = f"\n  • {pr_link_text}"
-                    if pr_title:
-                        pr_line += f" - {pr_title}"
-                    if pr_report_url:
-                        pr_line += f" (<{pr_report_url}|report>)"
-
-                    event_text += pr_line
-
     return event_text
 
 
@@ -369,7 +340,7 @@ def _format_notification_text(event, notify_type: str) -> str:
     ext = getattr(event, "ext", {}) or {}
     pr_status = (ext.get("pr_status") or "").lower()
 
-    base = format_event_text(event, pr_status, indent="", include_related_prs=False)
+    base = format_event_text(event, pr_status, indent="")
 
     failed_names = []
     result = getattr(event, "result", None)
@@ -660,7 +631,6 @@ def publish_home_view(
 
     # Add footer with divider
     if github_login:
-        blocks.append({"type": "divider"})
         blocks.append(
             {
                 "type": "section",
@@ -670,6 +640,28 @@ def publish_home_view(
                 },
             }
         )
+
+    # Slack home views are limited to 100 blocks total.
+    # Truncate before the limit, leaving room for a notice block.
+    SLACK_BLOCK_LIMIT = 100
+    if len(blocks) > SLACK_BLOCK_LIMIT:
+        blocks = blocks[: SLACK_BLOCK_LIMIT - 1]
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "_Some events were truncated (view limit reached)._",
+                },
+            }
+        )
+
+    # Slack section text is capped at 3000 characters.
+    for block in blocks:
+        if block.get("type") == "section":
+            txt = block.get("text", {})
+            if isinstance(txt, dict) and len(txt.get("text", "")) > 3000:
+                txt["text"] = txt["text"][:2997] + "…"
 
     view_data = {
         "user_id": user_id,
@@ -709,6 +701,11 @@ def lambda_handler(event, context):
 
     Note: 'github_login' parameter now contains user email addresses for email-based subscriptions.
     """
+    # Clear the per-container cache at the start of every invocation so that
+    # preference changes saved to S3 by a previous invocation (e.g. toggle_pref)
+    # are always reflected in subsequent invocations running in the same container.
+    SUBSCRIPTION_CACHE.clear()
+
     print(f"Worker Lambda invoked with event: {json.dumps(event)}")
 
     action = event.get("action", "")

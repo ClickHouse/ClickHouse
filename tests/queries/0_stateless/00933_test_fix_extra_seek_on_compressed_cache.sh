@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-random-merge-tree-settings
-# add_minmax_index_for_numeric_columns=0: Changes teh number of files and bytes read
+# add_minmax_index_for_numeric_columns=0: Changes the number of files and bytes read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT --query="
     WHERE query_id = 'test-query-uncompressed-cache'
         AND current_database = currentDatabase()
         AND type = 2
-        AND event_date >= yesterday()
+        AND event_date >= yesterday() AND event_time >= now() - 600
     ORDER BY event_time DESC
     LIMIT 1"
 

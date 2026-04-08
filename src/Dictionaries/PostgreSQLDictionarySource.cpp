@@ -39,7 +39,7 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority", "sslmode"};
 
 #if USE_LIBPQXX
 
@@ -109,7 +109,7 @@ BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
     return io;
 }
 
-BlockIO PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO PostgreSQLDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
     BlockIO io;
@@ -118,7 +118,7 @@ BlockIO PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 }
 
 
-BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     BlockIO io;

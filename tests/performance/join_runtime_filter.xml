@@ -104,6 +104,23 @@
         SETTINGS enable_join_runtime_filters=1
     </query>
 
+    <!-- 91 million elements in filter  -->
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN customer
+        ON c_custkey = o_custkey
+        SETTINGS enable_join_runtime_filters=0
+    </query>
+
+    <query>
+        SELECT avg(o_totalprice)
+        FROM orders
+        JOIN customer
+        ON c_custkey = o_custkey
+        SETTINGS enable_join_runtime_filters=1
+    </query>
+
     <drop_query>DROP TABLE orders</drop_query>
     <drop_query>DROP TABLE customer</drop_query>
     <drop_query>DROP TABLE nation</drop_query>

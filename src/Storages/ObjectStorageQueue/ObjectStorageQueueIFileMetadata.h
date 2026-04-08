@@ -20,6 +20,8 @@ class ObjectStorageQueueIFileMetadata
 public:
     struct FileStatus
     {
+        explicit FileStatus(const std::string & path_) : path(path_) {}
+
         enum class State : uint8_t
         {
             Processing,
@@ -41,6 +43,7 @@ public:
 
         std::mutex processing_lock;
 
+        const std::string path;
         std::atomic<State> state = State::None;
         std::atomic<size_t> processed_rows = 0;
         std::atomic<time_t> processing_start_time = 0;
@@ -160,10 +163,17 @@ public:
     void finalizeProcessed();
     /// Do some work after prepared requests to set file as Failed succeeded.
     void finalizeFailed(const std::string & exception_message);
+    /// Do some work after prepared requests reset processing without marking as failed.
+    void finalizeResetProcessing();
+    /// Whether prepareFailedRequests just reset processing
+    /// without actually marking the file as failed.
+    bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
     void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
+
+    void setUncertainCommit() { uncertain_commit = true; }
 
     /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
@@ -205,6 +215,14 @@ protected:
 
     /// Whether processing node was created by us.
     bool created_processing_node = false;
+    /// Set when a commit failed after a ZooKeeper retry (possible "failed after operation"):
+    /// the multi-op may have succeeded in ZK but the connection was lost before we received
+    /// the response. In this case the destructor must check ownership before removing the
+    /// processing node rather than asserting it.
+    bool uncertain_commit = false;
+    /// Whether prepareFailedRequests just reset processing without actually
+    /// marking the file as failed (when reduce_retry_count was false).
+    bool processing_reset_without_failure = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;

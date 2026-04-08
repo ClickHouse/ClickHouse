@@ -147,6 +147,7 @@ private:
     void initialize();
     void setUser(const UserPtr & user_) const TSA_REQUIRES(mutex);
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const TSA_REQUIRES(mutex);
+    void findRowPoliciesOfInitialUser() const TSA_REQUIRES(mutex);
     void calculateAccessRights() const TSA_REQUIRES(mutex);
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
@@ -200,6 +201,7 @@ private:
     mutable UserPtr user TSA_GUARDED_BY(mutex);
     mutable String user_name TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_user_change TSA_GUARDED_BY(mutex);
+    mutable scope_guard subscription_for_initial_user_change TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRoles> enabled_roles TSA_GUARDED_BY(mutex);
     mutable scope_guard subscription_for_roles_changes TSA_GUARDED_BY(mutex);
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info TSA_GUARDED_BY(mutex);

@@ -1,6 +1,6 @@
 #pragma once
 #include <Interpreters/Cache/IFileCachePriority.h>
-#include <Interpreters/Cache/UserInfo.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <boost/noncopyable.hpp>
 
 namespace DB
@@ -27,9 +27,9 @@ struct CacheUsageStatGuard : private boost::noncopyable
 /// From each user cache is evicted according to LRU/SLRU eviction policies.
 struct CacheUsage
 {
-    CacheUsage(const FileCacheUserInfo & user_, FileCachePriorityPtr priority_);
+    CacheUsage(const FileCacheOriginInfo & origin_info_, FileCachePriorityPtr priority_);
 
-    const FileCacheUserInfo user;
+    const FileCacheOriginInfo origin_info;
     /// A user priority, contains only entries which belong to `user`
     /// by corresponding eviction strategy priority.
     const FileCachePriorityPtr priority{};

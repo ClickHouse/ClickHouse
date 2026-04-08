@@ -5,11 +5,12 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
-#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/defines.h>
 #include <Interpreters/QueryFlags.h>
 #include <Parsers/SyncReplicaMode.h>
+#include <QueryPipeline/BlockIO.h>
+#include <base/defines.h>
+#include <Common/ZooKeeper/IKeeper.h>
 
 
 namespace zkutil
@@ -88,9 +89,27 @@ public:
 
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
-    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags) override;
+    BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context, QueryFlags flags, DDLGuardPtr && database_guard) override;
 
     bool canExecuteReplicatedMetadataAlter() const override;
+
+    /// RAII guard to suppress digest checks during SYSTEM RESTART REPLICA.
+    /// The table is temporarily removed from the in-memory tables map during restart,
+    /// making it inconsistent with tables_metadata_digest (which remains correct).
+    struct RestartReplicaGuard
+    {
+        explicit RestartReplicaGuard(DatabaseReplicated & db_) : db(db_) { db.tables_being_restarted.fetch_add(1); }
+        ~RestartReplicaGuard() { db.tables_being_restarted.fetch_sub(1); }
+        RestartReplicaGuard(const RestartReplicaGuard &) = delete;
+        RestartReplicaGuard & operator=(const RestartReplicaGuard &) = delete;
+    private:
+        DatabaseReplicated & db;
+    };
+
+    /// Called when SYSTEM RESTART REPLICA fails after detaching a table.
+    /// Adjusts tables_metadata_digest to account for the table being absent
+    /// from the in-memory tables map, preventing false "Digest does not match" assertions.
+    void adjustDigestOnTableLostFromRestart(const String & table_name);
 
     bool hasReplicationThread() const override { return true; }
 
@@ -133,7 +152,7 @@ public:
         const String & replica,
         bool throw_if_noop);
 
-    void restoreDatabaseMetadataInKeeper(ContextPtr ctx);
+    void restoreDatabaseInKeeper(ContextPtr ctx);
 
     ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
 
@@ -155,6 +174,8 @@ protected:
 
 private:
     void tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode);
+    void initDatabaseReplica(const ZooKeeperPtr & current_zookeeper, LoadingStrictnessLevel mode);
+    Coordination::Requests buildDatabaseNodesInZooKeeper();
     bool createDatabaseNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
     static bool looksLikeReplicatedDatabasePath(const ZooKeeperPtr & current_zookeeper, const String & path);
     void createReplicaNodesInZooKeeper(const ZooKeeperPtr & current_zookeeper);
@@ -169,7 +190,7 @@ private:
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
-    void fillClusterAuthInfo(String collection_name, const Poco::Util::AbstractConfiguration & config);
+    void fillClusterAuthInfo(String collection_name);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
@@ -215,12 +236,16 @@ private:
 
     void initDDLWorkerUnlocked() TSA_REQUIRES(ddl_worker_mutex);
 
-    void restoreTablesMetadataInKeeper();
-
+    void restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zookeeper);
     void reinitializeDDLWorker();
 
-    BlockIO
-    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
+    static BlockIO getQueryStatus(
+        const String & zookeeper_name,
+        const String & node_path,
+        const String & replicas_path,
+        ContextPtr context,
+        const Strings & hosts_to_wait,
+        DDLGuardPtr && database_guard);
 
     const String zookeeper_name;
     const String zookeeper_path;
@@ -249,6 +274,12 @@ private:
     /// We calculate this sum from local metadata files and compare it will value in ZooKeeper.
     /// It allows to detect if metadata is broken and recover replica.
     UInt64 tables_metadata_digest TSA_GUARDED_BY(metadata_mutex);
+
+    /// Counter for tables currently being restarted by SYSTEM RESTART REPLICA.
+    /// During restart, the table is temporarily removed from the in-memory tables map,
+    /// making it inconsistent with tables_metadata_digest. We skip digest checks
+    /// while any restart is in progress to avoid false LOGICAL_ERROR exceptions in debug builds.
+    std::atomic<int> tables_being_restarted{0};
 
     mutable ClusterPtr cluster;
     mutable ClusterPtr cluster_all_groups;

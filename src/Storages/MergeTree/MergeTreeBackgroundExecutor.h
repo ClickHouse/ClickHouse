@@ -39,7 +39,8 @@ enum class ThreadName : uint8_t;
 struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_, TaskProfileEvents events_)
-        : task(std::move(task_))
+        : storage_id(task_->getStorageID())
+        , task(std::move(task_))
         , metric(metric_)
         , events(events_)
     {
@@ -81,6 +82,9 @@ struct TaskRuntimeData
             task.reset();
     }
 
+    /// Cached at construction — valid even after resetTask() nulls the task pointer.
+    /// Used by removeTasksCorrespondingToStorage to identify items during destruction.
+    StorageID storage_id;
     ExecutableTaskPtr task;
     CurrentMetrics::Metric metric;
     TaskProfileEvents events;

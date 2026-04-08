@@ -4,6 +4,9 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <Common/JSONBuilder.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
 
@@ -463,6 +466,19 @@ public:
      */
     void pointwiseAddInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-addition requires a deep copy because the full adder logic below
+        /// performs in-place XOR on shared bitmaps (`sum->rb_xor(*addend)` where
+        /// `sum` and `addend` alias the same Roaring bitmap via `shallowCopyFrom`),
+        /// which triggers an assertion in CRoaring (`assert(x1 != x2)`) and would
+        /// produce incorrect results (A XOR A = 0) in release builds.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseAddInplace(copy);
+            return;
+        }
+
         if (isEmpty())
         {
             deepCopyFrom(rhs);
@@ -539,6 +555,16 @@ public:
      */
     void pointwiseSubtractInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-subtraction requires a deep copy for the same reason as
+        /// `pointwiseAddInplace`: in-place XOR on aliased bitmaps is undefined.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseSubtractInplace(copy);
+            return;
+        }
+
         auto total_indexes = getAllIndex();
         total_indexes->rb_or(*rhs.getAllIndex());
 

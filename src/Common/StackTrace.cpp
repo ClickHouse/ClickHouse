@@ -66,134 +66,215 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-static std::string SigsegvErrorString(const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
-{
-    using namespace std::string_literals;
-    std::string address
-        = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
-
-    const std::string_view access =
-#if defined(__arm__)
-        "<not available on ARM>";
-#elif defined(__powerpc__)
-        "<not available on PowerPC>";
-#elif defined(OS_DARWIN)
-        "<not available on Darwin>";
-#elif defined(OS_FREEBSD)
-        "<not available on FreeBSD>";
-#elif !defined(__x86_64__)
-        "<not available>";
-#else
-        (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
-#endif
-
-    std::string_view message;
-
-    switch (info.si_code)
-    {
-        case SEGV_ACCERR:
-            message = "Attempted access has violated the permissions assigned to the memory area";
-            break;
-        case SEGV_MAPERR:
-            message = "Address not mapped to object";
-            break;
-        default:
-            message = "Unknown si_code";
-            break;
-    }
-
-    return fmt::format("Address: {}. Access: {}. {}.", std::move(address), access, message);
-}
-
-static constexpr std::string_view SigbusErrorString(int si_code)
-{
-    switch (si_code)
-    {
-        case BUS_ADRALN:
-            return "Invalid address alignment.";
-        case BUS_ADRERR:
-            return "Non-existent physical address.";
-        case BUS_OBJERR:
-            return "Object specific hardware error.";
-
-            // Linux specific
-#if defined(BUS_MCEERR_AR)
-        case BUS_MCEERR_AR:
-            return "Hardware memory error: action required.";
-#endif
-#if defined(BUS_MCEERR_AO)
-        case BUS_MCEERR_AO:
-            return "Hardware memory error: action optional.";
-#endif
-        default:
-            return "Unknown si_code.";
-    }
-}
-
-static constexpr std::string_view SigfpeErrorString(int si_code)
-{
-    switch (si_code)
-    {
-        case FPE_INTDIV:
-            return "Integer divide by zero.";
-        case FPE_INTOVF:
-            return "Integer overflow.";
-        case FPE_FLTDIV:
-            return "Floating point divide by zero.";
-        case FPE_FLTOVF:
-            return "Floating point overflow.";
-        case FPE_FLTUND:
-            return "Floating point underflow.";
-        case FPE_FLTRES:
-            return "Floating point inexact result.";
-        case FPE_FLTINV:
-            return "Floating point invalid operation.";
-        case FPE_FLTSUB:
-            return "Subscript out of range.";
-        default:
-            return "Unknown si_code.";
-    }
-}
-
-static constexpr std::string_view SigillErrorString(int si_code)
-{
-    switch (si_code)
-    {
-        case ILL_ILLOPC:
-            return "Illegal opcode.";
-        case ILL_ILLOPN:
-            return "Illegal operand.";
-        case ILL_ILLADR:
-            return "Illegal addressing mode.";
-        case ILL_ILLTRP:
-            return "Illegal trap.";
-        case ILL_PRVOPC:
-            return "Privileged opcode.";
-        case ILL_PRVREG:
-            return "Privileged register.";
-        case ILL_COPROC:
-            return "Coprocessor error.";
-        case ILL_BADSTK:
-            return "Internal stack error.";
-        default:
-            return "Unknown si_code.";
-    }
-}
-
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
+    std::string message = getSignalCodeDescription(sig, info.si_code);
+
+    if (sig == SIGSEGV || sig == SIGBUS)
+    {
+        using namespace std::string_literals;
+
+        std::string address = info.si_addr == nullptr ? "NULL pointer"s : (shouldShowAddress(info.si_addr) ? fmt::format("{}", info.si_addr) : ""s);
+        std::string access = getFaultMemoryAccessType(sig, context);
+        if (access.empty())
+            access = "<not available>";
+        return fmt::format("Address: {}. Access: {}. {}", address, access, message);
+    }
+
+    if (sig == SIGTSTP)
+        return "This is a signal used for debugging purposes by the user.";
+
+    return message;
+}
+
+std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info)
+{
+    /// Only these signals have meaningful fault addresses
+    if (sig != SIGSEGV && sig != SIGBUS && sig != SIGILL && sig != SIGFPE)
+        return std::nullopt;
+
+    if (info.si_addr == nullptr)
+        return 0;
+
+    if (shouldShowAddress(info.si_addr))
+        return reinterpret_cast<UInt64>(info.si_addr);
+
+    return std::nullopt;
+}
+
+std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t & context)
+{
+    /// Only SIGSEGV and SIGBUS have meaningful memory access types
+    if (sig != SIGSEGV && sig != SIGBUS)
+        return "";
+
+#if defined(__x86_64__) && !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+    return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
+#else
+    return "";  // Not available on this platform
+#endif
+}
+
+std::string getSignalCodeDescription(int sig, int si_code)
+{
+    /// Signal codes that apply to all signals
+    switch (si_code)
+    {
+        case SI_USER:
+            return "Sent by kill, sigsend.";
+        case SI_QUEUE:
+            return "Sent by sigqueue.";
+        case SI_TIMER:
+            return "Sent by timer expiration.";
+        case SI_MESGQ:
+            return "Sent by real time mesq state change.";
+        case SI_ASYNCIO:
+            return "Sent by AIO completion.";
+#if defined(SI_KERNEL)
+        case SI_KERNEL:
+            return "Sent by the kernel.";
+#endif
+#if defined(SI_SIGIO)
+        case SI_SIGIO:
+            return "Sent by queued SIGIO.";
+#endif
+#if defined(SI_TKILL)
+        case SI_TKILL:
+            return "Sent by tkill.";
+#endif
+#if defined(SI_ASYNCNL)
+        case SI_ASYNCNL:
+            return "Sent by asynch name lookup completion.";
+#endif
+        default:
+            break;
+    }
+
+    /// Signal-specific codes
     switch (sig)
     {
         case SIGSEGV:
-            return SigsegvErrorString(info, context);
+        {
+            switch (si_code)
+            {
+                case SEGV_ACCERR:
+                    return "Attempted access has violated the permissions assigned to the memory area.";
+                case SEGV_MAPERR:
+                    return "Address not mapped to object.";
+#if defined(SEGV_BNDERR)
+                case SEGV_BNDERR:
+                    return "Failed address bound checks (Intel MPX).";
+#endif
+#if defined(SEGV_ACCADI)
+                case SEGV_ACCADI:
+                    return "ADI not enabled for mapped object (SPARC).";
+#endif
+#if defined(SEGV_ADIDERR)
+                case SEGV_ADIDERR:
+                    return "Disrupting MCD error (SPARC).";
+#endif
+#if defined(SEGV_ADIPERR)
+                case SEGV_ADIPERR:
+                    return "Precise MCD exception (SPARC).";
+#endif
+#if defined(SEGV_MTEAERR)
+                case SEGV_MTEAERR:
+                    return "Asynchronous ARM MTE error.";
+#endif
+#if defined(SEGV_MTESERR)
+                case SEGV_MTESERR:
+                    return "Synchronous ARM MTE exception.";
+#endif
+#if defined(SEGV_CPERR)
+                case SEGV_CPERR:
+                    return "Control protection fault (Intel CET).";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
         case SIGBUS:
-            return std::string{SigbusErrorString(info.si_code)};
+        {
+            switch (si_code)
+            {
+                case BUS_ADRALN:
+                    return "Invalid address alignment.";
+                case BUS_ADRERR:
+                    return "Non-existent physical address.";
+                case BUS_OBJERR:
+                    return "Object specific hardware error.";
+#if defined(BUS_MCEERR_AR)
+                case BUS_MCEERR_AR:
+                    return "Hardware memory error consumed on a machine check; action required.";
+#endif
+#if defined(BUS_MCEERR_AO)
+                case BUS_MCEERR_AO:
+                    return "Hardware memory error detected in process but not consumed; action optional.";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
         case SIGILL:
-            return std::string{SigillErrorString(info.si_code)};
+        {
+            switch (si_code)
+            {
+                case ILL_ILLOPC:
+                    return "Illegal opcode.";
+                case ILL_ILLOPN:
+                    return "Illegal operand.";
+                case ILL_ILLADR:
+                    return "Illegal addressing mode.";
+                case ILL_ILLTRP:
+                    return "Illegal trap.";
+                case ILL_PRVOPC:
+                    return "Privileged opcode.";
+                case ILL_PRVREG:
+                    return "Privileged register.";
+                case ILL_COPROC:
+                    return "Coprocessor error.";
+                case ILL_BADSTK:
+                    return "Internal stack error.";
+#if defined(ILL_BADIADDR)
+                case ILL_BADIADDR:
+                    return "Unimplemented instruction address.";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
         case SIGFPE:
-            return std::string{SigfpeErrorString(info.si_code)};
-        case SIGTSTP:
-            return "This is a signal used for debugging purposes by the user.";
+        {
+            switch (si_code)
+            {
+                case FPE_INTDIV:
+                    return "Integer divide by zero.";
+                case FPE_INTOVF:
+                    return "Integer overflow.";
+                case FPE_FLTDIV:
+                    return "Floating point divide by zero.";
+                case FPE_FLTOVF:
+                    return "Floating point overflow.";
+                case FPE_FLTUND:
+                    return "Floating point underflow.";
+                case FPE_FLTRES:
+                    return "Floating point inexact result.";
+                case FPE_FLTINV:
+                    return "Floating point invalid operation.";
+                case FPE_FLTSUB:
+                    return "Subscript out of range.";
+#if defined(FPE_FLTUNK)
+                case FPE_FLTUNK:
+                    return "Undiagnosed floating-point exception.";
+#endif
+#if defined(FPE_CONDTRAP)
+                case FPE_CONDTRAP:
+                    return "Trap on condition.";
+#endif
+                default:
+                    return fmt::format("Unknown si_code: {}", si_code);
+            }
+        }
         default:
             return "";
     }
@@ -292,6 +373,7 @@ void StackTrace::forEachFrame(
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
+                    current_frame.column = location.column;
                 }
             }
         }
@@ -306,6 +388,7 @@ void StackTrace::forEachFrame(
 
             current_inline_frame.file = "inlined from " + file_for_inline_frame;
             current_inline_frame.line = frame.location.line;
+            current_inline_frame.column = frame.location.column;
             current_inline_frame.symbol = demangle(frame.name);
 
             callback(current_inline_frame);
@@ -314,30 +397,62 @@ void StackTrace::forEachFrame(
         callback(current_frame);
     }
 #elif defined(OS_DARWIN)
-    UNUSED(fatal);
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    std::unordered_map<std::string, DB::Dwarf> dwarfs;
 
-    /// This function returns an array of string in a special (a little bit weird format)
-    /// The frame number, library name, address in hex, mangled symbol name, `+` sign, the offset.
-    char** strs = ::backtrace_symbols(frame_pointers.data(), static_cast<int>(size));
-    SCOPE_EXIT_SAFE({free(strs);});
+    using enum DB::Dwarf::LocationInfoMode;
+    const auto mode = fatal ? FULL_WITH_INLINE : FAST;
 
     for (size_t i = offset; i < size; ++i)
     {
         StackTrace::Frame current_frame;
-
-        std::vector<std::string> split;
-        boost::split(split, strs[i], isWhitespaceASCII);
-        split.erase(
-            std::remove_if(
-                split.begin(), split.end(),
-                [](const std::string & x) { return x.empty(); }),
-            split.end());
-        assert(split.size() == 6);
-
+        std::vector<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
-        current_frame.object = split[1];
-        current_frame.symbol = demangle(split[3].c_str());
+
+        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
+        if (object)
+        {
+            current_frame.object = object->name;
+
+            /// If this object has a dSYM, use it for file/line resolution.
+            if (object->dsym)
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, object->dsym).first;
+
+                DB::Dwarf::LocationInfo location;
+                /// Convert runtime address to linked (pre-ASLR) address for DWARF lookup.
+                uintptr_t dwarf_addr = uintptr_t(current_frame.virtual_addr) - object->slide;
+                /// The first frame (at index `offset`) is the instruction pointer, not a return address.
+                /// Only subtract 1 for subsequent frames to get back into the call instruction.
+                if (i > offset)
+                    dwarf_addr -= 1;
+
+                if (dwarf_it->second.findAddress(dwarf_addr, location, mode, inline_frames))
+                {
+                    current_frame.file = location.file.toString();
+                    current_frame.line = location.line;
+                    current_frame.column = location.column;
+                }
+            }
+        }
+
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
+            current_frame.symbol = demangle(symbol->name);
+
+        for (const auto & frame : inline_frames)
+        {
+            StackTrace::Frame current_inline_frame;
+            const String file_for_inline_frame = frame.location.file.toString();
+
+            current_inline_frame.file = "inlined from " + file_for_inline_frame;
+            current_inline_frame.line = frame.location.line;
+            current_inline_frame.column = frame.location.column;
+            current_inline_frame.symbol = demangle(frame.name);
+
+            callback(current_inline_frame);
+        }
+
         callback(current_frame);
     }
 #else
@@ -481,7 +596,12 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.file.has_value() && frame.line.has_value())
-            out << *frame.file << ':' << *frame.line << ": ";
+        {
+            out << *frame.file << ':' << *frame.line;
+            if (frame.column.has_value() && *frame.column > 0)
+                out << ':' << *frame.column;
+            out << ": ";
+        }
 
         if (frame.symbol.has_value())
             out << collapseDemangledNames(frame.file, frame.symbol.value());

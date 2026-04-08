@@ -38,7 +38,7 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 
     /// Skip next 30 blocks if too few rows got filtered out
     if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
-        rows_to_skip = rows_checked * blocks_to_skip_before_reenabling;
+        rows_to_skip += rows_checked * blocks_to_skip_before_reenabling;
 }
 
 bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
@@ -64,6 +64,16 @@ bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
 
     rows_to_skip = 0;
     return false;
+}
+
+void IRuntimeFilter::finishInsert()
+{
+    if (filters_to_merge != 0)
+        return;
+
+    inserts_are_finished = true;
+
+    finishInsertImpl();
 }
 
 ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
@@ -107,9 +117,9 @@ void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
     --filters_to_merge;
 }
 
-void ExactContainsRuntimeFilter::finishInsert()
+void ExactContainsRuntimeFilter::finishInsertImpl()
 {
-    Base::finishInsert();
+    Base::finishInsertImpl();
 
     if (isFull())
     {
@@ -175,20 +185,15 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
 }
 
-void ApproximateRuntimeFilter::finishInsert()
+void ApproximateRuntimeFilter::finishInsertImpl()
 {
-    if (filters_to_merge != 0)
-        return;
-
-    inserts_are_finished = true;
-
     if (bloom_filter)
     {
         checkBloomFilterWorthiness();
         return;
     }
 
-    Base::finishInsert();
+    Base::finishInsertImpl();
 }
 
 /// Add all keys from one filter to the other so that destination filter contains the union of both filters.

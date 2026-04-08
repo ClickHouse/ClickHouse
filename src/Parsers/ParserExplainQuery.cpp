@@ -71,9 +71,29 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (kind == ASTExplainQuery::ExplainKind::ParsedAST)
     {
         ParserQuery p(end, allow_settings_after_format_in_insert);
+        bool parsed_query = false;
         if (p.parse(pos, query, expected))
+        {
             explain_query->setExplainedQuery(std::move(query));
-        else
+            parsed_query = true;
+        }
+        /// Allow parentheses around inner EXPLAIN queries
+        if (!parsed_query && pos->type == TokenType::OpeningRoundBracket)
+        {
+            auto saved = pos;
+            ++pos;
+            if (p.parse(pos, query, expected) && pos->type == TokenType::ClosingRoundBracket)
+            {
+                ++pos;
+                explain_query->setExplainedQuery(std::move(query));
+                parsed_query = true;
+            }
+            else
+            {
+                pos = saved;
+            }
+        }
+        if (!parsed_query)
             return false;
     }
     else if (kind == ASTExplainQuery::ExplainKind::TableOverride)

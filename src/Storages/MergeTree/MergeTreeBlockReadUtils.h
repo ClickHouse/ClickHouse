@@ -49,7 +49,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
 
 struct MergeTreeBlockSizePredictor
 {
-    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block);
+    MergeTreeBlockSizePredictor(const DataPartPtr & data_part_, const Names & columns, const Block & sample_block, bool allow_subcolumns_sizes_calculation);
 
     /// Reset some values for correct statistics calculating
     void startBlock();
@@ -112,6 +112,10 @@ protected:
         double bytes_per_row_global = 0;
         double bytes_per_row = 0;
         size_t size_bytes = 0;
+        /// For subcolumns, the output column may be much smaller than the data actually
+        /// read from disk (e.g. a Map subcolumn extracts one key but reads the whole Map).
+        /// When set, `bytes_per_row` will not drop below `bytes_per_row_global`.
+        bool is_subcolumn = false;
     };
 
     std::vector<ColumnInfo> dynamic_columns_infos;
@@ -123,6 +127,7 @@ protected:
     size_t number_of_rows_in_part;
 
     bool is_initialized_in_update = false;
+    bool allow_subcolumns_sizes_calculation = false;
 
     void initialize(const Block & sample_block, const Columns & columns, const Names & names, bool from_update = false);
 

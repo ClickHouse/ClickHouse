@@ -301,7 +301,7 @@ public:
                 return [](IColumn & column, Float64 value)
                 {
                     auto & col = assert_cast<ColumnDate32 &>(column);
-                    col.getData().push_back(static_cast<UInt32>(value));
+                    col.getData().push_back(static_cast<Int32>(value));
                 };
             case TypeIndex::DateTime:
                 return [](IColumn & column, Float64 value)
@@ -397,7 +397,7 @@ SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_tes
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, {createAggregateFunctionLargestTriangleThreeBuckets, {}, documentation});
+    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, {createAggregateFunctionLargestTriangleThreeBuckets, documentation});
     factory.registerAlias("lttb", AggregateFunctionLargestTriangleThreeBuckets::name);
 }
 

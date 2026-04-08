@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -21,6 +22,7 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MaterializingCTETransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -428,9 +430,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     /// In case joined subquery has totals, and we don't, add default chunk to totals.
     bool default_totals = false;
 
-    if (!join->supportTotals() && (left->hasTotals() || right->hasTotals()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
-
     if (!left->hasTotals() && right->hasTotals())
     {
         left->addDefaultTotals();
@@ -505,9 +504,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     size_t num_streams_including_totals = num_streams + (left->hasTotals() ? 1 : 0);
     right->resize(num_streams_including_totals);
 
-    /// This counter is needed for every Joining except totals, to decide which Joining will generate non joined rows.
-    auto joining_finish_counter = std::make_shared<FinishCounter>(num_streams);
-
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();
 
@@ -532,6 +528,14 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
             delayed_root_output_ports.emplace_back(&outport);
     }
 
+    /// When true, non-joined rows are emitted by separate NonJoinedBlocksTransform sources in parallel
+    /// when false, the last JoiningTransform to finish emits them (via finish_counter)
+    bool use_parallel_non_joined = !delayed_root && join->supportParallelNonJoinedBlocksProcessing();
+
+    /// nullptr disables non-joined emission inside JoiningTransform (parallel path handles it)
+    auto joining_finish_counter = use_parallel_non_joined
+        ? nullptr
+        : std::make_shared<FinishCounter>(num_streams);
 
     SharedHeader left_header = left->getSharedHeader();
     for (size_t i = 0; i < num_streams; ++i)
@@ -569,6 +573,19 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 collected_processors->emplace_back(delayed);
             left->pipe.processors->emplace_back(std::move(delayed));
         }
+        else if (use_parallel_non_joined)
+        {
+            /// Parallel non-joined source, activated by DelayedPortsProcessor after all probing finishes
+            auto non_joined = std::make_shared<NonJoinedBlocksTransform>(
+                output_header, join, *left_header, max_block_size, i, num_streams);
+
+            joined_output_ports.push_back(&joining->getOutputs().front());
+            joined_output_ports.push_back(&non_joined->getPort());
+
+            if (collected_processors)
+                collected_processors->emplace_back(non_joined);
+            left->pipe.processors->emplace_back(std::move(non_joined));
+        }
         else
         {
             *lit = &joining->getOutputs().front();
@@ -583,7 +600,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
         left->pipe.processors->emplace_back(std::move(joining));
     }
 
-    if (delayed_root)
+    if (delayed_root || use_parallel_non_joined)
     {
         // Process DelayedJoinedBlocksTransform after all JoiningTransforms.
         DelayedPortsProcessor::PortNumbers delayed_ports_numbers;
@@ -736,6 +753,22 @@ void QueryPipelineBuilder::addCreatingSetsTransform(
             std::move(set_and_key),
             limits,
             std::move(prepared_sets_cache));
+
+    pipe.addTransform(std::move(transform));
+}
+
+void QueryPipelineBuilder::addMaterializingCTETransform(
+    SharedHeader res_header,
+    MaterializedCTEPtr materialized_cte
+)
+{
+    checkInitializedAndNotCompleted();
+    resize(1);
+
+    auto transform = std::make_shared<MaterializingCTETransform>(
+            getSharedHeader(),
+            res_header,
+            std::move(materialized_cte));
 
     pipe.addTransform(std::move(transform));
 }

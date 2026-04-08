@@ -196,7 +196,7 @@ public:
     FullMergeJoinCursor & operator=(const FullMergeJoinCursor &) = delete;
 
     bool fullyCompleted() const;
-    void setCompleted() { recieved_all_blocks = true; }
+    void setCompleted() { received_all_blocks = true; }
     const Chunk & getCurrent() const;
     void setChunk(Chunk && chunk);
 
@@ -217,7 +217,7 @@ public:
 
 private:
     Chunk current_chunk;
-    bool recieved_all_blocks = false;
+    bool received_all_blocks = false;
 
     std::vector<size_t> key_indices;
     bool is_asof = false;

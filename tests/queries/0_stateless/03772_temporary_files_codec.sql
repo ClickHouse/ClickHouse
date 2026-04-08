@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: long, no-flaky-check
 SET max_bytes_before_external_sort = '1M';
 SET max_bytes_ratio_before_external_sort = 0;
 SET max_block_size = DEFAULT;

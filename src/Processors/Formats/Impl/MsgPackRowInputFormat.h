@@ -65,7 +65,7 @@ class MsgPackRowInputFormat : public IRowInputFormat
 public:
     MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
-    String getName() const override { return "MagPackRowInputFormat"; }
+    String getName() const override { return "MsgPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;

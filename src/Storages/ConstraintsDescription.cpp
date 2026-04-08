@@ -193,7 +193,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        auto expr = constraint->getChild(*constraint->as<ASTConstraintDeclaration>()->expr);
+        auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
         if (dynamic_cast<ASTSubquery *>(expr.get()))
         {

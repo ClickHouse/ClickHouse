@@ -265,21 +265,21 @@ private:
 
 REGISTER_FUNCTION(ToDecimalString)
 {
-    FunctionDocumentation::Description description_toDecimalString = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a numeric value to a String with specified number of fractional digits.
 
 The function rounds the input value to the specified number of decimal places. If the input value has fewer fractional
 digits than requested, the result is padded with zeros to achieve the exact number of fractional digits specified.
     )";
-    FunctionDocumentation::Syntax syntax_toDecimalString = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toDecimalString(number, scale)
     )";
-    FunctionDocumentation::Arguments arguments_toDecimalString = {
+    FunctionDocumentation::Arguments arguments = {
         {"number", "The numeric value to convert to a string. Can be any numeric type (Int, UInt, Float, Decimal).", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64", "Decimal"}},
         {"scale", "The number of digits to display in the fractional part. The result will be rounded if necessary.", {"UInt8"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDecimalString = {"Returns a String representation of the number with exactly the specified number of fractional digits.", {"String"}};
-    FunctionDocumentation::Examples examples_toDecimalString = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a String representation of the number with exactly the specified number of fractional digits.", {"String"}};
+    FunctionDocumentation::Examples examples = {
         {"Round and format a number", R"(
 SELECT toDecimalString(2.1456, 2)
         )",
@@ -306,11 +306,11 @@ SELECT toDecimalString(CAST(123.456 AS Decimal(10,3)), 2) AS decimal_val,
 └─────────────┴───────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toDecimalString = {23, 3};
-    FunctionDocumentation::Category category_toDecimalString = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toDecimalString = {description_toDecimalString, syntax_toDecimalString, arguments_toDecimalString, {}, returned_value_toDecimalString, examples_toDecimalString, introduced_in_toDecimalString, category_toDecimalString};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToDecimalString>(documentation_toDecimalString, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionToDecimalString>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

@@ -49,13 +49,7 @@ private:
 class PostingListCodecFactory : public boost::noncopyable
 {
 public:
-    static void isAllowedCodec(std::string_view codec_name, const std::vector<String> & allowed_codecs, std::string_view caller_name);
-
-    static std::unique_ptr<IPostingListCodec> createPostingListCodec(
-        std::string_view codec_name,
-        const std::vector<String> & allowed_codecs,
-        const String & caller_name,
-        bool only_validate = false);
+    static std::unique_ptr<IPostingListCodec> createPostingListCodec(std::string_view codec_name, const String & caller_name);
 };
 
 }

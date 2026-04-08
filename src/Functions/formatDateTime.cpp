@@ -606,7 +606,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -620,7 +622,9 @@ private:
 
             for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += fractional_second % 10;
+                /// Use assignment instead of `+=` to avoid reading uninitialized memory
+                /// when the output buffer is not pre-filled with the template (variable-width formatters path).
+                dest[i - 1] = '0' + (fractional_second % 10);
                 fractional_second /= 10;
             }
             return scale;
@@ -822,6 +826,11 @@ private:
                 return min_represent_digits;
             }
             auto str = toString(fractional_second);
+            /// Left-pad with zeros to `scale` digits, because `toString` does not preserve leading zeros
+            /// (e.g. fractional_second=5, scale=3 gives "5" but we need "005").
+            /// Without this, the buffer would be left partially uninitialized.
+            if (str.size() < scale)
+                str.insert(0, scale - str.size(), '0');
             if (min_represent_digits > scale)
             {
                 for (UInt64 i = 0; i < min_represent_digits - scale; ++i)
@@ -854,7 +863,7 @@ private:
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
+        static constexpr std::array variable_width_formatter_M_is_month_name = {'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
         static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
@@ -865,6 +874,12 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
+
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
+
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
@@ -886,13 +901,7 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+
                     i += 1;
                     continue;
                 default:

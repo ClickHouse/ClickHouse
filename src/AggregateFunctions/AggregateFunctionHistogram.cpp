@@ -2,13 +2,13 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/NaNUtils.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
-#include <Common/ContainersWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -432,7 +432,7 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("histogram", createAggregateFunctionHistogram);
+    factory.registerFunction("histogram", {createAggregateFunctionHistogram, {}});
 }
 
 }
