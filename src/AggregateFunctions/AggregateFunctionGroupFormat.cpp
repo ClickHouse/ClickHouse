@@ -79,11 +79,14 @@ public:
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "`groupFormat` `create` probe: {} arguments, first argument type {}",
-            argument_types.size(),
-            argument_types.empty() ? String("n/a") : argument_types.front()->getName());
+        if (argument_types.size() == 1 && !argument_types.empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`groupFormat` `create` probe: {} arguments, first argument type {}",
+                argument_types.size(),
+                argument_types.front()->getName());
+        }
 
         new (place) GroupFormatData;
         auto & state = data(place);
