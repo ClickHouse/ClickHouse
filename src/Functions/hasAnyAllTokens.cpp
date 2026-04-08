@@ -40,7 +40,15 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
         return {};
 
     auto column_needles = arguments[arg_needles].column;
-    if (!column_needles || column_needles->empty())
+    if (!column_needles)
+        return {};
+
+    /// When the query plan is serialized and deserialized (e.g. with serialize_query_plan=1),
+    /// ColumnConst is recreated with size 0. A size-0 ColumnConst is still a valid constant
+    /// that holds its value - do not treat it as absent. However, we must still guard against
+    /// a ColumnConst whose underlying data column is itself empty.
+    const auto * column_const = typeid_cast<const ColumnConst *>(column_needles.get());
+    if (column_const ? column_const->getDataColumn().empty() : column_needles->empty())
         return {};
 
     Field needles_field = (*column_needles)[0];
