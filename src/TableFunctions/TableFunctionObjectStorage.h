@@ -90,6 +90,7 @@ public:
         auto [config, opts]
             = ObjectStorageConnectionConfiguration::initialize(type, args, context, true, nullptr, disk_name);
         configuration = config;
+        configuration->check(context);
         table_options = std::move(opts);
         if constexpr (is_data_lake)
         {
