@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1134,7 +1135,20 @@ bool applyFunctionChainToColumn(
                 return false;
         }
 
-        result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
+        /// The function may have been built with LowCardinality argument types (from the key expression),
+        /// but we stripped LowCardinality from the column at the top of this function.
+        /// Functions like FunctionCast handle LowCardinality internally (useDefaultImplementationForLowCardinalityColumns = false)
+        /// and their wrappers expect the column type to match the declared argument type.
+        /// We must pass the original (non-stripped) argument type and re-wrap the column in LowCardinality if needed.
+        auto original_argument_type = getArgumentTypeOfMonotonicFunction(*func);
+        ColumnPtr exec_column = result_column;
+        if (original_argument_type->lowCardinality() && !result_column->lowCardinality())
+        {
+            auto lc_col = original_argument_type->createColumn();
+            assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*result_column, 0, result_column->size());
+            exec_column = std::move(lc_col);
+        }
+        result_column = func->execute({{exec_column, original_argument_type, ""}}, func_result_type, exec_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
 
