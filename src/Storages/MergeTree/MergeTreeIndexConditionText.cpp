@@ -159,6 +159,7 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
     return function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
+        || function_name == "matchPhrase"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -202,6 +203,7 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
 
     if (function_name == "like"
+        || function_name == "matchPhrase"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
@@ -610,6 +612,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+        return true;
+    }
+    if (function_name == "matchPhrase")
+    {
+        /// The SparseGrams tokenizer is not supported with the `matchPhrase` function.
+        if (tokenizer->getType() == ITokenizer::Type::SparseGrams)
+            return false;
+
+        auto tokens = stringToTokens(value_field);
+        out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, tokens));
         return true;
     }
     if (function_name == "startsWith" && tokenizer->supportsStringLike())
