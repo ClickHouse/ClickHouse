@@ -31,7 +31,8 @@ These functions are based on [simdjson](https://github.com/lemire/simdjson), and
 
 These functions perform ASCII case-insensitive key matching when extracting values from JSON objects.
 They work identically to their case-sensitive counterparts, except that object keys are matched without regard to case.
-When multiple keys match with different cases, the first match is returned.
+If a JSON object contains multiple keys that differ only in case (e.g. `Key` and `KEY`), the function returns the value of the first matching key in document order when the input is a string.
+When the input is a column of `JSON` type, which key is chosen among case-insensitive duplicates is not guaranteed.
 
 :::note
 These functions may be less performant than their case-sensitive counterparts, so use the regular JSONExtract functions if possible.
