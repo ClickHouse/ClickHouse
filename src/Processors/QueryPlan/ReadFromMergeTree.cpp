@@ -29,6 +29,7 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -3435,11 +3436,48 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
         predicate_stats_log->add(std::move(elem));
 }
 
-void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+MarkRanges filterMarkRangesForBucket(const MarkRanges & ranges, size_t & effective_bucket_index, size_t total_buckets)
+{
+    MarkRanges result;
+    for (const auto & range : ranges)
+    {
+        size_t length = range.end - range.begin;
+        size_t length_per_bucket = std::max<size_t>(1, (length + total_buckets - 1) / total_buckets);
+        size_t updated_begin = range.begin + effective_bucket_index * length_per_bucket;
+        size_t updated_end = std::min(range.end, updated_begin + length_per_bucket);
+        if (updated_begin < updated_end)
+            result.emplace_back(updated_begin, updated_end);
+        effective_bucket_index = (effective_bucket_index + 1) % total_buckets;
+    }
+    return result;
+}
+
+void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
     auto & result = getAnalysisResult();
 
     logPredicateStatistics(result);
+
+    /// Filter ranges by 'bucket_id' parameter so that each distributed worker reads only its slice of the parts.
+    if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
+    {
+        const size_t bucket_id = parse<UInt64>(settings.parameter_lookup->getParameter("bucket_id").safeGet<String>());
+        const size_t total_buckets = settings.parameter_lookup->getParameter("total_buckets").safeGet<UInt64>();
+
+        size_t effective_bucket_index = bucket_id;
+        RangesInDataParts filtered_parts;
+        for (const auto & part : result.parts_with_ranges)
+        {
+            auto filtered_part = part;
+            filtered_part.ranges = filterMarkRangesForBucket(part.ranges, effective_bucket_index, total_buckets);
+            if (!filtered_part.ranges.empty())
+                filtered_parts.push_back(std::move(filtered_part));
+        }
+        result.parts_with_ranges = std::move(filtered_parts);
+
+        /// Cannot cache PREWHERE results when ranges are filtered by bucket_id.
+        reader_settings.use_query_condition_cache = false;
+    }
 
     if (enable_remove_parts_from_snapshot_optimization)
     {
