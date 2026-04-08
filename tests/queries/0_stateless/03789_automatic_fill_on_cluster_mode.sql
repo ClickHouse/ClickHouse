@@ -1,5 +1,5 @@
 SET distributed_ddl_output_mode='none';
-SET automatic_fill_on_cluster_mode = false;
+SET allow_experimental_automatic_fill_on_cluster_mode = false;
 SET cluster_for_automatic_fill_mode = 'test_shard_localhost';
 
 SELECT 'Test 1: CREATE TABLE without automatic mode';
@@ -14,7 +14,7 @@ SELECT count() = 0 FROM system.query_log WHERE current_database = currentDatabas
 
 DROP TABLE test_no_auto;
 
-SET automatic_fill_on_cluster_mode = true;
+SET allow_experimental_automatic_fill_on_cluster_mode = true;
 SET cluster_for_automatic_fill_mode = 'test_shard_localhost';
 
 SELECT 'Test 2: CREATE TABLE with automatic mode';
