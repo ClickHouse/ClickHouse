@@ -1,3 +1,6 @@
+#include "config.h"
+#if USE_AVRO
+
 #include <Processors/QueryPlan/ReadFromIcebergStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
@@ -197,3 +200,5 @@ InputOrderInfoPtr ReadFromIcebergStep::getDataOrder() const
 }
 
 }
+
+#endif

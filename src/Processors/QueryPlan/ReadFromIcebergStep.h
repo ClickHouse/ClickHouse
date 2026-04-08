@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config.h"
+#if USE_AVRO
+
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageTableOptions.h>
@@ -73,3 +76,5 @@ private:
 };
 
 }
+
+#endif
