@@ -31,7 +31,8 @@ public:
         SortDirection sort_direction_ = SortDirection::ASCENDING,
         std::optional<SortDirection> nulls_sort_direction_ = {},
         std::shared_ptr<Collator> collator_ = nullptr,
-        bool with_fill = false);
+        bool with_fill = false,
+        bool has_depends_on_ = false);
 
     /// Get sort expression
     const QueryTreeNodePtr & getExpression() const
@@ -123,6 +124,29 @@ public:
         return children[fill_staleness_child_index];
     }
 
+    /// Returns true if sort node has DEPENDS ON clause, false otherwise
+    bool hasDependsOn() const
+    {
+        return has_depends_on;
+    }
+
+    void setHasDependsOn(bool v)
+    {
+        has_depends_on = v;
+    }
+
+    /// Get the DEPENDS ON expression (Array column of dependency keys)
+    const QueryTreeNodePtr & getDependsOn() const
+    {
+        return children[depends_on_expression_child_index];
+    }
+
+    /// Get the DEPENDS ON expression
+    QueryTreeNodePtr & getDependsOn()
+    {
+        return children[depends_on_expression_child_index];
+    }
+
     /// Get collator
     const std::shared_ptr<Collator> & getCollator() const
     {
@@ -165,13 +189,15 @@ private:
     static constexpr size_t fill_to_child_index = 2;
     static constexpr size_t fill_step_child_index = 3;
     static constexpr size_t fill_staleness_child_index = 4;
-    static constexpr size_t children_size = fill_staleness_child_index + 1;
+    static constexpr size_t depends_on_expression_child_index = 5;
+    static constexpr size_t children_size = depends_on_expression_child_index + 1;
 
     std::string column_name;
     SortDirection sort_direction = SortDirection::ASCENDING;
     std::optional<SortDirection> nulls_sort_direction;
     std::shared_ptr<Collator> collator;
     bool with_fill = false;
+    bool has_depends_on = false;
 };
 
 }

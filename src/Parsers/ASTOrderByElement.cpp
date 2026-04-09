@@ -12,12 +12,21 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     hash_state.update(nulls_direction);
     hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
+    hash_state.update(has_depends_on);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTOrderByElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     children.front()->format(ostr, settings, state, frame);
+
+    if (has_depends_on)
+    {
+        ostr << " DEPENDS ON ";
+        getDependsOn()->format(ostr, settings, state, frame);
+        return;
+    }
+
     ostr
         << (direction == -1 ? " DESC" : " ASC")
        ;

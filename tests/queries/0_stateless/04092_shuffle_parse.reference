@@ -1,0 +1,4 @@
+SELECT number\nFROM numbers(10)\nSHUFFLE
+SELECT number\nFROM numbers(10)\nSHUFFLE\nLIMIT 5
+SELECT number % 3 AS r\nFROM numbers(10)\nWHERE number > 0\nSHUFFLE\nLIMIT 3
+SELECT *\nFROM\n(\n    SELECT number\n    FROM numbers(10)\n    SHUFFLE\n)\nORDER BY number ASC

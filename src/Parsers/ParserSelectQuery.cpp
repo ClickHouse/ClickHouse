@@ -66,6 +66,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_first(Keyword::FIRST);
     ParserKeyword s_next(Keyword::NEXT);
     ParserKeyword s_interpolate(Keyword::INTERPOLATE);
+    ParserKeyword s_shuffle(Keyword::SHUFFLE);
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
@@ -376,6 +377,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!order_list.parse(pos, order_expression_list, expected))
                 return false;
 
+            /// DEPENDS ON is only valid as the sole ORDER BY element.
+            {
+                bool has_depends_on_elem = false;
+                for (const auto & child : order_expression_list->children)
+                {
+                    if (child->template as<ASTOrderByElement>()->has_depends_on)
+                    {
+                        has_depends_on_elem = true;
+                        break;
+                    }
+                }
+                if (has_depends_on_elem && order_expression_list->children.size() > 1)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "ORDER BY with DEPENDS ON must have exactly one sort element");
+            }
+
             /// if any WITH FILL parse possible INTERPOLATE list
             if (std::any_of(order_expression_list->children.begin(), order_expression_list->children.end(),
                     [](auto & child) { return child->template as<ASTOrderByElement>()->with_fill; }))
@@ -394,6 +411,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
             }
         }
+    }
+    else if (s_shuffle.ignore(pos, expected))
+    {
+        select_query->has_shuffle = true;
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.

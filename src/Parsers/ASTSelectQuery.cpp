@@ -52,6 +52,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
+    hash_state.update(has_shuffle);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -221,6 +222,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
             ostr << " NULLS " << (elem->nulls_direction == elem->direction ? "LAST" : "FIRST");
         }
     }
+
+    if (has_shuffle)
+        ostr << s.nl_or_ws << indent_str << "SHUFFLE";
 
     if (limitByLength())
     {

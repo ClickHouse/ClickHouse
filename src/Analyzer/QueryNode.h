@@ -179,6 +179,18 @@ public:
         is_distinct = is_distinct_value;
     }
 
+    /// Returns true if query node has SHUFFLE, false otherwise
+    bool isShuffle() const
+    {
+        return is_shuffle;
+    }
+
+    /// Set query node SHUFFLE value
+    void setIsShuffle(bool is_shuffle_value)
+    {
+        is_shuffle = is_shuffle_value;
+    }
+
     bool isLimitByAll() const
     {
         return is_limit_by_all;
@@ -700,6 +712,7 @@ private:
     bool is_materialized = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
+    bool is_shuffle = false;
     bool is_limit_with_ties = false;
     bool is_group_by_with_totals = false;
     bool is_group_by_with_rollup = false;

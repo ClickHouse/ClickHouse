@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/TopologicalSortStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -114,6 +115,12 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     }
 
     if (typeid_cast<const SortingStep *>(child.get()))
+        return 0;
+
+    /// Topological sort (ORDER BY ... DEPENDS ON) is an accumulating transform that must see
+    /// ALL rows before emitting output. Pushing a Limit before it would truncate input and
+    /// produce an incorrect topological ordering.
+    if (typeid_cast<const TopologicalSortStep *>(child.get()))
         return 0;
 
     /// Special case for TotalsHaving. Totals may be incorrect if we push down limit.
