@@ -221,12 +221,12 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
         if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                 "The query result was not cached because the query contains a non-deterministic function."
-                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
 
         if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
                 "The query result was not cached because the query contains a system table."
-                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
 
         if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
