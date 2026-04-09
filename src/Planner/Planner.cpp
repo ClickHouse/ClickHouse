@@ -1946,8 +1946,11 @@ static bool shouldUseQueryCacheForSubquery(
         }
     }
 
-    /// `query_cache_for_subqueries` enables the Planner-level cache for all query nodes
-    if (settings[Setting::query_cache_for_subqueries] && outer_can_use_cache)
+    /// `query_cache_for_subqueries` enables the Planner-level cache for actual subqueries only.
+    /// Without this `is_subquery` guard a top-level query with both settings enabled would be
+    /// cached twice (once by `executeQuery` with `is_subquery = false`, and again here with
+    /// `is_subquery = true`).
+    if (is_subquery && settings[Setting::query_cache_for_subqueries] && outer_can_use_cache)
         return true;
 
     return false;
