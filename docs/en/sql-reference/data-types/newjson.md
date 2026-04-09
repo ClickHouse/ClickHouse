@@ -1008,6 +1008,75 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
+## Lazy Type Hints (Experimental) {#lazy-type-hints}
+
+:::note
+This feature is experimental and requires the setting `allow_experimental_json_lazy_type_hints` to be enabled.
+:::
+
+When you add or modify type hints on a JSON column using `ALTER TABLE ... MODIFY COLUMN`, ClickHouse normally rewrites all data parts to materialize the new type hints. For tables with large amounts of historical data (hundreds of terabytes), this can be extremely expensive.
+
+**Lazy type hints** allow adding type hints as a metadata-only operation without rewriting existing data:
+
+- **Old parts**: Type hints are applied at query time by casting from `Dynamic` to the hinted type
+- **New parts**: Type hints are materialized during `INSERT` operations
+- **Merges**: Type hints are materialized when parts are merged
+
+This means you can add type hints instantly, and the data will be gradually converted as normal background merges occur.
+
+### Enabling Lazy Type Hints {#enabling-lazy-type-hints}
+
+```sql
+SET allow_experimental_json_lazy_type_hints = 1;
+```
+
+### Example {#lazy-type-hints-example}
+
+```sql title="Query"
+-- Create a table and insert data
+CREATE TABLE test_lazy (json JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_lazy VALUES ('{"user_id": "123", "score": "95.5"}');
+
+-- Enable experimental setting
+SET allow_experimental_json_lazy_type_hints = 1;
+
+-- Add type hints - this completes instantly without mutation
+ALTER TABLE test_lazy MODIFY COLUMN json JSON(user_id UInt64, score Float64);
+
+-- Query the data - type hints are applied at read time
+SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score) FROM test_lazy;
+```
+
+```text title="Response"
+┌─json.user_id─┬─toTypeName(json.user_id)─┬─json.score─┬─toTypeName(json.score)─┐
+│          123 │ UInt64                   │       95.5 │ Float64                │
+└──────────────┴──────────────────────────┴────────────┴────────────────────────┘
+```
+
+### Verifying No Mutation Occurred {#verifying-no-mutation-occurred}
+
+You can verify that the `ALTER` completed without a mutation by checking the `system.mutations` table:
+
+```sql
+SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
+```
+
+With lazy type hints enabled, this query returns no rows, confirming the operation was metadata-only.
+
+### Materializing Type Hints {#materializing-type-hints}
+
+To materialize type hints in existing data, you can either:
+
+1. **Wait for background merges**: ClickHouse will automatically materialize type hints when parts are merged
+2. **Force merge**: Use `OPTIMIZE TABLE test_lazy FINAL` to merge all parts immediately
+3. **Rewrite parts**: Use `ALTER TABLE test_lazy REWRITE PARTS` to rewrite parts with the new metadata
+
+### Limitations {#lazy-type-hints-limitations}
+
+- This feature is experimental and may change in future versions
+- Query-time type conversion can have significant performance overhead compared to pre-materialized types, especially for large JSON objects
+- The feature only applies when modifying `typed_paths` (type hints); other JSON parameters like `max_dynamic_paths`, `SKIP`, or `SKIP REGEXP` still require mutations
+
 ## Comparison between values of the JSON type {#comparison-between-values-of-the-json-type}
 
 JSON objects are compared similarly to Maps. 

@@ -59,8 +59,6 @@ private:
     void initializePostingStreams();
     void fillColumn(IColumn & column, const String & column_name, PostingsMap & postings, size_t row_offset, size_t num_rows);
 
-    using TokenToPostingsInfosMap = MergeTreeIndexGranuleText::TokenToPostingsInfosMap;
-
     size_t getNumRowsInGranule(size_t index_mark) const;
     double estimateCardinality(const TextSearchQuery & query, const TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const;
 
@@ -96,6 +94,7 @@ private:
     /// Tokens that are useful for analysis and filling virtual columns.
     absl::flat_hash_set<std::string_view> useful_tokens;
     std::unique_ptr<MergeTreeIndexDeserializationState> deserialization_state;
+    PostingsSerialization postings_serialization;
 };
 
 }

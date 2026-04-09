@@ -107,6 +107,7 @@ class IO(object):
             self.process.kill()
         else:
             self.process.terminate()
+        self.process.wait()
         os.close(self.master)
         if self._logger:
             self._logger.write("\n")

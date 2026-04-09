@@ -328,6 +328,8 @@ public:
     DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
+    /// NOTE: `operation_with_data_parts_mutex` is also locked directly via `std::lock` in
+    /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
     MergeTreeDataPartFormat
@@ -365,8 +367,7 @@ public:
 
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
-        void rollback();
-        void rollback(DataPartsLock & lock);
+        void rollback(DataPartsLock * acquired_lock = nullptr);
 
         /// Immediately remove parts from table's data_parts set and change part
         /// state to temporary. Useful for new parts which not present in table.
@@ -527,7 +528,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, ContextPtr local_context) const override;
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts & parts, const Names & required_columns, ContextPtr local_context) const override;
 
     bool supportsFinal() const override;
 
@@ -639,13 +640,21 @@ public:
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
-    /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
-    PrimaryIndexCachePtr getPrimaryIndexCacheToPrewarm(size_t part_uncompressed_bytes) const;
-    /// Returns a pointer to primary mark cache if it is required to be prewarmed.
-    MarkCachePtr getMarkCacheToPrewarm(size_t part_uncompressed_bytes) const;
 
-    /// Prewarm mark cache and primary index cache for the most recent data parts.
-    void prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, PrimaryIndexCachePtr index_cache);
+    struct CachesToPrewarm
+    {
+        MarkCachePtr mark_cache;
+        MarkCachePtr index_mark_cache;
+        PrimaryIndexCachePtr primary_index_cache;
+
+        bool hasAny() const { return mark_cache || index_mark_cache || primary_index_cache; }
+    };
+
+    /// Returns caches that should be prewarmed for a part of the given size.
+    CachesToPrewarm getCachesToPrewarm(size_t part_uncompressed_bytes) const;
+
+    /// Prewarm mark cache, index mark cache, and primary index cache for the most recent data parts.
+    void prewarmCaches(ThreadPool & pool, const CachesToPrewarm & caches);
 
     String getLogName() const { return log.loadName(); }
 
@@ -766,6 +775,16 @@ public:
     static void validateDetachedPartName(const String & name);
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+
+    /// Execute a merge of the specified parts to a temporary directory without committing.
+    /// Used by OPTIMIZE ... DRY RUN PARTS.
+    void optimizeDryRun(
+        const Names & part_names,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool deduplicate,
+        const Names & deduplicate_by_columns,
+        bool cleanup,
+        ContextPtr context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
@@ -1072,8 +1091,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
-    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsAnyLock & lock) const;
+    String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context, const DataPartsLock * acquired_lock = nullptr) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
@@ -1415,7 +1433,7 @@ private:
         std::shared_ptr<const ColumnsDescription> original;
         std::shared_ptr<const ColumnsDescription> with_collected_nested;
     };
-    mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
+    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
     mutable std::mutex columns_descriptions_cache_mutex;
     mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
 
@@ -1771,7 +1789,9 @@ protected:
         using PartLoadingInfos = std::vector<PartLoadingInfo>;
 
         /// Builds a tree from the list of part infos.
-        static PartLoadingTree build(PartLoadingInfos nodes);
+        /// @param relative_data_path - path to the table data directory on disks,
+        ///   used to check for transaction metadata when parts intersect.
+        static PartLoadingTree build(PartLoadingInfos nodes, const String & relative_data_path);
 
         /// Traverses a tree and call @func on each node.
         /// If recursive is false traverses only the top level.
@@ -1783,6 +1803,7 @@ protected:
         /// because rearranging tree to the new root is not supported.
         void add(const MergeTreePartInfo & info, const String & name, const DiskPtr & disk);
         std::unordered_map<String, NodePtr> root_by_partition;
+        String relative_data_path;
     };
 
     using PartLoadingTreeNodes = std::vector<PartLoadingTree::NodePtr>;

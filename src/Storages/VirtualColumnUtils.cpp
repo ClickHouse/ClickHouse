@@ -14,6 +14,7 @@
 
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
@@ -41,6 +42,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -396,7 +399,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (virtual_column.name == "_row_number")
         {
-#if USE_PARQUET
             auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
             if (chunk_info)
             {
@@ -411,7 +413,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
                 return;
             }
-#endif
             /// Row numbers not known, _row_number = NULL.
             chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
         }
@@ -423,6 +424,14 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                     convertFieldToType(Field(it->second), *virtual_column.type))->convertToFullColumnIfConst());
         }
     }
+}
+
+bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns)
+{
+    return std::any_of(
+        requested_virtual_columns.begin(),
+        requested_virtual_columns.end(),
+        [](const auto & col) { return col.name == "_row_number"; });
 }
 
 static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allowed_inputs)
@@ -641,6 +650,38 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
     }
 
     return result;
+}
+
+DataPartsVector filterDataPartsWithExpression(
+    const DataPartsVector & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter)
+{
+    if (!virtual_columns_filter)
+        return data_parts;
+
+    auto all_part_names = ColumnString::create();
+    for (const auto & part : data_parts)
+        all_part_names->insert(part->name);
+
+    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), "part_name"}};
+    filterBlockWithExpression(virtual_columns_filter, filtered_block);
+
+    if (!filtered_block.rows())
+        return {};
+
+    auto part_names = filtered_block.getByPosition(0).column;
+    const auto & part_names_str = assert_cast<const ColumnString &>(*part_names);
+
+    HashSet<std::string_view> part_names_set;
+    for (size_t i = 0; i < part_names_str.size(); ++i)
+        part_names_set.insert(part_names_str.getDataAt(i));
+
+    DataPartsVector filtered_parts;
+    for (const auto & part : data_parts)
+        if (part_names_set.has(part->name))
+            filtered_parts.push_back(part);
+
+    return filtered_parts;
 }
 
 }

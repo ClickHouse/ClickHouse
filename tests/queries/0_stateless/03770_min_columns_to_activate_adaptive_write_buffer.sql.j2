@@ -41,5 +41,5 @@ select
     )
   )
 from system.part_log
-where database = currentDatabase() and event_type = 'MergeParts'
+where event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() and event_type = 'MergeParts'
 order by event_time_microseconds;

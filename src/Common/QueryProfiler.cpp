@@ -7,6 +7,7 @@
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/MemoryTracker.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceSender.h>

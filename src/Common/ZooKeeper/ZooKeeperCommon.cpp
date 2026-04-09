@@ -52,7 +52,7 @@ std::string ZooKeeperRequest::toString(bool short_format) const
         toStringImpl(short_format));
 }
 
-void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64) const
+void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64, bool supports_tracing) const
 {
     size_t request_size = 0;
     if (use_xid_64)
@@ -69,6 +69,16 @@ void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64) const
         Coordination::write(static_cast<int32_t>(xid), out);
     Coordination::write(getOpNum(), out);
     writeImpl(out);
+
+    if (supports_tracing)
+    {
+        const uint8_t has_tracing_context = tracing_context.has_value();
+        Coordination::write(has_tracing_context, out);
+        if (has_tracing_context)
+        {
+            tracing_context->serialize(out);
+        }
+    }
 }
 
 void ZooKeeperSyncRequest::writeImpl(WriteBuffer & out) const
@@ -711,7 +721,7 @@ std::string ZooKeeperCheckWatchRequest::toStringImpl(bool /*short_format*/) cons
 
 ZooKeeperResponsePtr ZooKeeperCheckWatchRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperAddWatchResponse>();
+    return std::make_shared<ZooKeeperCheckWatchResponse>();
 }
 
 void ZooKeeperCheckWatchResponse::readImpl(ReadBuffer &)
@@ -755,7 +765,7 @@ std::string ZooKeeperRemoveWatchRequest::toStringImpl(bool /*short_format*/) con
 
 ZooKeeperResponsePtr ZooKeeperRemoveWatchRequest::makeResponse() const
 {
-    return std::make_shared<ZooKeeperAddWatchResponse>();
+    return std::make_shared<ZooKeeperRemoveWatchResponse>();
 }
 
 void ZooKeeperRemoveWatchResponse::readImpl(ReadBuffer &)
@@ -802,17 +812,23 @@ ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
     return std::make_shared<ZooKeeperAddWatchResponse>();
 }
 
-void ZooKeeperAddWatchResponse::readImpl(ReadBuffer &)
+void ZooKeeperAddWatchResponse::readImpl(ReadBuffer & in)
 {
+    int32_t err;
+    Coordination::read(err, in);
 }
 
-void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer &) const
+void ZooKeeperAddWatchResponse::writeImpl(WriteBuffer & out) const
 {
+    /// The Java ZooKeeper client uses ErrorResponse as the response type for
+    /// addWatch, which expects a 4-byte error code in the response body.
+    /// Without it, the client gets EOFException and disconnects.
+    Coordination::write(static_cast<int32_t>(error), out);
 }
 
 size_t ZooKeeperAddWatchResponse::sizeImpl() const
 {
-    return 0;
+    return sizeof(int32_t);
 }
 
 void ZooKeeperSetWatchesRequest::readImpl(ReadBuffer & in)
@@ -1572,6 +1588,7 @@ std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
     auto request = ZooKeeperRequestFactory::instance().get(op_num);
     request->xid = xid;
     request->readImpl(in);
+
     return request;
 }
 

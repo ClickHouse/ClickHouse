@@ -122,8 +122,6 @@ protected:
 /// Properties of table function that are independent of argument types and parameters.
 struct TableFunctionProperties
 {
-    FunctionDocumentation documentation;
-
     /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
       *
       * If users can make a request to an arbitrary hostname, they can get the info from the internal network

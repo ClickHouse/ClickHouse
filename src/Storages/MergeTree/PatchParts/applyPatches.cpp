@@ -230,9 +230,13 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(const String & column_
 
     for (const auto & patch_block : all_patch_blocks)
     {
+        const auto & patch_column = patch_block.getByName(column_name).column;
+        if (!patch_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} has null data in patch block", column_name);
+
         IColumn::Patch::Source source =
         {
-            .column = *patch_block.getByName(column_name).column,
+            .column = *patch_column,
             .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
         };
 
@@ -266,8 +270,8 @@ Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_c
 
         for (const auto & column : patch->patch_blocks[0])
         {
-            /// Ignore columns that are not updated.
-            if (!updated_columns.contains(column.name))
+            /// Ignore columns that are not updated or have no data.
+            if (!updated_columns.contains(column.name) || !column.column)
                 header.erase(column.name);
         }
 
@@ -293,7 +297,7 @@ bool canApplyPatchesRaw(const PatchesToApply & patches)
         {
             for (const auto & column : patch->patch_blocks.front())
             {
-                if (!isPatchPartSystemColumn(column.name) && !canApplyPatchInplace(*column.column))
+                if (!isPatchPartSystemColumn(column.name) && column.column && !canApplyPatchInplace(*column.column))
                     return false;
             }
         }
@@ -325,9 +329,16 @@ void applyPatchesToBlockRaw(
             chassert(patch_to_apply->patch_blocks.size() == 1);
             const auto & patch_block = patch_to_apply->patch_blocks.front();
 
+            if (!patch_block.has(result_column.name))
+                continue;
+
+            const auto & patch_column = patch_block.getByName(result_column.name).column;
+            if (!patch_column)
+                continue;
+
             IColumn::Patch::Source source =
             {
-                .column = *patch_block.getByName(result_column.name).column,
+                .column = *patch_column,
                 .versions = getColumnUInt64Data(patch_block, PartDataVersionColumn::name),
             };
 

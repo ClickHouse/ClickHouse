@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/FloatUtils.h>
 
-#include <arrow/util/bit_stream_utils.h>
+#include <arrow/util/bit_stream_utils_internal.h>
 
 namespace DB::ErrorCodes
 {

@@ -1,4 +1,5 @@
 <clickhouse>
     <max_server_memory_usage>1000</max_server_memory_usage>
+    <users_to_ignore_early_memory_limit_check>default</users_to_ignore_early_memory_limit_check>
     <page_cache_size>0</page_cache_size>
 </clickhouse>

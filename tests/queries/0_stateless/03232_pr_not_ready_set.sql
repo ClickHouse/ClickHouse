@@ -4,7 +4,7 @@ SELECT
     count() AS c,
     replaceRegexpAll(query, '_data_(\\d+)_(\\d+)', '_data_') AS query
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (type = 'QueryFinish') AND (ignore(54, 0, ignore('QueryFinish', 11, toLowCardinality(toLowCardinality(11)), 11, 11, 11), 'QueryFinish', materialize(11), toUInt128(11)) IN (
+WHERE (event_date >= yesterday() AND event_time >= now() - 600) AND (type = 'QueryFinish') AND (ignore(54, 0, ignore('QueryFinish', 11, toLowCardinality(toLowCardinality(11)), 11, 11, 11), 'QueryFinish', materialize(11), toUInt128(11)) IN (
     SELECT query_id
     FROM system.query_log
     WHERE (current_database = currentDatabase()) AND (event_date >= yesterday()) AND (type = 'QueryFinish') AND (query LIKE '-- Parallel inner query alone%')

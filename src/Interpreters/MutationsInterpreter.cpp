@@ -87,10 +87,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_STATISTICS;
 }
 
-
-namespace
-{
-
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
@@ -124,6 +120,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     return select;
 }
+
+namespace
+{
 
 QueryTreeNodePtr prepareQueryAffectedQueryTree(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context)
 {
@@ -920,7 +919,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                         return index.name == command.index_name;
                     });
             if (it == std::cend(indices_desc))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
+            {
+                LOG_WARNING(logger, "Index {} does not exist, skipping materialization", command.index_name);
+                continue;
+            }
 
             if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
             {
@@ -959,6 +961,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_PROJECTION)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
+            if (!projections_desc.has(command.projection_name))
+            {
+                LOG_WARNING(logger, "Projection {} does not exist, skipping materialization", command.projection_name);
+                continue;
+            }
             const auto & projection = projections_desc.get(command.projection_name);
             if (!source.hasProjection(projection.name) || source.hasBrokenProjection(projection.name))
             {
@@ -1185,6 +1192,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & [name, ast] : stage.column_to_updated)
                         stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
+                    stages_copy.back().affects_all_columns = stage.affects_all_columns;
                     for (const auto & filter : stage.filters)
                         stages_copy.back().filters.push_back(filter->clone());
                 }

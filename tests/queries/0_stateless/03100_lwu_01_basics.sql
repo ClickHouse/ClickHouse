@@ -40,7 +40,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['ReadTasksWithAppliedPatches']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query = 'SELECT * FROM t_shared ORDER BY id;' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_shared SYNC;

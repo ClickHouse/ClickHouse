@@ -9,7 +9,6 @@
 -- and uncompressed tables return identical counts (and matches expected exact counts for key tokens),
 -- ensuring correctness across full blocks, tail blocks, and small-N cases.
 
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
 

@@ -35,8 +35,8 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
     FROM (
         SELECT
             (SELECT query_duration_ms FROM system.query_log
-             WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id_native' AND type != 'QueryStart') AS native_duration_ms,
+             WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id_native' AND type != 'QueryStart') AS native_duration_ms,
             (SELECT query_duration_ms FROM system.query_log
-             WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id_no_native' AND type != 'QueryStart') AS no_native_duration_ms
+             WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id_no_native' AND type != 'QueryStart') AS no_native_duration_ms
     )
 "

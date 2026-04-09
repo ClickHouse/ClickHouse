@@ -5,7 +5,6 @@
 #include <limits>
 #include <algorithm>
 #include <bit>
-
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -104,6 +103,7 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 {
     writeStringBinary(std::string_view{s}, buf);
 }
+
 
 template <typename T, typename Alloc = std::allocator<T>>
 void writeVectorBinary(const std::vector<T, Alloc> & v, WriteBuffer & buf)

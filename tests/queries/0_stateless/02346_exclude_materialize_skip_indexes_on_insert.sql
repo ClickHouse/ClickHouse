@@ -76,7 +76,7 @@ SELECT '';
 SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 
@@ -123,7 +123,7 @@ SELECT '';
 SELECT 'Count query log entries containing index updates on INSERT';
 SELECT count()
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
     AND query LIKE 'INSERT INTO tab SELECT%'
     AND type = 'QueryFinish';
 

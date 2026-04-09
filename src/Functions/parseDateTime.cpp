@@ -1,27 +1,29 @@
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
-#include <Common/DateLUTImpl.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/CacheLine.h>
+#include <Common/DateLUTImpl.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/StringHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/numLiteralChars.h>
 
 #include <Interpreters/Context.h>
 
 #include <IO/WriteHelpers.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <expected>
 
-#include <Functions/StringHelpers.h>
 
 namespace DB
 {
@@ -204,7 +206,7 @@ namespace
 }
 
     template <ErrorHandling error_handling, ReturnType return_type>
-    struct ParsedValue
+    struct alignas(CH_CACHE_LINE_SIZE) ParsedValue
     {
         static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 1900 : 1970;
         static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 2299 : 2106;
@@ -766,7 +768,7 @@ namespace
             const std::vector<Instruction> instructions = parseFormat(format);
             const auto & time_zone = getTimeZone(arguments);
 
-            alignas(64) ParsedValue<error_handling, return_type> datetime; /// Make datetime fit in a cache line.
+            ParsedValue<error_handling, return_type> datetime;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();

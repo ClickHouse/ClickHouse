@@ -1,4 +1,5 @@
 SET enable_analyzer=1;
+SET optimize_syntax_fuse_functions=0;
 
 -- { echoOn }
 Select sum(number + 1) from numbers(10);

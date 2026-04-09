@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /// A ColumnVector for Decimals
 template <is_decimal T>
 class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, ColumnFixedSizeHelper>, ColumnDecimal<T>>
@@ -88,7 +83,7 @@ public:
     void popBack(size_t n) override
     {
         if (n > size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, this->getName(), size());
+            throwCannotPopBack(n, this->getName(), size());
 
         data.resize_assume_reserved(data.size() - n);
     }
@@ -126,7 +121,7 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField<ValueType>(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const override;
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
@@ -143,7 +138,7 @@ public:
     ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool structureEquals(const IColumn & rhs) const override
     {

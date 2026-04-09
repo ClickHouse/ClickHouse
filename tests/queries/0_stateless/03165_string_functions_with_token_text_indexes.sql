@@ -2,8 +2,6 @@ SELECT '-------- Bloom filter --------';
 SELECT '';
 DROP TABLE IF EXISTS 03165_token_bf;
 
-SET enable_full_text_index=1;
-
 CREATE TABLE 03165_token_bf
 (
     id Int64,
@@ -118,7 +116,6 @@ SELECT '';
 SELECT '-------- Text index filter --------';
 SELECT '';
 
-SET enable_full_text_index = 1;
 DROP TABLE IF EXISTS 03165_token_ft;
 CREATE TABLE 03165_token_ft
 (

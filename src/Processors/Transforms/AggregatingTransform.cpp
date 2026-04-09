@@ -1,5 +1,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Chunk.h>
@@ -16,6 +17,13 @@
 #include <algorithm>
 #include <atomic>
 
+namespace CurrentMetrics
+{
+    extern const Metric DestroyAggregatesThreads;
+    extern const Metric DestroyAggregatesThreadsActive;
+    extern const Metric DestroyAggregatesThreadsScheduled;
+}
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
@@ -27,6 +35,47 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
     extern const int LOGICAL_ERROR;
+}
+
+ManyAggregatedData::~ManyAggregatedData()
+{
+    try
+    {
+        if (variants.size() <= 1)
+            return;
+
+        // Aggregation states destruction may be very time-consuming.
+        // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
+        // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
+        const auto pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::DestroyAggregatesThreads,
+            CurrentMetrics::DestroyAggregatesThreadsActive,
+            CurrentMetrics::DestroyAggregatesThreadsScheduled,
+            variants.size());
+
+        for (auto && variant : variants)
+        {
+            if (variant->size() < 100'000) // some seemingly reasonable constant
+                continue;
+
+            // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
+            if (variant->aggregator)
+            {
+                pool->scheduleOrThrowOnError(
+                    [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
+                        my_variant.reset();
+                    });
+            }
+        }
+
+        pool->wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 /// Convert block to chunk.

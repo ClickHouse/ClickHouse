@@ -107,10 +107,18 @@ rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."
 genhtml --version
+
+HEADER_TITLE="ClickHouse coverage report"
+if [ -n "${PR_NUMBER}" ]; then
+  PR_URL="https://github.com/ClickHouse/ClickHouse/pull/${PR_NUMBER}"
+  HEADER_TITLE="<a href=\"${PR_URL}\">${PR_URL}</a>"
+fi
+
 genhtml "llvm_coverage.info" \
+    --header-title "${HEADER_TITLE}" \
+    --title "branch=${BRANCH}, current_commit=${CURRENT_COMMIT}" \
+    --baseline-title "base_branch=${BASE_BRANCH}, baseline_commit=${BASE_COMMIT}" \
     --output-directory "llvm_coverage_html_report" \
-    --verbose \
-    --title "ClickHouse Coverage Report" \
     --legend \
     --demangle-cpp \
     --branch-coverage \
@@ -127,5 +135,6 @@ genhtml "llvm_coverage.info" \
     --ignore-errors unsupported \
     --ignore-errors source \
     --ignore-errors branch \
-    --ignore-errors range
-
+    --ignore-errors range \
+    --filter missing \
+    --quiet 

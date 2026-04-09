@@ -1,7 +1,8 @@
+#include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <IO/Operators.h>
+#include <Parsers/ASTSnapshotQuery.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -191,6 +192,18 @@ namespace
         out_settings->is_standalone = false;
         return out_settings;
     }
+
+    constexpr ASTBackupQuery::ElementType toBackupElementType(ASTSnapshotQuery::ElementType snapshot_type)
+    {
+        switch (snapshot_type)
+        {
+            case ASTSnapshotQuery::ElementType::TABLE:
+                return ASTBackupQuery::ElementType::TABLE;
+            case ASTSnapshotQuery::ElementType::ALL:
+                return ASTBackupQuery::ElementType::ALL;
+        }
+        std::unreachable();
+    }
 }
 
 
@@ -224,6 +237,35 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
     }
 }
 
+ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
+{
+    auto res = make_intrusive<ASTBackupQuery>();
+    res->children.clear();
+
+    const auto & element = query.element;
+    res->elements.push_back(
+        ASTBackupQuery::Element{
+            toBackupElementType(element.type),
+            element.table_name,
+            element.database_name,
+            element.table_name,
+            element.database_name,
+            /*partitions*/ {},
+            element.except_tables,
+            element.except_databases});
+    if (query.snapshot_destination)
+        res->set(res->backup_name, query.snapshot_destination->clone());
+
+    SettingsChanges changes;
+    changes.emplace_back("experimental_lightweight_snapshot", true);
+    changes.emplace_back("snapshot", true);
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->changes = std::move(changes);
+    settings->is_standalone = false;
+    res->settings = settings;
+
+    return res;
+};
 
 void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, const String & current_database)
 {

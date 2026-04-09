@@ -120,7 +120,7 @@ SELECT
         arrayExists(d -> d NOT IN allowed_databases, databases)
     ) AS unexpected_entries_found
 FROM system.query_log
-WHERE
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     log_comment = '$log_comment' AND
     (
         current_database = currentDatabase() OR

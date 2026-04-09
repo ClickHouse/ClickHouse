@@ -42,7 +42,7 @@ SELECT * FROM system.primes LIMIT 10;
 
 The first prime greater than 1e15.
 ```sql
-SELECT prime FROM system.primes WHERE prime > toUInt64(1e15) LIMIT 1;
+SELECT prime FROM system.primes WHERE prime > 1e15 LIMIT 1;
 ```
 
 ```response

@@ -62,6 +62,16 @@ if (WITH_COVERAGE)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
 endif()
 
+# Use our bundled compiler-rt headers (sanitizer/ and xray/ interfaces) instead of the ones
+# from the compiler's resource directory. This avoids depending on the host compiler's headers:
+# for example, sanitizer builds need <sanitizer/asan_interface.h> etc., but XRay is disabled
+# for sanitizer builds, so those headers would otherwise come from the system compiler.
+#
+# The compiler searches -isystem paths before its implicit resource directory, so putting our
+# bundled path here ensures it takes precedence without disrupting #include_next chains (which
+# libcxx relies on to reach the compiler's own stddef.h, stdarg.h, etc.).
+include_directories (SYSTEM "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
+
 option (SANITIZE_COVERAGE "Instrumentation for code coverage with custom callbacks" OFF)
 
 if (SANITIZE_COVERAGE)

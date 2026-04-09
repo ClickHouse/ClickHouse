@@ -10,7 +10,15 @@ namespace DB
 class SerializationObjectSharedDataPath final : public SerializationWrapper
 {
 public:
-    SerializationObjectSharedDataPath(const SerializationPtr & nested_, SerializationObjectSharedData::SerializationVersion serialization_version_, const String & path_, const String & path_subcolumn_, const DataTypePtr & dynamic_type_, const DataTypePtr & subcolumn_type_, size_t bucket);
+    SerializationObjectSharedDataPath(
+        const SerializationPtr & nested_,
+        SerializationObjectSharedData::SerializationVersion serialization_version_,
+        const String & path_,
+        const String & path_subcolumn_,
+        const DataTypePtr & dynamic_type_,
+        const SerializationPtr & dynamic_serialization_,
+        const DataTypePtr & subcolumn_type_,
+        size_t bucket);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

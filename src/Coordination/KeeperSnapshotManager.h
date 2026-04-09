@@ -120,7 +120,6 @@ struct SnapshotFileInfo
 
     std::string path;
     DiskPtr disk;
-    mutable std::atomic<size_t> size{0};
 };
 
 using SnapshotFileInfoPtr = std::shared_ptr<SnapshotFileInfo>;

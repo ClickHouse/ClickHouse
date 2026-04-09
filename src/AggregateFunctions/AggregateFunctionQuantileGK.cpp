@@ -593,7 +593,7 @@ SELECT quantileGK(100, 0.25)(number + 1) FROM numbers(1000);
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, {}, documentation});
+    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, documentation});
 
     FunctionDocumentation::Description description_quantiles = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
@@ -644,7 +644,7 @@ SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
     FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
 
-    factory.registerFunction(NameQuantilesGK::name, {createAggregateFunctionQuantile<FuncQuantilesGK>, properties, documentation_quantiles});
+    factory.registerFunction(NameQuantilesGK::name, {createAggregateFunctionQuantile<FuncQuantilesGK>, documentation_quantiles, properties});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianGK", NameQuantileGK::name);

@@ -82,5 +82,7 @@
 #cmakedefine01 USE_YTSAURUS
 #cmakedefine01 USE_CLIENT_AI
 #cmakedefine01 USE_LIBCOTP
+#cmakedefine01 USE_WASMEDGE
+#cmakedefine01 USE_WASMTIME
 #cmakedefine01 WITH_COVERAGE
 

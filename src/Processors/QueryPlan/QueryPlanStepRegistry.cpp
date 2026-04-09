@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
 namespace DB

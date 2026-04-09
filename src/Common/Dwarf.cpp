@@ -1388,19 +1388,22 @@ void Dwarf::findInlinedSubroutineDieForAddress(
             // and line info.
             // DW_AT_specification: Incomplete, non-defining, or separate declaration
             // corresponding to a declaration
+            std::optional<CompilationUnit> spec_cu;
             auto def = getReferenceAttribute(srcu, die_to_look_for_name, DW_AT_specification);
             if (def.has_value())
             {
                 auto [def_cu, def_offset] = std::move(def.value());
-                const CompilationUnit & def_cu_ref = def_cu.has_value() ? def_cu.value() : srcu;
-                die_to_look_for_name = getDieAtOffset(def_cu_ref, def_offset);
+                if (def_cu.has_value())
+                    spec_cu = std::move(def_cu.value());
+                die_to_look_for_name = getDieAtOffset(spec_cu.has_value() ? spec_cu.value() : srcu, def_offset);
             }
 
+            const CompilationUnit & die_cu = spec_cu.has_value() ? spec_cu.value() : srcu;
             std::string_view name;
 
             // The file and line will be set in the next inline subroutine based on
             // its DW_AT_call_file and DW_AT_call_line.
-            forEachAttribute(srcu, die_to_look_for_name, [&](const Attribute & attr)
+            forEachAttribute(die_cu, die_to_look_for_name, [&](const Attribute & attr)
             {
                 switch (attr.spec.name) // NOLINT(bugprone-switch-missing-default-case)
                 {

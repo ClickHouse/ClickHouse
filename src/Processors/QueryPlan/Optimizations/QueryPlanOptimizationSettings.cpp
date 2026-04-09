@@ -1,7 +1,8 @@
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 namespace DB
 {
@@ -73,6 +74,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
@@ -223,7 +225,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_threads = from[Setting::max_threads];
 
     parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
-    max_parallel_replicas = from[Setting::max_parallel_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 
@@ -241,6 +242,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             && from->getSettingsRef()[Setting::parallel_replicas_local_plan]
             && from->getSettingsRef()[Setting::parallel_replicas_support_projection])
 {
+    max_parallel_replicas = from->getSettingsRef()[Setting::max_parallel_replicas];
+    if (auto cluster_name = from->getSettingsRef()[Setting::cluster_for_parallel_replicas].value; !cluster_name.empty())
+    {
+        if (auto cluster = from->tryGetCluster(cluster_name))
+            if (auto nodes = cluster->getAnyShardInfo().getAllNodeCount())
+                max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
+    }
 }
-
 }

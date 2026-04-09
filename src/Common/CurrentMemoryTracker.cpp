@@ -1,8 +1,8 @@
-#include <Common/MemoryTracker.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS

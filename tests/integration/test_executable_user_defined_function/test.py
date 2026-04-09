@@ -351,7 +351,7 @@ def test_executable_function_query_cache(started_cluster):
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''
     skip_test_msan(node)
 
-    node.query("SYSTEM DROP QUERY CACHE");
+    node.query("SYSTEM CLEAR QUERY CACHE");
 
     # we are each testing an UDF without explicit <deterministic> tag (to check the default behavior) and two queries with <deterministic> true respectively false </deterministic>.
 
@@ -366,7 +366,7 @@ def test_executable_function_query_cache(started_cluster):
     assert node.query_and_get_error("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'")
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
 
-    node.query("SYSTEM DROP QUERY CACHE");
+    node.query("SYSTEM CLEAR QUERY CACHE");
 
     # query_cache_nondeterministic_function_handling = save
 
@@ -379,7 +379,7 @@ def test_executable_function_query_cache(started_cluster):
     assert node.query("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
     assert node.query("SELECT count(*) FROM system.query_cache") == "3\n"
 
-    node.query("SYSTEM DROP QUERY CACHE");
+    node.query("SYSTEM CLEAR QUERY CACHE");
 
     # query_cache_nondeterministic_function_handling = ignore
 
@@ -392,7 +392,7 @@ def test_executable_function_query_cache(started_cluster):
     assert node.query("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
 
-    node.query("SYSTEM DROP QUERY CACHE");
+    node.query("SYSTEM CLEAR QUERY CACHE");
 
 def test_executable_function_python_exception_in_query_log(started_cluster):
     '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction defaults to throw'''

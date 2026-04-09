@@ -27,6 +27,7 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
@@ -707,6 +708,7 @@ void DiskLocal::checkAccessImpl(const String & path)
 
 void DiskLocal::setup()
 {
+    fs::create_directories(disk_path);
     try
     {
         if (!FS::canRead(disk_path))

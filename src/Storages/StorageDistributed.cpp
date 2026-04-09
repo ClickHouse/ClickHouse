@@ -177,6 +177,7 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
 }
 
@@ -209,6 +210,7 @@ namespace ErrorCodes
     extern const int DISTRIBUTED_TOO_MANY_PENDING_BYTES;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
 namespace ActionLocks
@@ -1167,6 +1169,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     query_context->increaseDistributedDepth();
     query_context->setSetting("enable_parallel_replicas", Field{0}); // TODO: allow parallel inserts with PR for distributed tables
 
+    size_t available_shards = 0;
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
@@ -1180,14 +1183,19 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
                 /* no_destination */ false,
                 /* async_isnert */ false);
             pipeline.addCompletedPipeline(interpreter.execute().pipeline);
+            ++available_shards;
         }
         else
         {
             auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
             auto connections = shard_info.pool->getMany(timeouts, settings, PoolMode::GET_ONE);
             if (connections.empty() || connections.front().isNull())
+            {
+                if (settings[Setting::skip_unavailable_shards])
+                    continue;
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected exactly one connection for shard {}",
                     shard_info.shard_num);
+            }
 
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
@@ -1197,8 +1205,12 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getSharedHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
+            ++available_shards;
         }
     }
+
+    if (available_shards == 0)
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No available shards to write to");
 
     return pipeline;
 }

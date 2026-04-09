@@ -50,8 +50,6 @@ protected:
     void updateLoggerLevel(const String & logs_level) override;
 
 private:
-    String getHelpHeader() const;
-    String getHelpFooter() const;
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
       * Returns a pair of the table name and the corresponding create table statement.

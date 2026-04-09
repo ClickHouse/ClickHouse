@@ -598,22 +598,20 @@ void ColumnString::shrinkToFit()
     offsets.shrink_to_fit();
 }
 
-void ColumnString::getExtremes(Field & min, Field & max) const
+void ColumnString::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
     min = String();
     max = String();
 
-    size_t col_size = size();
-
-    if (col_size == 0)
+    if (start >= end)
         return;
 
-    size_t min_idx = 0;
-    size_t max_idx = 0;
+    size_t min_idx = start;
+    size_t max_idx = start;
 
     ComparatorBase cmp_op(*this);
 
-    for (size_t i = 1; i < col_size; ++i)
+    for (size_t i = start + 1; i < end; ++i)
     {
         if (cmp_op.compare(i, min_idx) < 0)
             min_idx = i;

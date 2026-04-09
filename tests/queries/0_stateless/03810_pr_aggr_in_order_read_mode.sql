@@ -9,7 +9,6 @@ SET optimize_read_in_order=0;
 SET optimize_aggregation_in_order=1; -- issue is related to this optimization
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-SYSTEM ENABLE FAILPOINT parallel_replicas_check_read_mode_always;
 
 -- TODO: this query will fail if parallel_replicas_filter_pushdown is enabled
 --       enable parallel_replicas_filter_pushdown setting explicitly

@@ -80,6 +80,10 @@ private:
     void startWritingFile();
     void endWritingFile();
 
+    /// Re-throws a stored exception from a libarchive C callback, if any.
+    void rethrowStoredException();
+    void rethrowStoredExceptionLocked() TSA_REQUIRES(mutex);
+
     std::unique_ptr<StreamInfo> stream_info TSA_GUARDED_BY(mutex);
     bool is_writing_file TSA_GUARDED_BY(mutex) = false;
     bool finalized TSA_GUARDED_BY(mutex) = false;

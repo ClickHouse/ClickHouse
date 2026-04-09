@@ -5,7 +5,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 
 
 namespace DB
@@ -62,7 +62,7 @@ struct LocalQueryState
     Stopwatch after_send_progress;
     Stopwatch after_send_profile_events;
 
-    CurrentThread::QueryScope query_scope_holder;
+    QueryScope query_scope_holder;
 };
 
 

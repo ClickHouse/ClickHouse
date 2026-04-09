@@ -595,8 +595,8 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
 
     HashSet<KeyType> not_found_keys;
 
-    std::vector<UInt64> requested_keys_vector;
-    std::vector<size_t> requested_complex_key_rows;
+    VectorWithMemoryTracking<UInt64> requested_keys_vector;
+    VectorWithMemoryTracking<size_t> requested_complex_key_rows;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         requested_keys_vector.reserve(requested_keys.size());

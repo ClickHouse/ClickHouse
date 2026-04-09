@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
 #include <bit>
@@ -116,7 +117,19 @@ bool memoryIsZero(const void * data, size_t start, size_t end)
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+}
+
+void throwIndexesSizeTooSmall(size_t indexes_size, size_t limit)
+{
+    throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+        "Size of indexes ({}) is less than required ({})", indexes_size, limit);
+}
+
+void throwUnsupportedIndexesColumnType(const std::string & name)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Indexes column for IColumn::select must be ColumnUInt, got {}", name);
 }
 
 

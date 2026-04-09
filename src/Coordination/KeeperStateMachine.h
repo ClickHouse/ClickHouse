@@ -4,6 +4,7 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/SharedMutex.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
@@ -42,6 +43,7 @@ public:
         WITH_TIME = 1,
         WITH_ZXID_DIGEST = 2,
         WITH_XID_64 = 3,
+        WITH_OPTIONAL_TRACING_CONTEXT = 4,
     };
 
     /// lifetime of a parsed request is:
@@ -126,6 +128,13 @@ protected:
     SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
     std::shared_ptr<SnapshotFileInfo> latest_snapshot_info TSA_GUARDED_BY(snapshots_lock);
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf TSA_GUARDED_BY(snapshots_lock) = nullptr;
+
+    /// Cached size of the latest snapshot file, updated atomically after each snapshot
+    /// creation/save while snapshots_lock is held. Read lock-free by `getLatestSnapshotSize`
+    /// (called from `mntr`) to avoid blocking on `snapshots_lock` during long-running
+    /// snapshot serialization. On `getFileSize` failure the previous value is retained
+    /// and a warning is logged; the value self-corrects on the next successful snapshot.
+    std::atomic<uint64_t> latest_snapshot_size{0};
 
     CoordinationSettingsPtr coordination_settings;
 

@@ -74,7 +74,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] == 50, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_left'
 ORDER BY event_time DESC
 LIMIT 1;
@@ -85,7 +85,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 50, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_left_where'
 ORDER BY event_time DESC
 LIMIT 1;
@@ -95,7 +95,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] == 50, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 50, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_left_where_filter_zeros'
 ORDER BY event_time DESC
 LIMIT 1;
@@ -105,7 +105,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_right'
 ORDER BY event_time DESC
 LIMIT 1;
@@ -116,7 +116,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] == 50, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 50, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_inner'
 ORDER BY event_time DESC
 LIMIT 1;
@@ -126,7 +126,7 @@ SELECT
     if(ProfileEvents['JoinBuildTableRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinBuildTableRowCount'])),
     if(ProfileEvents['JoinResultRowCount'] == 150, 'ok', 'fail: ' || toString(ProfileEvents['JoinResultRowCount'])),
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
 AND log_comment = '03362_join_on_filterpushdown_full'
 ORDER BY event_time DESC
 LIMIT 1;

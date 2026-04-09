@@ -148,6 +148,7 @@ private:
     const size_t max_joined_block_rows = 0;
     const size_t max_joined_block_bytes = 0;
     const bool joined_block_split_single_row = false;
+    const bool parallel_non_joined_rows_processing = true;
     std::vector<JoinAlgorithm> join_algorithms;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
@@ -311,6 +312,7 @@ public:
     bool allowJoinSorting() const { return allow_join_sorting; }
     size_t defaultMaxBytes() const { return default_max_bytes; }
     bool joinedBlockAllowSplitSingleRow() const { return joined_block_split_single_row; }
+    bool allowParallelNonJoinedRowsProcessing() const { return parallel_non_joined_rows_processing; }
     size_t maxJoinedBlockRows() const { return max_joined_block_rows; }
     size_t maxJoinedBlockBytes() const { return max_joined_block_bytes; }
     size_t maxRowsInRightBlock() const { return partial_merge_join_rows_in_right_blocks; }

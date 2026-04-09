@@ -37,6 +37,13 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
 
 void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
+    /// Let inner nodes (e.g. ASTSelectWithUnionQuery) know that SETTINGS will be
+    /// appended after them, so they can parenthesize the last SELECT to prevent the
+    /// re-parser from consuming SETTINGS into that SELECT.
+    /// When out_file or format_ast is present, they are formatted before SETTINGS and
+    /// act as a separator, so the parser stops before them — no parentheses needed.
+    frame.parent_has_trailing_settings = frame.parent_has_trailing_settings || (settings_ast && !out_file && !format_ast);
+
     formatQueryImpl(ostr, s, state, frame);
 
     std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');

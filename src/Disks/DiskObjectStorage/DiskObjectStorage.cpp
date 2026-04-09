@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -259,6 +260,7 @@ void DiskObjectStorage::copyFile( /// NOLINT
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
+    auto component_guard = Coordination::setCurrentComponent("DiskObjectStorage::copyFile");
     if (getDataSourceDescription() == to_disk.getDataSourceDescription())
     {
         /// It may use s3-server-side copy
@@ -713,7 +715,7 @@ static inline Settings updateIOSchedulingSettings(const Settings & settings, con
 {
     if (read_resource_name.empty() && write_resource_name.empty())
         return settings;
-    if (auto query_context = CurrentThread::getQueryContext())
+    if (auto query_context = CurrentThread::tryGetQueryContext())
     {
         Settings result(settings);
         if (!read_resource_name.empty())

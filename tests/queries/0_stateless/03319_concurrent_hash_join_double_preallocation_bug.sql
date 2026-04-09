@@ -22,4 +22,4 @@ system flush logs query_log;
 
 select ProfileEvents['HashJoinPreallocatedElementsInHashTables']
 from system.query_log
-where event_date >= yesterday() and current_database = currentDatabase() and type = 'QueryFinish' and log_comment = '03319_second_query';
+where event_date >= yesterday() AND event_time >= now() - 600 and current_database = currentDatabase() and type = 'QueryFinish' and log_comment = '03319_second_query';

@@ -26,6 +26,7 @@ using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IInputFormat;
 struct ConnectionTimeouts;
 class NamedCollection;
+struct StorageID;
 class PullingPipelineExecutor;
 
 /**
@@ -340,7 +341,7 @@ public:
         std::string addresses_expr;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
     /// If `headers(...)` argument is present, parses it and moves it to the end of the array.

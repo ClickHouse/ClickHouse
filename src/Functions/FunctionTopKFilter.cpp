@@ -29,10 +29,10 @@ public:
         if (!threshold_tracker_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopKFilter got NULL threshold_tracker");
 
-        String comparator = "less";
+        String comparator = "lessOrEquals";
 
         if (threshold_tracker->getDirection() == -1) /// DESC
-            comparator = "greater";
+            comparator = "greaterOrEquals";
         auto context = Context::getGlobalContextInstance();
         compare_function = FunctionFactory::instance().get(comparator, context);
         direction = threshold_tracker_->getDirection();

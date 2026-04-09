@@ -18,8 +18,8 @@ namespace DB
 /// To prevent this, we provide these `-WithMemoryTracking` aliases to standard containers that use the
 /// `AllocatorWithMemoryTracking`, which tracks memory using throwing methods of the `MemoryTracker`.
 
-template <typename K>
-using SetWithMemoryTracking = std::set<K, std::less<K>, AllocatorWithMemoryTracking<K>>;
+template <typename K, typename Compare = std::less<K>>
+using SetWithMemoryTracking = std::set<K, Compare, AllocatorWithMemoryTracking<K>>;
 
 template <typename K>
 using MultiSetWithMemoryTracking = std::multiset<K, std::less<K>, AllocatorWithMemoryTracking<K>>;

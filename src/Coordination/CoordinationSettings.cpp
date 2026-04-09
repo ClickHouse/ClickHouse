@@ -42,6 +42,7 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
+    DECLARE(UInt64, max_finished_sessions_cache_size, 100000, "Maximum number of finished sessions to track for stale request filtering. Entries are normally cleaned up when the corresponding Close commits; this limit is a safety cap.", 0) \
     DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", 0) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", 0) \
@@ -287,6 +288,9 @@ void KeeperConfigurationAndSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings[CoordinationSetting::use_xid_64]);
     writeText("check_node_acl_on_remove=", buf);
     write_bool(coordination_settings[CoordinationSetting::check_node_acl_on_remove]);
+
+    writeText("max_finished_sessions_cache_size=", buf);
+    write_int(coordination_settings[CoordinationSetting::max_finished_sessions_cache_size]);
 }
 
 KeeperConfigurationAndSettingsPtr

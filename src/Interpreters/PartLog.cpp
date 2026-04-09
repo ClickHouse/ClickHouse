@@ -134,6 +134,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
         {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
+        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
@@ -189,7 +190,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
     columns[i++]->insert(partition);
-    columns[i++]->insert(part_type.toString());
+    columns[i++]->insert(part_format.part_type.toString());
+    columns[i++]->insert(part_format.storage_type.toString());
     columns[i++]->insert(disk_name);
     columns[i++]->insert(path_on_disk);
 
@@ -278,8 +280,8 @@ bool PartLog::addNewPartsImpl(
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();
-            elem.part_type = part->getType();
             elem.deduplication_block_ids = deduplication_block_ids.empty() ? Strings() : std::move(deduplication_block_ids[i]);
+            elem.part_format = part->getFormat();
 
             elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();

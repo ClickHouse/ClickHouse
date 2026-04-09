@@ -287,7 +287,7 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         },
         {
             "CREATE USER user1",
-            "CREATE USER user1 IDENTIFIED WITH no_password"
+            "CREATE USER user1"
         },
         {
             "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123', plaintext_password BY 'def123', sha256_password BY 'ghi123'",

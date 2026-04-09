@@ -5,6 +5,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
+#include <Common/Logger_fwd.h>
 #include <map>
 #include <mutex>
 
@@ -89,7 +90,7 @@ public:
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
-    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
+    void removeAllFilesUnderDirectory(const String & directory) const override;
 
 private:
     void open();
