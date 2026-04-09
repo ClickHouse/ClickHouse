@@ -1,5 +1,6 @@
 -- Tags: no-parallel-replicas
--- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas.
+-- no-parallel-replicas: use_skip_indexes_on_data_read is not supported with parallel replicas
+-- add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 -- { echo ON }
 
@@ -27,7 +28,8 @@ SETTINGS
     index_granularity = 1,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 -- create 3 parts to test concurrent processing.
 INSERT INTO test VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe'), (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west'), (3, '2023-01-02', 106, 'https://example.com/page3', 'us_west'), (4, '2023-01-02', 107, 'https://example.com/page4', 'us_west'), (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
@@ -53,13 +55,13 @@ SELECT * FROM test WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS 
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_1';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_1';
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_2';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_2';
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_3';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_3';
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_4';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_4';
 
 DROP TABLE test;
 
@@ -81,7 +83,8 @@ SETTINGS
     index_granularity = 1,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    max_bytes_to_merge_at_max_space_in_pool = 1;
+    max_bytes_to_merge_at_max_space_in_pool = 1,
+    add_minmax_index_for_numeric_columns=0;
 
 -- insert a part with no index
 INSERT INTO test_partial_index VALUES (1, '2023-01-01', 101, 'https://example.com/page1', 'europe'), (2, '2023-01-01', 102, 'https://example.com/page2', 'us_west'), (3, '2023-01-02', 106, 'https://example.com/page3', 'us_west'), (4, '2023-01-02', 107, 'https://example.com/page4', 'us_west'), (5, '2023-01-03', 104, 'https://example.com/page5', 'asia');
@@ -114,12 +117,12 @@ SELECT * FROM test_partial_index WHERE region = 'asia' OR user_id = 101 ORDER BY
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_1';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_1';
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_2';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_2';
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_3';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_3';
 
-SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_4';
+SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_4';
 
 DROP TABLE test_partial_index;

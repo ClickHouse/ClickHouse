@@ -1,0 +1,18 @@
+before delete	1	2000-01-01 01:02:03
+before delete	2	2000-01-01 04:05:06
+after delete	1	2000-01-01 01:02:03
+before delete dt64	1	2000-01-01 01:02:03.123
+before delete dt64	2	2000-01-01 04:05:06.456
+after delete dt64	1	2000-01-01 01:02:03.123
+after update	1	old
+after update	2	new
+before delete nullable	1	2000-01-01 01:02:03
+before delete nullable	2	2000-01-01 04:05:06
+after delete nullable	1	2000-01-01 01:02:03
+before delete lc	1	2000-01-01 01:02:03
+before delete lc	2	2000-01-01 04:05:06
+after delete lc	1	2000-01-01 01:02:03
+before delete nullable dt64	1	2000-01-01 01:02:03.123
+before delete nullable dt64	2	2000-01-01 04:05:06.456
+after delete nullable dt64	1	2000-01-01 01:02:03.123
+explicit tz	1	2000-01-01 01:02:03

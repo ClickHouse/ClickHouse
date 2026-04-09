@@ -262,6 +262,12 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 highlight_matching_identifiers = &range;
             }
 
+            /// Highlight digit groups inside numbers
+            bool is_regular_number = (range.highlight == Highlight::number);
+            bool is_regular_number_finished = false;
+            std::optional<size_t> regular_number_before_decimal_code_point_first;
+            std::optional<size_t> regular_number_before_decimal_code_point_last;
+
             int escaped = 0;
             while (char_pos < range.end)
             {
@@ -282,8 +288,52 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                     escaped = 0;
                 }
 
+                if (is_regular_number)
+                {
+                    if (*char_pos == '-')
+                    {
+                        /// Skip
+                    }
+                    else if (isNumericASCII(*char_pos))
+                    {
+                        if (!is_regular_number_finished)
+                        {
+                            if (!regular_number_before_decimal_code_point_first)
+                                regular_number_before_decimal_code_point_first = code_point_pos;
+                            regular_number_before_decimal_code_point_last = code_point_pos;
+                        }
+                    }
+                    else if (*char_pos == '.')
+                    {
+                        /// We are highlighting only before the decimal point
+                        is_regular_number_finished = true;
+                    }
+                    else
+                    {
+                        /// Unexpected, like already pre-formatted numbers, e.g., 1_000, or exponential notation or hex/bin
+                        /// Do not highlight.
+                        is_regular_number = false;
+                    }
+                }
+
                 ++code_point_pos;
                 char_pos += UTF8::seqLength(*char_pos);
+            }
+
+            /// Highlight digit groups inside numbers
+            if (is_regular_number
+                && regular_number_before_decimal_code_point_first
+                && regular_number_before_decimal_code_point_last)
+            {
+                size_t number_length = 1 + *regular_number_before_decimal_code_point_last - *regular_number_before_decimal_code_point_first;
+                if (number_length >= 5)
+                {
+                    for (int64_t offset = number_length - 4; offset >= 0; offset -= 3)
+                    {
+                        size_t number_code_point_pos = *regular_number_before_decimal_code_point_first + offset;
+                        colors[number_code_point_pos] = replxx::color::underline(colors[number_code_point_pos]);
+                    }
+                }
             }
         }
     }

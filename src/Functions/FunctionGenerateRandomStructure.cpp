@@ -193,7 +193,7 @@ namespace
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)
-            x = rng() % (2 * max_value + 3 - num_values) - max_value - 1;
+            x = static_cast<Int16>(rng() % (2 * max_value + 3 - num_values) - max_value - 1);
         /// Make all numbers unique.
         std::sort(values.begin(), values.end());
         for (size_t i = 0; i < num_values; ++i)
@@ -430,6 +430,17 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     size_t number_of_columns = generateNumberOfColumns(rng);
     WriteBufferFromOwnString buf;
     writeRandomStructure(rng, number_of_columns, buf, context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types]);
+    return buf.str();
+}
+
+String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types)
+{
+    WriteBufferFromOwnString buf;
+    String column_name = "c";
+    if (allow_complex_types)
+        writeRandomType<true>(column_name, rng, buf, allow_suspicious_lc_types);
+    else
+        writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types);
     return buf.str();
 }
 

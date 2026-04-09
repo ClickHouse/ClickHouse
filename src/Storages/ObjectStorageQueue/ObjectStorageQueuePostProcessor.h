@@ -10,7 +10,7 @@ namespace DB
 
 struct ObjectStorageQueueTableMetadata;
 
-class ObjectStorageQueuePostProcessor: public WithContext
+class ObjectStorageQueuePostProcessor : public WithContext
 {
 public:
     struct AfterProcessingSettings

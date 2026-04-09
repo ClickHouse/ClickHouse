@@ -7,8 +7,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Port.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -344,7 +346,7 @@ try
 
                         break;
                     }
-                    catch (...)
+                    catch (const std::exception &)
                     {
                         /// We failed to infer the schema for this format.
                         /// Recreate read buffer or rollback to the beginning of the data
@@ -381,7 +383,7 @@ try
                             if (!tmp_names_and_types.empty())
                                 format_to_schema[formats_set_to_detect[i]] = tmp_names_and_types;
                         }
-                        catch (...) // NOLINT(bugprone-empty-catch)
+                        catch (const std::exception &) // NOLINT(bugprone-empty-catch)
                         {
                             /// Try next format.
                         }
@@ -437,6 +439,14 @@ try
 
         if (!format_name)
             throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
+
+        if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} file format doesn't support schema inference. You must specify the structure manually",
+                *format_name);
+        }
 
         /// We need some stateless methods of ISchemaReader, but during reading schema we
         /// could not even create a schema reader (for example when we got schema from cache).

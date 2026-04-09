@@ -1,0 +1,16 @@
+499
+Expression ((Project names + Projection))
+  AggregatingProjection
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_nullable_filter)
+        Indexes:
+          PrimaryKey
+            Keys:
+              x
+            Condition: (CAST(x, \'Nullable(UInt64)\') in [501, +Inf))
+            Parts: 1/1
+            Granules: 500/1000
+            Search Algorithm: binary search
+          Ranges: 1
+    ReadFromPreparedSource (_exact_count_projection)

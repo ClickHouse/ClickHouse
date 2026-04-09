@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: use-xray, no-parallel, no-fasttest
+# Tags: use-xray, no-parallel, no-fasttest, no-llvm-coverage
 # no-parallel: avoid other tests interfering with the global system.instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -24,14 +24,14 @@ statements=(
     "SELECT * FROM system.trace_log WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 1 MINUTE AND trace_type = 'Instrumentation' FORMAT NULL"
     "SYSTEM INSTRUMENT REMOVE ALL"
     "SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation LIMIT 2)"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry log'"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit log'"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP ENTRY 0"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP EXIT 0"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP ENTRY 0 0.01"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP EXIT 0 0.01"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` PROFILE"
-    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` PROFILE"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry log'"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit log'"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' SLEEP ENTRY 0"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' SLEEP EXIT 0"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' SLEEP ENTRY 0 0.01"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' SLEEP EXIT 0 0.01"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE"
+    "SYSTEM INSTRUMENT ADD 'QueryMetricLog::finishQuery' PROFILE"
 )
 
 statements_nr=${#statements[@]}
@@ -56,6 +56,6 @@ wait
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.text_log, system.trace_log;
-    SELECT count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%';
-    SELECT count() >= 1 FROM system.trace_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE '%QueryMetricLog%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
+    SELECT count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '$query_id_prefix%';
+    SELECT count() >= 1 FROM system.trace_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE '%QueryMetricLog%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
 """

@@ -51,13 +51,13 @@ void readFinalFromNestedStorage(
 
     String filter_column_name;
     Names require_columns_name = column_names;
-    ASTPtr expressions = std::make_shared<ASTExpressionList>();
+    ASTPtr expressions = make_intrusive<ASTExpressionList>();
     if (column_names_set.empty() || !column_names_set.contains(sign_column.name))
     {
         require_columns_name.emplace_back(sign_column.name);
 
-        const auto & sign_column_name = std::make_shared<ASTIdentifier>(sign_column.name);
-        const auto & fetch_sign_value = std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1)));
+        const auto & sign_column_name = make_intrusive<ASTIdentifier>(sign_column.name);
+        const auto & fetch_sign_value = make_intrusive<ASTLiteral>(Field(static_cast<Int8>(1)));
 
         expressions->children.emplace_back(makeASTOperator("equals", sign_column_name, fetch_sign_value));
         filter_column_name = expressions->children.back()->getColumnName();

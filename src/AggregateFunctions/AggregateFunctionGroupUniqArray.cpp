@@ -6,11 +6,9 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 
@@ -388,7 +386,7 @@ SELECT groupUniqArray(2)(x) FROM t;
 
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, properties, documentation });
+    factory.registerFunction("groupUniqArray", { createAggregateFunctionGroupUniqArray, documentation, properties });
 }
 
 }

@@ -71,7 +71,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         return false;
 
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
     bool all = false;
     bool current_quota = false;
     bool current_user = false;
@@ -112,7 +112,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             bool wildcard = false;
             bool default_database = false;
             if (ParserRowPolicyNames{}.parse(pos, ast, expected))
-                row_policy_names = typeid_cast<std::shared_ptr<ASTRowPolicyNames>>(ast);
+                row_policy_names = boost::static_pointer_cast<ASTRowPolicyNames>(ast);
             else if (parseOnDBAndTableName(pos, expected, database, table_name, wildcard, default_database))
             {
                 if (database.empty() && !default_database)
@@ -186,7 +186,7 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type {} is not implemented in SHOW CREATE query", toString(type));
     }
 
-    auto query = std::make_shared<ASTShowCreateAccessEntityQuery>();
+    auto query = make_intrusive<ASTShowCreateAccessEntityQuery>();
     node = query;
 
     query->type = type;

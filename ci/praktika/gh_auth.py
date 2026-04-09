@@ -14,27 +14,10 @@ except (ImportError, AssertionError):
     )
     from jwt import jwk_from_pem, JWT
 
-from ci.praktika.info import Info
-from ci.praktika.utils import Shell
+from praktika.utils import Shell
 
 
 class GHAuth:
-
-    @classmethod
-    def _get_installation_id(cls, jwt_token: str) -> int:
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
-        response = requests.get(
-            "https://api.github.com/app/installations", headers=headers, timeout=10
-        )
-        response.raise_for_status()
-        data = response.json()
-        for installation in data:
-            installation_id = installation["id"]
-
-        return installation_id
 
     @classmethod
     def _get_access_token_by_jwt(cls, jwt_token: str, installation_id: int) -> str:
@@ -52,7 +35,7 @@ class GHAuth:
         return token
 
     @classmethod
-    def _get_access_token(cls, private_key: str, app_id: str) -> str:
+    def _get_access_token(cls, private_key: str, app_id: str, installation_id: int) -> str:
         payload = {
             "iat": int(time.time()) - 60,
             "exp": int(time.time()) + (10 * 60),
@@ -61,11 +44,10 @@ class GHAuth:
 
         jwt_instance = jwt.PyJWT()
         encoded_jwt = jwt_instance.encode(payload, private_key, algorithm="RS256")
-        installation_id = cls._get_installation_id(encoded_jwt)
         return cls._get_access_token_by_jwt(encoded_jwt, installation_id)
 
     @classmethod
-    def _get_access_token_deprecated(cls, app_key, app_id):
+    def _get_access_token_deprecated(cls, app_key, app_id, installation_id: int):
         def _generate_jwt(client_id, pem):
             pem = str.encode(pem)
             signing_key = jwk_from_pem(pem)
@@ -80,16 +62,44 @@ class GHAuth:
             return encoded_jwt
 
         jwt_token = _generate_jwt(app_id, app_key)
-        installation_id = cls._get_installation_id(jwt_token)
         return cls._get_access_token_by_jwt(jwt_token, installation_id)
 
     @classmethod
-    def auth(cls, app_id, app_key) -> None:
+    def auth(cls, app_id, app_key, installation_id: int) -> None:
         if USING_PYJWT:
-            access_token = cls._get_access_token(app_key, app_id)
+            access_token = cls._get_access_token(app_key, app_id, installation_id)
         else:
-            access_token = cls._get_access_token_deprecated(app_key, app_id)
+            access_token = cls._get_access_token_deprecated(app_key, app_id, installation_id)
         Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
+
+    @classmethod
+    def auth_from_settings(cls) -> None:
+        from praktika.secret import Secret
+        from praktika.settings import Settings
+
+        app_id, pem, installation_id = (
+            Secret.Config(
+                name=Settings.SECRET_GH_APP_ID,
+                type=Secret.Type.AWS_SSM_SECRET,
+                region=Settings.SECRET_GH_APP_REGION,
+            )
+            .join_with(
+                Secret.Config(
+                    name=Settings.SECRET_GH_APP_PEM_KEY,
+                    type=Secret.Type.AWS_SSM_SECRET,
+                    region=Settings.SECRET_GH_APP_REGION,
+                )
+            )
+            .join_with(
+                Secret.Config(
+                    name=Settings.SECRET_GH_APP_INSTALLATION_ID,
+                    type=Secret.Type.AWS_SSM_SECRET,
+                    region=Settings.SECRET_GH_APP_REGION,
+                )
+            )
+            .get_value()
+        )
+        cls.auth(app_id=app_id, app_key=pem, installation_id=int(installation_id))
 
 
 # if __name__ == "__main__":

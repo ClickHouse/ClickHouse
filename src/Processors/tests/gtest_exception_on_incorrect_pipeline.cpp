@@ -11,7 +11,7 @@ using namespace DB;
 
 TEST(Processors, PortsConnected)
 {
-    auto col = ColumnUInt8::create(1, 1);
+    auto col = ColumnUInt8::create(1, static_cast<UInt8>(1));
     Columns columns;
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);
@@ -34,7 +34,7 @@ TEST(Processors, PortsConnected)
 
 TEST(Processors, PortsNotConnected)
 {
-    auto col = ColumnUInt8::create(1, 1);
+    auto col = ColumnUInt8::create(1, static_cast<UInt8>(1));
     Columns columns;
     columns.emplace_back(std::move(col));
     Chunk chunk(std::move(columns), 1);

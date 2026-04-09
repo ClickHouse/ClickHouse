@@ -19,7 +19,6 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <base/EnumReflection.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -359,12 +358,12 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
+    authenticate(BasicCredentials{user_name, password}, address, connection_address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -379,10 +378,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     LOG_DEBUG(log, "Authenticating user '{}' from {}",
             credentials_.getUserName(), address.toString());
 
+    AuthResult auth_result;
     try
     {
-        auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
+        auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -403,9 +402,11 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         throw;
     }
 
-    prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->authenticated_user = credentials_.getUserName();
+    chassert(!auth_result.user_name.empty());
+    prepared_client_info->current_user = auth_result.user_name;
+    prepared_client_info->authenticated_user = auth_result.user_name;
     prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
+    prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()

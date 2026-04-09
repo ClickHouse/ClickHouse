@@ -349,6 +349,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     };
 
     rx.set_completion_callback(callback);
+
     rx.set_complete_on_empty(false);
     rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);

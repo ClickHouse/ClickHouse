@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import os
 from typing import List, Union
 
@@ -33,11 +34,7 @@ class Secret:
                     return self.get_aws_ssm_parameter()
             if self.type == Secret.Type.AWS_SSM_SECRET:
                 if isinstance(self.name, list):
-                    # add support for requesting all at once
-                    res = []
-                    for name in self.name:
-                        res.append(Secret.Config(name=name, type=self.type).get_value())
-                    return res
+                    return self.get_aws_ssm_secrets_batched()
                 else:
                     return self.get_aws_ssm_secret()
             elif self.type in (Secret.Type.GH_SECRET, Secret.Type.GH_VAR):
@@ -95,7 +92,7 @@ class Secret:
         def get_aws_ssm_secret(self):
             name, secret_key_name = self.name, ""
             if "." in self.name:
-                name, secret_key_name = self.name.split(".")
+                name, secret_key_name = self.name.split(".", 1)
             region = ""
             if self.region:
                 region = f" --region {self.region}"
@@ -104,6 +101,40 @@ class Secret:
                 cmd += f" | jq -r '.[\"{secret_key_name}\"]'"
             res = Shell.get_output(cmd, verbose=True, strict=True)
             return res
+
+        def get_aws_ssm_secrets_batched(self):
+            """
+            Fetch multiple secrets efficiently, making one CLI call per unique root
+            secret. Secrets sharing the same root (e.g. "vault.key1" and "vault.key2")
+            are resolved from a single get_secret_value response parsed in Python,
+            which correctly handles multi-line values such as PEM keys.
+            """
+            assert isinstance(self.name, list)
+
+            region = f" --region {self.region}" if self.region else ""
+
+            # Parse each name into (root, key); key is None when there is no dot
+            parsed = [(n.split(".", 1) if "." in n else (n, None)) for n in self.name]
+
+            # Group indices by root, preserving insertion order
+            root_to_indices: dict = {}
+            for i, (root, _) in enumerate(parsed):
+                root_to_indices.setdefault(root, []).append(i)
+
+            results = [None] * len(self.name)
+
+            for root, indices in root_to_indices.items():
+                cmd = f"aws secretsmanager get-secret-value --secret-id {root} --query SecretString --output text{region}"
+                secret_string = Shell.get_output(cmd, verbose=True, strict=True)
+                keys = [parsed[idx][1] for idx in indices]
+                # Only parse JSON when at least one entry requests a specific key;
+                # keyless requests return the raw secret string to stay compatible
+                # with non-JSON secrets.
+                secret_data = json.loads(secret_string) if any(k is not None for k in keys) else None
+                for idx, key in zip(indices, keys):
+                    results[idx] = secret_data[key] if key is not None else secret_string
+
+            return results
 
         def get_gh_secret(self):
             res = os.getenv(f"{self.name}")
