@@ -24,6 +24,9 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 /// Does AST contain system tables like "system.processes"?
 bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
+/// Does AST contain subqueries (e.g. IN (SELECT ...), scalar subqueries)?
+bool astContainsSubqueries(ASTPtr ast);
+
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 

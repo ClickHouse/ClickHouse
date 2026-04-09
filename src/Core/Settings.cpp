@@ -5315,6 +5315,19 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    \
+    DECLARE(Bool, allow_experimental_query_plan_cache, false, R"(
+If turned on, `SELECT` queries may cache their query plan to skip repeated planning on subsequent identical queries.
+Only single-table non-distributed queries with `allow_experimental_analyzer = 1` are eligible.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, query_plan_cache_size_in_bytes_quota, 0, R"(
+Maximum number of bytes a single user may store in the query plan cache. 0 means no quota.
+)", 0) \
     DECLARE(Bool, use_query_cache, false, R"(
 If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
 and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
@@ -7817,6 +7830,17 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
 )", EXPERIMENTAL, evaluation_time) \
     DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
 Allow to create table with the Alias engine.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
+Allow to create tables with Paimon* table engines.
+)", EXPERIMENTAL) \
+    DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
+Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
+for the specified snapshot_id without advancing the committed watermark.
+Default: -1 (disabled)
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_consume_snapshots, 0, R"(
+Maximum number of Paimon snapshots to consume per incremental read. 0 means no limit.
 )", EXPERIMENTAL) \
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions

@@ -15,6 +15,7 @@ struct IQueryPlanStep::Serialization
 {
     WriteBuffer & out;
     SerializedSetsRegistry & registry;
+    UInt64 version = 0;
 
     // A durty hack used by the automatic parallel replicas implementation:
     // the `final` value differs for `AggregatingStep` in single-node and distributed query plans.
@@ -31,6 +32,7 @@ struct IQueryPlanStep::Deserialization
 {
     ReadBuffer & in;
     DeserializedSetsRegistry & registry;
+    UInt64 version = 0;
     std::vector<StoragePtr> storage_holders;    /// Storages that are referenced by the step and need to be kept alive
 
     const ContextPtr & context;

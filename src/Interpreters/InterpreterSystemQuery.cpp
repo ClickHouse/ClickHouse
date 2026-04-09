@@ -480,6 +480,12 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->clearQueryConditionCache();
             break;
         }
+        case Type::CLEAR_QUERY_PLAN_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_PLAN_CACHE);
+            getContext()->clearQueryPlanCache();
+            break;
+        }
         case Type::CLEAR_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
@@ -2235,6 +2241,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_QUERY_PLAN_CACHE:
         case Type::CLEAR_QUERY_CACHE:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_UNCOMPRESSED_CACHE:

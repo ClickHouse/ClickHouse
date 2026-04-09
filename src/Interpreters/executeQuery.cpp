@@ -12,8 +12,15 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 
+#include <Core/ProtocolDefines.h>
+
+#include <Parsers/ASTTablesInSelectQuery.h>
+
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryPlanCache.h>
+#include <Interpreters/universalizePlan.h>
+#include <Interpreters/materializePlan.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -25,7 +32,9 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
@@ -44,11 +53,15 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
 
+#include <Access/Common/AccessType.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -66,6 +79,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/ProfileEvents.h>
+#include <Planner/PlannerContext.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
@@ -112,6 +126,7 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+
 }
 
 namespace DB
@@ -120,6 +135,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -131,6 +147,8 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool allow_experimental_query_plan_cache;
+    extern const SettingsUInt64 query_plan_cache_size_in_bytes_quota;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
@@ -205,6 +223,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
@@ -221,6 +240,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -1081,6 +1101,187 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
+namespace
+{
+
+class RemoveQueryPlanCacheIgnoredSettingsMatcher
+{
+public:
+    struct Data {};
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & ast, Data &)
+    {
+        if (auto * set_clause = ast->as<ASTSetQuery>())
+        {
+            chassert(!set_clause->is_standalone);
+
+            auto is_ignored_setting = [](const auto & change)
+            {
+                return isSettingIgnoredInQueryPlanCache(change.name);
+            };
+
+            std::erase_if(set_clause->changes, is_ignored_setting);
+        }
+        else
+        {
+            ASTQueryWithOutput::resetOutputASTIfExist(*ast);
+        }
+    }
+};
+
+using RemoveQueryPlanCacheIgnoredSettingsVisitor = InDepthNodeVisitor<RemoveQueryPlanCacheIgnoredSettingsMatcher, true>;
+
+ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
+{
+    ASTPtr normalized_ast = ast->clone();
+
+    RemoveQueryPlanCacheIgnoredSettingsMatcher::Data visitor_data;
+    RemoveQueryPlanCacheIgnoredSettingsVisitor(visitor_data).visit(normalized_ast);
+
+    return normalized_ast;
+}
+
+}
+
+
+/// Attempts to build a QueryPlanCacheKey for the given plain SELECT query.
+/// Returns nullopt when the query is not eligible for plan caching:
+///   - not a plain ASTSelectQuery (e.g. UNION, subquery-as-FROM)
+///   - FROM clause contains a JOIN, table function, or subquery
+///   - the target table is a remote / distributed storage
+///   - the table cannot be resolved (e.g. temporary table)
+///
+/// On success the caller must additionally verify that the AST contains no
+/// non-deterministic functions before using the returned key.
+static std::optional<QueryPlanCacheKey> tryBuildQueryPlanCacheKey(
+    const ASTPtr & ast,
+    const ContextPtr & context,
+    UInt64 semantic_settings_hash)
+{
+    /// Unwrap ASTSelectWithUnionQuery → single ASTSelectQuery if applicable.
+    const ASTSelectQuery * select_query = ast->as<ASTSelectQuery>();
+    if (!select_query)
+    {
+        const auto * union_query = ast->as<ASTSelectWithUnionQuery>();
+        if (union_query && union_query->list_of_selects && union_query->list_of_selects->children.size() == 1)
+            select_query = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+    }
+    if (!select_query)
+        return {};
+
+    /// Only single-table, plain identifier reference in FROM.
+    const auto * tables_in_select = select_query->tables()
+        ? select_query->tables()->as<ASTTablesInSelectQuery>()
+        : nullptr;
+    if (!tables_in_select || tables_in_select->children.size() != 1)
+        return {};
+
+    const auto * elem = tables_in_select->children.front()->as<ASTTablesInSelectQueryElement>();
+    if (!elem || !elem->table_expression)
+        return {};
+
+    const auto * table_expr = elem->table_expression->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name
+        || table_expr->table_function || table_expr->subquery)
+        return {};
+
+    /// TODO: View queries are implicitly excluded here because the Analyzer expands them into
+    /// subqueries, which triggers the `table_expr->subquery` bail-out above. To support Views
+    /// in the query plan cache we need to explicitly handle View expansion and track the
+    /// underlying table metadata for cache invalidation.
+
+    StorageID storage_id(table_expr->database_and_table_name);
+    storage_id = context->resolveStorageID(storage_id);
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    if (!storage || storage->isRemote())
+        return {};
+
+    /// System tables are excluded explicitly: their plans may not serialize correctly and their
+    /// data changes without incrementing the metadata version (e.g. system.processes).
+    if (storage_id.database_name == DatabaseCatalog::SYSTEM_DATABASE)
+        return {};
+
+    auto metadata = storage->getInMemoryMetadataPtr();
+    std::map<String, Int64> table_metadata_versions;
+    Int64 schema_version = metadata->getMetadataVersion();
+    if (schema_version == 0)
+        schema_version = computeSchemaHash(*metadata);
+    table_metadata_versions[storage_id.getFullTableName()] = schema_version;
+
+    /// Compute row policy hash: if a non-trivial SELECT row policy exists for this table,
+    /// its AST expression must be part of the cache key. Two users with different row policies
+    /// see different filtered views and must not share cached plans.
+    IASTHash row_policy_hash{};
+    auto row_policy = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy && !row_policy->isAlwaysTrue() && row_policy->expression)
+    {
+        auto policy_ast_hash = row_policy->expression->getTreeHash(/*ignore_aliases=*/false);
+        row_policy_hash = policy_ast_hash;
+    }
+
+    auto roles = context->getCurrentRoles();
+    std::sort(roles.begin(), roles.end());
+
+    ASTPtr normalized_ast = normalizeASTForQueryPlanCache(ast);
+
+    QueryPlanCacheKey key;
+    key.ast_hash = normalized_ast->getTreeHash(/*ignore_aliases=*/false);
+    key.semantic_settings_hash = semantic_settings_hash;
+    key.table_metadata_versions = std::move(table_metadata_versions);
+    key.storage_id = storage_id;
+    key.row_policy_hash = row_policy_hash;
+    key.user_id = context->getUserID();
+    key.current_user_roles = std::move(roles);
+    return key;
+}
+
+static Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context)
+{
+    if (!planner_context)
+        return {};
+
+    const auto & table_expression_data = planner_context->getTableExpressionNodeToData();
+    if (table_expression_data.size() != 1)
+        return {};
+
+    return table_expression_data.begin()->second.getSelectedColumnsNames();
+}
+
+static void checkAccessForQueryPlanCacheHit(const ContextPtr & context, const StorageID & storage_id, const Names & selected_columns)
+{
+    auto storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+    if (!storage)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {} no longer exists (stale query plan cache entry)",
+            storage_id.getFullTableName());
+
+    auto metadata = storage->getInMemoryMetadataPtr();
+
+    if (selected_columns.empty() && metadata && !metadata->getColumns().empty())
+    {
+        auto access = context->getAccess();
+        for (const auto & column : metadata->getColumns())
+        {
+            if (access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name))
+                return;
+        }
+
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant SELECT for at least one column on {}",
+            context->getUserName(),
+            storage_id.getFullTableName());
+    }
+
+    context->checkAccess(AccessType::SELECT, storage_id, selected_columns);
+}
+
 
 static BlockIO executeQueryImpl(
     const char * begin,
@@ -1661,6 +1862,29 @@ static BlockIO executeQueryImpl(
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
+        /// Query plan cache: skip for internal queries, non-SELECT, queries using parallel replicas,
+        /// and when the analyzer is off.
+        QueryPlanCachePtr query_plan_cache = context->getQueryPlanCache();
+        const bool can_use_query_plan_cache = query_plan_cache != nullptr
+            && settings[Setting::allow_experimental_query_plan_cache]
+            && !internal
+            && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
+            && out_ast && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+            && settings[Setting::allow_experimental_analyzer]
+            /// Parallel replicas optimizer operates on ReadFromMergeTree nodes which are absent from
+            /// universalized (cached) plans. Exclude to avoid incorrect pipeline construction.
+            /// TODO: To support parallel replicas, `materializePlan` must restore plan nodes that the
+            /// parallel replicas optimizer can recognize (e.g. by re-creating `ReadFromMergeTree` or by
+            /// teaching the optimizer to work with `ReadFromTableStep`).
+            && settings[Setting::allow_experimental_parallel_reading_from_replicas] == 0;
+
+        /// Precompute the semantic settings hash instead of copying the entire Settings object.
+        /// This avoids an expensive full Settings copy for queries that are later filtered out
+        /// by eligibility checks (non-deterministic functions, subqueries, etc.).
+        std::optional<UInt64> plan_cache_semantic_settings_hash;
+        if (can_use_query_plan_cache)
+            plan_cache_semantic_settings_hash = SemanticSettings::computeHash(settings);
+
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
@@ -1737,6 +1961,14 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
+                /// Build the query plan cache key before constructing the interpreter.
+                /// tryBuildQueryPlanCacheKey also enforces eligibility (single-table, not remote, etc.).
+                std::optional<QueryPlanCacheKey> query_plan_cache_key;
+                if (can_use_query_plan_cache
+                    && !astContainsNonDeterministicFunctions(out_ast, context)
+                    && !astContainsSubqueries(out_ast))
+                    query_plan_cache_key = tryBuildQueryPlanCacheKey(out_ast, context, *plan_cache_semantic_settings_hash);
+
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
@@ -1750,10 +1982,70 @@ static BlockIO executeQueryImpl(
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
                 }
 
-                // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
-                // We need to force to build it here to check if we need to ignore quota.
-                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                /// Query plan cache: inject a cached plan before buildQueryPlanIfNeeded() triggers.
+                auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get());
+                bool query_plan_cache_hit = false;
+                if (query_plan_cache_key && interpreter_with_analyzer)
+                {
+                    if (auto cached_entry = query_plan_cache->get(*query_plan_cache_key))
+                    {
+                        try
+                        {
+                            /// Revalidate access rights: permissions may have been revoked after the plan
+                            /// was cached. checkAccess throws ACCESS_DENIED on failure.
+                            checkAccessForQueryPlanCacheHit(context, query_plan_cache_key->storage_id, cached_entry->selected_columns);
+
+                            auto plan = materializePlan(cached_entry->serialized_plan, context);
+                            interpreter_with_analyzer->setQueryPlan(std::move(plan));
+                            interpreter_with_analyzer->getPlanner().setUsedRowPolicies(cached_entry->used_row_policies);
+                            query_plan_cache_hit = true;
+                        }
+                        catch (...)
+                        {
+                            /// Materialization may fail after a schema change that is not yet reflected
+                            /// in the metadata version (e.g. non-replicated MergeTree ALTER). Fall through
+                            /// to normal planning so the query never fails due to a stale cached plan.
+                            /// Access denial also falls through here — the normal planning path will
+                            /// perform its own access check and produce a proper error message.
+                            tryLogCurrentException("QueryPlanCache",
+                                "Failed to use cached plan, falling back to normal planning");
+                        }
+                    }
+                }
+
+                /// InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
+                /// We need to force to build it here to check if we need to ignore quota.
+                /// On cache hit, buildQueryPlanIfNeeded() returns immediately (plan already initialized).
+                if (interpreter_with_analyzer)
                     interpreter_with_analyzer->getQueryPlan();
+
+                /// Query plan cache: on a miss, serialize and store the raw (pre-optimization) plan.
+                /// ProfileEvents (hits/misses) are emitted inside QueryPlanCache::get(); do not duplicate here.
+                if (query_plan_cache_key && !query_plan_cache_hit && interpreter_with_analyzer)
+                {
+                    /// Clone the plan immediately before any further use to avoid holding a reference
+                    /// into planner.query_plan across subsequent operations.
+                    QueryPlan plan_copy = interpreter_with_analyzer->getPlanner().getQueryPlan().clone();
+                    if (isSerializablePlan(plan_copy))
+                    {
+                        try
+                        {
+                            universalizePlan(plan_copy);
+                            plan_copy.ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+                            QueryPlanCacheEntry entry;
+                            entry.serialized_plan = std::string(plan_copy.getSerializedData());
+                            entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(interpreter_with_analyzer->getPlanner().getPlannerContext());
+                            entry.used_row_policies = interpreter_with_analyzer->getPlanner().getUsedRowPolicies();
+                            /// Quota is a per-query admission rule only. It is not stored in the cache state.
+                            const size_t plan_cache_quota = settings[Setting::query_plan_cache_size_in_bytes_quota];
+                            query_plan_cache->set(*query_plan_cache_key, std::move(entry), plan_cache_quota);
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException("QueryPlanCache", "Failed to insert plan into cache");
+                        }
+                    }
+                }
 
                 if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
                 {
@@ -2136,6 +2428,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            /// Disable query plan cache for fuzzed queries: the fuzzer randomly mutates ASTs
+            /// and may ALTER tables between runs, making cached plans unsafe (type mismatches
+            /// in filter expressions can cause Bad cast exceptions during optimization).
+            fuzz_context->setSetting("allow_experimental_query_plan_cache", Field(false));
 
             /// Limit resources for each fuzzed query to prevent runaway execution.
             fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));

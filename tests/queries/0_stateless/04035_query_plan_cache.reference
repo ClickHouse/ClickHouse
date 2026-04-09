@@ -1,0 +1,43 @@
+Test 1: Basic hit/miss
+0	1
+1	0
+Test 2: SYSTEM CLEAR
+0	1
+Test 3: Schema change (non-replicated)
+0	1
+0	1
+Test 4: Non-deterministic exclusion
+0	0
+0	0
+0	0
+0	0
+Test 5: System table exclusion
+0	0
+0	0
+Test 6: Non-analyzer exclusion
+0	0
+0	0
+Test 7: Settings sensitivity
+0	1
+0	1
+Test 8: Explicit PREWHERE preserved
+0	1
+1	0
+Test 9: Alias differentiation
+0	1
+0	1
+Test 10: ALIAS expression change invalidates cache
+0	1
+0	1
+Test 11: Subquery exclusion
+0	0
+0	0
+Test 12: Quota reset to 0
+0	1
+1	0
+Test 13: query_plan_optimize_prewhere sensitivity
+0	1
+0	1
+Test 14: log_comment ignored in cache key
+0	1
+1	0
