@@ -13,6 +13,12 @@ import TabItem from '@theme/TabItem';
 The `cached` dictionary layout type is stores the dictionary in a cache that has a fixed number of cells.
 These cells contain frequently used elements.
 
+:::warning ClickHouse Cloud
+In ClickHouse Cloud, nodes can be replaced at any time due to autoscaling. When a node is replaced, the `cache` dictionary is wiped clean and must be re-warmed by incoming queries. Until re-warmed, lookups for keys not yet in the cache return default values, which can cause **data quality issues** — especially when the dictionary is used to denormalize data inside a [materialized view](/sql-reference/statements/create/view#materialized-view).
+
+Use a layout that fully loads dictionary data on startup, such as [`hashed`](./hashed.md), [`complex_key_hashed`](./hashed.md#complex_key_hashed), or [`flat`](./flat.md), so the dictionary is immediately available after a node replacement. See [Dictionary Best Practices](/dictionary/best-practices) for guidance on choosing a layout.
+:::
+
 The dictionary key has the [UInt64](/sql-reference/data-types/int-uint.md) type.
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.

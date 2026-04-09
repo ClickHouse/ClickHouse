@@ -37,6 +37,8 @@ There are a variety of ways to store dictionaries in memory, each with CPU and R
 :::tip Recommended layouts
 [flat](./flat.md), [hashed](./hashed.md), and [complex_key_hashed](./hashed.md#complex_key_hashed) provide the best query performance.
 Caching layouts are not recommended due to potentially poor performance and difficulty tuning parameters — see [cache](./cache.md) for details.
+
+**ClickHouse Cloud:** Caching layouts (`cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`) are not recommended for use in ClickHouse Cloud. Nodes can be replaced at any time due to autoscaling, which wipes the cache clean. Until re-warmed, dictionary lookups return default values, which can cause data quality issues in downstream [materialized views](/sql-reference/statements/create/view#materialized-view). Always use a fully-loaded layout in Cloud environments. See [Dictionary Best Practices](/dictionary/best-practices) for more details.
 :::
 
 ## Specify dictionary layout {#specify-dictionary-layout}
