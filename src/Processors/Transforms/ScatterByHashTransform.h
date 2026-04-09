@@ -8,6 +8,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Common/Exception.h>
+#include <Common/SerializedKeyBuffer.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ struct ShardedChunkInfo : public ChunkInfo
 
     KeyHashesPtr key_hashes; /// shared across all shards for the same input chunk
     IColumn::Selector row_indices; /// rows belonging to this shard
+    SerializedKeyBufferPtr serialized_keys; /// serialized keys for Serialized method (nullptr otherwise)
 };
 
 /// Scatters input rows to N output ports by hash(key) % N.
@@ -81,7 +83,7 @@ private:
     static constexpr size_t max_queued_chunks_per_shard = 4;
     std::vector<std::deque<Chunk>> output_queues;
 
-    /// Cached to avoid per-chunk allocation in Aggregator::computeHashesForSharding.
+    /// Cached to avoid per-chunk allocation in Aggregator::prepareHashesAndKeysForSharding.
     AggregatedDataVariants cached_hash_variants;
 };
 

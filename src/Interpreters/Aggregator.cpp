@@ -23,6 +23,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Transforms/ScatterByHashTransform.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -1890,14 +1891,68 @@ static void computeHashesForShardingImpl(
         result_hashes[i] = state.getHash(method.data, i, pool);
 }
 
-void Aggregator::computeHashesForSharding(
+/// For Serialized methods: batch-serialize all keys, then hash the serialized bytes,
+/// and keep the serialized buffer for reuse during aggregation to avoid re-serialization.
+template <typename Method>
+static void serializeAndHashForShardingImpl(
+    Method & method,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    const HashMethodContextPtr & aggregation_state_cache,
+    size_t row_count,
+    PaddedPODArray<size_t> & result_hashes,
+    SerializedKeyBuffer & serialized_keys_out)
+{
+    /// Since we only need the hash, we do not need the consecutive keys cache optimization.
+    typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+
+    /// Build SerializedKeyBuffer — either move from batch-serialized state (if available) or serialize manually.
+    serialized_keys_out.offsets.resize_exact(row_count + 1);
+
+    if (state.use_batch_serialize)
+    {
+        serialized_keys_out.data = std::move(state.serialized_buffer);
+        UInt64 offset = 0;
+        for (size_t i = 0; i < row_count; ++i)
+        {
+            serialized_keys_out.offsets[i] = offset;
+            offset += state.row_sizes[i];
+        }
+        serialized_keys_out.offsets[row_count] = offset;
+    }
+    else
+    {
+        /// Non-batch fallback: serialize into SerializedKeyBuffer once.
+        size_t total_size = 0;
+        for (auto sz : state.row_sizes)
+            total_size += sz;
+        serialized_keys_out.data.resize_exact(total_size);
+
+        char * ptr = serialized_keys_out.data.data();
+        for (size_t i = 0; i < row_count; ++i)
+        {
+            serialized_keys_out.offsets[i] = ptr - serialized_keys_out.data.data();
+            for (const auto * key_column : key_columns)
+                ptr = key_column->serializeValueIntoMemory(i, ptr, &state.serialization_settings);
+        }
+        serialized_keys_out.offsets[row_count] = ptr - serialized_keys_out.data.data();
+    }
+
+    /// Hash from the serialized buffer
+    result_hashes.resize_exact(row_count);
+    for (size_t i = 0; i < row_count; ++i)
+        result_hashes[i] = method.data.hash(serialized_keys_out.getKey(i));
+}
+
+
+void Aggregator::prepareHashesAndKeysForSharding(
     AggregatedDataVariants & cached_variants,
     const ColumnRawPtrs & key_columns,
     size_t row_count,
-    PaddedPODArray<size_t> & result_hashes) const
+    PaddedPODArray<size_t> & result_hashes,
+    SerializedKeyBufferPtr & serialized_keys_out) const
 {
-    /// For now, we only support single key GROUP BY for sharded aggregation.
-    chassert(params.keys_size == 1);
+    chassert(params.keys_size >= 1);
     chassert(method_chosen != AggregatedDataVariants::Type::without_key);
 
     if (cached_variants.empty())
@@ -1906,6 +1961,26 @@ void Aggregator::computeHashesForSharding(
         cached_variants.keys_size = params.keys_size;
         cached_variants.key_sizes = key_sizes;
     }
+
+    if (AggregatedDataVariants::usesSerializedKeys(method_chosen))
+    {
+        /// For Serialized methods, serialize keys once and keep the buffer.
+        /// This avoids re-serialization during aggregation.
+        auto buffer = std::make_shared<SerializedKeyBuffer>();
+
+        #define M(NAME) \
+            else if (cached_variants.type == AggregatedDataVariants::Type::NAME) \
+                serializeAndHashForShardingImpl(*cached_variants.NAME, key_columns, key_sizes, aggregation_state_cache, row_count, result_hashes, *buffer);
+
+        if (false) {} // NOLINT
+        APPLY_FOR_VARIANTS_WITH_SERIALIZED_KEYS(M)
+        #undef M
+
+        serialized_keys_out = std::move(buffer);
+        return;
+    }
+
+    serialized_keys_out = nullptr;
 
     #define M(NAME, IS_TWO_LEVEL) \
         else if (cached_variants.type == AggregatedDataVariants::Type::NAME) \
@@ -1917,10 +1992,9 @@ void Aggregator::computeHashesForSharding(
 }
 
 
-std::pair<Columns, std::shared_ptr<PaddedPODArray<size_t>>>
+Aggregator::ShardedPayload
 Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count, AggregatedDataVariants & cached_hash_variants) const
 {
-    chassert(params.keys_size == 1);
     chassert(method_chosen != AggregatedDataVariants::Type::without_key);
 
     Columns payload_columns;
@@ -1963,9 +2037,10 @@ Aggregator::prepareColumnsForSharding(const Columns & columns, size_t row_count,
     }
 
     auto key_hashes = std::make_shared<PaddedPODArray<size_t>>();
-    computeHashesForSharding(cached_hash_variants, key_columns, row_count, *key_hashes);
+    SerializedKeyBufferPtr serialized_keys;
+    prepareHashesAndKeysForSharding(cached_hash_variants, key_columns, row_count, *key_hashes, serialized_keys);
 
-    return {std::move(payload_columns), std::move(key_hashes)};
+    return {std::move(payload_columns), std::move(key_hashes), std::move(serialized_keys)};
 }
 
 
@@ -2075,7 +2150,8 @@ void Aggregator::executeForRows(
     const size_t * key_hashes,
     const ColumnRawPtrs & key_columns,
     const AggregateFunctionInstruction * aggregate_instructions,
-    std::optional<size_t> size_hint) const
+    std::optional<size_t> size_hint,
+    const SerializedKeyBuffer * serialized_keys) const
 {
     chassert(!row_indices.empty());
     chassert(key_hashes);
@@ -2090,7 +2166,7 @@ void Aggregator::executeForRows(
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
     }
 
-    executeImplForRows(result, row_indices, key_hashes, key_columns, aggregate_instructions);
+    executeImplForRows(result, row_indices, key_hashes, key_columns, aggregate_instructions, serialized_keys);
 }
 
 
@@ -2099,11 +2175,12 @@ void Aggregator::executeImplForRows(
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
     const ColumnRawPtrs & key_columns,
-    const AggregateFunctionInstruction * aggregate_instructions) const
+    const AggregateFunctionInstruction * aggregate_instructions,
+    const SerializedKeyBuffer * serialized_keys) const
 {
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImplForRows(*result.NAME, result.aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+            executeImplForRows(*result.NAME, result.aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions, serialized_keys);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -2117,19 +2194,32 @@ void NO_INLINE Aggregator::executeImplForRows(
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
     const ColumnRawPtrs & key_columns,
-    const AggregateFunctionInstruction * aggregate_instructions) const
+    const AggregateFunctionInstruction * aggregate_instructions,
+    const SerializedKeyBuffer * serialized_keys) const
 {
-    /// Use the consecutive keys cache — it helps when consecutive rows within a shard
-    /// have the same key (e.g., sorted data)
-    typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+    const size_t chunk_num_rows = key_columns[0]->size();
 
-    const bool prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
+    /// Construct State. For Serialized methods, pass pre-serialized keys so the
+    /// constructor skips batch serialization (keys were already serialized during scatter).
+    /// For other methods, the extra argument is not accepted — construct normally.
+    auto make_state = [&]
+    {
+        if constexpr (requires { std::declval<typename Method::State>().external_serialized_keys; })
+            return typename Method::State(key_columns, key_sizes, aggregation_state_cache, serialized_keys);
+        else
+            return typename Method::State(key_columns, key_sizes, aggregation_state_cache);
+    };
+    auto state = make_state();
+
+    const bool do_prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
 
-    if (prefetch)
-        executeImplBatchForRows<true>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+    if (do_prefetch)
+        executeImplBatchForRows<true>(method, state, aggregates_pool, row_indices, key_hashes,
+            chunk_num_rows, aggregate_instructions);
     else
-        executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes, key_columns, aggregate_instructions);
+        executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes,
+            chunk_num_rows, aggregate_instructions);
 }
 
 
@@ -2140,18 +2230,14 @@ void NO_INLINE Aggregator::executeImplBatchForRows(
     Arena * aggregates_pool,
     const IColumn::Selector & row_indices,
     const size_t * key_hashes,
-    const ColumnRawPtrs & key_columns,
+    size_t chunk_num_rows,
     const AggregateFunctionInstruction * aggregate_instructions) const
 {
-    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
-
     const size_t num_indices = row_indices.size();
-    const size_t chunk_num_rows = key_columns[0]->size();
     chassert(num_indices > 0);
-    chassert(num_indices <= chunk_num_rows);
     chassert(key_hashes);
 
-    /// No aggregate functions - just insert keys.
+    /// No aggregate functions — just insert keys.
     if (params.aggregates_size == 0)
     {
         /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
@@ -2165,7 +2251,7 @@ void NO_INLINE Aggregator::executeImplBatchForRows(
         return;
     }
 
-    /// Simple count - inline counter, no aggregate state allocation.
+    /// Simple count — inline counter, no aggregate state allocation.
     if (is_simple_count)
     {
         for (size_t j = 0; j < num_indices; ++j)
@@ -2197,6 +2283,7 @@ void NO_INLINE Aggregator::executeImplBatchForRows(
         const size_t i = row_indices[j];
         AggregateDataPtr aggregate_data = nullptr;
 
+        using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
         /// Is prefetching enabled and the method supports it?
         if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
         {
@@ -2205,27 +2292,22 @@ void NO_INLINE Aggregator::executeImplBatchForRows(
 
             if (j + prefetch_look_ahead < num_indices)
             {
-                {
-                    auto && key_holder = state.getKeyHolder(row_indices[j + prefetch_look_ahead], *aggregates_pool);
-                    method.data.prefetch(std::move(key_holder));
-                }
+                auto && key_holder = state.getKeyHolder(row_indices[j + prefetch_look_ahead], *aggregates_pool);
+                method.data.prefetch(std::move(key_holder));
             }
         }
 
+        auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
+
+        if (emplace_result.isInserted())
         {
-            auto emplace_result = state.emplaceKeyWithHash(method.data, i, *aggregates_pool, key_hashes[i]);
-
-            if (emplace_result.isInserted())
-            {
-                emplace_result.setMapped(nullptr);
-
-                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-                createAggregateStates(aggregate_data);
-                emplace_result.setMapped(aggregate_data);
-            }
-            else
-                aggregate_data = emplace_result.getMapped();
+            emplace_result.setMapped(nullptr);
+            aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+            createAggregateStates(aggregate_data);
+            emplace_result.setMapped(aggregate_data);
         }
+        else
+            aggregate_data = emplace_result.getMapped();
 
         chassert(aggregate_data != nullptr);
         places[j] = aggregate_data;
@@ -2240,6 +2322,7 @@ void NO_INLINE Aggregator::executeImplBatchForRows(
         aggregates_pool, row_indices.data(), num_indices, aggregate_instructions, places.get(),
         has_only_one_key, has_all_chunk_rows);
 }
+
 
 void Aggregator::executeAggregateInstructionsForRows(
     Arena * aggregates_pool,

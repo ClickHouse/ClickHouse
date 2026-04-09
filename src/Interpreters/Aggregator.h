@@ -35,6 +35,9 @@ class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
 
+struct SerializedKeyBuffer;
+using SerializedKeyBufferPtr = std::shared_ptr<const SerializedKeyBuffer>;
+
 using ColumnsHashing::HashMethodContext;
 using ColumnsHashing::HashMethodContextPtr;
 using ColumnsHashing::LastElementCacheStats;
@@ -196,12 +199,15 @@ public:
 
     /// Used by Sharded Aggregation
     /// Compute per-row hashes using the aggregation method's hash function.
-    /// Used for shard routing and hash is reused during `emplaceKeyWithHash`.
-    void computeHashesForSharding(
+    /// Used for shard routing; the hash is reused during `emplaceKeyWithHash`.
+    /// For Serialized methods, also populates `serialized_keys_out` with the
+    /// serialized keys to avoid re-serialization during aggregation.
+    void prepareHashesAndKeysForSharding(
         AggregatedDataVariants & cached_variants,
         const ColumnRawPtrs & key_columns,
         size_t row_count,
-        PaddedPODArray<size_t> & result_hashes) const;
+        PaddedPODArray<size_t> & result_hashes,
+        SerializedKeyBufferPtr & serialized_keys_out) const;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Columns columns,
@@ -237,9 +243,16 @@ public:
 
     /// Used by Sharded Aggregation
     /// Prepare key and argument columns for sharded aggregation and compute per-row hashes.
-    /// Returns payload columns [keys..., aggregate arguments...] and shared hashes.
-    std::pair<Columns, std::shared_ptr<PaddedPODArray<size_t>>>
-        prepareColumnsForSharding(
+    /// Returns payload columns [keys..., aggregate arguments...], shared hashes,
+    /// and optionally serialized keys (for Serialized method only, nullptr otherwise).
+    struct ShardedPayload
+    {
+        Columns payload_columns;
+        std::shared_ptr<PaddedPODArray<size_t>> key_hashes;
+        SerializedKeyBufferPtr serialized_keys; /// nullptr for non-Serialized methods
+    };
+
+    ShardedPayload prepareColumnsForSharding(
             const Columns & columns,
             size_t row_count,
             AggregatedDataVariants & cached_hash_variants) const;
@@ -262,7 +275,8 @@ public:
         const size_t * key_hashes,
         const ColumnRawPtrs & key_columns,
         const AggregateFunctionInstruction * aggregate_instructions,
-        std::optional<size_t> size_hint) const;
+        std::optional<size_t> size_hint,
+        const SerializedKeyBuffer * serialized_keys = nullptr) const;
 
     /// Used for optimize_aggregation_in_order:
     /// - No two-level aggregation
@@ -474,7 +488,8 @@ private:
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
         const ColumnRawPtrs & key_columns,
-        const AggregateFunctionInstruction * aggregate_instructions) const;
+        const AggregateFunctionInstruction * aggregate_instructions,
+        const SerializedKeyBuffer * serialized_keys) const;
 
     template <typename Method>
     void executeImplForRows(
@@ -483,7 +498,8 @@ private:
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
         const ColumnRawPtrs & key_columns,
-        const AggregateFunctionInstruction * aggregate_instructions) const;
+        const AggregateFunctionInstruction * aggregate_instructions,
+        const SerializedKeyBuffer * serialized_keys) const;
 
     template <bool prefetch, typename Method, typename State>
     void executeImplBatchForRows(
@@ -492,7 +508,7 @@ private:
         Arena * aggregates_pool,
         const IColumn::Selector & row_indices,
         const size_t * key_hashes,
-        const ColumnRawPtrs & key_columns,
+        size_t chunk_num_rows,
         const AggregateFunctionInstruction * aggregate_instructions) const;
 
     void executeAggregateInstructionsForRows(

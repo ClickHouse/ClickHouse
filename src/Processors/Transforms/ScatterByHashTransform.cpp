@@ -13,7 +13,7 @@ ScatterByHashTransform::ScatterByHashTransform(
     , output_queues(num_shards)
 {
     chassert(num_shards > 0);
-    chassert(params->params.keys_size == 1);
+    chassert(params->params.keys_size >= 1);
 }
 
 IProcessor::Status ScatterByHashTransform::prepare()
@@ -144,7 +144,11 @@ void ScatterByHashTransform::generateOutputChunks()
     chassert(!columns.empty());
 
     /// Materialize key + argument columns and compute per-row hashes.
-    auto [payload_columns, key_hashes] = params->aggregator.prepareColumnsForSharding(columns, num_rows, cached_hash_variants);
+    /// For Serialized methods, also produces serialized keys to avoid re-serialization during aggregation.
+    auto result = params->aggregator.prepareColumnsForSharding(columns, num_rows, cached_hash_variants);
+    auto & payload_columns = result.payload_columns;
+    auto & key_hashes = result.key_hashes;
+    auto & serialized_keys = result.serialized_keys;
     chassert(payload_columns.size() == outputs.front().getHeader().columns());
     chassert(key_hashes->size() == num_rows);
     chassert(std::all_of(payload_columns.begin(), payload_columns.end(), [num_rows](const auto & col) { return col->size() == num_rows; }));
@@ -182,7 +186,9 @@ void ScatterByHashTransform::generateOutputChunks()
         /// the payload columns are shared full-size. ShardedAggregatingTransform uses
         /// ShardedChunkInfo::row_indices for the actual row count.
         Chunk output_chunk(payload_columns, num_rows);
-        output_chunk.getChunkInfos().add(std::make_shared<ShardedChunkInfo>(key_hashes, std::move(per_shard_indices[shard])));
+        auto info = std::make_shared<ShardedChunkInfo>(key_hashes, std::move(per_shard_indices[shard]));
+        info->serialized_keys = serialized_keys; /// shared across all shards, nullptr for non-Serialized methods
+        output_chunk.getChunkInfos().add(std::move(info));
         output_queues[shard].push_back(std::move(output_chunk));
     }
 }
