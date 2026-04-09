@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <vector>
 #include <functional>
+#include <boost/functional/hash.hpp>
 
 namespace DB
 {
@@ -56,13 +57,13 @@ struct ExpressionPropertiesHash
     size_t operator()(const ExpressionProperties & props) const
     {
         size_t h = std::hash<size_t>()(props.distribution.node_count);
-        h ^= std::hash<bool>()(props.distribution.is_replicated) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<UInt64>()(props.sort_limit) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        boost::hash_combine(h, props.distribution.is_replicated);
+        boost::hash_combine(h, props.sort_limit);
         for (const auto & col_set : props.distribution.columns)
             for (const auto & name : col_set)
-                h ^= std::hash<String>()(name) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                boost::hash_combine(h, name);
         for (const auto & col : props.sorting)
-            h ^= std::hash<String>()(col.column_name) + 0x9e3779b9 + (h << 6) + (h >> 2);
+            boost::hash_combine(h, col.column_name);
         return h;
     }
 };
@@ -81,7 +82,7 @@ struct RulePropertiesKeyHash
     size_t operator()(const RulePropertiesKey & key) const
     {
         size_t h = std::hash<const void *>()(key.rule_ptr);
-        h ^= ExpressionPropertiesHash()(key.properties) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        boost::hash_combine(h, ExpressionPropertiesHash()(key.properties));
         return h;
     }
 };
