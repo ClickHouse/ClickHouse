@@ -32,7 +32,7 @@ namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
-    extern const SettingsBool allow_skip_index_aggregation_optimize;
+    extern const SettingsBool optimize_use_skip_index_aggregation;
 }
 }
 
@@ -335,10 +335,19 @@ struct SkipIndexProjectionCandidate
     Block block;
 };
 
+/// Column statistics projection candidate for aggregation optimization.
+/// This is used when min/max aggregates can be answered from per-column
+/// `StatisticsMinMax` metadata without reading index files.
+struct ColumnStatisticsProjectionCandidate
+{
+    Block block;
+};
+
 struct AggregateProjectionCandidates
 {
     std::vector<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
+    std::optional<ColumnStatisticsProjectionCandidate> column_statistics_projection;
     std::optional<SkipIndexProjectionCandidate> skip_index_projection;
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
@@ -359,20 +368,79 @@ static bool isIndexAggregatable(const String & index_type)
 static bool canIndexSatisfyAggregate(const String & index_type, const String & aggregate_function_name)
 {
     if (index_type == "minmax")
-    {
         return aggregate_function_name == "min" || aggregate_function_name == "max";
-    }
-    else if (index_type == "set")
+    if (index_type == "set")
+        return aggregate_function_name.starts_with("uniq");
+    return false;
+}
+
+/// Build a part-level DAG containing partition key expressions and virtual columns.
+/// This is used to check whether filter and GROUP BY keys can be resolved at the part level.
+static ActionsDAG buildPartLevelDAG(const StorageMetadataPtr & metadata, const Block & virtual_columns_block)
+{
+    ActionsDAG part_level_dag;
+    if (metadata->hasPartitionKey())
     {
-        return aggregate_function_name == "uniq"
-            || aggregate_function_name == "uniqExact"
-            || aggregate_function_name == "uniqCombined"
-            || aggregate_function_name == "uniqCombined64"
-            || aggregate_function_name == "uniqHLL12"
-            || aggregate_function_name == "uniqTheta";
+        const auto & partition_key = metadata->getPartitionKey();
+        if (partition_key.expression)
+            part_level_dag = partition_key.expression->getActionsDAG().clone();
     }
 
-    return false;
+    for (const auto & col : virtual_columns_block)
+    {
+        const auto * node = &part_level_dag.addInput(col.name, col.type);
+        part_level_dag.getOutputs().push_back(node);
+    }
+
+    return part_level_dag;
+}
+
+/// Result of checking whether GROUP BY keys and filter can be resolved at the part level.
+struct PartLevelResolutionResult
+{
+    bool valid = false;
+    MergeTreeData::GroupByKeyToPartitionIdx group_by_key_to_partition_idx;
+};
+
+/// Check whether GROUP BY keys map to partition keys and filter is deterministic,
+/// building the mapping from query key names to partition key indices.
+static PartLevelResolutionResult resolvePartLevelKeys(
+    const StorageMetadataPtr & metadata,
+    const Names & keys,
+    const DAGIndex & query_index,
+    const MatchedTrees::Matches & part_level_matches)
+{
+    PartLevelResolutionResult result;
+    result.valid = true;
+
+    if (!keys.empty() && metadata->hasPartitionKey())
+    {
+        const auto & partition_key = metadata->getPartitionKey();
+        std::unordered_map<String, size_t> partition_col_to_idx;
+        for (size_t i = 0; i < partition_key.column_names.size(); ++i)
+            partition_col_to_idx[partition_key.column_names[i]] = i;
+
+        for (const auto & key : keys)
+        {
+            auto it = query_index.find(key);
+            if (it != query_index.end())
+            {
+                auto match_it = part_level_matches.find(it->second);
+                if (match_it != part_level_matches.end() && match_it->second.node != nullptr)
+                {
+                    const String & partition_col_name = match_it->second.node->result_name;
+                    auto idx_it = partition_col_to_idx.find(partition_col_name);
+                    if (idx_it != partition_col_to_idx.end())
+                        result.group_by_key_to_partition_idx.emplace_back(key, idx_it->second);
+                }
+            }
+        }
+
+        if (result.group_by_key_to_partition_idx.size() != keys.size())
+            result.valid = false;
+    }
+
+    return result;
 }
 
 AggregateProjectionCandidates getAggregateProjectionCandidates(
@@ -479,9 +547,120 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         }
     }
 
-    /// Try to use skip indices for aggregation if no other projection was found.
-    if (context->getSettingsRef()[Setting::allow_skip_index_aggregation_optimize]
+    /// Try to use column statistics (StatisticsMinMax) for min/max aggregation.
+    /// This is cheaper than reading skip index files and should be attempted first.
+    if (context->getSettingsRef()[Setting::optimize_use_skip_index_aggregation]
         && !candidates.minmax_projection
+        && candidates.real.empty()
+        && (metadata->hasPartitionKey() || keys.empty()))
+    {
+        /// Only applicable when all aggregates are min or max
+        bool all_min_max = !aggregates.empty()
+            && std::all_of(aggregates.begin(), aggregates.end(), [](const AggregateDescription & agg)
+            {
+                const String & name = agg.function->getName();
+                return name == "min" || name == "max";
+            });
+
+        if (all_min_max)
+        {
+            /// Check filter and GROUP BY keys can be computed from part-level expressions (same logic as skip index)
+            auto part_level_dag = buildPartLevelDAG(metadata, key_virtual_columns);
+
+            std::unordered_set<const ActionsDAG::Node *> part_level_nodes;
+            for (const auto * output : part_level_dag.getOutputs())
+                part_level_nodes.insert(output);
+
+            auto part_level_matches = matchTrees(part_level_dag.getOutputs(), *dag.dag, false /* check_monotonicity */);
+
+            auto [group_by_keys_valid, group_by_key_to_partition_idx]
+                = resolvePartLevelKeys(metadata, keys, query_index, part_level_matches);
+
+            if (group_by_keys_valid)
+            {
+                std::vector<const ActionsDAG::Node *> nodes_to_resolve;
+                if (dag.filter_node)
+                {
+                    if (VirtualColumnUtils::isDeterministicInScopeOfQuery(dag.filter_node))
+                        nodes_to_resolve.push_back(dag.filter_node);
+                    else
+                        group_by_keys_valid = false;
+                }
+
+                for (const auto & key : keys)
+                {
+                    auto it = query_index.find(key);
+                    if (it != query_index.end())
+                        nodes_to_resolve.push_back(it->second);
+                }
+
+                if (group_by_keys_valid
+                    && (nodes_to_resolve.empty()
+                        || resolveMatchedInputs(part_level_matches, part_level_nodes, nodes_to_resolve)))
+                {
+                    /// Aggregate argument names from the analyzer may be qualified (e.g. `__table1.value`).
+                    /// Use matchTrees against an identity DAG of the physical inputs to resolve them —
+                    /// the same approach as the skip index path below.
+                    ActionsDAG inputs_dag;
+                    for (const auto * input : dag.dag->getInputs())
+                    {
+                        const auto & input_node = inputs_dag.addInput(input->result_name, input->result_type);
+                        inputs_dag.getOutputs().push_back(&input_node);
+                    }
+                    auto inputs_matches = matchTrees(inputs_dag.getOutputs(), *dag.dag, false /* check_monotonicity */);
+
+                    MergeTreeData::AggColumnToPhysicalName agg_col_to_physical_name;
+                    bool all_args_resolved = true;
+                    for (const auto & agg : aggregates)
+                    {
+                        if (agg.argument_names.empty())
+                        {
+                            all_args_resolved = false;
+                            break;
+                        }
+                        auto query_it = query_index.find(agg.argument_names[0]);
+                        if (query_it == query_index.end())
+                        {
+                            all_args_resolved = false;
+                            break;
+                        }
+                        auto match_it = inputs_matches.find(query_it->second);
+                        if (match_it == inputs_matches.end() || match_it->second.node == nullptr)
+                        {
+                            all_args_resolved = false;
+                            break;
+                        }
+                        agg_col_to_physical_name[agg.column_name] = match_it->second.node->result_name;
+                    }
+
+                    if (all_args_resolved)
+                    {
+                        auto block = reading.getMergeTreeData().getColumnStatisticsAggregationBlock(
+                            metadata,
+                            aggregates,
+                            agg_col_to_physical_name,
+                            group_by_key_to_partition_idx,
+                            dag.filter_node ? &*dag.dag : nullptr,
+                            reading.getParts(),
+                            max_added_blocks.get(),
+                            context);
+
+                        if (!block.empty())
+                        {
+                            ColumnStatisticsProjectionCandidate col_stats_candidate;
+                            col_stats_candidate.block = std::move(block);
+                            candidates.column_statistics_projection = std::move(col_stats_candidate);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Try to use skip indices for aggregation if no other projection was found.
+    if (context->getSettingsRef()[Setting::optimize_use_skip_index_aggregation]
+        && !candidates.minmax_projection
+        && !candidates.column_statistics_projection
         && candidates.real.empty()
         && (metadata->hasPartitionKey() || keys.empty()))
     {
@@ -555,20 +734,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
             /// Collect the part-level expressions, which contains:
             /// 1. Partition key expressions
             /// 2. Virtual columns for filter
-            ActionsDAG part_level_dag;
-            if (metadata->hasPartitionKey())
-            {
-                const auto & partition_key = metadata->getPartitionKey();
-                if (partition_key.expression)
-                    part_level_dag = partition_key.expression->getActionsDAG().clone();
-            }
-
-            auto virtual_columns_block = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
-            for (const auto & col : virtual_columns_block)
-            {
-                const auto * node_ = &part_level_dag.addInput(col.name, col.type);
-                part_level_dag.getOutputs().push_back(node_);
-            }
+            auto part_level_dag = buildPartLevelDAG(metadata, key_virtual_columns);
 
             std::unordered_set<const ActionsDAG::Node *> part_level_nodes;
             for (const auto * output : part_level_dag.getOutputs())
@@ -590,44 +756,22 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 nodes_to_resolve.push_back(dag.filter_node);
             }
 
-            /// Build mapping from query GROUP BY key name to partition key index
-            MergeTreeData::GroupByKeyToPartitionIdx group_by_key_to_partition_idx;
-            if (!keys.empty() && metadata->hasPartitionKey())
+            auto [group_by_keys_valid, group_by_key_to_partition_idx]
+                = resolvePartLevelKeys(metadata, keys, query_index, part_level_matches);
+
+            if (!group_by_keys_valid)
             {
-                const auto & partition_key = metadata->getPartitionKey();
+                LOG_TRACE(
+                    getLogger("optimizeUseAggregateProjection"),
+                    "Not all GROUP BY keys map to partition keys, skipping skip index aggregation optimization");
+                continue;
+            }
 
-                /// Build partition key column name to index mapping
-                std::unordered_map<String, size_t> partition_col_to_idx;
-                for (size_t i = 0; i < partition_key.column_names.size(); ++i)
-                    partition_col_to_idx[partition_key.column_names[i]] = i;
-
-                for (const auto & key : keys)
-                {
-                    auto it = query_index.find(key);
-                    if (it != query_index.end())
-                    {
-                        nodes_to_resolve.push_back(it->second);
-
-                        /// Find the matched partition key column name via matchTrees result
-                        auto match_it = part_level_matches.find(it->second);
-                        if (match_it != part_level_matches.end() && match_it->second.node != nullptr)
-                        {
-                            const String & partition_col_name = match_it->second.node->result_name;
-                            auto idx_it = partition_col_to_idx.find(partition_col_name);
-                            if (idx_it != partition_col_to_idx.end())
-                                group_by_key_to_partition_idx.emplace_back(key, idx_it->second);
-                        }
-                    }
-                }
-
-                /// All GROUP BY keys must map to partition keys
-                if (group_by_key_to_partition_idx.size() != keys.size())
-                {
-                    LOG_TRACE(
-                        getLogger("optimizeUseAggregateProjection"),
-                        "Not all GROUP BY keys map to partition keys, skipping skip index aggregation optimization");
-                    continue;
-                }
+            for (const auto & key : keys)
+            {
+                auto it = query_index.find(key);
+                if (it != query_index.end())
+                    nodes_to_resolve.push_back(it->second);
             }
 
             if (!nodes_to_resolve.empty() && !resolveMatchedInputs(part_level_matches, part_level_nodes, nodes_to_resolve))
@@ -651,8 +795,6 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
 
             if (!block.empty())
             {
-                ActionsDAG skip_dag(block.getColumnsWithTypeAndName());
-
                 SkipIndexProjectionCandidate skip_candidate;
                 skip_candidate.index_desc = &index_desc;
                 skip_candidate.block = std::move(block);
@@ -744,6 +886,15 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
+/// Create a Pipe from a Block, using either a real source or a NullSource
+/// depending on whether this is the initiator for parallel replica reading.
+static Pipe createProjectionPipe(Block block, bool is_parallel_reading_on_remote_replicas)
+{
+    if (!is_parallel_reading_on_remote_replicas)
+        return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block))));
+    return Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(block.cloneEmpty())));
+}
+
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
@@ -796,8 +947,11 @@ std::optional<String> optimizeUseAggregateProjections(
     {
         best_candidate = &candidates.minmax_projection->candidate;
     }
-    else if (!candidates.skip_index_projection && (!candidates.real.empty() || !candidates.only_count_column.empty()))
+    else if (!candidates.skip_index_projection && !candidates.column_statistics_projection)
     {
+        if (candidates.real.empty() && candidates.only_count_column.empty())
+            return {};
+
         parent_reading_select_result = reading->getAnalyzedResult();
         bool find_exact_ranges = !candidates.only_count_column.empty();
         if (!parent_reading_select_result || (!parent_reading_select_result->has_exact_ranges && find_exact_ranges))
@@ -968,10 +1122,6 @@ std::optional<String> optimizeUseAggregateProjections(
         if (!best_candidate && exact_count == 0)
             return {};
     }
-    else if (!candidates.skip_index_projection)
-    {
-        return {};
-    }
 
     /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging
     if (best_candidate)
@@ -1020,33 +1170,30 @@ std::optional<String> optimizeUseAggregateProjections(
         ///  ReadFromMergeTree  ---is replaced by--->       ReadFromPreparedSource (_minmax_count_projection)
         /// -------------------------------------------------------------------------------------------------
         /// When parallel replicas is enabled, only the initiator should read the min-max projection to avoid data duplication.
-        Pipe pipe;
-        if (!is_parallel_reading_on_remote_replicas)
-            pipe = Pipe(
-                std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.minmax_projection->block))));
-        else
-            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.minmax_projection->block.cloneEmpty())));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            createProjectionPipe(std::move(candidates.minmax_projection->block), is_parallel_reading_on_remote_replicas));
         has_parent_parts = false;
     }
     else if (candidates.skip_index_projection)
     {
-        /// Skip index aggregation optimization - reads aggregation results directly from skip index
-        /// -------------------------------------------------------------------------------------------------
-        ///  ReadFromMergeTree  ---is replaced by--->       ReadFromPreparedSource (_skip_index_aggregation)
-        /// -------------------------------------------------------------------------------------------------
+        /// Skip index aggregation optimization - reads aggregation results directly from skip index.
         /// When parallel replicas is enabled, only the initiator should read to avoid data duplication.
-        Pipe pipe;
-        if (!is_parallel_reading_on_remote_replicas)
-            pipe = Pipe(
-                std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(candidates.skip_index_projection->block))));
-        else
-            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.skip_index_projection->block.cloneEmpty())));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            createProjectionPipe(std::move(candidates.skip_index_projection->block), is_parallel_reading_on_remote_replicas));
         has_parent_parts = false;
         selected_projection_name = candidates.skip_index_projection->index_desc->name;
-        LOG_DEBUG(logger, "Using skip index '{}' for aggregation optimization",
+        LOG_DEBUG(logger, "Using skip index `{}` for aggregation optimization",
             candidates.skip_index_projection->index_desc->name);
+    }
+    else if (candidates.column_statistics_projection)
+    {
+        /// Column statistics aggregation optimization - reads min/max from per-column statistics.
+        /// When parallel replicas is enabled, only the initiator should read to avoid data duplication.
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            createProjectionPipe(std::move(candidates.column_statistics_projection->block), is_parallel_reading_on_remote_replicas));
+        has_parent_parts = false;
+        selected_projection_name = "_column_statistics_aggregation";
+        LOG_DEBUG(logger, "Using column statistics for min/max aggregation optimization");
     }
     else if (best_candidate == nullptr)
     {
@@ -1075,14 +1222,10 @@ std::optional<String> optimizeUseAggregateProjections(
         ///                                             AggregatingProjection
         ///  ReadFromMergeTree  ---is replaced by--->       ReadFromMergeTree
         ///                                                 ReadFromPreparedSource (_exact_count_projection)
-        /// ------------------------------------------------------------------------------------------------
+        /// -------------------------------------------------------------------------------------------------
         /// When parallel replicas is enabled, only the initiator should read the exact count projection to avoid data duplication.
-        Pipe pipe;
-        if (!is_parallel_reading_on_remote_replicas)
-            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(block_with_count))));
-        else
-            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(block_with_count.cloneEmpty())));
-        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(
+            createProjectionPipe(std::move(block_with_count), is_parallel_reading_on_remote_replicas));
 
         selected_projection_name = EXACT_COUNT_PROJECTION_NAME;
         has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();

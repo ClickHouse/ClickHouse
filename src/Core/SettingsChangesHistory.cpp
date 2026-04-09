@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_inline_views", false, false, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"optimize_use_skip_index_aggregation", false, true, "New setting to enable skip index aggregation optimization for min/max/uniq queries"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -143,7 +144,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_blocks_to_skip_before_reenabling", 30, 30, "New setting"},
             {"use_join_disjunctions_push_down", false, true, "Enabled this optimization."},
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
-            {"allow_skip_index_aggregation_optimize", false, true, "New setting to enable skip index aggregation optimization for min/max/uniq queries"},
             {"check_conversion_from_numbers_to_enum", false, true, "New setting"},
             {"allow_experimental_nullable_tuple_type", false, false, "New experimental setting"},
             {"use_skip_indexes_on_data_read", false, true, "Default enable"},

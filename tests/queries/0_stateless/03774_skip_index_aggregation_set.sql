@@ -1,3 +1,4 @@
+
 DROP TABLE IF EXISTS test_skip_index_set_agg;
 
 CREATE TABLE test_skip_index_set_agg (
@@ -18,8 +19,7 @@ INSERT INTO test_skip_index_set_agg VALUES
     (6, 2, 'p3'),
     (7, 40, 'p3');
 
-SET allow_skip_index_aggregation_optimize = 1;
--- For parallel replicas
+SET optimize_use_skip_index_aggregation = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_aggregation_in_order = 0;
 
@@ -64,6 +64,20 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT p, uniqExact(value) FROM test_skip
 SELECT p, uniqExact(value) FROM test_skip_index_set_agg WHERE p IN ('p1', 'p2') GROUP BY p ORDER BY p;
 
 -- ==================================================
+-- Setting disabled fallback test (in the same table)
+-- ==================================================
+
+-- Disable skip index aggregation - should fall back to ReadFromMergeTree
+SET optimize_use_skip_index_aggregation = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(value) FROM test_skip_index_set_agg) WHERE explain LIKE '%ReadFromMergeTree%';
+SELECT uniqExact(value) FROM test_skip_index_set_agg;
+
+-- Re-enable
+SET optimize_use_skip_index_aggregation = 1;
+
+DROP TABLE test_skip_index_set_agg;
+
+-- ==================================================
 -- Set index overflow test
 -- ==================================================
 
@@ -84,4 +98,3 @@ SELECT trimLeft(explain) FROM (EXPLAIN SELECT uniqExact(value) FROM test_skip_in
 SELECT uniqExact(value) FROM test_skip_index_set_overflow;
 
 DROP TABLE test_skip_index_set_overflow;
-DROP TABLE test_skip_index_set_agg;

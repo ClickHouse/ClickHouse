@@ -92,11 +92,6 @@ public:
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
 {
-    /// Mode of operation:
-    /// - TopK: for ORDER BY LIMIT optimization, stores per-granule min or max values
-    /// - Aggregate: for skip index aggregation, aggregates min and max across all granules
-    enum class Mode : uint8_t { TopK, Aggregate };
-
     struct MinMaxGranule
     {
         size_t granule_num;
@@ -116,26 +111,17 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
         }
     };
 
-    /// Constructor for TopK mode
     explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
-                                              int direction_, size_t size_hint_, bool store_map_ = false);
-
-    /// Constructor for Aggregate mode
-    explicit MergeTreeIndexBulkGranulesMinMax(const Block & index_sample_block_);
-
-
+                                              size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     void getTopKMarks(size_t n, bool handle_ties, std::vector<MinMaxGranule> & result);
     static void getTopKMarks(int direction, size_t n, size_t index_granularity, bool handle_ties,
                                 const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
-    /// For TopK mode: per-granule values
     std::vector<MinMaxGranule> granules;
     std::unordered_map<size_t, size_t> granules_map;
 
-    /// For Aggregate mode: aggregated min and max across all granules, one Range per column
-    std::vector<Range> hyperrectangle;
 private:
     template<bool handle_ties>
     void getTopKMarks(size_t n, std::vector<MinMaxGranule> & result);
@@ -143,14 +129,15 @@ private:
     template<bool handle_ties>
     static void getTopKMarks(int direction, size_t n, size_t index_granularity, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
-    Serializations serializations;
+    SerializationPtr serialization;
     [[maybe_unused]] const String & index_name;
     const Block & index_sample_block;
     FormatSettings format_settings;
-    int direction = 0;
+    size_t index_granularity;
+    int direction;
+    size_t last_part_granule;
     bool empty = true;
     bool store_map = false;
-    Mode mode = Mode::TopK;
 };
 
 using MergeTreeIndexBulkGranulesMinMaxPtr = std::shared_ptr<MergeTreeIndexBulkGranulesMinMax>;

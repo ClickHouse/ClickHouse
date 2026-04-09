@@ -237,82 +237,50 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTree
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
-                                                                   int direction_, size_t size_hint_, bool store_map_) :
+                                                                   size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_) :
     index_name(index_name_)
     , index_sample_block(index_sample_block_)
+    , index_granularity(index_granularity_)
     , direction(direction_)
+    , last_part_granule(last_part_granule_)
     , store_map(store_map_)
 {
     const DataTypePtr & type = index_sample_block.getByPosition(0).type;
-    serializations.push_back(type->getDefaultSerialization());
+    serialization = type->getDefaultSerialization();
     granules.reserve(size_hint_);
-}
-
-MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const Block & index_sample_block_) :
-    index_name(index_sample_block_.getByPosition(0).name)
-    , index_sample_block(index_sample_block_)
-    , mode(Mode::Aggregate)
-{
-    /// Aggregate mode: need all columns' serializations
-    size_t num_columns = index_sample_block.columns();
-    serializations.reserve(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        const DataTypePtr & type = index_sample_block.getByPosition(i).type;
-        serializations.push_back(type->getDefaultSerialization());
-    }
 }
 
 void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
-    if (mode == Mode::TopK)
-    {
-        Field value;
-        Field scratch;
+    Field value;
+    Field scratch;
 
-        /// The order in which values are read depends on 'direction':
-        /// If direction == ASC, we need only min value, discard max value
-        /// If direction == DESC, we need only max value, discard min value
-        if (direction == 1)
-        {
-            serializations[0]->deserializeBinary(value, istr, format_settings);
-            serializations[0]->deserializeBinary(scratch, istr, format_settings);
-        }
-        else
-        {
-            serializations[0]->deserializeBinary(scratch, istr, format_settings);
-            serializations[0]->deserializeBinary(value, istr, format_settings);
-        }
-        granules.emplace_back(MinMaxGranule{granule_num, value});
+    /// The order in which values are read depends on 'direction':
+    /// If direction == ASC, we need only min value, discard max value
+    /// If direction == DESC, we need only max value, discard min value
+    if (direction == 1)
+    {
+        serialization->deserializeBinary(value, istr, format_settings);
+        serialization->deserializeBinary(scratch, istr, format_settings);
+    }
+    else
+    {
+        serialization->deserializeBinary(scratch, istr, format_settings);
+        serialization->deserializeBinary(value, istr, format_settings);
+    }
+    /// If index granularity is not 1, we insert the same value as the min
+    /// or max for all the corresponding granules. For our top-K purpose, this
+    /// is safe and maybe lead to false positives, but never wrong results.
+    for (size_t i = 0; i < index_granularity; ++i)
+    {
+        auto part_granule_num = (granule_num * index_granularity) + i;
+        if (part_granule_num >= last_part_granule)
+            break;
+
+        granules.emplace_back(MinMaxGranule{part_granule_num, value});
         if (store_map)
-            granules_map.emplace(granule_num, granules.size() - 1);
+            granules_map.emplace(part_granule_num, granules.size() - 1);
     }
-    else if (mode == Mode::Aggregate)
-    {
-        /// Read min/max for all columns and aggregate into hyperrectangle
-        size_t num_columns = serializations.size();
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            Field min_val;
-            Field max_val;
-            serializations[i]->deserializeBinary(min_val, istr, format_settings);
-            serializations[i]->deserializeBinary(max_val, istr, format_settings);
-
-            if (hyperrectangle.size() <= i)
-            {
-                hyperrectangle.emplace_back(min_val, true, max_val, true);
-            }
-            else
-            {
-                if (accurateLess(min_val, hyperrectangle[i].left))
-                    hyperrectangle[i].left = min_val;
-                if (accurateLess(hyperrectangle[i].right, max_val))
-                    hyperrectangle[i].right = max_val;
-            }
-        }
-    }
-
-
     empty = false;
 }
 
@@ -361,7 +329,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     }
     else
     {
-        auto min_granules_to_select = n;
+        auto min_granules_to_select = n * index_granularity;
         auto threshold = queue.top();
         for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
