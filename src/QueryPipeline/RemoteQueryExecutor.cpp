@@ -103,9 +103,9 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , external_tables(external_tables_)
     , stage(stage_)
     , extension(extension_)
-    , priority_func(priority_func_)
     , skip_unavailable_shards(context->getSettingsRef()[Setting::skip_unavailable_shards])
     , skip_unavailable_shards_mode(context->getSettingsRef()[Setting::skip_unavailable_shards_mode])
+    , priority_func(priority_func_)
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
     if (stage == QueryProcessingStage::QueryPlan && !query_plan)
