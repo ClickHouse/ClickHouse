@@ -82,6 +82,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 snapshot_distance;
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
+    extern const CoordinationSettingsUInt64 max_log_gap_in_stream;
     extern const CoordinationSettingsBool nuraft_test_mode;
     extern const CoordinationSettingsBool asio_streaming_mode;
 }
@@ -550,6 +551,9 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     asio_opts.thread_pool_size_ = std::max(16U, getNumberOfCPUCoresToUse());
 
     asio_opts.streaming_mode_ = coordination_settings[CoordinationSetting::asio_streaming_mode];
+
+    params.max_log_gap_in_stream_
+        = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_log_gap_in_stream], "max_log_gap_in_stream", log);
 
     if (state_manager->isSecure())
     {

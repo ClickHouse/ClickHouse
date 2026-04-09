@@ -63,6 +63,7 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
     DECLARE(Bool, asio_streaming_mode, false, "Enable NuRaft streaming mode, which allows sending subsequent requests without waiting for the response to previous requests", 0) \
+    DECLARE(UInt64, max_log_gap_in_stream, 0, "If non-zero, nuraft may send multiple append_entries requests without waiting for responses, with up to this many total entries in flight.", 0) \
     DECLARE(Bool, experimental_use_rocksdb, false, "Use rocksdb as backend storage", 0) \
     DECLARE(UInt64, rocksdb_load_batch_size, 1000, "Size of write batch used during snapshot loading", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
