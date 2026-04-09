@@ -414,7 +414,7 @@ class S3:
     ) -> str:
         if upload_to_s3:
             env = _Environment.get()
-            s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+            s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}"
             if s3_subprefix:
                 s3_subprefix = s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
