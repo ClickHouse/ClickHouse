@@ -162,7 +162,8 @@ protected:
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method = Poco::Net::HTTPRequest::HTTP_POST,
-        bool ignore_result = false) const;
+        bool ignore_result = false,
+        std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors = {}) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

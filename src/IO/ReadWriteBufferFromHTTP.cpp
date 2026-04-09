@@ -19,20 +19,6 @@ namespace ProfileEvents
 namespace
 {
 
-bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noexcept
-{
-    static constexpr std::array non_retriable_errors{
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
-
-    return std::all_of(
-        non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });
-}
-
 Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPResponse & response, bool enable_url_encoding)
 {
     chassert(DB::isRedirect(response.getStatus()));
@@ -75,6 +61,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+}
+
+bool ReadWriteBufferFromHTTP::isRetriableError(Poco::Net::HTTPResponse::HTTPStatus http_status) const noexcept
+{
+    static constexpr std::array non_retriable_errors{
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_BAD_REQUEST,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
+
+    if (std::any_of(non_retriable_errors.begin(), non_retriable_errors.end(),
+                    [&](const auto status) { return http_status == status; }))
+        return false;
+
+    if (std::find(custom_non_retryable_errors.begin(), custom_non_retryable_errors.end(), http_status)
+        != custom_non_retryable_errors.end())
+        return false;
+
+    return true;
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -202,7 +209,8 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     bool http_skip_not_found_url_,
     HTTPHeaderEntries http_header_entries_,
     bool delay_initialization,
-    std::optional<HTTPFileInfo> file_info_)
+    std::optional<HTTPFileInfo> file_info_,
+    std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_)
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
     , initial_uri(uri_)
@@ -220,6 +228,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     , out_stream_callback(std::move(out_stream_callback_))
     , redirects(0)
     , http_header_entries {std::move(http_header_entries_)}
+    , custom_non_retryable_errors(std::move(custom_non_retryable_errors_))
     , file_info(file_info_)
     , log(getLogger("ReadWriteBufferFromHTTP"))
 {
@@ -836,7 +845,8 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
         http_skip_not_found_url,
         http_header_entries,
         delay_initialization,
-        /*file_info_=*/ std::nullopt));
+        /*file_info_=*/ std::nullopt,
+        custom_non_retryable_errors));
     return ptr;
 }
 

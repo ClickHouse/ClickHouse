@@ -100,6 +100,7 @@ private:
     std::map<String, String> response_headers;
 
     HTTPHeaderEntries http_header_entries;
+    std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors;
     std::function<void(size_t)> next_callback;
 
     size_t offset_from_begin_pos = 0;
@@ -109,6 +110,8 @@ private:
     LoggerPtr log;
 
     bool withPartialContent() const;
+
+    bool isRetriableError(Poco::Net::HTTPResponse::HTTPStatus http_status) const noexcept;
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
@@ -161,7 +164,8 @@ private:
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
         bool delay_initialization,
-        std::optional<HTTPFileInfo> file_info_);
+        std::optional<HTTPFileInfo> file_info_,
+        std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_);
 
 public:
     bool nextImpl() override;
@@ -217,6 +221,7 @@ class BuilderRWBufferFromHTTP
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
     bool delay_initialization = true;
+    std::vector<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors{};
 
 public:
     explicit BuilderRWBufferFromHTTP(Poco::URI uri_)
@@ -245,6 +250,7 @@ public:
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)
+    setterMember(withCustomNonRetryableError, custom_non_retryable_errors)
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
