@@ -1,0 +1,25 @@
+<test>
+  <query>
+    SELECT
+      number,
+      s,
+      t,
+      u,
+      v,
+      w
+    FROM numbers_mt(1e8) AS n
+    INNER JOIN
+    (
+        SELECT
+            CAST('157', 'UInt64') AS p,
+            repeat(toString(p), 10) AS s,
+            repeat(toString(p), 10) AS t,
+            repeat(toString(p), 10) AS u,
+            repeat(toString(p), 10) AS v,
+            repeat(toString(p), 10) AS w
+        FROM system.one
+    ) AS o ON number = p
+    FORMAT Null
+    SETTINGS max_threads = 1, join_algorithm = 'hash', max_block_size = 5000, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0
+  </query>
+</test>

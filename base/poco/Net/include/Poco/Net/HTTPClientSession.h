@@ -359,6 +359,9 @@ namespace Net
         void setLastRequest(Poco::Timestamp time);
 
         void assign(HTTPClientSession & session);
+        /// Takes away socket and properties from another `session`, which is then reset.
+        /// This is helpful to organize connection pools.
+        /// NOTE: it does NOT take away throttlers and data hooks, keeps its own.
 
         void setKeepAliveRequest(int request);
 

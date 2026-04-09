@@ -31,7 +31,7 @@ namespace
 {
     size_t getCacheLockWaitTimeout()
     {
-        auto query_context = CurrentThread::getQueryContext();
+        auto query_context = CurrentThread::tryGetQueryContext();
         if (query_context)
             return query_context->getSettingsRef()[Setting::temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds];
 
@@ -40,15 +40,15 @@ namespace
     }
 }
 
-WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_)
-    : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegment * file_segment_, size_t buffer_size)
+    : WriteBufferFromFileBase(buffer_size, nullptr, 0)
     , file_segment(file_segment_)
     , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())
 {
 }
 
-WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_)
-    : WriteBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+WriteBufferToFileSegment::WriteBufferToFileSegment(FileSegmentsHolderPtr segment_holder_, size_t buffer_size)
+    : WriteBufferFromFileBase(buffer_size, nullptr, 0)
     , file_segment(&segment_holder_->front())
     , segment_holder(std::move(segment_holder_))
     , reserve_space_lock_wait_timeout_milliseconds(getCacheLockWaitTimeout())

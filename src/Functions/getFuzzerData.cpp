@@ -53,7 +53,7 @@ public:
 
 REGISTER_FUNCTION(GetFuzzerData)
 {
-    factory.registerFunction<FunctionGetFuzzerData>();
+    factory.registerFunction<FunctionGetFuzzerData>({});
 }
 
 }

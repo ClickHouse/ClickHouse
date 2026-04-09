@@ -1,0 +1,5 @@
+Row 1:
+──────
+cache_name: cache
+path:       /cache/
+max_size:   1000000000 -- 1.00 billion

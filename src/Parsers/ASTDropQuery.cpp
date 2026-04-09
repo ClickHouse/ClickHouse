@@ -1,6 +1,8 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTLiteral.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -26,7 +28,7 @@ String ASTDropQuery::getID(char delim) const
 
 ASTPtr ASTDropQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropQuery>(*this);
+    auto res = make_intrusive<ASTDropQuery>(*this);
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
@@ -34,7 +36,6 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
         ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
@@ -44,11 +45,13 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else
         throw Exception(ErrorCodes::SYNTAX_ERROR, "Not supported kind of drop query.");
 
-    if (temporary)
+    if (isTemporary())
         ostr << "TEMPORARY ";
 
-    if (has_all_tables)
-        ostr << "ALL TABLES FROM ";
+    if (has_all)
+        ostr << "ALL ";
+    if (has_tables)
+        ostr << "TABLES FROM ";
     else if (!table && !database_and_tables && database)
         ostr << "DATABASE ";
     else if (is_dictionary)
@@ -64,8 +67,6 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     if (if_empty)
         ostr << "IF EMPTY ";
 
-    ostr << (settings.hilite ? hilite_none : "");
-
     if (!table && !database_and_tables && database)
     {
         database->format(ostr, settings, state, frame);
@@ -73,7 +74,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else if (database_and_tables)
     {
         auto & list = database_and_tables->as<ASTExpressionList &>();
-        for (auto * it = list.children.begin(); it != list.children.end(); ++it)
+        for (auto it = list.children.begin(); it != list.children.end(); ++it)
         {
             if (it != list.children.begin())
                 ostr << ", ";
@@ -105,21 +106,29 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         table->format(ostr, settings, state, frame);
     }
 
+    if (!like.empty())
+    {
+        ostr
+            << (not_like ? " NOT" : "")
+            << (case_insensitive_like ? " ILIKE " : " LIKE")
+            << quoteString(like);
+    }
+
     formatOnCluster(ostr, settings);
 
     if (permanently)
         ostr << " PERMANENTLY";
 
     if (sync)
-        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
+        ostr << " SYNC";
 }
 
-ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
+ASTs ASTDropQuery::getRewrittenASTsOfSingleTable(ASTPtr self) const
 {
     ASTs res;
     if (database_and_tables == nullptr)
     {
-        res.push_back(shared_from_this());
+        res.push_back(self);
         return res;
     }
 

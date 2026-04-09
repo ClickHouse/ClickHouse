@@ -63,7 +63,7 @@ def test(storage_policy, key_prefix):
             ) ENGINE=MergeTree()
             PARTITION BY id % 10
             ORDER BY id
-            SETTINGS storage_policy='{}'
+            SETTINGS storage_policy='{}', cleanup_delay_period=1, cleanup_delay_period_random_add=0, cleanup_thread_preferred_points_per_iteration=0
             """.format(
                 table_name, storage_policy
             )
@@ -179,3 +179,38 @@ def test(storage_policy, key_prefix):
     )
 
     assert len(list(it)) == 0
+
+
+@pytest.mark.parametrize(
+    "storage_policy",
+    [
+        pytest.param("s3_plain_rewritable"),
+        pytest.param("cache_s3_plain_rewritable"),
+        pytest.param("s3_plain_rewritable_with_metadata_cache"),
+    ],
+)
+def test_projections(storage_policy):
+    node = cluster.instances["node1"]
+    table_name = "prj_test"
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
+    node.query(
+        f"""
+            CREATE TABLE {table_name} (
+                x UInt32,
+                y UInt32,
+                PROJECTION prj_y (SELECT x, y ORDER BY y)
+            )
+            ENGINE = MergeTree
+            PRIMARY KEY x
+            SETTINGS storage_policy = '{storage_policy}';
+        """
+    )
+    node.query(
+        f"""
+            INSERT INTO {table_name} SELECT number, number FROM system.numbers limit 100000;
+        """
+    )
+    assert int(node.query(f"SELECT count(*) FROM {table_name} WHERE x=100")) == 1
+    assert int(node.query(f"SELECT count(*) FROM {table_name} WHERE y=100")) == 1
+
+    node.query(f"DROP TABLE {table_name} SYNC")

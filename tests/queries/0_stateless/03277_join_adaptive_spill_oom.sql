@@ -10,6 +10,8 @@ insert into adaptive_spill_03277_3 select cast(rand() as String) as k, cast(rand
 set max_threads=1;
 set join_algorithm='grace_hash';
 set max_memory_usage=314572800;
+set enable_parallel_replicas=0; -- parallel replicas distribute data across nodes, reducing per-node memory and preventing the expected OOM
+set grace_hash_join_initial_buckets=1; -- more initial buckets split the right side, reducing per-bucket memory and preventing the expected OOM
 set collect_hash_table_stats_during_joins=0;
 -- don't limit the memory usage for join
 set max_bytes_in_join=0;

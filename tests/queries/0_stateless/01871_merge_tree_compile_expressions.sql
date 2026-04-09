@@ -1,3 +1,5 @@
+-- Tags: no-azure-blob-storage
+
 DROP TABLE IF EXISTS data_01875_1;
 DROP TABLE IF EXISTS data_01875_2;
 DROP TABLE IF EXISTS data_01875_3;

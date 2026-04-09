@@ -5,6 +5,7 @@
 
 namespace DB
 {
+struct ClusterFunctionReadTaskResponse;
 
 /// Base class for working with multiple replicas (connections)
 /// from one shard within a single thread
@@ -28,7 +29,7 @@ public:
 
     virtual void sendQueryPlan(const QueryPlan & query_plan) = 0;
 
-    virtual void sendReadTaskResponse(const String &) = 0;
+    virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
 
     /// Get packet from any replica.
@@ -65,6 +66,11 @@ public:
     /// This is needed in max_parallel_replicas case.
     /// We create a RemoteQueryExecutor for each replica
     virtual void setReplicaInfo(ReplicaInfo value) = 0;
+
+    /// Set the total number of remote connections across all shards in a distributed query.
+    /// Used to scale `interactive_delay` by sqrt(fanout) to reduce progress/profile event traffic.
+    virtual void setDistributedFanout(size_t /*total_connections*/) {}
+
 
     /// Returns the number of replicas.
     virtual size_t size() const = 0;

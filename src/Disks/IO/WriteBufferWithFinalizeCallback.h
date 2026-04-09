@@ -21,7 +21,7 @@ public:
         std::unique_ptr<WriteBuffer> impl_,
         FinalizeCallback && create_callback_,
         const String & remote_path_,
-        bool do_not_write_empty_);
+        bool create_blob_if_empty_);
 
     String getFileName() const override { return remote_path; }
 
@@ -32,7 +32,7 @@ private:
 
     FinalizeCallback create_metadata_callback;
     String remote_path;
-    const bool do_not_write_empty = false;
+    const bool create_blob_if_empty = true;
 };
 
 }

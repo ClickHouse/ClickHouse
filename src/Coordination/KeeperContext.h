@@ -22,6 +22,7 @@ namespace DB
 {
 
 class KeeperDispatcher;
+enum SnapshotVersion : uint8_t;
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
@@ -68,6 +69,7 @@ public:
 
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
+    SnapshotVersion getWriteSnapshotVersion() const;
 
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 
@@ -81,6 +83,8 @@ public:
 
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
+
+    static void initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log);
 
     bool setShutdownCalled();
     const auto & isShutdownCalled() const
@@ -100,21 +104,19 @@ public:
 
     const CoordinationSettings & getCoordinationSettings() const;
 
-    int64_t getPrecommitSleepMillisecondsForTesting() const
-    {
-        return precommit_sleep_ms_for_testing;
-    }
+    int64_t getPrecommitSleepMillisecondsForTesting() const;
 
-    double getPrecommitSleepProbabilityForTesting() const
-    {
-        chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
-        return precommit_sleep_probability_for_testing;
-    }
+    double getPrecommitSleepProbabilityForTesting() const;
+
+    bool shouldBlockACL() const;
+    void setBlockACL(bool block_acl_);
 
     bool isOperationSupported(Coordination::OpNum operation) const;
     bool isS3ExperimentalChangelog() const;
     Int64 getS3FlushInterval() const;
 
+    bool shouldLogRequests() const;
+    void setLogRequests(bool log_requests_);
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -181,6 +183,10 @@ private:
     double precommit_sleep_probability_for_testing = 0.0;
 
     CoordinationSettingsPtr coordination_settings;
+
+    bool block_acl = false;
+
+    std::atomic<bool> log_requests = false;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

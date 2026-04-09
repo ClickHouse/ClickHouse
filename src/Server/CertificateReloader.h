@@ -4,16 +4,18 @@
 
 #if USE_SSL
 
-#include <openssl/ssl.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Common/Crypto/KeyPair.h>
+#include <Common/Crypto/X509Certificate.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Crypto/X509Certificate.h>
+#include <openssl/x509v3.h>
+#include <openssl/ssl.h>
 
+#include <chrono>
 #include <string>
 #include <filesystem>
 #include <list>
@@ -40,7 +42,10 @@ public:
         X509Certificate::List certs_chain;
         KeyPair key;
 
+        const std::string hash;
+
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
+        Data(KeyPair pkey, X509Certificate::List certs_chain, std::string hash);
     };
 
     struct File
@@ -58,7 +63,7 @@ public:
     {
         SSL_CTX * ctx = nullptr;
         MultiVersion<Data> data;
-        bool init_was_not_made = true;
+        bool initialized = false;
 
         File cert_file{"certificate"};
         File key_file{"key"};
@@ -98,6 +103,7 @@ private:
 
     /// Unsafe implementation
     void tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
+    void tryLoadACMECertificate(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 
     std::list<MultiData>::iterator findOrInsert(SSL_CTX * ctx, const std::string & prefix) TSA_REQUIRES(data_mutex);
 

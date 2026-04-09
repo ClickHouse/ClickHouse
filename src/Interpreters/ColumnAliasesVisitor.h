@@ -3,12 +3,11 @@
 #include <Core/Names.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class IDataType;
 class ASTFunction;
 class ASTIdentifier;

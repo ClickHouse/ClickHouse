@@ -1,29 +1,5 @@
-from helpers.kafka.common import (
-    kafka_create_topic,
-    kafka_delete_topic,
-    get_kafka_producer,
-    producer_serializer,
-    kafka_produce,
-)
-
-import logging
-import time
-
-import pytest
-from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProducer
-from kafka.admin import NewTopic
-
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.kafka_common import (
-    kafka_create_topic,
-    kafka_delete_topic,
-    get_kafka_producer,
-    producer_serializer,
-    kafka_produce,
-)
-
-if is_arm():
-    pytestmark = pytest.mark.skip
+from helpers.kafka.common_direct import *
+import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -49,8 +25,8 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
         bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
     )
 
-    kafka_create_topic(admin_client, "visible")
-    kafka_create_topic(admin_client, "hidden")
+    k.kafka_create_topic(admin_client, "visible")
+    k.kafka_create_topic(admin_client, "hidden")
     instance.query(
         f"""
         DROP TABLE IF EXISTS kafka_grant_visible;
@@ -102,8 +78,8 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     assert int(restricted_result_system_kafka_consumers) == 1
     # only kafka_grant_visible is visible for user `restricted`
 
-    kafka_delete_topic(admin_client, "visible")
-    kafka_delete_topic(admin_client, "hidden")
+    k.kafka_delete_topic(admin_client, "visible")
+    k.kafka_delete_topic(admin_client, "hidden")
     instance.query(
         f"""
         DROP TABLE IF EXISTS kafka_grant_visible;

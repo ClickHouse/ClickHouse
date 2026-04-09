@@ -15,7 +15,7 @@ namespace DB
 class MergeSorter
 {
 public:
-    MergeSorter(const Block & header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_);
+    MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_);
 
     Chunk read();
 
@@ -37,13 +37,15 @@ private:
     template <typename TSortingQueue>
     Chunk mergeBatchImpl(TSortingQueue & queue);
 
+    MutableColumns createMergedColumns() const;
+
 };
 
 
 class MergeSorterSource : public ISource
 {
 public:
-    MergeSorterSource(const Block & header, Chunks chunks, SortDescription & description, size_t max_merged_block_size, UInt64 limit)
+    MergeSorterSource(SharedHeader header, Chunks chunks, SortDescription & description, size_t max_merged_block_size, UInt64 limit)
         : ISource(header), merge_sorter(header, std::move(chunks), description, max_merged_block_size, limit)
     {
     }
@@ -64,7 +66,7 @@ class SortingTransform : public IProcessor
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    SortingTransform(const Block & header,
+    SortingTransform(SharedHeader header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
         UInt64 limit_,

@@ -12,8 +12,10 @@
 #include <Poco/Timespan.h>
 #include <Poco/Net/HTTPClientSession.h>
 
+#include <cstdint>
 #include <mutex>
 #include <memory>
+#include <vector>
 
 namespace DB
 {
@@ -67,8 +69,19 @@ public:
         size_t soft_limit = 100;
         size_t warning_limit = 1000;
         size_t store_limit = 10000;
+        size_t hard_limit = 25000;
 
         static constexpr size_t warning_step = 100;
+    };
+
+    /// Socket inodes of live connections, grouped by connection pool type.
+    struct PoolSocketInodes
+    {
+        std::vector<uint64_t> disk;
+        std::vector<uint64_t> storage;
+        std::vector<uint64_t> http;
+
+        bool empty() const { return disk.empty() && storage.empty() && http.empty(); }
     };
 
     HTTPConnectionPools(const HTTPConnectionPools &) = delete;
@@ -84,6 +97,10 @@ public:
     void dropCache();
 
     IHTTPConnectionPoolForEndpoint::Ptr getPool(HTTPConnectionGroupType type, const Poco::URI & uri, const ProxyConfiguration & proxy_configuration);
+
+    /// Collect socket inodes of all tracked HTTP connections, grouped by pool type.
+    /// Inodes are cached snapshots updated on connect, reconnect, and keep-alive store.
+    PoolSocketInodes getSocketInodes();
 
 private:
     class Impl;
