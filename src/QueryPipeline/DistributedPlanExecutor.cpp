@@ -1000,7 +1000,7 @@ protected:
         /// Wait for all tasks of the stage to finish
         bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms)
         {
-            LOG_DEBUG(logger, "Waiting for stage {} to finish", stage_name);
+            LOG_TRACE(logger, "Waiting for stage {} to finish", stage_name);
 
             std::shared_future<void> finished;
             {
