@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -18,8 +17,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Storages/MergeTree/MergeTreeIndexTextUtils.h>
 
 namespace DB
 {
@@ -34,24 +32,6 @@ namespace
 
 constexpr char preprocessor_lambda_arg[] = "__text_index_x";
 constexpr char preprocessor_column_name[] = "__text_index_column";
-
-/// Replaces subtrees in the AST whose canonical name matches `expression_name` with an identifier named `identifier_name`.
-/// Unlike RenameColumnVisitor which only handles plain identifiers, this also handles
-/// function expressions (e.g., replacing the `lower(val)` subtree with a lambda variable).
-void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name, const String & identifier_name)
-{
-    if (!ast)
-        return;
-
-    if ((ast->as<ASTIdentifier>() || ast->as<ASTFunction>()) && ast->getColumnName() == expression_name)
-    {
-        ast = make_intrusive<ASTIdentifier>(identifier_name);
-        return;
-    }
-
-    for (auto & child : ast->children)
-        replaceExpressionToIdentifier(child, expression_name, identifier_name);
-}
 
 ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & expression_ast, bool replace_index_column)
 {
@@ -115,13 +95,7 @@ ActionsDAG createActionsDAGForPreprocessor(
     if (expression_ast == nullptr)
         return ActionsDAG();
 
-    auto context = Context::getGlobalContextInstance();
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, source_columns);
-    auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false, true);
-
-    auto expression_name = expression_ast->getColumnName();
-    actions_dag.project({{expression_name, expression_name}});
-    actions_dag.removeUnusedActions();
+    auto actions_dag = buildActionsDAGFromAST(expression_ast, source_columns);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
     if (outputs.size() != 1)

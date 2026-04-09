@@ -533,6 +533,18 @@ private:
                 needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
+
+            /// Apply the postprocessor to the haystack symmetrically with the needle.
+            /// mergeNodes wires it onto any prior preprocessor output via result_name matching.
+            auto haystack_dag = postprocessor->getActionsDAGForHaystackColumn(
+                new_children[0]->result_name, new_children[0]->result_type);
+            if (!haystack_dag.getOutputs().empty())
+            {
+                ActionsDAG::NodeRawConstPtrs merged_outputs;
+                actions_dag.mergeNodes(std::move(haystack_dag), &merged_outputs);
+                if (!merged_outputs.empty())
+                    new_children[0] = merged_outputs.front();
+            }
         }
 
         /// Recreate an argument with needles.

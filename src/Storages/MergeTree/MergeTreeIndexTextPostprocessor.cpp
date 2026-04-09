@@ -5,13 +5,9 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexTextUtils.h>
 
 namespace DB
 {
@@ -27,23 +23,6 @@ namespace
 /// Name of the placeholder column used when building the postprocessor ActionsDAG.
 constexpr char postprocessor_token_name[] = "__text_index_token";
 
-/// Replaces subtrees in the AST whose canonical name matches `expression_name` with an identifier
-/// named `identifier_name`. This handles both plain identifiers and function expressions.
-void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name, const String & identifier_name)
-{
-    if (!ast)
-        return;
-
-    if ((ast->as<ASTIdentifier>() || ast->as<ASTFunction>()) && ast->getColumnName() == expression_name)
-    {
-        ast = make_intrusive<ASTIdentifier>(identifier_name);
-        return;
-    }
-
-    for (auto & child : ast->children)
-        replaceExpressionToIdentifier(child, expression_name, identifier_name);
-}
-
 }
 
 MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
@@ -54,6 +33,9 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
 
     chassert(index_description.column_names.size() == 1);
 
+    original_expression_ast = expression_ast->clone(); /// saved for getActionsDAGForHaystackColumn
+    index_column_name = index_description.column_names.front();
+
     /// Replace the index column name with the token placeholder.
     /// The postprocessor always operates on String tokens (not the original column type).
     ASTPtr transformed_ast = expression_ast->clone();
@@ -61,14 +43,7 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
 
     /// Build ActionsDAG treating the input as a plain String token.
     NamesAndTypesList source_columns{{postprocessor_token_name, string_type}};
-
-    auto context = Context::getGlobalContextInstance();
-    auto syntax_result = TreeRewriter(context).analyze(transformed_ast, source_columns);
-    auto actions_dag = ExpressionAnalyzer(transformed_ast, syntax_result, context).getActionsDAG(false, true);
-
-    auto expression_name = transformed_ast->getColumnName();
-    actions_dag.project({{expression_name, expression_name}});
-    actions_dag.removeUnusedActions();
+    auto actions_dag = buildActionsDAGFromAST(transformed_ast, source_columns);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
     if (outputs.size() != 1)
@@ -134,6 +109,19 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensBatch(ColumnPtr tokens_c
     Block block{{ColumnWithTypeAndName(tokens_column, string_type, postprocessor_token_name)}};
     actions->execute(block, n_rows);
     return block.safeGetByPosition(0).column;
+}
+
+ActionsDAG MergeTreeIndexTextPostprocessor::getActionsDAGForHaystackColumn(const String & haystack_column_name, const DataTypePtr & haystack_type) const
+{
+    if (!original_expression_ast || !actions)
+        return ActionsDAG();
+
+    /// Substitute the index column with the haystack name to build the per-row transform DAG.
+    ASTPtr haystack_ast = original_expression_ast->clone();
+    replaceExpressionToIdentifier(haystack_ast, index_column_name, haystack_column_name);
+
+    NamesAndTypesList source_columns{{haystack_column_name, haystack_type}};
+    return buildActionsDAGFromAST(haystack_ast, source_columns);
 }
 
 ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(ColumnPtr tokens_array_column) const
