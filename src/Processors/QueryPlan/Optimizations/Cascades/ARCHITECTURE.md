@@ -204,21 +204,23 @@ to prevent re-entry loops from self-referential enforcers.
 
 ### Cost Model
 
-Multi-component cost with `cpu`, `memory`, `network`, `io`, and `sequential` dimensions,
+Three-component cost with `work`, `network`, and `sequential` dimensions,
 combined via configurable weights:
 
 ```
-total_cost = cpu * cpu_weight + memory * memory_weight + network * network_weight
-           + io * io_weight + sequential * sequential_weight
+total_cost = work * work_weight + network * network_weight + sequential * sequential_weight
 ```
 
-The `sequential` component captures operations that cannot be parallelized (e.g., final
-merge on coordinator). With a high `sequential_weight`, the optimizer prefers plans that
-minimize single-node bottlenecks.
+- `work`: rows or bytes processed, divided by parallelism (I/O + CPU combined)
+- `network`: bytes transferred between nodes
+- `sequential`: single-threaded phases (hash table builds, merge cursors)
+
+With a high `sequential_weight`, the optimizer prefers plans that minimize
+single-node bottlenecks (e.g., shuffle over broadcast for large hash tables).
 
 Cost weights are configurable at query time via:
 ```sql
-SET param__internal_cascades_cost_config = '{"cpu_weight":1,"network_weight":1,"sequential_weight":1000,...}';
+SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":1000}';
 ```
 
 The cluster size (number of nodes) is set via:
@@ -338,7 +340,7 @@ pieces work together.
 
 ```sql
 SET param__internal_cascades_cluster_node_count = 4;
-SET param__internal_cascades_cost_config = '{"cpu_weight":1,"exchange_fixed_overhead":100,"io_weight":1,"memory_weight":1,"network_weight":1,"sequential_weight":1000}';
+SET param__internal_cascades_cost_config = '{"work_weight":1,"exchange_fixed_overhead":100,"network_weight":1,"sequential_weight":1000}';
 
 SELECT
     n_name,

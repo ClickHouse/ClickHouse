@@ -177,7 +177,9 @@ void Group::dump(WriteBuffer & out, const CostConfig & cost_config, String inden
                 << indent << indent
                 << "Cost: " << best->cost->cost.total(cost_config) << " (subtree: " << best->cost->subtree_cost.total(cost_config);
             if (best->cost->cost.sequential > 0)
-                out << ", seq: " << best->cost->cost.sequential;
+                out << ", seq: " << best->cost->cost.sequential
+                    << ", work: " << best->cost->cost.work
+                    << ", net: " << best->cost->cost.network;
             out << ") : " << best->getDescription() << "\n";
         }
     }

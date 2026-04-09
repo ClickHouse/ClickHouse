@@ -10,33 +10,29 @@ namespace DB
 {
 
 /// Weights for combining cost components into a single scalar:
-///   total = cpu * cpu_weight + memory * memory_weight + network * network_weight
-///         + io * io_weight + sequential * sequential_weight
+///   total = work * work_weight + network * network_weight + sequential * sequential_weight
 ///
 /// Cost approximates wall-clock time on the bottleneck node.  Parallelism factor:
 ///   partitioned data (`is_replicated = false`): each node processes 1/N -- divide by N
 ///   replicated data  (`is_replicated = true`):  each node processes all -- no division
 ///
-/// The `sequential` component represents single-threaded work (hash table builds in
-/// joins, merge phases) that cannot be parallelized within a node.  Its weight relative
-/// to `cpu_weight` should approximate the number of parallel threads per node, since
-/// sequential work is T times slower in wall-clock than parallel work on T threads.
+/// Three dimensions:
+///   - `work`: rows or bytes processed, divided by parallelism (merges old cpu + io)
+///   - `network`: bytes transferred over the network between nodes
+///   - `sequential`: single-threaded phases (hash table builds, merge cursors) that
+///     cannot be parallelized within a node.  Its weight relative to `work_weight`
+///     approximates the number of parallel threads per node.
 ///
 /// Broadcast vs shuffle differentiation:
 ///   - sequential: broadcast = `right_rows * 2` (full HT), shuffle = `right_rows * 2 / N`
-///   - memory:     broadcast = `right_rows * bytes` (full HT per node),
-///                 shuffle   = `right_rows * bytes / N` (1/N per node)
-///   - network:    both modeled by their respective Exchange children (per-node bottleneck)
+///   - network:    both modeled by their respective Exchange children
 ///
 /// Configurable at query time via `SET param__internal_cascades_cost_config = '<json>'`.
 struct CostConfig
 {
-    Float64 cpu_weight = 1.0;             /// Parallelizable CPU work (scans, expression eval). Reference = 1.0.
-    Float64 memory_weight = 1.0;          /// Memory consumption (hash tables, buffers). ~0.1-1.0 depending on pressure.
-    Float64 network_weight = 1.0;         /// Per-byte network transfer. ~1.0 if bandwidth ~ disk; higher for slow networks.
-    Float64 io_weight = 1.0;              /// Per-byte I/O (S3/disk reads). ~1.0 for S3; lower for fast NVMe.
-    Float64 sequential_weight = 1000.0;   /// Single-threaded phases (hash build, merge). ~threads_per_node for single-node
-                                          /// decisions; ~bytes_per_row * N / 2 for broadcast-vs-shuffle threshold.
+    Float64 work_weight = 1.0;            /// Parallelizable work (scans, expression eval, I/O).
+    Float64 network_weight = 1.0;         /// Per-byte network transfer.
+    Float64 sequential_weight = 1000.0;   /// Single-threaded phases (hash build, merge).
     Float64 exchange_fixed_overhead = 100.0; /// Fixed per-exchange latency (connection setup, metadata).
 
     String dump() const;
@@ -46,36 +42,30 @@ CostConfig parseCostConfig(const String & json_str);
 
 struct Cost
 {
-    Float64 cpu = 0;
-    Float64 memory = 0;
-    Float64 network = 0;
-    Float64 io = 0;
-    Float64 sequential = 0;
+    Float64 work = 0;       /// Rows/bytes processed, divided by parallelism.
+    Float64 network = 0;    /// Bytes transferred over network.
+    Float64 sequential = 0; /// Single-threaded phases (hash builds, merges).
 
     Float64 total(const CostConfig & config) const
     {
-        return cpu * config.cpu_weight + memory * config.memory_weight
-             + network * config.network_weight + io * config.io_weight
+        return work * config.work_weight
+             + network * config.network_weight
              + sequential * config.sequential_weight;
     }
 
     static Cost infinity()
     {
         return Cost{
-            .cpu = std::numeric_limits<Float64>::infinity(),
-            .memory = std::numeric_limits<Float64>::infinity(),
+            .work = std::numeric_limits<Float64>::infinity(),
             .network = std::numeric_limits<Float64>::infinity(),
-            .io = std::numeric_limits<Float64>::infinity(),
             .sequential = std::numeric_limits<Float64>::infinity(),
         };
     }
 
     Cost & operator+=(const Cost & other)
     {
-        cpu += other.cpu;
-        memory += other.memory;
+        work += other.work;
         network += other.network;
-        io += other.io;
         sequential += other.sequential;
         return *this;
     }

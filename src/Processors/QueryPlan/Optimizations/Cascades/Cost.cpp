@@ -31,14 +31,12 @@ CostConfig parseCostConfig(const String & json_str)
     const auto & object = result.extract<Poco::JSON::Object::Ptr>();
     if (!object)
         return config;
-    if (object->has("cpu_weight"))
-        config.cpu_weight = object->getValue<Float64>("cpu_weight");
-    if (object->has("memory_weight"))
-        config.memory_weight = object->getValue<Float64>("memory_weight");
+    if (object->has("work_weight"))
+        config.work_weight = object->getValue<Float64>("work_weight");
+    else if (object->has("cpu_weight"))
+        config.work_weight = object->getValue<Float64>("cpu_weight");
     if (object->has("network_weight"))
         config.network_weight = object->getValue<Float64>("network_weight");
-    if (object->has("io_weight"))
-        config.io_weight = object->getValue<Float64>("io_weight");
     if (object->has("sequential_weight"))
         config.sequential_weight = object->getValue<Float64>("sequential_weight");
     if (object->has("exchange_fixed_overhead"))
@@ -49,10 +47,8 @@ CostConfig parseCostConfig(const String & json_str)
 String CostConfig::dump() const
 {
     Poco::JSON::Object obj;
-    obj.set("cpu_weight", cpu_weight);
-    obj.set("memory_weight", memory_weight);
+    obj.set("work_weight", work_weight);
     obj.set("network_weight", network_weight);
-    obj.set("io_weight", io_weight);
     obj.set("sequential_weight", sequential_weight);
     obj.set("exchange_fixed_overhead", exchange_fixed_overhead);
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -112,12 +108,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<const FilterStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / parallelism;
+        total_cost.cost.work = 0.1 * input_group->statistics->estimated_row_count / parallelism;
     }
     else if (typeid_cast<const ExpressionStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = 0.1 * input_group->statistics->estimated_row_count / parallelism;
+        total_cost.cost.work = 0.1 * input_group->statistics->estimated_row_count / parallelism;
     }
     else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(expression_plan_step))
     {
@@ -128,8 +124,9 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<const MergingAggregatedStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.cpu = (group->statistics->estimated_row_count + input_group->statistics->estimated_row_count) / parallelism;
-        total_cost.cost.memory = group->statistics->estimated_row_count * group->statistics->estimated_bytes_per_row / parallelism;
+        total_cost.cost.work = (group->statistics->estimated_row_count
+            + group->statistics->estimated_row_count * group->statistics->estimated_bytes_per_row
+            + input_group->statistics->estimated_row_count) / parallelism;
         /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
         /// merge for large outputs; bucket-level merge within a node is parallel.
         total_cost.cost.sequential = group->statistics->estimated_row_count / parallelism;
@@ -139,7 +136,6 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Each node receives a full copy.
         total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row;
-        total_cost.cost.memory += group->statistics->estimated_row_count * bytes_per_row;
         total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
     else if (dynamic_cast<const LogicalExchangeStep *>(expression_plan_step))
@@ -152,7 +148,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<const SortingStep *>(expression_plan_step))
     {
         Float64 rows = group->statistics->estimated_row_count;
-        total_cost.cost.cpu += rows * std::max(1.0, std::log2(rows)) / parallelism;
+        total_cost.cost.work += rows * std::max(1.0, std::log2(rows)) / parallelism;
         /// N-way merge is single-threaded.
         total_cost.cost.sequential += rows / parallelism;
     }
@@ -161,7 +157,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         if (expression->inputs.empty())
         {
             /// Some default non-zero cost
-            total_cost.cost.cpu = 100500;
+            total_cost.cost.work = 100500;
         }
     }
 
@@ -199,29 +195,32 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     if (is_merge_join)
     {
         /// Linear scan, no hash table. Merge cursor is single-threaded.
-        join_cost.cost.cpu = (left_statistics.estimated_row_count
-                              + right_statistics.estimated_row_count
-                              + this_step_statistics.estimated_row_count) / parallelism;
+        join_cost.cost.work = (left_statistics.estimated_row_count
+                               + right_statistics.estimated_row_count
+                               + this_step_statistics.estimated_row_count) / parallelism;
         join_cost.cost.sequential = (left_statistics.estimated_row_count
                                      + right_statistics.estimated_row_count) / parallelism;
         return join_cost;
     }
 
     /// Hash join: left probe + right build (2x) + output.
-    join_cost.cost.cpu = (left_statistics.estimated_row_count
-                          + 2.0 * right_statistics.estimated_row_count
-                          + this_step_statistics.estimated_row_count) / parallelism;
+    join_cost.cost.work = (left_statistics.estimated_row_count
+                           + 2.0 * right_statistics.estimated_row_count
+                           + this_step_statistics.estimated_row_count) / parallelism;
+
+    /// Hash table materialization: memory allocation + cache pressure.
+    const Float64 ht_bytes = right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
 
     if (is_broadcast)
     {
         /// Full right table per node. Network modeled by BroadcastExchange.
-        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
+        join_cost.cost.work += ht_bytes;
         join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
     }
     else
     {
         /// 1/N of right table per node. Network modeled by ShuffleExchange.
-        join_cost.cost.memory += right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row / parallelism;
+        join_cost.cost.work += ht_bytes / parallelism;
         join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / parallelism;
     }
 
@@ -240,18 +239,17 @@ ExpressionCost CostEstimator::estimateReadCost(
     {
         /// Each of N nodes reads 1/N.
         return ExpressionCost{
-            .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row / distribution_node_count},
+            .cost = Cost{.work = this_step_statistics.estimated_row_count * bytes_per_row / distribution_node_count},
             .subtree_cost = {},
         };
     }
 
     if (dynamic_cast<const SortedReadStrategy *>(strategy) != nullptr)
     {
-        /// Same IO + small CPU for N-way merge of pre-sorted parts.
+        /// Same IO + small overhead for N-way merge of pre-sorted parts.
         Float64 rows = this_step_statistics.estimated_row_count;
-        Float64 io = rows * bytes_per_row / distribution_node_count;
         return ExpressionCost{
-            .cost = Cost{.cpu = rows * 0.1 / distribution_node_count, .io = io},
+            .cost = Cost{.work = rows * bytes_per_row / distribution_node_count + rows * 0.1 / distribution_node_count},
             .subtree_cost = {},
         };
     }
@@ -260,14 +258,14 @@ ExpressionCost CostEstimator::estimateReadCost(
     {
         /// Shared storage: every node reads full table from S3. No network.
         return ExpressionCost{
-            .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row},
+            .cost = Cost{.work = this_step_statistics.estimated_row_count * bytes_per_row},
             .subtree_cost = {},
         };
     }
 
     /// Single-node local read.
     return ExpressionCost{
-        .cost = Cost{.io = this_step_statistics.estimated_row_count * bytes_per_row},
+        .cost = Cost{.work = this_step_statistics.estimated_row_count * bytes_per_row},
         .subtree_cost = {},
     };
 }
@@ -289,41 +287,38 @@ ExpressionCost CostEstimator::estimateAggregationCost(
     if (is_streaming)
     {
         /// Sorted input, no hash table.
-        aggregation_cost.cost.cpu += input_statistics.estimated_row_count / parallelism;
+        aggregation_cost.cost.work += input_statistics.estimated_row_count / parallelism;
     }
     else if (is_local)
     {
-        aggregation_cost.cost.cpu +=
+        /// Hash table build + probe + output materialization.
+        aggregation_cost.cost.work +=
             this_step_statistics.estimated_row_count +
+            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row +
             input_statistics.estimated_row_count;
-        aggregation_cost.cost.memory +=
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row;
     }
     else if (is_shuffle)
     {
         /// Per-node 1/N. Network modeled by ShuffleExchange child.
-        aggregation_cost.cost.cpu +=
+        aggregation_cost.cost.work +=
             this_step_statistics.estimated_row_count / parallelism +
+            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row / parallelism +
             input_statistics.estimated_row_count / parallelism;
-        aggregation_cost.cost.memory +=
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row / parallelism;
     }
     else if (is_partial)
     {
-        aggregation_cost.cost.cpu +=
+        aggregation_cost.cost.work +=
             this_step_statistics.estimated_row_count / parallelism +
+            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row / parallelism +
             input_statistics.estimated_row_count / parallelism;
-        aggregation_cost.cost.memory +=
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row / parallelism;
     }
     else
     {
         /// Fallback (e.g. DefaultImplementation). Same as Local.
-        aggregation_cost.cost.cpu +=
+        aggregation_cost.cost.work +=
             this_step_statistics.estimated_row_count +
+            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row +
             input_statistics.estimated_row_count;
-        aggregation_cost.cost.memory +=
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row;
     }
 
     return aggregation_cost;

@@ -92,10 +92,8 @@ SET send_logs_level = 'error';
 -- Simulate 20 node cluster, and set cost weights to optimize for lower sequential time, i.e. more parallelism
 SET param__internal_cascades_cluster_node_count = 20;
 SET param__internal_cascades_cost_config = '{
-    "cpu_weight":1,
+    "work_weight":1,
     "exchange_fixed_overhead":100,
-    "io_weight":1,
-    "memory_weight":1,
     "network_weight":1,
     "sequential_weight":1000
 }';
