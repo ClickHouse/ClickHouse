@@ -8,6 +8,10 @@ doc_type: 'reference'
 
 Formats rows in each group using an output format and returns the formatted data as a string. This is similar to `formatRow`, but works on the whole group and can use block-based formats.
 
+:::warning
+All rows of each group are accumulated in memory before the formatted string is produced. For groups with a very large number of rows this can consume significant memory. Consider using `LIMIT` inside subqueries or splitting large groups to keep memory usage under control.
+:::
+
 ## Syntax {#syntax}
 
 ```sql
