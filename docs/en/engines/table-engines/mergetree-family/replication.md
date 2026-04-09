@@ -26,15 +26,16 @@ ENGINE = ReplicatedMergeTree
 ```
 :::
 
-Replication is only supported for tables in the MergeTree family:
+Replication is only supported for tables in the MergeTree family
 
-- ReplicatedMergeTree
 - ReplicatedSummingMergeTree
+- ReplicatedCoalescingMergeTree
+- ReplicatedVersionedCollapsingMergeTree
+- ReplicatedCollapsingMergeTree
+- ReplicatedGraphiteMergeTree
+- ReplicatedMergeTree
 - ReplicatedReplacingMergeTree
 - ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergeTree
-- ReplicatedGraphiteMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
