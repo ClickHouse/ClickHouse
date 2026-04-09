@@ -303,29 +303,6 @@ public:
         nested_function->add(place, columns, row_num, arena);
     }
 
-    void addBatchSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t row = row_begin; row < row_end; ++row)
-            {
-                if (flags[row])
-                    add(place, columns, row, arena);
-            }
-            return;
-        }
-
-        for (size_t row = row_begin; row < row_end; ++row)
-            add(place, columns, row, arena);
-    }
-
     void addBatchSinglePlaceNotNull(
         size_t row_begin,
         size_t row_end,
@@ -378,38 +355,6 @@ public:
             rebuilt_columns[i] = temp_columns[i].get();
 
         nested_function->addBatchSinglePlace(0, temp_columns.front()->size(), place, rebuilt_columns.data(), arena, -1);
-    }
-
-    void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t row = row_begin; row < row_end; ++row)
-            {
-                if (flags[row])
-                    add(places[row] + place_offset, columns, row, arena);
-            }
-            return;
-        }
-
-        for (size_t row = row_begin; row < row_end; ++row)
-            add(places[row] + place_offset, columns, row, arena);
-    }
-
-    void addBatchSparseSinglePlace(size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena * arena) const override
-    {
-        nested_function->addBatchSparseSinglePlace(row_begin, row_end, place, columns, arena);
-    }
-
-    void addBatchSparse(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, Arena * arena) const override
-    {
-        nested_function->addBatchSparse(row_begin, row_end, places, place_offset, columns, arena);
-    }
-
-    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
-    {
-        nested_function->addManyDefaults(place, columns, length, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
