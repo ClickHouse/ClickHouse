@@ -1,4 +1,4 @@
-#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTWithOnIgnoring.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -8,7 +8,7 @@
 namespace DB::PrometheusQueryToSQL
 {
 
-ASTPtr transformGroupASTWithOnIgnoring(
+ASTPtr transformGroupASTForBinaryOperator(
     const PQT::BinaryOperator * operator_node,
     ASTPtr && group,
     bool drop_metric_name,
