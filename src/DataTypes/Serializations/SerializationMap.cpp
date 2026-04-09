@@ -1166,6 +1166,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     if (serialization_version == MergeTreeMapSerializationVersion::BASIC)
     {
         ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
+        const auto * original_nested = nested_ptr.get();
         /// Try to get data from the substreams cache before reading from disk.
         if (!insertDataFromSubstreamsCacheIfAny(cache, settings, nested_ptr))
         {
@@ -1174,11 +1175,14 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_ptr, nested_ptr->size() - prev_size);
         }
 
-        /// Write back: nested_ptr may have been reassigned to a cached column
-        /// by insertDataFromSubstreamsCacheIfAny or by the nested deserialization.
-        /// Without this, the Map column would remain empty while its data lives
-        /// only in the local nested_ptr variable.
-        column_map.getNestedColumnPtr() = std::move(nested_ptr);
+        /// Write back only if nested_ptr was reassigned to a different column
+        /// (e.g., replaced by substreams cache in Variant/Dynamic dual-read scenarios).
+        /// In the normal case, the nested serialization modifies the column in-place
+        /// via assumeMutable(), and both nested_ptr and column_map share the same
+        /// underlying pointer — unconditional write-back is unnecessary and can cause
+        /// wrong Map subcolumn values in rare cases (see #102179).
+        if (nested_ptr.get() != original_nested)
+            column_map.getNestedColumnPtr() = std::move(nested_ptr);
         return;
     }
 
@@ -1191,6 +1195,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         settings.path.back().bucket = 0;
 
         ColumnPtr nested_ptr = column_map.getNestedColumnPtr();
+        const auto * original_nested = nested_ptr.get();
         /// Try to get data from the substreams cache before reading from disk.
         if (!insertDataFromSubstreamsCacheIfAny(cache, settings, nested_ptr))
         {
@@ -1199,8 +1204,9 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_ptr, nested_ptr->size() - prev_size);
         }
 
-        /// Write back: nested_ptr may have been reassigned (same reason as BASIC path above).
-        column_map.getNestedColumnPtr() = std::move(nested_ptr);
+        /// Write back only if nested_ptr was reassigned (same reason as BASIC path above).
+        if (nested_ptr.get() != original_nested)
+            column_map.getNestedColumnPtr() = std::move(nested_ptr);
         settings.path.pop_back();
     }
     /// Multiple buckets. Deserialize each bucket into a separate Map column,
@@ -1214,7 +1220,11 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().bucket = bucket;
             map_buckets[bucket] = column_map.cloneEmpty();
             ColumnPtr nested_ptr = assert_cast<const ColumnMap &>(*map_buckets[bucket]).getNestedColumnPtr();
+            const auto * original_nested = nested_ptr.get();
             nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_ptr, rows_offset, limit, settings, map_state->bucket_nested_states[bucket], cache);
+            /// Write back only if nested_ptr was reassigned (e.g., from substreams cache).
+            if (nested_ptr.get() != original_nested)
+                assert_cast<ColumnMap &>(*map_buckets[bucket]->assumeMutable()).getNestedColumnPtr() = std::move(nested_ptr);
             settings.path.pop_back();
         }
 
