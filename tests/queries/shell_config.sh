@@ -6,6 +6,8 @@
 export CLICKHOUSE_WRITE_COVERAGE=${CLICKHOUSE_WRITE_COVERAGE:="coverage"}
 
 export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
+export CLICKHOUSE_DATABASE_1="${CLICKHOUSE_DATABASE}_1"
+export CLICKHOUSE_DATABASE_2="${CLICKHOUSE_DATABASE}_2"
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 
 # Unique zookeeper path (based on test name and current database) to avoid overlaps
@@ -249,7 +251,7 @@ function with_lock()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

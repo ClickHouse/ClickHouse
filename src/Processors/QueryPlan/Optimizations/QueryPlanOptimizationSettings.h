@@ -71,6 +71,8 @@ struct QueryPlanOptimizationSettings
     std::optional<bool> join_swap_table;
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
+    /// When non-zero, randomize statistics for join reordering using this value as seed
+    UInt64 query_plan_optimize_join_order_randomize = 0;
 
     /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
     bool enable_join_transitive_predicates = false;

@@ -172,11 +172,20 @@ When reading diffs, scan for these classes of bugs:
 - Watch for file paths that surface contents in error messages on parse failure — even a "read then validate" pattern can leak file contents through exceptions.
 - This applies to all code paths that use `ReadBufferFromFile`, `WriteBufferToFile`, `std::ifstream`, or similar with user-controlled paths.
 
-**9) Semantic correctness & fix completeness**
+**9) Repository bloat — large & binary files**
+- ClickHouse is a huge monorepo; every byte committed to git is cloned by every contributor forever and can never be fully removed without history rewriting.
+- **Binary blobs** (JARs, compiled executables, archives, images, dataset files, model weights) must **never** be committed directly. Flag any new binary file larger than ~100 KB as a blocker. Check `file` type and size for any non-text addition.
+- **Chunked / split binaries** are a red flag — they indicate someone tried to work around size limits while still committing the same blob.
+- **Fat dependency bundles** (uber-JARs, vendored node_modules, bundled `.so`/.`dylib` files) are never acceptable in-tree.
+- **Acceptable alternatives:** download at test time from CI artifact storage / S3 / Maven Central; build from source inside the test container; use a Docker image that already contains the dependency; use git-lfs if the project supports it (ClickHouse does not).
+- **Test data** (Parquet files, Avro files, small JSON fixtures) under ~1 MB total is usually fine, but anything larger should be generated at test time or downloaded.
+- When a PR adds new files under `tests/integration/`, `tests/queries/`, or any other directory, always scan for unexpectedly large or binary additions — contributors sometimes commit build artifacts or data files without realizing the permanent cost.
+
+**10) Semantic correctness & fix completeness**
 - **Partial / asymmetric fixes:** when a behavior is changed in one code path, check whether symmetric paths need the same change. Examples: fixing `SYSTEM STOP MERGES` for merge selection but not mutation selection; fixing `ReplicatedMergeTree` but not `SharedMergeTree`. Use `grep` to find all related call sites.
 - **Multi-instance resource selection:** when a PR adds support for multiple instances of a resource (e.g. auxiliary ZooKeeper clusters, secondary storage backends), grep for every place that accesses the resource and verify the correct instance is selected — not just in the newly added code paths.
 
-**10) Trust boundary expansion — looking beyond the diff**
+**11) Trust boundary expansion — looking beyond the diff**
 
 Trigger: a PR wraps existing internal code for a wider audience (library function → SQL function, CLI tool → server endpoint, internal reader → table function, background-only path → user-reachable query). The wrapper diff may look fine, but the callee was written with assumptions about its original callers that no longer hold.
 
@@ -217,6 +226,8 @@ CLICKHOUSE RULES (MANDATORY)
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
   Follow checklist **7) Compilation time & build impact**. Treat violations there as ClickHouse-rule issues.
+- **No large / binary files in git**
+  Binary blobs (JARs, archives, compiled artifacts, datasets >1 MB, fat dependency bundles) must never be committed. They permanently bloat the repository for every clone and cannot be removed without history rewriting. Test dependencies should be downloaded at test time, built from source inside the test container, or pulled from Docker images. Follow checklist **9) Repository bloat**. Any violation is a blocker.
 - **PR metadata quality**
   For PR-number reviews, verify PR template metadata against `.github/PULL_REQUEST_TEMPLATE.md`: `Changelog category` correctness, required `Changelog entry` quality, and alignment with `clickhouse-pr-description` changelog guidance (specificity, user impact, and migration details for backward-incompatible changes).
 
@@ -232,6 +243,7 @@ SEVERITY MODEL – WHAT DESERVES A COMMENT
 - Significant performance regression in a hot path.
 - Security or privilege issues, or license incompatibility.
 - Server-side file access with user-controlled paths that bypass `user_files_path` or equivalent restrictions.
+- Large binary files (JARs, archives, datasets, compiled artifacts) committed to git — permanent, irreversible repo bloat.
 
 **Majors** – serious but not catastrophic
 - Under-tested important edge cases or error paths.
@@ -296,6 +308,7 @@ Example:
 | PR metadata quality | ⚠️ | `Changelog category` does not match change type; `Changelog entry` is too vague for users |
 | Safe rollout | ➖ | |
 | Compilation time | ✅ | |
+| No large/binary files | ✅ | |
 
 **Performance & Safety** (omit if no concerns)
 - Only include this section if there are actual concerns about hot-path regressions, memory, concurrency, or failure modes.

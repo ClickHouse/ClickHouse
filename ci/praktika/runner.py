@@ -441,15 +441,6 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        # Clean up stale experimental result file before starting the subprocess.
-        # This must happen before TeePopen.__enter__ which sleeps 1s after spawning
-        # the process — if the subprocess completes during that sleep (common for
-        # fast native jobs like Finish Workflow in backport PRs), deleting the file
-        # afterwards would remove the subprocess's own output, causing a spurious
-        # "Job killed or terminated" error.
-        if Path((Result.experimental_file_name_static())).exists():
-            Path(Result.experimental_file_name_static()).unlink()
-
         with TeePopen(
             cmd,
             timeout=job.timeout,
@@ -459,15 +450,6 @@ class Runner:
             start_time = Utils.timestamp()
 
             exit_code = process.wait()
-
-            if Path(Result.experimental_file_name_static()).exists():
-                result = Result.experimental_from_fs(job.name)
-                if not result.start_time:
-                    print(
-                        "WARNING: no start_time set by the job - set job start_time/duration"
-                    )
-                    result.start_time = start_time
-                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
