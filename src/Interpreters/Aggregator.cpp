@@ -2199,23 +2199,24 @@ void NO_INLINE Aggregator::executeImplForRows(
 {
     const size_t chunk_num_rows = key_columns[0]->size();
 
+    /// Helper to construct a State, passing pre-serialized keys to Serialized methods
+    /// so the constructor skips batch serialization (already done during scatter).
+    auto make_state = [&]<typename StateType>()
+    {
+        if constexpr (requires { std::declval<StateType>().external_serialized_keys; })
+            return StateType(key_columns, key_sizes, aggregation_state_cache, serialized_keys);
+        else
+            return StateType(key_columns, key_sizes, aggregation_state_cache);
+    };
+
     if (is_simple_count)
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        auto state = make_state.template operator()<typename Method::StateNoCache>();
         executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes, chunk_num_rows, aggregate_instructions);
         return;
     }
 
-    /// Construct State with consecutive keys cache. For Serialized methods, pass pre-serialized
-    /// keys so the constructor skips batch serialization (already done during scatter).
-    auto make_state = [&]
-    {
-        if constexpr (requires { std::declval<typename Method::State>().external_serialized_keys; })
-            return typename Method::State(key_columns, key_sizes, aggregation_state_cache, serialized_keys);
-        else
-            return typename Method::State(key_columns, key_sizes, aggregation_state_cache);
-    };
-    auto state = make_state();
+    auto state = make_state.template operator()<typename Method::State>();
 
     const bool do_prefetch = Method::State::has_cheap_key_calculation && params.enable_prefetch
         && (method.data.getBufferSizeInBytes() > min_bytes_for_prefetch);
