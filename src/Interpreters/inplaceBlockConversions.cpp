@@ -182,10 +182,18 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            auto convert_func = makeASTFunction("_CAST",
-                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
+            /// Cast the nullable column to Nullable(TargetType) first, then strip NULLs with ifNull.
+            /// This handles cross-type conversion (e.g. Nullable(UInt8) -> String) correctly,
+            /// because _CAST(Nullable(UInt8), 'Nullable(String)') -> Nullable(String),
+            /// and ifNull(Nullable(String), String) trivially resolves to String.
+            auto nullable_target_type_name = "Nullable(" + required_column.type->getName() + ")";
+            auto cast_col = makeASTFunction("_CAST",
+                make_intrusive<ASTIdentifier>(required_column.name),
+                make_intrusive<ASTLiteral>(nullable_target_type_name));
+            auto cast_default = makeASTFunction("_CAST",
+                default_value,
                 make_intrusive<ASTLiteral>(required_column.type->getName()));
-
+            auto convert_func = makeASTFunction("ifNull", std::move(cast_col), std::move(cast_default));
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
             continue;
         }
