@@ -21,7 +21,7 @@ source /repo/tests/docker_scripts/attach_gdb.lib
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --debug /azurite_log &
+azurite-rs --host 0.0.0.0 --blob-port 10000 --debug > /azurite_log 2>&1 &
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
 echo "Get previous release tag"
