@@ -104,9 +104,27 @@ def generate_cluster_def(common_path, port, azure_container):
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
             </disk_azure_common>
+            <disk_s3_0_with_cache>
+                <type>cache</type>
+                <disk>disk_s3_0_common</disk>
+                <path>/tmp/s3_0_cache/</path>
+                <max_size>1000000000</max_size>
+            </disk_s3_0_with_cache>
+            <disk_s3_1_with_cache>
+                <type>cache</type>
+                <disk>disk_s3_1_common</disk>
+                <path>/tmp/s3_1_cache/</path>
+                <max_size>1000000000</max_size>
+            </disk_s3_1_with_cache>
+            <disk_azure_with_cache>
+                <type>cache</type>
+                <disk>disk_azure_common</disk>
+                <path>/tmp/azure_cache/</path>
+                <max_size>1000000000</max_size>
+            </disk_azure_with_cache>
         </disks>
     </storage_configuration>
-    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common</allowed_disks_for_table_engines>
+    <allowed_disks_for_table_engines>disk_s3_1_common,disk_s3_0_common,disk_local_common,disk_azure_common,disk_s3_0_with_cache,disk_s3_1_with_cache,disk_azure_with_cache</allowed_disks_for_table_engines>
 </clickhouse>
 """
         )
@@ -256,6 +274,22 @@ def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
 
 
+def get_disk_name(storage_type, use_delta_kernel, disk_suffix, with_cache=False):
+    if storage_type == "s3":
+        base = f"disk_s3_{use_delta_kernel}{disk_suffix}"
+        if with_cache:
+            return f"disk_s3_{use_delta_kernel}_with_cache"
+        return base
+    elif storage_type == "azure":
+        if with_cache:
+            return "disk_azure_with_cache"
+        return f"disk_azure{disk_suffix}"
+    elif storage_type == "local":
+        return f"disk_local{disk_suffix}"
+    else:
+        raise Exception(f"Unknown delta lake storage type: {storage_type}")
+
+
 def create_delta_table(
     instance,
     storage_type,
@@ -264,38 +298,18 @@ def create_delta_table(
     use_delta_kernel,
     path_suffix,
     disk_suffix,
+    with_cache=False,
     **kwargs,
 ):
-    if storage_type == "s3":
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=DeltaLake({path_suffix})
-            SETTINGS disk = 'disk_s3_{use_delta_kernel}{disk_suffix}'
-            """
-        )
-
-    elif storage_type == "azure":
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=DeltaLake({path_suffix})
-            SETTINGS disk = 'disk_azure{disk_suffix}'
-            """
-        )
-    elif storage_type == "local":
-        instance.query(
-            f"""
-            DROP TABLE IF EXISTS {table_name};
-            CREATE TABLE {table_name}
-            ENGINE=DeltaLake({path_suffix})
-            SETTINGS disk = 'disk_local{disk_suffix}'
-            """
-        )
-    else:
-        raise Exception(f"Unknown delta lake storage type: {storage_type}")
+    disk_name = get_disk_name(storage_type, use_delta_kernel, disk_suffix, with_cache)
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name}
+        ENGINE=DeltaLake({path_suffix})
+        SETTINGS disk = '{disk_name}'
+        """
+    )
 
 
 def create_initial_data_file(
@@ -322,7 +336,11 @@ def create_initial_data_file(
     "use_delta_kernel, storage_type",
     [("1", "s3"), ("0", "s3"), ("1", "local"), ("0", "azure")],
 )
-def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
+@pytest.mark.parametrize("with_cache", [False, True])
+def test_single_log_file(started_cluster, use_delta_kernel, storage_type, with_cache):
+    if with_cache and storage_type == "local":
+        pytest.skip("Cache is not supported with local disk")
+
     instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
     TABLE_NAME = f"test_single_log_file_{get_uuid_str()}"
@@ -370,6 +388,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
             else f"'var/lib/clickhouse/user_files/{TABLE_NAME}'"
         ),
         "_common",
+        with_cache=with_cache,
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
@@ -377,12 +396,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         inserted_data
     )
 
-    if storage_type == "s3":
-        disk_name = f"disk_s3_{use_delta_kernel}_common"
-    elif storage_type == "local":
-        disk_name = f"disk_local_common"
-    else:
-        disk_name = f"disk_azure_common"
+    disk_name = get_disk_name(storage_type, use_delta_kernel, "_common", with_cache)
 
     storage_path = (
         f"{TABLE_NAME}"
