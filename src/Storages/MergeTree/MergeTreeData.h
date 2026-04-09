@@ -540,7 +540,6 @@ public:
     bool supportsSparseSerialization() const override { return true; }
 
     bool supportsLightweightDelete() const override;
-    bool hasLightweightDeletedMask() const override;
 
     bool hasProjection() const override;
 
@@ -1292,6 +1291,9 @@ public:
 
     bool has_non_adaptive_index_granularity_parts = false;
 
+    /// True if at least one part contains lightweight delete.
+    mutable std::atomic_bool has_lightweight_delete_parts = false;
+
     /// Parts that currently moving from disk/volume to another.
     /// This set have to be used with `currently_processing_in_background_mutex`.
     /// Moving may conflict with merges and mutations, but this is OK, because
@@ -1372,10 +1374,6 @@ public:
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const StorageInMemoryMetadata & metadata);
-    static VirtualColumnsDescription createProjectionVirtuals(const StorageInMemoryMetadata & metadata);
-
-    /// Similar to IStorage::getVirtuals but returns only virtual columns valid in projection.
-    VirtualsDescriptionPtr getProjectionVirtualsPtr() const { return projection_virtuals.get(); }
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
@@ -1928,9 +1926,14 @@ private:
     bool allow_nullable_key = false;
     bool allow_reverse_key = false;
 
-    void addPartContributionToTableCounters(const DataPartPtr & part);
-    void removePartContributionToTableCounters(const DataPartPtr & part);
-    void resetTableCounters();
+    void addPartContributionToDataVolume(const DataPartPtr & part);
+    void removePartContributionToDataVolume(const DataPartPtr & part);
+
+    void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
+    void setDataVolume(size_t bytes, size_t rows, size_t parts);
+
+    void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
+    void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
 
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
@@ -1938,7 +1941,6 @@ private:
 
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;
-    std::atomic<size_t> total_parts_with_lightweight_delete = 0;
 
     // Record all query ids which access the table. It's guarded by `query_id_set_mutex` and is always mutable.
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
@@ -1978,8 +1980,6 @@ private:
     void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     mutable TemporaryParts temporary_parts;
-
-    MultiVersionVirtualsDescriptionPtr projection_virtuals;
 
     /// A regexp for files that should be prewarmed in the cache if cache_populated_by_fetch is enabled.
     MultiVersion<re2::RE2> filename_regexp_for_cache_prewarming;

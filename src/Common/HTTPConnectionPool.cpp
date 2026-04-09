@@ -24,7 +24,10 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Timespan.h>
 
+#include <sys/stat.h>
+
 #include <queue>
+#include <unordered_map>
 
 #include "config.h"
 
@@ -191,7 +194,7 @@ public:
         return total_connections_in_group >= limits.store_limit;
     }
 
-    void atConnectionCreate(std::string host, UInt16 port)
+    void atConnectionCreate(Poco::Net::HTTPClientSession * session, std::string host, UInt16 port)
     {
         std::lock_guard lock(mutex);
 
@@ -202,6 +205,7 @@ public:
                 host, port, limits.hard_limit, getType());
 
         ++total_connections_in_group;
+        live_connections.emplace(session, 0);
 
         if (total_connections_in_group >= limits.warning_limit && total_connections_in_group >= mute_warning_until)
         {
@@ -211,11 +215,19 @@ public:
         }
     }
 
-    void atConnectionDestroy() noexcept
+    void updateSocketInode(Poco::Net::HTTPClientSession * session, uint64_t inode) noexcept
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = live_connections.find(session); it != live_connections.end())
+            it->second = inode;
+    }
+
+    void atConnectionDestroy(Poco::Net::HTTPClientSession * session) noexcept
     {
         std::lock_guard lock(mutex);
 
         --total_connections_in_group;
+        live_connections.erase(session);
 
         const size_t gap = 20;
         const size_t reduced_warning_limit = limits.warning_limit > gap ? limits.warning_limit - gap : 1;
@@ -229,6 +241,21 @@ public:
     HTTPConnectionGroupType getType() const { return type; }
 
     const IHTTPConnectionPoolForEndpoint::Metrics & getMetrics() const { return metrics; }
+
+    /// Return cached socket inodes of all tracked connections.
+    /// Inodes are updated by PooledConnection after each connect/reconnect.
+    std::vector<uint64_t> getSocketInodes() const
+    {
+        std::lock_guard lock(mutex);
+        std::vector<uint64_t> inodes;
+        inodes.reserve(live_connections.size());
+        for (const auto & [_, inode] : live_connections)
+        {
+            if (inode != 0)
+                inodes.push_back(inode);
+        }
+        return inodes;
+    }
 
 private:
     bool isHardLimitReached() const TSA_REQUIRES(mutex)
@@ -245,6 +272,7 @@ private:
     HTTPConnectionPools::Limits limits TSA_GUARDED_BY(mutex) = HTTPConnectionPools::Limits();
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
+    std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
 };
 
 
@@ -358,6 +386,7 @@ private:
                 Session::reconnect(connect_time);
                 ProfileEvents::increment(metrics.created);
             }
+            notifySocketInode();
         }
 
         String getTarget() const
@@ -476,13 +505,15 @@ private:
                     response_stream_completed = false;
                 }
             }
+            /// Unregister from live_connections first, before tearing down session internals,
+            /// so that the async metrics thread cannot dereference a partially-destructed session.
+            group->atConnectionDestroy(this);
+
             response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
             Session::setSendThrottler();
             Session::setReceiveThrottler();
-
-            group->atConnectionDestroy();
 
             if (!isExpired)
                 if (auto lock = pool.lock())
@@ -507,7 +538,7 @@ private:
         {
             // atConnectionCreate can throw. If it does, this object's constructor fails and its destructor won't be called,
             // so we must call atConnectionCreate before incrementing active_count to avoid leaking the metric increment.
-            group->atConnectionCreate(Session::getHost(), Session::getPort());
+            group->atConnectionCreate(this, Session::getHost(), Session::getPort());
             CurrentMetrics::add(metrics.active_count);
         }
 
@@ -524,9 +555,28 @@ private:
             return std::make_shared<make_shared_enabler>(std::forward<Args>(args)...);
         }
 
+        /// Notify the connection group about the current socket inode.
+        /// Called after connect/reconnect so the async metrics thread can map sockets to netlink data.
+        void notifySocketInode()
+        {
+            try
+            {
+                auto fd = Session::socket().impl()->sockfd();
+                if (fd < 0)
+                    return;
+                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init)
+                if (fstat(fd, &st) == 0)
+                    group->updateSocketInode(this, st.st_ino);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: socket may not be connected yet
+            {
+            }
+        }
+
         void doConnect(UInt64 * connect_time)
         {
             Session::reconnect(connect_time);
+            notifySocketInode();
         }
 
         bool isCompleted() const
@@ -764,6 +814,7 @@ private:
         {
             auto connection_to_store = PooledConnection::create(this->getWeakFromThis(), group, getMetrics(), host, port);
             connection_to_store->assign(connection);
+            connection_to_store->notifySocketInode();
 
             {
                 MemoryTrackerSwitcher switcher{&total_memory_tracker};
@@ -912,6 +963,17 @@ public:
         endpoints_pool.clear();
     }
 
+    HTTPConnectionPools::PoolSocketInodes getSocketInodes()
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        /// The groups are created once in the constructor and never replaced.
+        return {
+            .disk = disk_group->getSocketInodes(),
+            .storage = storage_group->getSocketInodes(),
+            .http = http_group->getSocketInodes()
+        };
+    }
+
 protected:
     ConnectionGroup::Ptr & getGroup(HTTPConnectionGroupType type)
     {
@@ -1010,4 +1072,10 @@ HTTPConnectionPools::getPool(HTTPConnectionGroupType type, const Poco::URI & uri
 {
     return impl->getPool(type, uri, proxy_configuration);
 }
+
+HTTPConnectionPools::PoolSocketInodes HTTPConnectionPools::getSocketInodes()
+{
+    return impl->getSocketInodes();
+}
+
 }
