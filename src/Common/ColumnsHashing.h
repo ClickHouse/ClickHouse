@@ -5,6 +5,7 @@
 #include <Common/ColumnsHashing/HashMethod.h>
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/Arena.h>
+#include <Common/SerializedKeyBuffer.h>
 #include <Common/CacheBase.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentMetrics.h>
@@ -373,7 +374,16 @@ struct HashMethodSerialized
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
 
-    HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
+    /// When set, `getKeyHolder` reads from this buffer instead of serializing from columns.
+    /// Used by sharded aggregation to avoid re-serialization when keys were already serialized
+    /// during the scatter phase. Default nullptr means normal serialization from columns.
+    const SerializedKeyBuffer * external_serialized_keys = nullptr;
+
+    HashMethodSerialized(
+        const ColumnRawPtrs & key_columns_,
+        const Sizes & /*key_sizes*/,
+        const HashMethodContextPtr & context,
+        const SerializedKeyBuffer * external_serialized_keys_ = nullptr)
         : key_columns(key_columns_), keys_size(key_columns_.size())
     {
         const auto * hash_serialized_context = typeid_cast<const HashMethodSerializedContext *>(context.get());
@@ -385,6 +395,15 @@ struct HashMethodSerialized
         }
 
         serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
+
+        /// If pre-serialized keys are provided, skip all serialization work.
+        /// `getKeyHolder` will read from the external buffer instead.
+        if (external_serialized_keys_)
+        {
+            external_serialized_keys = external_serialized_keys_;
+            return;
+        }
+
         if constexpr (nullable)
         {
             null_maps.resize(keys_size, nullptr);
@@ -460,6 +479,8 @@ struct HashMethodSerialized
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
     requires(prealloc)
     {
+        if (external_serialized_keys)
+            return ArenaKeyHolder{external_serialized_keys->getKey(row), pool};
         if (use_batch_serialize)
             return ArenaKeyHolder{serialized_keys[row], pool};
         else
@@ -482,6 +503,9 @@ struct HashMethodSerialized
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const
     requires(!prealloc)
     {
+        if (external_serialized_keys)
+            return SerializedKeyHolder{external_serialized_keys->getKey(row), pool};
+
         if constexpr (nullable)
         {
             const char * begin = nullptr;
