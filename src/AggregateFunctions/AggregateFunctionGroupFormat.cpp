@@ -223,16 +223,19 @@ public:
     }
 
     AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested_function,
-        const DataTypes & /*arguments*/,
-        const Array & /*params*/,
+        const AggregateFunctionPtr & /*nested_function*/,
+        const DataTypes & arguments,
+        const Array & params,
         const AggregateFunctionProperties & /*properties*/) const override
     {
-        /// Return the function itself: it already handles nullable columns natively
-        /// (addBatchSinglePlaceNotNull ignores the null_map, preserving NULL payloads).
-        /// No wrapper needed — this just prevents the standard null combinator from
-        /// unwrapping nullable columns and merging their null maps.
-        return nested_function;
+        /// Create a new instance with the nullable argument types.
+        /// The null combinator always strips Nullable before creating the nested function,
+        /// so our own `argument_types` are non-nullable. We must create a fresh function
+        /// with the original nullable types so that the state columns and header match
+        /// the actual nullable columns the executor will pass at runtime.
+        /// `addBatchSinglePlaceNotNull` on the returned function ignores the null_map,
+        /// preserving NULL payload values instead of skipping them.
+        return std::make_shared<AggregateFunctionGroupFormat>(arguments, params, format_name, format_settings, context);
     }
 
     bool preservesNullablePayloadForIf() const override
