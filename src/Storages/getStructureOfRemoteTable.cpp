@@ -52,7 +52,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         if (shard_info.isLocal())
         {
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-            return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
+            return table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query*/ true);
         }
 
         auto table_func_name = table_func_ptr->formatWithSecretsOneLine();

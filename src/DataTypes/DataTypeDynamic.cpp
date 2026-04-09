@@ -61,8 +61,8 @@ Field DataTypeDynamic::getDefault() const
 SerializationPtr DataTypeDynamic::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     if (settings.propagate_types_serialization_versions_to_nested_types)
-        return std::make_shared<SerializationDynamic>(max_dynamic_types, settings);
-    return std::make_shared<SerializationDynamic>(max_dynamic_types);
+        return SerializationDynamic::create(max_dynamic_types, settings);
+    return SerializationDynamic::create(max_dynamic_types);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -244,13 +244,12 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         }
     }
 
-    res->serialization = std::make_shared<SerializationDynamicElement>(
+    res->serialization = SerializationDynamicElement::create(
         res->serialization,
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
         String(subcolumn_nested_name),
         is_null_map_subcolumn);
-
     /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
     bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
     if (!is_null_map_subcolumn && make_subcolumn_nullable)

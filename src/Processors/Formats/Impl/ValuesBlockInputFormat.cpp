@@ -121,7 +121,7 @@ Chunk ValuesBlockInputFormat::read()
     {
         try
         {
-            skipWhitespaceIfAny(*buf);
+            skipWhitespaceAndSQLComments(*buf);
             if (buf->eof() || *buf->position() == ';')
                 break;
             if (need_only_count)
@@ -723,7 +723,7 @@ std::optional<DataTypes> ValuesSchemaReader::readRowAndGetDataTypes()
         first_row = false;
     }
 
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceAndSQLComments(buf);
     if (buf.eof() || end_of_data)
         return {};
 

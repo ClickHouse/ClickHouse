@@ -292,6 +292,48 @@ Below are the possible values for both `deduplicate_merge_projection_mode` and `
 - `drop`: Affected projection table parts are dropped. Queries will fall back to the original table part for affected projection parts.
 - `rebuild`: The affected projection part is rebuilt to stay consistent with data in the original table part.
 
+## Limitations {#limitations}
+
+It is not possible to use an `ALIAS` column in a projection's `ORDER BY` clause. For example:
+
+```sql
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 ALIAS a + 1,
+--highlight-next-line
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+-- Fails with UNKNOWN_IDENTIFIER
+```
+
+`ALIAS` columns are not physically stored and are computed on-the-fly at query time, so they are unavailable during the projection part write path when the sorting expression is evaluated.
+
+Instead, use `MATERIALIZED` columns or inline the expression directly:
+
+```sql
+-- using MATERIALIZED column
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 MATERIALIZED a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- using an inline expression
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    PROJECTION p (SELECT a ORDER BY a + 1)
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
 ## See also {#see-also}
 - ["Control Of Projections During Merges" (blog post)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 - ["Projections" (guide)](/data-modeling/projections#using-projections-to-speed-up-UK-price-paid)

@@ -494,6 +494,7 @@ class S3:
 
             # Retry on transient credential failures (IMDS temporarily unreachable)
             version = cls._retry_on_no_credentials(_download)
+            StorageUsage.add_downloaded(local_path)
             print(f"Downloaded file from S3 with version {version} using boto3")
             return version
 
@@ -511,7 +512,7 @@ class S3:
         )
         metadata = json.loads(output)
         version = int(metadata.get("Metadata", {}).get("version", "0"))
-
+        StorageUsage.add_downloaded(local_path)
         print(f"Downloaded file from S3 with version {version} using AWS CLI")
         return version
 

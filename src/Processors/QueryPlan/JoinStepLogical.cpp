@@ -308,18 +308,23 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
 
 void JoinStepLogical::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
 
     for (const auto & [name, value] : describeJoinProperties())
         settings.out << prefix << name << ": " << value << '\n';
 
-    settings.out << prefix << "Expression:\n";
-    auto actions_dag = expression_actions.getActionsDAG();
-    ExpressionActions(actions_dag->clone()).describeActions(settings.out, prefix);
+    if (!settings.compact)
+    {
+        settings.out << prefix << "Expression:\n";
 
-    settings.out << prefix << "Expression Sources:\n";
-    for (const auto * input_ptr : actions_dag->getInputs())
-        settings.out << prefix << JoinActionRef(input_ptr, expression_actions).dump() << "\n";
+        auto actions_dag = expression_actions.getActionsDAG();
+        ExpressionActions(actions_dag->clone()).describeActions(settings.out, prefix);
+
+        settings.out << prefix << "Expression Sources:\n";
+
+        for (const auto * input_ptr : actions_dag->getInputs())
+            settings.out << prefix << JoinActionRef(input_ptr, expression_actions).dump() << "\n";
+    }
 }
 
 void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const

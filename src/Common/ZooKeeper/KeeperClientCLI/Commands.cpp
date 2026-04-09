@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperClientCLI/Commands.h>
 #include <Common/ZooKeeper/KeeperClientCLI/KeeperClient.h>
@@ -44,7 +45,7 @@ void LSCommand::execute(const ASTKeeperQuery * query, KeeperClientBase * client)
         if (std::exchange(need_space, true))
             client->cout << " ";
 
-        client->cout << child;
+        client->cout << formatKeeperNodeName(child);
     }
 
     client->cout << "\n";

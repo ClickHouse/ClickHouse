@@ -1,5 +1,6 @@
 /// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
+#include <algorithm>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -428,7 +429,7 @@ KeeperMemNode & KeeperMemNode::operator=(KeeperMemNode && other) noexcept
 
     other.stats.data_size = 0;
 
-    static_assert(std::is_nothrow_move_assignable_v<ChildrenSet>);
+    static_assert(std::is_nothrow_move_assignable_v<CompactChildrenSet>);
     children = std::move(other.children);
 
     return *this;
@@ -466,7 +467,7 @@ void KeeperMemNode::setResponseStat(Coordination::Stat & response_stat) const
 
 uint64_t KeeperMemNode::sizeInBytes() const
 {
-    return sizeof(KeeperMemNode) + children.size() * sizeof(std::string_view) + stats.data_size;
+    return sizeof(KeeperMemNode) + children.heapSizeInBytes() + stats.data_size;
 }
 
 void KeeperMemNode::setData(const String & new_data)
@@ -800,6 +801,11 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
         uncommitted_node = &emplaced_it->second;
     }
 
+    /// Cache the zxid_to_nodes set reference and node membership once,
+    /// avoiding repeated std::map lookups inside the variant visitor.
+    auto & zxid_nodes = zxid_to_nodes[delta.zxid];
+    const bool node_not_yet_in_zxid = !zxid_nodes.contains(node_it);
+
     /// if it's the first time we see that node in the transaction
     /// we need to subtract it's digest from the point before
     /// we started the transaction
@@ -819,7 +825,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
             {
-                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
+                if (digest && node_not_yet_in_zxid)
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
@@ -827,7 +833,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
             {
-                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
+                if (digest && node_not_yet_in_zxid)
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
@@ -836,7 +842,7 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
-                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
+                if (digest && node_not_yet_in_zxid)
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
@@ -848,8 +854,8 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 acls = operation.new_acls;
             }
 
-            applied_zxids.insert(delta.zxid);
-            zxid_to_nodes[delta.zxid].insert(node_it);
+            applied_zxids.push_back(delta.zxid);
+            zxid_nodes.insert(node_it);
         },
         delta.operation);
 }
@@ -1009,7 +1015,7 @@ void KeeperStorage<Container>::UncommittedState::cleanup(int64_t commit_zxid)
 
         for (const auto node_it : transaction_nodes)
         {
-            node_it->second.applied_zxids.erase(transaction_zxid);
+            std::erase(node_it->second.applied_zxids, transaction_zxid);
             if (node_it->second.applied_zxids.empty())
                 nodes.erase(node_it);
         }
@@ -1130,7 +1136,7 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
 
         for (const auto node_it : transaction_nodes)
         {
-            node_it->second.applied_zxids.erase(transaction_zxid);
+            std::erase(node_it->second.applied_zxids, transaction_zxid);
             if (node_it->second.applied_zxids.empty())
                 nodes.erase(node_it);
         }

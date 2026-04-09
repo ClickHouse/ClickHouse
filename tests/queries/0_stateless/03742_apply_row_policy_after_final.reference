@@ -56,6 +56,10 @@
 --- FINAL WHERE x != 1 (partition pruning is safe here)
 2	bbb	1
 
+= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =
+--- toDate(time) row policy: only row filter deferred, not prewhere
+        Deferred filters (applied after FINAL)
+          Deferred row level filter column: equals(toDate(time), \'2024-01-01\'_String)
 = compound row policy: sorting-key atom should be used for index analysis =
 --- FINAL: x>1 atom should still participate in primary key analysis
 2	eee	2

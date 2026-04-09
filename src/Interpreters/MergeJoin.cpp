@@ -78,8 +78,8 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
     return {res_col, res_col_type, res_name};
 }
 
-template <bool has_left_nulls, bool has_right_nulls>
-int nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
+template <bool has_left_nulls, bool has_right_nulls, bool track = false>
+Int64 nullableCompareAt(const IColumn & left_column, const IColumn & right_column, size_t lhs_pos, size_t rhs_pos)
 {
     static constexpr int null_direction_hint = 1;
 
@@ -122,7 +122,10 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
         }
     }
 
-    return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    if constexpr (track)
+        return left_column.compareTrackAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
+    else
+        return left_column.compareAt(lhs_pos, rhs_pos, right_column, null_direction_hint);
 }
 
 /// Get first and last row from sorted block
@@ -285,8 +288,8 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected block size");
 
         size_t last_position = end() - 1;
-        int first_vs_max = 0;
-        int last_vs_min = 0;
+        Int64 first_vs_max = 0;
+        Int64 last_vs_min = 0;
 
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
@@ -321,39 +324,34 @@ private:
 
         while (true)
         {
-            int cmp = compareAtCursor<left_nulls, right_nulls>(rhs);
+            Int64 cmp = nullableCompareAt<left_nulls, right_nulls, true>(
+                *impl.sort_columns[0], *rhs.impl.sort_columns[0], position(), rhs.position());
+
+            for (size_t i = 1; (!cmp) && i < impl.sort_columns_size; ++i)
+            {
+                const auto * left_column = impl.sort_columns[i];
+                const auto * right_column = rhs.impl.sort_columns[i];
+
+                cmp = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, position(), rhs.position());
+            }
+
             if (cmp < 0)
             {
-                next();
+                nextN(-cmp);
                 if (atEnd())
                     break;
             }
             else if (cmp > 0)
             {
-                rhs.next();
+                rhs.nextN(cmp);
                 if (rhs.atEnd())
                     break;
             }
-            else if (!cmp)
+            else
                 return MergeJoinEqualRange{position(), rhs.position(), getEqualLength(), rhs.getEqualLength()};
         }
 
         return MergeJoinEqualRange{position(), rhs.position(), 0, 0};
-    }
-
-    template <bool left_nulls, bool right_nulls>
-    int ALWAYS_INLINE compareAtCursor(const MergeJoinCursor & rhs) const
-    {
-        int res = nullableCompareAt<left_nulls, right_nulls>(*impl.sort_columns[0], *rhs.impl.sort_columns[0], position(), rhs.position());
-
-        for (size_t i = 1; (!res) && i < impl.sort_columns_size; ++i)
-        {
-            const auto * left_column = impl.sort_columns[i];
-            const auto * right_column = rhs.impl.sort_columns[i];
-
-            res = nullableCompareAt<left_nulls, right_nulls>(*left_column, *right_column, position(), rhs.position());
-        }
-        return res;
     }
 
     /// Expects !atEnd()

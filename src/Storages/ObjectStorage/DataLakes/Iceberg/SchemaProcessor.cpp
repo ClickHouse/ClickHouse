@@ -241,6 +241,10 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
         return std::make_shared<DataTypeDateTime64>(6);
     if (type_name == f_timestamptz)
         return std::make_shared<DataTypeDateTime64>(6, "UTC");
+    if (type_name == f_timestamp_ns)
+        return std::make_shared<DataTypeDateTime64>(9);
+    if (type_name == f_timestamptz_ns)
+        return std::make_shared<DataTypeDateTime64>(9, "UTC");
     if (type_name == f_string || type_name == f_binary)
         return std::make_shared<DataTypeString>();
     if (type_name == f_uuid)

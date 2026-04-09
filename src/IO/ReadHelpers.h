@@ -2104,6 +2104,10 @@ inline void skipBOMIfExists(ReadBuffer & buf)
 /// Skip to next character after next \n. If no \n in stream, skip to end.
 void skipToNextLineOrEOF(ReadBuffer & buf);
 
+/// Skip whitespace and SQL-style comments (-- to end of line, /* */ blocks).
+/// Used so that trailing comments after the last row in VALUES format do not cause parse errors.
+void skipWhitespaceAndSQLComments(ReadBuffer & buf);
+
 /// Skip to next character after next \r. If no \r in stream, skip to end.
 void skipToCarriageReturnOrEOF(ReadBuffer & buf);
 

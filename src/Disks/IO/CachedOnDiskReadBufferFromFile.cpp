@@ -666,7 +666,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
 
 CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
 {
-    if (cache_log && info.file_segments && !info.file_segments->empty())
+    if (cache_log && info.file_segments && !info.file_segments->empty() && state)
     {
         appendFilesystemCacheLog(info.file_segments->front(), state->read_type);
     }

@@ -1,5 +1,11 @@
 #pragma once
 #include <boost/context/stack_context.hpp>
+#include <base/sanitizer_defs.h>
+#include <cstddef>
+
+#if __has_include(<sanitizer/asan_interface.h>) && defined(ADDRESS_SANITIZER)
+#   include <sanitizer/asan_interface.h>
+#endif
 
 /// This is an implementation of allocator for fiber stack.
 /// The reference implementation is protected_fixedsize_stack from boost::context.
@@ -16,10 +22,31 @@ public:
 
     explicit FiberStack(size_t stack_size_ = default_stack_size);
 
-    boost::context::stack_context allocate() const;
+    boost::context::stack_context allocate();
     void deallocate(boost::context::stack_context & sctx) const;
+
+    /// Unpoison the fiber stack memory for ASan.
+    ///
+    /// ASan's use-after-scope detection poisons stack memory when local variables
+    /// go out of scope. On fiber stacks, this poisoning persists across context
+    /// switches (yield/resume), causing false positives when the same stack addresses
+    /// are reused by new frames in subsequent fiber resumes.
+    ///
+    /// This must be called before each fiber resume to clear stale scope poisoning.
+    /// See https://github.com/google/sanitizers/issues/189
+    void beforeResume() const
+    {
+#if defined(ADDRESS_SANITIZER)
+        if (stack_base)
+            ASAN_UNPOISON_MEMORY_REGION(stack_base, stack_allocation_size);
+#endif
+    }
 
 private:
     const size_t stack_size;
     const size_t page_size;
+
+    /// Tracked allocation for ASan unpoisoning.
+    void * stack_base = nullptr;
+    size_t stack_allocation_size = 0;
 };

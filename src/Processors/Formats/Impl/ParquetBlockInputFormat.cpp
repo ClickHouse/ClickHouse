@@ -691,7 +691,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     if (format_filter_info)
     {
-        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
+        format_filter_info->initKeyConditionOnce(getPort().getHeader());
     }
 
     // Create arrow file adapter.
@@ -1420,7 +1420,8 @@ void registerInputFormatParquet(FormatFactory & factory)
            bool is_remote_fs,
            FormatParserSharedResourcesPtr parser_shared_resources,
            FormatFilterInfoPtr format_filter_info,
-           const std::optional<RelativePathWithMetadata> & object_with_metadata) -> InputFormatPtr
+           const std::optional<RelativePathWithMetadata> & object_with_metadata,
+           const ContextPtr & context) -> InputFormatPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
             size_t min_bytes_for_seek
@@ -1428,7 +1429,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             if (settings.parquet.use_native_reader_v3)
             {
                 LOG_TRACE(lambda_logger, "using native reader v3 in ParquetBlockInputFormat with metadata cache");
-                ParquetMetadataCachePtr metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
+                ParquetMetadataCachePtr metadata_cache = context->getParquetMetadataCache();
                 return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),

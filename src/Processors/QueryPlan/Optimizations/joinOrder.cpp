@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Common/CurrentThread.h>
 
 #include <algorithm>
 #include <deque>
@@ -36,10 +37,11 @@ namespace ErrorCodes
     extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
+    , column_stats(std::move(column_stats_))
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -59,6 +61,40 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
+    /// Merge column stats from both children, then update NDVs for equi-join key columns.
+    column_stats = left->column_stats;
+    column_stats.insert(right->column_stats.begin(), right->column_stats.end());
+
+    for (const auto & predicate : join_operator.expression)
+    {
+        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        if (left_node.fromRight() && right_node.fromLeft())
+            std::swap(left_node, right_node);
+        if (!left_node.fromLeft() || !right_node.fromRight())
+            continue;
+
+        const auto & left_col = left_node.getColumnName();
+        const auto & right_col = right_node.getColumnName();
+        auto left_it = column_stats.find(left_col);
+        auto right_it = column_stats.find(right_col);
+
+        if (left_it != column_stats.end() && right_it != column_stats.end())
+        {
+            UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
+            left_it->second.num_distinct_values = min_ndv;
+            right_it->second.num_distinct_values = min_ndv;
+        }
+    }
+
+    /// Cap all NDVs at the estimated output rows.
+    if (cardinality_)
+    {
+        for (auto & [_, stats] : column_stats)
+            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+    }
 }
 
 bool DPJoinEntry::isLeaf() const { return !left && !right; }
@@ -77,7 +113,7 @@ public:
         : query_graph(std::move(query_graph_))
         , enabled_algorithms(enabled_algorithms_)
     {
-        auto context = CurrentThread::getQueryContext();
+        auto context = CurrentThread::tryGetQueryContext();
         if (context)
         {
             query_status = context->getProcessListElementSafe();
@@ -130,15 +166,20 @@ size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_nam
     auto rel_id = rels.getSingleBit();
     if (!rel_id.has_value())
     {
-        /// Assume all keys are distinct
+        /// Look up NDV from the dp_table entry's column_stats (propagated through joins).
         if (auto it = dp_table.find(rels); it != dp_table.end())
+        {
+            auto col_it = it->second->column_stats.find(column_name);
+            if (col_it != it->second->column_stats.end())
+                return col_it->second.num_distinct_values;
             return it->second->estimated_rows.value_or(0);
+        }
         return 0;
     }
 
     const auto & relation_stat = relation_stats.at(rel_id.value());
-    const auto & column_stats = relation_stat.column_stats;
-    if (auto it = column_stats.find(column_name); it != column_stats.end())
+    const auto & col_stats = relation_stat.column_stats;
+    if (auto it = col_stats.find(column_name); it != col_stats.end())
         return it->second.num_distinct_values;
     return relation_stat.estimated_rows.value_or(0);
 }
@@ -286,7 +327,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
     std::vector<JoinActionRef *> applied_edge;
@@ -417,7 +458,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     for (size_t i = 0; i < total_relations_count; ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows);
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats);
         components[1][entry->relations] = entry;
         dp_table[entry->relations] = entry;
     }

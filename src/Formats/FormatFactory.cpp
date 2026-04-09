@@ -198,6 +198,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
     format_settings.parquet.row_group_bytes = settings[Setting::output_format_parquet_row_group_size_bytes];
     format_settings.parquet.output_version = settings[Setting::output_format_parquet_version];
@@ -530,11 +531,12 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
     // 2. Prefer to use metadata-aware creator if we have object metadata
-    else if (creators.random_access_input_creator_with_metadata && object_with_metadata.has_value())
+    else if (creators.random_access_input_creator_with_metadata
+        && object_with_metadata.has_value() && format_settings.parquet.use_native_reader_v3)
     {
         format = creators.random_access_input_creator_with_metadata(
             buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
-            parser_shared_resources, format_filter_info, object_with_metadata);
+            parser_shared_resources, format_filter_info, object_with_metadata, context);
     }
     // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)

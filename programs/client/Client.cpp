@@ -13,6 +13,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
 #include <Common/config_version.h>
@@ -545,7 +546,7 @@ void Client::connect()
 
             if (max_client_network_bandwidth)
             {
-                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                ThrottlerPtr throttler = std::make_shared<Throttler>("client_network", max_client_network_bandwidth, 0, "");
                 connection->setThrottler(throttler);
             }
 
@@ -994,7 +995,7 @@ void Client::processOptions(
 
     initClientContext(Context::createCopy(global_context));
     /// Initialize query context for the current thread to avoid sharing global context (i.e. for obtaining session_timezone)
-    query_scope = CurrentThread::QueryScope::create(client_context);
+    query_scope = QueryScope::create(client_context);
 
 
     /// Allow to pass-through unknown settings to the server.

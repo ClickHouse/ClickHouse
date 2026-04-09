@@ -814,12 +814,52 @@ class GH:
 
 
 if __name__ == "__main__":
-    # test
-    GH.post_updateable_comment(
-        comment_tags_and_bodies={
-            "test": "foobar4",
-            "test3": "foobar33",
-        },
-        pr=81471,
-        repo="ClickHouse/ClickHouse",
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="GitHub PR comment helper")
+    subparsers = parser.add_subparsers(dest="command")
+
+    post_parser = subparsers.add_parser(
+        "post-or-update",
+        help="Post a new PR comment or update an existing one with the given tag",
     )
+    post_parser.add_argument(
+        "--tag",
+        required=True,
+        help="Tag identifying the comment section (e.g. 'review')",
+    )
+    post_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body",
+    )
+    post_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    post_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+    post_parser.add_argument(
+        "--only-update",
+        action="store_true",
+        help="Only update an existing comment; do not create a new one",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "post-or-update":
+        with open(args.body_file, "r", encoding="utf-8") as f:
+            body = f.read()
+        kwargs = dict(
+            comment_tags_and_bodies={args.tag: body},
+            only_update=args.only_update,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    else:
+        parser.print_help()
+        sys.exit(1)

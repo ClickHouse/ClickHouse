@@ -16,6 +16,8 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `-h HOST`, `--host=HOST` — Server host. Default value: `localhost`.
 -   `-p N`, `--port=N` — Server port. Default value: 9181
 -   `-c FILE_PATH`, `--config-file=FILE_PATH` — Set path of config file to get the connection string. Default value: `config.xml`.
+-   `--password=PASSWORD` — Password for authentication. Can also be set via the `CLICKHOUSE_KEEPER_PASSWORD` environment variable or in the XML config file under `<zookeeper><password>`.
+-   `--identity=IDENTITY` — Identity for `digest` authentication scheme. Can also be set via the `CLICKHOUSE_KEEPER_IDENTITY` environment variable or in the XML config file under `<zookeeper><identity>`.
 -   `--connection-timeout=TIMEOUT` — Set connection timeout in seconds. Default value: 10s.
 -   `--session-timeout=TIMEOUT` — Set session timeout in seconds. Default value: 10s.
 -   `--operation-timeout=TIMEOUT` — Set operation timeout in seconds. Default value: 10s.
@@ -23,6 +25,35 @@ A client application to interact with clickhouse-keeper by its native protocol.
 -   `--log-level=LEVEL` — Set log level. Default value: `information`.
 -   `--no-confirmation` — If set, will not require a confirmation on several commands. Default value `false` for interactive and `true` for query
 -   `--help` — Shows the help message.
+
+## Environment Variables {#clickhouse-keeper-client-env}
+
+-   `CLICKHOUSE_KEEPER_PASSWORD` — Used as the default password if `--password` is not provided on the command line.
+-   `CLICKHOUSE_KEEPER_IDENTITY` — Used as the default identity if `--identity` is not provided on the command line.
+
+## Authentication {#clickhouse-keeper-client-auth}
+
+When connecting to a Keeper server that requires authentication, the password is resolved in the following priority order (first match wins):
+
+1. `--password` command-line argument
+2. `CLICKHOUSE_KEEPER_PASSWORD` environment variable
+3. `<zookeeper><password>` in the XML config file specified by `--config-file`
+
+The same priority applies to `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
+
+Example XML config file with authentication settings:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <password>secret</password>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
 
 ## Example {#clickhouse-keeper-client-example}
 

@@ -91,7 +91,6 @@ private:
 
     void removeOutdatedTables();
 
-    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }

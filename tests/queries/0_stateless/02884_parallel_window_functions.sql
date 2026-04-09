@@ -3,6 +3,7 @@
 CREATE TABLE window_function_threading
 Engine = MergeTree
 ORDER BY (ac, nw)
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
 AS SELECT
         toUInt64(toFloat32(number % 2) % 20000000) as ac,
         toFloat32(1) as wg,

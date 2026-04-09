@@ -8,6 +8,41 @@ from ci.praktika.result import Result
 repo_root = Utils.cwd()
 temp_dir = f"{repo_root}/ci/tmp/"
 
+# Lines matching any of these patterns are excluded from the uncovered report:
+# they represent code paths that are intentionally never executed in normal runs
+# (error paths, logical impossibilities, unreachable markers).
+_NOISE_PATTERNS = [
+    re.compile(r"\bLOGICAL_ERROR\b"),        # ErrorCodes::LOGICAL_ERROR (impossible conditions)
+    re.compile(r"\bUNREACHABLE\s*\("),       # UNREACHABLE() macro
+    re.compile(r"__builtin_unreachable\s*\("),
+    re.compile(r"\babort\s*\(\s*\)"),        # abort()
+    re.compile(r"\bstd::terminate\s*\("),    # std::terminate()
+    re.compile(r"\babortOnFailedAssertion\s*\("),  # chassert failure handler
+]
+
+# Lazily-loaded source file cache: relpath -> list of raw lines
+_source_cache: dict[str, list[str]] = {}
+
+
+def _load_source(relpath: str) -> list[str]:
+    if relpath not in _source_cache:
+        abs_path = os.path.join(repo_root, relpath)
+        try:
+            with open(abs_path, encoding="utf-8", errors="replace") as f:
+                _source_cache[relpath] = f.readlines()
+        except FileNotFoundError:
+            _source_cache[relpath] = []
+    return _source_cache[relpath]
+
+
+def _is_noise(relpath: str, lineno: int) -> bool:
+    lines = _load_source(relpath)
+    if not (1 <= lineno <= len(lines)):
+        return False
+    text = lines[lineno - 1].strip()
+    return any(p.search(text) for p in _NOISE_PATTERNS)
+
+
 if __name__ == "__main__":
     DIFF = f"{temp_dir}/changes.diff"
     INFO = f"{temp_dir}/current.changed.info"
@@ -49,7 +84,7 @@ if __name__ == "__main__":
         return sf.endswith("/" + rel) or sf.endswith(rel)
 
     # --- stream parse LCOV .info: only DA lines; count only changed lines
-    total = covered = 0
+    total = covered = noise_skipped = 0
     uncovered = []  # (relpath, line)
 
     active_rel = None
@@ -83,6 +118,11 @@ if __name__ == "__main__":
                 if not in_changed:
                     continue
 
+                # Skip lines that are not meant to be executed (error paths, etc.)
+                if _is_noise(active_rel, ln):
+                    noise_skipped += 1
+                    continue
+
                 total += 1
                 if cnt > 0:
                     covered += 1
@@ -106,7 +146,7 @@ if __name__ == "__main__":
     CONTEXT = 2  # lines before/after
     MAX_PRINT = 200  # max uncovered lines to print total
 
-    msg = f"PR changed-lines coverage: {pct:.2f}% ({covered}/{total})"
+    msg = f"PR changed-lines coverage: {pct:.2f}% ({covered}/{total}, {noise_skipped} noise lines excluded)"
     print(msg)
 
     if uncovered:
@@ -118,18 +158,16 @@ if __name__ == "__main__":
             by_file[rel].append(ln)
 
         for rel in sorted(by_file.keys()):
-            abs_path = os.path.join(repo_root, rel)
+            lines = _load_source(rel)  # already cached
 
             print("=" * 80)
             print(rel)
             print("=" * 80)
 
-            if not os.path.exists(abs_path):
+            if not lines:
+                abs_path = os.path.join(repo_root, rel)
                 print(f"  [source file not found: {abs_path}]")
                 continue
-
-            with open(abs_path, encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
 
             # sort + deduplicate
             file_lines = sorted(set(by_file[rel]))

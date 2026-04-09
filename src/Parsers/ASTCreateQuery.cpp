@@ -394,7 +394,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         if (uuid != UUIDHelpers::Nil)
             ostr << " UUID " << quoteString(toString(uuid));
 
-        assert(attach || !has_attach_from_path);
+        chassert(attach || !has_attach_from_path);
         if (has_attach_from_path)
             ostr << " FROM " << quoteString(attach_from_path);
 
@@ -601,7 +601,27 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         ostr << settings.nl_or_ws;
         ostr << "AS ";
-        select->format(ostr, settings, state, frame);
+
+        /// When the query has trailing output options like SETTINGS, FORMAT, or INTO OUTFILE
+        /// (either from this CREATE query or from an outer query like EXPLAIN),
+        /// we must wrap the AS-select in parentheses. Otherwise the trailing
+        /// SETTINGS clause would be consumed by `ParserSelectQuery` as part of the
+        /// last SELECT in the UNION/INTERSECT chain during re-parsing, instead of
+        /// remaining on the outer query — breaking the formatting roundtrip.
+        /// The outer parentheses already protect against consumption, so
+        /// clear the flags to prevent inner nodes from adding redundant parentheses.
+        if (settings_ast || frame.has_trailing_output_options)
+        {
+            ostr << "(";
+            frame.parent_has_trailing_settings = false;
+            frame.has_trailing_output_options = false;
+            select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+        else
+        {
+            select->format(ostr, settings, state, frame);
+        }
     }
 }
 

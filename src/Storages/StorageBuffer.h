@@ -109,7 +109,16 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    bool supportsSampling() const override { return true; }
+    bool supportsSampling() const override
+    {
+        /// During reads, Buffer queries both the in-memory buffers and the destination table simultaneously.
+        /// Sampling on the buffer part is handled probabilistically (no sampling key required).
+        /// Sampling on the destination part requires the destination to have a sampling key.
+        /// If there is no destination, only the buffer is read, so sampling is always supported.
+        if (auto destination = getDestinationTable())
+            return destination->supportsSampling();
+        return true;
+    }
     bool supportsPrewhere() const override;
     bool supportsFinal() const override { return true; }
 

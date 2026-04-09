@@ -3,10 +3,10 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -72,7 +72,14 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
+private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+
+public:
+    static UInt128 getHash(const VariantSerializations & variant_serializations_, const String & variant_name_);
+    static SerializationPtr create(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -106,7 +113,7 @@ public:
         size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state,
-        std::unordered_map<String, size_t> & variants_statistics,
+        UnorderedMapWithMemoryTracking<String, size_t> & variants_statistics,
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(

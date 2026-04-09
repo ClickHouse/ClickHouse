@@ -44,7 +44,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_statistics;
+    extern const SettingsBool allow_statistics;
     extern const SettingsBool fsync_metadata;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
@@ -220,11 +220,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong parameter type in ALTER query");
 
-        if (!settings[Setting::allow_experimental_statistics] && (
+        if (!settings[Setting::allow_statistics] && (
             command_ast->type == ASTAlterCommand::ADD_STATISTICS ||
             command_ast->type == ASTAlterCommand::DROP_STATISTICS ||
             command_ast->type == ASTAlterCommand::MATERIALIZE_STATISTICS))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is now disabled. Turn on allow_experimental_statistics");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistic is disabled. Turn on allow_statistics");
     }
 
     if (typeid_cast<DatabaseReplicated *>(database.get()))

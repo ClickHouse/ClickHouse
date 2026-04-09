@@ -284,5 +284,6 @@ public:
 
 extern MemoryTracker total_memory_tracker;
 extern MemoryTracker background_memory_tracker;
+bool isTotalMemoryTrackerInitialized();
 
 bool canEnqueueBackgroundTask();

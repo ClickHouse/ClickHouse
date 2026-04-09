@@ -1,8 +1,8 @@
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
-
 
 namespace DB
 {
@@ -17,6 +17,33 @@ SerializationObjectDistinctPaths::SerializationObjectDistinctPaths(const std::ve
 {
     const auto & shared_data_type = DataTypeObject::getTypeOfSharedData();
     shared_data_paths_serialization = shared_data_type->getSubcolumnSerialization("paths", shared_data_type->getDefaultSerialization());
+}
+
+
+UInt128 SerializationObjectDistinctPaths::getHash(const std::vector<String> & typed_paths_)
+{
+    SipHash hash;
+    hash.update("ObjectDistinctPaths");
+    for (const auto & path : typed_paths_)
+    {
+        hash.update(path.size());
+        hash.update(path);
+    }
+    /// shared_data_paths_serialization is always derived from the static
+    /// DataTypeObject::getTypeOfSharedData() type, so it is the same for all
+    /// instances and does not need to be part of the distinguishing hash.
+    return hash.get128();
+}
+
+SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<String> & typed_paths_)
+{
+    /// shared_data_paths_serialization is always derived from the static
+    /// DataTypeObject::getTypeOfSharedData() type, which always supports pooling,
+    /// but we check for consistency with other composite serializations.
+    auto result = std::shared_ptr<ISerialization>(new SerializationObjectDistinctPaths(typed_paths_));
+    if (!result->supportsPooling())
+        return result;
+    return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
 }
 
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
@@ -288,6 +315,15 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
     settings.path.pop_back();
+}
+
+size_t SerializationObjectDistinctPaths::allocatedBytes() const
+{
+    size_t bytes = sizeof(*this);
+    bytes += typed_paths.capacity() * sizeof(String);
+    for (const auto & path : typed_paths)
+        bytes += path.capacity();
+    return bytes;
 }
 
 }

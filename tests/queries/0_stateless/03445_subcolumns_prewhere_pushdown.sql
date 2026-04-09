@@ -1,6 +1,7 @@
 -- Tags: no-parallel-replicas
 
 set enable_analyzer=1;
+SET query_plan_optimize_prewhere = 1;
 
 drop table if exists test;
 create table test (x UInt64, n Nullable(UInt32), t Tuple(a UInt32, b UInt32), json JSON) engine=MergeTree order by tuple() settings index_granularity=4;

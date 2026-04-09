@@ -181,6 +181,8 @@ public:
         const std::function<void()> & cancellation_hook = {}
         ) override;
 
+    void waitBlobsCleanup();
+
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     ObjectStoragePtr getObjectStorage() override;

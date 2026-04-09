@@ -13,6 +13,8 @@
 namespace ProfileEvents
 {
     extern const Event DataAfterMutationDiffersFromReplica;
+    extern const Event MutationCommitMilliseconds;
+    extern const Event MutationTotalMilliseconds;
     extern const Event ReplicatedPartMutations;
 }
 
@@ -274,6 +276,8 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
+    Stopwatch commit_watch;
+
     try
     {
         transaction_ptr->renameParts();
@@ -285,6 +289,9 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         {
             transaction_ptr->rollback();
 
+            UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+            ProfileEvents::increment(ProfileEvents::MutationCommitMilliseconds, commit_elapsed_ms);
+            ProfileEvents::increment(ProfileEvents::MutationTotalMilliseconds, commit_elapsed_ms);
             ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
 
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
@@ -315,6 +322,10 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.
          */
+    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::MutationCommitMilliseconds, commit_elapsed_ms);
+    ProfileEvents::increment(ProfileEvents::MutationTotalMilliseconds, commit_elapsed_ms);
+
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
     write_part_log({});

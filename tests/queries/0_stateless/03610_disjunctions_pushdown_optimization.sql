@@ -5,6 +5,8 @@
 -- such pre-join filters are not produced. It also validates join-order-dependent pushdown
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=0;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;

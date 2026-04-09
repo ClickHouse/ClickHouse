@@ -1,5 +1,6 @@
 set optimize_group_by_function_keys = 1;
 set optimize_syntax_fuse_functions = 0;
+set optimize_arithmetic_operations_in_aggregate_functions = 1;
 set enable_analyzer = 1;
 
 -- { echoOn }

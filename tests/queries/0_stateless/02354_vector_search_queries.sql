@@ -4,6 +4,7 @@
 
 -- Test runs with analyzer enabled
 SET enable_analyzer = 1;
+SET query_plan_optimize_lazy_materialization = 1;
 
 SELECT '10 rows, index_granularity = 8192, GRANULARITY = 1 million --> 1 granule, 1 indexed block';
 

@@ -140,15 +140,13 @@ BackupImpl::BackupImpl(
 BackupImpl::BackupImpl(
     const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_,
-    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_)
+    std::shared_ptr<IBackupReader> reader_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
-    , lightweight_snapshot_writer(lightweight_snapshot_writer_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -1191,20 +1189,5 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     }
 }
 
-void BackupImpl::removeAllFilesUnderDirectory(const String & directory) const
-{
-    LOG_INFO(log, "Removing all files of under directory {}", directory);
-
-    Strings files_to_remove = listFiles(directory, true);
-    Strings objects_to_remove;
-    for (const String & file_name : files_to_remove)
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
-        objects_to_remove.push_back(file_object_key);
-    }
-
-    lightweight_snapshot_writer->removeFiles(objects_to_remove);
 }
 
-}
