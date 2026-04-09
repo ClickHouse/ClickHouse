@@ -1152,7 +1152,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         std::optional<std::string> impl_read_stop_reason;
         if (read_type != ReadType::CACHED)
         {
-            object_size = state.buf->getRemoteFileSize();
+            object_size = implementation_buffer->getRemoteFileSize();
 
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
