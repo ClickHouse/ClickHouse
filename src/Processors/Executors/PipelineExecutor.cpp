@@ -120,7 +120,7 @@ void PipelineExecutor::finish()
 
 bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired)
 {
-    return execution_status.compare_exchange_strong(expected, desired);
+    return execution_status.compare_exchange_strong(expected, desired, std::memory_order_acq_rel, std::memory_order_relaxed);
 }
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
@@ -234,7 +234,7 @@ void PipelineExecutor::finalizeExecution()
 
     checkTimeLimit();
 
-    auto status = execution_status.load();
+    auto status = execution_status.load(std::memory_order_acquire);
     if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
         return;
 

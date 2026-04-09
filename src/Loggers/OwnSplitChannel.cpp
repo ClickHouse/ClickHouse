@@ -443,14 +443,14 @@ void OwnAsyncSplitChannel::flushTextLogs()
     /// once the previous flush is finished, which is not what we need
     /// This is not ideal and we could use some kind of flush id to wait only until the point when you entered this function
     /// But notice that even if you call in many threads, they will all wait and be processed together in the same block once this is unlocked
-    text_log_queue.request_flush.wait(true, std::memory_order_seq_cst);
+    text_log_queue.request_flush.wait(true, std::memory_order_acquire);
 
     /// We need to send an empty notification to wake up the thread if necessary
     text_log_queue.request_flush = true;
     text_log_queue.wakeUp();
 
     /// Now we simply wait for the async thread to notify it has finished flushing
-    text_log_queue.request_flush.wait(true, std::memory_order_seq_cst);
+    text_log_queue.request_flush.wait(true, std::memory_order_acquire);
 }
 
 AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()

@@ -66,7 +66,7 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel() { cancel(ExecutionStatus::CancelledByUser); }
 
-    ExecutionStatus getExecutionStatus() const { return execution_status.load(); }
+    ExecutionStatus getExecutionStatus() const { return execution_status.load(std::memory_order_acquire); }
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();

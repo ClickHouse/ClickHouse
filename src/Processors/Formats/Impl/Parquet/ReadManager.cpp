@@ -172,7 +172,7 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                 reader.intersectColumnIndexResultsAndInitSubgroups(row_group);
                 if (!row_group.subgroups.empty())
                 {
-                    row_group.stage.store(ReadStage::ColumnData);
+                    row_group.stage.store(ReadStage::ColumnData, std::memory_order_release);
                     row_group.stage_tasks_remaining.store(row_group.subgroups.size(), std::memory_order_relaxed);
                     /// Start the first subgroup.
                     finishRowSubgroupStage(row_group_idx, /*row_subgroup_idx=*/ 0, ReadStage::NotStarted, /*step_idx=*/ 0, diff);
@@ -202,15 +202,15 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
         /// Nothing needs to be done for this stage, skip to next stage.
     }
 
-    row_group.stage.store(stage);
+    row_group.stage.store(stage, std::memory_order_release);
     row_group.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
 
     if (stage == ReadStage::Deallocated)
     {
-        size_t i = first_incomplete_row_group.load();
-        while (i < reader.row_groups.size() && reader.row_groups[i].stage.load() == ReadStage::Deallocated)
+        size_t i = first_incomplete_row_group.load(std::memory_order_relaxed);
+        while (i < reader.row_groups.size() && reader.row_groups[i].stage.load(std::memory_order_acquire) == ReadStage::Deallocated)
         {
-            if (first_incomplete_row_group.compare_exchange_weak(i, i + 1))
+            if (first_incomplete_row_group.compare_exchange_weak(i, i + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
             {
                 diff.scheduleAllStages();
 
@@ -395,7 +395,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                               row_group_idx, row_subgroup_idx, delivery_queue.size());
                 }
 
-                row_group.read_ptr.store(row_subgroup_idx + 1);
+                row_group.read_ptr.store(row_subgroup_idx + 1, std::memory_order_release);
                 advanced_ptr = row_subgroup_idx + 1;
                 LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} advanced read_ptr -> {}",
                           row_group_idx, row_subgroup_idx, row_subgroup_idx + 1);
@@ -410,7 +410,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::Deliver:
         {
-            row_subgroup.stage.store(ReadStage::Deallocated);
+            row_subgroup.stage.store(ReadStage::Deallocated, std::memory_order_release);
             clearRowSubgroup(row_subgroup, diff);
             advanceDeliveryPtrIfNeeded(row_group_idx, diff);
             return;
@@ -430,17 +430,17 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
     /// Start reading the next row subgroup if ready.
     /// Skip subgroups that were fully filtered out by prewhere.
-    size_t main_ptr = row_group.read_ptr.load();
+    size_t main_ptr = row_group.read_ptr.load(std::memory_order_acquire);
     LOG_TEST(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} starting next subgroup, read_ptr={} subgroups={} delivery_ptr={}",
-              row_group_idx, main_ptr, row_group.subgroups.size(), row_group.delivery_ptr.load());
+              row_group_idx, main_ptr, row_group.subgroups.size(), row_group.delivery_ptr.load(std::memory_order_relaxed));
 
     /// Start next subgroup to read (sequential: one subgroup at a time).
     while (main_ptr < row_group.subgroups.size())
     {
         RowSubgroup & next_subgroup = row_group.subgroups[main_ptr];
-        ReadStage next_subgroup_stage = next_subgroup.stage.load();
+        ReadStage next_subgroup_stage = next_subgroup.stage.load(std::memory_order_relaxed);
         if (!next_subgroup.stage.compare_exchange_strong(
-                next_subgroup_stage, ReadStage::OffsetIndex))
+                next_subgroup_stage, ReadStage::OffsetIndex, std::memory_order_acq_rel, std::memory_order_relaxed))
             break;
 
         if (next_subgroup.filter.rows_pass > 0)
@@ -451,10 +451,10 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         else
         {
-            row_group.read_ptr.store(main_ptr + 1);
+            row_group.read_ptr.store(main_ptr + 1, std::memory_order_release);
             main_ptr += 1;
             advanced_ptr = main_ptr;
-            next_subgroup.stage.store(ReadStage::Deallocated);
+            next_subgroup.stage.store(ReadStage::Deallocated, std::memory_order_release);
             clearRowSubgroup(next_subgroup, diff);
         }
     }
@@ -477,16 +477,16 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff)
 {
     RowGroup & row_group = reader.row_groups[row_group_idx];
-    size_t delivery_ptr = row_group.delivery_ptr.load();
+    size_t delivery_ptr = row_group.delivery_ptr.load(std::memory_order_relaxed);
     size_t initial_delivery_ptr = delivery_ptr;
 
     LOG_TEST(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} initial_delivery_ptr={} subgroups={} read_ptr={}",
-              row_group_idx, delivery_ptr, row_group.subgroups.size(), row_group.read_ptr.load());
+              row_group_idx, delivery_ptr, row_group.subgroups.size(), row_group.read_ptr.load(std::memory_order_relaxed));
 
     while (delivery_ptr < row_group.subgroups.size() &&
-           row_group.subgroups[delivery_ptr].stage.load() == ReadStage::Deallocated)
+           row_group.subgroups[delivery_ptr].stage.load(std::memory_order_acquire) == ReadStage::Deallocated)
     {
-        if (!row_group.delivery_ptr.compare_exchange_weak(delivery_ptr, delivery_ptr + 1))
+        if (!row_group.delivery_ptr.compare_exchange_weak(delivery_ptr, delivery_ptr + 1, std::memory_order_acq_rel, std::memory_order_relaxed))
             continue;
         size_t old_delivery_ptr = delivery_ptr;
         delivery_ptr += 1;
@@ -885,14 +885,14 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
 
     if (task.row_subgroup_idx != UINT64_MAX)
     {
-        size_t remaining = row_group.subgroups.at(task.row_subgroup_idx).stage_tasks_remaining.fetch_sub(1);
+        size_t remaining = row_group.subgroups.at(task.row_subgroup_idx).stage_tasks_remaining.fetch_sub(1, std::memory_order_acq_rel);
         chassert(remaining > 0);
         if (remaining == 1)
             finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, task.stage, task.step_idx, diff);
     }
     else
     {
-        size_t remaining = row_group.stage_tasks_remaining.fetch_sub(1);
+        size_t remaining = row_group.stage_tasks_remaining.fetch_sub(1, std::memory_order_acq_rel);
         chassert(remaining > 0);
         if (remaining == 1)
             finishRowGroupStage(task.row_group_idx, task.stage, diff);

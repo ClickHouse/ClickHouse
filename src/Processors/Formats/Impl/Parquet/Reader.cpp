@@ -1445,7 +1445,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     OutputColumnState & state = row_subgroup.output.at(column_info.idx_in_output_block);
     chassert(!state.column);
-    size_t prev_count = state.primitive_columns_remaining.fetch_sub(1);
+    size_t prev_count = state.primitive_columns_remaining.fetch_sub(1, std::memory_order_acq_rel);
     chassert(prev_count > 0);
     if (prev_count == 1)
     {

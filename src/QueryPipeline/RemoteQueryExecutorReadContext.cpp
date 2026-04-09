@@ -80,14 +80,14 @@ void RemoteQueryExecutorReadContext::processAsyncEvent(
     timer.setRelative(socket_timeout);
     timeout_type = type;
     connection_fd_description = description;
-    is_in_progress.store(true);
+    is_in_progress.store(true, std::memory_order_release);
 }
 
 void RemoteQueryExecutorReadContext::clearAsyncEvent()
 {
     epoll.remove(connection_fd);
     timer.reset();
-    is_in_progress.store(false);
+    is_in_progress.store(false, std::memory_order_release);
 }
 
 bool RemoteQueryExecutorReadContext::checkTimeout(bool blocking)

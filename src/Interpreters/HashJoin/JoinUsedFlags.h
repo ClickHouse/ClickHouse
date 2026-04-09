@@ -159,7 +159,7 @@ public:
                 return false;
 
             bool expected = false;
-            return per_row_flags[&mapped.columns_info->columns][mapped.row_num].compare_exchange_strong(expected, true);
+            return per_row_flags[&mapped.columns_info->columns][mapped.row_num].compare_exchange_strong(expected, true, std::memory_order_relaxed, std::memory_order_relaxed);
         }
         else
         {
@@ -170,7 +170,7 @@ public:
                 return false;
 
             bool expected = false;
-            return per_offset_flags[off].compare_exchange_strong(expected, true);
+            return per_offset_flags[off].compare_exchange_strong(expected, true, std::memory_order_relaxed, std::memory_order_relaxed);
         }
 
     }
