@@ -309,7 +309,7 @@ def main():
 
         res = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR, test_options=["fast"]).run()
         if not res:
             test_results.results.append(
                 Result.create_from(
