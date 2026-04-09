@@ -44,7 +44,7 @@ public:
 
     void dump(WriteBuffer & out, const CostConfig & cost_config) const;
     String dump(const CostConfig & cost_config) const;
-    String fingerprint() const;
+    size_t fingerprint() const;
 
     GroupId group_id = INVALID_GROUP_ID;
     std::shared_ptr<const IQueryPlanStep> plan_step;  /// Shared immutable plan step

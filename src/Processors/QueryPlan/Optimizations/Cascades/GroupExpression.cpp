@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <IO/Operators.h>
+#include <boost/functional/hash.hpp>
 
 namespace DB
 {
@@ -63,19 +64,18 @@ String GroupExpression::dump(const CostConfig & cost_config) const
     return out.str();
 }
 
-String GroupExpression::fingerprint() const
+size_t GroupExpression::fingerprint() const
 {
-    WriteBufferFromOwnString buf;
-    buf << getDescription();
+    size_t h = std::hash<String>()(getDescription());
     if (strategy)
-        buf << " [" << strategy->getName() << "]";
-    properties.dump(buf);
+        boost::hash_combine(h, std::hash<String>()(strategy->getName()));
+    boost::hash_combine(h, ExpressionPropertiesHash()(properties));
     for (const auto & input : inputs)
     {
-        buf << " #" << input.group_id << ':';
-        input.required_properties.dump(buf);
+        boost::hash_combine(h, input.group_id);
+        boost::hash_combine(h, ExpressionPropertiesHash()(input.required_properties));
     }
-    return buf.str();
+    return h;
 }
 
 }
