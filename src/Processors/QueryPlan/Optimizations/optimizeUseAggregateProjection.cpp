@@ -362,9 +362,8 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    bool can_use_minmax_projection = allow_implicit_projections
-        && metadata->minmax_count_projection
-        && !reading.getMergeTreeData().hasLightweightDeletedMask();
+    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
+        && !reading.getMergeTreeData().has_lightweight_delete_parts.load();
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
