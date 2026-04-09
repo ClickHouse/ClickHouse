@@ -328,6 +328,66 @@ GROUP BY domain
 
 For every different key value encountered, `GROUP BY` calculates a set of aggregate function values.
 
+## WITH CLUSTER Modifier {#with-cluster-modifier}
+
+The `WITH CLUSTER` modifier is a per-element modifier that merges groups whose key values are within a specified distance. This enables session-window-style aggregation where nearby key values are treated as belonging to the same group.
+
+Unlike `ROLLUP` or `CUBE`, `WITH CLUSTER` is applied to an individual `GROUP BY` expression rather than to the entire `GROUP BY` clause:
+
+```sql
+SELECT ... GROUP BY key1, key2 WITH CLUSTER <distance>
+```
+
+Here `key2` is the cluster key. Rows are first aggregated by exact key values using the standard hash-table aggregation. Then adjacent groups whose cluster key values differ by at most `<distance>` are merged together. This uses chain semantics: rows A and B are in the same cluster if there is a chain of rows where each consecutive pair differs by at most `<distance>`.
+
+Only one `GROUP BY` key can have the `WITH CLUSTER` modifier. The cluster key must be a numeric type (`Int`, `UInt`, `Float`, `DateTime`).
+
+**Example**
+
+Consider user activity events where you want to group events into sessions. Two events belong to the same session if they are within 1800 seconds (30 minutes) of each other:
+
+```sql
+SELECT
+    user_id,
+    min(event_time) AS session_start,
+    max(event_time) AS session_end,
+    count() AS events,
+    sum(duration) AS total_duration
+FROM user_events
+GROUP BY user_id, event_time WITH CLUSTER 1800
+ORDER BY user_id, session_start
+```
+
+A simpler example using inline data:
+
+```sql
+SELECT
+    min(ts) AS cluster_start,
+    max(ts) AS cluster_end,
+    sum(value) AS total
+FROM
+(
+    SELECT * FROM VALUES('ts UInt64, value UInt64',
+        (1, 10), (5, 20), (8, 30),
+        (100, 40), (105, 50),
+        (200, 60))
+)
+GROUP BY ts WITH CLUSTER 10
+ORDER BY cluster_start
+```
+
+Result:
+
+```text
+┌─cluster_start─┬─cluster_end─┬─total─┐
+│             1 │           8 │    60 │
+│           100 │         105 │    90 │
+│           200 │         200 │    60 │
+└───────────────┴─────────────┴───────┘
+```
+
+Values 1, 5, 8 are merged into one cluster (1→5 within 10, 5→8 within 10). Values 100 and 105 form another cluster. Value 200 is alone.
+
 ## GROUPING SETS modifier {#grouping-sets-modifier}
 
 This is the most general modifier.
