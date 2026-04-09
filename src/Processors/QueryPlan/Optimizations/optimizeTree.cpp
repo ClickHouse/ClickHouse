@@ -255,27 +255,13 @@ void optimizeTreeSecondPass(
         });
     }
 
+    bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
             optimizeJoinLogical(frame_node, nodes, optimization_settings);
             optimizeJoinLegacy(frame_node, nodes, optimization_settings);
             useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
-        });
-
-///    if (optimization_settings.enable_cascades_optimizer)
-///    {
-///        CascadesOptimizer cascades_optimizer(query_plan);
-///        cascades_optimizer.optimize();
-///    }
-
-    bool join_runtime_filters_were_added = false;
-    traverseQueryPlan(stack, root,
-        [&](auto & /*frame_node*/)
-        {
-//            optimizeJoinLogical(frame_node, nodes, optimization_settings);
-//            optimizeJoinLegacy(frame_node, nodes, optimization_settings);
-//            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
         },
         [&](auto & frame_node)
         {
@@ -340,13 +326,12 @@ void optimizeTreeSecondPass(
             }
         });
 
-
+    /// Run Cascades optimizer after all push down and join order optimizations.
     if (optimization_settings.enable_cascades_optimizer)
     {
         CascadesOptimizer cascades_optimizer(query_plan);
         cascades_optimizer.optimize();
     }
-
 
     stack.push_back({.node = &root});
 
