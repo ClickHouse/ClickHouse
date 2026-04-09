@@ -78,10 +78,10 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
             case SelectUnionMode::EXCEPT_ALL:
             case SelectUnionMode::EXCEPT_DISTINCT:
             {
-                auto left = std::make_shared<ASTSelectWithUnionQuery>();
+                auto left = make_intrusive<ASTSelectWithUnionQuery>();
                 left->union_mode = mode == SelectUnionMode::EXCEPT_ALL ? SelectUnionMode::UNION_ALL : SelectUnionMode::UNION_DISTINCT;
 
-                left->list_of_selects = std::make_shared<ASTExpressionList>();
+                left->list_of_selects = make_intrusive<ASTExpressionList>();
                 left->children.push_back(left->list_of_selects);
                 left->list_of_selects->children = std::move(children);
 
@@ -91,7 +91,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 auto right = selects.back();
                 selects.pop_back();
 
-                auto except_node = std::make_shared<ASTSelectIntersectExceptQuery>();
+                auto except_node = make_intrusive<ASTSelectIntersectExceptQuery>();
                 except_node->final_operator = mode == SelectUnionMode::EXCEPT_ALL
                     ? ASTSelectIntersectExceptQuery::Operator::EXCEPT_ALL
                     : ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT;
@@ -124,7 +124,7 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 auto right = selects.back();
                 selects.pop_back();
 
-                auto intersect_node = std::make_shared<ASTSelectIntersectExceptQuery>();
+                auto intersect_node = make_intrusive<ASTSelectIntersectExceptQuery>();
                 intersect_node->final_operator = mode == SelectUnionMode::INTERSECT_ALL
                     ? ASTSelectIntersectExceptQuery::Operator::INTERSECT_ALL
                     : ASTSelectIntersectExceptQuery::Operator::INTERSECT_DISTINCT;

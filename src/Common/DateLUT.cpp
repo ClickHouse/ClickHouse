@@ -61,7 +61,12 @@ std::string determineDefaultTimeZone()
             ++tz_env_var;
 
         tz_file_path = tz_env_var;
-        tz_name = tz_env_var;
+
+        /// If TZ points to a file path (e.g. TZ=:/etc/localtime per POSIX),
+        /// don't use the path as the timezone name — let it be resolved from
+        /// the file's location relative to the timezone database. See #86495.
+        if (tz_env_var[0] != '/')
+            tz_name = tz_env_var;
     }
     else
     {
@@ -158,7 +163,7 @@ const DateLUTImpl & DateLUT::instance()
     std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
-        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
+        const DB::ContextPtr query_context = DB::CurrentThread::get().tryGetQueryContext();
         if (query_context)
             timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
@@ -209,6 +214,11 @@ ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month,
     return date_lut.makeDayNum(year, month, day_of_month, default_error_day_num);
 }
 
+std::optional<ExtendedDayNum> tryToMakeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month)
+{
+    return date_lut.tryToMakeDayNum(year, month, day_of_month);
+}
+
 Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month)
 {
     static_assert(std::same_as<Int64, DateLUTImpl::Time>);
@@ -219,6 +229,12 @@ Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 
 {
     static_assert(std::same_as<Int64, DateLUTImpl::Time>);
     return date_lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+}
+
+std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second)
+{
+    static_assert(std::same_as<Int64, DateLUTImpl::Time>);
+    return date_lut.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
 }
 
 const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut)

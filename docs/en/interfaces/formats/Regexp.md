@@ -6,6 +6,7 @@ keywords: ['Regexp']
 output_format: false
 slug: /interfaces/formats/Regexp
 title: 'Regexp'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

@@ -1,4 +1,5 @@
 #include <Server/KeeperTCPHandler.h>
+#include <Common/ErrnoException.h>
 
 #if USE_NURAFT
 
@@ -10,6 +11,7 @@
 #    include <IO/ReadBufferFromFileDescriptor.h>
 #    include <IO/ReadBufferFromPocoSocket.h>
 #    include <IO/WriteBufferFromPocoSocket.h>
+#    include <IO/LimitReadBuffer.h>
 #    include <base/defines.h>
 #    include <base/hex.h>
 #    include <Poco/Net/NetException.h>
@@ -23,6 +25,11 @@
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
+#    include <Common/HistogramMetrics.h>
+#    include <Common/OpenTelemetryTracingContext.h>
+#    include <Coordination/KeeperCommon.h>
+#    include <Common/ZooKeeper/KeeperSpans.h>
+
 #    include <Compression/CompressionFactory.h>
 
 #    include <boost/algorithm/string/trim.hpp>
@@ -39,7 +46,6 @@ namespace ProfileEvents
     extern const Event KeeperTotalElapsedMicroseconds;
 }
 
-
 namespace DB
 {
 
@@ -47,6 +53,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
     extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
+    extern const CoordinationSettingsUInt64 max_request_size;
     extern const CoordinationSettingsBool use_xid_64;
 }
 
@@ -68,7 +75,9 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int LIMIT_EXCEEDED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int SESSION_REFUSED;
 }
 
 struct PollResult
@@ -257,7 +266,9 @@ void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
     {
-        if (use_xid_64)
+        if (expect_opentelemetry_tracing_context)
+            Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING, *out);
+        else if (use_xid_64)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64, *out);
         else if (use_compression)
             Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION, *out);
@@ -297,9 +308,8 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 
     Coordination::read(protocol_version, *in);
 
-    if (protocol_version != Coordination::ZOOKEEPER_PROTOCOL_VERSION
-        && protocol_version < Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION
-        && protocol_version > Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
+    if (protocol_version > Coordination::ZOOKEEPER_PROTOCOL_VERSION
+        && protocol_version < Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
     {
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected protocol version: {}", toString(protocol_version));
     }
@@ -307,6 +317,24 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     if (protocol_version == Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION)
     {
         use_compression = true;
+    }
+    else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
+    {
+        expect_opentelemetry_tracing_context = true;
+
+        Coordination::read(use_xid_64, *in);
+        if (use_xid_64)
+        {
+            close_xid = Coordination::CLOSE_XID_64;
+        }
+        if (use_xid_64 && !keeper_context->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+        {
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
+        }
+
+        Coordination::read(use_compression, *in);
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
     {
@@ -320,6 +348,17 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
 
     Coordination::read(last_zxid_seen, *in);
+    const int64_t last_processed_zxid = keeper_dispatcher->getStateMachine().getLastProcessedZxid();
+    if (last_zxid_seen > last_processed_zxid)
+    {
+        throw Exception(
+            ErrorCodes::SESSION_REFUSED,
+            "Refusing session as the client has seen zxid {} while our last processed zxid is {}. The client should try another server.",
+            last_zxid_seen,
+            last_processed_zxid
+        );
+    }
+
     Coordination::read(timeout_ms, *in);
 
     Coordination::read(previous_session_id, *in);
@@ -333,7 +372,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
         /// It was padded to Coordination::PASSWORD_LENGTH with '\0'
         boost::trim_right_if(password, [](char c) { return c == '\0'; });
         AuthenticationData client_auth_data(auth_data->getType());
-        client_auth_data.setPassword(password, true);
+        client_auth_data.setPassword(password, /* second_factor */ {}, /* validate */ true);
         if (client_auth_data != *auth_data)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
     }
@@ -348,7 +387,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
 
 void KeeperTCPHandler::runImpl()
 {
-    setThreadName("KeeperHandler");
+    DB::setThreadName(ThreadName::KEEPER_HANDLER);
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
@@ -363,7 +402,7 @@ void KeeperTCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data.");
+        LOG_WARNING(log, "Client has not sent any data. peer address = {}  address = {}", socket().peerAddress().toString(), socket().address().toString());
         return;
     }
 
@@ -385,7 +424,7 @@ void KeeperTCPHandler::runImpl()
     if (!isHandShake(four_letter_cmd))
     {
         connected.store(true, std::memory_order_relaxed);
-        tryExecuteFourLetterWordCmd(four_letter_cmd);
+        tryExecuteFourLetterWordCmd(four_letter_cmd, *in);
         return;
     }
 
@@ -436,9 +475,14 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
+    max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
+
     auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
+        if (request)
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->tracing_context);
+
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
@@ -468,6 +512,17 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
+
+            if (keeper_dispatcher->isShuttingDown())
+            {
+                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
+                break;
+            }
+
+            /// Restart the stopwatch after poll() returns so that the time spent
+            /// waiting inside poll() (which can be up to session_timeout, e.g. 10s
+            /// between heartbeats) is not attributed to the next operation.
+            logging_stopwatch.restart();
             if (result.has_requests && !close_received)
             {
                 if (in->eof())
@@ -507,9 +562,12 @@ void KeeperTCPHandler::runImpl()
 
                 if (!responses->tryPop(request_with_response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
-                log_long_operation("Waiting for response to be ready");
 
                 auto & response = request_with_response.response;
+                auto & request = request_with_response.request;
+
+                log_long_operation("Waiting for response to be ready");
+
                 if (response->xid == close_xid)
                 {
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
@@ -519,8 +577,38 @@ void KeeperTCPHandler::runImpl()
                 updateStats(response, request_with_response.request);
                 packageSent();
 
-                response->write(getWriteBuffer(), use_xid_64);
-                flushWriteBuffer();
+                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+                {
+                    if (!request)
+                        return;
+
+                    ZooKeeperOpentelemetrySpans::maybeFinalize(
+                        request->spans.send_response,
+                        [&]
+                        {
+                            return std::vector<OpenTelemetry::SpanAttribute>{
+                                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                                {"keeper.session_id", session_id},
+                                {"keeper.xid", request->xid},
+                            };
+                        },
+                        status,
+                        error_message);
+                };
+
+                try
+                {
+                    response->write(getWriteBuffer(), use_xid_64);
+                    flushWriteBuffer();
+                }
+                catch (...)
+                {
+                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    throw;
+                }
+
+                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
+
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
@@ -560,7 +648,7 @@ bool KeeperTCPHandler::isHandShake(int32_t handshake_length)
     || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
 }
 
-bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in_)
 {
     if (!FourLetterCommandFactory::instance().isKnown(command))
     {
@@ -573,12 +661,20 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         return false;
     }
 
+    std::optional<std::string> maybe_argument;
+    if (FourLetterCommandFactory::instance().supportArguments(command))
+    {
+        String argument;
+        Coordination::read(argument, in_);
+        maybe_argument = argument;
+    }
+
     auto command_ptr = FourLetterCommandFactory::instance().get(command);
     LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
 
     try
     {
-        String res = command_ptr->run();
+        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
         out->write(res.data(), res.size());
         out->next();
     }
@@ -628,9 +724,24 @@ ReadBuffer & KeeperTCPHandler::getReadBuffer()
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
 {
-    auto & read_buffer = getReadBuffer();
+    const UInt64 receive_start_time = ZooKeeperOpentelemetrySpans::now();
+
+    std::optional<LimitReadBuffer> limited_buffer_holder;
+    /// Wrap regular read buffer with LimitReadBuffer to apply max_request_size
+    /// (this should be done on per-request basis)
+    auto get_read_buffer_with_limit = [&]() -> ReadBuffer &
+    {
+        if (max_request_size == 0)
+            return getReadBuffer();
+        limited_buffer_holder.emplace(getReadBuffer(), LimitReadBuffer::Settings{.read_no_more = max_request_size, .expect_eof = false, .excetion_hint = "too long packet."});
+        return *limited_buffer_holder;
+    };
+    auto & read_buffer = get_read_buffer_with_limit();
     int32_t length;
     Coordination::read(length, read_buffer);
+    if (length < 0 || (max_request_size > 0 && static_cast<uint32_t>(length) > max_request_size))
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Request size {} is too big request (limit: {})", length, max_request_size);
+
     int64_t xid;
     if (use_xid_64)
         Coordination::read(xid, read_buffer);
@@ -663,6 +774,29 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
         request_validator(*request);
     }
 
+    if (expect_opentelemetry_tracing_context)
+    {
+        uint8_t has_tracing_context;
+        Coordination::read(has_tracing_context, read_buffer);
+
+        if (has_tracing_context)
+        {
+            request->tracing_context.emplace();
+            request->tracing_context->deserialize(read_buffer);
+
+            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
+            ZooKeeperOpentelemetrySpans::maybeFinalize(
+                request->spans.receive_request,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", session_id},
+                        {"keeper.xid", request->xid},
+                    };
+                });
+        }
+    }
 
     if (!keeper_dispatcher->putRequest(request, session_id, use_xid_64))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
@@ -704,10 +838,18 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
                 request->toString(/*short_format=*/true));
         }
 
-        conn_stats.updateLatency(elapsed_ms);
+        uint64_t subrequest_count = 1;
+        if (request)
+        {
+            auto op_num = request->getOpNum();
+            if (op_num == Coordination::OpNum::Multi || op_num == Coordination::OpNum::MultiRead)
+                subrequest_count = static_cast<const Coordination::ZooKeeperMultiRequest &>(*request).requests.size();
+        }
+
+        conn_stats.updateLatency(elapsed_ms, subrequest_count);
 
         operations.erase(response->xid);
-        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms);
+        keeper_dispatcher->updateKeeperStatLatency(elapsed_ms, subrequest_count);
 
         last_op.set(std::make_unique<LastOp>(LastOp{
             .name = Coordination::toString(response->getOpNum()),

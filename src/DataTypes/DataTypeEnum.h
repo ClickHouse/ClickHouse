@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
-#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -53,13 +52,6 @@ public:
     TypeIndex getTypeId() const override { return type_id; }
     TypeIndex getColumnType() const override { return sizeof(FieldType) == 1 ? TypeIndex::Int8 : TypeIndex::Int16; }
 
-    FieldType readValue(ReadBuffer & istr) const
-    {
-        FieldType x;
-        readText(x, istr);
-        return this->findByValue(x)->first;
-    }
-
     Field castToName(const Field & value_or_name) const override;
     Field castToValue(const Field & value_or_name) const override;
 
@@ -80,7 +72,7 @@ public:
     /// Enum('a' = 1, 'b' = 2) -> Enum('a' = 2, 'b' = 1) NOT OK
     bool contains(const IDataType & rhs) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     void updateHashImpl(SipHash & hash) const override;
 };

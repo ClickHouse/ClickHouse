@@ -36,7 +36,7 @@ public:
     {
         std::lock_guard lock(get_stream_mutex);
         poco_check_ptr(stream);
-        LOG_DEBUG(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream.use_count());
+        LOG_TEST(getLogger("HTTPServerRequest"), "Returning request input stream with ref count {}", stream.use_count());
         return stream;
     }
 
@@ -78,6 +78,8 @@ public:
         /// only this instance possesses the stream it is safe to read from it
         return !stream->isCanceled() && stream->eof();
     }
+
+    std::string toStringForLogging() const;
 
 private:
     /// Limits for basic sanity checks when reading a header

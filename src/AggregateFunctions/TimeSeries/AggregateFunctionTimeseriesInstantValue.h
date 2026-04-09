@@ -100,7 +100,7 @@ public:
 
     void fillResultValue(TimestampType timestamp, ValueType value, TimestampType previous_timestamp, ValueType previous_value, ValueType & result, UInt8 & null) const
     {
-        ValueType time_difference = timestamp - previous_timestamp;
+        ValueType time_difference = static_cast<ValueType>(timestamp - previous_timestamp);
         if (time_difference == 0)
         {
             result = 0;
@@ -115,7 +115,10 @@ public:
         ValueType value_difference = (adjust_to_resets && value < previous_value) ? value : (value - previous_value);
         result = value_difference;
         if constexpr (is_rate)
-            result = result * Base::timestamp_scale_multiplier / time_difference;
+        {
+            using TimestampScaleMultiplierType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, TimestampType>;
+            result = result * static_cast<TimestampScaleMultiplierType>(Base::timestamp_scale_multiplier) / time_difference;
+        }
         null = 0;
     }
 
@@ -159,7 +162,7 @@ public:
                 last_2_samples.merge(bucket_it->second);
 
             /// If the oldest of last 2 samples is within the window, we can calculate the rate or delta
-            if (last_2_samples.filled == 2 && last_2_samples.timestamps[1] + Base::window >= current_timestamp)
+            if (last_2_samples.filled == 2 && last_2_samples.timestamps[1] + Base::window > current_timestamp)
             {
                 fillResultValue(last_2_samples.timestamps[0], last_2_samples.values[0],
                     last_2_samples.timestamps[1], last_2_samples.values[1],

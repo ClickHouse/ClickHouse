@@ -5,6 +5,7 @@ sidebar_label: 'Enum'
 sidebar_position: 20
 slug: /sql-reference/data-types/enum
 title: 'Enum'
+doc_type: 'reference'
 ---
 
 # Enum

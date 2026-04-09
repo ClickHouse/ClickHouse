@@ -49,7 +49,7 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
     std::optional<NameSet> supportedPrewhereColumns() const override;
 
@@ -139,6 +139,8 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
+
+    std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 
     ColumnsDescription getColumnsDescriptionFromSourceTables(const ContextPtr & context) const;
 

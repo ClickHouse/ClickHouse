@@ -1,9 +1,6 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas: the result of EXPLAIN differs with parallel replicas
 
--- Force using skip indexes in planning to proper test `force_data_skipping_indices` setting.
-SET use_skip_indexes_on_data_read = 0;
-
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test (

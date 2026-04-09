@@ -38,11 +38,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 {
     if (level)
     {
-        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
+        auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
 
-    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
+    auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
     return get(makeASTFunction("CODEC", identifier), {});
 }
 
@@ -191,17 +191,21 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(
 }
 
 
+std::vector<String> CompressionCodecFactory::getAllRegisteredNames() const
+{
+    std::vector<String> result;
+    result.reserve(family_name_with_codec.size());
+    for (const auto & pair : family_name_with_codec)
+        result.push_back(pair.first);
+    return result;
+}
+
+
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
-#if USE_QATLIB
-void registerCodecZSTDQAT(CompressionCodecFactory & factory);
-#endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
-#if USE_QPL
-void registerCodecDeflateQpl(CompressionCodecFactory & factory);
-#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
@@ -212,15 +216,13 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+void registerCodecALP(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
-#if USE_QATLIB
-    registerCodecZSTDQAT(*this);
-#endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
     registerCodecDelta(*this);
@@ -229,10 +231,8 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-#if USE_QPL
-    registerCodecDeflateQpl(*this);
-#endif
     registerCodecGCD(*this);
+    registerCodecALP(*this);
 
     default_codec = get("LZ4", {});
 }

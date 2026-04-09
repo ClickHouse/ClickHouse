@@ -112,10 +112,10 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
                 if (password.length() > Coordination::PASSWORD_LENGTH)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
 
-                data->setPassword(password, true);
+                data->setPassword(password, /* second_factor */ {}, /* validate */ true);
             }
             else
-                data->setPasswordHashHex(config.getString(config_password_name), true);
+                data->setPasswordHashHex(config.getString(config_password_name), /* second_factor */ {}, /* validate */ true);
         }
     }
 
@@ -124,7 +124,7 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
 
 }
 
-/// this function quite long because contains a lot of sanity checks in config:
+/// this function is quite long because it contains a lot of sanity checks in config:
 /// 1. No duplicate endpoints
 /// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
 /// 3. Raft internal port is not equal to any other port for client

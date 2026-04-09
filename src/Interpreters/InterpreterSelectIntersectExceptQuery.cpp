@@ -51,7 +51,7 @@ static Block getCommonHeader(const SharedHeaders & headers)
                             common_header.dumpNames(), headers[query_num]->dumpNames());
     }
 
-    std::vector<const ColumnWithTypeAndName *> columns(num_selects);
+    VectorWithMemoryTracking<const ColumnWithTypeAndName *> columns(num_selects);
     for (size_t column_num = 0; column_num < num_columns; ++column_num)
     {
         for (size_t i = 0; i < num_selects; ++i)
@@ -140,7 +140,8 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
             auto actions_dag = ActionsDAG::makeConvertingActions(
                     plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
                     result_header->getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Position);
+                    ActionsDAG::MatchColumnsMode::Position,
+                    context);
             auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
             converting_step->setStepDescription("Conversion before UNION");
             plans[i]->addStep(std::move(converting_step));

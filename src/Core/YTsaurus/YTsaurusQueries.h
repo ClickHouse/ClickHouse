@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <fmt/format.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -25,11 +26,21 @@ struct IYTsaurusQuery
     virtual ~IYTsaurusQuery() = default;
     /// Follows: https://ytsaurus.tech/docs/en/user-guide/proxy/http-reference#http_method
     virtual String getHTTPMethod() const = 0;
+    virtual bool isHeavyQuery() { return false; }
 };
 
-struct YTsaurusReadTableQuery : public IYTsaurusQuery
+// Follow up: https://ytsaurus.tech/docs/en/api/commands
+struct IYTsaurusHeavyQuery : public IYTsaurusQuery
 {
-    explicit YTsaurusReadTableQuery(const String & cypress_path_) : cypress_path(cypress_path_) {}
+    bool isHeavyQuery() override { return true; }
+};
+
+// https://ytsaurus.tech/docs/en/api/commands#read_table
+struct YTsaurusReadTableQuery : public IYTsaurusHeavyQuery
+{
+    explicit YTsaurusReadTableQuery(const String & cypress_path_, const std::pair<size_t, size_t>& row_range)
+        : cypress_path(fmt::format("{}[#{}:#{}]", cypress_path_, row_range.first, row_range.second))
+        {}
 
     String getQueryName() const override
     {
@@ -48,7 +59,7 @@ struct YTsaurusReadTableQuery : public IYTsaurusQuery
     String cypress_path;
 };
 
-
+// https://ytsaurus.tech/docs/en/api/commands#get
 struct YTsaurusGetQuery : public IYTsaurusQuery
 {
     explicit YTsaurusGetQuery(const String & cypress_path_) : cypress_path(cypress_path_) {}
@@ -70,10 +81,11 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
     String cypress_path;
 };
 
-
-struct YTsaurusSelectRowsQuery : public IYTsaurusQuery
+// https://ytsaurus.tech/docs/en/api/commands#select_rows
+struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
 {
-    explicit YTsaurusSelectRowsQuery(const String & table_path_) : table_path(table_path_) {}
+    explicit YTsaurusSelectRowsQuery(const String & table_path_, const String & columns_str_)
+        : table_path(table_path_) , column_names_str(columns_str_) {}
 
     String getQueryName() const override
     {
@@ -87,7 +99,7 @@ struct YTsaurusSelectRowsQuery : public IYTsaurusQuery
 
     String constructQuery() const
     {
-        return fmt::format("* from [{}]", table_path);
+        return fmt::format("{} from [{}]", column_names_str, table_path);
     }
 
     QueryParameters getQueryParameters() const override
@@ -95,9 +107,11 @@ struct YTsaurusSelectRowsQuery : public IYTsaurusQuery
         return {{.name="query", .value=constructQuery()}};
     }
     String table_path;
+    String column_names_str;
 };
 
-struct YTsaurusLookupRows : public IYTsaurusQuery
+// https://ytsaurus.tech/docs/en/api/commands#lookup_rows
+struct YTsaurusLookupRows : public IYTsaurusHeavyQuery
 {
     explicit YTsaurusLookupRows(const String & cypress_path_) : cypress_path(cypress_path_) {}
 
@@ -117,6 +131,87 @@ struct YTsaurusLookupRows : public IYTsaurusQuery
     }
     String cypress_path;
 };
+
+
+// https://ytsaurus.tech/docs/en/api/commands#start_tx
+struct YTsaurusStartTxQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusStartTxQuery(size_t timeout_) : timeout(timeout_) {}
+
+    String getQueryName() const override
+    {
+        return "start_tx";
+    }
+
+    String getHTTPMethod() const override
+    {
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {{.name="timeout", .value=std::to_string(timeout) }};
+    }
+
+    size_t timeout;
+};
+
+// https://ytsaurus.tech/docs/en/api/commands#commit_tx
+struct YTsaurusCommitTxQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusCommitTxQuery(const String& transaction_id_)
+        : transaction_id(transaction_id_)
+    {
+    }
+
+    String getQueryName() const override
+    {
+        return "commit_tx";
+    }
+
+    String getHTTPMethod() const override
+    {
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {{.name="transaction_id", .value=transaction_id}};
+    }
+
+    String transaction_id;
+};
+
+// https://ytsaurus.tech/docs/en/api/commands#lock
+struct YTsaurusLockQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusLockQuery(const String& path_, const String& transaction_id_)
+        : path(path_)
+        , transaction_id(transaction_id_) {}
+
+    String getQueryName() const override
+    {
+        return "lock";
+    }
+
+    String getHTTPMethod() const override
+    {
+        return Poco::Net::HTTPRequest::HTTP_POST;
+    }
+
+    QueryParameters getQueryParameters() const override
+    {
+        return {
+            {.name="path", .value=path},
+            {.name="transaction_id", .value=transaction_id},
+            {.name="mode", .value="snapshot"},
+        };
+    }
+
+    String path;
+    String transaction_id;
+};
+
 
 using YTsaurusQueryPtr = std::shared_ptr<IYTsaurusQuery>;
 

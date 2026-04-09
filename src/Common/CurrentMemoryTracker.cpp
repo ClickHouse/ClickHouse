@@ -1,8 +1,8 @@
-#include <Common/MemoryTracker.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -25,10 +25,9 @@ MemoryTracker * getMemoryTracker()
     if (auto * thread_memory_tracker = DB::CurrentThread::getMemoryTracker())
         return thread_memory_tracker;
 
-    /// Note, we cannot use total_memory_tracker earlier (i.e. just after static variable initialized without this check),
-    /// since the initialization order of static objects is not defined, and total_memory_tracker may not be initialized yet.
-    /// So here we relying on MainThreadStatus initialization.
-    if (DB::MainThreadStatus::initialized())
+    /// total_memory_tracker can be used before MainThreadStatus is initialized,
+    /// but only after its own initialization and before teardown.
+    if (DB::MainThreadStatus::initialized() || isTotalMemoryTrackerInitialized())
         return &total_memory_tracker;
 
     return nullptr;
@@ -100,14 +99,12 @@ void CurrentMemoryTracker::check()
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
-    bool throw_if_memory_exceeded = true;
-    return allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ true);
 }
 
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
-    bool throw_if_memory_exceeded = false;
-    return allocImpl(size, throw_if_memory_exceeded);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ false);
 }
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)

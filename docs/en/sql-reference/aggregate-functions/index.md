@@ -4,6 +4,7 @@ sidebar_label: 'Aggregate Functions'
 sidebar_position: 33
 slug: /sql-reference/aggregate-functions/
 title: 'Aggregate Functions'
+doc_type: 'reference'
 ---
 
 # Aggregate functions

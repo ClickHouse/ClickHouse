@@ -55,7 +55,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTInsertQuery>(*this);
+        auto res = make_intrusive<ASTInsertQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }

@@ -4,6 +4,7 @@ description: 'System table containing logging entries with information about var
 keywords: ['system table', 'blob_storage_log']
 slug: /operations/system-tables/blob_storage_log
 title: 'system.blob_storage_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

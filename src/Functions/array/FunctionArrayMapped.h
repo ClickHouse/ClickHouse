@@ -58,7 +58,7 @@ namespace ErrorCodes
   *
   * See the example of Impl template parameter in arrayMap.cpp
   */
-template <typename Impl, typename Name>
+template <typename Impl, typename Name, bool IsDeterministic = true>
 class FunctionArrayMapped : public IFunction
 {
 public:
@@ -72,6 +72,8 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isDeterministic() const override { return IsDeterministic; }
+    bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -385,8 +387,7 @@ public:
             if (lambda_result.column->lowCardinality())
                 lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
-            if (const auto * const_column = checkAndGetColumnConst<ColumnLowCardinality>(lambda_result.column.get()))
-                lambda_result.column = const_column->removeLowCardinality();
+            lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
             if (Impl::needBoolean())
             {

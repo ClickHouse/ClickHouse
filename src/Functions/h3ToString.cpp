@@ -111,7 +111,32 @@ public:
 
 REGISTER_FUNCTION(H3ToString)
 {
-    factory.registerFunction<FunctionH3ToString>();
+    FunctionDocumentation::Description description = R"(
+Converts the `H3Index` representation of the index to the string representation.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToString(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "H3 index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the string representation of the H3 index.",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Convert H3 index to string",
+            "SELECT h3ToString(617420388352917503) AS h3_string",
+            R"(
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToString>(documentation);
 }
 
 }

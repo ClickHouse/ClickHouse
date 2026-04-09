@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -32,7 +33,8 @@ namespace DB::QueryPlanOptimizations
 /// to speed up the search.
 ///
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
-///     function, we don't care. That check is left to query runtime, ReadFromMergeTree specifically.
+///     function, we check that the table has a vector similarity index built on vec or an expression based
+///     on vec. Other checks are left to query runtime, ReadFromMergeTree specifically.
 size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
@@ -143,7 +145,7 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
 
     for (const auto * child : sort_column_node_children)
     {
-        if (child->type == ActionsDAG::ActionType::ALIAS) /// new analyzer
+        if (child->type == ActionsDAG::ActionType::ALIAS) /// the analyzer
         {
             const auto * search_column_node = child->children.at(0);
             if (search_column_node->type == ActionsDAG::ActionType::INPUT)
@@ -192,6 +194,27 @@ size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*no
     }
 
     if (search_column.empty() || reference_vector.empty())
+        return no_layers_updated;
+
+    /// Check if a vector similarity index exists on top of the search column.
+    /// Multi-column indexes cannot be used
+    const auto & indexes = read_from_mergetree_step->getStorageMetadata()->getSecondaryIndices();
+    bool has_vector_similarity_index = false;
+    for (const auto & index : indexes)
+    {
+        if (index.type != "vector_similarity")
+            continue;
+
+        chassert(index.expression);
+        auto required_columns = index.expression->getRequiredColumns();
+        if (required_columns.size() == 1 && required_columns[0] == search_column)
+        {
+            has_vector_similarity_index = true;
+            break;
+        }
+    }
+
+    if (!has_vector_similarity_index)
         return no_layers_updated;
 
     /// All set for 2nd pass
@@ -386,7 +409,7 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
             if (need_cast)
-                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance");
+                distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
             expression.getOutputs().push_back(new_output);
@@ -410,20 +433,21 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
                 filter_expression.removeUnusedActions();
 
                 /// Update the node with new Step
-                auto step_description = filter_or_prewhere_node->step->getStepDescription();
+                QueryPlanStepPtr new_step;
                 if (prewhere_expression_step)
-                    filter_or_prewhere_node->step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
+                    new_step = std::make_unique<ExpressionStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression));
                 else
-                    filter_or_prewhere_node->step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
-               filter_or_prewhere_node->step->setStepDescription(step_description);
+                    new_step = std::make_unique<FilterStep>(read_from_mergetree_step->getOutputHeader(), std::move(filter_expression), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                new_step->setStepDescription(*filter_or_prewhere_node->step);
+               filter_or_prewhere_node->step = std::move(new_step);
             }
         }
 
         /// Update the node with new Step
-        auto step_description = expression_node->step->getStepDescription();
-        expression_node->step = std::make_unique<ExpressionStep>(
+        auto new_step = std::make_unique<ExpressionStep>(
             filter_or_prewhere_node ? filter_or_prewhere_node->step.get()->getOutputHeader() : read_from_mergetree_step->getOutputHeader(), std::move(expression));
-        expression_node->step->setStepDescription(step_description);
+        new_step->setStepDescription(*expression_node->step);
+        expression_node->step = std::move(new_step);
     }
 
     return true;

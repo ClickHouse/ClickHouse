@@ -1,3 +1,4 @@
+-- add_minmax_index_for_numeric_columns=0: Adds more output to system.data_skipping_indices
 DROP TABLE IF EXISTS alter_index_test;
 
 CREATE TABLE alter_index_test (
@@ -8,7 +9,7 @@ CREATE TABLE alter_index_test (
     INDEX index_a a TYPE set(0) GRANULARITY 1
 )
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple() SETTINGS add_minmax_index_for_numeric_columns=0;
 
 SELECT * FROM system.data_skipping_indices WHERE table = 'alter_index_test' AND database = currentDatabase();
 

@@ -53,10 +53,11 @@ std::string getOrCreateCustomDisk(
             xml_document,
             substitutions,
             include_from_path,
-            /* throw_on_bad_incl */!attach,
+            /* throw_on_bad_incl= */!attach,
             dom_parser,
             getLogger("getOrCreateCustomDisk"),
-            {}, {},
+            /*contributing_zk_paths=*/ {},
+            /*contributing_files=*/ {},
             &zk_node_cache);
 
         config->load(xml_document);
@@ -152,7 +153,7 @@ public:
             const auto & function_args = function_args_expr->children;
             auto disk_setting_string = function->formatWithSecretsOneLine();
             auto disk_name = getOrCreateCustomDisk(function_args, disk_setting_string, data.context, data.attach);
-            ast = std::make_shared<ASTLiteral>(disk_name);
+            ast = make_intrusive<ASTLiteral>(disk_name);
         }
     }
 };

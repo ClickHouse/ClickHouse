@@ -10,6 +10,9 @@ namespace DB
     struct PrewhereInfo;
     using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
+    struct FilterDAGInfo;
+    using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
+
     struct ReadFromFormatInfo
     {
         /// Header that will return Source from storage.
@@ -23,8 +26,8 @@ namespace DB
         /// Description of columns for format_header. Used for inserting defaults.
         ColumnsDescription columns_description;
         /// Columns to request from IInputFormat.
-        /// Includes columns to read from file and maybe prewhere result column (if
-        /// !remove_prewhere_column). The prewhere result column is not necessarily at the end.
+        /// Includes columns to read from file and columns outputted by the prewhere expression
+        /// (the prewhere columns are not necessarily at the end of the list).
         /// Doesn't include columns that are only used as prewhere input; IInputFormat should deduce
         /// them from prewhere expression.
         NamesAndTypesList requested_columns;
@@ -32,7 +35,7 @@ namespace DB
         NamesAndTypesList requested_virtual_columns;
         /// Hints for the serialization of columns.
         /// For example can be retrieved from the destination table in INSERT SELECT query.
-        SerializationInfoByName serialization_hints;
+        SerializationInfoByName serialization_hints{{}};
 
         void serialize(IQueryPlanStep::Serialization & ctx) const;
         static ReadFromFormatInfo deserialize(IQueryPlanStep::Deserialization & ctx);
@@ -40,6 +43,7 @@ namespace DB
         /// The list of hive partition columns. It shall be read from the path regardless if it is present in the file
         NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         PrewhereInfoPtr prewhere_info;
+        FilterDAGInfoPtr row_level_filter;
     };
 
     struct PrepareReadingFromFormatHiveParams
@@ -70,7 +74,10 @@ namespace DB
         bool supports_tuple_elements = false,
         const PrepareReadingFromFormatHiveParams & hive_parameters = {});
 
-    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
+    /// Returns columns_to_read from file.
+    Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns);
+
+    ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);

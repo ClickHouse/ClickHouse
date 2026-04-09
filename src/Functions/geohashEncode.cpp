@@ -93,7 +93,7 @@ private:
             const Float64 latitude_value = lat_column->getFloat64(i);
             const UInt64 precision_value = std::min<UInt64>(precision_column->get64(i), GEOHASH_MAX_TEXT_LENGTH);
 
-            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
+            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, static_cast<UInt8>(precision_value), pos);
 
             pos += encoded_size;
             out_offsets[i] = pos - begin;
@@ -143,7 +143,7 @@ For the `precision` parameter, any value less than `1` or greater than `12` is s
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeohashEncode>(documentation);
 }
 

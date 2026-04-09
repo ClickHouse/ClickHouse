@@ -18,8 +18,10 @@
 namespace ProfileEvents
 {
     extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerBlocked;
     extern const Event S3GetRequestThrottlerSleepMicroseconds;
     extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerBlocked;
     extern const Event S3PutRequestThrottlerSleepMicroseconds;
 }
 
@@ -128,16 +130,14 @@ S3RequestSettings::S3RequestSettings() : impl(std::make_unique<S3RequestSettings
 }
 
 S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
-    : get_request_throttler(settings.get_request_throttler)
-    , put_request_throttler(settings.put_request_throttler)
+    : request_throttler(settings.request_throttler)
     , proxy_resolver(settings.proxy_resolver)
     , impl(std::make_unique<S3RequestSettingsImpl>(*settings.impl))
 {
 }
 
 S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
-    : get_request_throttler(std::move(settings.get_request_throttler))
-    , put_request_throttler(std::move(settings.put_request_throttler))
+    : request_throttler(std::move(settings.request_throttler))
     , proxy_resolver(std::move(settings.proxy_resolver))
     , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
 {
@@ -195,8 +195,7 @@ S3REQUEST_SETTINGS_SUPPORTED_TYPES(S3RequestSettings, IMPLEMENT_SETTING_SUBSCRIP
 
 S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept
 {
-    get_request_throttler = std::move(settings.get_request_throttler);
-    put_request_throttler = std::move(settings.put_request_throttler);
+    request_throttler = std::move(settings.request_throttler);
     proxy_resolver = std::move(settings.proxy_resolver);
     *impl = std::move(*settings.impl);
 
@@ -241,13 +240,13 @@ void S3RequestSettings::validateUploadSettings()
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize(impl->min_upload_part_size));
+                ReadableSize(impl->min_upload_part_size.value));
 
         if (impl->max_upload_part_size < impl->min_upload_part_size)
             throw Exception(
                 ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
+                ReadableSize(impl->max_upload_part_size.value), ReadableSize(impl->min_upload_part_size.value));
 
         if (!impl->upload_part_size_multiply_factor)
             throw Exception(
@@ -265,7 +264,7 @@ void S3RequestSettings::validateUploadSettings()
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size.value));
     }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
@@ -301,11 +300,12 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             ? (*this)[S3RequestSetting::max_get_burst].value
             : default_max_get_burst;
 
-        get_request_throttler = std::make_shared<Throttler>(
+        request_throttler.get_throttler = std::make_shared<Throttler>(
             max_get_rps,
             max_get_burst,
             ProfileEvents::S3GetRequestThrottlerCount,
             ProfileEvents::S3GetRequestThrottlerSleepMicroseconds);
+        request_throttler.get_blocked = ProfileEvents::S3GetRequestThrottlerBlocked;
     }
 
     if (UInt64 max_put_rps = (*this)[S3RequestSetting::max_put_rps].changed
@@ -320,11 +320,12 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
             ? (*this)[S3RequestSetting::max_put_burst].value
             : default_max_put_burst;
 
-        put_request_throttler = std::make_shared<Throttler>(
+        request_throttler.put_throttler = std::make_shared<Throttler>(
             max_put_rps,
             max_put_burst,
             ProfileEvents::S3PutRequestThrottlerCount,
             ProfileEvents::S3PutRequestThrottlerSleepMicroseconds);
+        request_throttler.put_blocked = ProfileEvents::S3PutRequestThrottlerBlocked;
     }
 }
 

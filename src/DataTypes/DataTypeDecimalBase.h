@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cmath>
 #include <type_traits>
 
 #include <Columns/ColumnDecimal.h>
@@ -95,7 +94,7 @@ public:
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
 
     bool isSummable() const override { return true; }
-    bool canBeUsedInBooleanContext() const override { return true; }
+    bool canBeUsedInBooleanContext() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
 
     /// Decimal specific
@@ -114,7 +113,9 @@ public:
     {
         static_assert(is_signed_v<typename T::NativeType>);
         T max = maxWholeValue();
-        if constexpr (is_signed_v<U>)
+        if constexpr (std::is_floating_point_v<U>)
+            return static_cast<U>(-max.value) <= x && x <= static_cast<U>(max.value);
+        else if constexpr (is_signed_v<U>)
             return -max.value <= x && x <= max.value;
         else
             return x <= static_cast<make_unsigned_t<typename T::NativeType>>(max.value);

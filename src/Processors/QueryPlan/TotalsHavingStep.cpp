@@ -72,7 +72,11 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), settings.getActionsSettings()) : nullptr;
+    auto actions_settings = settings.getActionsSettings();
+    /// ArrayJoin is not supported in Having and we have to disable lazy columns
+    /// replication to avoid block structure mismatch during query analisys.
+    actions_settings.enable_lazy_columns_replication = false;
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), actions_settings) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
@@ -108,26 +112,23 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Filter column: " << filter_column_name;
     if (remove_filter)
         settings.out << " (removed)";
     settings.out << '\n';
     settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
 
-    if (actions_dag)
+    if (!settings.compact && actions_dag)
     {
         bool first = true;
-        if (actions_dag)
+        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+        for (const auto & action : expression->getActions())
         {
-            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-            for (const auto & action : expression->getActions())
-            {
-                settings.out << prefix << (first ? "Actions: "
-                                                : "         ");
-                first = false;
-                settings.out << action.toString() << '\n';
-            }
+            settings.out << prefix << (first ? "Actions: "
+                                            : "         ");
+            first = false;
+            settings.out << action.toString() << '\n';
         }
     }
 }
@@ -187,7 +188,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     }
 }
 
-std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");

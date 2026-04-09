@@ -200,7 +200,7 @@ private:
     std::atomic<CSN> tail_ptr = Tx::UnknownCSN;
     std::atomic<bool> updated_tail_ptr{false};
 
-    zkutil::EventPtr log_updated_event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr log_updated_event = std::make_shared<Poco::Event>();
 
     std::atomic_bool stop_flag = false;
     ThreadFromGlobalPool updating_thread;

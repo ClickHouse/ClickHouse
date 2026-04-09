@@ -98,7 +98,7 @@ public:
     /// Insert the result into the column
     void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
     {
-        std::vector<TimestampType> timestamps;
+        VectorWithMemoryTracking<TimestampType> timestamps;
 
         ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
@@ -149,7 +149,7 @@ public:
                 previous_value = values[i];
                 previous_timestamp = timestamps[i];
             }
-            else if (has_previous_value && (previous_timestamp + Base::window >= current_timestamp))
+            else if (has_previous_value && (previous_timestamp + Base::window > current_timestamp))
             {
                 /// Use the previous value if the current timestamp is missing and the previous one is not stale
                 values[i] = previous_value;

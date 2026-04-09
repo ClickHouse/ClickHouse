@@ -1,10 +1,12 @@
+#include <Common/AllocationInterceptors.h>
 #include <Common/Allocator.h>
+#include <Common/BitHelpers.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/AllocationInterceptors.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
@@ -41,7 +43,7 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
 
 bool madviseSupportsMadvPopulateWrite()
 {
-    /// Can't rely for detecton on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
+    /// Can't rely for detection on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
     VersionNumber linux_version(Poco::Environment::osVersion());
     VersionNumber supported_version(5, 14, 0);
     bool is_supported = linux_version >= supported_version;
@@ -49,53 +51,57 @@ bool madviseSupportsMadvPopulateWrite()
         LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
     return is_supported;
 }
+
+const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
+
 #endif
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
 {
 #if defined(MADV_POPULATE_WRITE)
-    static const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
-    if (!is_supported_by_kernel)
-        return;
-
     if (len_ < POPULATE_THRESHOLD)
         return;
 
-    static const size_t page_size = ::getPageSize();
-    if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
+    if (!is_supported_by_kernel) [[unlikely]]
         return;
 
-    auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
-    if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
-        LOG_TRACE(
-            LogFrequencyLimiter(getLogger("Allocator"), 1),
-            "Attempt to populate pages failed: {}",
-            errnoToString(errno));
+    auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
+    ::madvise(buf, len, MADV_POPULATE_WRITE);
 #endif
 }
 
 template <bool clear_memory, bool populate>
-void * allocNoTrack(size_t size, size_t alignment)
+void * allocImpl(size_t size, size_t alignment)
 {
+    auto trace = CurrentMemoryTracker::alloc(size);
+
     void * buf;
-    if (alignment <= MALLOC_MIN_ALIGNMENT)
+    if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
     {
         if constexpr (clear_memory)
             buf = __real_calloc(size, 1);
         else
             buf = __real_malloc(size);
 
-        if (nullptr == buf)
-            throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(size));
+        if (nullptr == buf) [[unlikely]]
+        {
+            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
+            throw DB::ErrnoException(
+                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(static_cast<double>(size)));
+        }
     }
     else
     {
         buf = nullptr;
         int res = __real_posix_memalign(&buf, alignment, size);
 
-        if (0 != res)
-            throw DB::ErrnoException(
-                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
+        if (0 != res) [[unlikely]]
+        {
+            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
+            // The value of `errno` is not set according to the man: https://man7.org/linux/man-pages/man3/posix_memalign.3.html
+            DB::ErrnoException::throwWithErrno(
+                DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
+        }
 
         if constexpr (clear_memory)
             memset(buf, 0, size);
@@ -104,10 +110,11 @@ void * allocNoTrack(size_t size, size_t alignment)
     if constexpr (populate)
         prefaultPages(buf, size);
 
+    trace.onAlloc(buf, size);
     return buf;
 }
 
-void freeNoTrack(void * buf)
+void freeImpl(void * buf)
 {
     __real_free(buf);
 }
@@ -115,7 +122,7 @@ void freeNoTrack(void * buf)
 void checkSize(size_t size)
 {
     /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-    if (size >= 0x8000000000000000ULL)
+    if (size >= 0x8000000000000000ULL) [[unlikely]]
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
 }
 
@@ -123,16 +130,13 @@ void checkSize(size_t size)
 
 
 /// Constant is chosen almost arbitrarily, what I observed is 128KB is too small, 1MB is almost indistinguishable from 64MB and 1GB is too large.
-extern const size_t POPULATE_THRESHOLD = 16 * 1024 * 1024;
+extern const size_t POPULATE_THRESHOLD = std::max(Int64{16 * 1024 * 1024}, ::getPageSize());
 
 template <bool clear_memory_, bool populate>
 void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
 {
     checkSize(size);
-    auto trace = CurrentMemoryTracker::alloc(size);
-    void * ptr = allocNoTrack<clear_memory_, populate>(size, alignment);
-    trace.onAlloc(ptr, size);
-    return ptr;
+    return allocImpl<clear_memory_, populate>(size, alignment);
 }
 
 
@@ -142,7 +146,7 @@ void Allocator<clear_memory_, populate>::free(void * buf, size_t size)
     try
     {
         checkSize(size);
-        freeNoTrack(buf);
+        freeImpl(buf);
         auto trace = CurrentMemoryTracker::free(size);
         trace.onFree(buf, size);
     }
@@ -165,7 +169,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         return buf;
     }
 
-    if (alignment <= MALLOC_MIN_ALIGNMENT)
+    if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
     {
         /// Resize malloc'd memory region with no special alignment requirement.
         /// Realloc can do 2 possible things:
@@ -176,7 +180,7 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
 
         void * new_buf = __real_realloc(buf, new_size);
-        if (nullptr == new_buf)
+        if (nullptr == new_buf) [[unlikely]]
         {
             [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(

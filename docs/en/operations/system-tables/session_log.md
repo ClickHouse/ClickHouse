@@ -4,6 +4,7 @@ description: 'System table containing information about all successful and faile
 keywords: ['system table', 'session_log']
 slug: /operations/system-tables/session_log
 title: 'system.session_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -22,7 +23,7 @@ Columns:
   - `LoginSuccess` — Successful login.
   - `Logout` — Logout from the system.
 - `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Authentication ID, which is a UUID that is automatically generated each time user logins.
-- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](../../interfaces/http.md) interface.
+- `session_id` ([String](../../sql-reference/data-types/string.md)) — Session ID that is passed by client via [HTTP](/interfaces/http) interface.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
@@ -46,7 +47,7 @@ Columns:
   - `gRPC`
   - `MySQL`
   - `PostgreSQL`
-- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
+- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/client.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the `clickhouse-client` or another TCP client.
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The major version of the `clickhouse-client` or another TCP client.

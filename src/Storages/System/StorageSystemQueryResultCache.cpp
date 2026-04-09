@@ -40,27 +40,23 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 
     std::vector<QueryResultCache::Cache::KeyMapped> content = query_result_cache->dump();
 
-    const String & user_name = context->getUserName();
-    std::optional<UUID> user_id = context->getUserID();
-    std::vector<UUID> current_user_roles = context->getCurrentRoles();
-
     for (const auto & [key, query_result] : content)
     {
-        /// Showing other user's queries is considered a security risk
-        const bool is_same_user_id = ((!key.user_id.has_value() && !user_id.has_value()) || (key.user_id.has_value() && user_id.has_value() && *key.user_id == *user_id));
-        const bool is_same_current_user_roles = (key.current_user_roles == current_user_roles);
-        if (!key.is_shared && (!is_same_user_id || !is_same_current_user_roles))
-            continue;
-
         res_columns[0]->insert(key.query_string); /// approximates the original query string
         res_columns[1]->insert(key.query_id);
         res_columns[2]->insert(QueryResultCache::EntryWeight()(*query_result));
         res_columns[3]->insert(key.tag);
         res_columns[4]->insert(key.expires_at < std::chrono::system_clock::now());
-        res_columns[5]->insert(key.is_shared);
+        res_columns[5]->insert(key.is_shared); /// (*)
         res_columns[6]->insert(key.is_compressed);
         res_columns[7]->insert(std::chrono::system_clock::to_time_t(key.expires_at));
         res_columns[8]->insert(key.ast_hash.low64); /// query cache considers aliases (issue #56258)
+
+        /// (*) The query result cache has a setting 'query_cache_share_between_users'. The purpose of the setting is to prevent that query
+        ///     results aka. table contents leak to unprivileged users. We intentionally ignore the setting in 'system.query_cache', i.e.
+        ///     _all_ cache entries are returned. This is okay because the system table only shows query strings with sensitive data
+        ///     removed (the query cache takes care of the latter when an entry is inserted). No query results are shown. Note that this
+        ///     behavior is similar to system.query_log.
     }
 }
 

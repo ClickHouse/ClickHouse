@@ -195,7 +195,7 @@ struct PoissonDistribution
 
     static void generate(UInt64 n, ColumnUInt64::Container & container)
     {
-        auto distribution = std::poisson_distribution<UInt64>(n);
+        auto distribution = std::poisson_distribution<UInt64>(static_cast<double>(n));
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
     }
@@ -326,7 +326,7 @@ Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$
     FunctionDocumentation::Arguments arguments = {
         {"min", "Left boundary of the range (inclusive).", {"Float64"}},
         {"max", "Right boundary of the range (inclusive).", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a random number drawn uniformly from the interval formed by `min` and `max`.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -342,7 +342,7 @@ Returns a random Float64 number drawn uniformly from the interval $[\min, \max]$
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomDistribution<UniformDistribution>>(documentation);
 
@@ -353,7 +353,7 @@ Returns a random Float64 number drawn from a [normal distribution](https://en.wi
     FunctionDocumentation::Arguments arguments_normal = {
         {"mean", "The mean value of distribution", {"Float64"}},
         {"stddev", "The standard deviation of the distribution", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_normal = {"Returns a random Float64 number drawn from the specified normal distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_normal = {
@@ -369,7 +369,7 @@ Returns a random Float64 number drawn from a [normal distribution](https://en.wi
     };
     FunctionDocumentation::IntroducedIn introduced_in_normal = {22, 10};
     FunctionDocumentation::Category category_normal = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_normal = {description_normal, syntax_normal, arguments_normal, returned_value_normal, examples_normal, introduced_in_normal, category_normal};
+    FunctionDocumentation documentation_normal = {description_normal, syntax_normal, arguments_normal, {}, returned_value_normal, examples_normal, introduced_in_normal, category_normal};
 
     factory.registerFunction<FunctionRandomDistribution<NormalDistribution>>(documentation_normal);
 
@@ -381,7 +381,7 @@ Returns a random Float64 number drawn from a [log-normal distribution](https://e
     FunctionDocumentation::Arguments arguments_lognormal = {
         {"mean", "The mean value of distribution.", {"Float64"}},
         {"stddev", "The standard deviation of the distribution.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_lognormal = {"Returns a random Float64 number drawn from the specified log-normal distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_lognormal = {
@@ -397,7 +397,7 @@ Returns a random Float64 number drawn from a [log-normal distribution](https://e
     };
     FunctionDocumentation::IntroducedIn introduced_in_lognormal = {22, 10};
     FunctionDocumentation::Category category_lognormal = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_lognormal = {description_lognormal, syntax_lognormal, arguments_lognormal, returned_value_lognormal, examples_lognormal, introduced_in_lognormal, category_lognormal};
+    FunctionDocumentation documentation_lognormal = {description_lognormal, syntax_lognormal, arguments_lognormal, {}, returned_value_lognormal, examples_lognormal, introduced_in_lognormal, category_lognormal};
 
     factory.registerFunction<FunctionRandomDistribution<LogNormalDistribution>>(documentation_lognormal);
 
@@ -408,7 +408,7 @@ Returns a random Float64 number drawn from an [exponential distribution](https:/
     FunctionDocumentation::Syntax syntax_exponential = "randExponential(lambda[, x])";
     FunctionDocumentation::Arguments arguments_exponential = {
         {"lambda", "Rate parameter or lambda value of the distribution", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_exponential = {"Returns a random Float64 number drawn from the specified exponential distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_exponential = {
@@ -424,7 +424,7 @@ Returns a random Float64 number drawn from an [exponential distribution](https:/
     };
     FunctionDocumentation::IntroducedIn introduced_in_exponential = {22, 10};
     FunctionDocumentation::Category category_exponential = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_exponential = {description_exponential, syntax_exponential, arguments_exponential, returned_value_exponential, examples_exponential, introduced_in_exponential, category_exponential};
+    FunctionDocumentation documentation_exponential = {description_exponential, syntax_exponential, arguments_exponential, {}, returned_value_exponential, examples_exponential, introduced_in_exponential, category_exponential};
 
     factory.registerFunction<FunctionRandomDistribution<ExponentialDistribution>>(documentation_exponential);
 
@@ -435,7 +435,7 @@ Returns a random Float64 number drawn from a [chi-square distribution](https://e
     FunctionDocumentation::Syntax syntax_chisquared = "randChiSquared(degree_of_freedom[, x])";
     FunctionDocumentation::Arguments arguments_chisquared = {
         {"degree_of_freedom", "Degrees of freedom.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_chisquared = {"Returns a random Float64 number drawn from the specified chi-square distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_chisquared = {
@@ -451,7 +451,7 @@ Returns a random Float64 number drawn from a [chi-square distribution](https://e
     };
     FunctionDocumentation::IntroducedIn introduced_in_chisquared = {22, 10};
     FunctionDocumentation::Category category_chisquared = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_chisquared = {description_chisquared, syntax_chisquared, arguments_chisquared, returned_value_chisquared, examples_chisquared, introduced_in_chisquared, category_chisquared};
+    FunctionDocumentation documentation_chisquared = {description_chisquared, syntax_chisquared, arguments_chisquared, {}, returned_value_chisquared, examples_chisquared, introduced_in_chisquared, category_chisquared};
 
     factory.registerFunction<FunctionRandomDistribution<ChiSquaredDistribution>>(documentation_chisquared);
 
@@ -461,7 +461,7 @@ Returns a random Float64 number drawn from a [Student's t-distribution](https://
     FunctionDocumentation::Syntax syntax_studentt = "randStudentT(degree_of_freedom[, x])";
     FunctionDocumentation::Arguments arguments_studentt = {
         {"degree_of_freedom", "Degrees of freedom.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_studentt = {"Returns a random Float64 number drawn from the specified Student's t-distribution.", {"Float64"}};
     FunctionDocumentation::Examples examples_studentt = {
@@ -477,7 +477,7 @@ Returns a random Float64 number drawn from a [Student's t-distribution](https://
     };
     FunctionDocumentation::IntroducedIn introduced_in_studentt = {22, 10};
     FunctionDocumentation::Category category_studentt = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_studentt = {description_studentt, syntax_studentt, arguments_studentt, returned_value_studentt, examples_studentt, introduced_in_studentt, category_studentt};
+    FunctionDocumentation documentation_studentt = {description_studentt, syntax_studentt, arguments_studentt, {}, returned_value_studentt, examples_studentt, introduced_in_studentt, category_studentt};
 
     factory.registerFunction<FunctionRandomDistribution<StudentTDistribution>>(documentation_studentt);
 
@@ -489,7 +489,7 @@ Returns a random Float64 number drawn from an [F-distribution](https://en.wikipe
     FunctionDocumentation::Arguments arguments_fisherf = {
         {"d1", "d1 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}},
         {"d2", "d2 degree of freedom in `X = (S1 / d1) / (S2 / d2)`.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_fisherf = {"Returns a random Float64 number drawn from the specified F-distribution", {"Float64"}};
     FunctionDocumentation::Examples examples_fisherf = {
@@ -505,7 +505,7 @@ Returns a random Float64 number drawn from an [F-distribution](https://en.wikipe
     };
     FunctionDocumentation::IntroducedIn introduced_in_fisherf = {22, 10};
     FunctionDocumentation::Category category_fisherf = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_fisherf = {description_fisherf, syntax_fisherf, arguments_fisherf, returned_value_fisherf, examples_fisherf, introduced_in_fisherf, category_fisherf};
+    FunctionDocumentation documentation_fisherf = {description_fisherf, syntax_fisherf, arguments_fisherf, {}, returned_value_fisherf, examples_fisherf, introduced_in_fisherf, category_fisherf};
 
     factory.registerFunction<FunctionRandomDistribution<FisherFDistribution>>(documentation_fisherf);
 
@@ -516,7 +516,7 @@ Returns a random Float64 number drawn from a [Bernoulli distribution](https://en
     FunctionDocumentation::Syntax syntax_bernoulli = "randBernoulli(probability[, x])";
     FunctionDocumentation::Arguments arguments_bernoulli = {
         {"probability", "The probability of success as a value between `0` and `1`.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_bernoulli = {"Returns a random Float64 number drawn from the specified Bernoulli distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_bernoulli = {
@@ -532,7 +532,7 @@ Returns a random Float64 number drawn from a [Bernoulli distribution](https://en
     };
     FunctionDocumentation::IntroducedIn introduced_in_bernoulli = {22, 10};
     FunctionDocumentation::Category category_bernoulli = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_bernoulli = {description_bernoulli, syntax_bernoulli, arguments_bernoulli, returned_value_bernoulli, examples_bernoulli, introduced_in_bernoulli, category_bernoulli};
+    FunctionDocumentation documentation_bernoulli = {description_bernoulli, syntax_bernoulli, arguments_bernoulli, {}, returned_value_bernoulli, examples_bernoulli, introduced_in_bernoulli, category_bernoulli};
 
     factory.registerFunction<FunctionRandomDistribution<BernoulliDistribution>>(documentation_bernoulli);
 
@@ -544,7 +544,7 @@ Returns a random Float64 number drawn from a [binomial distribution](https://en.
     FunctionDocumentation::Arguments arguments_binomial = {
         {"experiments", "The number of experiments", {"UInt64"}},
         {"probability", "The probability of success in each experiment as a value between `0` and `1`", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_binomial = {"Returns a random Float64 number drawn from the specified binomial distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_binomial = {
@@ -560,7 +560,7 @@ Returns a random Float64 number drawn from a [binomial distribution](https://en.
     };
     FunctionDocumentation::IntroducedIn introduced_in_binomial = {22, 10};
     FunctionDocumentation::Category category_binomial = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_binomial = {description_binomial, syntax_binomial, arguments_binomial, returned_value_binomial, examples_binomial, introduced_in_binomial, category_binomial};
+    FunctionDocumentation documentation_binomial = {description_binomial, syntax_binomial, arguments_binomial, {}, returned_value_binomial, examples_binomial, introduced_in_binomial, category_binomial};
 
     factory.registerFunction<FunctionRandomDistribution<BinomialDistribution>>(documentation_binomial);
 
@@ -572,7 +572,7 @@ Returns a random Float64 number drawn from a [negative binomial distribution](ht
     FunctionDocumentation::Arguments arguments_negativebinomial = {
         {"experiments", "The number of experiments.", {"UInt64"}},
         {"probability", "`The probability of failure in each experiment as a value between `0` and `1`.", {"Float64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_negativebinomial = {"Returns a random Float64 number drawn from the specified negative binomial distribution", {"UInt64"}};
     FunctionDocumentation::Examples examples_negativebinomial = {
@@ -588,7 +588,7 @@ Returns a random Float64 number drawn from a [negative binomial distribution](ht
     };
     FunctionDocumentation::IntroducedIn introduced_in_negativebinomial = {22, 10};
     FunctionDocumentation::Category category_negativebinomial = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_negativebinomial = {description_negativebinomial, syntax_negativebinomial, arguments_negativebinomial, returned_value_negativebinomial, examples_negativebinomial, introduced_in_negativebinomial, category_negativebinomial};
+    FunctionDocumentation documentation_negativebinomial = {description_negativebinomial, syntax_negativebinomial, arguments_negativebinomial, {}, returned_value_negativebinomial, examples_negativebinomial, introduced_in_negativebinomial, category_negativebinomial};
 
     factory.registerFunction<FunctionRandomDistribution<NegativeBinomialDistribution>>(documentation_negativebinomial);
 
@@ -599,7 +599,7 @@ Returns a random Float64 number drawn from a [Poisson distribution](https://en.w
     FunctionDocumentation::Syntax syntax_poisson = "randPoisson(n[, x])";
     FunctionDocumentation::Arguments arguments_poisson = {
         {"n", "The mean number of occurrences.", {"UInt64"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_poisson = {"Returns a random Float64 number drawn from the specified Poisson distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples_poisson = {
@@ -615,7 +615,7 @@ Returns a random Float64 number drawn from a [Poisson distribution](https://en.w
     };
     FunctionDocumentation::IntroducedIn introduced_in_poisson = {22, 10};
     FunctionDocumentation::Category category_poisson = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation_poisson = {description_poisson, syntax_poisson, arguments_poisson, returned_value_poisson, examples_poisson, introduced_in_poisson, category_poisson};
+    FunctionDocumentation documentation_poisson = {description_poisson, syntax_poisson, arguments_poisson, {}, returned_value_poisson, examples_poisson, introduced_in_poisson, category_poisson};
 
     factory.registerFunction<FunctionRandomDistribution<PoissonDistribution>>(documentation_poisson);
 }

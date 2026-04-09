@@ -3,6 +3,7 @@ description: 'Documentation for Conditional Functions'
 sidebar_label: 'Conditional'
 slug: /sql-reference/functions/conditional-functions
 title: 'Conditional Functions'
+doc_type: 'reference'
 ---
 
 # Conditional functions

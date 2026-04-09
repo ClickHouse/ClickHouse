@@ -21,7 +21,6 @@ void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
-void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
@@ -131,7 +130,6 @@ void registerStorages()
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
-    registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);

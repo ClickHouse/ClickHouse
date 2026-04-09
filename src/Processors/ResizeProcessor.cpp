@@ -156,7 +156,7 @@ ResizeProcessor::Status ResizeProcessor::prepare()
         if (input == inputs.end())
             return get_status_if_no_inputs();
 
-        output->push(input->pull());
+        output->pushData(input->pullData());
     }
 
     if (is_end_input())

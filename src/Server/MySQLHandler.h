@@ -21,6 +21,7 @@
 #endif
 
 #include <memory>
+#include <mutex>
 
 namespace CurrentMetrics
 {

@@ -1,0 +1,65 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    avg_yearly Float64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: divide, function_type: ordinary, result_type: Float64
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            FUNCTION id: 4, function_name: sum, function_type: aggregate, result_type: Decimal(38, 2)
+              ARGUMENTS
+                LIST id: 5, nodes: 1
+                  COLUMN id: 6, column_name: l_extendedprice, result_type: Decimal(15, 2), source_id: 7
+            CONSTANT id: 8, constant_value: Float64_7, constant_value_type: Float64
+  JOIN TREE
+    QUERY id: 7, alias: __table1, is_subquery: 1
+      PROJECTION COLUMNS
+        l_quantity Decimal(15, 2)
+        l_extendedprice Decimal(15, 2)
+        p_partkey Int32
+      PROJECTION
+        LIST id: 9, nodes: 3
+          COLUMN id: 10, column_name: l_quantity, result_type: Decimal(15, 2), source_id: 11
+          COLUMN id: 12, column_name: l_extendedprice, result_type: Decimal(15, 2), source_id: 11
+          COLUMN id: 13, column_name: p_partkey, result_type: Int32, source_id: 14
+      JOIN TREE
+        JOIN id: 15, strictness: ALL, kind: INNER
+          LEFT TABLE EXPRESSION
+            TABLE id: 11, alias: __table2, table_name: default.lineitem
+          RIGHT TABLE EXPRESSION
+            TABLE id: 14, alias: __table3, table_name: default.part
+          JOIN EXPRESSION
+            FUNCTION id: 16, function_name: equals, function_type: ordinary, result_type: UInt8
+              ARGUMENTS
+                LIST id: 17, nodes: 2
+                  COLUMN id: 18, column_name: p_partkey, result_type: Int32, source_id: 14
+                  COLUMN id: 19, column_name: l_partkey, result_type: Int32, source_id: 11
+  WHERE
+    FUNCTION id: 20, function_name: less, function_type: ordinary, result_type: Nullable(UInt8)
+      ARGUMENTS
+        LIST id: 21, nodes: 2
+          COLUMN id: 22, column_name: l_quantity, result_type: Decimal(15, 2), source_id: 7
+          QUERY id: 23, alias: __table4, is_subquery: 1, is_correlated: 1
+            CORRELATED COLUMNS
+              LIST id: 24, nodes: 1
+                COLUMN id: 25, column_name: p_partkey, result_type: Int32, source_id: 7
+            PROJECTION COLUMNS
+              multiply(0.2, avg(l_quantity)) Float64
+            PROJECTION
+              LIST id: 26, nodes: 1
+                FUNCTION id: 27, function_name: multiply, function_type: ordinary, result_type: Float64
+                  ARGUMENTS
+                    LIST id: 28, nodes: 2
+                      CONSTANT id: 29, constant_value: Float64_0.2, constant_value_type: Float64
+                      FUNCTION id: 30, function_name: avg, function_type: aggregate, result_type: Float64
+                        ARGUMENTS
+                          LIST id: 31, nodes: 1
+                            COLUMN id: 32, column_name: l_quantity, result_type: Decimal(15, 2), source_id: 33
+            JOIN TREE
+              TABLE id: 33, alias: __table5, table_name: default.lineitem
+            WHERE
+              FUNCTION id: 34, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 35, nodes: 2
+                    COLUMN id: 36, column_name: l_partkey, result_type: Int32, source_id: 33
+                    COLUMN id: 25, column_name: p_partkey, result_type: Int32, source_id: 7

@@ -2,8 +2,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <deque>
-#include <vector>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -15,6 +13,8 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 
@@ -81,9 +81,9 @@ public:
 
     using Bucket = typename Base::Bucket;
 
-    explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_,
+    explicit AggregateFunctionTimeseriesLinearRegression(const DataTypes & argument_types_, const Array & parameters_,
         TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_, Float64 predict_offset_ = 0)
-        : Base(argument_types_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
+        : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
         , predict_offset(predict_offset_)
     {
     }
@@ -132,7 +132,7 @@ private:
     }
 
     void fillResultValue(const TimestampType current_timestamp,
-        const std::deque<std::pair<TimestampType, ValueType>> & samples_in_window,
+        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
         ValueType & result, UInt8 & null) const
     {
         size_t n = samples_in_window.size();
@@ -180,13 +180,13 @@ private:
         sum_xy += c_xy;
         sum_xx += c_xx;
 
-        Float64 cov_xy = sum_xy - sum_x * sum_y / n;
-        Float64 var_x = sum_xx - sum_x * sum_x / n;
+        Float64 cov_xy = sum_xy - sum_x * sum_y / static_cast<Float64>(n);
+        Float64 var_x = sum_xx - sum_x * sum_x / static_cast<Float64>(n);
 
         Float64 slope = cov_xy / var_x;
         if (is_predict)
         {
-            Float64 intercept = sum_y / n - slope * sum_x / n;
+            Float64 intercept = sum_y / static_cast<Float64>(n) - slope * sum_x / static_cast<Float64>(n);
             Float64 predicted_value = slope * predict_offset + intercept;
             result = static_cast<ValueType>(predicted_value);
         }
@@ -224,8 +224,8 @@ public:
 
         const auto & buckets = Base::data(place)->buckets;
 
-        std::deque<std::pair<TimestampType, ValueType>> samples_in_window;
-        std::vector<std::pair<TimestampType, ValueType>> timestamps_buffer;
+        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
 
 
         /// Fill the data for missing buckets
@@ -248,7 +248,7 @@ public:
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window < current_timestamp)
+            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
             {
                 samples_in_window.pop_front();
             }

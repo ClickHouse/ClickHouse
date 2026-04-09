@@ -33,7 +33,7 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
         /// and path is actually not used
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name, UUIDHelpers::generateV4());
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
-        String path = "store/" + DatabaseCatalog::getPathForUUID(table_id.uuid);
+        String path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
         if constexpr (with_description)
             system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), path);
         else

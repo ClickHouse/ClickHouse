@@ -25,7 +25,7 @@ REGISTER_FUNCTION(ArrayEnumerateDense)
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayEnumerateDense([10, 20, 10, 30])", "[1,2,1,3]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {18, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayEnumerateDense>(documentation);
 }
