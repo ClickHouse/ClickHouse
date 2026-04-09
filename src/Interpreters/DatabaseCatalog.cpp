@@ -388,6 +388,21 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         auto db_and_table = tryGetByUUID(table_id.uuid);
         if (!db_and_table.first || !db_and_table.second)
         {
+            if (db_and_table.first && !db_and_table.second)
+            {
+                /// UUID belongs to a database, not a table. This can happen when a user
+                /// specifies a table UUID that collides with an existing database UUID
+                /// (e.g. BuzzHouse fuzzer generates random UUIDs that may collide).
+                /// Treat as "table not found" rather than crashing.
+                if (exception)
+                    exception->emplace(Exception(
+                        ErrorCodes::UNKNOWN_TABLE,
+                        "Table {} does not exist. The UUID {} belongs to database {}, not a table",
+                        table_id.getNameForLogs(),
+                        table_id.uuid,
+                        db_and_table.first->getDatabaseName()));
+                return {};
+            }
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
