@@ -495,6 +495,7 @@ JOINed
 JOINs
 JSONAllPaths
 JSONAllPathsWithTypes
+JSONAllValues
 JSONArrayLength
 JSONAsObject
 JSONAsString
@@ -1672,6 +1673,7 @@ cli
 clickcache
 clickcat
 clickhouse
+clickhousectl
 clickhousedb
 clickhousex
 clickmate
