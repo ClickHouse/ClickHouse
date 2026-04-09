@@ -12,6 +12,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Common/transformEndianness.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
@@ -840,8 +841,9 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
 
     char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + type_and_value.size(), begin);
     memcpy(pos, &null_bit, sizeof(UInt8));
-    size_t type_and_value_size = type_and_value.size();
-    memcpy(pos + sizeof(UInt8), &type_and_value_size, sizeof(size_t));
+    size_t type_and_value_size_le = type_and_value.size();
+    transformEndianness<std::endian::little>(type_and_value_size_le);
+    memcpy(pos + sizeof(UInt8), &type_and_value_size_le, sizeof(size_t));
     memcpy(pos + sizeof(UInt8) + sizeof(size_t), type_and_value.data(), type_and_value.size());
     return {pos, sizeof(UInt8) + sizeof(size_t) + type_and_value.size()};
 }
