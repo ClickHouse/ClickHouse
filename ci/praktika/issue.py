@@ -47,13 +47,13 @@ def fetch_github_issues(
         )
         label_query = " ".join([f'label:"{lbl}"' for lbl in label])
         search_query = f"{label_query} is:closed closed:>{date_threshold}"
-        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(
             f"Fetching {state} issues with label '{label}' closed in last {hours_back} hours (since {date_threshold})..."
         )
     else:
         label_args = " ".join([f'--label "{lbl}"' for lbl in label])
-        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels,url --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
     try:
@@ -324,7 +324,7 @@ class Issue:
         labels,
         closed_at="",
         number=0,
-        repo="ClickHouse/ClickHouse",
+        url="",
     ):
         body_fields = cls.parse_issue_body_fields(body)
         test_name = body_fields["test_name"]
@@ -334,16 +334,11 @@ class Issue:
                 test_name = cls.extract_test_name(title)
             else:
                 test_name = title
-        issue_url = (
-            f"https://github.com/{repo}/issues/{number}"
-            if number
-            else ""
-        )
         return Issue(
             test_name=test_name,
             closed_at=closed_at if closed_at else "",
             number=int(number),
-            url=issue_url,
+            url=url,
             title=title,
             body=body if body else "",
             labels=labels,
@@ -363,13 +358,12 @@ class Issue:
         return self
 
     @classmethod
-    def from_dict(cls, issue: dict, repo="ClickHouse/ClickHouse") -> "Issue":
+    def from_dict(cls, issue: dict) -> "Issue":
         """
         Process raw GitHub issue into TestCaseIssue objects.
 
         Args:
             issue: raw issue dictionary from GitHub
-            repo: GitHub repository in format owner/repo
 
         Returns:
             TestCaseIssue object
@@ -379,11 +373,12 @@ class Issue:
         title = issue.get("title", "")
         body = issue.get("body", "")
         closed_at = issue.get("closedAt", "")
+        url = issue.get("url", "")
         assert number > 0, f"Issue {number} has no number"
         assert title, f"Issue {number} has no title"
         # Extract label names from the labels array
         labels = [label.get("name", "") for label in issue.get("labels", [])]
-        return cls.create_from(title, body, labels, closed_at, number, repo=repo)
+        return cls.create_from(title, body, labels, closed_at, number, url=url)
 
 
 @dataclass
@@ -412,10 +407,10 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         )
 
     @classmethod
-    def process_issue(cls, issues_raw, verbose=True, repo="ClickHouse/ClickHouse"):
+    def process_issue(cls, issues_raw, verbose=True):
         res = []
         for issue_ in issues_raw:
-            issue = Issue.from_dict(issue_, repo=repo)
+            issue = Issue.from_dict(issue_)
             if issue.validate(verbose=verbose):
                 res.append(issue)
         return res
@@ -441,7 +436,7 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         testing_issues = fetch_github_issues(
             label=IssueLabels.CI_ISSUE, state="open", repo=repo
         )
-        catalog.active_test_issues = cls.process_issue(testing_issues, verbose=verbose, repo=repo)
+        catalog.active_test_issues = cls.process_issue(testing_issues, verbose=verbose)
         if verbose:
             print(f"Processed {len(catalog.active_test_issues)} testing issues")
 
@@ -452,7 +447,7 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
             label=IssueLabels.CI_ISSUE, state="closed", hours_back=8, repo=repo
         )
         closed_testing_processed = cls.process_issue(
-            closed_testing_issues, verbose=verbose, repo=repo
+            closed_testing_issues, verbose=verbose
         )
         added_closed_testing = 0
         existing_issue_numbers = {issue.number for issue in catalog.active_test_issues}
