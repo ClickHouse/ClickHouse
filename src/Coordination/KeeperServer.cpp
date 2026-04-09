@@ -32,6 +32,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/setThreadName.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
