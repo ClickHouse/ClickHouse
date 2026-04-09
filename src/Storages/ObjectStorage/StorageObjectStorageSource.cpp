@@ -1,6 +1,7 @@
 #include <memory>
-#include <Common/CurrentThread.h>
 #include <optional>
+#include <unordered_set>
+#include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
@@ -37,6 +38,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
+#include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -493,26 +495,41 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            auto unmarked_row_groups = reader.getInputFormat()->getMatchedBuckets();
-            MarkRanges unmatched_ranges;
-            for (size_t rg : unmarked_row_groups)
+            try
             {
-                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == rg)
-                    unmatched_ranges.back().end++;
-                else
-                    unmatched_ranges.push_back({UInt64(rg), UInt64(rg + 1)});
+                auto matched_groups = reader.getInputFormat()->getMatchedBuckets();
+                size_t total_groups = reader.getInputFormat()->getTotalBuckets();
+
+                std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
+                MarkRanges unmatched_ranges;
+                for (size_t i = 0; i < total_groups; ++i)
+                {
+                    if (!matched_set.contains(i))
+                    {
+                        if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                            unmatched_ranges.back().end++;
+                        else
+                            unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+                    }
+                }
+
+                auto query_condition_cache = read_context->getQueryConditionCache();
+                std::cerr << "write to cache " << storage_id.getNameForLogs() << ' ' << object_info->getFileName() << '\n';
+                query_condition_cache->write(
+                    storage_id.uuid,
+                    object_info->getFileName(),
+                    *format_filter_info->condition_hash,
+                    format_filter_info->filter_actions_dag->dumpNames(),
+                    unmatched_ranges,
+                    total_groups,
+                    false
+                );
             }
-            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-            std::cerr << "write to cache " << storage_id.getNameForLogs() << ' ' << object_info->getFileName() << '\n';
-            query_condition_cache->write(
-                storage_id.uuid,
-                object_info->getFileName(),
-                *format_filter_info->condition_hash,
-                format_filter_info->filter_actions_dag->dumpNames(),
-                unmatched_ranges,
-                unmatched_ranges.size(),
-                false
-            );
+            catch (...)
+            {
+                std::cerr << "error writing to cache\n";
+                tryLogCurrentException(getLogger("StorageObjectStorageSource"), "Failed to write to query condition cache");
+            }
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
@@ -589,9 +606,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     QueryConditionCachePtr query_condition_cache;
     if (format_filter_info && format_filter_info->condition_hash
         && context_->getSettingsRef()[Setting::use_query_condition_cache])
-        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        query_condition_cache = context_->getQueryConditionCache();
 
-    do
+    /// We use while(true)+break instead of do-while because `continue` inside do-while goes to the
+    /// while condition (not back to the loop body). The original do-while condition was
+    /// `skip_empty_files && size == 0`, so any `continue` for QCC-based file skipping (which are
+    /// not empty files) would evaluate to false and exit the loop prematurely — stopping iteration
+    /// entirely instead of moving to the next file.
+    while (true)
     {
         object_info = file_iterator->next(processor);
 
@@ -621,14 +643,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             auto matching_marks = query_condition_cache->read(
                 storage_id.uuid, object_info->getFileName(), *format_filter_info->condition_hash);
+            std::cerr << "try to read from cache " << object_info->getFileName() << '\n';
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
-
                 std::vector<size_t> matching_row_groups;
                 for (size_t i = 0; i < marks.size(); ++i)
                     if (marks[i])
                         matching_row_groups.push_back(i);
+
+                std::cerr << "matching marks " << object_info->getFileName() << ' ' << matching_row_groups.size() << '/' << marks.size() << '\n';
 
                 if (matching_row_groups.empty())
                     continue;
@@ -654,7 +678,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 }
             }
         }
-    } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
+        break;
+    }
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;

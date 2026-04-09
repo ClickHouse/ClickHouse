@@ -123,7 +123,7 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
 {
     if (format_filter_info && format_filter_info->condition_hash
         && context_->getSettingsRef()[Setting::use_query_condition_cache])
-        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+        query_condition_cache = context_->getQueryConditionCache();
 }
 
 ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)

@@ -68,7 +68,7 @@ FormatFilterInfo::FormatFilterInfo(
     , column_mapper(column_mapper_)
 {
     bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
-    if (use_query_condition_cache)
+    if (use_query_condition_cache && filter_actions_dag)
         condition_hash = filter_actions_dag->getHash();
 }
 

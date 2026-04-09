@@ -144,12 +144,38 @@ Chunk ParquetV3BlockInputFormat::read()
 std::vector<size_t> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
     std::vector<size_t> result;
-    for (size_t i = 0; i < reader->reader.row_groups.size(); ++i)
+    for (const auto & row_group : reader->reader.row_groups)
     {
-        if (reader->reader.row_groups[i].need_to_process)
-            result.push_back(i);
+        if (!row_group.need_to_process)
+            continue;
+
+        /// `need_to_process = true` just means the row group was not excluded by the bucket
+        /// restriction — it does NOT mean the group actually produced rows.  In particular:
+        ///  - Groups rejected by a bloom filter have no subgroups (the stage jumps straight to
+        ///    Deliver), so the loop below never executes → produced_rows = false.
+        ///  - Groups rejected by column index also have empty subgroups.
+        ///  - Groups where prewhere filtered everything have rows_pass = 0 in every subgroup.
+        ///    Note: RowSet::clear() zeroes the filter vector and memory token but does NOT touch
+        ///    rows_pass, so the value is readable even after the subgroup is deallocated.
+        bool produced_rows = false;
+        for (const auto & subgroup : row_group.subgroups)
+        {
+            if (subgroup.filter.rows_pass > 0)
+            {
+                produced_rows = true;
+                break;
+            }
+        }
+
+        if (produced_rows)
+            result.push_back(row_group.row_group_idx);
     }
     return result;
+}
+
+size_t ParquetV3BlockInputFormat::getTotalBuckets() const
+{
+    return reader->reader.file_metadata.row_groups.size();
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)

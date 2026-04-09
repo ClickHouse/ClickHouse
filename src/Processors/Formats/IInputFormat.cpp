@@ -87,7 +87,12 @@ void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*
 
 std::vector<size_t> IInputFormat::getMatchedBuckets() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getUnmatchedBuckets is not implemented for this format");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getMatchedBuckets is not implemented for this format");
+}
+
+size_t IInputFormat::getTotalBuckets() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getTotalBuckets is not implemented for this format");
 }
 
 }

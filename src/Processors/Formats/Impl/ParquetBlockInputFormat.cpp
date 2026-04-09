@@ -1367,6 +1367,11 @@ std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
 
 std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
 {
+    if (matching_row_groups.empty())
+        return nullptr;
+    /// Prototype with no row group restriction: use matching_row_groups directly.
+    if (row_group_ids.empty())
+        return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
     std::vector<size_t> filtered;
     for (size_t rg : row_group_ids)
         if (std::find(matching_row_groups.begin(), matching_row_groups.end(), rg) != matching_row_groups.end())
