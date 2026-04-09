@@ -41,7 +41,7 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 ][0]
 
 workflow = Workflow.Config(
-    name="PR",
+    name="PR1",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
