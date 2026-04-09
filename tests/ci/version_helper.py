@@ -399,7 +399,7 @@ def get_supported_versions(
 def update_cmake_version(
     version: ClickHouseVersion,
     versions_path: Union[Path, str] = FILE_WITH_VERSION_PATH,
-    preserve_sha: bool = False
+    preserve_sha: bool = False,
 ) -> None:
     version_dict = version.as_dict()
     if preserve_sha:

@@ -37,19 +37,6 @@ node5 = cluster.add_instance(
         "configs/allow_suspicious_codecs.xml",
     ],
 )
-node6 = cluster.add_instance(
-    "node6",
-    main_configs=["configs/deflateqpl_compression_by_default.xml"],
-    user_configs=[
-        "configs/allow_suspicious_codecs.xml",
-        "configs/enable_deflateqpl_codec.xml",
-    ],
-)
-node7 = cluster.add_instance(
-    "node7",
-    main_configs=["configs/allow_experimental_codecs.xml"],
-    user_configs=["configs/allow_suspicious_codecs.xml"],
-)
 
 
 @pytest.fixture(scope="module")
@@ -260,6 +247,7 @@ def test_uncompressed_cache_plus_zstd_codec(start_cluster):
     )
 
     node5.query("DROP TABLE compression_codec_multiple_with_key;")
+<<<<<<< HEAD
 
 
 def test_preconfigured_deflateqpl_codec(start_cluster):
@@ -322,3 +310,5 @@ def test_preconfigured_deflateqpl_codec(start_cluster):
     )
 
     node6.query("DROP TABLE compression_codec_multiple_with_key;")
+=======
+>>>>>>> origin/master

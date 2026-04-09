@@ -15,12 +15,12 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 
-#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeSet.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/FieldToDataType.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
-#include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
@@ -48,6 +48,7 @@ namespace Setting
 {
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
+    extern const SettingsInt64 optimize_const_name_size;
 }
 
 namespace ErrorCodes
@@ -66,10 +67,20 @@ namespace
  * If converting to AST will add a '_CAST' function call,
  * the result action name will also include it.
  */
-String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node)
+String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_node, Int64 optimize_const_name_size)
 {
+<<<<<<< HEAD
     const auto & [name, type] = constant_node.getValueNameAndType();
     bool requires_cast_call = constant_node.hasSourceExpression() || ConstantNode::requiresCastCall(type, constant_node.getResultType());
+=======
+    const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
+    bool requires_cast_call = constant_node.hasSourceExpression();
+    if (!requires_cast_call)
+    {
+        auto field_type = applyVisitor(FieldToDataType(), constant_node.getValue());
+        requires_cast_call = ConstantNode::requiresCastCall(field_type, constant_node.getResultType());
+    }
+>>>>>>> origin/master
 
     WriteBufferFromOwnString buffer;
     if (requires_cast_call)
@@ -158,20 +169,26 @@ public:
                 */
                 if (planner_context.isASTLevelOptimizationAllowed())
                 {
-                    result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
                 else
                 {
-                    // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-                    if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+                    // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+                    if (constant_node.hasSourceExpression()
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
                     {
                         if (constant_node.receivedFromInitiatorServer())
-                            result = calculateActionNodeNameWithCastIfNeeded(constant_node);
+                            result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
                     else
+<<<<<<< HEAD
                         result = calculateConstantActionNodeName(constant_node);
+=======
+                        result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+>>>>>>> origin/master
                 }
                 break;
             }
@@ -185,7 +202,7 @@ public:
                     if (function_argument_nodes.size() == 2)
                     {
                         if (const auto * second_argument = function_argument_nodes.at(1)->as<ConstantNode>())
-                            result = toString(second_argument->getValue());
+                            result = fieldToString(second_argument->getValue());
                     }
 
                     /// Empty node name is not allowed and leads to logical errors
@@ -202,9 +219,34 @@ public:
                     chassert(exists_argument != nullptr);
 
                     const auto & table_alias = exists_argument->getAlias();
-                    chassert(!table_alias.empty());
+                    if (!table_alias.empty())
+                    {
+                        result = fmt::format("exists({})", table_alias);
+                    }
+                    else
+                    {
+                        /// The alias may be empty when EXISTS was constant-folded into a ConstantNode
+                        /// and its source expression is being traversed to reconstruct the action node name.
+                        /// In this case, createUniqueAliasesIfNecessary did not visit the subquery argument
+                        /// because it is not a child of ConstantNode. Use the tree hash as a stable identifier.
+                        auto hash = exists_argument->getTreeHash();
+                        result = fmt::format("exists({}_{})", hash.low64, hash.high64);
+                    }
+                    break;
+                }
+                else if (function_node.getFunctionName() == "__getScalar")
+                {
+                    const auto & arguments = function_node.getArguments().getNodes();
+                    chassert(arguments.size() == 1);
 
-                    result = fmt::format("exists({})", table_alias);
+                    const auto & argument = arguments.front();
+                    chassert(argument != nullptr);
+
+                    const auto * argument_node = argument->as<ConstantNode>();
+                    if (!argument_node || !isString(argument_node->getResultType()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __getScalar is internal and should not be used directly");
+
+                    result = fmt::format("__getScalar('{}'_String)", argument_node->getValue().safeGet<String>());
                     break;
                 }
 
@@ -215,7 +257,7 @@ public:
                     {
                         if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            if (type_tuple->haveExplicitNames())
+                            if (type_tuple->hasExplicitNames())
                             {
                                 const auto & names = type_tuple->getElementNames();
                                 size_t size = names.size();
@@ -334,6 +376,18 @@ public:
                 result = buffer.str();
                 break;
             }
+            case QueryTreeNodeType::QUERY:
+            {
+                auto & query_node = node->as<QueryNode &>();
+                if (query_node.isCorrelated())
+                    result = query_node.getAlias();
+                else
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Only correlated QueryNode can be used as action query tree node, but got {}",
+                        node->formatASTForErrorMessage());
+                break;
+            }
             default:
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action query tree node {}", node->formatASTForErrorMessage());
@@ -356,9 +410,13 @@ public:
         return calculateConstantActionNodeName(constant_literal, applyVisitor(FieldToDataType(), constant_literal));
     }
 
+<<<<<<< HEAD
     static String calculateConstantActionNodeName(const ConstantNode & constant_node)
+=======
+    static String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
+>>>>>>> origin/master
     {
-        const auto & [name, type] = constant_node.getValueNameAndType();
+        const auto & name = constant_node.getValueName({.optimize_const_name_size = optimize_const_name_size});
         return name + "_" + constant_node.getResultType()->getName();
     }
 
@@ -474,7 +532,7 @@ public:
 
     [[maybe_unused]] bool containsNode(const std::string & node_name)
     {
-        return node_name_to_node.find(node_name) != node_name_to_node.end();
+        return node_name_to_node.contains(node_name);
     }
 
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)
@@ -543,14 +601,14 @@ public:
         return node;
     }
 
-    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column)
+    const ActionsDAG::Node * addConstantIfNecessary(const std::string & node_name, const ColumnWithTypeAndName & column, bool is_deterministic)
     {
         auto it = node_name_to_node.find(node_name);
         if (it != node_name_to_node.end())
         {
             /// It is possible that ActionsDAG already has an input with the same name as constant.
             /// In this case, prefer constant to input.
-            /// Constatns affect function return type, which should be consistent with QueryTree.
+            /// Constants affect function return type, which should be consistent with QueryTree.
             /// Query example:
             /// SELECT materialize(toLowCardinality('b')) || 'a' FROM remote('127.0.0.{1,2}', system, one) GROUP BY 'a'
             bool materialized_input = it->second->type == ActionsDAG::ActionType::INPUT && !it->second->column;
@@ -558,7 +616,7 @@ public:
                 return it->second;
         }
 
-        const auto * node = &actions_dag.addColumn(column);
+        const auto * node = &actions_dag.addColumn(column, is_deterministic);
         node_name_to_node[node->result_name] = node;
 
         return node;
@@ -661,6 +719,8 @@ private:
 
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
+    NodeNameAndNodeMinLevel visitQuery(const QueryTreeNodePtr & node);
+
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     CorrelatedSubtrees correlated_subtrees;
@@ -709,16 +769,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto node_type = node->getNodeType();
 
-    if (node_type == QueryTreeNodeType::COLUMN)
+    switch (node_type)
+    {
+    case QueryTreeNodeType::COLUMN:
         return visitColumn(node);
-    if (node_type == QueryTreeNodeType::CONSTANT)
+    case QueryTreeNodeType::CONSTANT:
         return visitConstant(node);
-    if (node_type == QueryTreeNodeType::FUNCTION)
+    case QueryTreeNodeType::FUNCTION:
         return visitFunction(node);
-
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-        "Expected column, constant, function. Actual {} with type: {}",
-        node->formatASTForErrorMessage(), node_type);
+    case QueryTreeNodeType::QUERY:
+        return visitQuery(node);
+    default:
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Expected column, constant, function. Actual {} with type: {}",
+            node->formatASTForErrorMessage(), node_type);
+    }
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
@@ -763,8 +828,13 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
 
-    for (auto & action_scope_node : actions_stack)
-        action_scope_node.addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
+    /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
+    /// can properly capture the correlated column value from the outer scope.
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+
+    for (size_t i = 1; i < actions_stack.size(); ++i)
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
 
     return {column_node_name, Levels(0)};
 }
@@ -804,17 +874,23 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
          */
         if (planner_context->isASTLevelOptimizationAllowed())
         {
-            return calculateActionNodeNameWithCastIfNeeded(constant_node);
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
         }
 
-        // Need to check if constant folded from QueryNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
-        if (constant_node.hasSourceExpression() && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY)
+        // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
+        if (constant_node.hasSourceExpression()
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
         {
             if (constant_node.receivedFromInitiatorServer())
-                return calculateActionNodeNameWithCastIfNeeded(constant_node);
+                return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+<<<<<<< HEAD
         return calculateConstantActionNodeName(constant_node);
+=======
+        return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+>>>>>>> origin/master
     }();
 
     ColumnWithTypeAndName column;
@@ -822,7 +898,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     column.type = constant_type;
     column.column = constant_node.getColumn();
 
-    actions_stack[0].addConstantIfNecessary(constant_node_name, column);
+    actions_stack[0].addConstantIfNecessary(constant_node_name, column, constant_node.isDeterministic());
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -921,14 +997,20 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
         in_second_argument_node_type == QueryTreeNodeType::UNION ||
         in_second_argument_node_type == QueryTreeNodeType::TABLE;
 
+    bool in_second_is_deterministic = false;
+    if (const auto * const_node = in_second_argument->as<const ConstantNode>())
+        in_second_is_deterministic = const_node->isDeterministic();
+
     FutureSetPtr set;
-    auto set_key = in_second_argument->getTreeHash();
+    auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
     if (!subquery_or_table)
     {
         set_element_types = {in_first_argument->getResultType()};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-        if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+
+        /// Do not unpack if empty tuple or single element tuple
+        if (left_tuple_type && left_tuple_type->getElements().size() > 1)
             set_element_types = left_tuple_type->getElements();
 
         set_element_types
@@ -959,7 +1041,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     else
         column.column = std::move(column_set);
 
-    actions_stack[0].addConstantIfNecessary(column.name, column);
+    actions_stack[0].addConstantIfNecessary(column.name, column, in_second_is_deterministic);
 
     size_t actions_stack_size = actions_stack.size();
     for (size_t i = 1; i < actions_stack_size; ++i)
@@ -1125,7 +1207,31 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
     else
     {
-        actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        /// When group_by_use_nulls wraps GROUP BY key constants in Nullable after aggregation,
+        /// the ActionsDAG may contain Nullable nodes where the query tree function expects
+        /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
+        /// In this case, rebuild the function via FunctionFactory with the actual argument types
+        /// so that the result type is correct.
+        bool argument_types_match = true;
+        if (auto function_base = function_node.getFunction())
+        {
+            const auto & expected_types = function_base->getArgumentTypes();
+            for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
+                argument_types_match = children[i]->result_type->equals(*expected_types[i]);
+        }
+
+        if (!argument_types_match)
+        {
+            if (auto resolver = FunctionFactory::instance().tryGet(
+                    function_node.getFunctionName(), planner_context->getQueryContext()))
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, resolver);
+            else
+                actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
+        else
+        {
+            actions_stack[level].addFunctionIfNecessary(function_node_name, children, function_node);
+        }
     }
 
     size_t actions_stack_size = actions_stack.size();
@@ -1136,6 +1242,53 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     return {function_node_name, levels};
+}
+
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitQuery(const QueryTreeNodePtr & node)
+{
+    auto & query_node = node->as<QueryNode &>();
+    if (!query_node.isCorrelated())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Only correlated QueryNode can be used as an action node, but got: {}",
+            node->formatASTForErrorMessage());
+
+    Levels levels(0);
+
+    auto correlated_subquery_name = action_node_name_helper.calculateActionNodeName(node);
+
+    size_t actions_stack_size = actions_stack.size();
+    for (size_t i = 0; i < actions_stack_size; ++i)
+    {
+        auto & actions_stack_node = actions_stack[i];
+        actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
+    }
+
+    /// The same correlated subquery can be referenced multiple times in the projection,
+    /// for example when `untuple` expands into multiple `tupleElement` calls sharing
+    /// the same argument.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == correlated_subquery_name)
+            return {correlated_subquery_name, levels};
+    }
+
+    const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();
+
+    ColumnIdentifiers correlated_column_identifiers;
+    correlated_column_identifiers.reserve(correlated_columns.size());
+    for (const auto & column : correlated_columns)
+    {
+        correlated_column_identifiers.push_back(action_node_name_helper.calculateActionNodeName(column));
+    }
+
+    correlated_subtrees.subqueries.emplace_back(
+        node,
+        CorrelatedSubqueryKind::SCALAR,
+        correlated_subquery_name,
+        std::move(correlated_column_identifiers));
+
+    return { correlated_subquery_name, levels };
 }
 
 }
@@ -1180,9 +1333,13 @@ String calculateConstantActionNodeName(const Field & constant_literal, const Dat
     return ActionNodeNameHelper::calculateConstantActionNodeName(constant_literal, constant_type);
 }
 
+<<<<<<< HEAD
 String calculateConstantActionNodeName(const ConstantNode & constant_node)
+=======
+String calculateConstantActionNodeName(const ConstantNode & constant_node, Int64 optimize_const_name_size)
+>>>>>>> origin/master
 {
-    return ActionNodeNameHelper::calculateConstantActionNodeName(constant_node);
+    return ActionNodeNameHelper::calculateConstantActionNodeName(constant_node, optimize_const_name_size);
 }
 
 String calculateConstantActionNodeName(const Field & constant_literal)

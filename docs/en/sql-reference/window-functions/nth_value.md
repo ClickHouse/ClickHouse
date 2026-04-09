@@ -4,6 +4,7 @@ sidebar_label: 'nth_value'
 sidebar_position: 5
 slug: /sql-reference/window-functions/nth_value
 title: 'nth_value'
+doc_type: 'reference'
 ---
 
 # nth_value

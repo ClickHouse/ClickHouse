@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -18,6 +19,8 @@ namespace DB
 using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
+
+using WrittenOffsetSubstreams = std::set<std::string>;
 
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
 
@@ -44,6 +47,7 @@ public:
 
     virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
+    virtual void finalizeIndexGranularity() = 0;
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 
     virtual void finish(bool sync) = 0;
@@ -54,10 +58,14 @@ public:
     std::optional<Columns> releaseIndexColumns();
 
     PlainMarksByName releaseCachedMarks();
+    PlainMarksByName releaseCachedIndexMarks();
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
+    MergeTreeWriterSettings getWriterSettings() const { return settings; }
 
     virtual const Block & getColumnsSample() const = 0;
+
+    virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
@@ -82,6 +90,8 @@ protected:
     MergeTreeIndexGranularityPtr index_granularity;
     /// Marks that will be saved to cache on finish.
     PlainMarksByName cached_marks;
+    /// Index marks (for secondary indices) that will be saved to cache on finish.
+    PlainMarksByName cached_index_marks;
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
@@ -100,10 +110,10 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const StorageMetadataPtr & metadata_snapshot,
         const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        MergeTreeIndexGranularityPtr computed_index_granularity);
+        MergeTreeIndexGranularityPtr computed_index_granularity,
+        WrittenOffsetSubstreams * written_offset_substreams);
 
 }

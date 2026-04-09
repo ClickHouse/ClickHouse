@@ -5,6 +5,7 @@ sidebar_label: 'Third-Party Libraries'
 sidebar_position: 60
 slug: /development/contrib
 title: 'Third-Party Libraries'
+doc_type: 'reference'
 ---
 
 # Third-Party Libraries

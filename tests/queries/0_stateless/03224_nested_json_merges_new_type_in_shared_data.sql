@@ -1,3 +1,5 @@
+-- Tags: no-azure-blob-storage
+
 SET enable_json_type = 1;
 
 drop table if exists test;

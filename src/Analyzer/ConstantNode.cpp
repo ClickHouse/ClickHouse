@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
@@ -6,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -13,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
-#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/IDataType.h>
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -23,9 +25,16 @@
 namespace DB
 {
 
+<<<<<<< HEAD
 ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_)
     : IQueryTreeNode(children_size)
     , constant_value(std::move(constant_value_))
+=======
+    ConstantNode::ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression_, bool is_deterministic_)
+    : IQueryTreeNode(children_size)
+    , constant_value(std::move(constant_value_))
+    , is_deterministic(is_deterministic_)
+>>>>>>> origin/master
 {
     source_expression = std::move(source_expression_);
 }
@@ -52,6 +61,7 @@ ConstantNode::ConstantNode(Field value_)
 
 String ConstantNode::getValueStringRepresentation() const
 {
+<<<<<<< HEAD
     return applyVisitor(FieldVisitorToString(), getValue());
 }
 
@@ -101,12 +111,24 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
     }
 
     return need_to_add_cast_function;
+=======
+    // Special handling for Bool literals that are stored as UInt64 internally
+    // Check if this is a Bool constant based on the data type
+    if (isBool(getResultType()) && isInt64OrUInt64FieldType(getValue().getType()))
+    {
+        // This is a Bool literal stored as UInt64 - generate proper column name
+        UInt64 bool_value = getValue().safeGet<UInt64>();
+        return bool_value ? "true" : "false";
+    }
+
+    return applyVisitor(FieldVisitorToString(), getValue());
+>>>>>>> origin/master
 }
 
 bool ConstantNode::requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type)
 {
     WhichDataType which_field_type(field_type);
-    if (which_field_type.isNullable() || which_field_type.isArray())
+    if (which_field_type.isNullable() || which_field_type.isArray() || which_field_type.isTuple())
         return true;
 
     return field_type->getTypeId() != data_type->getTypeId();
@@ -185,41 +207,97 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
 {
     constant_value.getColumn()->updateHashFast(hash_state);
     if (compare_options.compare_types)
+<<<<<<< HEAD
     {
         auto type_name = constant_value.getType()->getName();
         hash_state.update(type_name.size());
         hash_state.update(type_name);
     }
+=======
+        constant_value.getType()->updateHash(hash_state);
+>>>>>>> origin/master
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression);
+    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+}
+
+template <typename F>
+boost::intrusive_ptr<ASTLiteral> ConstantNode::getCachedAST(const F &ast_generator) const
+{
+    HashState hash_state;
+    hash_state.update(getTreeHash());
+    /// ast_generator function's address is used as a key to uniquely define generated AST
+    hash_state.update(reinterpret_cast<const std::uintptr_t>(&ast_generator));
+    auto hash = getSipHash128AsPair(hash_state);
+
+    if (cached_ast && hash == hash_ast)
+        return make_intrusive<ASTLiteral>(*cached_ast);
+
+    hash_ast = hash;
+    cached_ast = ast_generator(*this);
+
+    return make_intrusive<ASTLiteral>(*cached_ast);
 }
 
 ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
+<<<<<<< HEAD
     const auto & constant_value_type = constant_value.getType();
     auto constant_value_ast = std::make_shared<ASTLiteral>(getValue());
+=======
+    static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
+    static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
+>>>>>>> origin/master
 
     if (!options.add_cast_for_constants)
-        return constant_value_ast;
+        return getCachedAST(from_column);
 
+<<<<<<< HEAD
+=======
+    const auto & constant_value_type = constant_value.getType();
+
+>>>>>>> origin/master
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
     // may have a different type.
-    if (source_expression != nullptr || requiresCastCall(constant_value_ast->value.getType(), applyVisitor(FieldToDataType(), constant_value_ast->value), getResultType()))
+
+    auto requires_cast = [this]()
+    {
+        try
+        {
+            auto field_type = applyVisitor(FieldToDataType(), getValue());
+            return requiresCastCall(field_type, getResultType());
+        }
+        catch (...)
+        {
+            /// FieldToDataType may throw for complex cases like mixed-type arrays.
+            /// If we can't determine the natural type, a cast is needed.
+            return true;
+        }
+    };
+
+    if (source_expression != nullptr || requires_cast())
     {
         /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
         /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
+<<<<<<< HEAD
         /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
         constant_value_ast = std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
+=======
+        /// Also for Dynamic and Object types we can lose types information, so we need to create a Field carefully.
+        auto constant_value_ast = getCachedAST(from_column);
+        auto constant_type_name_ast = make_intrusive<ASTLiteral>(constant_value_type->getName());
+>>>>>>> origin/master
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 
+    auto constant_value_ast = getCachedAST(from_field);
+
     if (isBool(constant_value_type))
-        constant_value_ast->custom_type = constant_value_type;
+        constant_value_ast->value = Field(constant_value_ast->value.safeGet<UInt64>() != 0);
 
     return constant_value_ast;
 }

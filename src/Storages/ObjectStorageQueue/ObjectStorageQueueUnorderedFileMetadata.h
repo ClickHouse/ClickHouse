@@ -17,16 +17,20 @@ public:
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
+        bool use_persistent_processing_nodes_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-    static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }
+    static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
+<<<<<<< HEAD
     void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) override;
@@ -35,6 +39,14 @@ private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
     void prepareProcessedRequestsImpl(Coordination::Requests & requests) override;
     SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests & requests) override;
+=======
+private:
+    std::pair<bool, FileStatus::State> setProcessingImpl() override;
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;
+    SetProcessingResponseIndexes prepareProcessingRequestsImpl(
+        Coordination::Requests & requests,
+        const std::string & processing_id) override;
+>>>>>>> origin/master
 };
 
 }

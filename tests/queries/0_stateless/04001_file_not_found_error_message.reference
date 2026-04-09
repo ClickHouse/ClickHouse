@@ -1,0 +1,9 @@
+Error: no such file: /tmp/nonexistent_04001.sql
+If you intended to run a script, please check the path.
+exit: 1
+Error: no such file: nonexistent_04001.sql
+If you intended to run a script, please check the path.
+exit: 1
+No such file: /tmp/nonexistent_04001.sql
+No such file: nonexistent_04001.rep
+Use one of the following commands:

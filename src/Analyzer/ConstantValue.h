@@ -2,7 +2,10 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn_fwd.h>
+<<<<<<< HEAD
 #include <DataTypes/FieldToDataType.h>
+=======
+>>>>>>> origin/master
 #include <DataTypes/IDataType.h>
 
 namespace DB
@@ -31,9 +34,9 @@ public:
         return data_type;
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType() const
+    String getValueName(const IColumn::Options & options) const
     {
-        return column->getValueNameAndType(0);
+        return column->getValueName(0, options);
     }
 
 private:

@@ -1,10 +1,12 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET query_plan_merge_filters = 1; -- Filter nodes must be merged for stable EXPLAIN output
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
-CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t1 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity=8192;
+CREATE TABLE t2 (`id` Int32, key String, key2 String) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity=8192;
 INSERT INTO t1 VALUES (1, '111', '111'),(2, '222', '2'),(2, '222', '222'),(3, '333', '333');
 INSERT INTO t2 VALUES (2, 'AAA', 'AAA'),(2, 'AAA', 'a'),(3, 'BBB', 'BBB'),(4, 'CCC', 'CCC');
 
@@ -29,7 +31,7 @@ EXPLAIN
 SELECT hostName() AS hostName
 FROM system.query_log AS a
 INNER JOIN system.processes AS b ON (a.query_id = b.query_id) AND (type = 'QueryStart')
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 SELECT dummy
@@ -90,6 +92,6 @@ SELECT 10
 FROM system.query_log AS a
 INNER JOIN system.processes AS b
 ON (a.query_id = b.query_id) AND (a.query_id = b.query_id)
-WHERE current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
 FORMAT Null
 SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;

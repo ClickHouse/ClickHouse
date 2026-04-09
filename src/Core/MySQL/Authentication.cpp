@@ -197,6 +197,7 @@ void Sha256Password::authenticate(
             throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to decrypt auth data: {}", getOpenSSLErrors());
 
         plaintext.resize(plaintext_length);
+        password.resize(plaintext_length);
 
         for (size_t i = 0; i < plaintext_length; ++i)
         {

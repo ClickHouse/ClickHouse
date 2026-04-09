@@ -23,6 +23,7 @@ public:
 
     MergeTreeDataPartCompact(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -49,7 +50,7 @@ protected:
      static void loadIndexGranularityImpl(
          MergeTreeIndexGranularityPtr & index_granularity_,
          const MergeTreeIndexGranularityInfo & index_granularity_info_,
-         size_t columns_count,
+         size_t marks_per_granule,
          const IDataPartStorage & data_part_storage_,
          const MergeTreeSettings & storage_settings);
 
@@ -60,7 +61,7 @@ private:
      void loadIndexGranularity() override;
 
      /// Compact parts don't support per column size, only total size
-     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
+     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

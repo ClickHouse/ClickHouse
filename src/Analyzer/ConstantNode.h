@@ -5,6 +5,10 @@
 #include <Analyzer/ConstantValue.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Columns/IColumn_fwd.h>
+<<<<<<< HEAD
+=======
+#include <Parsers/ASTLiteral.h>
+>>>>>>> origin/master
 
 namespace DB
 {
@@ -21,8 +25,13 @@ using ConstantNodePtr = std::shared_ptr<ConstantNode>;
 class ConstantNode final : public IQueryTreeNode
 {
 public:
+<<<<<<< HEAD
     /// Construct constant query tree node from constant value and source expression
     explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression);
+=======
+    /// Construct constant query tree node from constant value, source expression and deterministic flag
+    explicit ConstantNode(ConstantValue constant_value_, QueryTreeNodePtr source_expression, bool is_deterministic = true);
+>>>>>>> origin/master
 
     /// Construct constant query tree node from constant value
     explicit ConstantNode(ConstantValue constant_value_);
@@ -91,7 +100,6 @@ public:
     }
 
     /// Check if conversion to AST requires wrapping with _CAST function.
-    static bool requiresCastCall(Field::Types::Which type, const DataTypePtr & field_type, const DataTypePtr & data_type);
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
     /// Check if constant is a result of _CAST function constant folding.
@@ -106,11 +114,20 @@ public:
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
+<<<<<<< HEAD
     std::pair<String, DataTypePtr> getValueNameAndType() const
+=======
+    String getValueName(const IColumn::Options & options) const
+>>>>>>> origin/master
     {
-        return constant_value.getValueNameAndType();
+        return constant_value.getValueName(options);
     }
 
+<<<<<<< HEAD
+=======
+    bool isDeterministic() const { return is_deterministic; }
+
+>>>>>>> origin/master
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const override;
 
@@ -118,14 +135,22 @@ protected:
 
     QueryTreeNodePtr cloneImpl() const override;
 
+    template <typename F>
+    boost::intrusive_ptr<ASTLiteral> getCachedAST(const F &ast_generator) const;
     ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
 
 private:
     ConstantValue constant_value;
     QueryTreeNodePtr source_expression;
+    bool is_deterministic = true;
     size_t mask_id = 0;
 
     static constexpr size_t children_size = 0;
+
+    /// Converting to AST maybe costly (for example for large arrays), so we want
+    /// to cache it using hash to check for update
+    mutable boost::intrusive_ptr<ASTLiteral> cached_ast;
+    mutable Hash hash_ast;
 };
 
 }

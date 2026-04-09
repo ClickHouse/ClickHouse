@@ -24,7 +24,7 @@ class BlocksSource : public ISource
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksSource(BlocksPtr blocks_ptr_, Block header)
+    BlocksSource(BlocksPtr blocks_ptr_, SharedHeader header)
         : ISource(std::move(header))
         , blocks(blocks_ptr_), it(blocks_ptr_->begin()), end(blocks_ptr_->end()) {}
 
@@ -42,6 +42,7 @@ protected:
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = res.info.bucket_num;
         info->is_overflows = res.info.is_overflows;
+        info->out_of_order_buckets = res.info.out_of_order_buckets;
 
         auto chunk = Chunk(res.getColumns(), res.rows());
         chunk.getChunkInfos().add(std::move(info));

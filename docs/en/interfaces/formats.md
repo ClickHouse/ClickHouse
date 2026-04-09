@@ -4,6 +4,7 @@ sidebar_label: 'View all formats...'
 sidebar_position: 21
 slug: /interfaces/formats
 title: 'Formats for input and output data'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -45,6 +46,7 @@ Formats supported for output are used for:
 
 The supported formats are:
 
+<<<<<<< HEAD
 | Format                                                                                    | Input | Output |
 |-------------------------------------------------------------------------------------------|-----|-------|
 | [TabSeparated](#tabseparated)                                                             | ✔   | ✔     |
@@ -470,6 +472,101 @@ See [Dwarf](/interfaces/formats/DWARF)
 See [Form](/interfaces/formats/Form)
 
 ## Format Schema {#formatschema}
+=======
+| Format                                                                                                     | Input | Output |
+|------------------------------------------------------------------------------------------------------------|-----|-------|
+| [TabSeparated](./formats/TabSeparated/TabSeparated.md)                                                     | ✔   | ✔     |
+| [TabSeparatedRaw](./formats/TabSeparated/TabSeparatedRaw.md)                                               | ✔   | ✔     |
+| [TabSeparatedWithNames](./formats/TabSeparated/TabSeparatedWithNames.md)                                   | ✔   | ✔     |
+| [TabSeparatedWithNamesAndTypes](./formats/TabSeparated/TabSeparatedWithNamesAndTypes.md)                   | ✔   | ✔     |
+| [TabSeparatedRawWithNames](./formats/TabSeparated/TabSeparatedRawWithNames.md)                             | ✔   | ✔     |
+| [TabSeparatedRawWithNamesAndTypes](./formats/TabSeparated/TabSeparatedRawWithNamesAndTypes.md)             | ✔   | ✔     |
+| [Template](./formats/Template/Template.md)                                                                 | ✔   | ✔     |
+| [TemplateIgnoreSpaces](./formats/Template/TemplateIgnoreSpaces.md)                                         | ✔   | ✗     |
+| [CSV](./formats/CSV/CSV.md)                                                                                | ✔   | ✔     |
+| [CSVWithNames](./formats/CSV/CSVWithNames.md)                                                              | ✔   | ✔     |
+| [CSVWithNamesAndTypes](./formats/CSV/CSVWithNamesAndTypes.md)                                              | ✔   | ✔     |
+| [CustomSeparated](./formats/CustomSeparated/CustomSeparated.md)                                            | ✔   | ✔     |
+| [CustomSeparatedWithNames](./formats/CustomSeparated/CustomSeparatedWithNames.md)                          | ✔   | ✔     |
+| [CustomSeparatedWithNamesAndTypes](./formats/CustomSeparated/CustomSeparatedWithNamesAndTypes.md)          | ✔   | ✔     |
+| [SQLInsert](./formats/SQLInsert.md)                                                                        | ✗   | ✔     |
+| [Values](./formats/Values.md)                                                                              | ✔   | ✔     |
+| [Vertical](./formats/Vertical.md)                                                                          | ✗   | ✔     |
+| [JSON](./formats/JSON/JSON.md)                                                                             | ✔   | ✔     |
+| [JSONAsString](./formats/JSON/JSONAsString.md)                                                             | ✔   | ✗     |
+| [JSONAsObject](./formats/JSON/JSONAsObject.md)                                                             | ✔   | ✗     |
+| [JSONStrings](./formats/JSON/JSONStrings.md)                                                               | ✔   | ✔     |
+| [JSONColumns](./formats/JSON/JSONColumns.md)                                                               | ✔   | ✔     |
+| [JSONColumnsWithMetadata](./formats/JSON/JSONColumnsWithMetadata.md)                                       | ✔   | ✔     |
+| [JSONCompact](./formats/JSON/JSONCompact.md)                                                               | ✔   | ✔     |
+| [JSONCompactStrings](./formats/JSON/JSONCompactStrings.md)                                                 | ✗   | ✔     |
+| [JSONCompactColumns](./formats/JSON/JSONCompactColumns.md)                                                 | ✔   | ✔     |
+| [JSONEachRow](./formats/JSON/JSONEachRow.md)                                                               | ✔   | ✔     |
+| [PrettyJSONEachRow](./formats/JSON/PrettyJSONEachRow.md)                                                   | ✗   | ✔     |
+| [JSONEachRowWithProgress](./formats/JSON/JSONEachRowWithProgress.md)                                       | ✗   | ✔     |
+| [JSONStringsEachRow](./formats/JSON/JSONStringsEachRow.md)                                                 | ✔   | ✔     |
+| [JSONStringsEachRowWithProgress](./formats/JSON/JSONStringsEachRowWithProgress.md)                         | ✗   | ✔     |
+| [JSONCompactEachRow](./formats/JSON/JSONCompactEachRow.md)                                                 | ✔   | ✔     |
+| [JSONCompactEachRowWithNames](./formats/JSON/JSONCompactEachRowWithNames.md)                               | ✔   | ✔     |
+| [JSONCompactEachRowWithNamesAndTypes](./formats/JSON/JSONCompactEachRowWithNamesAndTypes.md)               | ✔   | ✔     |
+| [JSONCompactEachRowWithProgress](./formats/JSON/JSONCompactEachRowWithProgress.md)                         | ✗   | ✔     |
+| [JSONCompactStringsEachRow](./formats/JSON/JSONCompactStringsEachRow.md)                                   | ✔   | ✔     |
+| [JSONCompactStringsEachRowWithNames](./formats/JSON/JSONCompactStringsEachRowWithNames.md)                 | ✔   | ✔     |
+| [JSONCompactStringsEachRowWithNamesAndTypes](./formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes.md) | ✔   | ✔     |
+| [JSONCompactStringsEachRowWithProgress](./formats/JSON/JSONCompactStringsEachRowWithProgress.md)           | ✗   | ✔     |
+| [JSONObjectEachRow](./formats/JSON/JSONObjectEachRow.md)                                                   | ✔   | ✔     |
+| [BSONEachRow](./formats/BSONEachRow.md)                                                                    | ✔   | ✔     |
+| [TSKV](./formats/TabSeparated/TSKV.md)                                                                     | ✔   | ✔     |
+| [Pretty](./formats/Pretty/Pretty.md)                                                                       | ✗   | ✔     |
+| [PrettyNoEscapes](./formats/Pretty/PrettyNoEscapes.md)                                                     | ✗   | ✔     |
+| [PrettyMonoBlock](./formats/Pretty/PrettyMonoBlock.md)                                                     | ✗   | ✔     |
+| [PrettyNoEscapesMonoBlock](./formats/Pretty/PrettyNoEscapesMonoBlock.md)                                   | ✗   | ✔     |
+| [PrettyCompact](./formats/Pretty/PrettyCompact.md)                                                         | ✗   | ✔     |
+| [PrettyCompactNoEscapes](./formats/Pretty/PrettyCompactNoEscapes.md)                                       | ✗   | ✔     |
+| [PrettyCompactMonoBlock](./formats/Pretty/PrettyCompactMonoBlock.md)                                       | ✗   | ✔     |
+| [PrettyCompactNoEscapesMonoBlock](./formats/Pretty/PrettyCompactNoEscapesMonoBlock.md)                     | ✗   | ✔     |
+| [PrettySpace](./formats/Pretty/PrettySpace.md)                                                             | ✗   | ✔     |
+| [PrettySpaceNoEscapes](./formats/Pretty/PrettySpaceNoEscapes.md)                                           | ✗   | ✔     |
+| [PrettySpaceMonoBlock](./formats/Pretty/PrettySpaceMonoBlock.md)                                           | ✗   | ✔     |
+| [PrettySpaceNoEscapesMonoBlock](./formats/Pretty/PrettySpaceNoEscapesMonoBlock.md)                         | ✗   | ✔     |
+| [Prometheus](./formats/Prometheus.md)                                                                      | ✗   | ✔     |
+| [Protobuf](./formats/Protobuf/Protobuf.md)                                                                 | ✔   | ✔     |
+| [ProtobufSingle](./formats/Protobuf/ProtobufSingle.md)                                                     | ✔   | ✔     |
+| [ProtobufList](./formats/Protobuf/ProtobufList.md)                                                         | ✔   | ✔     |
+| [Avro](./formats/Avro/Avro.md)                                                                             | ✔   | ✔     |
+| [AvroConfluent](./formats/Avro/AvroConfluent.md)                                                           | ✔   | ✗     |
+| [Parquet](./formats/Parquet/Parquet.md)                                                                    | ✔   | ✔     |
+| [ParquetMetadata](./formats/Parquet/ParquetMetadata.md)                                                    | ✔   | ✗     |
+| [Arrow](./formats/Arrow/Arrow.md)                                                                          | ✔   | ✔     |
+| [ArrowStream](./formats/Arrow/ArrowStream.md)                                                              | ✔   | ✔     |
+| [ORC](./formats/ORC.md)                                                                                    | ✔   | ✔     |
+| [One](./formats/One.md)                                                                                    | ✔   | ✗     |
+| [Npy](./formats/Npy.md)                                                                                    | ✔   | ✔     |
+| [RowBinary](./formats/RowBinary/RowBinary.md)                                                              | ✔   | ✔     |
+| [RowBinaryWithNames](./formats/RowBinary/RowBinaryWithNames.md)                                            | ✔   | ✔     |
+| [RowBinaryWithNamesAndTypes](./formats/RowBinary/RowBinaryWithNamesAndTypes.md)                            | ✔   | ✔     |
+| [RowBinaryWithDefaults](./formats/RowBinary/RowBinaryWithDefaults.md)                                      | ✔   | ✗     |
+| [Native](./formats/Native.md)                                                                              | ✔   | ✔     |
+| [Buffers](./formats/Buffers.md)                                                                            | ✔   | ✔     |
+| [Null](./formats/Null.md)                                                                                  | ✗   | ✔     |
+| [Hash](./formats/Hash.md)                                                                                  | ✗   | ✔     |
+| [XML](./formats/XML.md)                                                                                    | ✗   | ✔     |
+| [CapnProto](./formats/CapnProto.md)                                                                        | ✔   | ✔     |
+| [LineAsString](./formats/LineAsString/LineAsString.md)                                                     | ✔   | ✔     |
+| [LineAsStringWithNames](./formats/LineAsString/LineAsStringWithNames.md)                                   | ✔   | ✔     |
+| [LineAsStringWithNamesAndTypes](./formats/LineAsString/LineAsStringWithNamesAndTypes.md)                   | ✔   | ✔     |
+| [Regexp](./formats/Regexp.md)                                                                              | ✔   | ✗     |
+| [RawBLOB](./formats/RawBLOB.md)                                                                            | ✔   | ✔     |
+| [MsgPack](./formats/MsgPack.md)                                                                            | ✔   | ✔     |
+| [MySQLDump](./formats/MySQLDump.md)                                                                        | ✔   | ✗     |
+| [DWARF](./formats/DWARF.md)                                                                                | ✔   | ✗     |
+| [Markdown](./formats/Markdown.md)                                                                          | ✗   | ✔     |
+| [Form](./formats/Form.md)                                                                                  | ✔   | ✗     |
+
+You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/operations/settings/settings-formats.md) section.
+
+## Format schema {#formatschema}
+>>>>>>> origin/master
 
 The file name containing the format schema is set by the setting `format_schema`.
 It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
@@ -478,15 +575,15 @@ e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
 it can be omitted and in this case, the format schema looks like `schemafile:MessageType`.
 
-If you input or output data via the [client](/interfaces/cli.md) in interactive mode, the file name specified in the format schema
+If you input or output data via the [client](/interfaces/client.md) in interactive mode, the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
-If you use the client in the [batch mode](/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
+If you use the client in the [batch mode](/interfaces/client.md/#batch-mode), the path to the schema must be relative due to security reasons.
 
-If you input or output data via the [HTTP interface](/interfaces/http.md) the file name specified in the format schema
+If you input or output data via the [HTTP interface](/interfaces/http) the file name specified in the format schema
 should be located in the directory specified in [format_schema_path](/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 
-## Skipping Errors {#skippingerrors}
+## Skipping errors {#skippingerrors}
 
 Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
 [input_format_allow_errors_ratio](/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.

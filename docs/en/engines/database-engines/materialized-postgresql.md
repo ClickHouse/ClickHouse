@@ -4,6 +4,7 @@ sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 60
 slug: /engines/database-engines/materialized-postgresql
 title: 'MaterializedPostgreSQL'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -29,7 +30,7 @@ SET allow_experimental_database_materialized_postgresql=1
 ```
 :::
 
-## Creating a Database {#creating-a-database}
+## Creating a database {#creating-a-database}
 
 ```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
@@ -43,7 +44,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 - `user` — PostgreSQL user.
 - `password` — User password.
 
-## Example of Use {#example-of-use}
+## Example of use {#example-of-use}
 
 ```sql
 CREATE DATABASE postgres_db
@@ -124,7 +125,6 @@ SELECT * FROM database1.`schema2.table2`;
 ```
 
 Warning: for this case dots in table name are not allowed.
-
 
 ## Requirements {#requirements}
 

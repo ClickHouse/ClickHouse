@@ -22,7 +22,7 @@ class TableNode;
 
 struct FiltersForTableExpression
 {
-    std::optional<ActionsDAG> filter_actions;
+    std::shared_ptr<const ActionsDAG> filter_actions;
     PrewhereInfoPtr prewhere_info;
 };
 

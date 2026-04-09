@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
 #include <Poco/JSON/Object.h>
@@ -17,7 +18,7 @@ namespace ErrorCodes
 
 SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_, Names names_)
     /// Pass default settings because Tuple column cannot be sparse itself.
-    : SerializationInfo(ISerialization::Kind::DEFAULT, SerializationInfo::Settings{})
+    : SerializationInfo({ISerialization::Kind::DEFAULT}, SerializationInfo::Settings{})
     , elems(std::move(elems_))
     , names(std::move(names_))
 {
@@ -28,7 +29,7 @@ SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_,
 
 bool SerializationInfoTuple::hasCustomSerialization() const
 {
-    return std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasCustomSerialization(); });
+    return SerializationInfo::hasCustomSerialization() || std::any_of(elems.begin(), elems.end(), [](const auto & elem) { return elem->hasCustomSerialization(); });
 }
 
 bool SerializationInfoTuple::structureEquals(const SerializationInfo & rhs) const
@@ -60,14 +61,19 @@ void SerializationInfoTuple::add(const SerializationInfo & other)
 {
     SerializationInfo::add(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
+    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
+    if (!other_info)
+    {
+        return;
+    }
+
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
+        auto it = other_info->name_to_elem.find(name);
+        if (it != other_info->name_to_elem.end())
             elem->add(*it->second);
         else
-            elem->addDefaults(other_info.getData().num_rows);
+            elem->addDefaults(other_info->getData().num_rows);
     }
 }
 
@@ -96,11 +102,16 @@ void SerializationInfoTuple::replaceData(const SerializationInfo & other)
 {
     SerializationInfo::replaceData(other);
 
-    const auto & other_info = assert_cast<const SerializationInfoTuple &>(other);
+    const auto * other_info = typeid_cast<const SerializationInfoTuple *>(&other);
+    if (!other_info)
+    {
+        return;
+    }
+
     for (const auto & [name, elem] : name_to_elem)
     {
-        auto it = other_info.name_to_elem.find(name);
-        if (it != other_info.name_to_elem.end())
+        auto it = other_info->name_to_elem.find(name);
+        if (it != other_info->name_to_elem.end())
             elem->replaceData(*it->second);
     }
 }
@@ -139,11 +150,11 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
-void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const
+void SerializationInfoTuple::serialializeKindStackBinary(WriteBuffer & out) const
 {
-    SerializationInfo::serialializeKindBinary(out);
+    SerializationInfo::serialializeKindStackBinary(out);
     for (const auto & elem : elems)
-        elem->serialializeKindBinary(out);
+        elem->serialializeKindStackBinary(out);
 }
 
 void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)

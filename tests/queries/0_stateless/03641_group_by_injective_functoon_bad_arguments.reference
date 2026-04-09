@@ -1,0 +1,22 @@
+1	str
+1	str
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+    toString(json.a) String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+      FUNCTION id: 3, function_name: toString, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 4, nodes: 1
+            COLUMN id: 5, column_name: json.a, result_type: Dynamic, source_id: 6
+  JOIN TREE
+    TABLE id: 6, alias: __table1, table_name: default.test
+  GROUP BY
+    LIST id: 7, nodes: 1
+      FUNCTION id: 8, function_name: toString, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 9, nodes: 1
+            COLUMN id: 10, column_name: json.a, result_type: Dynamic, source_id: 6
+  SETTINGS enable_analyzer=1 optimize_injective_functions_in_group_by=1

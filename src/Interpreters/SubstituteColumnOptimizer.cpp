@@ -56,7 +56,7 @@ public:
             data.old_name[name] = ast->getAliasOrColumnName();
             data.component[name] = *id;
             data.components.insert(*id);
-            ast = std::make_shared<ASTIdentifier>(name);
+            ast = make_intrusive<ASTIdentifier>(name);
         }
     }
 
