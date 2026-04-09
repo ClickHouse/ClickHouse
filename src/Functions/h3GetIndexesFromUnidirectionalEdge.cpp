@@ -82,7 +82,7 @@ public:
             // allocate array of size 2
             // directedEdgeToCells func sets the origin and
             // destination at [0] and [1] of the input vector
-            std::array<H3Index, 2> res;
+            std::array<H3Index, 2> res{};
 
             directedEdgeToCells(edge, res.data());
 

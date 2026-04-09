@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ObjectStorageKey.h>
 
@@ -114,7 +115,8 @@ public:
         const std::string & path_prefix,
         std::shared_ptr<const S3::Client> client_,
         size_t max_list_size,
-        bool with_tags_)
+        bool with_tags_,
+        const std::optional<std::string> & start_after_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
@@ -123,10 +125,13 @@ public:
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
+        , start_after_set(start_after_.has_value() && !start_after_->empty())
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
         request->SetMaxKeys(static_cast<int>(max_list_size));
+        if (start_after_set)
+            request->SetStartAfter(*start_after_);
     }
 
     ~S3IteratorAsync() override
@@ -148,7 +153,23 @@ private:
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
-            request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+            const auto next_continuation_token = outcome.GetResult().GetNextContinuationToken();
+            if (start_after_set)
+            {
+                /// StartAfter should only be sent on the first request. AWS SDK doesn't provide
+                /// a way to clear "has been set" flag, so we rebuild request for pagination.
+                auto paginated_request = std::make_unique<S3::ListObjectsV2Request>();
+                paginated_request->SetBucket(request->GetBucket());
+                paginated_request->SetPrefix(request->GetPrefix());
+                paginated_request->SetMaxKeys(request->GetMaxKeys());
+                paginated_request->SetContinuationToken(next_continuation_token);
+                request = std::move(paginated_request);
+                start_after_set = false;
+            }
+            else
+            {
+                request->SetContinuationToken(next_continuation_token);
+            }
 
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
@@ -172,6 +193,7 @@ private:
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
+    bool start_after_set;
 };
 
 }
@@ -199,7 +221,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* offset */0,
         /* read_until_position */0,
         read_settings.remote_read_buffer_restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        credentials_refresh_callback);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -234,8 +257,8 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     /// NOTE: For background operations settings are not propagated from session or query. They are taken from
     /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
     /// to rely on settings from disk.
-    if (auto query_context = CurrentThread::getQueryContext();
-        query_context && !query_context->isBackgroundOperationContext())
+    if (auto query_context = CurrentThread::tryGetQueryContext();
+        query_context && !query_context->isBackgroundContext())
     {
         const auto & settings = query_context->getSettingsRef();
         request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
@@ -262,12 +285,16 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 }
 
 
-ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const
+ObjectStorageIteratorPtr S3ObjectStorage::iterate(
+    const std::string & path_prefix,
+    size_t max_keys,
+    bool with_tags,
+    const std::optional<std::string> & start_after) const
 {
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags, start_after);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -280,7 +307,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     if (max_keys)
         request.SetMaxKeys(static_cast<int>(max_keys));
     else
-        request.SetMaxKeys(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]);
+        request.SetMaxKeys(static_cast<int>(settings_ptr->request_settings[S3RequestSetting::list_object_keys_size]));
 
     Aws::S3::Model::ListObjectsV2Outcome outcome;
     do
@@ -466,8 +493,22 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     }
     catch (DB::Exception & e)
     {
-        e.addMessage("while reading " + path);
-        throw;
+        bool updated = false;
+        if (credentials_refresh_callback)
+        {
+            auto new_client = credentials_refresh_callback();
+            if (new_client)
+            {
+                client.set(std::move(new_client));
+                object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
+                updated = true;
+            }
+        }
+        if (!updated)
+        {
+            e.addMessage("while reading " + path);
+            throw;
+        }
     }
 
     ObjectMetadata result;
@@ -521,6 +562,21 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
             /// If authentication/permissions error occurs then fallthrough to copy with buffer.
             if (exc.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
                 throw;
+            else
+            {
+                bool updated = false;
+                if (credentials_refresh_callback)
+                {
+                    auto new_client = credentials_refresh_callback();
+                    if (new_client)
+                    {
+                        updated = true;
+                        client.set(std::move(new_client));
+                    }
+                }
+                if (!updated)
+                    throw;
+            }
             LOG_WARNING(getLogger("S3ObjectStorage"),
                 "S3-server-side copy object from the disk {} to the disk {} can not be performed: {}\n",
                 getName(), dest_s3->getName(), exc.what());

@@ -218,7 +218,7 @@ struct Work
         double time_aggregated = watch.elapsedSeconds();
         std::cerr
             << "Aggregated in " << time_aggregated
-            << " (" << data.size() / time_aggregated << " elem/sec.)"
+            << " (" << static_cast<double>(data.size()) / time_aggregated << " elem/sec.)"
             << std::endl;
 
         size_t size_before_merge = 0;
@@ -243,13 +243,13 @@ struct Work
         double time_merged = watch.elapsedSeconds();
         std::cerr
             << "Merged in " << time_merged
-            << " (" << size_before_merge / time_merged << " elem/sec.)"
+            << " (" << static_cast<double>(size_before_merge) / time_merged << " elem/sec.)"
             << std::endl;
 
         double time_total = time_aggregated + time_merged;
         std::cerr
             << "Total in " << time_total
-            << " (" << data.size() / time_total << " elem/sec.)"
+            << " (" << static_cast<double>(data.size()) / time_total << " elem/sec.)"
             << std::endl;
         std::cerr << "Size: " << result_map->size() << std::endl << std::endl;
     }
@@ -300,7 +300,7 @@ int main(int argc, char ** argv)
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl << std::endl;
     }
 

@@ -1,15 +1,14 @@
 -- Tags: no-parallel-replicas, no-parallel
 
--- Tests correctness and profile events of SYSTEM DROP TEXT INDEX CACHES
+-- Tests correctness and profile events of SYSTEM CLEAR TEXT INDEX CACHES
 
 DROP TABLE IF EXISTS tab;
 
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 
 -- Force-enable text index caches
 SET use_text_index_header_cache = 1;
-SET use_text_index_dictionary_cache = 1;
+SET use_text_index_tokens_cache = 1;
 SET use_text_index_postings_cache = 1;
 
 CREATE TABLE tab
@@ -25,7 +24,7 @@ SELECT count() FROM tab WHERE s LIKE '%888%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 
-SYSTEM DROP TEXT INDEX CACHES;
+SYSTEM CLEAR TEXT INDEX CACHES;
 
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
@@ -34,10 +33,10 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['TextIndexHeaderCacheMisses'] > 0,
-    ProfileEvents['TextIndexDictionaryBlockCacheMisses'] > 0,
+    ProfileEvents['TextIndexTokensCacheMisses'] > 0,
     ProfileEvents['TextIndexPostingsCacheMisses'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query LIKE '%SELECT count() FROM tab%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE '%SELECT count() FROM tab%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE IF EXISTS tab;

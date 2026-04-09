@@ -21,9 +21,11 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/QueryScope.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
 
 
@@ -83,6 +85,7 @@ RefreshTask::RefreshTask(
     , refresh_schedule(strategy)
     , refresh_append(strategy.append)
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::RefreshTask");
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
@@ -163,6 +166,7 @@ OwnedRefreshTask RefreshTask::create(
     task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
         w->root_watch_active.store(false);
+        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -231,6 +235,7 @@ void RefreshTask::drop(ContextPtr context)
 {
     if (coordination.coordinated)
     {
+        auto component_guard = Coordination::setCurrentComponent("RefreshTask::drop");
         auto zookeeper = context->getZooKeeper();
 
         zookeeper->tryRemove(coordination.path + "/replicas/" + coordination.replica_name);
@@ -332,6 +337,7 @@ void RefreshTask::stop()
 
 void RefreshTask::startReplicated()
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::startReplicated");
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
@@ -354,6 +360,7 @@ void RefreshTask::stopReplicated(const String & reason)
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::stopReplicated");
     const auto zookeeper = [this]()
     {
         std::lock_guard guard(mutex);
@@ -467,6 +474,7 @@ void RefreshTask::setFakeTime(std::optional<Int64> t)
 
 void RefreshTask::refreshTask()
 {
+    auto component_guard = Coordination::setCurrentComponent("RefreshTask::refreshTask");
     std::unique_lock lock(mutex);
 
     auto schedule_keeper_retry = [&] {
@@ -671,7 +679,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     auto new_table_id = StorageID::createEmpty();
 
     std::optional<QueryLogElement> query_log_elem;
-    std::shared_ptr<ASTInsertQuery> refresh_query;
+    boost::intrusive_ptr<ASTInsertQuery> refresh_query;
     String query_for_logging;
     UInt64 normalized_query_hash = 0;
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
@@ -692,7 +700,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// Create a table.
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            QueryScope query_scope;
             std::tie(refresh_query, query_scope) = view->prepareRefresh(append, refresh_context, table_to_drop);
             new_table_id = refresh_query->table_id;
 

@@ -161,10 +161,6 @@ public:
     /// Return **permanent** watch callback needed for notifications from ZooKeeper watches.
     Coordination::WatchCallbackPtr getWatchCallback();
 
-    /// Returns lock that protects from concurrent task execution.
-    /// This lock should not be held for a long time.
-    std::unique_lock<std::mutex> getExecLock();
-
 private:
     friend class TaskNotification;
     friend class BackgroundSchedulePool;

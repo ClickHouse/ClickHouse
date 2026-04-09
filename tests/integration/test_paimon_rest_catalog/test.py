@@ -39,18 +39,9 @@ def start_bearer_token_server():
         shell=True
     )
 
-    # install maven
+    # build paimon rest catalog from chunks
     run_and_check(
-        ["docker exec {cont_id} bash -lc \"apt update --allow-insecure-repositories && apt-get install -y maven\"".format(
-            cont_id=instance_id,
-        )]
-        ,
-        shell=True
-    )
-
-    # build paimon rest catalog
-    run_and_check(
-        ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && mvn clean package > /dev/null 2>&1\"".format(
+        ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && cat chunk_* > paimon-server-starter-1.0-SNAPSHOT.jar\"".format(
             cont_id=instance_id,
         )]
         , 
@@ -58,7 +49,7 @@ def start_bearer_token_server():
     )
 
     # start paimon rest catalog
-    start_cmd = f'''nohup java -jar target/paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///tmp/warehouse/" "bearer" "0.0.0.0" "{PORT}" &!'''
+    start_cmd = f'''nohup java -jar paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///var/lib/clickhouse/user_files/warehouse/" "bearer" "0.0.0.0" "{PORT}" &!'''
     run_and_check(
         ["docker exec {cont_id} bash -lc 'cd /root/paimon-rest-catalog && {start_cmd}'".format(
             cont_id=instance_id,
@@ -69,7 +60,7 @@ def start_bearer_token_server():
 def start_dlf_token_server():
     # start dlf paimon rest catalog
     instance_id = cluster.get_instance_docker_id("node")
-    start_cmd = f'''nohup java -jar target/paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///tmp/warehouse/" "dlf" "0.0.0.0" "{DLF_PORT}" &!'''
+    start_cmd = f'''nohup java -jar paimon-server-starter-1.0-SNAPSHOT.jar "server" "file:///var/lib/clickhouse/user_files/warehouse/" "dlf" "0.0.0.0" "{DLF_PORT}" &!'''
     run_and_check(
         ["docker exec {cont_id} bash -lc 'cd /root/paimon-rest-catalog && {start_cmd}'".format(
             cont_id=instance_id,
@@ -83,7 +74,7 @@ def test_paimon_rest_catalog(started_cluster):
     # clean warehouse data path
     instance_id = cluster.get_instance_docker_id("node")
     run_and_check(
-        ["docker exec {cont_id} bash -lc \"rm -fr /tmp/warehouse\"".format(
+        ["docker exec {cont_id} bash -lc \"rm -fr /var/lib/clickhouse/user_files/warehouse\"".format(
             cont_id=instance_id,
         )]
         , 
@@ -156,7 +147,7 @@ def test_paimon_rest_catalog(started_cluster):
     )
 
     # insert data
-    insert_cmd = '''java -jar target/paimon-server-starter-1.0-SNAPSHOT.jar "insert" "file:///tmp/warehouse/" "test" "test_table"'''
+    insert_cmd = '''java -jar paimon-server-starter-1.0-SNAPSHOT.jar "insert" "file:///var/lib/clickhouse/user_files/warehouse/" "test" "test_table"'''
     run_and_check(
         ["docker exec {cont_id} bash -lc \"cd /root/paimon-rest-catalog && {insert_cmd}\"".format(
             cont_id=instance_id,
@@ -177,6 +168,5 @@ def test_paimon_rest_catalog(started_cluster):
 
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
     node.query(f"create database paimon_rest_db_dlf engine = DataLakeCatalog('http://{paimon_rest_catalog_container_ip}:{DLF_PORT}') SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse', dlf_access_key_id='accessKeyIdxx', dlf_access_key_secret='accessKeySecret', region='cn-hangzhou';", settings={"allow_experimental_database_paimon_rest_catalog": 1})
-    error = node.query_and_get_error("show tables;", database="paimon_rest_db_dlf")
-    assert "HTTP status code: 401" in error
+    assert "" == node.query("show tables;", database="paimon_rest_db_dlf")
 

@@ -16,6 +16,13 @@ struct QueryIdHolder;
 class InsertDependenciesBuilder;
 using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
+/// Base class for holding any other resources up till the end of query execution.
+class ICustomResourceHolder
+{
+public:
+    virtual ~ICustomResourceHolder() = default;
+};
+
 struct QueryPlanResourceHolder
 {
     QueryPlanResourceHolder();
@@ -36,6 +43,7 @@ struct QueryPlanResourceHolder
     std::vector<TableLockHolder> table_locks;
     std::vector<std::shared_ptr<QueryIdHolder>> query_id_holders;
     std::vector<InsertDependenciesBuilderConstPtr> insert_dependencies_holders;
+    std::vector<std::shared_ptr<ICustomResourceHolder>> custom_resources;
 };
 
 }

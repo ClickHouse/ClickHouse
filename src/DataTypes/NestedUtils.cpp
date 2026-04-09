@@ -99,6 +99,21 @@ std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & s
     return getColumnAndSubcolumnPair(name, storage_columns).first;
 }
 
+std::optional<String> tryGetColumnNameInStorage(const String & name, const NameSet & storage_columns)
+{
+    if (storage_columns.contains(name))
+        return name;
+
+    auto subcolumn_pairs = Nested::getAllColumnAndSubcolumnPairs(name);
+    for (const auto & [column_name, _] : subcolumn_pairs)
+    {
+        if (storage_columns.contains(String(column_name)))
+            return String(column_name);
+    }
+
+    return std::nullopt;
+}
+
 std::string extractTableName(const std::string & nested_name)
 {
     auto split = splitName(nested_name);
@@ -200,6 +215,11 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
     std::unordered_map<String, NamesAndTypesList> nested;
     for (const auto & name_type : names_and_types)
     {
+        /// Skip subcolumns (e.g. `c0.c2.null` derived from `c0.c2 Array(Nullable(Tuple()))`).
+        /// They are not real flat-nested columns like `n.a Array(T)`, `n.b Array(T)`.
+        if (name_type.isSubcolumn())
+            continue;
+
         const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
 
         /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
@@ -250,8 +270,29 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
             continue;
 
         auto split = splitName(name_type.name);
-        if (name_type.isSubcolumn() || split.second.empty())
+        if (split.second.empty())
             continue;
+
+        if (name_type.isSubcolumn())
+        {
+            /// If this is a subcolumn (e.g. `c0.c2.null` — subcolumn `null` of `c0.c2`)
+            /// and its parent column is part of a Nested group, remap it to be a subcolumn
+            /// of the Nested type (e.g. subcolumn `c2.null` of Nested `c0`).
+            /// This ensures the Nested serialization is used, which handles shared offsets correctly.
+            auto name_in_storage = name_type.getNameInStorage();
+            auto storage_split = splitName(name_in_storage);
+            if (!storage_split.second.empty())
+            {
+                auto it = nested_types.find(storage_split.first);
+                if (it != nested_types.end())
+                {
+                    auto new_subcolumn = concatenateName(storage_split.second, name_type.getSubcolumnName());
+                    if (auto subcolumn_type = it->second->tryGetSubcolumnType(new_subcolumn))
+                        name_type = NameAndTypePair{storage_split.first, new_subcolumn, it->second, subcolumn_type};
+                }
+            }
+            continue;
+        }
 
         auto it = nested_types.find(split.first);
         if (it != nested_types.end())

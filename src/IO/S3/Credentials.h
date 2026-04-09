@@ -6,6 +6,7 @@
 
 #    include <base/types.h>
 
+#    include <aws/core/auth/AWSCredentials.h>
 #    include <aws/core/utils/threading/ReaderWriterLock.h>
 #    include <aws/core/http/HttpRequest.h>
 #    include <aws/core/endpoint/AWSEndpoint.h>
@@ -105,9 +106,23 @@ class AWSInstanceProfileCredentialsProvider : public Aws::Auth::AWSCredentialsPr
 public:
     /// See InstanceProfileCredentialsProvider.
 
+    static std::shared_ptr<Aws::Auth::AWSCredentialsProvider>
+    create(const Aws::Client::ClientConfiguration & client_configuration, bool use_secure_pull);
+
     explicit AWSInstanceProfileCredentialsProvider(const std::shared_ptr<AWSEC2InstanceProfileConfigLoader> & config_loader);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
+    struct CacheKey
+    {
+        String endpoint;
+        bool use_secure_pull;
+
+        bool operator==(const CacheKey & rhs) const = default;
+
+        void updateHash(SipHash & hash) const;
+    };
+
 protected:
     void Reload() override;
 

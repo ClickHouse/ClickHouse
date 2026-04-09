@@ -21,15 +21,14 @@ def start_cluster():
 
 
 def clone_git_repository(repo, dir, commit=None):
-    command = (
-        f"rm -rf {dir} && mkdir {dir} && cd {dir} && git clone --quiet {repo} {dir}"
-    )
+    command = f"rm -rf {dir} && mkdir {dir} && cd {dir} && GIT_TERMINAL_PROMPT=0 timeout 60 git clone --quiet {repo} {dir}"
     if commit:
         command += f" && git checkout --quiet {commit}"
     num_attempts = 10
     for attempt_no in range(1, num_attempts + 1):
         try:
             node.exec_in_container(["bash", "-c", command])
+            return
         except Exception as err:
             try_again = attempt_no < num_attempts
             what_next = "will try again" if try_again else "will stop"

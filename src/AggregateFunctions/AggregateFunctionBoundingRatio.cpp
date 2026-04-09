@@ -252,7 +252,7 @@ FROM numbers(10)
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("boundingRatio", {createAggregateFunctionRate, AggregateFunctionProperties{}, documentation});
+    factory.registerFunction("boundingRatio", {createAggregateFunctionRate, documentation});
 }
 
 }

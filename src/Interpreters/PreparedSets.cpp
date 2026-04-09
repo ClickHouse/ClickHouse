@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/Operators.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -178,6 +179,20 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
+void FutureSetFromSubquery::replaceSetAndKey(SetAndKeyPtr set)
+{
+    if (set->key != set_and_key->key)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to exchange sets with different keys: {} vs {}", set->key, set_and_key->key);
+    set_and_key = std::move(set);
+}
+
+SetAndKeyPtr FutureSetFromSubquery::detachSetAndKey()
+{
+    SetAndKeyPtr ret;
+    std::swap(ret, set_and_key);
+    return ret;
+}
+
 SetPtr FutureSetFromSubquery::get() const
 {
     if (set_and_key->set != nullptr && set_and_key->set->isCreated())
@@ -200,8 +215,38 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     if (set.empty())
         return;
 
-    Chunk set_chunk(set.getSetElements(), set.getTotalRowCount());
-    auto pipeline = QueryPipeline(external_table_->write({}, external_table_->getInMemoryMetadataPtr(), nullptr, /*async_insert=*/false));
+    auto metadata = external_table_->getInMemoryMetadataPtr();
+    const auto & expected_columns = metadata->getColumns().getAllPhysical();
+
+    Columns set_elements = set.getSetElements();
+    const auto & set_types = set.getElementsTypes();
+
+    /// The Set class may strip Nullable/LowCardinality from types when storing elements
+    /// (depending on transform_null_in setting), so we need to convert the set elements
+    /// to match the external table's expected column types.
+    Columns converted_columns;
+    converted_columns.reserve(set_elements.size());
+
+    size_t idx = 0;
+    for (const auto & expected_col : expected_columns)
+    {
+        if (idx >= set_elements.size())
+            break;
+
+        const auto & set_column = set_elements[idx];
+        const auto & set_type = set_types[idx];
+        const auto & expected_type = expected_col.type;
+
+        if (!set_type->equals(*expected_type))
+            converted_columns.push_back(castColumn({set_column, set_type, ""}, expected_type));
+        else
+            converted_columns.push_back(set_column);
+
+        ++idx;
+    }
+
+    Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
+    auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
     executor.finish();

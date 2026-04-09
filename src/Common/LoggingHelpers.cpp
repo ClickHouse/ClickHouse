@@ -90,7 +90,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     static const time_t cleanup_delay_s = 600;
     time_t cutoff_time = now - cleanup_delay_s; // entries older than this are stale
 
-    UInt128 name_hash = sipHash128(logger->name().c_str(), logger->name().size());
+    UInt64 name_hash = sipHash64(logger->name().c_str(), logger->name().size());
 
     std::lock_guard lock(mutex);
 

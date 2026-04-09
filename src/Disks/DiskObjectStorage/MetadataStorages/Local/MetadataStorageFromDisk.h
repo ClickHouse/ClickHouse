@@ -1,15 +1,19 @@
 #pragma once
 
+#include <Disks/DiskObjectStorage/Replication/Location.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/SharedMutex.h>
+
+#include <base/defines.h>
 
 namespace DB
 {
@@ -26,8 +30,39 @@ private:
     const std::string compatible_key_prefix;
     const ObjectStorageKeyGeneratorPtr key_generator;
 
+    mutable std::mutex removed_objects_mutex;
+    InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
+
+    static constexpr std::string_view SYSTEM_METADATA_DIR = ".metadata";
+    static constexpr std::string_view REMOVAL_LOG_FILE = ".metadata/blobs_to_remove.log";
+
+    enum RemovalLogVersion : UInt32
+    {
+        V0 = 0, /// initial binary format
+    };
+
+    static constexpr RemovalLogVersion REMOVAL_LOG_CURRENT_VERSION = RemovalLogVersion::V0;
+
+    enum RemovalLogEntryType : UInt8
+    {
+        ADD = 0,
+        REMOVED = 1,
+    };
+
+    /// Persistence for the removal queue. Returns true if compaction is needed (version mismatch or truncated entries).
+    bool loadRemovalLog() TSA_REQUIRES(removed_objects_mutex);
+    void appendToRemovalLog(RemovalLogEntryType entry_type, const StoredObjects & blobs) TSA_REQUIRES(removed_objects_mutex);
+    void compactRemovalLog() TSA_REQUIRES(removed_objects_mutex);
+
+    /// Number of REMOVED entries in the log that haven't been compacted yet.
+    size_t removal_log_stale_entries TSA_GUARDED_BY(removed_objects_mutex) = 0;
+
+    bool persist_removal_queue;
+    size_t removal_log_compaction_threshold;
+    LoggerPtr log;
+
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_);
+    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -79,32 +114,35 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 
     bool isReadOnly() const override { return disk->isReadOnly(); }
+
+    void startup() override;
+
+    BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
+    int64_t recordAsRemoved(const StoredObjects & blobs) override;
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
-    const MetadataStorageFromDisk & metadata_storage;
+    MetadataStorageFromDisk & metadata_storage;
+
+    /// We collect all removed in transaction blobs here. After successful tx commit
+    /// these blobs will be scheduled for background removal (into in-memory queue of outdated blobs).
+    StoredObjects objects_to_remove;
     MetadataOperationsHolder operations;
 
 public:
-    explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
-        : metadata_storage(metadata_storage_)
-    {}
+    explicit MetadataStorageFromDiskTransaction(MetadataStorageFromDisk & metadata_storage_);
 
-    ~MetadataStorageFromDiskTransaction() override = default;
-
-    const IMetadataStorage & getStorageForNonTransactionalReads() const final;
-
-    void commit(const TransactionCommitOptionsVariant & options) final;
+    void commit(const TransactionCommitOptionsVariant & options) override;
+    TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &options) override;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
-
-    bool supportAddingBlobToMetadata() override { return true; }
 
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
@@ -116,9 +154,7 @@ public:
 
     void setReadOnly(const std::string & path) override;
 
-    void unlinkFile(const std::string & path) override;
-
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
 
     void createDirectory(const std::string & path) override;
 
@@ -126,7 +162,7 @@ public:
 
     void removeDirectory(const std::string & path) override;
 
-    void removeRecursive(const std::string & path) override;
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
 
@@ -136,11 +172,10 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
-
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+    void truncateFile(const std::string & src_path, size_t target_size) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
+    StoredObjects getSubmittedForRemovalBlobs() override;
 };
 
 }

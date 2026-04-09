@@ -2,7 +2,7 @@
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/IStorage.h>
-#include <Storages/TimeSeries/PrometheusQueryEvaluationRange.h>
+#include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 
 
 namespace DB
@@ -12,14 +12,15 @@ namespace DB
 class StoragePrometheusQuery : public IStorage
 {
 public:
-    StoragePrometheusQuery(
-        const StorageID & table_id_,
-        const ColumnsDescription & columns_,
-        const StorageID & time_series_storage_id_,
-        const PrometheusQueryTree & promql_query_);
+    struct Configuration
+    {
+        std::shared_ptr<const PrometheusQueryTree> promql_query;
+        PrometheusQueryEvaluationSettings evaluation_settings;
+    };
 
-    void setEvaluationTime(const Field & time_);
-    void setEvaluationRange(const PrometheusQueryEvaluationRange & range_);
+    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, bool over_range);
+
+    StoragePrometheusQuery(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
 
     std::string getName() const override { return "PrometheusQuery"; }
 
@@ -34,11 +35,7 @@ public:
         size_t num_streams) override;
 
 private:
-    StorageID time_series_storage_id;
-    PrometheusQueryTree promql_query;
-    Field evaluation_time;
-    PrometheusQueryEvaluationRange evaluation_range;
-
+    Configuration config;
     LoggerPtr log;
 };
 

@@ -78,7 +78,7 @@ private:
 
 REGISTER_FUNCTION(ToInterval)
 {
-    FunctionDocumentation::Description description_toInterval = R"(
+    FunctionDocumentation::Description description = R"(
 Creates an Interval value from a numeric value and a unit string.
 
 This function provides a unified way to create intervals of different types (seconds, minutes, hours, days, weeks, months, quarters, years)
@@ -87,15 +87,15 @@ from a single function by specifying the unit as a string argument. The unit str
 This is equivalent to calling type-specific functions like `toIntervalSecond`, `toIntervalMinute`, `toIntervalDay`, etc.,
 but allows the unit to be specified dynamically as a string parameter.
     )";
-    FunctionDocumentation::Syntax syntax_toInterval = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 toInterval(value, unit)
     )";
-    FunctionDocumentation::Arguments arguments_toInterval = {
+    FunctionDocumentation::Arguments arguments = {
         {"value", "The numeric value representing the number of units. Can be any numeric type.", {"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64", "Float32", "Float64"}},
         {"unit", R"(The unit of time. Must be a constant string. Valid values: 'nanosecond', 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'.)", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_toInterval = {R"(Returns an Interval value of the specified type. The result type depends on the unit: IntervalNanosecond, IntervalMicrosecond, IntervalMillisecond, IntervalSecond, IntervalMinute, IntervalHour, IntervalDay, IntervalWeek, IntervalMonth, IntervalQuarter, or IntervalYear.)", {"Interval"}};
-    FunctionDocumentation::Examples examples_toInterval = {
+    FunctionDocumentation::ReturnedValue returned_value = {R"(Returns an Interval value of the specified type. The result type depends on the unit: IntervalNanosecond, IntervalMicrosecond, IntervalMillisecond, IntervalSecond, IntervalMinute, IntervalHour, IntervalDay, IntervalWeek, IntervalMonth, IntervalQuarter, or IntervalYear.)", {"Interval"}};
+    FunctionDocumentation::Examples examples = {
         {"Create intervals with different units", R"(
 SELECT
     toInterval(5, 'second') AS seconds,
@@ -132,11 +132,11 @@ FROM numbers(5)
 └────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_toInterval = {25, 4};
-    FunctionDocumentation::Category category_toInterval = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toInterval = {description_toInterval, syntax_toInterval, arguments_toInterval, {}, returned_value_toInterval, examples_toInterval, introduced_in_toInterval, category_toInterval};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionToInterval>(documentation_toInterval);
+    factory.registerFunction<FunctionToInterval>(documentation);
 }
 
 }

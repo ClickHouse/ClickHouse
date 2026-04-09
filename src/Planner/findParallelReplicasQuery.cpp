@@ -8,7 +8,6 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/ASTSubquery.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -30,6 +29,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace ErrorCodes
@@ -491,7 +491,7 @@ const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tr
 
     auto context = query_node ? query_node->getContext() : union_node->getContext();
 
-    if (!context->canUseParallelReplicasOnFollower())
+    if (!context->getSettingsRef()[Setting::serialize_query_plan] && !context->canUseParallelReplicasOnFollower())
         return nullptr;
 
     return findTableForParallelReplicas(query_tree_node.get(), context);
@@ -514,7 +514,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto [header, new_planner_context] = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
@@ -528,6 +528,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         header,
         processed_stage,
         modified_query_ast,
+        std::move(modified_query_tree),
+        std::move(new_planner_context),
         context,
         storage_limits,
         nullptr);

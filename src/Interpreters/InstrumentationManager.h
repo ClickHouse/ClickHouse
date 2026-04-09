@@ -28,8 +28,11 @@ enum class EntryType : UInt8
 #include <boost/multi_index/ordered_index.hpp>
 #include <xray/xray_interface.h>
 
-#include <vector>
+#include <chrono>
+#include <functional>
+#include <unordered_map>
 #include <variant>
+#include <vector>
 
 namespace DB
 {

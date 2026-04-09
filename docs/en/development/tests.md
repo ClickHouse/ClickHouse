@@ -9,6 +9,21 @@ doc_type: 'guide'
 
 # Testing ClickHouse
 
+## Test types {#test-types}
+
+There are following tests in ClickHouse:
+- [Functional tests](#functional-tests) - a set of queries and scripts which include the following intersecting subsets
+  - [Fast test](#running-fast-tests) - the minimal subset
+  - [Stateless tests](#running-stateless-tests) which do not require populating databases with data
+  - Sequential tests which cannot be run in parallel
+- [Integration tests](#integration-tests), run by `pytest` in a cluster
+- [Unit tests](#unit-tests)
+- [Performance tests](#performance-tests)
+- [Build tests](#build-tests)
+- [Sanitizers](#sanitizers)
+- [Fuzzers](#fuzzing)
+and some others, see the sections below.
+
 ## Functional tests {#functional-tests}
 
 Functional tests are the most simple and convenient to use.
@@ -44,6 +59,80 @@ Test results (`stderr` and `stdout`) are written to files `01428_hash_set_nan_ke
 See `tests/clickhouse-test --help` for all options of `clickhouse-test`.
 You can run all tests or run subset of tests by providing a filter for test names: `./clickhouse-test substring`.
 There are also options to run tests in parallel or in random order.
+
+### Running fast tests {#running-fast-tests}
+
+You may need a decently powerful machine to run a subset of tests (called "Fast test"). The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 GB storage.
+
+1. Install prerequisites and re-login.
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+```
+
+2. Get the source code.
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. Build code and run "fast tests".
+
+```sh
+python -m ci.praktika run fast
+```
+
+You should get
+```sh
+Failed: 0, Passed: 7394, Skipped: 1795
+```
+
+If you leave the run unattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
+
+### Running stateless tests {#running-stateless-tests}
+
+You may need a decently powerful machine to run stateless tests. The following works on `m7i.8xlarge` AWS amd64 Ubuntu instance with 200 GB storage.
+
+1. Install prerequisites and re-login.
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+2. Get the source code.
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. Build the code.
+```sh
+python -m ci.praktika run build_debug
+cp ci/tmp/build/programs/clickhouse ci/tmp
+```
+
+4. Run stateless tests which can be run in parallel.
+```sh
+python -m ci.praktika run functional
+```
+
+You should get
+```sh
+Failed: 0, Passed: 8497, Skipped: 103
+```
+
+Note. `python -m ci.praktika run` invocations run a specific continuous integration job, you can read more about ClickHouse CI [here](continuous-integration.md#running-stateless-tests).
 
 ### Adding a new test {#adding-a-new-test}
 
@@ -107,23 +196,17 @@ List of available tags:
 | `global` | Same as `shard`. Prefer `shard` ||
 | `zookeeper` | Test requires Zookeeper or ClickHouse Keeper to run | Test uses `ReplicatedMergeTree` |
 | `replica` | Same as `zookeeper`. Prefer `zookeeper` ||
-| `no-fasttest`|  Test is not run under [Fast test](continuous-integration.md#fast-test) | Test uses `MySQL` table engine which is disabled in Fast test|
-| `fasttest-only`|  Test is only run under [Fast test](continuous-integration.md#fast-test) ||
+| `no-fasttest`|  Test is not run under [Fast test](#test-types) | Test uses `MySQL` table engine which is disabled in Fast test|
+| `fasttest-only`|  Test is only run under [Fast test](#test-types) ||
 | `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
-| `no-replicated-database` |||
-| `no-ordinary-database` |||
+| `no-replicated-database` | Disables test when the default database uses `ReplicatedDatabaseEngine` ||
+| `no-ordinary-database` | Disables test when the default database engine is `Ordinary` ||
 | `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
-| `no-parallel-replicas` |||
-| `no-debug` |||
-| `no-stress` |||
-| `no-polymorphic-parts` |||
-| `no-random-settings` |||
-| `no-random-merge-tree-settings` |||
-| `no-backward-compatibility-check` |||
-| `no-cpu-x86_64` |||
-| `no-cpu-aarch64` |||
-| `no-cpu-ppc64le` |||
-| `no-s3-storage` |||
+| `no-parallel-replicas` | Disables test when parallel replicas are enabled ||
+| `no-debug` | Disables tests in Debug builds ||
+| `no-release` | Disables tests in Release builds ||
+
+The following options are also supported: `no-stress`, `no-polymorphic-parts`, `no-random-settings`, `no-random-merge-tree-settings`, `no-backward-compatibility-check`, `no-cpu-x86_64`, `no-cpu-aarch64`, `no-cpu-ppc64le`, `no-s3-storage`.
 
 In addition to above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
@@ -245,13 +328,8 @@ You can use these kind of tools as a code examples and for exploration and manua
 There are tests for machine learned models in `tests/external_models`.
 These tests are not updated and must be transferred to integration tests.
 
-There is separate test for quorum inserts.
-This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
-
-Quorum test was written by separate team before ClickHouse was open-sourced.
-This team no longer work with ClickHouse.
-Test was accidentally written in Java.
-For these reasons, quorum test must be rewritten and moved to integration tests.
+There is a separate test for quorum inserts.
+This test runs a ClickHouse cluster on separate servers and emulates various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT`, like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts were written and all rejected inserts were not.
 
 ## Manual Testing {#manual-testing}
 
