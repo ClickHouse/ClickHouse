@@ -23,6 +23,50 @@ const DB::Strings compressionMethods
 const DB::Strings codecs
     = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
 
+String escapeSQLString(const String & s, const char escape_char)
+{
+    String out;
+    out.reserve(s.size());
+    for (const char c : s)
+    {
+        if (c == escape_char)
+            out += escape_char;
+        out += c;
+    }
+    return out;
+}
+
+String urlEncodeQueryParam(const String & s)
+{
+    String out;
+    out.reserve(s.size() * 3);
+    for (const unsigned char c : s)
+    {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            out += static_cast<char>(c);
+        }
+        else if (c == ' ')
+        {
+            out += '+';
+        }
+        else
+        {
+            static constexpr const char hex[] = "0123456789ABCDEF";
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 0xF];
+        }
+    }
+    return out;
+}
+
+void SystemTable::setName(ExprSchemaTable * est) const
+{
+    est->mutable_database()->set_value(schema_name);
+    est->mutable_table()->set_value(table_name);
+}
+
 using SettingEntries = std::unordered_map<String, std::function<void(const JSONObjectType &)>>;
 
 static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, const String & default_region, const uint32_t default_port)
@@ -388,6 +432,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_sync_settings", [&](const JSONObjectType & value) { enable_sync_settings = value.getBool(); }},
         {"enable_backups", [&](const JSONObjectType & value) { enable_backups = value.getBool(); }},
         {"enable_renames", [&](const JSONObjectType & value) { enable_renames = value.getBool(); }},
+        {"allow_nasty_identifiers", [&](const JSONObjectType & value) { allow_nasty_identifiers = value.getBool(); }},
         {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
@@ -640,7 +685,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
 {
     String buf;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     if (processServerQuery(
             true,
@@ -648,7 +693,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
                 R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 detached_tbl,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file);
@@ -745,7 +790,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
 {
     String res;
     const String & detached_tbl = detached ? "detached_parts" : "parts";
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     /// The system.parts table doesn't support sampling, so pick up a random part with a window function
     if (processServerQuery(
@@ -757,11 +802,11 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 rand_val,
                 detached_tbl,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);
@@ -775,7 +820,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
 uint32_t FuzzConfig::tableCountSystemRows(const String & system_table, const String & database, const String & table)
 {
     String buf;
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     if (processServerQuery(
             false,
@@ -783,7 +828,7 @@ uint32_t FuzzConfig::tableCountSystemRows(const String & system_table, const Str
                 R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 system_table,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file);
@@ -799,7 +844,7 @@ String
 FuzzConfig::tableGetRandomSystemName(const uint64_t rand_val, const String & system_table, const String & database, const String & table)
 {
     String res;
-    const String & db_clause = database.empty() ? "" : (R"("database" = ')" + database + "' AND ");
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
 
     /// These system tables don't support sampling, so pick a random row with a window function
     if (processServerQuery(
@@ -810,11 +855,11 @@ FuzzConfig::tableGetRandomSystemName(const uint64_t rand_val, const String & sys
                 "{} \"table\" = '{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 system_table,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 rand_val,
                 system_table,
                 db_clause,
-                table,
+                escapeSQLString(table),
                 fuzzer_out_file.generic_string())))
     {
         std::ifstream infile(fuzzer_out_file, std::ios::in);

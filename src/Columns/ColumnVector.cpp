@@ -73,6 +73,12 @@ void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
+void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+}
+
+template <typename T>
 WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
     auto s = data.size();
@@ -352,12 +358,15 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T> && !is_floating_point<T>)
+    if constexpr (has_find_extreme_implementation<T>)
     {
-        /// Disabled for floating point:
-        /// * floating point: We don't deal with nan_direction_hint
-        /// * stability::Stable: We might return any value, not the first
-        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
+        /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
+        /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
+        /// stability::Stable: We might return any value, not the first.
+        const bool nan_direction_ok = !is_floating_point<T>
+            || (direction == IColumn::PermutationSortDirection::Ascending && nan_direction_hint >= 0)
+            || (direction == IColumn::PermutationSortDirection::Descending && nan_direction_hint <= 0);
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable) && nan_direction_ok)
         {
             std::optional<size_t> index;
             if (direction == IColumn::PermutationSortDirection::Ascending)

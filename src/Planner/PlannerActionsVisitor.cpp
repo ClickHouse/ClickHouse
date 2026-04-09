@@ -1247,6 +1247,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         actions_stack_node.addInputColumnIfNecessary(correlated_subquery_name, query_node.getResultType());
     }
 
+    /// The same correlated subquery can be referenced multiple times in the projection,
+    /// for example when `untuple` expands into multiple `tupleElement` calls sharing
+    /// the same argument.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == correlated_subquery_name)
+            return {correlated_subquery_name, levels};
+    }
+
     const auto & correlated_columns = query_node.getCorrelatedColumns().getNodes();
 
     ColumnIdentifiers correlated_column_identifiers;
