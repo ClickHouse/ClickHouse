@@ -131,6 +131,8 @@ public:
     const MaterializedCTEPtr & getMaterializedCTE() const { return materialized_cte; }
 
 private:
+    static VirtualColumnsDescription createVirtuals();
+
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
