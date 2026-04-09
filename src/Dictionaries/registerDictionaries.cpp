@@ -1,5 +1,5 @@
-#include "DictionaryFactory.h"
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionarySourceFactory.h>
 
 namespace DB
 {
@@ -22,6 +22,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_fac
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
 void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & source_factory);
+void registerDictionarySourceYTsaurus(DictionarySourceFactory & source_factory);
 
 class DictionaryFactory;
 void registerDictionaryRangeHashed(DictionaryFactory & factory);
@@ -36,7 +37,7 @@ void registerDictionaryPolygon(DictionaryFactory & factory);
 void registerDictionaryDirect(DictionaryFactory & factory);
 
 
-void registerDictionaries(bool use_legacy_mongodb_integration)
+void registerDictionaries()
 {
     {
         auto & source_factory = DictionarySourceFactory::instance();
@@ -44,12 +45,7 @@ void registerDictionaries(bool use_legacy_mongodb_integration)
         registerDictionarySourceFile(source_factory);
         registerDictionarySourceMysql(source_factory);
         registerDictionarySourceClickHouse(source_factory);
-
-        if (use_legacy_mongodb_integration)
-            registerDictionarySourceMongoDBPocoLegacy(source_factory);
-        else
-            registerDictionarySourceMongoDB(source_factory);
-
+        registerDictionarySourceMongoDB(source_factory);
         registerDictionarySourceRedis(source_factory);
         registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);
@@ -60,6 +56,7 @@ void registerDictionaries(bool use_legacy_mongodb_integration)
         registerDictionarySourceHTTP(source_factory);
         registerDictionarySourceLibrary(source_factory);
         registerDictionarySourceYAMLRegExpTree(source_factory);
+        registerDictionarySourceYTsaurus(source_factory);
     }
 
     {

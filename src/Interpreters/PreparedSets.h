@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <city.h>
+#include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <memory>
 #include <unordered_map>
@@ -25,6 +26,9 @@ struct SetKeyColumns;
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
 struct Settings;
 
 /// This is a structure for prepared sets cache.
@@ -33,6 +37,7 @@ struct SetAndKey
 {
     String key;
     SetPtr set;
+    StoragePtr external_table;
 };
 
 using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
@@ -127,7 +132,7 @@ public:
         Hash hash_,
         ASTPtr ast_,
         std::unique_ptr<QueryPlan> source_,
-        StoragePtr external_table_,
+        StoragePtr external_table,
         std::shared_ptr<FutureSetFromSubquery> external_table_set_,
         bool transform_null_in,
         SizeLimits size_limits,
@@ -143,17 +148,28 @@ public:
 
     ~FutureSetFromSubquery() override;
 
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
+
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr & context);
+    std::unique_ptr<QueryPlan> build(
+        const SizeLimits & network_transfer_limits,
+        const PreparedSetsCachePtr & prepared_sets_cache);
+
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
+
+    void buildExternalTableFromInplaceSet(StoragePtr external_table_);
     void setExternalTable(StoragePtr external_table_);
 
     const QueryPlan * getQueryPlan() const { return source.get(); }
@@ -163,7 +179,6 @@ private:
     Hash hash;
     ASTPtr ast;
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     std::shared_ptr<FutureSetFromSubquery> external_table_set;
 
     std::unique_ptr<QueryPlan> source;

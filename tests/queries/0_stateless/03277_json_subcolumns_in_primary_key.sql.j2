@@ -1,10 +1,16 @@
 -- Tags: long
 
 set optimize_read_in_order=1;
-set allow_experimental_json_type=1;
+set enable_json_type=1;
 set allow_experimental_variant_type=1;
 set use_variant_as_common_type=1;
 set enable_analyzer=1;
+set optimize_sorting_by_input_stream_properties=1;
+set optimize_use_projections=1;
+set optimize_use_implicit_projections=1;
+set query_plan_optimize_prewhere=1;
+set optimize_move_to_prewhere=1;
+set optimize_trivial_insert_select=0;
 
 drop table if exists test;
 
@@ -68,4 +74,3 @@ select trimLeft(explain) from (explain indexes=1 select count() from test where 
 drop table test;
 
 {% endfor -%}
-

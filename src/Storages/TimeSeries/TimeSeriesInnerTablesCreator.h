@@ -29,14 +29,14 @@ public:
     StorageID getInnerTableID(ViewTarget::Kind inner_table_kind, const UUID & inner_table_uuid) const;
 
     /// Generates a CREATE TABLE query for an inner table.
-    std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(ViewTarget::Kind inner_table_kind,
+    boost::intrusive_ptr<ASTCreateQuery> getInnerTableCreateQuery(ViewTarget::Kind inner_table_kind,
                                                              const UUID & inner_table_uuid,
-                                                             const std::shared_ptr<ASTStorage> & inner_storage_def) const;
+                                                             const ASTStorage * inner_storage_def) const;
 
     /// Creates an inner table.
     StorageID createInnerTable(ViewTarget::Kind inner_table_kind,
                                const UUID & inner_table_uuid,
-                               const std::shared_ptr<ASTStorage> & inner_storage_def) const;
+                               const ASTStorage * inner_storage_def) const;
 
 private:
     const StorageID time_series_storage_id;

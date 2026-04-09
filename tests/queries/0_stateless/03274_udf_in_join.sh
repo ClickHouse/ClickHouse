@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -q "
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_equals AS (x, y) -> x = y;
   SET optimize_rewrite_array_exists_to_has = 1;
 
-  EXPLAIN SYNTAX SELECT 1 FROM v0 JOIN v0 vx ON ${CLICKHOUSE_DATABASE}_second(v0.c0, vx.c0); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+  EXPLAIN PLAN SELECT 1 FROM v0 JOIN v0 vx ON ${CLICKHOUSE_DATABASE}_second(v0.c0, vx.c0); -- { serverError INVALID_JOIN_ON_EXPRESSION }
   EXPLAIN SYNTAX SELECT 1 FROM v0 JOIN v0 vx ON ${CLICKHOUSE_DATABASE}_equals(v0.c0, vx.c0);
 
   SELECT 1 FROM v0 JOIN v0 vx ON ${CLICKHOUSE_DATABASE}_equals(v0.c0, vx.c0);

@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 NullWriteBuffer PullingOutputFormat::out;
 
-PullingOutputFormat::PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_)
+PullingOutputFormat::PullingOutputFormat(SharedHeader header, std::atomic_bool & consume_data_flag_)
     : IOutputFormat(header, out)
     , has_data_flag(consume_data_flag_)
 {}

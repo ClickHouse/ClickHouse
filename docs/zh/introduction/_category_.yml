@@ -1,7 +1,0 @@
-position: 1
-label: '简介'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: 简介

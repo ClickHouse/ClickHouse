@@ -30,9 +30,6 @@
 #include "Poco/Net/VerificationErrorArgs.h"
 #include "Poco/SharedPtr.h"
 #include "Poco/Util/AbstractConfiguration.h"
-#if defined(OPENSSL_FIPS) && OPENSSL_VERSION_NUMBER < 0x010001000L
-#    include <openssl/fips.h>
-#endif
 
 
 namespace Poco
@@ -100,7 +97,6 @@ namespace Net
     ///            <dhParamsFile>dh.pem</dhParamsFile>
     ///            <ecdhCurve>prime256v1</ecdhCurve>
     ///          </server|client>
-    ///          <fips>false</fips>
     ///       </openSSL>
     ///    </AppConfig>
     ///
@@ -152,8 +148,6 @@ namespace Net
     ///      If not specified or empty, the default parameters are used.
     ///    - ecdhCurve (string): Specifies the name of the curve to use for ECDH, based
     ///      on the curve names specified in RFC 4492. Defaults to "prime256v1".
-    ///    - fips: Enable or disable OpenSSL FIPS mode. Only supported if the OpenSSL version
-    ///      that this library is built against supports FIPS mode.
     {
     public:
         typedef Poco::SharedPtr<PrivateKeyPassphraseHandler> PrivateKeyPassphraseHandlerPtr;
@@ -294,11 +288,6 @@ namespace Net
         static const std::string CFG_DISABLE_PROTOCOLS;
         static const std::string CFG_DH_PARAMS_FILE;
         static const std::string CFG_ECDH_CURVE;
-
-#ifdef OPENSSL_FIPS
-        static const std::string CFG_FIPS_MODE;
-        static const bool VAL_FIPS_MODE;
-#endif
 
     protected:
         static int verifyClientCallback(int ok, X509_STORE_CTX * pStore);

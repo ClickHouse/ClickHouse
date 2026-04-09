@@ -1,2 +1,2 @@
-Condition: and((materialize(auid) in [1, 1]), (_CAST(toDate(ts)) in (-Inf, 1703980800]))
+Condition: and((auid in [1, 1]), (_CAST(toDate(ts)) in (-Inf, 1703980800]))
 Granules: 1/3

@@ -38,9 +38,9 @@ body:
         > Change "enabled" to true in "send_crash_reports" section in `config.xml`:
         ```xml
         <send_crash_reports>
-                <!-- Changing <enabled> to true allows sending crash reports to -->
-                <!-- the ClickHouse core developers team via Sentry https://sentry.io -->
-                <enabled>false</enabled>
+            <!-- Changing <enabled> to true allows sending crash reports to -->
+            <!-- the ClickHouse core developers team. -->
+            <enabled>true</enabled>
         </send_crash_reports>
         ```
         -----
@@ -52,7 +52,7 @@ body:
         * Which interface to use, if matters
         * Non-default settings, if any
         * `CREATE TABLE` statements for all tables involved
-        * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/master/programs/obfuscator/Obfuscator.cpp#L42-L80) if necessary
+        * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/c81bec37a58757be1e2b1ac6f20a62b3f14a31f1/programs/obfuscator/Obfuscator.cpp#L55-L95) if necessary
         * Queries to run that lead to unexpected result
     validations:
       required: true

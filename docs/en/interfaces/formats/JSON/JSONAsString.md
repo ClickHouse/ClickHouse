@@ -6,18 +6,18 @@ keywords: ['JSONAsString']
 output_format: false
 slug: /interfaces/formats/JSONAsString
 title: 'JSONAsString'
+doc_type: 'reference'
 ---
 
 | Input | Output  | Alias |
 |-------|---------|-------|
 | ✔     | ✗       |       |
 
-
 ## Description {#description}
 
 In this format, a single JSON object is interpreted as a single value. 
 If the input has several JSON objects (which are comma separated), they are interpreted as separate rows. 
-If the input data is enclosed in square brackets, it is interpreted as an array of JSON objects.
+If the input data is enclosed in `[]`, it is interpreted as an array of JSON objects.
 
 :::note
 This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
@@ -27,9 +27,9 @@ or be omitted.
 
 Once you serialize the entire JSON object to a String you can use the [JSON functions](/sql-reference/functions/json-functions.md) to process it.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Basic Example {#basic-example}
+### Basic example {#basic-example}
 
 ```sql title="Query"
 DROP TABLE IF EXISTS json_as_string;
@@ -62,4 +62,4 @@ SELECT * FROM json_square_brackets;
 └────────────────────────────┘
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

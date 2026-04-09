@@ -3,6 +3,7 @@ description: 'Documentation for LIMIT BY Clause'
 sidebar_label: 'LIMIT BY'
 slug: /sql-reference/statements/select/limit-by
 title: 'LIMIT BY Clause'
+doc_type: 'reference'
 ---
 
 # LIMIT BY Clause
@@ -21,24 +22,23 @@ During query processing, ClickHouse selects data ordered by sorting key. The sor
 :::
 
 If you want to use column numbers instead of column names in the `LIMIT BY` clause, enable the setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments).    
-    
 
 ## Examples {#examples}
 
 Sample table:
 
-``` sql
+```sql
 CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
 INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
 ```
 
 Queries:
 
-``` sql
+```sql
 SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
 ```
 
-``` text
+```text
 ┌─id─┬─val─┐
 │  1 │  10 │
 │  1 │  11 │
@@ -47,11 +47,11 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
 └────┴─────┘
 ```
 
-``` sql
+```sql
 SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 ```
 
-``` text
+```text
 ┌─id─┬─val─┐
 │  1 │  11 │
 │  1 │  12 │
@@ -63,7 +63,102 @@ The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query retur
 
 The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows in total (`LIMIT n BY + LIMIT`).
 
-``` sql
+```sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    domainWithoutWWW(REFERRER_URL) AS referrer,
+    device_type,
+    count() cnt
+FROM hits
+GROUP BY domain, referrer, device_type
+ORDER BY cnt DESC
+LIMIT 5 BY domain, device_type
+LIMIT 100
+```
+
+## LIMIT BY ALL {#limit-by-all}
+
+`LIMIT BY ALL` is equivalent to listing all the SELECT-ed expressions that are not aggregate functions.
+
+For example:
+
+```sql
+SELECT col1, col2, col3 FROM table LIMIT 2 BY ALL
+```
+
+is the same as
+
+```sql
+SELECT col1, col2, col3 FROM table LIMIT 2 BY col1, col2, col3
+```
+
+For a special case that if there is a function having both aggregate functions and other fields as its arguments, the `LIMIT BY` keys will contain the maximum non-aggregate fields we can extract from it.
+
+For example:
+
+```sql
+SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY ALL
+```
+
+is the same as
+
+```sql
+SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2)
+```
+
+## Examples {#examples-limit-by-all}
+
+Sample table:
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+Queries:
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query returns the same result.
+
+Using `LIMIT BY ALL`:
+
+```sql
+SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY ALL
+```
+
+This is equivalent to:
+
+```sql
+SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY id, val
+```
+
+The following query returns the top 5 referrers for each `domain, device_type` pair with a maximum of 100 rows in total (`LIMIT n BY + LIMIT`).
+
+```sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,

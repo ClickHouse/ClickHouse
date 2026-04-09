@@ -1,21 +1,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/KustoFunctions/IParserKQLFunction.h>
-#include <Parsers/Kusto/KustoFunctions/KQLAggregationFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLBinaryFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLCastingFunctions.h>
 #include <Parsers/Kusto/KustoFunctions/KQLDateTimeFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLDynamicFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLGeneralFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLIPFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLStringFunctions.h>
-#include <Parsers/Kusto/KustoFunctions/KQLTimeSeriesFunctions.h>
-#include <Parsers/Kusto/ParserKQLQuery.h>
-#include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/Utilities.h>
-#include <Parsers/ParserSetQuery.h>
-#include "Poco/String.h"
+#include <Poco/String.h>
 
 #include <fmt/format.h>
 
@@ -576,7 +564,7 @@ bool MakeTimeSpan::convertImpl(String & out, IParser::Pos & pos)
     datetime_str = "0000-00-00 " + datetime_str;
 
     out = fmt::format(
-        "CONCAT('{}',toString(SUBSTRING(toString(toTime(parseDateTime64BestEffortOrNull('{}', 9,'UTC'))),12)))", day, datetime_str);
+        "CONCAT('{}',toString(SUBSTRING(toString(toTimeWithFixedDate(parseDateTime64BestEffortOrNull('{}', 9,'UTC'))),12)))", day, datetime_str);
     return true;
 }
 

@@ -4,6 +4,7 @@ sidebar_label: 'FUNCTION'
 sidebar_position: 38
 slug: /sql-reference/statements/create/function
 title: 'CREATE FUNCTION -user defined function (UDF)'
+doc_type: 'reference'
 ---
 
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
@@ -11,7 +12,7 @@ Creates a user defined function (UDF) from a lambda expression. The expression m
 **Syntax**
 
 ```sql
-CREATE FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
+CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
 
@@ -34,7 +35,7 @@ SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 
 Result:
 
-``` text
+```text
 ┌─number─┬─plus(multiply(2, number), 1)─┐
 │      0 │                            1 │
 │      1 │                            3 │
@@ -51,12 +52,33 @@ SELECT number, parity_str(number) FROM numbers(3);
 
 Result:
 
-``` text
+```text
 ┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
 │      0 │ even                                 │
 │      1 │ odd                                  │
 │      2 │ even                                 │
 └────────┴──────────────────────────────────────┘
+```
+
+Replace an existing UDF:
+
+```sql
+CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+```
+
+Result:
+
+```text
+┌─create_query─────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
+└──────────────────────────────────────────────────────────┘
+
+┌─create_query───────────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> (frame + 1) │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ## Related Content {#related-content}

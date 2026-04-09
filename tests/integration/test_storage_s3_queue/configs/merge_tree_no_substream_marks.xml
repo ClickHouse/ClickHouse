@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <write_marks_for_substreams_in_compact_parts>0</write_marks_for_substreams_in_compact_parts>>
+    </merge_tree>
+</clickhouse>

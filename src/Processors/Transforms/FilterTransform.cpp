@@ -1,13 +1,21 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Columns/ColumnsCommon.h>
-#include <Core/Field.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Processors/Chunk.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Functions/IFunction.h>
 
 namespace ProfileEvents
 {
@@ -25,7 +33,7 @@ namespace ErrorCodes
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
-    return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
+    return filter_type->canBeUsedInBooleanContext();
 }
 
 auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
@@ -59,41 +67,53 @@ Block FilterTransform::transformHeader(
 }
 
 FilterTransform::FilterTransform(
-    const Block & header_,
+    SharedHeader header_,
     ExpressionActionsPtr expression_,
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<size_t> condition_hash_)
+    std::optional<std::pair<UInt64, String>> condition_)
     : ISimpleTransform(
             header_,
-            transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
+            std::make_shared<const Block>(transformHeader(*header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_)),
             true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
-    , condition_hash(condition_hash_)
+    , condition(condition_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
+    {
         expression->execute(transformed_header);
+
+        /// Special check to stop queries like "WHERE ignore(...)"
+        {
+            const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
+            while (node->type == ActionsDAG::ActionType::ALIAS)
+                node = node->children[0];
+
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "ignore")
+                always_false = true;
+        }
+    }
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
 
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
-        constant_filter_description = ConstantFilterDescription(*column);
+        always_false = always_false || ConstantFilterDescription(*column).always_false;
 
-    if (condition_hash.has_value())
+    if (condition.has_value())
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
 {
     if (!on_totals
-        && (constant_filter_description.always_false
+        && (always_false
             /// Optimization for `WHERE column in (empty set)`.
             /// The result will not change after set was created, so we can skip this check.
             /// It is implemented in prepare() stop pipeline before reading from input port.
@@ -109,6 +129,9 @@ IProcessor::Status FilterTransform::prepare()
     /// Until prepared sets are initialized, output port will be unneeded, and prepare will return PortFull.
     if (status != IProcessor::Status::PortFull)
         are_prepared_sets_initialized = true;
+
+    if (status == IProcessor::Status::Finished)
+        writeIntoQueryConditionCache({});
 
     return status;
 }
@@ -145,7 +168,11 @@ void FilterTransform::doTransform(Chunk & chunk)
         types = block.getDataTypes();
     }
 
-    if (constant_filter_description.always_true || on_totals)
+    size_t num_columns = columns.size();
+    ColumnPtr filter_column = columns[filter_column_position];
+    ConstantFilterDescription constant_filter_description(*filter_column);
+
+    if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);
@@ -153,34 +180,11 @@ void FilterTransform::doTransform(Chunk & chunk)
         return;
     }
 
-    size_t num_columns = columns.size();
-    ColumnPtr filter_column = columns[filter_column_position];
-
-    /** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
-        *  and now - are calculated. That is, not all cases are covered by the code above.
-        * This happens if the function returns a constant for a non-constant argument.
-        * For example, `ignore` function.
-        */
-    constant_filter_description = ConstantFilterDescription(*filter_column);
-
     if (constant_filter_description.always_false)
     {
-        if (query_condition_cache)
-        {
-            auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-            if (!mark_info)
-                return;
-
-            query_condition_cache->write(
-                        mark_info->table_uuid,
-                        mark_info->part_name,
-                        *condition_hash,
-                        mark_info->mark_ranges,
-                        mark_info->marks_count,
-                        mark_info->has_final_mark);
-        }
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         incrementProfileEvents(0, {});
-        return; /// Will finish at next prepare call
+        return;
     }
 
     std::unique_ptr<IFilterDescription> filter_description;
@@ -189,7 +193,24 @@ void FilterTransform::doTransform(Chunk & chunk)
         filter_column = filter_column->convertToFullColumnIfConst();
 
     if (filter_column->isSparse())
-        filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+    {
+        /// SparseFilterDescription only supports Sparse(UInt8) and Sparse(Nullable(UInt8)).
+        /// For other types (e.g. Float64 when WHERE uses sin(col)), fall back to the
+        /// regular FilterDescription which converts any numeric type to a boolean filter.
+        const auto * column_sparse = typeid_cast<const ColumnSparse *>(filter_column.get());
+        const auto & values_column = column_sparse->getValuesColumn();
+        if (typeid_cast<const ColumnUInt8 *>(&values_column)
+            || (typeid_cast<const ColumnNullable *>(&values_column)
+                && typeid_cast<const ColumnUInt8 *>(&assert_cast<const ColumnNullable &>(values_column).getNestedColumn())))
+        {
+            filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
+        }
+        else
+        {
+            filter_column = filter_column->convertToFullColumnIfSparse();
+            filter_description = std::make_unique<FilterDescription>(*filter_column);
+        }
+    }
     else
         filter_description = std::make_unique<FilterDescription>(*filter_column);
 
@@ -228,20 +249,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
     {
-        if (query_condition_cache)
-        {
-            auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-            if (!mark_info)
-                return;
-
-            query_condition_cache->write(
-                        mark_info->table_uuid,
-                        mark_info->part_name,
-                        *condition_hash,
-                        mark_info->mark_ranges,
-                        mark_info->marks_count,
-                        mark_info->has_final_mark);
-        }
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         /// SimpleTransform will skip it.
         return;
     }
@@ -276,5 +284,59 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
+{
+    if (!query_condition_cache)
+        return;
+
+    if (!mark_ranges_info)
+    {
+        /// FilterTransform has finished, we need to flush to the query result cache.
+
+        if (!buffered_mark_ranges_info)
+            return;
+
+        query_condition_cache->write(
+            buffered_mark_ranges_info->table_uuid,
+            buffered_mark_ranges_info->part_name,
+            condition->first,
+            condition->second,
+            buffered_mark_ranges_info->mark_ranges,
+            buffered_mark_ranges_info->marks_count,
+            buffered_mark_ranges_info->has_final_mark);
+
+        buffered_mark_ranges_info = nullptr;
+
+        return;
+    }
+
+    if (!buffered_mark_ranges_info)
+    {
+        buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    }
+    else
+    {
+        /// If the current and the buffer mark range info are from the same table/part, append to the buffer.
+        /// Otherwise write to the query condition cache and reset the buffer.
+
+        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
+        {
+            query_condition_cache->write(
+                buffered_mark_ranges_info->table_uuid,
+                buffered_mark_ranges_info->part_name,
+                condition->first,
+                condition->second,
+                buffered_mark_ranges_info->mark_ranges,
+                buffered_mark_ranges_info->marks_count,
+                buffered_mark_ranges_info->has_final_mark);
+
+            buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+        }
+        else
+        {
+            buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
+        }
+    }
+}
 
 }

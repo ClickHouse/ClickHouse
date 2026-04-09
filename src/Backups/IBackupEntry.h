@@ -46,6 +46,8 @@ public:
     virtual bool isFromRemoteFile() const { return false; }
     /// if it is a BackupEntryFromRemotePath, return the object key which the file refers to.
     virtual String getRemotePath() const { return "invalid remote path"; }
+    virtual String getEndpointURI() const { return "invalid endpoint"; }
+    virtual String getNamespace() const { return "invalid namespace"; }
     virtual String getFilePath() const { return ""; }
     virtual DiskPtr getDisk() const { return nullptr; }
 

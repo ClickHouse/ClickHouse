@@ -10,24 +10,13 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
-        # *[
-        #     job
-        #     for job in JobConfigs.unittest_jobs
-        #     if job.name == JobNames.UNITTEST + " (binary)"
-        # ],
     ],
     artifacts=[
-        *[
-            a
-            for a in ArtifactConfigs.unittests_binaries
-            if a.name == ArtifactNames.UNITTEST_AMD_BINARY
-        ],
         *[
             a
             for a in ArtifactConfigs.clickhouse_binaries
             if a.name == ArtifactNames.CH_AMD_BINARY
         ],
-        ArtifactConfigs.fast_test,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
@@ -39,6 +28,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_sync_commit_status.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_sync_pr_mergeable.py",
     ],
 )
 

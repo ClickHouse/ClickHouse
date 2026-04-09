@@ -5,9 +5,11 @@
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
+#include <Core/Names.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
@@ -25,6 +27,8 @@ class ASTCreateQuery;
 class ASTInsertQuery;
 class ASTColumnDeclaration;
 class ASTDropQuery;
+class ASTIndexDeclaration;
+class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
 struct ASTWindowDefinition;
@@ -58,6 +62,13 @@ public:
 
     UInt64 getSeed() const { return seed; }
 
+    /// Returns the total number of accumulated AST fragments (column-like + table-like).
+    size_t getAccumulatedStateSize() const { return column_like.size() + table_like.size(); }
+
+    /// Returns query parameters collected/generated during the last fuzzMain() call.
+    /// Callers should pass these to the execution context via setQueryParameters().
+    const NameToNameMap & getLastQueryParameters() const { return last_query_parameters; }
+
     void setSeed(const UInt64 new_seed)
     {
         seed = new_seed;
@@ -69,7 +80,7 @@ public:
 
 private:
     template <typename Parser>
-    ASTPtr tryParseQueryForFuzzedTables(const String & full_query)
+    ASTPtr tryParseQueryForFuzzedTables(const std::string_view & full_query)
     {
         String message;
         const char * pos = full_query.data();
@@ -111,7 +122,7 @@ private:
 
 public:
     template <typename ParsedAST, typename Parser>
-    ASTs getQueriesForFuzzedTables(const String & full_query)
+    ASTs getQueriesForFuzzedTables(const std::string_view & full_query)
     {
         auto parsed_query = tryParseQueryForFuzzedTables<Parser>(full_query);
         if (!parsed_query)
@@ -156,6 +167,26 @@ private:
     // Used to track added tables in join clauses
     uint32_t alias_counter = 0;
 
+    // Similar to current_ast_depth, this is a limit on some measure of query size or number of
+    // steps we take. Without it, with small probability, query size may explode even when depth is
+    // limited. In particular, array lengths and depths in fuzzField() were seen to do that:
+    // https://github.com/ClickHouse/ClickHouse/issues/77408
+    //
+    // I don't fully understand how this happens, but my impression is that recursive random
+    // generators like this just generally tend to produce size distribution with heavy tail.
+    // Maybe if the query size/depth/some-other-property reaches some critical mass, each recursive
+    // call on average causes more than one additional recursive call (e.g. by copying a huge subtree
+    // with some small-but-not-tiny probability), so the expected number of calls becomes infinite.
+    // Despite infinite expected tree size, the p99 size may still be moderate
+    // (see e.g. "St. Petersburg lottery"), so the failures can be rare in practice.
+    //
+    // (What does "infinite expected value" mean in practice? Suppose you keep generating more and
+    //  more values and averaging them. If the expected value is finite, the average will be
+    //  converging to it. If the expected value is infinite, the average will keep growing without
+    //  bound.)
+    size_t iteration_count = 0;
+    static constexpr size_t iteration_limit = 500000;
+
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes
@@ -174,7 +205,12 @@ private:
 
     std::unordered_map<std::string, std::unordered_set<std::string>> original_table_name_to_fuzzed;
     std::unordered_map<std::string, size_t> index_of_fuzzed_table;
-    std::set<IAST::Hash> created_tables_hashes;
+    std::set<IASTHash> created_tables_hashes;
+
+    /// Populated by fuzzMain(): name → string-serialized value for every {name:type} param in the fuzzed query.
+    NameToNameMap last_query_parameters;
+    /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
+    uint32_t param_counter = 0;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
@@ -187,13 +223,17 @@ private:
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);
     void fuzzColumnLikeExpressionList(IAST * ast);
-    void fuzzNullsAction(NullsAction & action);
+    NullsAction fuzzNullsAction(NullsAction action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
+    void fuzzWindowDefinition(ASTWindowDefinition & def);
     void fuzzCreateQuery(ASTCreateQuery & create);
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
+    void fuzzIndexDeclaration(ASTIndexDeclaration & index);
+    void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
+    void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
@@ -204,12 +244,15 @@ private:
     ASTPtr addArrayJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
+    void fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+    String generateParamValue();
+    void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);

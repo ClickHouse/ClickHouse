@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -33,7 +32,9 @@ struct StorageID;
     M(CLASS_NAME, IntervalOutputFormat) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
     M(CLASS_NAME, ObjectStorageQueueAction) \
+    M(CLASS_NAME, ObjectStorageQueueBucketingMode) \
     M(CLASS_NAME, ObjectStorageQueueMode) \
+    M(CLASS_NAME, ObjectStorageQueuePartitioningMode) \
     M(CLASS_NAME, ORCCompression) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
@@ -41,6 +42,7 @@ struct StorageID;
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
