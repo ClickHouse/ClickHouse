@@ -211,7 +211,26 @@ size_t MergeTreeReaderWide::readRows(
                 /// For elements of Nested, column_size_before_reading may be greater than column size
                 ///  if offsets are not empty and were already read, but elements are empty.
                 if (!column->empty())
-                    read_rows = std::max(read_rows, column->size() - column_size_before_reading);
+                {
+                    size_t column_rows_added = column->size() - column_size_before_reading;
+
+                    /// Deserialization of complex column types (Map, Nested, Array) may add more
+                    /// rows than requested due to SubstreamsCache interactions — when one column's
+                    /// substream data is cached and reused by another column, the cached data may
+                    /// cover more rows than `max_rows_to_read`. Truncate the excess immediately
+                    /// to maintain the invariant that each column grows by at most `max_rows_to_read`.
+                    /// Without this, MergeTreeRangeReader::adjustLastGranule hits an unsigned underflow
+                    /// (num_read_rows > total_rows_per_granule). See #100769.
+                    if (column_rows_added > max_rows_to_read)
+                    {
+                        auto mutable_column = IColumn::mutate(std::move(column));
+                        mutable_column->popBack(column_rows_added - max_rows_to_read);
+                        column = std::move(mutable_column);
+                        column_rows_added = max_rows_to_read;
+                    }
+
+                    read_rows = std::max(read_rows, column_rows_added);
+                }
             }
             catch (Exception & e)
             {
