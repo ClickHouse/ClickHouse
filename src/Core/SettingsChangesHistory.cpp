@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"input_format_avro_parallel_parsing", false, false, "New setting to enable parallel parsing of Avro format data."},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
@@ -124,7 +125,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.1",
         {
-            {"input_format_avro_parallel_parsing", false, false, "New setting to enable parallel parsing of Avro format data."},
             {"use_statistics", true, true, "Enable this optimization by default."},
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Benchmark script for Avro parallel parsing performance.
 # NOT a test - meant for manual performance evaluation.
-# Run with: ./03786_avro_parallel_parsing_benchmark.sh
+# Run with: ./04092_avro_parallel_parsing_benchmark.sh
 #
 # Tags: no-fasttest, no-parallel, disabled
 

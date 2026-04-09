@@ -79,7 +79,7 @@ public:
     /// Returns false only on clean EOF before any bytes read.
     static bool verifySyncMarker(ReadBuffer & in, const avro::DataFileSync & expected);
 
-    /// Decompress block data - delegates to avro::DataFileReaderBase::decompressBlock().
+    /// Decompress block data using the specified Avro codec.
     static void decompressBlock(
         const char * data,
         size_t size,
