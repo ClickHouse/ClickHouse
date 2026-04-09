@@ -2199,9 +2199,15 @@ void NO_INLINE Aggregator::executeImplForRows(
 {
     const size_t chunk_num_rows = key_columns[0]->size();
 
-    /// Construct State. For Serialized methods, pass pre-serialized keys so the
-    /// constructor skips batch serialization (keys were already serialized during scatter).
-    /// For other methods, the extra argument is not accepted — construct normally.
+    if (is_simple_count)
+    {
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        executeImplBatchForRows<false>(method, state, aggregates_pool, row_indices, key_hashes, chunk_num_rows, aggregate_instructions);
+        return;
+    }
+
+    /// Construct State with consecutive keys cache. For Serialized methods, pass pre-serialized
+    /// keys so the constructor skips batch serialization (already done during scatter).
     auto make_state = [&]
     {
         if constexpr (requires { std::declval<typename Method::State>().external_serialized_keys; })
