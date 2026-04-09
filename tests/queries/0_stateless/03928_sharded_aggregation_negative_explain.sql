@@ -86,3 +86,9 @@ SELECT count() = 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
     SETTINGS optimize_aggregation_by_sharding = 1, max_threads = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
+
+SELECT 'max_rows_to_group_by';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT a, sum(b) FROM test_sharded_agg_neg GROUP BY a
+    SETTINGS optimize_aggregation_by_sharding = 1, max_rows_to_group_by = 10, group_by_overflow_mode = 'any'
+) WHERE explain LIKE '%ScatterByHashTransform%';

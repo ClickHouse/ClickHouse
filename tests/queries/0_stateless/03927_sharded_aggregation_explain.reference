@@ -61,3 +61,11 @@ Sparse aggregate argument
 Explicit external aggregation settings are ignored on sharded path
 1
 1
+Multi-key GROUP BY
+1
+-If combinators (sumIf, countIf)
+1
+-Array combinator (sumArray)
+1
+-State combinator (sumState)
+1
