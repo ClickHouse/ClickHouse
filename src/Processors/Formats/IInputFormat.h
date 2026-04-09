@@ -129,8 +129,7 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
-    virtual std::vector<size_t> getMatchedBuckets() const;
-    virtual size_t getTotalBuckets() const;
+    virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

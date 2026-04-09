@@ -497,37 +497,40 @@ Chunk StorageObjectStorageSource::generate()
             const auto & object_info = reader.getObjectInfo();
             try
             {
-                auto matched_groups = reader.getInputFormat()->getMatchedBuckets();
-                size_t total_groups = reader.getInputFormat()->getTotalBuckets();
+                auto buckets_opt = reader.getInputFormat()->getMatchedBuckets();
 
-                std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
-                MarkRanges unmatched_ranges;
-                for (size_t i = 0; i < total_groups; ++i)
+                if (buckets_opt.has_value())
                 {
-                    if (!matched_set.contains(i))
-                    {
-                        if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                            unmatched_ranges.back().end++;
-                        else
-                            unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-                    }
-                }
+                    const auto & matched_groups = buckets_opt->first;
+                    size_t total_groups = buckets_opt->second;
 
-                auto query_condition_cache = read_context->getQueryConditionCache();
-                std::cerr << "write to cache " << storage_id.getNameForLogs() << ' ' << object_info->getFileName() << '\n';
-                query_condition_cache->write(
-                    storage_id.uuid,
-                    object_info->getFileName(),
-                    *format_filter_info->condition_hash,
-                    format_filter_info->filter_actions_dag->dumpNames(),
-                    unmatched_ranges,
-                    total_groups,
-                    false
-                );
+                    std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
+                    MarkRanges unmatched_ranges;
+                    for (size_t i = 0; i < total_groups; ++i)
+                    {
+                        if (!matched_set.contains(i))
+                        {
+                            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                                unmatched_ranges.back().end++;
+                            else
+                                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+                        }
+                    }
+
+                    auto query_condition_cache = read_context->getQueryConditionCache();
+                    query_condition_cache->write(
+                        storage_id.uuid,
+                        object_info->getFileName(),
+                        *format_filter_info->condition_hash,
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        unmatched_ranges,
+                        total_groups,
+                        false
+                    );
+                }
             }
             catch (...)
             {
-                std::cerr << "error writing to cache\n";
                 tryLogCurrentException(getLogger("StorageObjectStorageSource"), "Failed to write to query condition cache");
             }
         }
@@ -608,11 +611,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         && context_->getSettingsRef()[Setting::use_query_condition_cache])
         query_condition_cache = context_->getQueryConditionCache();
 
-    /// We use while(true)+break instead of do-while because `continue` inside do-while goes to the
-    /// while condition (not back to the loop body). The original do-while condition was
-    /// `skip_empty_files && size == 0`, so any `continue` for QCC-based file skipping (which are
-    /// not empty files) would evaluate to false and exit the loop prematurely — stopping iteration
-    /// entirely instead of moving to the next file.
     while (true)
     {
         object_info = file_iterator->next(processor);
@@ -643,7 +641,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             auto matching_marks = query_condition_cache->read(
                 storage_id.uuid, object_info->getFileName(), *format_filter_info->condition_hash);
-            std::cerr << "try to read from cache " << object_info->getFileName() << '\n';
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -651,8 +648,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 for (size_t i = 0; i < marks.size(); ++i)
                     if (marks[i])
                         matching_row_groups.push_back(i);
-
-                std::cerr << "matching marks " << object_info->getFileName() << ' ' << matching_row_groups.size() << '/' << marks.size() << '\n';
 
                 if (matching_row_groups.empty())
                     continue;
