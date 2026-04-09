@@ -606,7 +606,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
             auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
             FunctionNameNormalizer::visit(partition_key_ast.get());
             new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, context));
+                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
         }
     }
 
