@@ -22,12 +22,6 @@ SCRIPT_DIR=$(dirname "${SCRIPT_PATH}")
 GIT_DIR=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
 cd $GIT_DIR
 
-# Exclude from contribs some garbage subdirs that we don't need.
-# It reduces the checked out files size about 3 times and therefore speeds up indexing in IDEs and searching.
-# NOTE .git/ still contains everything that we don't check out (although, it's compressed)
-# See also https://git-scm.com/docs/git-sparse-checkout
-contrib/sparse-checkout/setup-sparse-checkout.sh
-
 git submodule init
 git submodule sync
 
@@ -40,15 +34,11 @@ git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -
 # We don't want to depend on any third-party CMake files.
 # To check it, find and delete them.
 # llvm-project: Used to build llvm. Could be replaced with our own cmake files
-# google-protobuf: Used to build protoc during cross-compilation
-# grpc: Used to build grpc_cpp_plugin during cross-compilation
-# abseil-cpp: Dependency for google-protobuf and grpc
-# c-ares: Dependency for grpc
-# corrosion: Used to build rust
+# corrosion: Used to build rust (Does not make sense to replace)
 # rust_vendor: Used to build rust
-# aws-crt-cpp: TODO: Fix and stop using it
+# wasmtime: uses build.rs script that requires cmake files to be present
 grep -o -P '"contrib/[^"]+"' .gitmodules |
-  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|c-ares|corrosion|rust_vendor|aws-crt-cpp)' |
+  grep -v -P 'contrib/(llvm-project|corrosion|rust_vendor|wasmtime)' |
   xargs -I@ find @ \
     -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
     -delete

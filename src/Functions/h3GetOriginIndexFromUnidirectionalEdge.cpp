@@ -80,7 +80,9 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            const UInt64 res = getDirectedEdgeOrigin(edge);
+            H3Index origin = 0;
+            getDirectedEdgeOrigin(edge, &origin);
+            const UInt64 res = origin;
             dst_data[row] = res;
         }
 
@@ -116,7 +118,7 @@ Returns the origin hexagon index from the unidirectional edge [H3](#h3-index).
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetOriginIndexFromUnidirectionalEdge>(documentation);
 }
 

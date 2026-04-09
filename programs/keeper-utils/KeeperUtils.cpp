@@ -58,7 +58,7 @@ uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
 {
     std::filesystem::path path(snapshot_path);
     std::string filename = path.stem();
-    Strings name_parts;
+    std::vector<std::string_view> name_parts;
     splitInto<'_', '.'>(name_parts, filename);
     return parse<uint64_t>(name_parts[1]);
 }
@@ -536,7 +536,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             res_columns[i++]->insert(value.stats.aversion);
             res_columns[i++]->insert(value.stats.ephemeralOwner());
             res_columns[i++]->insert(value.stats.data_size);
-            res_columns[i++]->insert(value.stats.numChildren());
+            res_columns[i++]->insert(value.numChildren());
             res_columns[i++]->insert(value.stats.pzxid);
             res_columns[i++]->insert(value.getData());
 
@@ -573,7 +573,7 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             value.stats.ephemeralOwner(),
             value.stats.czxid,
             value.stats.mzxid,
-            value.stats.numChildren(),
+            value.numChildren(),
             value.stats.data_size);
 
         if (with_acl)

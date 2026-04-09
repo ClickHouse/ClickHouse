@@ -8,7 +8,7 @@ set -e
 
 # Firstly write parts with use_const_adaptive_granularity=0 and then enable it and check that index_granularity_bytes_in_memory_allocated=25 (sizeof constant granularity)
 
-$CLICKHOUSE_CLIENT --allow_experimental_full_text_index=1 -nm -q "
+$CLICKHOUSE_CLIENT -nm -q "
 drop table if exists test_materialize;
 create table test_materialize
 (
@@ -37,7 +37,10 @@ settings
   -- otherwise sparse info will be different, since for INSERTs the sparse ratio is calculated for the whole block, while for mutations for each granula (FIXME?)
   ratio_of_defaults_for_sparse_serialization=1,
   -- there was a bug with checksums, fixed in https://github.com/ClickHouse/ClickHouse/pull/89381
-  auto_statistics_types=''
+  auto_statistics_types='',
+  --- map serialization version is fixed in serializations.json, but we have different setting for zero level parts, so set it explicitly so we have fixed version in all parts
+  map_serialization_version_for_zero_level_parts='basic',
+  map_serialization_version='basic'
 ;
 insert into test_materialize select number, repeat('a', number), [1 + number/10e3, 0 + number/10e3] from numbers(10e3) settings max_block_size=1e6;
 -- { echo }
@@ -45,7 +48,7 @@ select count() from test_materialize;
 "
 
 hashes="$($CLICKHOUSE_CLIENT -q "select (hash_of_all_files, hash_of_uncompressed_files, uncompressed_hash_of_compressed_files) from system.parts where database = currentDatabase() and table = 'test_materialize'")"
-$CLICKHOUSE_CLIENT --allow_experimental_full_text_index=1 -nm -q "
+$CLICKHOUSE_CLIENT --enable_full_text_index=1 -nm -q "
 -- { echo }
 select rows, index_granularity_bytes_in_memory_allocated>25 from system.parts where database = currentDatabase() and table = 'test_materialize' order by 1;
 alter table test_materialize modify setting use_const_adaptive_granularity;

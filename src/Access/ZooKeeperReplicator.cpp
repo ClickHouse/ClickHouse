@@ -10,8 +10,10 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
+
 
 namespace
 {
@@ -50,7 +52,8 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    MemoryAccessStorage & memory_storage_)
+    MemoryAccessStorage & memory_storage_,
+    bool throw_on_invalid_entities_)
     : storage_name(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
@@ -61,7 +64,9 @@ ZooKeeperReplicator::ZooKeeperReplicator(
       }))
     , memory_storage(memory_storage_)
     , changes_notifier(changes_notifier_)
+    , throw_on_invalid_entities(throw_on_invalid_entities_)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::ZooKeeperReplicator");
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
 
@@ -132,13 +137,14 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
 
 bool ZooKeeperReplicator::insertEntity(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::insertEntity");
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
     const String & name = new_entity->getName();
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
+    retryOnZooKeeperUserError(1000, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists, conflicting_id); });
 
     if (!ok)
         return false;
@@ -288,11 +294,12 @@ bool ZooKeeperReplicator::insertZooKeeper(
 
 bool ZooKeeperReplicator::removeEntity(const UUID & id, bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::removeEntity");
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Removing entity {}", toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
+    retryOnZooKeeperUserError(1000, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
 
     if (!ok)
         return false;
@@ -338,11 +345,12 @@ bool ZooKeeperReplicator::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
 
 bool ZooKeeperReplicator::updateEntity(const UUID & id, const IAccessStorage::UpdateFunc & update_func, bool throw_if_not_exists)
 {
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::updateEntity");
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Updating entity {}", toString(id));
 
     auto zookeeper = getZooKeeper();
     bool ok = false;
-    retryOnZooKeeperUserError(10, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
+    retryOnZooKeeperUserError(1000, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
 
     if (!ok)
         return false;
@@ -415,6 +423,7 @@ void ZooKeeperReplicator::runWatchingThread()
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
     DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
 
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::runWatchingThread");
     while (watching)
     {
         bool refreshed = false;
@@ -514,6 +523,7 @@ void ZooKeeperReplicator::reload(bool force_reload_all)
     if (!force_reload_all)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("ZooKeeperReplicator::reload");
     /// Reinitialize ZooKeeper and reread everything.
     std::lock_guard lock{cached_zookeeper_mutex};
     cached_zookeeper = nullptr;
@@ -644,6 +654,9 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
     }
     catch (...)
     {
+        if (throw_on_invalid_entities)
+            throw;
+
         tryLogCurrentException(&Poco::Logger::get(storage_name), "Error while reading the definition of " + toString(id));
         return nullptr;
     }

@@ -5,7 +5,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -99,7 +98,10 @@ void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_i
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    std::string prefix = format_settings.detail_prefix;
+
+    if (format_settings.pretty)
+        QueryPlanFormat::formatOutputColumns(format_settings.out, *this, prefix);
 
     if (query_info.prewhere_info || query_info.row_level_filter)
     {
@@ -120,7 +122,8 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
         format_settings.out << '\n';
 
         auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
-        expression->describeActions(format_settings.out, prefix);
+        if (!format_settings.compact)
+            expression->describeActions(format_settings.out, prefix);
     }
 
     if (query_info.row_level_filter)
@@ -132,7 +135,8 @@ void SourceStepWithFilter::describeActions(FormatSettings & format_settings) con
         format_settings.out << '\n';
 
         auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
-        expression->describeActions(format_settings.out, prefix);
+        if (!format_settings.compact)
+            expression->describeActions(format_settings.out, prefix);
     }
 }
 

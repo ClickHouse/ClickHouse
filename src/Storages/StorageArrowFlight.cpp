@@ -1,6 +1,8 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageArrowFlight.h>
 
 #if USE_ARROWFLIGHT
+#include <Common/Logger.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -13,7 +15,10 @@
 #include <Storages/ArrowFlight/ArrowFlightConnection.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <arrow/flight/client.h>
 
 
@@ -35,10 +40,10 @@ namespace Setting
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
 }
 
-StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_)
+StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id)
 {
     StorageArrowFlight::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context_, true, nullptr, table_id))
     {
         configuration = StorageArrowFlight::processNamedCollectionResult(*named_collection);
     }
@@ -129,6 +134,14 @@ StorageArrowFlight::StorageArrowFlight(
 
     storage_metadata.setConstraints(constraints_);
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
+}
+
+VirtualColumnsDescription StorageArrowFlight::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    return desc;
 }
 
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
@@ -178,13 +191,34 @@ Pipe StorageArrowFlight::read(
     storage_snapshot->check(column_names);
 
     Block sample_block;
+    Block virtual_header;
     for (const String & column_name : column_names)
     {
-        auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
-        sample_block.insert({column_data.type, column_data.name});
+        if (storage_snapshot->metadata->columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
+        {
+            auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
+            sample_block.insert({column_data.type, column_data.name});
+        }
+        else
+        {
+            auto column_data = storage_snapshot->virtual_columns->tryGet(column_name);
+            virtual_header.insert({column_data->type, column_data->name});
+        }
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, context_));
+    if (sample_block.columns() == 0)
+    {
+        const auto & physical = storage_snapshot->metadata->getColumns().getAllPhysical().front();
+        sample_block.insert({physical.type, physical.name});
+    }
+
+    return Pipe(std::make_shared<ArrowFlightSource>(
+        connection,
+        dataset_name,
+        sample_block,
+        virtual_header,
+        getStorageID(),
+        context_));
 }
 
 class ArrowFlightSink : public SinkToStorage
@@ -311,7 +345,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
-            auto config = StorageArrowFlight::getConfiguration(engine_args, args.getLocalContext());
+            auto config = StorageArrowFlight::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
             auto connection = std::make_shared<ArrowFlightConnection>(config);
 
             return std::make_shared<StorageArrowFlight>(

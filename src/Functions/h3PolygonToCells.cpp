@@ -13,6 +13,9 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -27,6 +30,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -48,6 +52,27 @@ LatLng toH3LatLng(const SphericalPointInRadians & point)
     return result;
 }
 
+template <typename TColumn>
+std::pair<const TColumn *, bool> getArgumentOrConstArgument(const ColumnsWithTypeAndName & arguments, size_t index, std::string_view function_name)
+{
+    const auto * column = checkAndGetColumn<TColumn>(arguments[index].column.get());
+    const auto * column_const = checkAndGetColumnConstData<TColumn>(arguments[index].column.get());
+
+    if (!column)
+    {
+        if (!column_const)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column type {} of argument {} of function {}. Must be {}",
+                arguments[index].column->getName(), index + 1, function_name, demangle(typeid(TColumn).name()));
+        }
+
+        return {column_const, true};
+    }
+
+    return {column, false};
+}
+
 }
 
 /// Takes a geometry (Ring, Polygon or MultiPolygon) and returns an array of H3 hexagons that cover this geometry.
@@ -57,7 +82,12 @@ class FunctionH3PolygonToCells : public IFunction
 public:
     static constexpr auto name = "h3PolygonToCells";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PolygonToCells>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3PolygonToCells>(context); }
+
+    explicit FunctionH3PolygonToCells(ContextPtr context)
+        : process_list_element(context ? context->getProcessListElement() : nullptr)
+    {
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -70,27 +100,15 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto non_const_arguments = arguments;
-        for (auto & argument : non_const_arguments)
-            argument.column = argument.column->convertToFullColumnIfConst();
-
-        const auto * col_resolution = checkAndGetColumn<ColumnUInt8>(non_const_arguments[1].column.get());
-        if (!col_resolution)
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt8.",
-                arguments[1].type->getName(),
-                2,
-                getName());
+        auto [col_array, is_const_array] = getArgumentOrConstArgument<ColumnArray>(arguments, 0, getName());
+        auto [col_resolution, is_const_resolution] = getArgumentOrConstArgument<ColumnUInt8>(arguments, 1, getName());
         const auto & data_resolution = col_resolution->getData();
-
 
         auto dst = ColumnArray::create(ColumnUInt64::create());
         auto & dst_data = dst->getData();
         auto & dst_offsets = dst->getOffsets();
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
-
 
         callOnGeometryDataType<SphericalPoint>(arguments[0].type, [&] (const auto & type)
         {
@@ -100,33 +118,59 @@ public:
             // polygonToCells does not work for points and lines
             if constexpr (std::is_same_v<ColumnToPointsConverter<SphericalPoint>, Converter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be Point", getName());
-            else if constexpr (std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>)
+            if constexpr (std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The second argument of function {} must not be LineString", getName());
 
-            // all geometries will be of same kind
-            auto geometries = Converter::convert(arguments[0].column);
-            for (size_t row = 0; row < input_rows_count; ++row)
+            auto get_multi_polygon = [&]<typename T>(T && geometry) -> SphericalMultiPolygon
             {
-                // check resolution *once* before looping over polygons
-                const UInt8 resolution = data_resolution[row];
+                boost::geometry::correct(geometry);
+
+                if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<SphericalPoint>, Converter>)
+                    return std::forward<T>(geometry);
+                if constexpr (std::is_same_v<ColumnToPolygonsConverter<SphericalPoint>, Converter>)
+                    return SphericalMultiPolygon({ std::forward<T>(geometry) });
+                if constexpr (std::is_same_v<ColumnToRingsConverter<SphericalPoint>, Converter>)
+                    return SphericalMultiPolygon({ SphericalPolygon({ std::forward<T>(geometry) }) });
+
+                return {};
+            };
+
+            auto get_resolution = [&](size_t row) -> UInt8
+            {
+                UInt8 resolution = data_resolution[row];
+
                 if (resolution > MAX_H3_RES)
+                {
                     throw Exception(
                         ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
                         toString(resolution), getName(), toString(MAX_H3_RES));
+                }
 
-                // will be ring, polygon, or multipolygon (boost::geometry)
-                auto geometry = geometries[row];
-                boost::geometry::correct(geometry); // TODO: Is this good or bad?
+                return resolution;
+            };
 
-                // Convert everything to multipolygon.
-                SphericalMultiPolygon multi_polygon;
-                if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<SphericalPoint>, Converter>)
-                    multi_polygon = std::move(geometry);
-                else if constexpr (std::is_same_v<ColumnToPolygonsConverter<SphericalPoint>, Converter>)
-                    multi_polygon = SphericalMultiPolygon({ std::move(geometry) });
-                else if constexpr (std::is_same_v<ColumnToRingsConverter<SphericalPoint>, Converter>)
-                    multi_polygon = SphericalMultiPolygon({ SphericalPolygon({ std::move(geometry) }) });
+            // All geometries will be of same kind
+            auto geometries = Converter::convert(col_array->getPtr());
+            UInt8 resolution = 0;
+            SphericalMultiPolygon multi_polygon;
+
+            if (is_const_resolution)
+                resolution = get_resolution(0);
+
+            if (is_const_array)
+                multi_polygon = get_multi_polygon(std::move(geometries[0]));
+
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                if (process_list_element && process_list_element->isKilled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+                if (!is_const_resolution)
+                    resolution = get_resolution(row);
+
+                if (!is_const_array)
+                    multi_polygon = get_multi_polygon(std::move(geometries[row]));
 
                 for (auto & polygon : multi_polygon)
                 {
@@ -149,7 +193,9 @@ public:
 
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
-                    const size_t vec_size = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution);
+                    int64_t polygon_size = 0;
+                    maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
+                    const size_t vec_size = static_cast<size_t>(polygon_size);
                     if (vec_size > MAX_ARRAY_SIZE)
                         throw Exception(
                             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
@@ -158,7 +204,7 @@ public:
 
                     std::vector<H3Index> hindex_vec;
                     hindex_vec.resize(vec_size);
-                    polygonToCells(polygon_wrapper.unwrap(), resolution, hindex_vec.data());
+                    polygonToCells(polygon_wrapper.unwrap(), resolution, 0, hindex_vec.data());
 
                     dst_data.reserve(dst_data.size() + vec_size);
                     for (auto hindex : hindex_vec)
@@ -173,14 +219,13 @@ public:
                     dst_offsets[row] = current_offset;
                 }
             }
-        }
-        );
-
+        });
 
         return dst;
     }
 
 private:
+    QueryStatusPtr process_list_element;
 
     class GeoPolygonContainer
     {
@@ -241,6 +286,7 @@ REGISTER_FUNCTION(H3PolygonToCells)
 {
     factory.registerFunction<FunctionH3PolygonToCells>(FunctionDocumentation{
         .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon.",
+        .syntax = "h3PolygonToCells(geometry, resolution)",
         .introduced_in = {25, 11},
         .category = FunctionDocumentation::Category::Geo});
 }

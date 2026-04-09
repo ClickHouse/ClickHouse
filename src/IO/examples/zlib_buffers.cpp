@@ -34,7 +34,7 @@ try
 
         stopwatch.stop();
         std::cout << "Writing done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-            << ", " << (deflating_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+            << ", " << (static_cast<double>(deflating_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
             << std::endl;
     }
 
@@ -54,7 +54,7 @@ try
         }
         stopwatch.stop();
         std::cout << "Reading done. Elapsed: " << stopwatch.elapsedSeconds() << " s."
-            << ", " << (inflating_buf.count() / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
+            << ", " << (static_cast<double>(inflating_buf.count()) / stopwatch.elapsedSeconds() / 1000000) << " MB/s"
             << std::endl;
     }
 

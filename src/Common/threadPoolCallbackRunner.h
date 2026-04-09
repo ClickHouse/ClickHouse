@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <exception>
 #include <future>
 
@@ -22,14 +23,14 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 
 /// NOTE When using ThreadPoolCallbackRunnerUnsafe you MUST ensure that all async tasks are finished
 /// before any objects they may use are destroyed.
-/// A common mistake is capturing some some local objects in lambda and passing it to the runner.
+/// A common mistake is capturing some local objects in lambda and passing it to the runner.
 /// In case of exception, these local objects will be destroyed before scheduled tasks are finished.
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
@@ -63,17 +64,28 @@ std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, T
     return schedule(std::move(task), priority); /// NOLINT
 }
 
-/// NOTE It's still not completely safe.
-/// When creating a runner on stack, you MUST make sure that it's created (and destroyed) before local objects captured by task lambda.
-
+/// ============================================================================
+/// CRITICAL SAFETY WARNING: DO NOT CAPTURE LOCAL VARIABLES BY REFERENCE!
+/// ============================================================================
+///
+/// Even though the destructor calls waitForAllToFinish(), exceptions during
+/// the enqueue loop can cause stack unwinding BEFORE the wait, resulting in
+/// stack-use-after-scope bugs when tasks access destroyed variables.
+///
+/// WRONG:  runner.enqueueAndKeepTrack([&my_lambda, ...] { my_lambda(); });
+/// RIGHT:  runner.enqueueAndKeepTrack([my_lambda, ...] { my_lambda(); });
+///
+/// WRONG:  runner.enqueueAndKeepTrack([&] { ... });  // captures everything by ref!
+/// RIGHT:  runner.enqueueAndKeepTrack([this, var1, var2] { ... });
+///
+/// For mutexes, use shared ownership:
+/// WRONG:  std::mutex m; runner.enqueueAndKeepTrack([&m] { ... });
+/// RIGHT:  auto m = std::make_shared<std::mutex>(); runner.enqueueAndKeepTrack([m] { ... });
+///
+///
 template <typename Result, typename PoolT = ThreadPool, typename Callback = std::function<Result()>>
 class ThreadPoolCallbackRunnerLocal final
 {
-    static_assert(!std::is_same_v<PoolT, GlobalThreadPool>, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
-
-    PoolT & pool;
-    ThreadName thread_name;
-
     enum TaskState
     {
         SCHEDULED = 0,
@@ -82,11 +94,21 @@ class ThreadPoolCallbackRunnerLocal final
         CANCELLED = 3,
     };
 
+public:
     struct Task
     {
         std::future<Result> future;
         std::atomic<TaskState> state = SCHEDULED;
     };
+
+private:
+    static_assert(
+        !std::is_same_v<PoolT, GlobalThreadPool>,
+        "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool "
+        "(local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
+
+    PoolT & pool;
+    ThreadName thread_name;
 
     /// NOTE It will leak for a global object with long lifetime
     std::vector<std::shared_ptr<Task>> tasks;
@@ -158,13 +180,29 @@ public:
         waitForAllToFinish();
     }
 
-    void operator() (Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
+    /// Deleted overload: Catch std::ref() and std::reference_wrapper usage at compile-time
+    template <typename Fn>
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(
+        std::reference_wrapper<Fn> callback,
+        Priority priority = {},
+        std::optional<uint64_t> wait_microseconds = {}) = delete;
+    // If you hit this error, you're passing std::ref(lambda) or capturing by reference.
+    // Change [&my_lambda] to [my_lambda] (capture by value).
+    //
+    // Note: This only catches std::reference_wrapper. It does NOT catch all reference
+    // captures (e.g., [&local_var]). Use clang-tidy or code review for complete coverage.
+
+    /// Adds a new task to the pool and returns it
+    /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
+    /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
+    /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
-        auto & task = tasks.emplace_back(std::make_shared<Task>());
+        auto task = std::make_shared<Task>();
         task->future = promise->get_future();
 
-        auto task_func = [this, task, thread_group = CurrentThread::getGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))
@@ -198,9 +236,16 @@ public:
             promise->set_exception(std::current_exception());
             throw;
         }
+
+        return task;
     }
 
-    void waitForAllToFinish()
+    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
+    {
+        tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
+    }
+
+    static void waitForAllToFinish(std::vector<std::shared_ptr<Task>> & tasks)
     {
         for (const auto & task : tasks)
         {
@@ -213,9 +258,11 @@ public:
         }
     }
 
-    void waitForAllToFinishAndRethrowFirstError()
+    void waitForAllToFinish() { waitForAllToFinish(tasks); }
+
+    static void waitForAllToFinishAndRethrowFirstError(std::vector<std::shared_ptr<Task>> & tasks)
     {
-        waitForAllToFinish();
+        waitForAllToFinish(tasks);
 
         for (auto & task : tasks)
         {
@@ -227,6 +274,8 @@ public:
 
         tasks.clear();
     }
+
+    void waitForAllToFinishAndRethrowFirstError() { waitForAllToFinishAndRethrowFirstError(tasks); }
 };
 
 /// Has a task queue and a set of threads from ThreadPool.

@@ -116,7 +116,7 @@ public:
 
         sortIfNeeded();
 
-        double index = level * (samples.size() - 1);
+        double index = level * static_cast<double>(samples.size() - 1);
         size_t int_index = static_cast<size_t>(index + 0.5); /// NOLINT
         int_index = std::max(0LU, std::min(samples.size() - 1, int_index));
         return samples[int_index];
@@ -135,7 +135,7 @@ public:
         }
         sortIfNeeded();
 
-        double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
+        double index = std::max(0., std::min(static_cast<double>(samples.size() - 1), level * static_cast<double>(samples.size() - 1)));
 
         /// To get the value of a fractional index, we linearly interpolate between neighboring values.
         size_t left_index = static_cast<size_t>(index);
@@ -148,8 +148,8 @@ public:
                 return static_cast<double>(samples[left_index]);
         }
 
-        double left_coef = right_index - index;
-        double right_coef = index - left_index;
+        double left_coef = static_cast<double>(right_index) - index;
+        double right_coef = index - static_cast<double>(left_index);
 
         if constexpr (DB::is_decimal<T>)
             return static_cast<double>(samples[left_index].value) * left_coef + static_cast<double>(samples[right_index].value) * right_coef;
@@ -192,10 +192,10 @@ public:
             total_values += b.total_values;
 
             /// Will replace every frequency'th element in a to element from b.
-            double frequency = static_cast<double>(total_values) / b.total_values;
+            double frequency = static_cast<double>(total_values) / static_cast<double>(b.total_values);
 
             /// When frequency is too low, replace just one random element with the corresponding probability.
-            if (frequency * 2 >= sample_count)
+            if (frequency * 2 >= static_cast<double>(sample_count))
             {
                 UInt64 rnd = genRandom(static_cast<UInt64>(frequency));
                 if (rnd < sample_count)
@@ -203,7 +203,7 @@ public:
             }
             else
             {
-                for (double i = 0; i < sample_count; i += frequency) /// NOLINT
+                for (double i = 0; i < static_cast<double>(sample_count); i += frequency) /// NOLINT
                 {
                     size_t idx = static_cast<size_t>(i);
                     samples[idx] = b.samples[idx];

@@ -16,3 +16,4 @@ select partition_id, rows, index_granularity_bytes_in_memory_allocated>25 from s
 0	2500	1
 1	2500	1
 select * from system.mutations where database = currentDatabase() and not is_done format Vertical;
+alter table test_materialize (APPLY DELETED MASK), (REWRITE PARTS);

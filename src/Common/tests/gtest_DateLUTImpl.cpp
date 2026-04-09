@@ -12,8 +12,10 @@
 #include <string>
 #include <string_view>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <cctz/time_zone.h>
-
+#pragma clang diagnostic pop
 
 /// For the expansion of gtest macros.
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"

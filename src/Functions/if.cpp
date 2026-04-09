@@ -67,6 +67,7 @@ concept is_native_int_or_decimal_v
 
 // This macro performs a branch-free conditional assignment for floating point types.
 // It uses bitwise operations to avoid branching, which can be beneficial for performance.
+#pragma clang diagnostic ignored "-Wundefined-reinterpret-cast"
 #define BRANCHFREE_IF_FLOAT(TYPE, vc, va, vb, vr) \
     using UIntType = typename NumberTraits::Construct<false, false, sizeof(TYPE)>::Type; \
     using IntType = typename NumberTraits::Construct<true, false, sizeof(TYPE)>::Type; \
@@ -91,7 +92,7 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
             res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
         else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
+            BRANCHFREE_IF_FLOAT(ResultType, !!cond[i], a[i], b[i], res[i])
         }
         else
         {
@@ -110,7 +111,7 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
             res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
         else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
+            BRANCHFREE_IF_FLOAT(ResultType, !!cond[i], a[i], b, res[i])
         }
         else
             res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
@@ -127,7 +128,7 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
             res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
         else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
+            BRANCHFREE_IF_FLOAT(ResultType, !!cond[i], a, b[i], res[i])
         }
         else
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
@@ -142,10 +143,19 @@ inline void fillConstantConstant(const ArrayCond & cond, A a, B b, ArrayResult &
     /// We manually optimize the loop for types like (U)Int128|256 or Decimal128/256 to avoid branches
     if constexpr (is_over_big_int<ResultType>)
     {
-        alignas(64) const ResultType ab[2] = {static_cast<ResultType>(a), static_cast<ResultType>(b)};
+        auto new_a = static_cast<ResultType>(a);
+        auto new_b = static_cast<ResultType>(b);
+
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = ab[!cond[i]];
+            // produces cmpb + sete
+            // results in less uops than ResultType{static_cast<MaskType>(cond[i]) - 1};
+            uint8_t flag = (cond[i] != 0);
+
+            ResultType mask{};
+            std::memset(&mask, flag ? 0xFF : 0x00, sizeof(ResultType));
+
+            res[i] = (mask & new_a) | (~mask & new_b);
         }
     }
     else if constexpr (std::is_same_v<ResultType, Decimal32> || std::is_same_v<ResultType, Decimal64>)
@@ -668,7 +678,14 @@ private:
         ColumnsWithTypeAndName temporary_columns(3);
         temporary_columns[0] = arguments[0];
 
-        size_t tuple_size = type1.getElements().size();
+        const size_t tuple_size = tuple_result.getElements().size();
+
+        if (type1.getElements().size() != tuple_size
+            || type2.getElements().size() != tuple_size
+            || col1_contents.size() != tuple_size
+            || col2_contents.size() != tuple_size)
+            return nullptr;
+
         if (tuple_size == 0)
             return ColumnTuple::create(input_rows_count);
 
@@ -767,6 +784,75 @@ private:
         auto nested_column = ColumnArray::create(
             ColumnTuple::create(Columns{key_array->getDataPtr(), value_array->getDataPtr()}), key_array->getOffsetsPtr());
         return ColumnMap::create(std::move(nested_column));
+    }
+
+    static ColumnPtr executeGenericWithType(
+        const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, size_t input_rows_count, const DataTypePtr & common_type)
+    {
+        /// Convert both columns to the given common type.
+        const ColumnWithTypeAndName & arg1 = arguments[1];
+        const ColumnWithTypeAndName & arg2 = arguments[2];
+
+        ColumnPtr col_then = castColumn(arg1, common_type);
+        ColumnPtr col_else = castColumn(arg2, common_type);
+
+        MutableColumnPtr result_column = common_type->createColumn();
+        result_column->reserve(input_rows_count);
+
+        bool then_is_const = isColumnConst(*col_then);
+        bool else_is_const = isColumnConst(*col_else);
+
+        const auto & cond_array = cond_col->getData();
+
+        if (then_is_const && else_is_const)
+        {
+            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
+            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(then_nested_column, 0);
+                else
+                    result_column->insertFrom(else_nested_column, 0);
+            }
+        }
+        else if (then_is_const)
+        {
+            const IColumn & then_nested_column = assert_cast<const ColumnConst &>(*col_then).getDataColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(then_nested_column, 0);
+                else
+                    result_column->insertFrom(*col_else, i);
+            }
+        }
+        else if (else_is_const)
+        {
+            const IColumn & else_nested_column = assert_cast<const ColumnConst &>(*col_else).getDataColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(*col_then, i);
+                else
+                    result_column->insertFrom(else_nested_column, 0);
+            }
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (cond_array[i])
+                    result_column->insertFrom(*col_then, i);
+                else
+                    result_column->insertFrom(*col_else, i);
+            }
+        }
+
+        return result_column;
     }
 
     static ColumnPtr executeGeneric(
@@ -924,7 +1010,7 @@ private:
         if (isColumnNullable(*materialized))
             return materialized;
 
-        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), 0));
+        return ColumnNullable::create(materialized, ColumnUInt8::create(column->size(), static_cast<UInt8>(0)));
     }
 
     /// Return nested column recursively removing Nullable, examples:
@@ -947,6 +1033,22 @@ private:
         return column;
     }
 
+    /// Return the null map column from a Nullable column, looking through ColumnConst, examples:
+    /// Nullable(size = N, Int32(size = N), UInt8(size = N)) -> UInt8(size = N)
+    /// Const(size = N, Nullable(size = 1, Int32(size = 1), UInt8(size = 1))) ->
+    /// Const(size = N, UInt8(size = 1))
+    static ColumnPtr recursiveGetNullMapFromNullable(const ColumnPtr & column)
+    {
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column))
+            return nullable->getNullMapColumnPtr();
+        if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*column))
+        {
+            if (const auto * nullable_inner = checkAndGetColumn<ColumnNullable>(&column_const->getDataColumn()))
+                return ColumnConst::create(nullable_inner->getNullMapColumnPtr(), column_const->size());
+        }
+        return nullptr;
+    }
+
     ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         /// If result type is Variant/Dynamic, we don't need to remove Nullable.
@@ -957,8 +1059,8 @@ private:
         const ColumnWithTypeAndName & arg_then = arguments[1];
         const ColumnWithTypeAndName & arg_else = arguments[2];
 
-        const auto * then_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_then.column);
-        const auto * else_is_nullable = checkAndGetColumn<ColumnNullable>(&*arg_else.column);
+        const bool then_is_nullable = arg_then.type->isNullable();
+        const bool else_is_nullable = arg_else.type->isNullable();
 
         if (!then_is_nullable && !else_is_nullable)
             return nullptr;
@@ -973,14 +1075,14 @@ private:
                 arg_cond,
                 {
                     then_is_nullable
-                        ? then_is_nullable->getNullMapColumnPtr()
+                        ? recursiveGetNullMapFromNullable(arg_then.column)
                         : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
-                        ? else_is_nullable->getNullMapColumnPtr()
+                        ? recursiveGetNullMapFromNullable(arg_else.column)
                         : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
@@ -1271,10 +1373,30 @@ public:
         /// Special case when one column is Integer and another is UInt64 that can be actually Int64.
         /// The result type for this case is Int64 and we need to change UInt64 type to Int64
         /// so the NumberTraits::ResultOfIf will return Int64 instead if Int128.
+        bool uint64_to_int64 = false;
         if (isNativeInteger(left_type) && isUInt64ThatCanBeInt64(right_type))
+        {
             right_type = std::make_shared<DataTypeInt64>();
+            uint64_to_int64 = true;
+        }
         else if (isNativeInteger(right_type) && isUInt64ThatCanBeInt64(left_type))
+        {
             left_type = std::make_shared<DataTypeInt64>();
+            uint64_to_int64 = true;
+        }
+
+        /// When the result type is Int64 but we have UInt64 and Int32 arguments,
+        /// the canUnsignedBeSigned flag on UInt64 type may have been lost during query plan transformations.
+        /// In this case, we use executeGenericWithType which casts both columns to the expected result type.
+        /// See issue #70017.
+        bool left_is_uint64 = WhichDataType(left_type).isUInt64();
+        bool right_is_uint64 = WhichDataType(right_type).isUInt64();
+        bool result_type_is_int64 = WhichDataType(removeNullable(result_type)).isInt64();
+        if (result_type_is_int64 && (left_is_uint64 || right_is_uint64) && !uint64_to_int64)
+        {
+            /// Cast both columns to Int64 using the pre-computed result type
+            return executeGenericWithType(cond_col, arguments, input_rows_count, removeNullable(result_type));
+        }
 
         TypeIndex left_id = left_type->getTypeId();
         TypeIndex right_id = right_type->getTypeId();
@@ -1362,7 +1484,7 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIf>(documentation, FunctionFactory::Case::Insensitive);
 }

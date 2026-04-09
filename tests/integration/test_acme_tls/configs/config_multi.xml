@@ -9,8 +9,8 @@
             <domain>multi.integration-tests.clickhouse.com</domain>
         </domains>
         <directory_url>https://10.5.11.2:14000/dir</directory_url>
-        <refresh_certificates_task_interval>1000</refresh_certificates_task_interval>
-        <refresh_certificates_before>86400</refresh_certificates_before> <!-- one day -->
+        <refresh_certificates_task_interval_seconds>1</refresh_certificates_task_interval_seconds>
+        <refresh_certificates_before_seconds>86400</refresh_certificates_before_seconds> <!-- one day -->
     </acme>
     <openSSL>
         <client>

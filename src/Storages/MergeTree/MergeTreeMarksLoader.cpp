@@ -11,6 +11,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 
 #include <utility>
@@ -45,16 +46,23 @@ namespace ErrorCodes
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
     : marks(std::move(marks_)), num_columns_in_mark(num_columns_in_mark_)
 {
-    assert(marks);
+    if (!marks)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null marks passed to MergeTreeMarksGetter");
+
+    if (num_columns_in_mark == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of columns in mark is zero");
+
+    if (marks->getNumberOfMarks() % num_columns_in_mark != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Number of marks {} is not divisible by number of columns in mark {}",
+            marks->getNumberOfMarks(), num_columns_in_mark);
 }
 
 MarkInCompressedFile MergeTreeMarksGetter::getMark(size_t row_index, size_t column_index) const
 {
-#ifndef NDEBUG
     if (column_index >= num_columns_in_mark)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Column index: {} is out of range [0, {})", column_index, num_columns_in_mark);
-#endif
+            "Column index {} is out of range [0, {})", column_index, num_columns_in_mark);
 
     return marks->get(row_index * num_columns_in_mark + column_index);
 }
@@ -231,7 +239,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
+        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
 
         if (save_marks_in_cache)
         {
@@ -240,7 +248,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
         }
         else
         {
-            loaded_marks = mark_cache->get(key);
+            loaded_marks = mark_cache->getWithoutMetrics(key);
             if (!loaded_marks)
                 loaded_marks = loadMarksImpl();
         }
@@ -263,8 +271,8 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
     /// Avoid queueing jobs into thread pool if marks are in cache
     auto data_part_storage = data_part_reader->getDataPartStorage();
-    auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
-    if (MarkCache::MappedPtr loaded_marks = mark_cache->get(key))
+    auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
     {
         ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
         auto promise = std::promise<MarkCache::MappedPtr>();
@@ -275,6 +283,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
+            auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
@@ -295,7 +304,7 @@ void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & c
     for (const auto & [stream_name, marks] : cached_marks)
     {
         auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(fs::path(part.getRelativePathOfActivePart()) / mark_path);
+        auto key = MarkCache::hash(part.getDataPartStorage().getDiskName() + ":" + (fs::path(part.getRelativePathOfActivePart()) / mark_path).string());
         mark_cache->set(key, std::make_shared<MarksInCompressedFile>(*marks));
     }
 }

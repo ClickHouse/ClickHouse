@@ -55,7 +55,7 @@ Returns:
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionAnd>(documentation);
     }
@@ -86,7 +86,7 @@ Returns:
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionOr>(documentation);
     }
@@ -112,7 +112,7 @@ Returns:
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionXor>(documentation);
     }
@@ -137,7 +137,7 @@ Returns:
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionNot>(documentation, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
     }
@@ -149,6 +149,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -306,7 +307,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = static_cast<UInt8>(column_data[i] != 0);
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
                 else
@@ -322,7 +323,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = ternary_column_data[i];
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
             }
@@ -335,7 +336,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
 
             for (size_t i = 0; i < size; ++i)
             {
-                ternary_column_data[i] = (column_data[i] != 0) << 1;
+                ternary_column_data[i] = static_cast<UInt8>((column_data[i] != 0) << 1);
             }
         }
         else
@@ -414,7 +415,7 @@ struct OperationApplier
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX512BW))
+        if (isArchSupported(TargetArch::x86_64_v4))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX512BW<false>(in, result_data.data(), result_data.size());
@@ -423,7 +424,7 @@ struct OperationApplier
             return;
         }
 
-        if (isArchSupported(TargetArch::AVX2))
+        if (isArchSupported(TargetArch::x86_64_v3))
         {
             if (!use_result_data_as_input)
                 doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
@@ -474,13 +475,13 @@ struct OperationApplier
 
 #if USE_MULTITARGET_CODE
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) X86_64_V4_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX512BW)
     }
 
     template <bool CarryResult, typename Columns, typename Result>
-    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) AVX2_FUNCTION_SPECIFIC_ATTRIBUTE
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
     {
         BATCH_BODY(doBatchedApplyAVX2)
     }
@@ -550,7 +551,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_AVX512BW_AVX2(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void
@@ -569,14 +570,14 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
         {
 #if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::AVX512BW))
+            if (isArchSupported(TargetArch::x86_64_v4))
             {
-                applyImplAVX512BW<T, Result>(x, *column, result);
+                applyImpl_x86_64_v4<T, Result>(x, *column, result);
                 return;
             }
-            if (isArchSupported(TargetArch::AVX2))
+            if (isArchSupported(TargetArch::x86_64_v3))
             {
-                applyImplAVX2<T, Result>(x, *column, result);
+                applyImpl_x86_64_v3<T, Result>(x, *column, result);
                 return;
             }
 #endif
@@ -658,7 +659,7 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
         }
         else
         {
-            auto converted_column = ColumnUInt8::create();
+            auto converted_column = ColumnUInt8::create(column->size());
             if (!tryConvertAnyColumnToBool(*column, converted_column->getData()))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
             uint8_args.push_back(converted_column.get());
@@ -671,6 +672,44 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
     return col_res;
 }
 
+}
+
+namespace FunctionsLogicalDetail
+{
+
+#if USE_EMBEDDED_COMPILER
+
+/// Cast LLVM value with type to ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
+{
+    auto * result_type = llvm::Type::getInt8Ty(b.getContext());
+
+    if (from_type->isNullable())
+    {
+        auto * ternary_null = llvm::ConstantInt::get(result_type, 1);
+        auto * inner = nativeTernaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
+        auto * is_null = b.CreateExtractValue(value, {1});
+        return b.CreateSelect(is_null, ternary_null, inner);
+    }
+
+    auto * zero = llvm::Constant::getNullValue(value->getType());
+    auto * ternary_true = llvm::ConstantInt::get(result_type, 2);
+    auto * ternary_false = llvm::ConstantInt::get(result_type, 0);
+    if (value->getType()->isIntegerTy())
+        return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
+    else if (value->getType()->isFloatingPointTy())
+        return b.CreateSelect(b.CreateFCmpUNE(value, zero), ternary_true, ternary_false);
+    else
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
+}
+
+/// Cast LLVM value with type to ternary
+llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
+{
+    return nativeTernaryCast(b, value_with_type.type, value_with_type.value);
+}
+
+#endif
 }
 
 template <typename Impl, typename Name>

@@ -17,6 +17,8 @@
 #include <stack>
 #include <ranges>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace DB
 {
 
@@ -178,15 +180,21 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<ExpressionTransform>(header, convert_actions, dataflow_cache_updater); });
+    }
+    else
+    {
+        if (dataflow_cache_updater)
         {
-            return std::make_shared<ExpressionTransform>(header, convert_actions);
-        });
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+        }
     }
 }
 
 void FilterStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
 
     auto cloned_dag = actions_dag.clone();
 
@@ -196,9 +204,12 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     for (auto & and_atom : and_atoms)
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
         settings.out << prefix << "AND column: " << and_atom.name << '\n';
-        expression->describeActions(settings.out, prefix);
+        if (!settings.compact)
+        {
+            auto expression = std::make_shared<ExpressionActions>(std::move(and_atom.dag));
+            expression->describeActions(settings.out, prefix);
+        }
     }
 
     settings.out << prefix << "Filter column: " << filter_column_name;
@@ -208,7 +219,8 @@ void FilterStep::describeActions(FormatSettings & settings) const
     settings.out << '\n';
 
     auto expression = std::make_shared<ExpressionActions>(std::move(cloned_dag));
-    expression->describeActions(settings.out, prefix);
+    if (!settings.compact)
+        expression->describeActions(settings.out, prefix);
 }
 
 void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -292,6 +304,11 @@ IQueryPlanStep::RemovedUnusedColumns FilterStep::removeUnusedColumns(NameMultiSe
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
+
+    /// When extra columns were absorbed from a child step that cannot reduce its output,
+    /// prevent input removal to avoid re-creating the mismatch on subsequent optimization passes.
+    if (prevent_input_removal)
+        remove_inputs = false;
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "In {} cannot be more inputs in the DAG than columns in the input header", getName());

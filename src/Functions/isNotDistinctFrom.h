@@ -1,6 +1,9 @@
 #pragma once
+
 #include <Core/AccurateComparison.h>
 #include <Functions/FunctionsNullSafeCmp.h>
+
+
 namespace DB
 {
 

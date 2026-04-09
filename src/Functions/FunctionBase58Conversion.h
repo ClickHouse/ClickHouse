@@ -20,22 +20,43 @@ struct Base58EncodeTraits
 
     static size_t perform(std::string_view src, UInt8 * dst)
     {
-        return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+        if (src.size() == 32)
+            return encodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), dst);
+        else if (src.size() == 64)
+            return encodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), dst);
+        else
+            return encodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
 };
 
 struct Base58DecodeTraits
 {
+    static constexpr bool has_size_optimization = true;
+
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
-        auto const string_length = src_column.getChars().size();
-        /// decoded size is at most length of encoded (every 8 bytes becomes at most 6 bytes)
-        return (string_length * 6 + 7) / 8;
+        /// According to the RFC https://datatracker.ietf.org/doc/html/draft-msporny-base58-03
+        /// base58 doesn't have a clean bitsequence-to-character mapping like base32 or base64.
+        /// Instead, it uses division by 58 and modulo operations on big integers.
+        /// In addition all the leading zeros are converted to "1"s as is.
+        /// Thus, if we decode the can have at most same amount of bytes as a result.
+        /// Example:
+        /// "11111" (5 chars) -> b'\x00\x00\x00\x00\x00' (5 bytes)
+        return src_column.getChars().size();
     }
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
     {
+        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+    }
+
+    static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size)
+    {
+        if (expected_size == 32)
+            return decodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
+        if (expected_size == 64)
+            return decodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
         return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
     }
 };

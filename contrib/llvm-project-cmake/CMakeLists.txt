@@ -19,11 +19,15 @@ if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAK
     return()
 endif()
 
-set (LLVM_VERSION "21.1.5bundled")
+set (LLVM_VERSION "22.1.1bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
+if (ENABLE_XRAY)
+    set (LLVM_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}" "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
+endif ()
+
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
 
 # There are compilation errors with C++23.
@@ -39,6 +43,8 @@ elseif (ARCH_S390X)
     set (LLVM_TARGETS_TO_BUILD "SystemZ" CACHE INTERNAL "")
 elseif (ARCH_RISCV64)
     set (LLVM_TARGETS_TO_BUILD "RISCV" CACHE INTERNAL "")
+elseif (ARCH_LOONGARCH64)
+    set (LLVM_TARGETS_TO_BUILD "LoongArch" CACHE INTERNAL "")
 endif ()
 
 if (USE_MUSL)
@@ -94,6 +100,12 @@ else()
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen)
     elseif (ARCH_RISCV64)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen)
+    elseif (ARCH_LOONGARCH64)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMLoongArchInfo LLVMLoongArchDesc LLVMLoongArchCodeGen)
+    endif ()
+
+    if (ENABLE_XRAY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMXRay)
     endif ()
 endif()
 

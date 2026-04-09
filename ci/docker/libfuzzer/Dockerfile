@@ -16,7 +16,6 @@ RUN apt-get update \
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
-            libc6-dbg \
             moreutils \
             ncdu \
             p7zip-full \

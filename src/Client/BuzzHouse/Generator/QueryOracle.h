@@ -12,44 +12,66 @@ enum class DumpOracleStrategy
     DUMP_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
-    BACKUP_RESTORE = 4
+    BACKUP_RESTORE = 4,
+    ALTER_UPDATE = 5,
+    INSERT_COUNT = 6
+};
+
+struct MatchHandler
+{
+    /// predicate: returns true if this message should be handled
+    std::function<bool(const google::protobuf::Message &)> predicate;
+    /// handler: mutates or processes the message
+    /// returns true if the message was consumed and recursion into its children should stop
+    std::function<bool(google::protobuf::Message &)> handler;
 };
 
 class QueryOracle
 {
 private:
     static const std::vector<std::vector<OutFormat>> oracleFormats;
-    const FuzzConfig & fc;
-    const std::filesystem::path qcfile, qsfile, qfile_peer;
+    FuzzConfig & fc;
+    const std::filesystem::path qcfile;
+    const std::filesystem::path qsfile;
+    const std::filesystem::path qfile_peer;
 
-    MD5Impl md5_hash1, md5_hash2;
-    Poco::DigestEngine::Digest first_digest, second_digest;
-    PerformanceResult res1, res2;
+    MD5Impl md5_hash1;
+    MD5Impl md5_hash2;
+    Poco::DigestEngine::Digest first_digest;
+    Poco::DigestEngine::Digest second_digest;
+    PerformanceResult res1;
+    PerformanceResult res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;
-    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
+    uint64_t nrows = 0;
+    std::uniform_int_distribution<uint64_t> rows_dist;
+    bool other_steps_success = true;
+    bool can_test_oracle_result;
+    bool can_test_success;
+    bool measure_performance;
+    bool compare_explain;
 
-    std::unordered_set<uint32_t> found_tables;
+    std::unordered_set<String> found_tables;
     DB::Strings nsettings;
 
-    void swapQuery(RandomGenerator & rg, StatementGenerator & gen, google::protobuf::Message & mes);
-    bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
-    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const;
+    void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
-    explicit QueryOracle(const FuzzConfig & ffc)
+    explicit QueryOracle(FuzzConfig & ffc)
         : fc(ffc)
         , qcfile(ffc.client_file_path / "query.data")
         , qsfile(ffc.server_file_path / "query.data")
         , qfile_peer(
               ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
                                                 : std::filesystem::temp_directory_path())
+        , rows_dist(fc.min_insert_rows, fc.max_insert_rows)
         , can_test_oracle_result(fc.compare_success_results)
+        , can_test_success(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
     }
@@ -63,12 +85,41 @@ public:
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
+    /// Roundtrip oracle: verifies that encoding/encryption functions compose correctly.
+    /// Query 1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
+    /// Query 2: SELECT count() FROM <from_clause> WHERE roundtrip(col) = col
+    /// Both queries must return the same value, catching any roundtrip failures.
+    void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
+    /// COUNT(DISTINCT expr) consistency oracle
+    /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>
+    /// Query 2: SELECT COUNT(*) FROM (SELECT DISTINCT expr FROM <from_clause>) AS sub
+    /// Both forms must return the same integer (different code paths: uniqExact vs DISTINCT + COUNT).
+    void generateCountDistinctFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
+    void generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
+
+    /// Row policy correctness oracle.
+    /// Picks an existing catalog row policy (with a stored USING predicate) on a suitable table.
+    /// Query 1 (sq1):  SELECT count() FROM db.t [FINAL] INTO OUTFILE ...
+    ///                  (FuzzLoop sends "EXECUTE AS buzzhouse_oracle_user" first → policy active)
+    /// Query 2 (sq2):  SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE ...
+    ///                  (run as admin after reconnect → explicit WHERE equivalent to policy filter)
+    /// Both counts must be equal.  No setup or teardown needed — the policy already exists.
+    void generateRowPolicyOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
     /// Dump and read table oracle
-    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq1);
+    void dumpTableContent(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        DumpOracleStrategy strategy,
+        bool test_content,
+        const SQLTable & t,
+        SQLQuery & sq1,
+        SQLQuery & sq2);
     void dumpOracleIntermediateSteps(
         RandomGenerator & rg,
         StatementGenerator & gen,
-        const SQLTable & t,
+        SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
         std::vector<SQLQuery> & intermediate_queries);

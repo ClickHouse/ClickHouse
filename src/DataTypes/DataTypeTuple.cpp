@@ -14,6 +14,7 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
+#include <DataTypes/Serializations/SerializationDetached.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -33,11 +34,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -215,6 +216,12 @@ MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serializatio
     if (const auto * serialization_replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
         return ColumnReplicated::create(createColumn(*serialization_replicated->getNested()), ColumnUInt8::create());
 
+    /// We can have Detached serialization over Tuple (for parallel blocks marshalling).
+    /// Create the inner column; SerializationDetached::deserializeBinaryBulkWithMultipleStreams
+    /// will wrap it in ColumnBLOB during deserialization.
+    if (const auto * serialization_detached = typeid_cast<const SerializationDetached *>(current_serialization))
+        return createColumn(*serialization_detached->getNested());
+
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Tuple");
@@ -272,7 +279,7 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
 }
 
 
-size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensitive) const
+size_t DataTypeTuple::getPositionByName(std::string_view name, bool case_insensitive) const
 {
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -290,7 +297,7 @@ size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensiti
     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
-std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name, bool case_insensitive) const
+std::optional<size_t> DataTypeTuple::tryGetPositionByName(std::string_view name, bool case_insensitive) const
 {
     for (size_t i = 0; i < elems.size(); ++i)
     {
@@ -322,6 +329,11 @@ bool DataTypeTuple::textCanContainOnlyValidUTF8() const
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->textCanContainOnlyValidUTF8(); });
 }
 
+bool DataTypeTuple::hasDynamicStructure() const
+{
+    return std::ranges::any_of(elems, [](auto && elem) { return elem->hasDynamicStructure(); });
+}
+
 bool DataTypeTuple::haveMaximumSizeOfValue() const
 {
     return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
@@ -348,18 +360,18 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
-SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
+SerializationPtr DataTypeTuple::doGetSerialization(const SerializationInfoSettings & settings) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getDefaultSerialization();
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
+        auto serialization = elems[i]->getSerialization(settings);
+        serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names);
+    return SerializationTuple::create(std::move(serializations), has_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
@@ -371,13 +383,13 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
-        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
+        serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
     auto kinds = info.getKindStack();
     /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
     std::erase(kinds, ISerialization::Kind::SPARSE);
-    return IDataType::getSerialization(kinds, std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
+    return wrapSerializationBasedOnKindStack(SerializationTuple::create(std::move(serializations), has_explicit_names), kinds, info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const

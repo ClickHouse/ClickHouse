@@ -1,31 +1,24 @@
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/checkStackSize.h>
-#include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
+#include <Client/IConnections.h>
 #include <Core/Settings.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Planner/Utils.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <IO/ConnectionTimeouts.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Client/IConnections.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Storages/StorageReplicatedMergeTree.h>
+#include <TableFunctions/TableFunctionFactory.h>
+
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 
 namespace ProfileEvents

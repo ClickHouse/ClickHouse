@@ -23,7 +23,7 @@ Range getExtremeRangeFromColumn(const ColumnPtr & column)
 {
     Field min_val;
     Field max_val;
-    column->getExtremes(min_val, max_val);
+    column->getExtremes(min_val, max_val, 0, column->size());
     return Range(min_val, true, max_val, true);
 }
 

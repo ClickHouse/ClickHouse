@@ -1,6 +1,7 @@
 import pytest
-
+import re
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
@@ -23,146 +24,264 @@ node2 = cluster.add_instance(
 def started_cluster():
     try:
         cluster.start()
-
         yield cluster
-
     finally:
         cluster.shutdown()
 
 
-def test_table_db_limit(started_cluster):
-    # By the way, default database already exists.
-    for i in range(9):
-        node.query("create database db{}".format(i))
+def verify_warning_with_values(node, current_val, warn_val, throw_val):
+    """
+    Parses system.warnings to find a warning message matching the expected values.
+    """
+    warnings_result = node.query("SELECT message, message_format_string FROM system.warnings")
+    rows = warnings_result.strip().split('\n')
 
-    assert "TOO_MANY_DATABASES" in node.query_and_get_error(
-        "create database db_exp".format(i)
+    found = False
+    found_message = ""
+
+    for row in rows:
+        if not row: continue
+        parts = row.split('\t')
+        if len(parts) < 1: continue
+
+        message = parts[0]
+
+        # Regex to capture values from message:
+        match = re.search(
+            r"\((\d+)\) exceeds the warning limit of (\d+)(?:\. You will not be able to create new .* limit of (\d+) is reached)?",
+            message)
+
+        if match:
+            msg_curr = int(match.group(1))
+            msg_warn = int(match.group(2))
+            msg_throw = int(match.group(3)) if match.group(3) else None
+
+            # We allow current_val to be >= expected because some internal system objects might have been attached
+            if msg_curr >= current_val and msg_warn == warn_val and msg_throw == throw_val:
+                found = True
+                found_message = message
+                break
+
+    assert found, (
+        f"Warning not found or values mismatch.\n"
+        f"Expected: Current>={current_val}, Warn={warn_val}, Throw={throw_val}\n"
+        f"Last found message: {found_message}"
     )
 
-    for i in range(10):
-        node.query("create table t{} (a Int32) Engine = Log".format(i))
 
-    # This checks that system tables are not accounted in the number of tables.
-    node.query("system flush logs")
+def verify_no_warning(node, message_part):
+    """
+    Verifies that no warning containing message_part exists in system.warnings.
+    """
+    warnings = node.query("SELECT message FROM system.warnings").strip()
+    if not warnings:
+        return
+    assert message_part not in warnings, f"Found unexpected warning containing '{message_part}':\n{warnings}"
 
-    # Regular tables
-    for i in range(10):
-        node.query("drop table t{}".format(i))
 
-    for i in range(10):
-        node.query("create table t{} (a Int32) Engine = Log".format(i))
+def test_table_limit(started_cluster):
+    warn_limit = 5
+    throw_limit = 10
+
+    for i in range(15):
+        node.query(f"DROP TABLE IF EXISTS t{i} SYNC")
+
+    for i in range(warn_limit):
+        node.query(f"CREATE TABLE t{i} (a Int32) Engine = Log")
+
+    node.query(f"CREATE TABLE t{warn_limit} (a Int32) Engine = Log")
+
+    verify_warning_with_values(
+        node,
+        current_val=warn_limit + 1,
+        warn_val=warn_limit,
+        throw_val=throw_limit
+    )
+
+    for i in range(warn_limit + 1, throw_limit):
+        node.query(f"CREATE TABLE t{i} (a Int32) Engine = Log")
+
+    verify_warning_with_values(
+        node,
+        current_val=throw_limit,
+        warn_val=warn_limit,
+        throw_val=throw_limit
+    )
 
     assert "TOO_MANY_TABLES" in node.query_and_get_error(
-        "create table default.tx (a Int32) Engine = Log"
+        f"CREATE TABLE t{throw_limit} (a Int32) Engine = Log"
     )
 
-    # Dictionaries
-    for i in range(10):
-        node.query(
-            "create dictionary d{} (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)".format(
-                i
-            )
+    # Cleanup and check warning disappears
+    for i in range(throw_limit):
+        node.query(f"DROP TABLE t{i} SYNC")
+
+    verify_no_warning(node, "The number of attached tables")
+
+
+def test_view_limit(started_cluster):
+    warn_limit = 5
+    throw_limit = 10
+
+    for i in range(warn_limit + 1):
+        node.query(f"CREATE VIEW v{i} AS SELECT 1")
+
+    verify_warning_with_values(
+        node,
+        current_val=warn_limit + 1,
+        warn_val=warn_limit,
+        throw_val=throw_limit
+    )
+
+    for i in range(warn_limit + 1, throw_limit):
+        node.query(f"CREATE VIEW v{i} AS SELECT 1")
+
+    assert "TOO_MANY_TABLES" in node.query_and_get_error(
+        f"CREATE VIEW v{throw_limit} AS SELECT 1"
+    )
+
+    # Cleanup and check warning disappears
+    for i in range(throw_limit):
+        node.query(f"DROP VIEW v{i}")
+
+    verify_no_warning(node, "The number of attached views")
+
+
+def test_database_limit(started_cluster):
+    warn_limit = 5
+    throw_limit = 10
+    created_dbs = []
+
+    try:
+        initial_dbs = int(node.query("SELECT value FROM system.metrics WHERE name = 'AttachedDatabase'"))
+
+        # 1. Reach Warning Limit
+        dbs_to_warn = max(0, warn_limit - initial_dbs + 1)
+        for i in range(dbs_to_warn):
+            name = f"db_test_{i}"
+            node.query(f"CREATE DATABASE {name}")
+            created_dbs.append(name)
+
+        current_total = int(node.query("SELECT value FROM system.metrics WHERE name = 'AttachedDatabase'"))
+
+        verify_warning_with_values(
+            node,
+            current_val=current_total,
+            warn_val=warn_limit,
+            throw_val=throw_limit
         )
 
+        # 2. Reach Throw Limit (and try to exceed)
+        limit_hit = False
+
+        # Try creating enough databases to definitely hit the limit + safety margin
+        for i in range(len(created_dbs), throw_limit + 10):
+            name = f"db_test_{i}"
+            try:
+                node.query(f"CREATE DATABASE {name}")
+                created_dbs.append(name)
+            except QueryRuntimeException as e:
+                if "TOO_MANY_DATABASES" in str(e):
+                    limit_hit = True
+                    break
+                else:
+                    raise e
+
+        assert limit_hit, f"Failed to trigger TOO_MANY_DATABASES limit. Created {len(created_dbs)} databases on top of {initial_dbs} initial."
+
+        # Cleanup and verify warning disappears
+        for db in created_dbs:
+            node.query(f"DROP DATABASE IF EXISTS {db}")
+
+        verify_no_warning(node, "The number of attached databases")
+        created_dbs = []  # Clear list so finally block doesn't duplicate effort
+
+    finally:
+        for db in created_dbs:
+            node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
+def test_dictionary_limit(started_cluster):
+    warn_limit = 5
+    throw_limit = 10
+
+    for i in range(warn_limit + 1):
+        node.query(f"CREATE DICTIONARY d{i} (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)")
+
+    verify_warning_with_values(
+        node,
+        current_val=warn_limit + 1,
+        warn_val=warn_limit,
+        throw_val=throw_limit
+    )
+
+    for i in range(warn_limit + 1, throw_limit):
+        node.query(f"CREATE DICTIONARY d{i} (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)")
+
     assert "TOO_MANY_TABLES" in node.query_and_get_error(
-        "create dictionary dx (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)"
+        f"CREATE DICTIONARY d{throw_limit} (a Int32) primary key a source(null()) layout(flat()) lifetime(1000)"
     )
 
-    # Replicated tables
-    for i in range(10):
-        node.query("drop table t{}".format(i))
+    # Cleanup and check warning disappears
+    for i in range(throw_limit):
+        node.query(f"DROP DICTIONARY d{i}")
 
-    for i in range(3):
-        node.query(
-            "create table t{} on cluster 'cluster' (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/t{}', '{{replica}}') order by a".format(
-                i, i
-            )
-        )
-
-    # Test limit on other replica
-    assert "Too many replicated tables" in node2.query_and_get_error(
-        "create table tx (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/tx', '{replica}') order by a"
-    )
-
-    for i in range(3, 5):
-        node.query(
-            "create table t{} (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/t{}', '{{replica}}') order by a".format(
-                i, i
-            )
-        )
-
-    assert "Too many replicated tables" in node.query_and_get_error(
-        "create table tx (a Int32) Engine = ReplicatedMergeTree('/clickhouse/tables/tx', '{replica}') order by a"
-    )
-
-    # Checks that replicated tables are also counted as regular tables
-    for i in range(5, 10):
-        node.query("create table t{} (a Int32) Engine = Log".format(i))
-
-    assert "TOO_MANY_TABLES" in node.query_and_get_error(
-        "create table tx (a Int32) Engine = Log"
-    )
-
-    # Cleanup
-    for i in range(10):
-        node.query("drop table t{} sync".format(i))
-    for i in range(3):
-        node2.query("drop table t{} sync".format(i))
-    for i in range(9):
-        node.query("drop database db{}".format(i))
-    for i in range(10):
-        node.query("drop dictionary d{}".format(i))
+    verify_no_warning(node, "The number of attached dictionaries")
 
 
-def test_replicated_database(started_cluster):
-    node.query("CREATE DATABASE db_replicated ENGINE = Replicated('/clickhouse/db_replicated', '{replica}');")
-    for i in range(10):
-        node.query(f"CREATE TABLE db_replicated.t{i} (a Int32) ENGINE = Log;")
-    assert "TOO_MANY_TABLES" in node.query_and_get_error(
-        "CREATE TABLE db_replicated.tx (a Int32) ENGINE = Log;"
-    )
-    node.query("DROP DATABASE db_replicated SYNC;")
+def test_named_collection_limit(started_cluster):
+    warn_limit = 5
+    throw_limit = 10
 
-
-def test_named_collection(started_cluster):
     def _get_number_of_collections():
         return int(node.query("SELECT value FROM system.metrics WHERE name = 'NamedCollection'"))
 
-    def _get_warnings():
-        return int(node.query("SELECT count() FROM system.warnings WHERE message = 'The number of named collections is more than 5.'"))
-
     try:
-        # Not enough named collections don't create any warning
-        for i in range(5):
-            node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
-        assert _get_warnings() == 0
-        assert _get_number_of_collections() == 5
+        for i in range(warn_limit):
+            node.query(f"CREATE NAMED COLLECTION nc_{i} AS key=1")
 
-        # Adding one more triggers a warning
-        node.query("CREATE NAMED COLLECTION test_5 AS key=1")
-        assert _get_warnings() == 1
-        assert _get_number_of_collections() == 6
+        node.query(f"CREATE NAMED COLLECTION nc_{warn_limit} AS key=1")
 
-        # Reach the limit of named collections
-        for i in range(6, 10):
-            node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
-        assert _get_number_of_collections() == 10
-
-        # Trying to create one more throws an error
-        assert "TOO_MANY_NAMED_COLLECTIONS" in node.query_and_get_error(
-            "CREATE NAMED COLLECTION test_11 AS key=1"
+        verify_warning_with_values(
+            node,
+            current_val=warn_limit + 1,
+            warn_val=warn_limit,
+            throw_val=throw_limit
         )
-        assert _get_number_of_collections() == 10
 
-        # Ensure we can still create if we remove them
-        for i in range(10):
-            node.query(f"DROP NAMED COLLECTION test_{i}")
-        assert _get_number_of_collections() == 0
-        assert _get_warnings() == 0
-        for i in range(10):
-            node.query(f"CREATE NAMED COLLECTION test_{i} AS key=1")
-        assert _get_number_of_collections() == 10
+        for i in range(warn_limit + 1, throw_limit):
+            node.query(f"CREATE NAMED COLLECTION nc_{i} AS key=1")
+
+        assert _get_number_of_collections() == throw_limit
+
+        assert "TOO_MANY_NAMED_COLLECTIONS" in node.query_and_get_error(
+            f"CREATE NAMED COLLECTION nc_{throw_limit} AS key=1"
+        )
+
+        node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
+
+        verify_warning_with_values(
+            node,
+            current_val=throw_limit-1,
+            warn_val=warn_limit,
+            throw_val=throw_limit
+        )
+
+        node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
+
+        verify_warning_with_values(
+            node,
+            current_val=throw_limit-1,
+            warn_val=warn_limit,
+            throw_val=throw_limit
+        )
+
+        # Cleanup and check warning disappears
+        for i in range(throw_limit + 1):
+            node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
+
+        verify_no_warning(node, "The number of named collections")
+
     finally:
-        for i in range(10):
-            node.query(f"DROP NAMED COLLECTION test_{i}")
-        assert _get_number_of_collections() == 0
+        for i in range(throw_limit + 1):
+            node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")

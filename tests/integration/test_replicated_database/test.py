@@ -101,7 +101,6 @@ def zk_rmr_with_retries(zk, path):
     assert False
 
 
-
 def generate_random_string(length=6):
     return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
@@ -261,8 +260,9 @@ def test_simple_alter_table(started_cluster, engine):
     assert_create_query([main_node, dummy_node], name, expected)
 
     # test_create_replica_after_delay
+    competing_node.query(f"DROP DATABASE IF EXISTS {database}")
     competing_node.query(
-        f"CREATE DATABASE IF NOT EXISTS {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
     )
 
     main_node.query("ALTER TABLE {} ADD COLUMN Added3 UInt32;".format(name))
@@ -282,6 +282,13 @@ def test_simple_alter_table(started_cluster, engine):
         "ENGINE = {}\\nPARTITION BY StartDate\\nORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)\\n"
         "SETTINGS index_granularity = 8192".format(name, full_engine)
     )
+
+    # Ensure all replicas are synchronized before asserting schema equality
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+    if "Replicated" in engine:
+        dummy_node.query(f"SYSTEM SYNC REPLICA {name}")
+        competing_node.query(f"SYSTEM SYNC REPLICA {name}")
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -655,7 +662,7 @@ def test_alters_from_different_replicas(started_cluster):
     )
 
     main_node.query(
-        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)"
+        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10) ORDER BY ALL"
     )
 
     # test_replica_restart
@@ -1013,13 +1020,13 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
     main_node.query_with_retry(
-        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
+        "CREATE DATABASE recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
     )
     started_cluster.get_kazoo_client("zoo1").set(
         "/clickhouse/databases/recover_mvs/logs_to_keep", b"10"
     )
     dummy_node.query_with_retry(
-        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
+        "CREATE DATABASE recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
     )
 
     settings = {"distributed_ddl_task_timeout": 0}
@@ -1498,17 +1505,28 @@ def test_table_metadata_corruption(started_cluster):
     )
     expected = main_node.query(query)
 
-    # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks
-    dummy_node.start_clickhouse(expected_to_fail=True)
+    # We expect clickhouse server to shutdown without LOGICAL_ERRORs or deadlocks.
+    # Use try/finally to ensure dummy_node is always recovered for subsequent tests.
+    start_failed_as_expected = False
+    try:
+        dummy_node.start_clickhouse(expected_to_fail=True)
+        start_failed_as_expected = True
 
-    assert not dummy_node.contains_in_log("LOGICAL_ERROR")
+        assert not dummy_node.contains_in_log("LOGICAL_ERROR")
+    finally:
+        # Always fix the corrupted metadata and ensure dummy_node is running,
+        # regardless of whether the assertion above passed or failed.
+        if not start_failed_as_expected:
+            # Server did not shut down as expected, kill it so we can fix metadata
+            dummy_node.stop_clickhouse(kill=True)
 
-    print(f"Fix corrupted metadata")
-    replace_text_in_metadata(
-        dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
-    )
+        print(f"Fix corrupted metadata")
+        replace_text_in_metadata(
+            dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
+        )
 
-    dummy_node.start_clickhouse()
+        dummy_node.start_clickhouse()
+
     assert_eq_with_retry(dummy_node, query, expected)
 
     main_node.query("DROP DATABASE IF EXISTS table_metadata_corruption SYNC")
@@ -1751,9 +1769,13 @@ def test_system_database_replicas_with_ro(started_cluster):
     main_node.query(f"DETACH DATABASE {database_1}")
     main_node.query(f"ATTACH DATABASE {database_1}", ignore_error=True)
 
-    expected = TSV([
-        [database_1, 1, 1],
-    ])
+    # When attaching database, if the db keeper path is remove, it does not recreate DB nodes on Keeper
+    # So max_log_ptr is zero because it is never updated.
+    expected = TSV(
+        [
+            [database_1, 1, 0],
+        ]
+    )
     assert (
         main_node.query(
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%'") == expected
@@ -1764,10 +1786,12 @@ def test_system_database_replicas_with_ro(started_cluster):
         f"CREATE DATABASE {database_2} ENGINE = Replicated('/test/{database_2}', 'shard1', 'replica1');"
     )
 
-    expected = TSV([
-        [database_1, 1, 1],
-        [database_2, 0, 1],
-    ])
+    expected = TSV(
+        [
+            [database_1, 1, 0],
+            [database_2, 0, 1],
+        ]
+    )
     assert (
         main_node.query(
             f"SELECT database, is_readonly, max_log_ptr FROM system.database_replicas WHERE database LIKE '{prefix}_%' ORDER BY database"
@@ -1840,14 +1864,18 @@ def test_block_system_database_replicas(started_cluster):
             f"ATTACH DATABASE {prefix}_db_{i}"
         )
 
-    expected = TSV([
-        [f"{prefix}_db_1", 1, 1],
-        [f"{prefix}_db_2", 1, 1],
-        [f"{prefix}_db_3", 1, 1],
-        [f"{prefix}_db_4", 0, 1],
-        [f"{prefix}_db_5", 0, 1],
-        [f"{prefix}_db_6", 0, 1],
-    ])
+    # When attaching database, if the db keeper path is remove, it does not recreate DB nodes on Keeper
+    # So max_log_ptr is zero because it is never updated.
+    expected = TSV(
+        [
+            [f"{prefix}_db_1", 1, 0],
+            [f"{prefix}_db_2", 1, 0],
+            [f"{prefix}_db_3", 1, 0],
+            [f"{prefix}_db_4", 0, 1],
+            [f"{prefix}_db_5", 0, 1],
+            [f"{prefix}_db_6", 0, 1],
+        ]
+    )
 
     assert (
         main_node.query(
@@ -1961,3 +1989,29 @@ def test_mv_false_cyclic_dependency(started_cluster):
     )
     # Cleanup
     main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_ignore_cluster_name_setting(started_cluster):
+    db_name = "test_cluster_name"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    for node in [main_node, dummy_node]:
+        node.query(f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')")
+
+    create_query = f"""
+        CREATE TABLE {db_name}.replicated_table ON CLUSTER 'some_cluster' (d Date, k UInt64, i32 Int32)
+        ENGINE=ReplicatedMergeTree('/clickhouse/{db_name}/{{table}}/{{shard}}', '{{replica}}') ORDER BY k PARTITION BY toYYYYMM(d);
+        """
+
+    assert (
+        "Requested cluster 'some_cluster' not found"
+        in main_node.query_and_get_error(create_query)
+    )
+
+    node.query(create_query, settings={"ignore_on_cluster_for_replicated_database": 1})
+
+    # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

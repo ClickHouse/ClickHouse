@@ -171,18 +171,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false,
-        .can_read_part_without_marks = true,
-    };
-
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = reader_settings,
+        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
         .storage_snapshot = storage_snapshot,
     };
 
@@ -196,7 +189,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
 
-    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
+    MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
     updateRowsToRead(0);

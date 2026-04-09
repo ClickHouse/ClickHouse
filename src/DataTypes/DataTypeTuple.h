@@ -35,7 +35,7 @@ public:
     std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
     bool canBeInsideSparseColumns() const override { return false; }
 
@@ -51,11 +51,12 @@ public:
     bool haveSubtypes() const override { return !elems.empty(); }
     bool isComparable() const override;
     bool textCanContainOnlyValidUTF8() const override;
+    bool hasDynamicStructure() const override;
     bool haveMaximumSizeOfValue() const override;
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
     SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
@@ -65,8 +66,8 @@ public:
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
-    size_t getPositionByName(const String & name, bool case_insensitive = false) const;
-    std::optional<size_t> tryGetPositionByName(const String & name, bool case_insensitive = false) const;
+    size_t getPositionByName(std::string_view name, bool case_insensitive = false) const;
+    std::optional<size_t> tryGetPositionByName(std::string_view name, bool case_insensitive = false) const;
     String getNameByPosition(size_t i) const;
 
     bool hasExplicitNames() const { return has_explicit_names; }

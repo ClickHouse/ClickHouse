@@ -20,6 +20,7 @@ ANY RIGHT JOIN mem2 ON k2 = mem2.k
 ORDER BY tab.v
 SETTINGS enable_parallel_replicas=0;
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT '-- parallel replicas --';
 SELECT *
 FROM tab

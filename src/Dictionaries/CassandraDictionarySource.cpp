@@ -6,6 +6,8 @@
 #include <Common/RemoteHostFilter.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -48,7 +50,6 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
-#include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>
 
 namespace DB
@@ -63,7 +64,7 @@ CassandraDictionarySource::Configuration::Configuration(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
     : host(config.getString(config_prefix + ".host"))
-    , port(config.getUInt(config_prefix + ".port", 0))
+    , port(static_cast<UInt16>(config.getUInt(config_prefix + ".port", 0)))
     , user(config.getString(config_prefix + ".user", ""))
     , password(config.getString(config_prefix + ".password", ""))
     , db(config.getString(config_prefix + ".keyspace"))
@@ -156,7 +157,7 @@ std::string CassandraDictionarySource::toString() const
     return "Cassandra: " + configuration.db + '.' + configuration.table;
 }
 
-BlockIO CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO CassandraDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     String query = query_builder.composeLoadIdsQuery(ids);
     maybeAllowFiltering(query);
@@ -167,13 +168,13 @@ BlockIO CassandraDictionarySource::loadIds(const std::vector<UInt64> & ids)
     return io;
 }
 
-BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO CassandraDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     if (requested_rows.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No rows requested");
 
     /// TODO is there a better way to load data by complex keys?
-    std::unordered_map<UInt64, std::vector<size_t>> partitions;
+    UnorderedMapWithMemoryTracking<UInt64, VectorWithMemoryTracking<size_t>> partitions;
     for (const auto & row : requested_rows)
     {
         SipHash partition_key;

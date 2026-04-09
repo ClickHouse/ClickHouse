@@ -30,6 +30,7 @@ namespace DB
 struct Settings;
 struct TimeoutSetter;
 
+class JWTProvider;
 class Connection;
 struct ConnectionParameters;
 struct ClusterFunctionReadTaskResponse;
@@ -64,7 +65,12 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        const String & bind_host_);
+        const String & tls_sni_override_,
+        const String & bind_host_
+#if USE_JWT_CPP && USE_SSL
+        , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
+#endif
+    );
 
     ~Connection() override;
 
@@ -174,6 +180,8 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
+    void setAddressConnectTimeoutExpired() { address_connect_timeout_expired = true; }
+
     void setFormatSettings(const FormatSettings & settings) override
     {
         format_settings = settings;
@@ -195,6 +203,7 @@ private:
     String quota_key;
 #if USE_JWT_CPP && USE_SSL
     String jwt;
+    std::shared_ptr<JWTProvider> jwt_provider;
 #endif
 
     /// For inter-server authorization
@@ -241,6 +250,7 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Secure secure;             /// Enable data encryption for communication.
+    String tls_sni_override;             /// Override for TLS SNI field.
     String bind_host;
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
@@ -263,7 +273,10 @@ private:
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
 
+    /// True if there are more resolved addresses to try when connecting (hostname may resolve to multiple IPs).
     bool have_more_addresses_to_connect = false;
+    /// Set by async callback when the per-address connect timeout expires, used to abort the current attempt.
+    bool address_connect_timeout_expired = false;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
@@ -296,17 +309,17 @@ private:
     std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello(const Poco::Timespan & handshake_timeout);
+    void sendHello();
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
+    void performHandshakeForSSHAuth();
 #endif
 
     void sendAddendum();
-    void receiveHello(const Poco::Timespan & handshake_timeout);
+    void receiveHello();
 
 #if USE_SSL
     void sendClusterNameAndSalt();
@@ -331,7 +344,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected, TimeoutSetter * timeout_setter = nullptr);
 };
 
 template <typename Conn>

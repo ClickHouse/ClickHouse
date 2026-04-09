@@ -96,6 +96,8 @@ public:
         }
     }
 
+    void resetFailures() { total_failures = 0; keeper_error = {}; user_error = {}; }
+
     bool callAndCatchAll(auto && f)
     {
         try

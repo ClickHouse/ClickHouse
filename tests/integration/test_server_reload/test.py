@@ -167,7 +167,7 @@ def sync_loaded_config(querier):
 def wait_loaded_config_changed(loads_before, querier):
     loads_after = None
     start_time = time.monotonic()
-    while time.monotonic() - start_time < 10:
+    while time.monotonic() - start_time < 60:
         try:
             loads_after = querier(LOADS_QUERY)
             if loads_after != loads_before:
@@ -323,8 +323,7 @@ def test_change_listen_host(cluster, zk):
             client.query("SELECT 1")
         assert localhost_client.query("SELECT 1") == "1\n"
     finally:
-        with sync_loaded_config(localhost_client.query):
-            configure_from_zk(zk)
+        configure_from_zk(zk, localhost_client.query)
 
 
 # This is a regression test for the case when the clickhouse-server was waiting

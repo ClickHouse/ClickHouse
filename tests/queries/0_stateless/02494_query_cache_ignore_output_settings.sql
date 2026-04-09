@@ -28,7 +28,7 @@ FROM
     system.query_log
 WHERE
     type = 'QueryFinish'
-    AND event_time > now() - 600
+    AND event_date >= yesterday() AND event_time >= now() - 600
     AND current_database = currentDatabase()
     AND query LIKE 'SELECT \'03710\', %'
 ORDER BY

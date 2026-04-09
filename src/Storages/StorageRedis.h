@@ -68,7 +68,7 @@ public:
     void multiSet(const RedisArray & data) const;
     RedisInteger multiDelete(const RedisArray & keys) const;
 
-    Chunk getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const override;
+    Chunk getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const override;
 
     Block getSampleBlock(const Names &) const override;
 

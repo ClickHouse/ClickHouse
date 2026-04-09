@@ -54,9 +54,12 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, MergeTreeSerializationInfoVersion) \
     M(CLASS_NAME, MergeTreeStringSerializationVersion) \
+    M(CLASS_NAME, MergeTreeNullableSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
+    M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
+    M(CLASS_NAME, MergeTreeMapSerializationVersion) \
     M(CLASS_NAME, SearchOrphanedPartsDisks)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)

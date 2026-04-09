@@ -34,15 +34,22 @@ NegativeLimitTransform::NegativeLimitTransform(SharedHeader header_, UInt64 limi
 
 /// First, our goal is to pull all the data from input ports. Once we have reached the end,
 /// then it is clear what should be part of the `limit`, `offset` and what should be pushed out to the output ports.
-IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
+NegativeLimitTransform::Status NegativeLimitTransform::prepare()
 {
+    if (allOutputsFinished())
+    {
+        for (auto & port : ports_data)
+            port.input_port->close();
+        return Status::Finished;
+    }
+
     if (stage == Stage::Pull)
     {
         bool has_data_need = false;
 
         auto process = [&](size_t pos)
         {
-            auto status = advancePort(ports_data[pos]);
+            auto status = advancePort(pos);
             switch (status)
             {
                 case IProcessor::Status::Finished: {
@@ -65,10 +72,7 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
             }
         };
 
-        for (auto pos : updated_input_ports)
-            process(pos);
-
-        for (auto pos : updated_output_ports)
+        for (size_t pos = 0; pos < ports_data.size(); ++pos)
             process(pos);
 
         if (has_data_need)
@@ -105,21 +109,15 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
     /// through scenario 1.
     if (stage == Stage::Push)
     {
-        /// Step I of scenario 1
         Status status = tryPushChunkSuffixWithinLimit();
-
         if (status != Status::Finished)
             return status;
 
-        /// Step II of scenario 1
         status = tryPushWholeFrontChunk();
-
         if (status != Status::Finished)
             return status;
 
-        /// Step III of scenario 1
         status = tryPushChunkPrefixWithinLimit();
-
         if (status != Status::Finished)
             return status;
 
@@ -141,17 +139,44 @@ IProcessor::Status NegativeLimitTransform::prepare(const PortNumbers & updated_i
     throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitTransform::prepare in unknown stage");
 }
 
-NegativeLimitTransform::Status NegativeLimitTransform::prepare()
+bool NegativeLimitTransform::allOutputsFinished() const
 {
-    if (ports_data.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port NegativeLimitTransform");
-
-    return prepare({0}, {0});
+    for (const auto & data : ports_data)
+    {
+        if (!data.output_port->isFinished())
+            return false;
+    }
+    return true;
 }
 
-NegativeLimitTransform::Status NegativeLimitTransform::advancePort(PortsData & data)
+OutputPort * NegativeLimitTransform::getAvailableOutputPort()
 {
-    auto & output = *data.output_port;
+    const size_t num_outputs = ports_data.size();
+
+    if (num_outputs == 0)
+        return nullptr;
+
+    for (size_t i = 0; i < num_outputs; ++i)
+    {
+        const size_t idx = (next_output_port + i) % num_outputs;
+
+        auto & output = *ports_data[idx].output_port;
+        if (output.isFinished())
+            continue;
+
+        if (!output.canPush())
+            continue;
+
+        next_output_port = (idx + 1) % num_outputs;
+        return &output;
+    }
+
+    return nullptr;
+}
+
+NegativeLimitTransform::Status NegativeLimitTransform::advancePort(size_t pos)
+{
+    auto & data = ports_data[pos];
     auto & input = *data.input_port;
 
     /// Check can input.
@@ -177,7 +202,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::advancePort(PortsData & d
             rows_before_limit_at_least->add(rows);
         }
 
-        queue.push(ChunkWithPort{&output, std::move(chunk)});
+        queue.push(ChunkWithPort{std::move(chunk)});
 
         /// Try removing the whole chunks that will never be part of the LIMIT
         while (!queue.empty())
@@ -220,8 +245,6 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkSuffixWithinLimit()
 
     auto & front = queue.front();
 
-    auto & output = *front.output_port;
-
     Chunk & chunk = front.chunk;
     const UInt64 front_chunk_rows = chunk.getNumRows();
 
@@ -230,16 +253,6 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkSuffixWithinLimit()
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "In NegativeLimitTransform::tryPushChunkSuffixWithinLimit chunk must be partially inside limit + offset");
-
-    if (output.isFinished())
-    {
-        queue.pop();
-        queued_row_count -= front_chunk_rows;
-        return Status::Finished;
-    }
-
-    if (!output.canPush())
-        return Status::PortFull;
 
     /// queued_row_count    <---------------------->
     /// front_chunk_rows    <---------->
@@ -268,11 +281,17 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkSuffixWithinLimit()
         return Status::Finished;
     }
 
-    output.push(std::move(chunk));
+    auto * output = getAvailableOutputPort();
+    if (!output)
+        return Status::PortFull;
+
+    output->push(std::move(chunk));
     queue.pop();
     queued_row_count -= take;
 
-    return Status::PortFull;
+    /// Don't block further progress in this prepare() call just because we pushed one chunk.
+    /// Return PortFull only if there are no output ports to push to.
+    return Status::Finished;
 }
 
 
@@ -286,50 +305,32 @@ IProcessor::Status NegativeLimitTransform::tryPushWholeFrontChunk()
             "In NegativeLimitTransform::tryPushWholeFrontChunk, queued rows should be less than or equal to limit + offset");
     }
 
-    /// Output port is closed, nothing can be done with the chunks; so, we keep discarding them.
-    while (!queue.empty() && queue.front().output_port->isFinished())
-    {
-        auto & front = queue.front();
-        const UInt64 front_chunk_rows = front.chunk.getNumRows();
-        queue.pop();
-        queued_row_count -= front_chunk_rows;
-    }
-
     /// Need to keep at least 'offset' rows queued.
-    if (queued_row_count <= offset)
-        return Status::Finished;
-
-    assert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
-
-    auto & front = queue.front();
-
-    auto & output = *front.output_port;
-
-    Chunk & chunk = front.chunk;
-    const UInt64 front_chunk_rows = chunk.getNumRows();
-
-    /// Make sure that front chunk can be completey pushed without potentially
-    /// going into the offset area.
-    if (queued_row_count - front_chunk_rows < offset)
-        return Status::Finished;
-
-    /// Output port is closed, nothing can be done with the chunk; so, we discard it.
-    if (output.isFinished())
+    while (queued_row_count > offset)
     {
+        assert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
+
+        auto & front = queue.front();
+
+        Chunk & chunk = front.chunk;
+        const UInt64 front_chunk_rows = chunk.getNumRows();
+
+        /// Make sure that front chunk can be completey pushed without potentially
+        /// going into the offset area.
+        if (queued_row_count - front_chunk_rows < offset)
+            return Status::Finished;
+
+        auto * output = getAvailableOutputPort();
+        if (!output)
+            return Status::PortFull;
+
+        output->push(std::move(chunk));
+
         queue.pop();
         queued_row_count -= front_chunk_rows;
-        return Status::Finished;
     }
 
-    if (!output.canPush())
-        return Status::PortFull;
-
-    output.push(std::move(chunk));
-
-    queue.pop();
-    queued_row_count -= front_chunk_rows;
-
-    return Status::PortFull;
+    return Status::Finished;
 }
 
 IProcessor::Status NegativeLimitTransform::tryPushChunkPrefixWithinLimit()
@@ -343,8 +344,6 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkPrefixWithinLimit()
 
     auto & front = queue.front();
 
-    auto & output = *front.output_port;
-
     Chunk & chunk = front.chunk;
     const UInt64 front_chunk_rows = chunk.getNumRows();
 
@@ -353,16 +352,6 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkPrefixWithinLimit()
             ErrorCodes::LOGICAL_ERROR,
             "In NegativeLimitTransform::tryPushChunkPrefixWithinLimit must not be required to fully push the front chunk");
 
-    if (output.isFinished())
-    {
-        queue.pop();
-        queued_row_count -= front_chunk_rows;
-        return Status::Finished;
-    }
-
-    if (!output.canPush())
-        return Status::PortFull;
-
     /// queued_row_count    <---------------------->
     /// front_chunk_rows    <---------->
     ///           offset           <--------------->
@@ -370,6 +359,10 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkPrefixWithinLimit()
 
     /// Push the prefix that leaves exactly 'offset' queued.
     const UInt64 take = queued_row_count - offset;
+
+    auto * output = getAvailableOutputPort();
+    if (!output)
+        return Status::PortFull;
 
     const UInt64 num_columns = chunk.getNumColumns();
     auto columns = chunk.detachColumns();
@@ -381,11 +374,13 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkPrefixWithinLimit()
     /// Reduce the rows that does not remain in the chunk after the cut.
     queued_row_count -= (front_chunk_rows - take);
 
-    output.push(std::move(chunk));
+    output->push(std::move(chunk));
     queue.pop();
     queued_row_count -= take;
 
-    return Status::PortFull;
+    /// Don't block further progress in this prepare() call just because we pushed one chunk.
+    /// Return PortFull only if there are no output ports to push to.
+    return Status::Finished;
 }
 
 }

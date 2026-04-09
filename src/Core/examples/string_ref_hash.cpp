@@ -1,10 +1,10 @@
+#include <base/StringViewHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
-#include <base/StringRef.h>
 
 
-/** Calculates StringRefHash from stdin. For debugging.
+/** Calculates StringViewHash from stdin. For debugging.
   */
 
 int main(int, char **)
@@ -16,7 +16,7 @@ int main(int, char **)
 
     String s;
     readStringUntilEOF(s, in);
-    out << StringRefHash()(StringRef{s}) << '\n';
+    out << StringViewHash()(s) << '\n';
     out.finalize();
 
     return 0;

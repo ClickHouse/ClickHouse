@@ -1,13 +1,11 @@
 #include <Dictionaries/DictionaryStructure.h>
 
-#include <numeric>
-#include <unordered_map>
-#include <unordered_set>
-
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <Common/StringUtils.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
@@ -249,7 +247,7 @@ Strings DictionaryStructure::getKeysNames() const
 
 static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
-    static const std::unordered_set<std::string_view> valid_keys
+    static const UnorderedSetWithMemoryTracking<std::string_view> valid_keys
         = {"name", "type", "expression", "null_value", "hierarchical", "bidirectional", "injective", "is_object_id"};
 
     for (const auto & key : keys)
@@ -259,7 +257,7 @@ static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
     }
 }
 
-std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
+VectorWithMemoryTracking<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     bool complex_key_attributes)
@@ -272,8 +270,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     config.keys(config_prefix, config_elems);
     bool has_hierarchy = false;
 
-    std::unordered_set<String> attribute_names;
-    std::vector<DictionaryAttribute> res_attributes;
+    UnorderedSetWithMemoryTracking<String> attribute_names;
+    VectorWithMemoryTracking<DictionaryAttribute> res_attributes;
 
     const FormatSettings format_settings = {};
 
@@ -366,18 +364,19 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        res_attributes.emplace_back(DictionaryAttribute{
-            name,
-            *underlying_type_opt,
-            initial_type,
-            initial_type_serialization,
-            expression,
-            null_value,
-            hierarchical,
-            bidirectional,
-            injective,
-            is_object_id,
-            is_nullable});
+        res_attributes.emplace_back(
+            DictionaryAttribute{
+                .name = name,
+                .type = initial_type,
+                .type_serialization = initial_type_serialization,
+                .expression = expression,
+                .null_value = null_value,
+                .underlying_type = *underlying_type_opt,
+                .hierarchical = hierarchical,
+                .bidirectional = bidirectional,
+                .injective = injective,
+                .is_object_id = is_object_id,
+                .is_nullable = is_nullable});
     }
 
     return res_attributes;
@@ -402,15 +401,21 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
     if (!range_min)
         return;
 
-    if (!range_min->type->equals(*range_max->type))
+    auto range_min_type = removeNullable(range_min->type);
+    auto range_max_type = removeNullable(range_max->type);
+
+    if (!range_min_type->equals(*range_max_type))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Dictionary structure 'range_min' and 'range_max' should have same type, "
             "'range_min' type: {},"
             "'range_max' type: {}",
-            range_min->type->getName(),
-            range_max->type->getName());
+            range_min_type->getName(),
+            range_max_type->getName());
     }
+
+    range_min.emplace(DictionaryTypedSpecialAttribute{range_min->name, range_min->expression, range_min_type});
+    range_max.emplace(DictionaryTypedSpecialAttribute{range_max->name, range_max->expression, range_max_type});
 
     WhichDataType range_type(range_min->type);
 

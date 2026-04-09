@@ -1,5 +1,4 @@
 #include <KeeperClient.h>
-#include <Commands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -8,9 +7,11 @@
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Parsers/parseQuery.h>
+#include <Common/ErrnoException.h>
+#include <Parsers/TokenIterator.h>
 #include <Poco/Util/HelpFormatter.h>
 
 #if USE_SSL
@@ -20,6 +21,65 @@
 #include <Poco/Net/RejectCertificateHandler.h>
 #endif
 
+#include <algorithm>
+#include <string_view>
+
+
+namespace
+{
+
+char WORD_BREAK_CHARACTERS[] = " \t\v\f\a\b\r\n";
+
+/// Unescape a bare (unquoted) path that may contain backslash escaping
+/// and inline quoted segments, mirroring what parseKeeperArg accepts:
+///   /foo\ bar        →  /foo bar       (backslash-escaped space)
+///   /foo\\bar        →  /foo\bar       (escaped backslash)
+///   /'has"quote'/d   →  /has"quote/d   (inline single-quoted segment)
+///   /'it\'s'/d       →  /it's/d        (escaped quote inside single quotes)
+String unescapePath(const String & s)
+{
+    String result;
+    result.reserve(s.size());
+    char in_quote = 0;
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        char c = s[i];
+        if (in_quote)
+        {
+            if (c == '\\' && i + 1 < s.size()
+                && (s[i + 1] == in_quote || s[i + 1] == '\\'))
+            {
+                result += s[i + 1];
+                ++i;
+            }
+            else if (c == in_quote)
+            {
+                in_quote = 0;
+            }
+            else
+            {
+                result += c;
+            }
+        }
+        else if (c == '\'' || c == '"')
+        {
+            in_quote = c;
+        }
+        else if (c == '\\' && i + 1 < s.size()
+            && (s[i + 1] == ' ' || s[i + 1] == '\\'))
+        {
+            result += s[i + 1];
+            ++i;
+        }
+        else
+        {
+            result += c;
+        }
+    }
+    return result;
+}
+
+}
 
 namespace DB
 {
@@ -52,89 +112,191 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     return result;
 }
 
+
+/// `prefix` is the full input line up to the cursor position, as provided by replxx.
+/// For example, if the user typed "ls /foo/b" and pressed Tab, prefix = "ls /foo/b".
 std::vector<String> KeeperClient::getCompletions(const String & prefix) const
 {
-    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    /// Determine whether we are completing a command name or a path argument
+    /// by looking for the first whitespace (end of command word).
+    std::string_view word_breaks(WORD_BREAK_CHARACTERS);
+    auto cmd_end = prefix.find_first_of(word_breaks);
 
-    if (pos->type != TokenType::BareWord)
+    /// No whitespace → still typing the command name.
+    if (cmd_end == String::npos || cmd_end == 0)
         return registered_commands_and_four_letter_words;
 
-    ++pos;
-    if (pos->isEnd())
-        return registered_commands_and_four_letter_words;
+    /// Find where the path argument starts (first non-whitespace char after command).
+    auto path_start = prefix.find_first_not_of(word_breaks, cmd_end);
+    if (path_start == String::npos)
+        path_start = prefix.size();
 
-    ParserToken{TokenType::Whitespace}.ignore(pos);
+    /// Detect quoted mode by scanning forward from the arguments, tracking
+    /// open/close quotes. If the cursor is inside an unclosed quote, we
+    /// complete in quoted mode (no backslash escaping, closing quote on leaf).
+    /// This correctly handles any argument position, e.g. 'create /path "val'.
+    ///
+    /// arg_start tracks the last unescaped word break (argument boundary).
+    char quote_char = 0;
+    size_t arg_start = path_start;
+    for (size_t i = path_start; i < prefix.size(); ++i)
+    {
+        char c = prefix[i];
+        if (quote_char)
+        {
+            if (c == quote_char)
+            {
+                /// Check if this quote is escaped by an odd number of preceding backslashes.
+                /// e.g. \" is escaped (stays in quoted mode), \\" is not (closes the quote).
+                size_t backslashes = 0;
+                while (backslashes < (i - path_start) && prefix[i - 1 - backslashes] == '\\')
+                    ++backslashes;
 
-    std::vector<String> result;
-    String string_path;
-    Expected expected;
-    if (!parseKeeperPath(pos, expected, string_path))
-        string_path = cwd;
+                if (backslashes % 2 == 0)
+                    quote_char = 0; /// closing quote
+            }
+        }
+        else if (c == '\'' || c == '"')
+        {
+            quote_char = c;
+            /// Just track that we're inside a quote; arg_start stays at the word break.
+        }
+        else if (word_breaks.contains(c))
+        {
+            /// Count consecutive backslashes before this character.
+            /// Odd count means this space is escaped (e.g. `\ `);
+            /// even count means the backslash itself is escaped (e.g. `\\ `)
+            /// and the space is a genuine word break.
+            size_t backslashes = 0;
+            while (backslashes < (i - path_start) && prefix[i - 1 - backslashes] == '\\')
+                ++backslashes;
 
-    if (!pos->isEnd())
-        return result;
+            if (backslashes % 2 == 0)
+            {
+                /// Unescaped word break — next argument starts after this.
+                arg_start = i + 1;
+            }
+        }
+    }
 
-    fs::path path = string_path;
-    String parent_path;
-    if (string_path.ends_with("/"))
-        parent_path = getAbsolutePath(string_path);
+    /// Full argument text from arg_start, used for splitting at the last '/'.
+    /// This includes any bare prefix before an opening quote (e.g. "/path/" in
+    /// "/path/'child"), so parent path resolution sees the complete path.
+    String full_arg = prefix.substr(arg_start);
+
+    /// Compute the offset of replxx's "last_word" within full_completion.
+    /// replxx splits on word-break characters (including space), so for quoted
+    /// paths like 'ls "foo b', last_word is just 'b' even though the argument
+    /// is '"foo b'. We compute last_word_offset so that our completions return
+    /// only the suffix that replxx expects to match against last_word.
+    auto last_word_pos = prefix.find_last_of(word_breaks);
+    size_t last_word_start = (last_word_pos == String::npos) ? 0 : last_word_pos + 1;
+    size_t last_word_offset = (last_word_start <= arg_start) ? 0 : (last_word_start - arg_start);
+
+    /// Split the full argument at the last '/' into parent and child portions.
+    auto last_slash = full_arg.rfind('/');
+    String typed_parent_str;
+    String typed_child_str;
+    if (last_slash != String::npos)
+    {
+        typed_parent_str = full_arg.substr(0, last_slash + 1);
+        typed_child_str = full_arg.substr(last_slash + 1);
+    }
     else
-        parent_path = getAbsolutePath(path.parent_path());
+    {
+        typed_child_str = full_arg;
+    }
 
+    /// Unescape using unescapePath which handles both bare escaping (\ ) and
+    /// inline quoted segments (/'dir"name'/) in a single pass.
+    String unescaped_parent = unescapePath(typed_parent_str);
+    String unescaped_child_prefix = unescapePath(typed_child_str);
+
+    String parent_path;
+    if (unescaped_parent.empty())
+        parent_path = cwd;
+    else
+        parent_path = getAbsolutePath(unescaped_parent);
+
+    Strings children;
     try
     {
-        for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(child);
+        children = zookeeper->getChildren(parent_path);
     }
     catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
 
+    std::vector<String> result;
+
+    for (const auto & child : children)
+    {
+        if (!unescaped_child_prefix.empty()
+            && !child.starts_with(unescaped_child_prefix))
+            continue;
+
+        /// Build the full completion text for this child.
+        /// In quoted mode: preserve typed_parent_str (including any bare prefix
+        /// and/or opening quote), then append the child name inside the quote.
+        /// The opening quote may be in typed_parent_str (e.g. "'/path/" from
+        /// ls '/path/child) or in typed_child_str (e.g. "'child" from ls /path/'child).
+        /// In unquoted mode: use formatKeeperNodeName which returns bare or single-quoted
+        /// form — always round-trippable through the parser.
+        String full_completion;
+        if (quote_char)
+        {
+            /// If the opening quote landed after the last '/', it's in the child
+            /// portion and needs to be re-added. Otherwise it's already in typed_parent_str.
+            bool quote_in_child = !typed_child_str.empty() && typed_child_str[0] == quote_char;
+            full_completion = typed_parent_str;
+            if (quote_in_child)
+                full_completion += quote_char;
+
+            /// Escape the child name for the active quoting context: the active
+            /// quote character and backslashes must be backslash-escaped so the
+            /// completion round-trips through parseIdentifierOrStringLiteral.
+            for (char c : child)
+            {
+                if (c == quote_char || c == '\\')
+                    full_completion += '\\';
+                full_completion += c;
+            }
+        }
+        else
+            full_completion = typed_parent_str + formatKeeperNodeName(child);
+
+        /// Check if this node has children to decide the suffix:
+        ///   - has children  → append '/' so the user can Tab-complete the next segment
+        ///   - leaf node     → in quoted mode append closing quote, otherwise no suffix
+        String full_path = parent_path;
+        if (!full_path.ends_with('/'))
+            full_path += '/';
+        full_path += child;
+
+        bool has_children = false;
+        try
+        {
+            Strings sub = zookeeper->getChildren(full_path);
+            has_children = !sub.empty();
+        }
+        catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
+
+        if (has_children)
+            full_completion += '/';
+        else if (quote_char)
+            full_completion += quote_char;
+
+        /// The completion text is the suffix starting from where replxx's
+        /// last_word begins, so that prefix matching works.
+        if (last_word_offset > full_completion.size())
+            continue;
+
+        String completion = full_completion.substr(last_word_offset);
+        result.push_back(std::move(completion));
+    }
+
     std::sort(result.begin(), result.end());
-
     return result;
 }
 
-void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
-{
-    if (!ask_confirmation)
-    {
-        callback();
-        return;
-    }
-
-    std::cout << prompt << " Continue?\n";
-    waiting_confirmation = true;
-    confirmation_callback = callback;
-}
-
-fs::path KeeperClient::getAbsolutePath(const String & relative) const
-{
-    String result;
-    if (relative.starts_with('/'))
-        result = fs::weakly_canonical(relative);
-    else
-        result = fs::weakly_canonical(cwd / relative);
-
-    if (result.ends_with('/') && result.size() > 1)
-        result.pop_back();
-
-    return result;
-}
-
-void KeeperClient::loadCommands(std::vector<Command> && new_commands)
-{
-    for (const auto & command : new_commands)
-    {
-        String name = command->getName();
-        commands.insert({name, command});
-        registered_commands_and_four_letter_words.push_back(std::move(name));
-    }
-
-    for (const auto & command : four_letter_word_commands)
-        registered_commands_and_four_letter_words.push_back(command);
-
-    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
-}
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
 {
@@ -240,33 +402,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 
-    loadCommands({
-        std::make_shared<LSCommand>(),
-        std::make_shared<CDCommand>(),
-        std::make_shared<SetCommand>(),
-        std::make_shared<CreateCommand>(),
-        std::make_shared<TouchCommand>(),
-        std::make_shared<GetCommand>(),
-        std::make_shared<ExistsCommand>(),
-        std::make_shared<GetStatCommand>(),
-        std::make_shared<FindSuperNodes>(),
-        std::make_shared<DeleteStaleBackups>(),
-        std::make_shared<FindBigFamily>(),
-        std::make_shared<RMCommand>(),
-        std::make_shared<RMRCommand>(),
-        std::make_shared<ReconfigCommand>(),
-        std::make_shared<SyncCommand>(),
-        std::make_shared<HelpCommand>(),
-        std::make_shared<FourLetterWordCommand>(),
-        std::make_shared<GetDirectChildrenNumberCommand>(),
-        std::make_shared<GetAllChildrenNumberCommand>(),
-        std::make_shared<CPCommand>(),
-        std::make_shared<CPRCommand>(),
-        std::make_shared<MVCommand>(),
-        std::make_shared<MVRCommand>(),
-        std::make_shared<GetAclCommand>(),
-    });
-
     String home_path;
     const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
     if (home_path_cstr)
@@ -302,6 +437,14 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
 
     EventNotifier::init();
+
+    const char * env_password = getenv("CLICKHOUSE_KEEPER_PASSWORD"); // NOLINT(concurrency-mt-unsafe)
+    if (env_password && !config().has("password"))
+        config().setString("password", env_password);
+
+    const char * env_identity = getenv("CLICKHOUSE_KEEPER_IDENTITY"); // NOLINT(concurrency-mt-unsafe)
+    if (env_identity && !config().has("identity"))
+        config().setString("identity", env_identity);
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
@@ -313,6 +456,7 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
     std::chrono::milliseconds current_sleep{100};
     size_t i = 0;
 
+    auto component_guard = Coordination::setCurrentComponent("KeeperClient::processQueryText");
     while (true)
     {
         try
@@ -328,29 +472,47 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
                 return true;
             }
 
-            KeeperParser parser;
             const char * begin = text.data();
             const char * end = begin + text.size();
 
-            while (begin < end)
-            {
-                String message;
-                ASTPtr res = tryParseQuery(
-                    parser,
-                    begin,
-                    end,
-                    /* out_error_message = */ message,
-                    /* hilite = */ true,
-                    /* description = */ "",
-                    /* allow_multi_statements = */ true,
-                    /* max_query_size = */ 0,
-                    /* max_parser_depth = */ 0,
-                    /* max_parser_backtracks = */ 0,
-                    /* skip_insignificant = */ false);
+            /// Tokenize once for the entire input. We use skip_insignificant=false
+            /// so that whitespace tokens are explicit — needed for `\ ` (escaped space)
+            /// handling in parseKeeperArg. We avoid tryParseQuery because it rejects
+            /// Error tokens (like `\`) during its lookahead scan.
+            Tokens tokens(begin, end, 0, false);
+            IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-                if (!res)
+            while (!pos->isEnd())
+            {
+                /// Skip leading whitespace and semicolons (to support multi statements).
+                while (!pos->isEnd() && (pos->type == TokenType::Whitespace || pos->type == TokenType::Semicolon))
+                    ++pos;
+
+                if (pos->isEnd())
+                    break;
+
+                KeeperParser parser;
+                ASTPtr res;
+                Expected expected;
+                bool parsed = parser.parse(pos, res, expected);
+
+                if (!parsed || !res)
                 {
-                    std::cerr << message << "\n";
+                    std::cerr << "Syntax error at position " << (pos->begin - begin) << "\n";
+                    return true;
+                }
+
+                /// Skip trailing whitespace after the parsed command.
+                while (!pos->isEnd() && pos->type == TokenType::Whitespace)
+                    ++pos;
+
+                /// After a command, the next token must be a semicolon (statement
+                /// separator) or end-of-stream. Anything else is trailing garbage
+                /// (e.g. "create /x v garbage") — report without executing.
+                if (!pos->isEnd() && pos->type != TokenType::Semicolon)
+                {
+                    std::cerr << "Syntax error: unexpected trailing input at position "
+                        << (pos->begin - begin) << "\n";
                     return true;
                 }
 
@@ -389,7 +551,6 @@ void KeeperClient::runInteractiveReplxx()
 
     LineReader::Patterns query_extenders = {"\\"};
     LineReader::Patterns query_delimiters = {};
-    char word_break_characters[] = " \t\v\f\a\b\r\n/";
 
     auto reader_options = ReplxxLineReader::Options
     {
@@ -400,7 +561,7 @@ void KeeperClient::runInteractiveReplxx()
         .ignore_shell_suspend = false,
         .extenders = query_extenders,
         .delimiters = query_delimiters,
-        .word_break_characters = word_break_characters,
+        .word_break_characters = WORD_BREAK_CHARACTERS,
         .highlighter = {},
     };
     ReplxxLineReader lr(std::move(reader_options));
@@ -422,9 +583,15 @@ void KeeperClient::runInteractiveReplxx()
             break;
     }
 
-    std::cout << std::endl;
+    cout << std::endl;
 }
 
+/// In tests-mode, commands are read line by line from stdin.
+/// After each command, a separator (four BEL characters + newline) is written
+/// to stdout so the test harness can detect where one command's output ends.
+/// Errors from failed commands go to stderr.
+/// We must flush stderr before writing the separator to stdout, otherwise
+/// the test harness may see the separator first and miss the error.
 void KeeperClient::runInteractiveInputStream()
 {
     for (String input; std::getline(std::cin, input);)
@@ -432,8 +599,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input, /*is_interactive=*/true))
             break;
 
-        std::cout << "\a\a\a\a" << std::endl;
-        std::cerr << std::flush;
+        cerr << std::flush;
+        cout << "\a\a\a\a" << std::endl;
     }
 }
 
@@ -529,11 +696,19 @@ void KeeperClient::connectToKeeper()
     new_zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     new_zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     new_zk_args.use_xid_64 = config().hasOption("use-xid-64");
-    new_zk_args.password = config().getString("password", "");
-    new_zk_args.identity = config().getString("identity", "");
+    new_zk_args.password = config().has("password")
+        ? config().getString("password")
+        : clickhouse_config.configuration->getString("zookeeper.password", "");
+
+    new_zk_args.identity = config().has("identity")
+        ? config().getString("identity")
+        : clickhouse_config.configuration->getString("zookeeper.identity", "");
+
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
+
     zk_args = new_zk_args;
+    auto component_guard = Coordination::setCurrentComponent("KeeperClient::connectToKeeper");
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
 }
 

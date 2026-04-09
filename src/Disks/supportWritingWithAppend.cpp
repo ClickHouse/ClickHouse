@@ -1,6 +1,6 @@
 #include <Disks/supportWritingWithAppend.h>
 
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 namespace DB
 {

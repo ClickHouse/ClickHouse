@@ -117,8 +117,11 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         // then: and(isNull(arr), isNull(elem))
         auto then_col = BuildAndExecuteFunction("and", {is_arr_null_arg, is_elem_null_arg}, context, arr_elements_count);
 
-        auto else_col = removeNullable(BuildAndExecuteFunction(
-            "equals", {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}, context, arr_elements_count));
+        auto equals_result = BuildAndExecuteFunction(
+            "equals", {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}, context, arr_elements_count);
+        /// equals() on tuples with nullable components may return ColumnConst(Nullable(UInt8)).
+        /// convertToFullIfNeeded() unwraps ColumnConst so removeNullable can strip the Nullable layer.
+        auto else_col = removeNullable(equals_result->convertToFullIfNeeded());
 
         auto cond_arg = ColumnWithTypeAndName{cond_col, std::make_shared<DataTypeUInt8>(), "cond"};
         auto then_arg = ColumnWithTypeAndName{then_col, std::make_shared<DataTypeUInt8>(), "then"};
@@ -128,6 +131,22 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         auto equality_check_arg = ColumnWithTypeAndName{equality_check_col, std::make_shared<DataTypeUInt8>(), "eq_check"};
 
         filter_col = BuildAndExecuteFunction("not", {equality_check_arg}, context, arr_elements_count);
+    }
+
+    /// The filter can end up as ColumnConst or ColumnNullable when comparing tuples
+    /// with NULL components during constant folding. Normalize to a plain ColumnUInt8.
+    filter_col = filter_col->convertToFullIfNeeded();
+    if (const auto * nullable_filter = checkAndGetColumn<ColumnNullable>(filter_col.get()))
+    {
+        /// NULL in filter means comparison was indeterminate (e.g., tuple with NULL component).
+        /// Treat as "not equal" → keep the element (filter = 1).
+        auto result_col = ColumnUInt8::create(nullable_filter->size());
+        auto & result_data = result_col->getData();
+        const auto & nested_data = assert_cast<const ColumnUInt8 &>(nullable_filter->getNestedColumn()).getData();
+        const auto & null_map = nullable_filter->getNullMapData();
+        for (size_t i = 0; i < null_map.size(); ++i)
+            result_data[i] = null_map[i] ? 1 : nested_data[i];
+        filter_col = std::move(result_col);
     }
 
     const auto * filter_col_uint8 = checkAndGetColumn<ColumnUInt8>(filter_col.get());
@@ -176,6 +195,7 @@ NULLs are treated as equal.
     FunctionDocumentation documentation = {
         description, syntax,
         {{"arr", "Array(T)"}, {"elem", "T"}},
+        {},
         returned_value,
         examples,
         introduced_in,
