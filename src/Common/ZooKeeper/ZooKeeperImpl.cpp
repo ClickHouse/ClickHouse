@@ -1011,22 +1011,23 @@ void ZooKeeper::receiveEvent()
         {
             const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
 
-            std::lock_guard lock(watches_mutex);
+            auto event_type = watch_response.type;
+            auto trigger_watches = [&watch_response](Watches & watches_container)
+            {
+                auto it = watches_container.find(watch_response.path);
+                if (it == watches_container.end())
+                {
+                    /// This is Ok.
+                    /// Because watches are identified by path.
+                    /// And there may exist many watches for single path.
+                    /// And watch is added to the list of watches on client side
+                    ///  slightly before than it is registered by the server.
+                    /// And that's why new watch may be already fired by old event,
+                    ///  but then the server will actually register new watch
+                    ///  and will send event again later.
+                    return;
+                }
 
-            auto it = watches.find(watch_response.path);
-            if (it == watches.end())
-            {
-                /// This is Ok.
-                /// Because watches are identified by path.
-                /// And there may exist many watches for single path.
-                /// And watch is added to the list of watches on client side
-                ///  slightly before than it is registered by the server.
-                /// And that's why new watch may be already fired by old event,
-                ///  but then the server will actually register new watch
-                ///  and will send event again later.
-            }
-            else
-            {
                 /// NOTE We may process callbacks not under mutex.
                 for (const auto & event_or_callback : it->second)
                 {
@@ -1035,7 +1036,28 @@ void ZooKeeper::receiveEvent()
                 }
 
                 CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, it->second.size());
-                watches.erase(it);
+                watches_container.erase(it);
+            };
+
+            std::lock_guard lock(watches_mutex);
+
+            switch (event_type)
+            {
+                case Coordination::Event::CREATED:
+                case Coordination::Event::CHANGED:
+                    trigger_watches(watches);
+                    break;
+                case Coordination::Event::DELETED:
+                case Coordination::Event::SESSION:
+                    /// client will handle disconnection but lets trigger callbacks as soon as possible
+                    trigger_watches(watches);
+                    trigger_watches(list_watches);
+                    break;
+                case Coordination::Event::CHILD:
+                    trigger_watches(list_watches);
+                    break;
+                default:
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected watch event type {}", event_type);
             }
         };
     }
@@ -1085,47 +1107,74 @@ void ZooKeeper::receiveEvent()
         }
 
         /// Just helper for watch callbacks update. The main logic is below.
-        const auto update_watch_callbacks = [this](const Coordination::ZooKeeperRequestPtr & req, const Coordination::ResponsePtr & resp, const Coordination::WatchCallbackPtrOrEventPtr & watch)
+        const auto update_watch_callbacks = [this](
+                                                const Coordination::ZooKeeperRequestPtr & req,
+                                                const Coordination::ResponsePtr & resp,
+                                                const Coordination::WatchCallbackPtrOrEventPtr & watch)
         {
             bool add_watch = false;
+            auto op_num = req->getOpNum();
             /// 3 indicates the ZooKeeperExistsRequest.
             // For exists, we set the watch on both node exist and nonexist case.
             // For other case like getData, we only set the watch when node exists.
-            if (req->getOpNum() == OpNum::Exists)
+            if (op_num == OpNum::Exists)
                 add_watch = (resp->error == Error::ZOK || resp->error == Error::ZNONODE);
             else
                 add_watch = resp->error == Error::ZOK;
 
-            if (add_watch)
-            {
+            if (!add_watch || !watch)
+                return;
 
-                /// The key of watches should exclude the args.chroot
-                String req_path = req->getPath();
-                removeRootPath(req_path, args.chroot);
-                std::lock_guard lock(watches_mutex);
-                auto & callbacks = watches[req_path];
-                if (watch)
-                {
-                    if (callbacks.insert(watch).second)
-                    {
-                        /// Warn only for debug or sanitizers builds (i.e. CI), since it is OK to have 100 replicas,
-                        /// but if we will log only if the number of watches > 1000..10000, then, CI will not capture anything.
-                        ///
-                        /// And we do have tests that create > 100 replicas, so we cannot assert for 100 watches here
-                        /// (since all replicas shares some paths in ZooKeeper)
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-                        static constexpr size_t WATCHES_CALLBACK_SANITY_LIMIT = 10000;
-                        chassert(callbacks.size() <= WATCHES_CALLBACK_SANITY_LIMIT);
-                        if (callbacks.size() > 100)
-                            LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
-#endif
-                        /// It is unlikely that 10K watches is OK, let's warn even in release builds.
-                        if (callbacks.size() > 10000)
-                            LOG_WARNING(log, "Too many watches for path {}: {} (This is likely an error)", req_path, callbacks.size());
-                        CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
-                    }
-                }
+            bool is_list_request = false;
+
+            switch (op_num)
+            {
+                case OpNum::SimpleList:
+                case OpNum::List:
+                case OpNum::FilteredList:
+                case OpNum::FilteredListWithStatsAndData:
+                    is_list_request = true;
+                    break;
+                default:
+                    break;
             }
+
+            /// The key of watches should exclude the args.chroot
+            String req_path = req->getPath();
+            removeRootPath(req_path, args.chroot);
+
+            std::lock_guard lock(watches_mutex);
+            auto & callbacks = is_list_request ? list_watches[req_path] : watches[req_path];
+
+            if (!callbacks.insert(watch).second)
+                return;
+
+            /// Warn only for debug or sanitizers builds (i.e. CI), since it is OK to have 100 replicas,
+            /// but if we will log only if the number of watches > 1000..10000, then, CI will not capture anything.
+            ///
+            /// And we do have tests that create > 100 replicas, so we cannot assert for 100 watches here
+            /// (since all replicas shares some paths in ZooKeeper)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            static constexpr size_t WATCHES_CALLBACK_SANITY_LIMIT = 10000;
+            chassert(callbacks.size() <= WATCHES_CALLBACK_SANITY_LIMIT);
+            if (callbacks.size() > 100)
+                LOG_WARNING(
+                    log,
+                    "Too many {} for path {}: {} (This is likely an error)",
+                    is_list_request ? "list_watches" : "watches",
+                    req_path,
+                    callbacks.size());
+#endif
+            /// It is unlikely that 10K watches is OK, let's warn even in release builds.
+            if (callbacks.size() > 10000)
+                LOG_WARNING(
+                    log,
+                    "Too many {} for path {}: {} (This is likely an error)",
+                    is_list_request ? "list_watches" : "watches",
+                    req_path,
+                    callbacks.size());
+
+            CurrentMetrics::add(CurrentMetrics::ZooKeeperWatch);
         };
 
         /// Instead of setting the watch in sendEvent, set it in receiveEvent because need to check the response.
@@ -1319,33 +1368,43 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         {
             std::lock_guard lock(watches_mutex);
 
-            Int64 watch_callback_count = 0;
-            for (auto & path_watches : watches)
+            auto trigger_watches = [this](Watches & watches_container)
             {
                 WatchResponse response;
                 response.type = SESSION;
                 response.state = EXPIRED_SESSION;
                 response.error = Error::ZSESSIONEXPIRED;
 
-                for (const auto & event_or_callback : path_watches.second)
+                Int64 watch_callback_count = 0;
+                for (auto & path_watches : watches_container)
                 {
-                    watch_callback_count += 1;
-                    if (event_or_callback)
+                    for (const auto & event_or_callback : path_watches.second)
                     {
-                        try
+                        watch_callback_count += 1;
+                        // TODO: there is impossible to have watch which will be "nullptr"
+                        if (event_or_callback)
                         {
-                            event_or_callback(response);
-                        }
-                        catch (...)
-                        {
-                            tryLogCurrentException(log);
+                            try
+                            {
+                                event_or_callback(response);
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(log);
+                            }
                         }
                     }
                 }
-            }
+
+                return watch_callback_count;
+            };
+
+            auto watch_callback_count = trigger_watches(watches);
+            watch_callback_count += trigger_watches(list_watches);
 
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperWatch, watch_callback_count);
             watches.clear();
+            list_watches.clear();
         }
 
         /// Drain queue

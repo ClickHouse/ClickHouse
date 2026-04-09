@@ -411,6 +411,10 @@ public:
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
 
+    /// Returns nullptr if pk isn't loaded
+    /// It doesn't check cache
+    IndexPtr tryGetIndex() const;
+
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     void setIndex(Columns index_columns);

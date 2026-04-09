@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -20,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/castColumn.h>
 
 #include <ranges>
@@ -329,6 +331,13 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// the runner is destroyed first (waits for all tasks) and the lambda is destroyed second.
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
+        /// Check if the query has been cancelled. USearch internally does not check for cancellation,
+        /// and a single `add` call can take a very long time under sanitizers. Without this check, KILL QUERY
+        /// cannot stop the index building. The check is cheap (reads an atomic flag).
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            if (auto query_status = query_context->getProcessListElementSafe())
+                query_status->throwIfKilled();
+
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
         unum::usearch::index_dense_t::add_result_t result;
 

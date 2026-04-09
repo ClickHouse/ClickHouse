@@ -525,6 +525,11 @@ StorageKeeperMap::StorageKeeperMap(
 
                     if (!drop_finished)
                     {
+                        /// Backward compatibility: tables created before 25.1 don't have
+                        /// the drop_lock_version node. Create it if missing so the set below
+                        /// doesn't fail with ZNONODE (same pattern as drop() uses).
+                        client->createIfNotExists(zk_dropped_lock_version_path, "");
+
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                             zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
@@ -554,6 +559,13 @@ StorageKeeperMap::StorageKeeperMap(
                                 return;
                         }
                     }
+                }
+
+                /// Root path may have been removed by dropTableData above.
+                if (zk_root_path != "/" && !client->exists(zk_root_path))
+                {
+                    client->createAncestors(zk_root_path);
+                    client->createIfNotExists(zk_root_path, "");
                 }
 
                 Coordination::Requests create_requests{

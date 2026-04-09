@@ -312,11 +312,12 @@ void KeeperStorageSnapshot<Storage>::serialize(const KeeperStorageSnapshot<Stora
 
         const auto & node = it->value;
 
-        /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
-        /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
-        /// slightly bigger than required.
+        /// (This is guaranteed because KeeperStorageSnapshot constructor is called with nuraft's
+        ///  commit_lock_ held, and therefore storage can't change between when we get storage->zxid
+        ///  and when we call storage->enableSnapshotMode().)
         if (node.stats.mzxid > snapshot.zxid)
-            break;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stats.mzxid, snapshot.zxid);
+
         writeBinary(path, out);
         writeNode(node, snapshot.version, out);
 

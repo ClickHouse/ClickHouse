@@ -4692,6 +4692,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         {
             /// No common columns — degrade to CROSS JOIN (standard SQL behavior).
             join_node_typed.setKind(JoinKind::Cross);
+            join_node_typed.setNatural(false);
             return;
         }
 

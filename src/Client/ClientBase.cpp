@@ -3322,7 +3322,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("enable-progress-table-toggle", po::value<bool>()->default_value(true), "Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with the progress table enabled.")
 
         ("disable_suggestion,A", "Disable loading suggestions. Note that suggestions are loaded asynchronously through a second connection to ClickHouse server. Recommended when pasting queries with TAB characters.") /// Shorthand -A like in MySQL client
-        ("wait_for_suggestions_to_load", "Load suggestion data synchonously")
+        ("wait_for_suggestions_to_load", "Load suggestion data synchronously")
         ("suggestion_limit", po::value<int>()->default_value(10000), "Suggestion limit for how many databases, tables and columns to fetch")
 
         ("time,t", "Print query execution time to stderr in non-interactive mode (for benchmarks)")

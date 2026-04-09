@@ -562,6 +562,8 @@ void mutate(
     while (--max_retries > 0)
     {
         auto log = getLogger("IcebergMutations");
+        /// Mutations must always operate on the actual latest metadata, regardless of
+        /// any explicit iceberg_metadata_file_path set on the table (used for time-travel reads).
         auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage,
             persistent_table_components.table_path,
@@ -570,7 +572,9 @@ void mutate(
             context,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_explicit_metadata_file_path */ true);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
@@ -698,7 +702,9 @@ void alter(
             context,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_explicit_metadata_file_path */ true);
 
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         filename_generator.setVersion(last_version + 1);
@@ -1284,7 +1290,9 @@ ExpireSnapshotsResult expireSnapshots(
             context,
             log.get(),
             persistent_table_components.table_uuid,
-            persistent_table_components.metadata_compression_method);
+            persistent_table_components.metadata_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            /* ignore_explicit_metadata_file_path */ true);
 
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
