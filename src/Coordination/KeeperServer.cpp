@@ -334,33 +334,30 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
     void commit_in_bg() override
     {
         /// Set up query profiler for the commit thread if configured.
-        /// We create a lightweight query context with query_profiler_real_time_period_ns
-        /// so that the profiler samples this thread and results appear in system.trace_log
-        /// with query_id = 'KeeperCommit' for easy filtering.
+        /// We create a new Context, as if this were a clickhouse query, and set setting
+        /// query_profiler_real_time_period_ns so that the profiler samples this thread and results
+        /// appear in system.trace_log with query_id = 'KeeperCommit' for easy filtering.
         std::optional<ThreadGroupSwitcher> thread_group_switcher;
-        if (keeper_context)
+        UInt64 profiler_period = keeper_context->getCoordinationSettings()[CoordinationSetting::commit_profiler_real_time_period_ns];
+        if (profiler_period > 0)
         {
-            UInt64 profiler_period = keeper_context->getCoordinationSettings()[CoordinationSetting::commit_profiler_real_time_period_ns];
-            if (profiler_period > 0)
+            try
             {
-                try
+                auto global_context = Context::getGlobalContextInstance();
+                if (global_context && global_context->hasTraceCollector())
                 {
-                    auto global_context = Context::getGlobalContextInstance();
-                    if (global_context && global_context->hasTraceCollector())
-                    {
-                        auto query_context = Context::createCopy(global_context);
-                        query_context->makeQueryContext();
-                        query_context->setCurrentQueryId("KeeperCommit");
-                        query_context->setSetting("query_profiler_real_time_period_ns", Field(profiler_period));
+                    auto query_context = Context::createCopy(global_context);
+                    query_context->makeQueryContext();
+                    query_context->setCurrentQueryId("KeeperCommit");
+                    query_context->setSetting("query_profiler_real_time_period_ns", Field(profiler_period));
 
-                        auto thread_group = ThreadGroup::createForQuery(query_context);
-                        thread_group_switcher.emplace(std::move(thread_group), ThreadName::KEEPER_COMMIT);
-                    }
+                    auto thread_group = ThreadGroup::createForQuery(query_context);
+                    thread_group_switcher.emplace(std::move(thread_group), ThreadName::KEEPER_COMMIT);
                 }
-                catch (...)
-                {
-                    tryLogCurrentException("KeeperServer", "Failed to set up commit thread profiler");
-                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException("KeeperServer", "Failed to set up commit thread profiler");
             }
         }
 
