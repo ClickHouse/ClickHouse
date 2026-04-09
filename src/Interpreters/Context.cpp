@@ -5219,7 +5219,7 @@ void Context::signalKeeperDispatcherShutdown() const
 #endif
 }
 
-void Context::shutdownKeeperDispatcher(bool closed_all_connections) const
+void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
 {
 #if USE_NURAFT
     if (auto dispatcher = tryGetKeeperDispatcher())

@@ -53,8 +53,6 @@ private:
 
         std::unique_lock<std::recursive_mutex> lockRaft();
 
-        std::unique_lock<std::mutex> lockCommit();
-
         bool isCommitInProgress() const;
 
         void setServingRequest(bool value);
