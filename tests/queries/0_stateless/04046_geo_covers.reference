@@ -1,0 +1,24 @@
+geoCoversCartesian: interior point
+1
+geoCoversCartesian: boundary point covered
+1
+geoCoversCartesian: boundary point not contained (shows difference from geoContainsCartesian)
+0
+geoCoversCartesian: exterior point
+0
+geoCoversCartesian: point covers same point
+1
+geoCoversCartesian: point cannot cover polygon
+0
+geoCoversCartesian: point in hole
+0
+geoCoversCartesian: big polygon covers small
+1
+geoCoversSpherical: interior point
+1
+geoCoversSpherical: boundary point covered
+1
+geoCoversSpherical: big polygon covers small
+1
+ST_Covers is alias for geoCoversCartesian
+1

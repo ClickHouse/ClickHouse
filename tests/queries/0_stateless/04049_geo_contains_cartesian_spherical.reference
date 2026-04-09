@@ -1,0 +1,24 @@
+geoContainsCartesian: polygon contains interior point
+1
+geoContainsCartesian: polygon not contains exterior point
+0
+geoContainsCartesian: point cannot contain polygon
+0
+geoContainsCartesian: big polygon contains small polygon
+1
+geoContainsCartesian: small polygon not contains big
+0
+geoContainsCartesian: ST_Contains is alias for geoContainsCartesian
+1
+geoContainsSpherical: polygon contains interior point
+1
+geoContainsSpherical: polygon not contains exterior point
+0
+geoContainsSpherical: point cannot contain polygon
+0
+geoContainsSpherical: big polygon contains small polygon
+1
+geoContainsSpherical: const polygon, variable points
+1
+0
+1

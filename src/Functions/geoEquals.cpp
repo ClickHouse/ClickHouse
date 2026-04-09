@@ -23,20 +23,22 @@ namespace ErrorCodes
 namespace
 {
 
-/// Spherical equality function: returns true if two geometries are topologically equal,
+/// Equality function: returns true if two geometries are topologically equal,
 /// i.e., each one covers the other. Modeled after BigQuery's ST_EQUALS.
 ///
 /// Implemented as: covered_by(A, B) AND covered_by(B, A)
 /// This avoids potential boost::geometry::equals compilation issues with certain
-/// spherical type combinations while providing correct topological equality semantics.
-class FunctionSTEquals : public IFunction
+/// type combinations while providing correct topological equality semantics.
+/// Templated on Point to support both Spherical and Cartesian coordinate systems.
+template <typename Point>
+class FunctionGeoEquals : public IFunction
 {
 public:
-    static inline const char * name = "ST_Equals";
+    static inline const char * name;
 
-    explicit FunctionSTEquals() = default;
+    explicit FunctionGeoEquals() = default;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSTEquals>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeoEquals>(); }
 
     String getName() const override { return name; }
 
@@ -60,7 +62,7 @@ public:
         bool left_is_const = isColumnConst(*arguments[0].column);
         bool right_is_const = isColumnConst(*arguments[1].column);
 
-        callOnTwoGeometryDataTypes<SphericalPoint>(
+        callOnTwoGeometryDataTypes<Point>(
             arguments[0].type,
             arguments[1].type,
             [&](const auto & left_type, const auto & right_type)
@@ -72,18 +74,18 @@ public:
                 using RightConverter = typename RightConverterType::Type;
 
                 if constexpr (
-                    std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, LeftConverter>
-                    || std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, RightConverter>)
+                    std::is_same_v<ColumnToLineStringsConverter<Point>, LeftConverter>
+                    || std::is_same_v<ColumnToLineStringsConverter<Point>, RightConverter>)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be LineString", getName());
                 else if constexpr (
-                    std::is_same_v<ColumnToMultiLineStringsConverter<SphericalPoint>, LeftConverter>
-                    || std::is_same_v<ColumnToMultiLineStringsConverter<SphericalPoint>, RightConverter>)
+                    std::is_same_v<ColumnToMultiLineStringsConverter<Point>, LeftConverter>
+                    || std::is_same_v<ColumnToMultiLineStringsConverter<Point>, RightConverter>)
                     throw Exception(
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Any argument of function {} must not be MultiLineString", getName());
                 else
                 {
-                    constexpr bool left_is_point = std::is_same_v<ColumnToPointsConverter<SphericalPoint>, LeftConverter>;
-                    constexpr bool right_is_point = std::is_same_v<ColumnToPointsConverter<SphericalPoint>, RightConverter>;
+                    constexpr bool left_is_point = std::is_same_v<ColumnToPointsConverter<Point>, LeftConverter>;
+                    constexpr bool right_is_point = std::is_same_v<ColumnToPointsConverter<Point>, RightConverter>;
 
                     /// Different dimensionality types can never be equal:
                     /// A Point cannot equal a Polygon/Ring/MultiPolygon, and vice versa.
@@ -94,8 +96,8 @@ public:
                     }
                     else
                     {
-                        /// ST_EQUALS(A, B) = covered_by(A, B) AND covered_by(B, A)
-                        executeGeometryPredicate<SphericalPoint, LeftConverter, RightConverter, left_is_point, right_is_point>(
+                        /// geoEquals(A, B) = covered_by(A, B) AND covered_by(B, A)
+                        executeGeometryPredicate<Point, LeftConverter, RightConverter, left_is_point, right_is_point>(
                             arguments, res_data, input_rows_count, left_is_const, right_is_const,
                             [](const auto & a, const auto & b)
                             {
@@ -112,24 +114,29 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
 };
 
+template <>
+const char * FunctionGeoEquals<CartesianPoint>::name = "geoEqualsCartesian";
+
+template <>
+const char * FunctionGeoEquals<SphericalPoint>::name = "geoEqualsSpherical";
+
 }
 
-REGISTER_FUNCTION(STEquals)
+REGISTER_FUNCTION(GeoEquals)
 {
-    factory.registerFunction<FunctionSTEquals>(FunctionDocumentation{
+    factory.registerFunction<FunctionGeoEquals<CartesianPoint>>(FunctionDocumentation{
         .description = R"(
-Returns true if two geometries are topologically equal on the sphere, meaning each
-geometry covers the other. Two geometries are equal if they represent the same spatial
-region, even if their vertex orderings differ.
+Returns true if two geometries are topologically equal using Cartesian (flat/planar)
+coordinates, meaning each geometry covers the other. Two geometries are equal if they
+represent the same spatial region, even if their vertex orderings differ.
 
-Equivalent to `ST_Covers(geometry1, geometry2) AND ST_Covers(geometry2, geometry1)`.
+Equivalent to `geoCoversCartesian(geometry1, geometry2) AND geoCoversCartesian(geometry2, geometry1)`.
 
-Similar to BigQuery's `ST_EQUALS`. Supports Point, Ring, Polygon, and MultiPolygon
-types in any combination. Operates in spherical coordinates (longitude, latitude in degrees).
+Supports Point, Ring, Polygon, and MultiPolygon types in any combination.
 
-Note: function name is case-insensitive, so `st_equals`, `ST_EQUALS`, etc. all work.
+`ST_Equals` is an alias for this function.
     )",
-        .syntax = "ST_Equals(geometry1, geometry2)",
+        .syntax = "geoEqualsCartesian(geometry1, geometry2)",
         .arguments
         = {{"geometry1",
             "A value of type [`Point`](/sql-reference/data-types/geo#point), "
@@ -146,27 +153,81 @@ Note: function name is case-insensitive, so `st_equals`, `ST_EQUALS`, etc. all w
         .examples
         = {{"Same polygon",
             R"(
-                SELECT ST_Equals(
+                SELECT geoEqualsCartesian(
                     CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
                     CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
             )",
             R"(
-                ┌─ST_Equals()─┐
-                │           1 │
-                └─────────────┘
+                ┌─geoEqualsCartesian()─┐
+                │                    1 │
+                └──────────────────────┘
             )"},
            {"Different polygons",
             R"(
-                SELECT ST_Equals(
+                SELECT geoEqualsCartesian(
                     CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
                     CAST([[(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0), (0.0, 0.0)]], 'Polygon'))
             )",
             R"(
-                ┌─ST_Equals()─┐
-                │           0 │
-                └─────────────┘
+                ┌─geoEqualsCartesian()─┐
+                │                    0 │
+                └──────────────────────┘
             )"}},
-        .introduced_in = {25, 8},
+        .introduced_in = {25, 9},
+        .category = FunctionDocumentation::Category::Geo});
+
+    /// ST_Equals is an alias for geoEqualsCartesian.
+    factory.registerAlias("ST_Equals", "geoEqualsCartesian", FunctionFactory::Case::Insensitive);
+
+    factory.registerFunction<FunctionGeoEquals<SphericalPoint>>(FunctionDocumentation{
+        .description = R"(
+Returns true if two geometries are topologically equal on the sphere, meaning each
+geometry covers the other. Two geometries are equal if they represent the same spatial
+region, even if their vertex orderings differ.
+
+Equivalent to `geoCoversSpherical(geometry1, geometry2) AND geoCoversSpherical(geometry2, geometry1)`.
+
+Similar to BigQuery's `ST_EQUALS`. Supports Point, Ring, Polygon, and MultiPolygon
+types in any combination. Operates in spherical coordinates (longitude, latitude in degrees).
+    )",
+        .syntax = "geoEqualsSpherical(geometry1, geometry2)",
+        .arguments
+        = {{"geometry1",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+           {"geometry2",
+            "A value of type [`Point`](/sql-reference/data-types/geo#point), "
+            "[`Ring`](/sql-reference/data-types/geo#ring), "
+            "[`Polygon`](/sql-reference/data-types/geo#polygon), or "
+            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+        .returned_value
+        = {"Returns 1 if the two geometries are equal, 0 otherwise. [`UInt8`](/sql-reference/data-types/int-uint)."},
+        .examples
+        = {{"Same polygon (spherical)",
+            R"(
+                SELECT geoEqualsSpherical(
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'))
+            )",
+            R"(
+                ┌─geoEqualsSpherical()─┐
+                │                    1 │
+                └──────────────────────┘
+            )"},
+           {"Different polygons (spherical)",
+            R"(
+                SELECT geoEqualsSpherical(
+                    CAST([[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)]], 'Polygon'),
+                    CAST([[(0.0, 0.0), (5.0, 0.0), (5.0, 5.0), (0.0, 5.0), (0.0, 0.0)]], 'Polygon'))
+            )",
+            R"(
+                ┌─geoEqualsSpherical()─┐
+                │                    0 │
+                └──────────────────────┘
+            )"}},
+        .introduced_in = {25, 9},
         .category = FunctionDocumentation::Category::Geo});
 }
 
