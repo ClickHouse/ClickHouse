@@ -138,7 +138,7 @@ endif ()
 include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
-option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
+option(ENABLE_TESTS "Provide unit_tests_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 option(ENABLE_BENCHMARKS "Build all benchmark programs in 'benchmarks' subdirectories" OFF)
 
@@ -195,8 +195,9 @@ option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
-if (LINKER_NAME MATCHES "lld")
+if (LINKER_NAME MATCHES "lld" AND NOT LINKER_NAME MATCHES "ld64")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
+    # ld64.lld (MachO linker) does not support --build-id.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 endif ()
 
