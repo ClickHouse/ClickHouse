@@ -744,11 +744,12 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
-        /// Track whether any ON-clause map received an insertion from this block.
-        /// We must not pop the block until all ON clauses have been checked, because
-        /// stored_columns->columns_info is shared across all maps — popping inside the
-        /// loop would leave stored_columns as a dangling pointer for later iterations.
+        /// Track insertions across all ON clauses before deciding whether to discard the block.
+        /// We must not pop early because stored_columns is shared across all clause maps.
+        /// Also, in RIGHT/FULL joins the not_joined_map path can add a nullmap entry referencing
+        /// stored_columns even when is_inserted is false; guard the pop with a nullmaps-size check.
         size_t inserted_count = 0;
+        const size_t nullmaps_size_before = data->nullmaps.size();
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
             ColumnRawPtrs key_columns;
@@ -844,7 +845,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             total_bytes = getTotalByteCount();
         }
 
-        if (!flag_per_row && inserted_count == 0)
+        if (!flag_per_row && inserted_count == 0 && data->nullmaps.size() == nullmaps_size_before)
         {
             doDebugAsserts();
             LOG_TRACE(log, "Skipping inserting block with {} rows", rows);

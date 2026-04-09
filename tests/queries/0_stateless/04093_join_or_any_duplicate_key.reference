@@ -1,2 +1,6 @@
+test 1: duplicate key
 1	99	1	r1
 99	20	1	r2
+test 2: has_right_not_joined with inserted_count=0
+1	10	1	1
+99	10	0	\N
