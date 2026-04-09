@@ -8,6 +8,8 @@ SYNC_USER="${CLICKHOUSE_DATABASE}_sync_user"
 ASYNC_USER="${CLICKHOUSE_DATABASE}_async_user"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
+SET use_async_executor_for_materialized_views = 0;
+
 DROP TABLE IF EXISTS source_table, target_table, target_table_remote_sync, target_table_remote_async, async_insert_mv, sync_insert_mv;
 DROP USER IF EXISTS ${SYNC_USER}, ${ASYNC_USER};
 
@@ -58,6 +60,7 @@ INSERT INTO source_table (id, data) SETTINGS async_insert=1 VALUES (4, 'test4'),
 -- This time both inserts have async_insert = 0, so 2 async and 4 sync inserts in total
 INSERT INTO source_table (id, data) SETTINGS async_insert=0 VALUES (7, 'test7'), (8, 'test8'), (9, 'test9');
 
+SYSTEM FLUSH ASYNC INSERT QUEUE;
 SYSTEM FLUSH LOGS query_log;
 SELECT count() FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Insert' AND type = 'QueryFinish'
