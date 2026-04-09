@@ -49,6 +49,12 @@ SELECT
     =
     (SELECT sum(cnt), count() FROM (SELECT a, count() AS cnt FROM test GROUP BY a SETTINGS optimize_aggregation_by_sharding = 1));
 
+SELECT 'count() with UInt64 key (low cardinality, consecutive keys cache)';
+SELECT
+    (SELECT sum(cnt), count() FROM (SELECT toUInt64(b % 100) AS k, count() AS cnt FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 0))
+    =
+    (SELECT sum(cnt), count() FROM (SELECT toUInt64(b % 100) AS k, count() AS cnt FROM test GROUP BY k SETTINGS optimize_aggregation_by_sharding = 1));
+
 SELECT 'Multiple aggregate functions (sum, count, max)';
 SELECT
     (SELECT sum(s1), sum(s2), sum(s3), count() FROM

@@ -6,6 +6,8 @@ No aggregate functions (aggregates_size == 0)
 1
 count() fast path (is_simple_count)
 1
+count() with UInt64 key (low cardinality, consecutive keys cache)
+1
 Multiple aggregate functions (sum, count, max)
 1
 Nullable key

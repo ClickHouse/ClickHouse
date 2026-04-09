@@ -51,6 +51,12 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_aggregation_by_sharding = 1
 ) WHERE explain LIKE '%ScatterByHashTransform%';
 
+SELECT 'count() with UInt64 key (low cardinality, consecutive keys cache)';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT toUInt64(b % 100) AS k, count() FROM test GROUP BY k
+    SETTINGS optimize_aggregation_by_sharding = 1
+) WHERE explain LIKE '%ScatterByHashTransform%';
+
 SELECT 'Multiple aggregate functions (sum, count, max)';
 SELECT count() > 0 FROM (
     EXPLAIN PIPELINE SELECT a, sum(b), count(), max(b) FROM test GROUP BY a
