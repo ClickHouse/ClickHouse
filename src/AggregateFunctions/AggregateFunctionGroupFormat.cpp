@@ -437,15 +437,6 @@ public:
         nested_function->insertMergeResultInto(place, to, arena);
     }
 
-    AggregateFunctionPtr getOwnNullAdapter(
-        const AggregateFunctionPtr & nested,
-        const DataTypes & arguments,
-        const Array & params,
-        const AggregateFunctionProperties & properties) const override
-    {
-        return nested_function->getOwnNullAdapter(nested, arguments, params, properties);
-    }
-
     bool preservesNullablePayloadForIf() const override
     {
         return true;
