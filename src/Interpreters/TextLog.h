@@ -29,7 +29,7 @@ struct TextLogElement
     String source_file;
     UInt64 source_line{};
 
-    std::string_view message_format_string;
+    String message_format_string;
     String value1;
     String value2;
     String value3;
