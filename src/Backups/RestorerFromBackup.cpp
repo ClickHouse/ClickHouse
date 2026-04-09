@@ -425,9 +425,7 @@ void RestorerFromBackup::createAndCheckDatabases()
 
 void RestorerFromBackup::createAndCheckDatabase(const String & database_name)
 {
-    schedule(
-        [this, database_name]() { createAndCheckDatabaseImpl(database_name); },
-        ThreadName::RESTORE_MAKE_DATABASE);
+    schedule([this, database_name]() { createAndCheckDatabaseImpl(database_name); }, ThreadName::RESTORE_MAKE_DATABASE);
 }
 
 void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name)

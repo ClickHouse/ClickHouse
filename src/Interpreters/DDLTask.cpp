@@ -318,7 +318,16 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     }
 
     if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
+    {
+        /// Clamp settings to the constraints of the local node, similar to how
+        /// TCPHandler handles secondary queries. Without this, settings from the
+        /// initiator node could bypass stricter constraints on worker nodes.
+        /// Work on a copy to avoid mutating the entry, which may be read later
+        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
+        auto settings_changes = *entry.settings;
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+    }
 
     return query_context;
 }

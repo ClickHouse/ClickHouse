@@ -138,6 +138,7 @@ jobs:
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgVG9vbGNoYWluIChQR08sIEJPTFQpIChhbWQ2NCk=') }}
     name: "Build Toolchain (PGO, BOLT) (amd64)"
+    timeout-minutes: 485
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -178,6 +179,7 @@ jobs:
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgVG9vbGNoYWluIChQR08sIEJPTFQpIChhYXJjaDY0KQ==') }}
     name: "Build Toolchain (PGO, BOLT) (aarch64)"
+    timeout-minutes: 485
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}

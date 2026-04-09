@@ -199,9 +199,14 @@ function fuzz
         else
             QUERIES_FILE=$(find /repo/tests/queries/0_stateless -type f -name "*.sql" | sort -R)
         fi
-        COMPATIBILITY_SETTING="${FUZZER_COMPATIBILITY:-26.1}"
-        echo "Using AST fuzzer compatibility setting: ${COMPATIBILITY_SETTING}"
-        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --compatibility=${COMPATIBILITY_SETTING} --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
+        if [[ -n "${FUZZER_COMPATIBILITY:-}" ]];
+        then
+            COMPAT_ARG="--compatibility=${FUZZER_COMPATIBILITY}"
+            echo "Using AST fuzzer compatibility setting: ${FUZZER_COMPATIBILITY}"
+        else
+            COMPAT_ARG=""
+        fi
+        FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 $COMPAT_ARG --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
         FUZZER_ARGS="--buzz-house-config=fuzz.json"
@@ -276,6 +281,10 @@ function fuzz
             then
                 # Give it some time to cool down
                 clickhouse-client --query "SHOW PROCESSLIST"
+                sleep 1
+            elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
+            then
+                # Server is alive but at memory limit, give it time to reclaim
                 sleep 1
             else
                 echo "Server live check returns $?"

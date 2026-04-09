@@ -233,6 +233,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_ephemeral.checkWithoutMoving(pos, expected)
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
+        && !s_ttl.checkWithoutMoving(pos, expected)
         && !s_primary_key.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
@@ -301,6 +302,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             auto default_function = make_intrusive<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
+            default_function->children.push_back(default_function->arguments);
             /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
             default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
             default_expression = default_function;

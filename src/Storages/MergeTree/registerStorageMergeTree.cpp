@@ -699,7 +699,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, context));
+            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, context);
@@ -736,10 +736,23 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
                 auto using_auto_minmax_index = metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns
                     || metadata.add_minmax_index_for_temporal_columns;
-                if (args.mode <= LoadingStrictnessLevel::CREATE && using_auto_minmax_index
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                if (using_auto_minmax_index && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
+                    if (args.mode <= LoadingStrictnessLevel::CREATE)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
+
+                    /// Backward compatibility: older versions (before 25.12) stored implicit indices
+                    /// on disk as regular indices. Re-mark them so `explicitToString` excludes them.
+                    auto & added = metadata.secondary_indices.back();
+                    String col_name = index_name.substr(strlen(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX));
+                    if (columns.has(col_name))
+                    {
+                        const auto & col_type = columns.get(col_name).type;
+                        if ((metadata.add_minmax_index_for_numeric_columns && isNumber(col_type))
+                            || (metadata.add_minmax_index_for_string_columns && isString(col_type))
+                            || (metadata.add_minmax_index_for_temporal_columns && isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(col_type)))
+                            added.is_implicitly_created = true;
+                    }
                 }
             }
         }
@@ -763,7 +776,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, context);
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -835,7 +848,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto partition_key = metadata.partition_key.expression_list_ast->clone();
         FunctionNameNormalizer::visit(partition_key.get());
         metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            columns, partition_key, minmax_columns, metadata.primary_key, context));
+            columns, partition_key, minmax_columns, metadata.primary_key, &metadata.partition_key, context));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)

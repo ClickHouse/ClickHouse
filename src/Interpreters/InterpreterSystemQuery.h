@@ -91,7 +91,6 @@ private:
     DatabasePtr
     restoreDatabaseFromKeeperPath(const String & zookeeper_name, const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name);
     std::optional<String> getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_);
-    [[noreturn]] void restartDisk(String & name);
 
     RefreshTaskList getRefreshTasks();
 

@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -64,9 +66,92 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-/// for "^prefix..." string it returns "prefix"
+/// Returns true if '\' followed by this character means "match this character
+/// literally". For example, '\.' matches a literal dot, '\(' matches a
+/// literal '(', '\-' matches a literal '-'.
+/// Returns false for escape sequences where the matched character is different
+/// from what follows '\': '\n' matches a newline (not 'n'), '\d' matches any
+/// digit (not 'd'), '\x41' matches 'A' (not 'x').
+static bool isLiteralEscape(char c)
+{
+    switch (c)
+    {
+        case '|':
+        case '(':
+        case ')':
+        case '^':
+        case '$':
+        case '.':
+        case '[':
+        case ']':
+        case '?':
+        case '*':
+        case '+':
+        case '\\':
+        case '{':
+        case '}':
+        case '-':
+            return true;
+        default:
+            return false;
+    }
+
+    UNREACHABLE();
+}
+
+/// Extracts a conservative fixed literal prefix from a ^-anchored regular expression.
+///
+/// In regex, '^' means "must start at the beginning of the string".
+/// This function walks the pattern after '^' and collects characters that
+/// are guaranteed to appear, in order, at the start of every matching string.
+/// It stops as soon as it hits any metacharacter or special construct where it
+/// cannot guarantee a fixed character. The parser is conservative and may miss
+/// some cases where a guaranteed fixed prefix could be derived but would be
+/// complicated to do so. The result is a prefix that is common to all possible
+/// matching strings.
+///
+/// "^abc"
+///   Every matching string starts with exactly "abc".
+///   Prefix: "abc".
+///
+/// "^abc.*"
+///   '.' means "any single character" and '*' means "zero or more times".
+///   So after "abc" anything can follow. We can only guarantee "abc".
+///   Prefix: "abc".
+///
+/// "^abc\\|def"
+///   A backslash before a special character removes its special meaning.
+///   '|' normally means "or" (see below), but '\\|' means a literal '|'
+///   character. So this matches strings starting with the text "abc|def".
+///   Prefix: "abc|def".
+///
+/// "^abc\\d"
+///   '\\d' means "any digit" (0-9). It is not a single fixed character,
+///   so we stop. We can only guarantee "abc".
+///   Prefix: "abc".
+///
+/// "^abc|def"
+///   '|' means "or" — match the left side or the right side.
+///   This means: (string starts with "abc") OR (string contains "def" anywhere).
+///   The right side has no '^', so it can match in the middle of a string.
+///   We cannot guarantee any prefix at all.
+///   Prefix: "".
+///
+/// "^abc[12]"
+///   '[12]' is a character class — it matches either '1' or '2'.
+///   Since the next character is not fixed, we stop at "abc".
+///   Prefix: "abc".
+///
+/// '(' is treated as a stop character (')' cannot appear unescaped in a
+/// valid regex without a preceding '('). Patterns like
+/// "^(abc)def" could theoretically yield prefix "abcdef", but analyzing
+/// group semantics (optional groups, alternation inside groups, etc.)
+/// is complex and error-prone. The alternation helper
+/// `extractCommonPrefixFromAlternationBranches` handles the important case of
+/// "^(branch1|branch2|...)" separately.
 static String extractFixedPrefixFromRegularExpression(const String & regexp)
 {
+    /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
     if (regexp.size() <= 1 || regexp[0] != '^')
         return {};
 
@@ -89,30 +174,13 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
                 if (pos == end)
                     break;
 
-                switch (*pos)
+                if (isLiteralEscape(*pos))
                 {
-                    case '|':
-                    case '(':
-                    case ')':
-                    case '^':
-                    case '$':
-                    case '.':
-                    case '[':
-                    case ']':
-                    case '?':
-                    case '*':
-                    case '+':
-                    case '\\':
-                    case '{':
-                    case '}':
-                    case '-':
-                        fixed_prefix += *pos;
-                        ++pos;
-                    break;
-                    default:
-                        /// all other escape sequences are not supported
-                            pos = end;
+                    fixed_prefix += *pos;
+                    ++pos;
                 }
+                else
+                    pos = end;
 
                 break;
             }
@@ -147,6 +215,153 @@ static String extractFixedPrefixFromRegularExpression(const String & regexp)
     }
 
     return fixed_prefix;
+}
+
+/// Returns true if the expression contains any unescaped '|'.
+static bool expressionHasUnescapedAlternation(const String & expression)
+{
+    for (size_t i = 0; i < expression.size(); ++i)
+    {
+        /// \\| is not an alternation, but a literal '|', so skip the next character after a backslash.
+        if (expression[i] == '\\' && i + 1 < expression.size())
+        {
+            ++i;
+            continue;
+        }
+        if (expression[i] == '|')
+            return true;
+    }
+    return false;
+}
+
+/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
+/// each branch is a plain literal string (no metacharacters, no nesting).
+///
+/// This is called when the expression contains an unescaped '|', meaning
+/// `extractFixedPrefixFromRegularExpression` cannot be used (it would stop
+/// at '|' or '('). Returns empty for any pattern more complex than simple
+/// literal branches inside a single group.
+///
+/// "^(abc-xx|abc-yy)"
+///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
+///   Both start with "abc-", so every matching string begins with "abc-".
+///   Prefix: "abc-".
+///
+/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
+///   Three alternatives. All three start with "abc-", but they diverge
+///   after that ('x' vs 'y'). So "abc-" is the longest common start.
+///   Prefix: "abc-".
+///
+/// "^(abc|def)"
+///   Two alternatives: "abc" and "def". They share nothing at the start —
+///   'a' vs 'd' already differ. We cannot guarantee any prefix.
+///   Prefix: "".
+///
+/// "^(abc|def)$"
+///   '$' means "must end at the end of the string". It constrains what
+///   comes after the match, but does not change what the string starts
+///   with. So the prefix analysis is the same as without '$'.
+///   Prefix: "".
+///
+/// Not supported (returns empty — could be improved in the future):
+///
+/// "^(abc.*|abd.*)"
+///   Branches contain '.*' (wildcard). We only handle plain literal branches.
+///   The common prefix "ab" could theoretically be extracted, but is not.
+///   Prefix: "".
+///
+/// "^(abc|abd)+"
+///   The '+' after the group means it must appear at least once.
+///   We only handle patterns where the group is followed by '$' or end
+///   of expression. Prefix: "".
+///
+/// "^(abc(1|2)|abc(3|4))"
+///   Branches contain nested groups. We only handle flat literal branches.
+///   The common prefix "abc" could theoretically be extracted, but is not.
+///   Prefix: "".
+static String extractCommonPrefixFromAlternationBranches(const String & expression)
+{
+    /// We only handle "^(literal1|literal2|...)$?".
+    /// Reject anything that doesn't start with "^(".
+    if (expression.size() < 4 || expression[0] != '^' || expression[1] != '(')
+        return {};
+
+    const char * pos = expression.data() + 2; /// Start right after "^("
+    const char * end = expression.data() + expression.size();
+
+    /// Split branches by '|'. Each branch must be a plain literal —
+    /// no metacharacters, no nested groups, no character classes.
+    /// If we see anything other than a literal char, escaped char, or '|',
+    /// we give up.
+    std::vector<String> branches;
+    String current_branch;
+
+    while (pos < end)
+    {
+        if (*pos == '\\' && pos + 1 < end)
+        {
+            char next = *(pos + 1);
+            if (isLiteralEscape(next))
+            {
+                current_branch += next;
+                pos += 2;
+            }
+            else
+                return {};
+        }
+        else if (*pos == '|')
+        {
+            /// Branch separator — save the current branch and start a new one.
+            branches.push_back(std::move(current_branch));
+            current_branch.clear();
+            ++pos;
+        }
+        else if (*pos == ')')
+        {
+            /// End of the group. Save the last branch.
+            branches.push_back(std::move(current_branch));
+            ++pos;
+
+            /// Allow only '$' or end of expression after ')'.
+            if (pos < end && *pos == '$')
+                ++pos;
+            if (pos != end)
+                return {};
+
+            break;
+        }
+        else if (
+            *pos == '(' || *pos == '[' || *pos == '.' || *pos == '*' || *pos == '+' || *pos == '?' || *pos == '{' || *pos == '^'
+            || *pos == '$')
+        {
+            /// Any metacharacter inside a branch — too complex, give up.
+            return {};
+        }
+        else
+        {
+            /// Plain literal character.
+            current_branch += *pos;
+            ++pos;
+        }
+    }
+
+    if (branches.size() < 2)
+        return {};
+
+    /// Compute the longest prefix common to all branches.
+    String common_prefix = branches[0];
+    for (size_t i = 1; i < branches.size(); ++i)
+    {
+        size_t common_len = 0;
+        size_t max_len = std::min(common_prefix.size(), branches[i].size());
+        while (common_len < max_len && common_prefix[common_len] == branches[i][common_len])
+            ++common_len;
+        common_prefix.resize(common_len);
+        if (common_prefix.empty())
+            return {};
+    }
+
+    return common_prefix;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -279,25 +494,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         },
         {
             "empty",
-            [] (RPNElement & out, const Field & value)
+            [] (RPNElement & out, const Field &)
             {
-                if (value.getType() != Field::Types::String)
-                    return false;
-
                 out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.range = Range("");
+                out.range = Range(String{});
                 return true;
             }
         },
         {
             "notEmpty",
-            [] (RPNElement & out, const Field & value)
+            [] (RPNElement & out, const Field &)
             {
-                if (value.getType() != Field::Types::String)
-                    return false;
-
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                out.range = Range("");
+                out.range = Range(String{});
                 return true;
             }
         },
@@ -403,12 +612,17 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 const String & expression = value.safeGet<String>();
 
-                /// This optimization can't process alternation - this would require
-                /// a comprehensive parsing of regular expression.
-                if (expression.contains('|'))
+                /// ClickHouse `match` patterns must not contain NUL bytes.
+                /// Do not attempt to optimize such patterns.
+                if (expression.find('\0') != String::npos)
                     return false;
 
-                String prefix = extractFixedPrefixFromRegularExpression(expression);
+                String prefix;
+                if (!expressionHasUnescapedAlternation(expression))
+                    prefix = extractFixedPrefixFromRegularExpression(expression);
+                else
+                    prefix = extractCommonPrefixFromAlternationBranches(expression);
+
                 if (prefix.empty())
                     return false;
 
@@ -1091,48 +1305,68 @@ bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
         auto func_result_type = func->getResultType();
 
-        /// DateTime64/Date32 are signed, but Date and DateTime are unsigned, so converting
-        /// values outside the unsigned range wraps around via static_cast, this can produce wrong pruning
+        /// DateTime64/Date32 are signed, but Date, DateTime, and UInt32 are unsigned, so converting
+        /// values outside the unsigned range wraps around or throws DECIMAL_OVERFLOW.
         ///
         /// we check the constant BEFORE execution to catch obvious out-of-range inputs,
         /// and AFTER execution to catch boundary values where the next value would wrap
         /// (toDate returns day 65535 — the next day overflows to 0)
         auto result_type_inner = removeLowCardinality(removeNullable(func_result_type));
-        if (isDate(result_type_inner) || isDateTime(result_type_inner))
+        auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+        if (isDateTime64(arg_type_inner) || isTime64(arg_type_inner))
         {
-            auto arg_type_inner = removeLowCardinality(removeNullable(argument_type));
+            Int64 value;
             if (isDateTime64(arg_type_inner))
-            {
-                Int64 value = (*result_column)[0].safeGet<DateTime64>().getValue();
+                value = (*result_column)[0].safeGet<DateTime64>().getValue();
+            else
+                value = (*result_column)[0].safeGet<Time64>().getValue();
 
-                /// negative timestamps after cast -> large unsigned values
-                if (value < 0)
-                    return false;
+            /// negative timestamps after cast -> large unsigned values
+            if (value < 0)
+                return false;
 
-                UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale();
-                Int64 seconds = value / intExp10OfSize<Int64>(scale);
+            UInt32 scale = isDateTime64(arg_type_inner)
+                ? assert_cast<const DataTypeDateTime64 &>(*arg_type_inner).getScale()
+                : assert_cast<const DataTypeTime64 &>(*arg_type_inner).getScale();
+            Int64 seconds = value / intExp10OfSize<Int64>(scale);
 
-                /// timestamps beyond the target range -> small values
-                if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
-                    return false;
-                if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
-                    return false;
-            }
-            else if (isDate32(arg_type_inner))
-            {
-                /// day numbers as Int32 -> Date only fits [0, 65535],
-                /// DateTime only fits seconds up to DATE_LUT_MAX
-                auto value = (*result_column)[0].safeGet<Int32>();
-                if (value < 0)
-                    return false;
-                if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
-                    return false;
-                if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
-                    return false;
-            }
+            /// timestamps beyond the target range -> small values
+            if (isDate(result_type_inner) && seconds >= static_cast<Int64>(DATE_LUT_MAX_DAY_NUM) * 86400)
+                return false;
+            if (isDateTime(result_type_inner) && seconds >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && seconds > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
+        }
+        else if (isDate32(arg_type_inner) && (isDate(result_type_inner) || isDateTime(result_type_inner) || isUInt32(result_type_inner)))
+        {
+            /// day numbers as Int32 -> Date only fits [0, 65535],
+            /// DateTime only fits seconds up to DATE_LUT_MAX
+            auto value = (*result_column)[0].safeGet<Int32>();
+            if (value < 0)
+                return false;
+            if (isDate(result_type_inner) && value > DATE_LUT_MAX_DAY_NUM)
+                return false;
+            if (isDateTime(result_type_inner) && value * 86400LL >= DATE_LUT_MAX)
+                return false;
+            if (isUInt32(result_type_inner) && value * 86400LL > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                return false;
         }
 
-        result_column = func->execute({{result_column, argument_type, ""}}, func_result_type, result_column->size(), /* dry_run = */ false);
+        /// The function may have been built with LowCardinality argument types (from the key expression),
+        /// but we stripped LowCardinality from the column at the top of this function.
+        /// Functions like FunctionCast handle LowCardinality internally (useDefaultImplementationForLowCardinalityColumns = false)
+        /// and their wrappers expect the column type to match the declared argument type.
+        /// We must pass the original (non-stripped) argument type and re-wrap the column in LowCardinality if needed.
+        auto original_argument_type = getArgumentTypeOfMonotonicFunction(*func);
+        ColumnPtr exec_column = result_column;
+        if (original_argument_type->lowCardinality() && !result_column->lowCardinality())
+        {
+            auto lc_col = original_argument_type->createColumn();
+            assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*result_column, 0, result_column->size());
+            exec_column = std::move(lc_col);
+        }
+        result_column = func->execute({{exec_column, original_argument_type, ""}}, func_result_type, exec_column->size(), /* dry_run = */ false);
         result_column = result_column->convertToFullColumnIfLowCardinality();
         result_type = removeLowCardinality(func_result_type);
 
@@ -1793,7 +2027,11 @@ bool tryPrepareSetColumnsForIndex(
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
-        const auto & key_column_type = data_types[indexes_mapping_index];
+        /// Recursively strip LowCardinality from the key column type (including inside Tuples).
+        /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
+        /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
+        /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
+        auto key_column_type = recursiveRemoveLowCardinality(data_types[indexes_mapping_index]);
         size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
@@ -2572,8 +2810,16 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
 struct KeyCondition::RPNElement::Polygon
 {
     using PointT = boost::geometry::model::d2::point_xy<Float64>;
-    using PolygonT = boost::geometry::model::polygon<PointT>;
-    PolygonT data;
+    using RingT = boost::geometry::model::ring<PointT>;
+    using BoxT = boost::geometry::model::box<PointT>;
+
+    /// Outer ring of the polygon. We do not store holes; index analysis only
+    /// uses the outer boundary
+    RingT ring;
+
+    /// Bounding box of the ring, precomputed once when the RPN element is built
+    /// Useful for quick rejection to avoid costly `intersects` checks
+    BoxT bbox;
 };
 
 KeyCondition::RPNElement::RPNElement()
@@ -2895,9 +3141,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                 auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
                 auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
-                out.polygon->data.outer().push_back({x, y});
+                out.polygon->ring.emplace_back(x, y);
             }
-            boost::geometry::correct(out.polygon->data);
+            boost::geometry::correct(out.polygon->ring);
+
+            /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
+            /// costly `intersects` checks
+            boost::geometry::envelope(out.polygon->ring, out.polygon->bbox);
+
             return atom_it->second(out, const_value);
         };
 
@@ -2909,6 +3160,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             if (key_column_num == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
+
+            /// empty/notEmpty produce a meaningful range only for String key columns.
+            if ((func_name == "empty" || func_name == "notEmpty") && !isString(*key_expr_type))
+                return false;
         }
         else if (num_args == 2)
         {
@@ -3081,10 +3336,32 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 if (const_value.getType() == Field::Types::String)
                 {
-                    const_value = convertFieldToType(const_value, *key_expr_type_not_null);
-                    if (const_value.isNull())
-                        return false;
-                    /// No need to set condition_is_relaxed because we're doing exact conversion
+                    /// These functions use the constant as a string pattern or prefix.
+                    /// For example, if column is `FixedString` type, then in `startsWith(column, 'ab')`
+                    /// and `column LIKE 'ab%'`, `'ab'` is used to build the prefix range `['ab', 'ac')`.
+                    //  The literal must not be converted to the column type which is `FixedString`. If we
+                    /// first convert it to `FixedString(N)`, it becomes `'ab\0...'`, and the range is built from
+                    /// the padded value instead of from `'ab'`. This can lead to the upper bound being set to the
+                    /// next padded value, for example `['ab\0...', 'ab\0...\1')`, instead of to the next prefix
+                    /// range `['ab', 'ac')`. The padded range is too small and can miss values such as `'abc...'` that still
+                    /// satisfy `startsWith(column, 'ab')` and `column LIKE 'ab%'`.
+                    /// New functions should be added to this list only if their constant argument is used as a
+                    /// pattern or prefix in the same way.
+                    const bool should_keep_original_string_constant
+                        = isStringOrFixedString(key_expr_type_not_null)
+                        && (func_name == "like"
+                        || func_name == "notLike"
+                        || func_name == "startsWith"
+                        || func_name == "startsWithUTF8"
+                        || func_name == "match");
+
+                    if (!should_keep_original_string_constant)
+                    {
+                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        if (const_value.isNull())
+                            return false;
+                        /// No need to set condition_is_relaxed because we're doing exact conversion
+                    }
                 }
                 else
                 {
@@ -4162,10 +4439,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool intersects = element.range.intersectsRange(key_range);
             bool contains = element.range.containsRange(key_range);
 
-            /// `Range::containsRange()` is not reliable when key range bounds contain NaN (NaN compares false),
-            /// and may incorrectly report "contained", making `NOT IN RANGE` incorrectly set `can_be_true = false`.
-            if (unlikely(key_range.left.isNaN() || key_range.right.isNaN()))
+            /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
+            /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
+            /// analysis may incorrectly include NaN values.
+            /// - If left bound is NaN: all values in the range are NaN (NaN sorts last),
+            ///   so no comparison condition can be true.
+            /// - If only right bound is NaN: the range extends into NaN territory,
+            ///   so it cannot be fully contained (NaN values don't satisfy the condition).
+            if (unlikely(key_range.left.isNaN()))
+            {
+                intersects = false;
                 contains = false;
+            }
+            else if (unlikely(key_range.right.isNaN()))
+            {
+                contains = false;
+            }
 
             rpn_stack.emplace_back(intersects, !contains);
 
@@ -4300,19 +4589,34 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
         {
             /** There are 2 kinds of polygons:
-              *   1. Polygon by minmax index
+              *   1. Polygon by minmax index or primary key index
               *   2. Polygons which is provided by user
               *
               * Polygon by minmax index:
-              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *   For hyperrectangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
               *
               * Algorithm:
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
-            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].left);
-            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[0]].right);
-            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].left);
-            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), hyperrectangle[element.key_columns[1]].right);
+
+            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
+            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            {
+                if (ref.isNull())
+                {
+                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                }
+
+                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
+            };
+
+            const auto & range_x = hyperrectangle[element.key_columns[0]];
+            const auto & range_y = hyperrectangle[element.key_columns[1]];
+
+            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
+            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
+            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
@@ -4320,20 +4624,31 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 continue;
             }
 
-            using Point = boost::geometry::model::d2::point_xy<Float64>;
-            using Polygon = boost::geometry::model::polygon<Point>;
-            Polygon  polygon_by_minmax_index;
-            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
-            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
-            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
-            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+            using Point = KeyCondition::RPNElement::Polygon::PointT;
+            using Box   = boost::geometry::model::box<Point>;
 
-            /// Close ring
-            boost::geometry::correct(polygon_by_minmax_index);
+            Box index_box(Point(x_min, y_min), Point(x_max, y_max));
+
+            // Very cheap bbox vs bbox check
+            const auto & poly_bbox = element.polygon->bbox;
+            const auto & poly_min = poly_bbox.min_corner();
+            const auto & poly_max = poly_bbox.max_corner();
+            const auto & index_min = index_box.min_corner();
+            const auto & index_max = index_box.max_corner();
+
+            bool disjoint
+                = index_max.x() < poly_min.x() || index_min.x() > poly_max.x() || index_max.y() < poly_min.y() || index_min.y() > poly_max.y();
+
+            if (disjoint)
+            {
+                // Indices box does not overlap with polygon bbox. So we can skip expensive `boost::geometry::intersects` call
+                rpn_stack.emplace_back(false, true);
+                continue;
+            }
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
-            rpn_stack.emplace_back(
-                boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
+            bool intersects = boost::geometry::intersects(index_box, element.polygon->ring);
+            rpn_stack.emplace_back(intersects, true);
         }
         else if (
             element.function == RPNElement::FUNCTION_IS_NULL
@@ -4673,16 +4988,16 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
         }
         case FUNCTION_POINT_IN_POLYGON:
         {
-            auto points_in_polygon = polygon->data.outer();
+            const auto & ring = polygon->ring;
             buf << point_in_polygon_function_name.value_or("") << "(";
             print_wrapped_columns();
             buf << ", ";
             buf << "[";
-            for (size_t i = 0; i < points_in_polygon.size(); ++i)
+            for (size_t i = 0; i < ring.size(); ++i)
             {
                 if (i != 0)
                     buf << ", ";
-                buf << "(" << points_in_polygon[i].x() << ", " << points_in_polygon[i].y() << ")";
+                buf << "(" << ring[i].x() << ", " << ring[i].y() << ")";
             }
             buf << "]";
             buf << ")";

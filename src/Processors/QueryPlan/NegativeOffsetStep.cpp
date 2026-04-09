@@ -40,7 +40,8 @@ void NegativeOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
 
 void NegativeOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Negative Offset " << offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Negative Offset " << offset << '\n';
 }
 
 void NegativeOffsetStep::describeActions(JSONBuilder::JSONMap & map) const

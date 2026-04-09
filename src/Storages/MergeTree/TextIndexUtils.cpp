@@ -133,6 +133,9 @@ IProcessor::Status BuildTextIndexTransform::prepare()
 
 void BuildTextIndexTransform::aggregate(const Block & block)
 {
+    if (block.rows() == 0)
+        return;
+
     /// Threshold for the number of processed tokens to flush the segment.
     /// Calculating used RAM or number of processed unique tokens adds significant overhead,
     /// so we use a simple trade-off threshold, which is reasonable in normal scenarios.

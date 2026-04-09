@@ -11,9 +11,14 @@ select count(), sum(marks) from system.parts where database = currentDatabase() 
 set cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas';
 set max_parallel_replicas=2;
 set use_query_condition_cache=0;
+-- Disable statistics-based part pruning so that randomized auto_statistics_types
+-- (which may include 'minmax') does not add a Statistics step to EXPLAIN output.
+set use_statistics_for_part_pruning=0;
 -- Parallel replicas changes EXPLAIN output
 set allow_experimental_parallel_reading_from_replicas=0;
 set allow_experimental_analyzer=1;
+set query_plan_optimize_prewhere=1;
+set optimize_move_to_prewhere=1;
 
 -- { echo }
 explain indexes=1 select * from test_1m where value > 800_000*100 settings distributed_index_analysis=0;

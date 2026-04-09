@@ -68,6 +68,7 @@ struct TopKFilterInfo
 {
     String column_name;
     DataTypePtr data_type;
+    size_t num_sort_columns;
     size_t limit_n;
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
@@ -82,11 +83,12 @@ public:
     enum class IndexType : uint8_t
     {
         None,
-        MinMax,
+        PartitionMinMax,
         Partition,
         PrimaryKey,
         Skip,
         PrimaryKeyExpand,
+        Statistics
     };
 
     struct DistributedIndexStat

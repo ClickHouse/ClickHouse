@@ -159,7 +159,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            fs::canonical(path_for_ls + for_match);
+            (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
@@ -1653,9 +1653,10 @@ Chunk StorageFileSource::generate()
                 chunk, requested_virtual_columns,
                 {
                     .path = current_path,
+                    .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
-                    .last_modified = current_file_last_modified
+                    .last_modified = current_file_last_modified,
                 }, getContext());
 
             return chunk;
@@ -1822,7 +1823,8 @@ void StorageFile::read(
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
     bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && context->getSettingsRef()[Setting::optimize_count_from_files];
+        && context->getSettingsRef()[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto reading = std::make_unique<ReadFromFile>(
         column_names,

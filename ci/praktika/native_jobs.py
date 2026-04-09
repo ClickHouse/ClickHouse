@@ -26,15 +26,13 @@ assert Settings.CI_CONFIG_RUNS_ON
 
 
 # TODO: find the right place to not dublicate
-def _GH_Auth(workflow, force=False):
+def _GH_Auth(force=False):
     if not Settings.USE_CUSTOM_GH_AUTH:
         return
     from .gh_auth import GHAuth
 
     if force or not Shell.check(f"gh auth status", verbose=True):
-        pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-        app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-        GHAuth.auth(app_id=app_id, app_key=pem)
+        GHAuth.auth_from_settings()
 
 
 _workflow_config_job = Job.Config(
@@ -304,7 +302,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         env.dump()
 
     try:
-        _GH_Auth(workflow, force=True)
+        _GH_Auth(force=True)
     except Exception as e:
         print(f"WARNING: Failed to auth with GH: [{e}]")
 
@@ -334,7 +332,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         report_url_current_sha = info.get_report_url(latest=False)
         body = f"Workflow [[{workflow.name}]({report_url_latest_sha})], commit [{env.SHA[:8]}]"
         res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
-            comment_tags_and_bodies={"report": body, "summary": ""},
+            comment_tags_and_bodies={
+                "report": body,
+                "param_1": "",
+                "summary": "",
+                "review": "",
+            },
         )
         res1 = GH.post_commit_status(
             name=workflow.name,
@@ -728,7 +731,7 @@ def _finish_workflow(workflow, job_name):
         or workflow.enable_open_issues_check
         or workflow.post_hooks
     ):
-        _GH_Auth(workflow)
+        _GH_Auth()
 
     update_final_report = False
     results = []
@@ -835,6 +838,18 @@ def _finish_workflow(workflow, job_name):
             ready_for_merge_description = f"Failed: {len(failed_results)}"
         if dropped_results:
             ready_for_merge_description += f", Dropped: {len(dropped_results)}"
+
+    # Revert PRs should be easy to merge - only Fast test is required
+    if "Reverts ClickHouse/" in env.PR_BODY:
+        fast_test_failed = any(
+            "Fast test" in name for name in failed_results
+        )
+        if not fast_test_failed and ready_for_merge_status != Result.Status.SUCCESS:
+            print(
+                f"NOTE: Revert PR detected - setting merge status to success despite failures"
+            )
+            ready_for_merge_status = Result.Status.SUCCESS
+            ready_for_merge_description = "Revert PR"
 
     if workflow.enable_merge_ready_status:
         if not GH.post_commit_status(

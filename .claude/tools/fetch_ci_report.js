@@ -16,7 +16,7 @@
  *   --all            Show all test results (not just summary)
  *   --links          Show artifact links
  *   --cidb           Show CIDB links for failed tests
- *   --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+ *   --download-logs [path]  Download logs to given path (default: /tmp/ci_logs.tar.gz or .tar.zst)
  *   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
  *   --credentials <user,password>  HTTP Basic Auth credentials (comma-separated). Only for ClickHouse_private repository
  *
@@ -34,7 +34,7 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const zlib = require('zlib');
 
 /**
@@ -180,7 +180,8 @@ function constructJsonUrl(baseUrl, suffix, sha, taskName) {
  * Check if a status represents a failure
  */
 function isFailureStatus(status) {
-  return status === 'failed' || status === 'FAIL' || status === 'failure';
+  return status === 'failed' || status === 'FAIL' || status === 'failure' ||
+         status === 'error' || status === 'ERROR';
 }
 
 /**
@@ -277,12 +278,21 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to only artifact links
-  return links.filter(link =>
-    link.href.includes('.tar.gz') ||
-    link.href.includes('.log') ||
-    link.href.includes('configs')
-  );
+  // Filter to artifact/log links; exclude json.html navigation links and raw binaries
+  return links.filter(link => {
+    const h = link.href;
+    // Exclude CI navigation/report links
+    if (h.includes('json.html')) return false;
+    // Include all log and archive formats
+    if (h.includes('.log') || h.includes('.log.zst')) return true;
+    if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
+    if (h.includes('.zst')) return true;
+    if (h.includes('.html') && !h.includes('json.html')) return true;
+    if (h.includes('.tsv')) return true;
+    if (h.includes('configs')) return true;
+    if (h.includes('artifact_report')) return true;
+    return false;
+  });
 }
 
 /**
@@ -300,25 +310,28 @@ async function getCIReportsFromPR(prUrl) {
 
   // Fetch PR comments to find CI bot comment
   try {
-    const commentsJson = execSync(`gh api repos/ClickHouse/ClickHouse/issues/${prNumber}/comments --jq '[.[] | select(.user.login == "clickhouse-gh[bot]") | {body, created_at}] | sort_by(.created_at) | reverse | .[0]'`, {
+    const commentsJson = execSync(`gh api repos/ClickHouse/ClickHouse/issues/${prNumber}/comments --paginate --jq '.[] | select(.user.login == "clickhouse-gh[bot]") | {body, created_at}'`, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    const comment = JSON.parse(commentsJson);
-    if (!comment || !comment.body) {
+    const comments = commentsJson.trim().split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+    comments.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    if (!comments || comments.length === 0) {
       throw new Error('No CI bot comment found');
     }
 
-    // Extract CI report URLs from comment
+    // Search through all bot comments for CI report URLs (not just the latest)
     const reportUrlPattern = /https:\/\/s3\.amazonaws\.com\/clickhouse-test-reports\/json\.html\?[^\s)]+/g;
-    const urls = comment.body.match(reportUrlPattern);
-
-    if (!urls || urls.length === 0) {
-      throw new Error('No CI report URLs found in bot comment');
+    for (const comment of comments) {
+      if (!comment.body) continue;
+      const urls = comment.body.match(reportUrlPattern);
+      if (urls && urls.length > 0) {
+        return urls;
+      }
     }
 
-    return urls;
+    throw new Error('No CI report URLs found in bot comments');
   } catch (error) {
     if (error.message.includes('No CI bot comment found') || error.message.includes('No CI report URLs found')) {
       throw error;
@@ -614,17 +627,19 @@ async function fetchReport(inputUrl, options = {}) {
 
     // Download logs if requested
     if (options.downloadLogs) {
-      const logsLink = artifactLinks.find(l => l.href.includes('logs.tar.gz'));
+      const logsLink = artifactLinks.find(l => l.href.includes('logs.tar.gz') || l.href.includes('logs.tar.zst'));
       if (logsLink) {
         console.log(`\nDownloading logs from: ${logsLink.href}`);
-        const logsPath = '/tmp/ci_logs.tar.gz';
-        execSync(`curl -sL "${logsLink.href}" -o ${logsPath}`);
+        const ext = logsLink.href.endsWith('.zst') ? '.tar.zst' : '.tar.gz';
+        const logsPath = options.downloadLogs !== true ? options.downloadLogs : `/tmp/ci_logs${ext}`;
+        execFileSync('curl', ['-sL', logsLink.href, '-o', logsPath]);
         console.log(`Logs saved to: ${logsPath}`);
 
-        // List contents
+        // List contents (tar auto-detects compression format with -tf)
         try {
           console.log('\nLogs archive contents (pytest logs):');
-          const contents = execSync(`tar -tzf ${logsPath} | grep -E "pytest.*\\.log$|pytest.*\\.jsonl$" | head -20`).toString();
+          const listing = execFileSync('tar', ['-tf', logsPath]).toString();
+          const contents = listing.split('\n').filter(l => /pytest.*\.(log|jsonl)$/.test(l)).slice(0, 20).join('\n');
           console.log(contents || '(no pytest logs found)');
         } catch (e) {
           // Ignore errors from grep/head
@@ -660,7 +675,7 @@ Options:
   --all            Show all test results (not just summary)
   --links          Show artifact links
   --cidb           Show CIDB links for failed tests
-  --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+  --download-logs [path]  Download logs to path (default: /tmp/ci_logs.tar.{gz,zst})
   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
   --credentials <user,password>  HTTP Basic Auth credentials
 
@@ -705,7 +720,12 @@ Examples:
         options.showCidb = true;
         break;
       case '--download-logs':
-        options.downloadLogs = true;
+        // Optional path argument: if next arg doesn't start with -- and isn't a URL, use it as path
+        if (i + 1 < args.length && !args[i + 1].startsWith('--') && !args[i + 1].startsWith('http')) {
+          options.downloadLogs = args[++i];
+        } else {
+          options.downloadLogs = true;
+        }
         break;
       case '--report':
         options.reportIndex = args[++i];

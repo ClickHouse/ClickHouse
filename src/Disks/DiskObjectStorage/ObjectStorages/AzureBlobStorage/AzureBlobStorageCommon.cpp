@@ -181,6 +181,21 @@ bool ContainerClientWrapper::IsClientForDisk() const
     return client.GetClickhouseOptions().IsClientForDisk;
 }
 
+BlobContainerBatch ContainerClientWrapper::CreateBatch() const
+{
+    return client.CreateBatch();
+}
+
+BlobBatchResultResponse ContainerClientWrapper::SubmitBatch(const BlobContainerBatch & batch) const
+{
+    return client.SubmitBatch(batch);
+}
+
+String ContainerClientWrapper::GetBlobPath(const String & blob_name) const
+{
+    return blob_prefix + blob_name;
+}
+
 String ConnectionParams::getConnectionURL() const
 {
     if (std::holds_alternative<ConnectionString>(auth_method))
@@ -268,6 +283,19 @@ static bool containerExists(const ContainerClient & client)
     {
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
+
+        /// Our HTTP client wraps transport-level failures (DNS, connection refused, etc.)
+        /// as InternalServerError. A transient network error should not prevent the server
+        /// from starting — assume the container exists and let actual I/O operations fail
+        /// with a clear error later if it doesn't.
+        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::InternalServerError)
+        {
+            LOG_WARNING(getLogger("AzureBlobStorageCommon"),
+                "Failed to check container existence: {}. Assuming the container exists.",
+                e.Message);
+            return true;
+        }
+
         throw;
     }
 }

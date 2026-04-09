@@ -324,7 +324,8 @@ class GH:
                     rex = re.compile(
                         f"{re.escape(start_tag)}.*{re.escape(end_tag)}", re.DOTALL
                     )
-                    body, _ = rex.subn(f"{start_tag}\n{tag_body}\n{end_tag}", body)
+                    replacement = f"{start_tag}\n{tag_body}\n{end_tag}"
+                    body, _ = rex.subn(lambda _: replacement, body)
                     if verbose:
                         print(
                             f"Updated existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
@@ -667,6 +668,7 @@ class GH:
         )
         info: str = ""
         comment: str = ""
+        extra_links: List[tuple] = dataclasses.field(default_factory=list)
 
         @classmethod
         def from_result(cls, result: Result, sha=""):
@@ -691,8 +693,8 @@ class GH:
                     for item in hlabels:
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
-                        if text and href:
-                            links.append(f"[{text}]({href})")
+                            if text and href:
+                                links.append(f"[{text}]({href})")
                     return ", ".join(links)
                 except Exception:
                     return ""
@@ -754,6 +756,13 @@ class GH:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]
                 print(f"NOTE: {remaining} more jobs not shown in PR comment")
+            # Collect links from jobs that have hlabels (e.g. keeper-stress Grafana links).
+            # Include regardless of success/failure so Grafana links always appear when keeper-stress runs.
+            for job_result in getattr(result, "results", []) or []:
+                if job_result.ext.get("hlabels"):
+                    links_md = extract_hlabels_info(job_result)
+                    if links_md:
+                        summary.extra_links.append((job_result.name, links_md))
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
@@ -769,7 +778,9 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-
+            if self.extra_links:
+                for job_name, links_md in self.extra_links:
+                    body += f"**{job_name}:** {links_md}\n"
             if self.failed_results:
                 if len(self.failed_results) > 15:
                     body += (
@@ -814,12 +825,52 @@ class GH:
 
 
 if __name__ == "__main__":
-    # test
-    GH.post_updateable_comment(
-        comment_tags_and_bodies={
-            "test": "foobar4",
-            "test3": "foobar33",
-        },
-        pr=81471,
-        repo="ClickHouse/ClickHouse",
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="GitHub PR comment helper")
+    subparsers = parser.add_subparsers(dest="command")
+
+    post_parser = subparsers.add_parser(
+        "post-or-update",
+        help="Post a new PR comment or update an existing one with the given tag",
     )
+    post_parser.add_argument(
+        "--tag",
+        required=True,
+        help="Tag identifying the comment section (e.g. 'review')",
+    )
+    post_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body",
+    )
+    post_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    post_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+    post_parser.add_argument(
+        "--only-update",
+        action="store_true",
+        help="Only update an existing comment; do not create a new one",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "post-or-update":
+        with open(args.body_file, "r", encoding="utf-8") as f:
+            body = f.read()
+        kwargs = dict(
+            comment_tags_and_bodies={args.tag: body},
+            only_update=args.only_update,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    else:
+        parser.print_help()
+        sys.exit(1)

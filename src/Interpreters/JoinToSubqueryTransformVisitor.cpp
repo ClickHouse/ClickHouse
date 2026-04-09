@@ -505,8 +505,7 @@ class UniqueShortNames
 public:
     /// We know that long names are unique (do not clashes with others).
     /// So we could make unique names base on this knolage by adding some unused prefix.
-    /// Add a heading underscore to make unique names valid for `isValidIdentifierBegin`
-    static constexpr const char * pattern = "_--";
+    static constexpr const char * pattern = "--";
 
     String longToShort(const String & long_name)
     {
@@ -605,8 +604,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 size_t count = countTablesWithColumn(tables, short_name);
                 const auto & table = tables[*table_pos];
 
-                /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
-                if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
+                if (count > 1 || aliases.contains(short_name))
                 {
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     const auto & unique_long_name = ident->name();
@@ -632,47 +630,9 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 restoreName(*ident, original_long_name, restored_names);
             }
             else if (got_alias)
-            {
-                String short_name = ident->shortName();
-                if (!isValidIdentifierBegin(short_name.at(0)))
-                {
-                    String original_long_name;
-                    if (public_identifiers.contains(ident))
-                        original_long_name = ident->name();
-
-                    const auto & table = tables[*table_pos];
-                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
-                    const auto & unique_long_name = ident->name();
-
-                    String unique_short_name = unique_names.longToShort(unique_long_name);
-                    ident->setShortName(unique_short_name);
-                    needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
-                    restoreName(*ident, original_long_name, restored_names);
-                }
-                else
-                    needed_columns[*table_pos].alias_clashes.emplace(ident->shortName());
-            }
+                needed_columns[*table_pos].alias_clashes.emplace(ident->shortName());
             else
-            {
-                String short_name = ident->shortName();
-                if (!isValidIdentifierBegin(short_name.at(0)))
-                {
-                    String original_long_name;
-                    if (public_identifiers.contains(ident))
-                        original_long_name = ident->name();
-
-                    const auto & table = tables[*table_pos];
-                    IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
-                    const auto & unique_long_name = ident->name();
-
-                    String unique_short_name = unique_names.longToShort(unique_long_name);
-                    ident->setShortName(unique_short_name);
-                    needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
-                    restoreName(*ident, original_long_name, restored_names);
-                }
-                else
-                    needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
-            }
+                needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
         }
     }
 

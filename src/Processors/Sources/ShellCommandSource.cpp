@@ -216,43 +216,50 @@ public:
 
                 if (res == 0)
                 {
-                    /// EOF on stdout - drain remaining stderr before throwing
-                    if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+                    /// EOF on stdout - drain remaining stderr before returning
+                    if (stderr_reaction != ExternalCommandStderrReaction::NONE
+                        && stderr_reaction != ExternalCommandStderrReaction::LOG)
                     {
                         static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
 
-                        /// Continue reading stderr until EOF or timeout
-                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
-                        while (current_size < MAX_STDERR_SIZE)
+                        while (true)
                         {
                             pfds[1].revents = 0;
                             int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
                             if (stderr_events <= 0)
                                 break;
 
-                            if (pfds[1].revents > 0)
-                            {
-                                if (stderr_read_buf == nullptr)
-                                    stderr_read_buf.reset(new char[BUFFER_SIZE]);
-                                ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
-                                if (stderr_res <= 0)
-                                    break;
+                            if (pfds[1].revents <= 0)
+                                break;
 
+                            if (stderr_read_buf == nullptr)
+                                stderr_read_buf.reset(new char[BUFFER_SIZE]);
+                            ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
+                            if (stderr_res <= 0)
+                                break;
+
+                            std::string_view str(stderr_read_buf.get(), stderr_res);
+                            if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+                            {
+                                size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                                if (current_size >= MAX_STDERR_SIZE)
+                                    break;
                                 if (!stderr_full_output)
                                     stderr_full_output.emplace();
-                                std::string_view str(stderr_read_buf.get(), stderr_res);
                                 size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - current_size);
                                 stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
-                                current_size = stderr_full_output->size();
                             }
-                            else
+                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                             {
-                                break;
+                                ssize_t to_insert = std::min(ssize_t(stderr_result_buf.reserve()), stderr_res);
+                                if (to_insert > 0)
+                                    stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + to_insert);
+                            }
+                            else if (stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
+                            {
+                                stderr_result_buf.insert(stderr_result_buf.end(), str.begin(), str.begin() + stderr_res);
                             }
                         }
-
-                        /// Don't throw here - let prepare() handle stderr exception after all reads complete
-                        /// This ensures we capture complete stderr and throw at the right time
                     }
                     break;
                 }
@@ -301,8 +308,21 @@ public:
     /// Check if stderr was accumulated (for THROW mode)
     bool hasStderr() const { return stderr_full_output.has_value(); }
 
-    /// Get accumulated stderr content
+    /// Get accumulated stderr content (for THROW mode)
     const String & getStderr() const { return *stderr_full_output; }
+
+    /// Get buffered stderr content from circular buffer (for LOG_FIRST/LOG_LAST modes)
+    /// Clears the buffer to prevent duplicate logging in destructor
+    String consumeBufferedStderr()
+    {
+        if (stderr_result_buf.empty())
+            return {};
+        String result;
+        result.reserve(stderr_result_buf.size());
+        result.append(stderr_result_buf.begin(), stderr_result_buf.end());
+        stderr_result_buf.clear();
+        return result;
+    }
 
 private:
     int stdout_fd;
@@ -579,17 +599,28 @@ namespace
 
                 if (check_exit_code)
                 {
-                    if (process_pool)
+                    try
                     {
-                        bool valid_command
-                            = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+                        if (process_pool)
+                        {
+                            bool valid_command
+                                = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
 
-                        // We can only wait for pooled commands when they are invalid.
-                        if (!valid_command)
+                            // We can only wait for pooled commands when they are invalid.
+                            if (!valid_command)
+                                command->wait();
+                        }
+                        else
                             command->wait();
                     }
-                    else
-                        command->wait();
+                    catch (Exception & e)
+                    {
+                        /// Enrich exit code exception with buffered stderr content (LOG_FIRST/LOG_LAST modes)
+                        String stderr_content = timeout_command_out.consumeBufferedStderr();
+                        if (!stderr_content.empty())
+                            e.addMessage("Stderr: {}", stderr_content);
+                        throw;
+                    }
                 }
 
                 rethrowExceptionDuringSendDataIfNeeded();

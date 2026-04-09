@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Test for apply_row_policy_after_final setting with ReplacingMergeTree, https://github.com/ClickHouse/ClickHouse/issues/90986
 
 DROP TABLE IF EXISTS tab;
@@ -165,6 +164,7 @@ DROP ROW POLICY pol_part ON tab_part;
 DROP TABLE tab_part;
 
 SELECT '';
+
 SELECT '= WHERE + FINAL must not prune partitions with non-sorting-key partition columns =';
 
 DROP TABLE IF EXISTS tab_where;
@@ -197,6 +197,28 @@ SELECT * FROM tab_safe FINAL WHERE x != 1 ORDER BY x;
 DROP TABLE tab_safe;
 
 SELECT '';
+
+SELECT '= row policy on toDate(time) with ORDER BY toDate(time) — prewhere should NOT be deferred =';
+
+DROP TABLE IF EXISTS tab_todate_policy;
+DROP ROW POLICY IF EXISTS pol_todate ON tab_todate_policy;
+
+CREATE TABLE tab_todate_policy (time DateTime, y String, version UInt32)
+ENGINE = ReplacingMergeTree(version) ORDER BY toDate(time);
+
+INSERT INTO tab_todate_policy VALUES ('2024-01-01 10:00:00', 'aaa', 1), ('2024-01-02 12:00:00', 'bbb', 1);
+INSERT INTO tab_todate_policy VALUES ('2024-01-01 11:00:00', 'ccc', 2), ('2024-01-02 13:00:00', 'ddd', 2);
+
+CREATE ROW POLICY pol_todate ON tab_todate_policy USING toDate(time) = '2024-01-01' TO ALL;
+
+SET apply_row_policy_after_final = 1;
+-- rp is over sorting key toDate(time), so only row policy itself should be deferred, not prewhere
+SELECT '--- toDate(time) row policy: only row filter deferred, not prewhere';
+SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab_todate_policy FINAL PREWHERE y != 'ddd' ORDER BY time) WHERE explain LIKE '%Deferred%' SETTINGS enable_analyzer=1;
+
+DROP ROW POLICY pol_todate ON tab_todate_policy;
+SET apply_row_policy_after_final = 0;
+DROP TABLE tab_todate_policy;
 SELECT '= compound row policy: sorting-key atom should be used for index analysis =';
 
 DROP TABLE IF EXISTS tab_compound;

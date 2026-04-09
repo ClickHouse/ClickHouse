@@ -60,7 +60,11 @@ cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_start |
 
 clickhouse-client --query "CREATE DATABASE datasets"
 clickhouse-client < /repo/tests/docker_scripts/create.sql
+bash /repo/tests/docker_scripts/create_tpcds.sh
+bash /repo/tests/docker_scripts/create_tpch.sh
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
 
@@ -86,6 +90,8 @@ start_server || { echo "Failed to start server"; exit 1; }
 clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
+clickhouse-client --query "SHOW TABLES FROM tpcds"
+clickhouse-client --query "SHOW TABLES FROM tpch"
 clickhouse-client --query "SHOW TABLES FROM test"
 
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
@@ -204,6 +210,9 @@ clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_u
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
+# Drop `tpch` before the storage policy switch below. Its tables live on the `default` disk which becomes unavailable under
+# `azure_cache`/`s3_cache`, preventing the server from starting. `tpcds` is not dropped because web disk survives policy changes.
+clickhouse-client --query "DROP DATABASE IF EXISTS tpch SYNC"
 
 clickhouse-client --query "SHOW TABLES FROM test"
 set -e
@@ -244,6 +253,11 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_T
 fi
 
 
+# Disable experimental transactions support.
+# TODO: Enable back after the issue with `assertHasValidVersionMetadata` will be fixed:
+# https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
+rm -f /etc/clickhouse-server/config.d/transactions.xml
+
 sed -i.tmp "s|<level>trace</level>|<level>test</level>|" /etc/clickhouse-server/config.d/logger_trace.xml
 
 if [ "$cache_policy" = "SLRU" ]; then
@@ -251,7 +265,7 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 # Randomize async_load_databases
-if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
+if [ $((RANDOM % 2)) -eq 0 ]; then
     sudo echo "<clickhouse><async_load_databases>false</async_load_databases></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
@@ -280,7 +294,9 @@ unset "${!THREAD_@}"
 # running with fault injection.
 rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
-start_server || { echo "Failed to start server"; exit 1; }
+# Use a larger timeout for the post-stress restart: under sanitizers with
+# async_load_databases=false the server may need minutes to load all tables.
+start_server 30 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
