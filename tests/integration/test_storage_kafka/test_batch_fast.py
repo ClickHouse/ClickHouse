@@ -1579,27 +1579,56 @@ def test_kafka_commit_on_block_write(kafka_cluster, create_query_generator):
         check_callback=lambda res: int(res) >= 100,
     )
 
+    # Stop the producer and wait for it to finish.
+    # This finalizes i[0] to the exact number of produced messages.
     cancel.set()
-
-    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
-
-    instance.query(create_query)
     kafka_thread.join()
 
+    # Wait for ALL produced messages to be consumed.
     instance.query_with_retry(
         f"SELECT uniqExact(key) FROM test.{kafka_table}_view",
         sleep_time=1,
+        retry_count=60,
         check_callback=lambda res: int(res) >= i[0],
     )
 
-    result = int(instance.query(f"SELECT count() == uniqExact(key) FROM test.{kafka_table}_view"))
+    # Wait for the streaming cycle to complete and commit offsets.
+    # "Stream(s) stalled. Rescheduling" is logged by threadFunc AFTER
+    # streamToViews returns (which includes the offset commit).
+    stalled_re_count = int(
+        instance.count_in_log(f"{kafka_table}.*stalled.*Rescheduling").strip()
+    )
+    instance.wait_for_log_line(
+        f"{kafka_table}.*stalled.*Rescheduling",
+        timeout=60,
+        repetitions=stalled_re_count + 1,
+    )
+
+    # Now offsets are committed. Drop and recreate the table.
+    instance.query(f"DROP TABLE test.{kafka_table} SYNC")
+    instance.query(create_query)
+
+    # Wait for the recreated consumer to poll and find no new messages.
+    stalled_re_count2 = int(
+        instance.count_in_log(f"{kafka_table}.*stalled.*Rescheduling").strip()
+    )
+    instance.wait_for_log_line(
+        f"{kafka_table}.*stalled.*Rescheduling",
+        timeout=60,
+        repetitions=stalled_re_count2 + 1,
+    )
+
+    # Verify no duplicates.
+    result = int(
+        instance.query(
+            f"SELECT count() == uniqExact(key) FROM test.{kafka_table}_view"
+        )
+    )
 
     instance.query(f"""
         DROP TABLE test.{kafka_table}_consumer;
         DROP TABLE test.{kafka_table}_view;
     """)
-
-    kafka_thread.join()
 
     assert result == 1, "Messages from kafka get duplicated!"
 
