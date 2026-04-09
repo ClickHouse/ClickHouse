@@ -231,8 +231,18 @@ LRUFileCachePriority::iterateImpl(
             {
                 case Entry::State::Active:
                 {
-                    /// TODO: Inroduce a separate pre-Active state for zero size valid entries
+                    /// A newly added entry may have size 0 before the first
+                    /// space reservation completes. It is not yet evictable.
                     return entry.size > 0;
+                }
+                case Entry::State::PreActive:
+                {
+                    /// Entry is being moved between SLRU queues. Size may already be
+                    /// non-zero, but the entry is not evictable until `SLRUIterator::setIterator`
+                    /// transitions it to Active atomically with the iterator pointer update.
+                    /// For SLRU transitions `size > 0` alone is not a sufficient guard, because
+                    /// the SLRUIterator might still point to the old entry.
+                    return false;
                 }
                 case Entry::State::Invalidated:
                 {
