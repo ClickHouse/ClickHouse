@@ -142,10 +142,26 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
     String version_str;
     /// v<V>.metadata.json
     if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    {
+        auto dot_pos = file_name.find_first_of('.');
+        if (dot_pos == String::npos || dot_pos <= 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
+        version_str = String(file_name.begin() + 1, file_name.begin() + dot_pos);
+    }
     /// <V>-<random-uuid>.metadata.json
     else
-        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+    {
+        auto dash_pos = file_name.find_first_of('-');
+        if (dash_pos == String::npos || dash_pos == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
+        version_str = String(file_name.begin(), file_name.begin() + dash_pos);
+    }
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
