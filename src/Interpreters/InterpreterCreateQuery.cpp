@@ -2250,6 +2250,16 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
             if (if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
             {
                 create.setTable(target_table);
+                auto drop_context = make_drop_context();
+                try
+                {
+                    InterpreterDropQuery(ast_drop, drop_context).execute();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
+                }
+
                 return {};
             }
             throw;
