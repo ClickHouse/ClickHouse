@@ -28,7 +28,7 @@ groupFormat(format)(x, y, ...)
 
 ## Returned value {#returned-value}
 
-- A [String](../../../sql-reference/data-types/string.md) containing the formatted output for the group.
+- A [String](../../data-types/string.md) containing the formatted output for the group.
 
 :::note
 Column names in the formatted output are generated as `c1`, `c2`, ... in the order of arguments.
