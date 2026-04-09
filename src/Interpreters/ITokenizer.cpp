@@ -470,14 +470,15 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
         });
 }
 
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & col, size_t offset, size_t rows_read)
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
 {
     auto tokens_data = ColumnString::create();
-    auto tokens_offsets_col = ColumnArray::ColumnOffsets::create();
-    tokens_offsets_col->reserve(rows_read);
+    auto tokens_offsets = ColumnArray::ColumnOffsets::create();
+    tokens_offsets->reserve(rows);
+
     size_t total_tokens = 0;
 
-    auto tokenizeDoc = [&](std::string_view doc)
+    auto tokenize = [&](std::string_view doc)
     {
         forEachToken(tokenizer, doc.data(), doc.size(),
             [&](const char * token_start, size_t token_length)
@@ -488,34 +489,34 @@ ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & col, siz
             });
     };
 
-    if (const auto * col_array = typeid_cast<const ColumnArray *>(&col))
+    if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
     {
         const IColumn & data = col_array->getData();
         const IColumn::Offsets & src_offsets = col_array->getOffsets();
         const bool data_is_nullable = data.isNullable();
 
-        for (size_t i = offset; i < offset + rows_read; ++i)
+        for (size_t i = from; i < from + rows; ++i)
         {
             for (size_t j = src_offsets[i - 1]; j < src_offsets[i]; ++j)
             {
                 if (data_is_nullable && data.isNullAt(j))
                     continue;
-                tokenizeDoc(data.getDataAt(j));
+                tokenize(data.getDataAt(j));
             }
-            tokens_offsets_col->getData().push_back(total_tokens);
+            tokens_offsets->getData().push_back(total_tokens);
         }
     }
     else
     {
-        for (size_t i = offset; i < offset + rows_read; ++i)
+        for (size_t i = from; i < from + rows; ++i)
         {
-            if (!col.isNullAt(i))
-                tokenizeDoc(col.getDataAt(i));
-            tokens_offsets_col->getData().push_back(total_tokens);
+            if (!input.isNullAt(i))
+                tokenize(input.getDataAt(i));
+            tokens_offsets->getData().push_back(total_tokens);
         }
     }
 
-    return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets_col));
+    return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
 }
 
 bool AsciiCJKTokenizer::nextInString(

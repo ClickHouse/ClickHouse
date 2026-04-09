@@ -507,9 +507,8 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
 
-/// Tokenizes rows_read rows of col starting at offset and returns a ColumnArray(String)
-/// with one sub-array per row containing the tokens.
-/// col may be a flat String column or a ColumnArray(String).
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & col, size_t offset, size_t rows_read);
+/// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
+/// `input` can be a String column or a ColumnArray(String).
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
 
 }
