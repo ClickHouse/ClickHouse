@@ -472,7 +472,6 @@ enum class SkipUnavailableShardsMode : uint8_t
 
 DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
 
-
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
