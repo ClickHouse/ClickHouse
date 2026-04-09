@@ -304,6 +304,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         scope,
         true /*allow_lambda_expression*/,
         true /*allow_table_expression*/,
+        false /*ignore_alias*/,
         allow_niladic_functions
     );
 
@@ -351,6 +352,7 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         scope,
         true /*allow_lambda_expression*/,
         true /*allow_table_expression*/,
+        false /*ignore_alias*/,
         allow_niladic_functions);
 
     if (only_analyze)

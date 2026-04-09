@@ -1,5 +1,7 @@
 ---
 description: 'Documentation for the `UNIQUE` operator'
+sidebar_label: 'UNIQUE'
+sidebar_position: 3
 slug: /sql-reference/operators/unique
 title: 'UNIQUE'
 doc_type: 'reference'
