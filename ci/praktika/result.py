@@ -1057,7 +1057,7 @@ class _ResultS3:
         result.dump()
         env = _Environment.get()
         result_file_path = result.file_name()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{Path(result_file_path).name}"
         if clean:
             S3.delete(s3_path)
         # gzip is supported by most browsers
@@ -1082,14 +1082,14 @@ class _ResultS3:
     def copy_result_from_s3(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{file_name}"
         S3.copy_file_from_s3(s3_path=s3_path, local_path=local_path)
 
     @classmethod
     def copy_result_from_s3_with_version(cls, local_path):
         env = _Environment.get()
         file_name = Path(local_path).name
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}"
         s3_file = f"{s3_path}/{file_name}"
 
         return S3.copy_file_from_s3_with_version(s3_path=s3_file, local_path=local_path)
@@ -1099,7 +1099,7 @@ class _ResultS3:
         result.dump()
         filename = Path(result.file_name()).name
         env = _Environment.get()
-        s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        s3_path = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/"
         s3_file = f"{s3_path}{filename}"
 
         return S3.copy_file_to_s3_with_version(
@@ -1176,7 +1176,7 @@ class _ResultS3:
             if asset_paths:
                 common_root = os.path.commonpath([p.parent for p in asset_paths])
                 env = _Environment.get()
-                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
+                base_s3_prefix = f"{Settings.S3_REPORT_BUCKET}/{env.get_s3_prefix()}/{s3_subprefix}".replace(
                     "//", "/"
                 )
 
