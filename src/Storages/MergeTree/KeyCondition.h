@@ -402,11 +402,11 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    bool extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
-    bool extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
-    bool extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
-    bool extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out);
-    bool extractBinaryComparisonAtoms(
+    void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
+    void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
+    void extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
+    void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out);
+    void extractBinaryComparisonAtoms(
         const RPNBuilderTreeNode & node,
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
@@ -496,13 +496,13 @@ private:
         bool & out_is_injective) const;
 
     /// If it's possible to make one or more RPNElements that will filter values (possibly tuples) by a set,
-    /// append them to `out` and return true. (If multiple atoms are produced, RPNBuilder will AND them.)
-    bool tryPrepareSetAtomsForIn(
+    /// append them to `out`. (If multiple atoms are produced, RPNBuilder will AND them.)
+    void tryPrepareSetAtomsForIn(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPN & out,
         bool allow_constant_transformation);
-    bool tryPrepareSetAtomsForHas(
+    void tryPrepareSetAtomsForHas(
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         RPN & out,

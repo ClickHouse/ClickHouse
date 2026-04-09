@@ -496,8 +496,8 @@ namespace
 {
 
 template <typename RPNElement>
-typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction makeExtractAtomsFromTreeFunction(
-    const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
+typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction
+makeExtractAtomsFromTreeFunction(const typename RPNBuilder<RPNElement>::ExtractAtomFromTreeFunction & extract_atom_from_tree_function)
 {
     return [&](const RPNBuilderTreeNode & node, typename RPNBuilder<RPNElement>::RPNElements & out)
     {
@@ -505,13 +505,15 @@ typename RPNBuilder<RPNElement>::ExtractAtomsFromTreeFunction makeExtractAtomsFr
 
         RPNElement element;
         if (!extract_atom_from_tree_function(node, element))
-            return false;
+        {
+            /// The callback may have pre-set fields (e.g. selectivity, finalized) on `element`
+            /// even when returning false. Preserve the element as FUNCTION_UNKNOWN.
+            element.function = RPNElement::FUNCTION_UNKNOWN;
+        }
 
         out.emplace_back(std::move(element));
-        return true;
     };
 }
-
 }
 
 template <typename RPNElement>
@@ -600,7 +602,9 @@ void RPNBuilder<RPNElement>::traverseTree(
     }
 
     RPNElements atoms;
-    if (extract_atoms_from_tree_function(node, atoms) && !atoms.empty())
+    extract_atoms_from_tree_function(node, atoms);
+
+    if (!atoms.empty())
     {
         for (size_t i = 0; i < atoms.size(); ++i)
         {

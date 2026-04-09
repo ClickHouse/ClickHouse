@@ -971,7 +971,7 @@ KeyCondition::KeyCondition(
 
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, std::vector<RPNElement> & out)
     {
-        return extractAtomsFromTree(node, info, out);
+        extractAtomsFromTree(node, info, out);
     });
 
     rpn = std::move(builder).extractRPN();
@@ -1996,7 +1996,7 @@ String getExprNameOrEmptyForSetWrapping(const RPNBuilderTreeNode & node, const N
 }
 }
 
-bool KeyCondition::tryPrepareSetAtomsForIn(
+void KeyCondition::tryPrepareSetAtomsForIn(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
     RPN & out,
@@ -2027,20 +2027,20 @@ bool KeyCondition::tryPrepareSetAtomsForIn(
         && !(
             left_args_count == 1 && allow_constant_transformation
             && !getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names).empty()))
-        return false;
+        return;
 
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
     auto future_set = right_arg.tryGetPreparedSet();
     if (!future_set)
-        return false;
+        return;
 
     auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
     if (!prepared_set)
-        return false;
+        return;
 
     /// The index can be prepared if the elements of the set were saved in advance.
     if (!prepared_set->hasExplicitSetElements())
-        return false;
+        return;
 
     /** Try to convert set columns to primary key columns.
       * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
@@ -2215,10 +2215,9 @@ bool KeyCondition::tryPrepareSetAtomsForIn(
         }
     }
 
-    return !out.empty();
 }
 
-bool KeyCondition::tryPrepareSetAtomsForHas(
+void KeyCondition::tryPrepareSetAtomsForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
     RPN & out,
@@ -2242,20 +2241,20 @@ bool KeyCondition::tryPrepareSetAtomsForHas(
         key_arg, indexes_mapping, set_transforming_dags, data_types, key_args_count, info, set_is_relaxed);
 
     if (indexes_mapping.empty())
-        return false;
+        return;
 
     /// Check if array argument is usable
     const RPNBuilderTreeNode & array_arg = func.getArgumentAt(0);
 
     /// First argument of has() must be a constant array
     if (!array_arg.isConstant())
-        return false;
+        return;
 
     auto column = array_arg.getConstantColumn();
 
     const auto * array_data_type = typeid_cast<const DataTypeArray *>(column.type.get());
     if (!array_data_type)
-        return false;
+        return;
 
     const auto * const_column = assert_cast<const ColumnConst *>(column.column.get());
     const auto * array_col = assert_cast<const ColumnArray *>(const_column->getDataColumnPtr().get());
@@ -2267,7 +2266,7 @@ bool KeyCondition::tryPrepareSetAtomsForHas(
     {
         /// has([], x) is always false – we can mark the condition as always false.
         out.emplace_back(RPNElement::ALWAYS_FALSE);
-        return true;
+        return;
     }
 
     /// We do not need to unpack tuples inside, because `tryPrepareSetColumnsForIndex` will do it
@@ -2408,7 +2407,7 @@ bool KeyCondition::tryPrepareSetAtomsForHas(
         }
     }
 
-    return !out.empty();
+
 }
 
 
@@ -3152,7 +3151,7 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
-bool KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
 {
     out.clear();
 
@@ -3162,16 +3161,16 @@ bool KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         /// If the inferred result type is Nullable(Nothing) at the query analysis stage,
         /// we don't analyze this node further as its condition will always be false.
         out.emplace_back(RPNElement::ALWAYS_FALSE);
-        return true;
+        return;
     }
 
     if (node.isFunction())
-        return extractAtomsFromFunction(node, info, out);
-
-    return extractAtomsFromConstant(node, out);
+        extractAtomsFromFunction(node, info, out);
+    else
+        extractAtomsFromConstant(node, out);
 }
 
-bool KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
 {
     /** Functions < > = != <= >= in `notIn` isNull isNotNull, where one argument is a constant, and the other is one of columns of key,
       *  or itself, wrapped in a chain of possibly-monotonic functions,
@@ -3186,10 +3185,13 @@ bool KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     const std::string func_name = func.getFunctionName();
 
     if (atom_map.find(func_name) == std::end(atom_map))
-        return false;
+        return;
 
     if (func_name == "pointInPolygon")
-        return extractPointInPolygonAtom(func, func_name, out);
+    {
+        extractPointInPolygonAtom(func, func_name, out);
+        return;
+    }
 
     const bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
 
@@ -3208,14 +3210,14 @@ bool KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         MonotonicFunctionsChain chain;
         if (!isKeyPossiblyWrappedByMonotonicFunctions(
                 func.getArgumentAt(0), info, key_column_num, argument_num_of_space_filling_curve, key_expr_type, chain))
-            return false;
+            return;
 
         if (key_column_num == static_cast<size_t>(-1))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "`key_column_num` wasn't initialized. It is a bug.");
 
         /// empty/notEmpty produce a meaningful range only for String key columns.
         if ((func_name == "empty" || func_name == "notEmpty") && !isString(*key_expr_type))
-            return false;
+            return;
 
         RPNElement element;
         element.key_columns.push_back(key_column_num);
@@ -3225,13 +3227,13 @@ bool KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         Field dummy_value;
         const auto atom_it = atom_map.find(func_name);
         if (!atom_it->second(element, dummy_value))
-            return false;
+            return;
 
         if (element.relaxed)
             relaxed = true;
 
         out.emplace_back(std::move(element));
-        return true;
+        return;
     }
 
     /// Binary functions with a constant, key expression, or supported set patterns.
@@ -3240,53 +3242,59 @@ bool KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
         /// IN / NOT IN
         if (functionIsInOrGlobalInOperator(func_name))
         {
-            if (!tryPrepareSetAtomsForIn(func, info, out, allow_constant_transformation))
-                return false;
+            tryPrepareSetAtomsForIn(func, info, out, allow_constant_transformation);
+            if (out.empty())
+                return;
 
             Field dummy_value;
             const auto atom_it = atom_map.find(func_name);
             for (auto & element : out)
             {
                 if (!atom_it->second(element, dummy_value))
-                    return false;
+                {
+                    out.clear();
+                    return;
+                }
 
                 if (element.relaxed)
                     relaxed = true;
             }
-            return true;
+            return;
         }
 
         /// has(const_array, key)
         if (func_name == "has")
         {
-            if (!tryPrepareSetAtomsForHas(func, info, out, allow_constant_transformation))
-                return false;
+            tryPrepareSetAtomsForHas(func, info, out, allow_constant_transformation);
+            if (out.empty())
+                return;
 
             /// Found empty array constant in has([], x) -> always false.
             if (out.size() == 1 && out[0].function == RPNElement::ALWAYS_FALSE)
-                return true;
+                return;
 
             Field dummy_value;
             const auto atom_it = atom_map.find(func_name);
             for (auto & element : out)
             {
                 if (!atom_it->second(element, dummy_value))
-                    return false;
+                {
+                    out.clear();
+                    return;
+                }
 
                 if (element.relaxed)
                     relaxed = true;
             }
-            return true;
+            return;
         }
 
-        return extractBinaryComparisonAtoms(
+        extractBinaryComparisonAtoms(
             node, func, info, func_name, func_name, allow_constant_transformation, out);
     }
-
-    return false;
 }
 
-bool KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out)
+void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, const std::string & func_name, RPN & out)
 {
     /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
     /// For polygons with holes, we will ignore the holes for the index analysis.
@@ -3294,17 +3302,17 @@ bool KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
 
     const size_t num_args = func.getArgumentsSize();
     if (num_args < 2)
-        return false;
+        return;
 
     Field point_field;
     DataTypePtr point_type;
     if (func.getArgumentAt(0).tryGetConstant(point_field, point_type))
-        return false;
+        return;
 
     Field polygon_field;
     DataTypePtr polygon_type;
     if (!func.getArgumentAt(1).tryGetConstant(polygon_field, polygon_type))
-        return false;
+        return;
 
     const auto atom_it = atom_map.find(func_name);
 
@@ -3314,18 +3322,18 @@ bool KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
 
     /// TODO: support index analysis for first argument of Point/Tuple type.
     if (!func.getArgumentAt(0).isFunction())
-        return false;
+        return;
 
     auto first_argument = func.getArgumentAt(0).toFunctionNode();
     if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
-        return false;
+        return;
 
     for (size_t i = 0; i < 2; ++i)
     {
         auto name = first_argument.getArgumentAt(i).getColumnName();
         auto it = key_columns.find(name);
         if (it == key_columns.end())
-            return false;
+            return;
         element.key_columns.push_back(it->second);
     }
 
@@ -3336,31 +3344,30 @@ bool KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
     for (const auto & elem : polygon_field.safeGet<Array>())
     {
         if (elem.getType() != Field::Types::Tuple)
-            return false;
+            return;
 
         const auto & elem_tuple = elem.safeGet<Tuple>();
         if (elem_tuple.size() != 2)
-            return false;
+            return;
 
         auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[0]);
         auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), elem_tuple[1]);
         element.polygon->ring.emplace_back(x, y);
     }
 
-        boost::geometry::correct(element.polygon->ring);
+    boost::geometry::correct(element.polygon->ring);
 
     /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
     /// costly `intersects` checks
     boost::geometry::envelope(element.polygon->ring, element.polygon->bbox);
 
     if (!atom_it->second(element, polygon_field))
-        return false;
+        return;
 
     out.emplace_back(std::move(element));
-    return true;
 }
 
-bool KeyCondition::extractBinaryComparisonAtoms(
+void KeyCondition::extractBinaryComparisonAtoms(
     const RPNBuilderTreeNode & node,
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -3379,13 +3386,13 @@ bool KeyCondition::extractBinaryComparisonAtoms(
     else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
         const_arg_pos = 0;
     else
-        return false;
+        return;
 
     /// If the const operand is NULL, the atom will be always false.
     if (const_value.isNull())
     {
         out.emplace_back(RPNElement::ALWAYS_FALSE);
-        return true;
+        return;
     }
 
     const size_t key_arg_pos = 1 - const_arg_pos;
@@ -3398,22 +3405,22 @@ bool KeyCondition::extractBinaryComparisonAtoms(
     if (const_value.isNaN())
     {
         if (key_arg.isNullable())
-            return false;
+            return;
 
         if (func_name == "notEquals")
         {
             out.emplace_back(RPNElement::ALWAYS_TRUE);
-            return true;
+            return;
         }
 
         if (func_name == "equals")
         {
             out.emplace_back(RPNElement::ALWAYS_FALSE);
-            return true;
+            return;
         }
 
         /// For other comparison operators, skip building the atom.
-        return false;
+        return;
     }
 
     struct RegularAtomCandidate
@@ -3516,13 +3523,13 @@ bool KeyCondition::extractBinaryComparisonAtoms(
     }
 
     if (candidates.empty())
-        return false;
+        return;
 
     /// Replace <const> <sign> <data> to <data> <-sign> <const>.
     /// This is shared between all candidates.
     std::string base_func_name = func_name;
     if (key_arg_pos == 1 && !invertComparisonForSwappedArguments(base_func_name))
-        return false;
+        return;
 
     struct NormalizedCandidate
     {
@@ -3689,39 +3696,24 @@ bool KeyCondition::extractBinaryComparisonAtoms(
             has_atom_for_key_column[candidate.key_column_num] = true;
     }
 
-    return !out.empty();
 }
 
-bool KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out)
+void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out)
 {
     Field const_value;
     DataTypePtr const_type;
     if (!node.tryGetConstant(const_value, const_type))
-        return false;
+        return;
 
     /// For cases where it says, for example, `WHERE 0 AND something`
     if (const_value.isNull())
-    {
         out.emplace_back(RPNElement::ALWAYS_FALSE);
-        return true;
-    }
-    if (const_value.getType() == Field::Types::UInt64)
-    {
+    else if (const_value.getType() == Field::Types::UInt64)
         out.emplace_back(const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
-        return true;
-    }
-    if (const_value.getType() == Field::Types::Int64)
-    {
+    else if (const_value.getType() == Field::Types::Int64)
         out.emplace_back(const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
-        return true;
-    }
-    if (const_value.getType() == Field::Types::Float64)
-    {
+    else if (const_value.getType() == Field::Types::Float64)
         out.emplace_back(const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
-        return true;
-    }
-
-    return false;
 }
 
 

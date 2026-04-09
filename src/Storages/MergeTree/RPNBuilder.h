@@ -194,9 +194,9 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   *
-  * Alternatively, client may provide ExtractAtomsFromTreeFunction that returns a list of one or more RPNElements
+  * Alternatively, client may provide ExtractAtomsFromTreeFunction that populates a list of one or more RPNElements
   * corresponding to a leaf node (atoms). If the list has more than one element, RPNBuilder will AND them together
-  * (i.e. emit `atom0 atom1 AND atom2 AND ...` in RPN).
+  * (i.e. emit `atom0 atom1 AND atom2 AND ...` in RPN). An empty list means the node could not be converted.
  */
 template <typename RPNElement>
 class RPNBuilder
@@ -204,7 +204,7 @@ class RPNBuilder
 public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
-    using ExtractAtomsFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElements & out)>;
+    using ExtractAtomsFromTreeFunction = std::function<void (const RPNBuilderTreeNode & node, RPNElements & out)>;
 
     explicit RPNBuilder(
         const ActionsDAG::Node * filter_actions_dag_node,
