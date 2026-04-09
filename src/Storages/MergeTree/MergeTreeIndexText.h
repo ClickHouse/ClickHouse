@@ -78,6 +78,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
+    size_t phrase_search = 0;
     ASTPtr preprocessor;
 };
 

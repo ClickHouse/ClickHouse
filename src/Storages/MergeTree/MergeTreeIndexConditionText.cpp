@@ -264,6 +264,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
         {RPNElement::FUNCTION_EQUALS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_MATCH_PHRASE,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_MATCH});
 }
