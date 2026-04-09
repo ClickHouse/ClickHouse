@@ -2132,44 +2132,18 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 
     /// If LHS is a single value (not a tuple), also add set-wrapping atoms for all PK components
     /// that are deterministic functions of that value (by transforming the set elements).
+    /// For each additional key column, extract a `DeterministicKeyTransformDag` and let
+    /// `tryPrepareSetColumnsForIndex` + `applyDeterministicDagToColumn` handle the transformation.
     if (left_args_count == 1 && allow_constant_transformation)
     {
         const String expr_name = getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names);
         if (!expr_name.empty())
         {
-            auto candidates = extractMonotonicFunctionsChainsFromKey(
-                left_arg.getTreeContext().getQueryContext(),
-                expr_name,
-                info,
-                [](const IFunctionBase & func_base, const IDataType &) { return func_base.isDeterministic(); });
+            auto candidates = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
 
-            std::ranges::sort(candidates, [](const auto & lhs, const auto & rhs) { return lhs.key_column_num < rhs.key_column_num; });
-
-            for (const auto & candidate : candidates)
+            for (auto & candidate : candidates)
             {
                 if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
-                    continue;
-
-                /// Pre-transform the set columns using the monotonic function chain,
-                /// then build an atom with no further transformation (nullopt dag).
-                auto transformed_set_columns = set_columns;
-                auto transformed_set_types = set_types;
-                bool transform_ok = true;
-                for (size_t i = 0; i < transformed_set_columns.size(); ++i)
-                {
-                    ColumnPtr out_column;
-                    DataTypePtr out_type;
-                    if (!applyFunctionChainToColumn(
-                            transformed_set_columns[i], transformed_set_types[i],
-                            candidate.functions_chain, out_column, out_type))
-                    {
-                        transform_ok = false;
-                        break;
-                    }
-                    transformed_set_columns[i] = std::move(out_column);
-                    transformed_set_types[i] = std::move(out_type);
-                }
-                if (!transform_ok)
                     continue;
 
                 MergeTreeSetIndex::KeyTuplePositionMapping mapping;
@@ -2180,16 +2154,17 @@ void KeyCondition::tryPrepareSetAtomsForIn(
                 candidate_indexes_mapping.emplace_back(std::move(mapping));
 
                 std::vector<std::optional<DeterministicKeyTransformDag>> candidate_dags;
-                candidate_dags.emplace_back(std::nullopt);
+                candidate_dags.emplace_back(std::move(candidate.dag));
 
                 DataTypes candidate_data_types;
                 candidate_data_types.emplace_back(candidate.key_column_type);
 
-                /// Build atom directly using pre-transformed columns (cannot use try_build_atom
-                /// because set_columns/set_types are const).
+                auto candidate_set_columns = set_columns;
+                auto candidate_set_types = set_types;
+
                 if (!tryPrepareSetColumnsForIndex(
-                        transformed_set_columns,
-                        transformed_set_types,
+                        candidate_set_columns,
+                        candidate_set_types,
                         candidate_dags,
                         candidate_data_types,
                         candidate_indexes_mapping,
@@ -2198,7 +2173,7 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 
                 RPNElement candidate_element;
                 candidate_element.set_index = std::make_shared<MergeTreeSetIndex>(
-                    transformed_set_columns, std::move(candidate_indexes_mapping));
+                    candidate_set_columns, std::move(candidate_indexes_mapping));
 
                 const auto & adjusted = candidate_element.set_index->getIndexesMapping();
                 for (const auto & idx : adjusted)
@@ -2333,38 +2308,11 @@ void KeyCondition::tryPrepareSetAtomsForHas(
         const String expr_name = getExprNameOrEmptyForSetWrapping(key_arg, info.key_subexpr_names);
         if (!expr_name.empty())
         {
-            auto candidates = extractMonotonicFunctionsChainsFromKey(
-                key_arg.getTreeContext().getQueryContext(),
-                expr_name,
-                info,
-                [](const IFunctionBase & func_base, const IDataType &) { return func_base.isDeterministic(); });
+            auto candidates = extractAllDeterministicFunctionsDagsFromKey(expr_name, info);
 
-            std::ranges::sort(candidates, [](const auto & lhs, const auto & rhs) { return lhs.key_column_num < rhs.key_column_num; });
-
-            for (const auto & candidate : candidates)
+            for (auto & candidate : candidates)
             {
                 if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
-                    continue;
-
-                /// Pre-transform the set columns using the monotonic function chain.
-                auto transformed_set_columns = set_columns;
-                auto transformed_set_types = set_types;
-                bool transform_ok = true;
-                for (size_t i = 0; i < transformed_set_columns.size(); ++i)
-                {
-                    ColumnPtr out_column;
-                    DataTypePtr out_type;
-                    if (!applyFunctionChainToColumn(
-                            transformed_set_columns[i], transformed_set_types[i],
-                            candidate.functions_chain, out_column, out_type))
-                    {
-                        transform_ok = false;
-                        break;
-                    }
-                    transformed_set_columns[i] = std::move(out_column);
-                    transformed_set_types[i] = std::move(out_type);
-                }
-                if (!transform_ok)
                     continue;
 
                 MergeTreeSetIndex::KeyTuplePositionMapping mapping;
@@ -2375,39 +2323,41 @@ void KeyCondition::tryPrepareSetAtomsForHas(
                 candidate_indexes_mapping.emplace_back(std::move(mapping));
 
                 std::vector<std::optional<DeterministicKeyTransformDag>> candidate_dags;
-                candidate_dags.emplace_back(std::nullopt);
+                candidate_dags.emplace_back(std::move(candidate.dag));
 
                 DataTypes candidate_data_types;
                 candidate_data_types.emplace_back(candidate.key_column_type);
 
-                auto saved_set_columns = set_columns;
-                auto saved_set_types = set_types;
-                set_columns = std::move(transformed_set_columns);
-                set_types = std::move(transformed_set_types);
+                auto candidate_set_columns = set_columns;
+                auto candidate_set_types = set_types;
 
-                auto candidate_atom = try_build_atom(
-                    std::move(candidate_indexes_mapping),
-                    candidate_dags,
-                    candidate_data_types,
-                    /*args_count*/ 1);
+                if (!tryPrepareSetColumnsForIndex(
+                        candidate_set_columns,
+                        candidate_set_types,
+                        candidate_dags,
+                        candidate_data_types,
+                        candidate_indexes_mapping,
+                        /*args_count*/ 1))
+                    continue;
 
-                set_columns = std::move(saved_set_columns);
-                set_types = std::move(saved_set_types);
+                RPNElement candidate_element;
+                candidate_element.set_index = std::make_shared<MergeTreeSetIndex>(
+                    candidate_set_columns, std::move(candidate_indexes_mapping));
 
-                if (candidate_atom)
-                {
-                    candidate_atom->relaxed = true;
-                    for (size_t column_idx : candidate_atom->key_columns)
-                        if (column_idx < has_atom_for_key_column.size())
-                            has_atom_for_key_column[column_idx] = true;
+                const auto & adjusted = candidate_element.set_index->getIndexesMapping();
+                for (const auto & idx : adjusted)
+                    candidate_element.key_columns.push_back(idx.key_index);
 
-                    out.emplace_back(std::move(*candidate_atom));
-                }
+                candidate_element.relaxed = true;
+
+                for (size_t column_idx : candidate_element.key_columns)
+                    if (column_idx < has_atom_for_key_column.size())
+                        has_atom_for_key_column[column_idx] = true;
+
+                out.emplace_back(std::move(candidate_element));
             }
         }
     }
-
-
 }
 
 
