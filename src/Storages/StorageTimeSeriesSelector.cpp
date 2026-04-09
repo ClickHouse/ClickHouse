@@ -370,10 +370,16 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE id IN (SELECT id FROM (select_query_from_tags_table))
+        /// PREWHERE (id IN (SELECT id FROM (select_query_from_tags_table))) AND (timestamp >= min_time) AND (timestamp <= max_time)
+        ///
+        /// NOTE: We have to use PREWHERE and not WHERE here to make sure that tags are stored in ContextTimeSeriesTagsCollector before we use them.
+        /// Otherwise in case the result of timeSeriesSelector() is passed to timeSeriesIdToGroup() as following:
+        /// SELECT timeSeriesIdToGroup(id) AS group, timestamp, value FROM timeSeriesSelector(...)
+        /// ClickHouse may decide to parallelize and execute timeSeriesIdToGroup(id) before executing timeSeriesStoreTags()
+        /// which may cause exception "Unknown identifier".
         {
-            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
-            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
+            auto prewhere_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter));
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.

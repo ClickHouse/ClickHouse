@@ -390,6 +390,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+                res->coverage_test_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            break;
+        }
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
@@ -439,6 +446,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
         case Type::RESTART_DISK:
+        case Type::CLEAR_DISK_METADATA_CACHE:
+        case Type::WAIT_BLOBS_CLEANUP:
         {
             if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
@@ -662,12 +671,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (path_parser.parse(pos, ast, expected))
                 res->filesystem_cache_name = ast->as<ASTLiteral>()->value.safeGet<String>();
             if (!parseQueryWithOnCluster(res, pos, expected))
-                return false;
-            break;
-        }
-        case Type::CLEAR_DISK_METADATA_CACHE:
-        {
-            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
                 return false;
             break;
         }

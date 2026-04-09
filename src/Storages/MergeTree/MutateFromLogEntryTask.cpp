@@ -13,6 +13,8 @@
 namespace ProfileEvents
 {
     extern const Event DataAfterMutationDiffersFromReplica;
+    extern const Event MutationCommitMilliseconds;
+    extern const Event MutationTotalMilliseconds;
     extern const Event ReplicatedPartMutations;
 }
 
@@ -61,7 +63,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
         storage.writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch_ptr->elapsed(),
             entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), std::move(profile_counters_snapshot),
-            mutation_ids_for_log);
+            mutation_ids_for_log, {});
     };
 
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
@@ -228,7 +230,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log);
+        entry.new_part_name, new_part, future_mutated_part->parts, merge_mutate_entry.get(), {}, mutation_ids_for_log, {});
 
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
@@ -274,6 +276,8 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     mutate_task->updateProfileEvents();
     mutate_task.reset();
 
+    Stopwatch commit_watch;
+
     try
     {
         transaction_ptr->renameParts();
@@ -285,6 +289,9 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         {
             transaction_ptr->rollback();
 
+            UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+            ProfileEvents::increment(ProfileEvents::MutationCommitMilliseconds, commit_elapsed_ms);
+            ProfileEvents::increment(ProfileEvents::MutationTotalMilliseconds, commit_elapsed_ms);
             ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
 
             LOG_ERROR(log, "{}. Data after mutation is not byte-identical to data on another replicas. "
@@ -315,6 +322,10 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
     /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
          * This is not a problem, because in this case the entry will remain in the queue, and we will try again.
          */
+    UInt64 commit_elapsed_ms = commit_watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::MutationCommitMilliseconds, commit_elapsed_ms);
+    ProfileEvents::increment(ProfileEvents::MutationTotalMilliseconds, commit_elapsed_ms);
+
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
     write_part_log({});

@@ -2,7 +2,7 @@
 
 #if USE_NLP
 
-/// Embedded SQL definitions
+/// Embedded NLP data
 constexpr unsigned char resource_charset_zst[] =
 {
 #embed "../../contrib/nlp-data/charset.zst"
@@ -10,10 +10,6 @@ constexpr unsigned char resource_charset_zst[] =
 constexpr unsigned char resource_tonality_ru_zst[] =
 {
 #embed "../../contrib/nlp-data/tonality_ru.zst"
-};
-constexpr unsigned char resource_programming_zst[] =
-{
-#embed "../../contrib/nlp-data/programming.zst"
 };
 
 namespace DB
@@ -35,7 +31,6 @@ FrequencyHolder::FrequencyHolder()
 {
     loadEmotionalDict();
     loadEncodingsFrequency();
-    loadProgrammingFrequency();
 }
 
 void FrequencyHolder::loadEncodingsFrequency()
@@ -132,58 +127,6 @@ void FrequencyHolder::loadEmotionalDict()
         ++count;
     }
     LOG_TRACE(log, "Emotional dictionary was added. Word count: {}", std::to_string(count));
-}
-
-void FrequencyHolder::loadProgrammingFrequency()
-{
-    LoggerPtr log = getLogger("ProgrammingFrequency");
-
-    LOG_TRACE(log, "Loading embedded programming languages frequencies loading");
-
-    std::string_view resource(reinterpret_cast<const char *>(resource_programming_zst), std::size(resource_programming_zst));
-    if (resource.empty())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded programming languages frequencies");
-
-    String line;
-    String bigram;
-    Float64 frequency;
-    String programming_language;
-
-    auto buf = std::make_unique<ReadBufferFromMemory>(resource);
-    ZstdInflatingReadBuffer in(std::move(buf));
-
-    while (!in.eof())
-    {
-        readString(line, in);
-        in.ignore();
-
-        if (line.empty())
-            continue;
-
-        ReadBufferFromString buf_line(line);
-
-        // Start loading a new language
-        if (line.starts_with("// "))
-        {
-            // Skip "// "
-            buf_line.ignore(3);
-            readString(programming_language, buf_line);
-
-            Language lang;
-            lang.name = programming_language;
-            programming_freq.push_back(std::move(lang));
-        }
-        else
-        {
-            readStringUntilWhitespace(bigram, buf_line);
-            buf_line.ignore();
-            readFloatText(frequency, buf_line);
-
-            std::string_view ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
-            programming_freq.back().map[ref] = frequency;
-        }
-    }
-    LOG_TRACE(log, "Programming languages frequencies was added");
 }
 
 }

@@ -33,7 +33,7 @@ class ColumnLazy final : public COWHelper<IColumn, ColumnLazy>
 private:
     friend class COWHelper<IColumn, ColumnLazy>;
 
-    using CapturedColumns = std::vector<WrappedPtr>;
+    using CapturedColumns = VectorWithMemoryTracking<WrappedPtr>;
     CapturedColumns captured_columns;
     size_t s = 0;
 
@@ -109,7 +109,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

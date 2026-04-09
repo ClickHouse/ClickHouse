@@ -323,12 +323,13 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
+List of prefixes used for [custom settings](/operations/settings/query-level#custom_settings).
+Multiple prefixes should be separated by commas.
 
 **Example**
 
 ```xml
-<custom_settings_prefixes>custom_</custom_settings_prefixes>
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -610,7 +611,7 @@ A username and a password used to connect to other servers during [replication](
 
 :::note
 - By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
-- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
+- `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/client.md#configuration_files).
 - These credentials are common for replication via `HTTP` and `HTTPS`.
 :::
 

@@ -1,17 +1,21 @@
-#if defined(SANITIZE_COVERAGE)
+#if WITH_COVERAGE_DEPTH
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
-
 #include <base/coverage.h>
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+#include <Common/CoverageCollection.h>
+#endif
 
 
 namespace DB
@@ -22,29 +26,27 @@ namespace
 
 enum class Kind : uint8_t
 {
-    Current,
-    Cumulative,
-    All
+    Files,
+    LineStarts,
+    LineEnds,
 };
 
-/** If ClickHouse is build with coverage instrumentation, returns an array
-  * of currently accumulated (`coverageCurrent`)
-  * or accumulated since the startup (`coverageCumulative`)
-  * or all possible (`coverageAll`) unique code addresses.
+/** If ClickHouse is built with coverage instrumentation (WITH_COVERAGE_DEPTH=1), returns arrays
+  * of source files / line start numbers / line end numbers covered since the last reset.
   */
-class FunctionCoverage : public IFunction
+class FunctionCoverageLines : public IFunction
 {
 private:
     Kind kind;
 
 public:
+    explicit FunctionCoverageLines(Kind kind_) : kind(kind_) {}
+
     String getName() const override
     {
-        return kind == Kind::Current ? "coverage" : "coverageAll";
-    }
-
-    explicit FunctionCoverage(Kind kind_) : kind(kind_)
-    {
+        if (kind == Kind::Files) return "coverageCurrentFiles";
+        if (kind == Kind::LineStarts) return "coverageCurrentLineStarts";
+        return "coverageCurrentLineEnds";
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -52,111 +54,154 @@ public:
         return false;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
+    size_t getNumberOfArguments() const override { return 0; }
 
-    bool isDeterministic() const override
-    {
-        return false;
-    }
+    bool isDeterministic() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+        if (kind == Kind::Files)
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto coverage_table = kind == Kind::Current
-            ? getCurrentCoverage()
-            : (kind == Kind::Cumulative
-                ? getCumulativeCoverage()
-                : getAllInstrumentedAddresses());
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        const DB::CurrentCoverageRegions regions = DB::getCurrentCoverageRegions();
 
-        auto column_addresses = ColumnUInt64::create();
-        auto & data = column_addresses->getData();
-
-        for (auto ptr : coverage_table)
-            if (ptr)
-                data.push_back(ptr);
-
-        auto column_array = ColumnArray::create(
-            std::move(column_addresses),
-            ColumnArray::ColumnOffsets::create(1, data.size()));
-
-        return ColumnConst::create(std::move(column_array), input_rows_count);
+        if (kind == Kind::Files)
+        {
+            auto column = ColumnString::create();
+            for (const auto & f : regions.files)
+                column->insertData(f.data(), f.size());
+            auto offsets = ColumnArray::ColumnOffsets::create(1, regions.files.size());
+            auto array = ColumnArray::create(std::move(column), std::move(offsets));
+            return ColumnConst::create(std::move(array), input_rows_count);
+        }
+        if (kind == Kind::LineStarts)
+        {
+            auto column = ColumnUInt32::create();
+            column->getData().insert(regions.line_starts.begin(), regions.line_starts.end());
+            auto offsets = ColumnArray::ColumnOffsets::create(1, regions.line_starts.size());
+            auto array = ColumnArray::create(std::move(column), std::move(offsets));
+            return ColumnConst::create(std::move(array), input_rows_count);
+        }
+        {
+            auto column = ColumnUInt32::create();
+            column->getData().insert(regions.line_ends.begin(), regions.line_ends.end());
+            auto offsets = ColumnArray::ColumnOffsets::create(1, regions.line_ends.size());
+            auto array = ColumnArray::create(std::move(column), std::move(offsets));
+            return ColumnConst::create(std::move(array), input_rows_count);
+        }
+#else
+        if (kind == Kind::Files)
+        {
+            auto column = ColumnString::create();
+            auto offsets = ColumnArray::ColumnOffsets::create(1, 0);
+            auto array = ColumnArray::create(std::move(column), std::move(offsets));
+            return ColumnConst::create(std::move(array), input_rows_count);
+        }
+        auto column = ColumnUInt32::create();
+        auto offsets = ColumnArray::ColumnOffsets::create(1, 0);
+        auto array = ColumnArray::create(std::move(column), std::move(offsets));
+        return ColumnConst::create(std::move(array), input_rows_count);
+#endif
     }
 };
 
 }
 
-REGISTER_FUNCTION(Coverage)
+/// Returns diagnostic info: (profile_data_records, covered_name_refs, coverage_map_size)
+class FunctionCoverageDiag : public IFunction
 {
-    factory.registerFunction("coverageCurrent", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::Current); },
+public:
+    String getName() const override { return "coverageDiag"; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isDeterministic() const override { return false; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    {
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+    }
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto column = ColumnUInt64::create();
+        auto & data = column->getData();
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        const auto name_refs = getCurrentCoveredNameRefs();
+        size_t map_size = DB::getCoverageMapSize();
+        size_t matches = DB::countCoverageMatches(name_refs);
+        auto [non_empty, zero_line, first_info] = DB::diagCoverageRegions(name_refs);
+        data.push_back(static_cast<UInt64>(name_refs.size()));
+        data.push_back(static_cast<UInt64>(map_size));
+        data.push_back(static_cast<UInt64>(matches));
+        data.push_back(static_cast<UInt64>(non_empty));   // regions with non-empty file
+        data.push_back(static_cast<UInt64>(zero_line));   // regions with line_start==0
+        data.push_back(static_cast<UInt64>(first_info));  // file_len<<32|line_start of first match
+#else
+        data.push_back(0);
+        data.push_back(0);
+        data.push_back(0);
+        data.push_back(0);
+        data.push_back(0);
+        data.push_back(0);
+#endif
+        auto offsets = ColumnArray::ColumnOffsets::create(1, data.size());
+        auto array = ColumnArray::create(std::move(column), std::move(offsets));
+        return ColumnConst::create(std::move(array), input_rows_count);
+    }
+};
+
+REGISTER_FUNCTION(CoverageLines)
+{
+    factory.registerFunction("coverageDiag", [](ContextPtr){ return std::make_shared<FunctionCoverageDiag>(); },
         FunctionDocumentation
         {
-            .description=R"(
-This function is only available if ClickHouse was built with the SANITIZE_COVERAGE=1 option.
-
-It returns an array of unique addresses (a subset of the instrumented points in code) in the code
-encountered at runtime after the previous coverage reset (with the `SYSTEM RESET COVERAGE` query) or after server startup.
-
-[example:functions]
-
-The order of array elements is undetermined.
-
-You can use another function, `coverageAll` to find all instrumented addresses in the code to compare and calculate the percentage.
-
-You can process the addresses with the `addressToSymbol` (possibly with `demangle`) and `addressToLine` functions
-to calculate symbol-level, file-level, or line-level coverage.
-
-If you run multiple tests sequentially and reset the coverage with the `SYSTEM RESET COVERAGE` query between the tests,
-you can obtain a coverage information for every test in isolation, to find which functions are covered by which tests and vise-versa.
-
-By default, every *basic block* in the code is covered, which roughly means - a sequence of instructions without jumps,
-e.g. a body of for loop without ifs, or a single branch of if.
-
-See https://clang.llvm.org/docs/SanitizerCoverage.html for more information.
-)",
-            .examples{
-                {"functions", "SELECT DISTINCT demangle(addressToSymbol(arrayJoin(coverageCurrent())))", ""}},
-            .introduced_in = {23, 11},
+            .description = R"(Returns diagnostic counters for the LLVM coverage system as an `Array(UInt64)`: `[name_refs_count, coverage_map_size, matches, non_empty_file_regions, zero_line_regions, first_file_info]`. Only available in `WITH_COVERAGE_DEPTH=1` builds.)",
+            .syntax = "coverageDiag()",
+            .introduced_in = {25, 6},
             .category = FunctionDocumentation::Category::Introspection
         });
 
-    factory.registerFunction("coverageCumulative", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::Cumulative); },
+    factory.registerFunction("coverageCurrentFiles", [](ContextPtr){ return std::make_shared<FunctionCoverageLines>(Kind::Files); },
         FunctionDocumentation
         {
-            .description=R"(
-This function is only available if ClickHouse was built with the SANITIZE_COVERAGE=1 option.
+            .description = R"(
+This function is only available if ClickHouse was built with the `WITH_COVERAGE_DEPTH=1` option.
 
-It returns an array of unique addresses (a subset of the instrumented points in code) in the code
-encountered at runtime after server startup.
+Returns an `Array(String)` of source file paths covered since the last `SYSTEM SET COVERAGE TEST` call.
 
-In contrast to `coverageCurrent` it cannot be reset with the `SYSTEM RESET COVERAGE`.
-
-See the `coverageCurrent` function for the details.
+Use together with `coverageCurrentLineStarts` and `coverageCurrentLineEnds` to get the covered line ranges.
 )",
-            .introduced_in = {23, 11},
+            .syntax = "coverageCurrentFiles()",
+            .introduced_in = {25, 6},
             .category = FunctionDocumentation::Category::Introspection
         });
 
-    factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::All); },
+    factory.registerFunction("coverageCurrentLineStarts", [](ContextPtr){ return std::make_shared<FunctionCoverageLines>(Kind::LineStarts); },
         FunctionDocumentation
         {
-            .description=R"(
-This function is only available if ClickHouse was built with the SANITIZE_COVERAGE=1 option.
+            .description = R"(
+This function is only available if ClickHouse was built with the `WITH_COVERAGE_DEPTH=1` option.
 
-It returns an array of all unique addresses in the code instrumented for coverage
-- all possible addresses that can appear in the result of the `coverage` function.
-
-You can use this function, and the `coverage` function to compare and calculate the coverage percentage.
-
-See the `coverageCurrent` function for the details.
+Returns an `Array(UInt32)` of line start numbers parallel to `coverageCurrentFiles`.
 )",
-            .introduced_in = {23, 11},
+            .syntax = "coverageCurrentLineStarts()",
+            .introduced_in = {25, 6},
+            .category = FunctionDocumentation::Category::Introspection
+        });
+
+    factory.registerFunction("coverageCurrentLineEnds", [](ContextPtr){ return std::make_shared<FunctionCoverageLines>(Kind::LineEnds); },
+        FunctionDocumentation
+        {
+            .description = R"(
+This function is only available if ClickHouse was built with the `WITH_COVERAGE_DEPTH=1` option.
+
+Returns an `Array(UInt32)` of line end numbers parallel to `coverageCurrentFiles`.
+)",
+            .syntax = "coverageCurrentLineEnds()",
+            .introduced_in = {25, 6},
             .category = FunctionDocumentation::Category::Introspection
         });
 }

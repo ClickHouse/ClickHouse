@@ -693,6 +693,7 @@ std::optional<String> optimizeUseAggregateProjections(
 
                 auto projection_query_info = query_info;
                 projection_query_info.prewhere_info = nullptr;
+                projection_query_info.row_level_filter = nullptr;
                 projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(candidate.dag.clone());
 
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
@@ -856,6 +857,7 @@ std::optional<String> optimizeUseAggregateProjections(
         auto proj_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, best_candidate->projection->metadata);
         auto projection_query_info = query_info;
         projection_query_info.prewhere_info = nullptr;
+        projection_query_info.row_level_filter = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
 
         MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);

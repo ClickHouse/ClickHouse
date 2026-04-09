@@ -261,6 +261,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
+        case Type::WAIT_BLOBS_CLEANUP:
         case Type::CLEAR_DISK_METADATA_CACHE:
         {
             if (table)
@@ -431,6 +432,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     }
                 }
             }
+            break;
+        }
+        case Type::SET_COVERAGE_TEST:
+        {
+            ostr << ' ';
+            ostr << quoteString(coverage_test_name);
             break;
         }
         case Type::ENABLE_FAILPOINT:

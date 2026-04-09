@@ -360,8 +360,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
         const auto * meta = &file_metadata.row_groups[row_group_idx];
-        if (meta->num_rows <= 0)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has <= 0 rows: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has negative row count: {}", row_group_idx, meta->num_rows);
+        if (meta->num_rows == 0)
+            continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
@@ -1329,10 +1331,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     /// Find ranges of rows that pass filter and decode them.
 
+    /// When we have per-page prefetches (offset index), some pages may have had their prefetch
+    /// handles reset by determinePagesToPrefetch because they are fully filtered out. The
+    /// use_filter_in_decoder path reads ALL pages sequentially, so it would crash trying to access
+    /// those reset handles. Only use this optimization when reading the whole column chunk
+    /// sequentially (no offset index, i.e. data_pages is empty).
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded;
+        !column.page.is_dictionary_encoded &&
+        column.data_pages.empty();
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
 
     if (use_filter_in_decoder)

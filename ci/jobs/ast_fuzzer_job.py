@@ -62,11 +62,38 @@ def get_run_command(
 def _collect_targeted_queries(workspace_path: Path, info: Info) -> tuple[list[str], Result]:
     targeter = Targeting(info=info)
     targeter.job_type = Targeting.STATELESS_JOB_TYPE
-    tests, relevant_tests_result = targeter.get_all_relevant_tests_with_info(f"{cwd}/ci/tmp")
 
-    logging.info("Found %d relevant tests for targeted AST fuzzer:", len(tests))
-    for test in sorted(tests):
-        logging.info("  %s", test)
+    # Step 1: changed/new test files in this PR
+    changed_tests = targeter.get_changed_tests()
+    logging.info("[targeted-fuzzer] Step 1 — changed/new tests (%d): %s",
+                 len(changed_tests), ", ".join(sorted(changed_tests)) or "(none)")
+
+    # Step 2: tests that failed in previous CI runs for this PR
+    try:
+        previously_failed = targeter.get_previously_failed_tests()
+    except Exception as e:
+        logging.warning("[targeted-fuzzer] Step 2 — failed to fetch previously-failed tests: %s", e)
+        previously_failed = []
+    logging.info("[targeted-fuzzer] Step 2 — previously failed tests (%d): %s",
+                 len(previously_failed), ", ".join(previously_failed) or "(none)")
+
+    # Step 3: coverage-relevant tests (direct lines, indirect callees, siblings)
+    try:
+        relevant_tests, relevant_tests_result = targeter.get_most_relevant_tests()
+    except Exception as e:
+        logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
+        relevant_tests = []
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+    logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
+
+    # Merge all three sets preserving priority order (changed first)
+    seen: set = set()
+    tests: list = []
+    for t in list(changed_tests) + list(previously_failed) + list(relevant_tests):
+        if t not in seen:
+            seen.add(t)
+            tests.append(t)
+    logging.info("[targeted-fuzzer] Total unique tests: %d", len(tests))
 
     stateless_tests_dir = Path(cwd) / "tests/queries/0_stateless"
     available_queries: dict[str, list[str]] = {}
@@ -144,12 +171,15 @@ def run_fuzz_job(check_name: str):
     compatibility_setting: str | None = None
     if not buzzhouse:
         if is_old_compatibility:
-            compatibility_setting = "22.1"
+            # The minimum version is 24.3 because that's when enable_analyzer
+            # became enabled by default, and the fuzzer has a readonly constraint
+            # on enable_analyzer to avoid wasting cycles on the old interpreter.
+            compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
         else:
             compatibility_setting = (
-                f"{random.randint(22, 27)}.{random.randint(1, 12)}"
+                f"{random.randint(24, 27)}.{random.randint(1, 12)}"
             )
         if compatibility_setting:
             logging.info("AST fuzzer compatibility setting: %s", compatibility_setting)
@@ -194,15 +224,35 @@ def run_fuzz_job(check_name: str):
     fatal_log = workspace_path / "fatal.log"
     server_log = workspace_path / "server.log"
     stderr_log = workspace_path / "stderr.log"
-    paths = [
-        workspace_path / "core.zst",
+
+    # Encrypt core dump if present (same as functional tests)
+    core_zst = workspace_path / "core.zst"
+    core_zst_enc = workspace_path / "core.zst.enc"
+    aes_key = temp_dir / "aes.key"
+    aes_key_rsa = temp_dir / "aes.key.rsa"
+    paths = []
+
+    if core_zst.exists():
+        try:
+            Utils.encrypt(str(core_zst), f"{cwd}/ci/defs/public.pem", str(aes_key))
+        except Exception as e:
+            logging.warning("Failed to encrypt core dump: %s", e)
+        if not core_zst_enc.exists():
+            logging.warning(
+                "Core dump encryption did not produce expected artifact: %s",
+                core_zst_enc,
+            )
+        else:
+            paths = [core_zst_enc, aes_key_rsa]
+
+    paths.extend([
         workspace_path / "dmesg.log",
         fatal_log,
         stderr_log,
         server_log,
         fuzzer_log,
         dmesg_log,
-    ]
+    ])
     if buzzhouse:
         paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json"])
 

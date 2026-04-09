@@ -87,7 +87,56 @@ jobs:
               :
             else
               should_rerun=true
-              echo "  Infrastructure failure detected."
+              echo "  Infrastructure failure detected (job-level heuristic)."
+            fi
+
+            # Fetch run metadata once for all checks below
+            run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
+              --jq '{pr: .pull_requests[0].number, sha: .head_sha}')
+            pr_number=$(echo "$run_data" | jq -r '.pr // empty')
+            run_sha=$(echo "$run_data" | jq -r '.sha')
+
+            # If the job-level heuristic didn't trigger, check Praktika result JSONs
+            # on S3 for failures at the "Checkout Submodules" sub-step (e.g. transient
+            # DNS failures cloning git submodules).
+            if [ "$should_rerun" = "false" ] && [ -n "$verdicts" ] && [ -n "$pr_number" ] && [ -n "$run_sha" ]; then
+              # Get names of failed jobs (excluding pipeline plumbing)
+              failed_job_names=$(echo "$jobs_raw" | jq -r '
+                .jobs[] | select(.conclusion == "failure") |
+                select(.name != "Config Workflow" and .name != "Finish Workflow") |
+                .name
+              ')
+
+              all_checkout_failures=true
+              while IFS= read -r job_name; do
+                [ -z "$job_name" ] && continue
+                # Normalize job name to match Praktika result file naming:
+                # lowercase, replace non-alphanumeric chars with underscore, collapse runs
+                normalized=$(echo "$job_name" | tr '[:upper:]' '[:lower:]' | \
+                  sed 's/[^a-z0-9_]/_/g; s/__*/_/g')
+                result_url="https://s3.amazonaws.com/clickhouse-test-reports/PRs/${pr_number}/${run_sha}/result_${normalized}.json"
+
+                result_json=$(curl -sf --compressed "$result_url" 2>/dev/null || true)
+                if [ -z "$result_json" ]; then
+                  all_checkout_failures=false
+                  break
+                fi
+
+                # Check: all failed sub-results must be "Checkout Submodules"
+                has_non_checkout_failure=$(echo "$result_json" | jq -r '
+                  [.results[] | select(.status == "failure" or .status == "error") |
+                   .name] | map(select(. != "Checkout Submodules")) | length > 0
+                ')
+                if [ "$has_non_checkout_failure" = "true" ]; then
+                  all_checkout_failures=false
+                  break
+                fi
+              done <<< "$failed_job_names"
+
+              if [ "$all_checkout_failures" = "true" ] && [ -n "$failed_job_names" ]; then
+                should_rerun=true
+                echo "  Infrastructure failure detected (submodule checkout failure in Praktika results)."
+              fi
             fi
 
             # Check if "Config Workflow" failed in its "Run" step (e.g. due to
@@ -103,22 +152,15 @@ jobs:
                 ] | first // empty
               ')
 
-              if [ -n "$config_failed_at" ]; then
-                run_data=$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
-                  --jq '{pr: .pull_requests[0].number, sha: .head_sha}')
-                pr_number=$(echo "$run_data" | jq -r '.pr // empty')
-                run_sha=$(echo "$run_data" | jq -r '.sha')
+              if [ -n "$config_failed_at" ] && [ -n "$pr_number" ]; then
+                pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
+                  --jq '{sha: .head.sha, updated: .updated_at}')
+                pr_sha=$(echo "$pr_data" | jq -r '.sha')
+                pr_updated=$(echo "$pr_data" | jq -r '.updated')
 
-                if [ -n "$pr_number" ]; then
-                  pr_data=$(gh api "repos/$GH_REPO/pulls/$pr_number" \
-                    --jq '{sha: .head.sha, updated: .updated_at}')
-                  pr_sha=$(echo "$pr_data" | jq -r '.sha')
-                  pr_updated=$(echo "$pr_data" | jq -r '.updated')
-
-                  if [ "$run_sha" = "$pr_sha" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
-                    should_rerun=true
-                    echo "  Config Workflow failed but PR #$pr_number was updated after — rerunning."
-                  fi
+                if [ "$run_sha" = "$pr_sha" ] && [[ "$pr_updated" > "$config_failed_at" ]]; then
+                  should_rerun=true
+                  echo "  Config Workflow failed but PR #$pr_number was updated after — rerunning."
                 fi
               fi
             fi

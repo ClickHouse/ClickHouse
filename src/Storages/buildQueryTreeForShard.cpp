@@ -417,6 +417,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     }
 
     auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth, true /*is_subquery*/);
+    /// Force materialization of CTEs in subqueries, if they used in the subquery.
+    subquery_options.forceMaterializeCTE();
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 

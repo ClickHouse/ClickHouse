@@ -42,4 +42,14 @@ Sparse grams tokenizer
 []
 ['abc','bc ','c d',' de','c de','bc de','def','bc def','ef ','f c',' cb','f cb','ef cb','cba']
 ['abc ','bc d','c de',' def','c def','def ','c def ','bc def ','ef c','f cb','ef cb',' cba']
-['bc def ']
+['c def ','bc def ']
+1
+1
+['abcde']
+asciiCJK tokenizer
+[]	Array(String)	1
+['hello','world']	Array(String)	1
+['hello_world']	Array(String)	1
+['你','好','世','界']	Array(String)	1
+['错','误','503']	Array(String)	1
+['hello','，','world']	Array(String)	1

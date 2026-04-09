@@ -58,6 +58,7 @@ extern const SettingsBool enable_positional_arguments_for_projections;
 
 }
 
+
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
@@ -92,6 +93,8 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
+    other.with_block_number = with_block_number;
+    other.with_block_offset = with_block_offset;
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
@@ -128,6 +131,8 @@ public:
         setInMemoryMetadata(storage_metadata);
         VirtualColumnsDescription desc;
         desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
+        desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "");
+        desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "");
         setVirtuals(std::move(desc));
     }
 
@@ -135,7 +140,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     Pipe read(
         const Names & column_names,
@@ -394,8 +399,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
+
+        /// Build sorting key — add virtual column types so KeyDescription can resolve them.
+        auto columns_for_key = columns;
+        if (!columns.has(BlockNumberColumn::name))
+            columns_for_key.add(ColumnDescription(BlockNumberColumn::name, BlockNumberColumn::type));
+        if (!columns.has(BlockOffsetColumn::name))
+            columns_for_key.add(ColumnDescription(BlockOffsetColumn::name, BlockOffsetColumn::type));
+
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns_for_key, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns_for_key, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -409,6 +422,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         result.with_parent_part_offset = true;
         std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
+
+    /// Track whether projection stores _block_number/_block_offset from the parent table.
+    result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
+    result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
     NamesAndTypesList metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
@@ -548,6 +565,7 @@ Block ProjectionDescription::calculate(
 {
     if (index)
         return index->calculate(*this, block, starting_offset, context, perm_ptr);
+
     return calculateByQuery(block, starting_offset, context, perm_ptr);
 }
 

@@ -35,6 +35,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_fetches_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_merges_ms;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_replicated_tasks_ms;
+    extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level;
+    extern const MergeTreeSettingsUInt64 replicated_fetches_min_part_level_timeout_seconds;
 }
 
 namespace ErrorCodes
@@ -232,7 +234,17 @@ void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
         storage.removePartAndEnqueueFetch(broken_part_name, /* storage_init = */true);
 
     Strings parts_in_zk = storage.getZooKeeper()->getChildren(replica_path + "/parts");
-    storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, {});
+
+    /// Compute parts_to_fetch: parts that exist in ZooKeeper but don't have
+    /// an active containing part locally. These parts are expected to be fetched,
+    /// so they should not trigger the paranoid check assertion even if they are
+    /// covered by another part in ZooKeeper and missing from disk.
+    Strings parts_to_fetch;
+    for (const auto & part_name : parts_in_zk)
+        if (!storage.getActiveContainingPart(part_name))
+            parts_to_fetch.push_back(part_name);
+
+    storage.paranoidCheckForCoveredPartsInZooKeeperOnStart(parts_in_zk, parts_to_fetch);
 
     std::lock_guard lock(state_mutex);
     /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
@@ -1673,6 +1685,48 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         /// Don't print log message about this, because we can have a lot of fetches,
         /// for example during replica recovery.
         return false;
+    }
+
+    if (entry.type == LogEntry::GET_PART
+        && !entry.new_part_name.empty())
+    {
+        const auto settings = data.getSettings();
+        const auto min_level = (*settings)[MergeTreeSetting::replicated_fetches_min_part_level];
+        if (min_level > 0)
+        {
+            const auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+            if (part_info.level < min_level)
+            {
+                const auto timeout_sec = (*settings)[MergeTreeSetting::replicated_fetches_min_part_level_timeout_seconds];
+
+                /// timeout_sec == 0 means permanent block (no timeout override)
+                if (timeout_sec == 0)
+                {
+                    out_postpone_reason = fmt::format(
+                        "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}",
+                        entry.new_part_name, part_info.level, static_cast<UInt64>(min_level));
+                    return false;
+                }
+
+                /// timeout_sec > 0: block until timeout expires, then fall through to allow fetch.
+                /// If create_time is unknown (0), be safe and allow the fetch immediately.
+                if (entry.create_time > 0)
+                {
+                    const auto elapsed = std::max(time(nullptr) - entry.create_time, static_cast<time_t>(0));
+
+                    if (elapsed < static_cast<time_t>(timeout_sec))
+                    {
+                        auto remaining = static_cast<time_t>(timeout_sec) - elapsed;
+                        out_postpone_reason = fmt::format(
+                            "Not fetching part {} because its level {} is below replicated_fetches_min_part_level {}"
+                            " ({} seconds remaining until force fetch)",
+                            entry.new_part_name, part_info.level, static_cast<UInt64>(min_level), remaining);
+                        return false;
+                    }
+                }
+                /// timeout expired (or create_time unknown) — fall through and allow fetch
+            }
+        }
     }
 
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)

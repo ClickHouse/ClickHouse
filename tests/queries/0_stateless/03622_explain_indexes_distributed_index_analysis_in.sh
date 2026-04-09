@@ -37,13 +37,15 @@ function explain_indexes()
     --use_query_condition_cache=0
     --parallel_replicas_for_non_replicated_merge_tree=1
     --parallel_replicas_local_plan=1
+    --use_statistics_for_part_pruning=0
+    --enable_add_distinct_to_in_subqueries=0  # CI may inject True; adds DISTINCT to IN subqueries, changing the logged query string in query_log
   )
 
-  local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=0 -q "$@" | {
+  local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=0 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas"
-  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=1 -q "$@" | {
+  local with_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --enable_parallel_replicas=1 --automatic_parallel_replicas_mode=0 -q "$@" | {
     jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
   })"
   if [ "$with_pr" != "$without_pr" ]; then

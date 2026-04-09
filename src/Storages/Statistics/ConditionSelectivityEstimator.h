@@ -70,7 +70,7 @@ public:
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
         bool finalized = false;
-        Float64 selectivity;
+        Float64 selectivity = 0;
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);

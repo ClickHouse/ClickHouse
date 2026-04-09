@@ -243,6 +243,12 @@
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperStorageSharedLockWaitMicroseconds) \
+    M(KeeperChangelogLockWaitMicroseconds) \
+    M(KeeperServerWriteLockWaitMicroseconds) \
+    M(KeeperSessionCallbackLockWaitMicroseconds) \
+    M(KeeperReadRequestQueueLockWaitMicroseconds) \
+    M(KeeperProcessAndResponsesLockWaitMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
@@ -253,6 +259,10 @@
     M(KeeperSnapshotApplys) \
     M(KeeperSnapshotApplysFailed) \
     M(KeeperReadSnapshot) \
+    M(KeeperReadSnapshotObject) \
+    M(KeeperReadSnapshotFailed) \
+    M(KeeperSaveSnapshotObject) \
+    M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
     M(KeeperCreateRequest) \
     M(KeeperRemoveRequest) \
@@ -272,6 +282,7 @@
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
+    M(KeeperSnapshotRemoteLoaderErrors) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -311,7 +322,7 @@
 \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
     M(KeeperStaleRequestsSkipped) \
-    M(KeeperFinishedSessionsCacheFull) \
+    M(KeeperLiveSessionsLockWaitMicroseconds) \
 
 namespace ProfileEvents
 {
