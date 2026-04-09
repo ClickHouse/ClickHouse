@@ -1427,6 +1427,10 @@ static BlockIO executeQueryImpl(
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
         }
 
+        /// Reset auto-fill flag to avoid cross-query state leakage when the same
+        /// Context instance is reused (e.g. in tests or embedded/local flows).
+        context->setAutoFillOnCluster(false);
+
         if (settings[Setting::allow_experimental_automatic_fill_on_cluster_mode]
             && !settings[Setting::cluster_for_automatic_fill_mode].toString().empty()
             && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
