@@ -79,7 +79,7 @@ class GitCommit:
         else:
             assert env.BRANCH
             s3suffix = f"REFs/{env.BRANCH}"
-        return f"{Settings.HTML_S3_PATH}/{s3suffix}"
+        return f"{Settings.S3_REPORT_BUCKET}/{s3suffix}"
 
     @classmethod
     def pull_from_s3(cls):

@@ -1217,6 +1217,28 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
+    /// Skip join order optimization if children's output headers have overlapping column names.
+    /// The `JoinExpressionActions` constructor used during join reconstruction requires unique column names
+    /// across left and right sides. Overlapping names can occur when scalar subquery results and join
+    /// table aliases collide (e.g. both sides produce `__table2`).
+    {
+        auto left_header = node.children[0]->step->getOutputHeader();
+        auto right_header = node.children[1]->step->getOutputHeader();
+
+        std::unordered_set<std::string_view> left_names;
+        for (const auto & col : *left_header)
+            left_names.insert(col.name);
+
+        for (const auto & col : *right_header)
+        {
+            if (left_names.contains(col.name))
+            {
+                join_step->setOptimized();
+                return;
+            }
+        }
+    }
+
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();
 
