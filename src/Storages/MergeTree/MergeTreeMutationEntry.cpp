@@ -115,6 +115,14 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
     out->finalize();
 }
 
+void MergeTreeMutationEntry::writeFinishTime(time_t finish_time_)
+{
+    finish_time = finish_time_;
+    auto out = disk->writeFile(path_prefix + file_name, 256, WriteMode::Append);
+    *out << "finish time: " << LocalDateTime(finish_time, DateLUT::serverTimezoneInstance()) << "\n";
+    out->finalize();
+}
+
 MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
     : commands(std::make_shared<MutationCommands>())
     , disk(std::move(disk_))
@@ -152,6 +160,15 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
         {
             *buf >> "csn: " >> csn >> "\n";
         }
+    }
+
+    if (!buf->eof())
+    {
+        LocalDateTime finish_time_dt;
+        *buf >> "finish time: " >> finish_time_dt >> "\n";
+        finish_time = makeDateTime(DateLUT::serverTimezoneInstance(),
+            finish_time_dt.year(), finish_time_dt.month(), finish_time_dt.day(),
+            finish_time_dt.hour(), finish_time_dt.minute(), finish_time_dt.second());
     }
 
     assertEOF(*buf);

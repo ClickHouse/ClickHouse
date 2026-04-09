@@ -16,7 +16,8 @@ class IBackupEntry;
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;
-    time_t latest_succesful_mutation_time = 0;
+    /// Time when the mutation completed (all parts mutated). Persisted to disk.
+    time_t finish_time = 0;
     std::shared_ptr<MutationCommands> commands;
 
     DiskPtr disk;
@@ -55,6 +56,7 @@ struct MergeTreeMutationEntry
     void removeFile();
 
     void writeCSN(CSN csn_);
+    void writeFinishTime(time_t finish_time_);
 
     std::shared_ptr<const IBackupEntry> backup() const;
 
