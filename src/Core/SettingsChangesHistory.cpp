@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_inline_views", false, false, "New setting"},
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
+            {"atomic_create_as_select", false, true, "Ensure atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases"},
         });
         addSettingsChanges(settings_changes_history, "26.3",
         {
@@ -86,7 +87,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"functions_h3_default_if_invalid", true, false, "A new setting for legacy behaviour to allow invalid inputs to h3 functions"},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"atomic_create_as_select", false, true, "Ensure atomicity of CREATE TABLE ... AS SELECT queries in Atomic databases"},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {
