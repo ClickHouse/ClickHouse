@@ -1,3 +1,4 @@
+#include <Core/Names.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -35,19 +36,19 @@ void TableFunctionObfuscate::parseArguments(const ASTPtr & ast_function, Context
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' requires a query argument.", getName());
 }
 
-ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr context) const
+ColumnsDescription TableFunctionObfuscate::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     assert(create.select);
     assert(create.children.size() == 1);
     assert(create.children[0]->as<ASTSelectWithUnionQuery>());
     auto sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.children[0], context);
-    return ColumnsDescription(sample.getNamesAndTypesList());
+    return ColumnsDescription(sample->getNamesAndTypesList());
 }
 
 StoragePtr TableFunctionObfuscate::executeImpl(
-    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
+    const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    auto columns = getActualTableStructure(context);
+    auto columns = getActualTableStructure(context, is_insert_query);
     auto res = std::make_shared<StorageObfuscate>(StorageID(getDatabaseName(), table_name), create, columns, "");
     res->startup();
     return res;
@@ -55,7 +56,7 @@ StoragePtr TableFunctionObfuscate::executeImpl(
 
 void registerTableFunctionObfuscate(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionObfuscate>();
+    factory.registerFunction<TableFunctionObfuscate>({}, {.allow_readonly = true});
 }
 
 }

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ObfuscateStep.h>
+#include <Processors/Port.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/ObfuscateTransform.h>
 #include <IO/Operators.h>
@@ -13,7 +14,6 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .preserves_distinct_columns = false,
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
             .preserves_sorting = false,
@@ -25,9 +25,9 @@ static ITransformingStep::Traits getTraits()
 }
 
 ObfuscateStep::ObfuscateStep(
-    const DataStream & input_stream_,
+    const SharedHeader & input_header_,
     TemporaryDataOnDiskScopePtr tmp_data_scope_)
-    : ITransformingStep(input_stream_, input_stream_.header, getTraits())
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , tmp_data_scope(std::move(tmp_data_scope_))
 {
     assert(tmp_data_scope);
@@ -44,14 +44,14 @@ void ObfuscateStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bui
     markov_model_params.frequency_desaturate = 0;
     markov_model_params.determinator_sliding_window_size = 8;
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ObfuscateTransform>(
-            header,
-            std::make_unique<TemporaryDataOnDisk>(tmp_data_scope),
+            *header,
+            tmp_data_scope,
             markov_model_params,
             /*seed*/ 0,
-            /*keep_original_data_*/ false
+            /*keep_original_data*/ false
         );
     });
 }
@@ -65,11 +65,5 @@ void ObfuscateStep::describeActions(FormatSettings & settings) const
 void ObfuscateStep::describeActions(JSONBuilder::JSONMap & /*map*/) const
 {
 }
-
-void ObfuscateStep::updateOutputStream()
-{
-    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
-}
-
 
 }

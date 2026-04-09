@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <Core/Block.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -12,7 +13,7 @@ class ObfuscateTransform : public IAccumulatingTransform
 public:
     ObfuscateTransform(
         const Block & header_,
-        TemporaryDataOnDiskPtr data_,
+        TemporaryDataOnDiskScopePtr tmp_data_scope_,
         const MarkovModelParameters & params_,
         UInt64 seed_,
         bool keep_original_data_
@@ -27,8 +28,8 @@ protected:
 private:
     Obfuscator obfuscator;
 
-    TemporaryDataOnDiskPtr data;
-    TemporaryFileStream * filestream;
+    TemporaryBlockStreamHolder stream_holder;
+    std::optional<TemporaryBlockStreamReaderHolder> reader;
 
     bool keep_original_data;
 

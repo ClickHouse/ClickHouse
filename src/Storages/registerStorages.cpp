@@ -20,6 +20,7 @@ void registerStorageDictionary(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
+void registerStorageObfuscate(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
@@ -129,6 +130,7 @@ void registerStorages()
     registerStorageSet(factory);
     registerStorageJoin(factory);
     registerStorageView(factory);
+    registerStorageObfuscate(factory);
     registerStorageMaterializedView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);

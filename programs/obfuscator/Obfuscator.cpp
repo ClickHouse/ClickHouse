@@ -1,56 +1,30 @@
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnFixedString.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeUUID.h>
+#include <Common/Obfuscator/Obfuscator.h>
+
 #include <Interpreters/Context.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/LimitTransform.h>
-#include <Common/SipHash.h>
-#include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Formats/registerFormats.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Core/Block.h>
-#include <base/StringRef.h>
-#include <Common/DateLUT.h>
-#include <base/bit_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <memory>
-#include <cmath>
+#include <Common/TerminalSize.h>
+#include <Common/ErrnoException.h>
+#include <Processors/Chunk.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/LimitTransform.h>
+#include <iostream>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
-#include <boost/container/flat_map.hpp>
-#include <Common/TerminalSize.h>
-#include <bit>
-
-#include <Common/Obfuscator/Obfuscator.h>
 
 static const char * documentation = R"(
 Simple tool for table data obfuscation.
@@ -142,10 +116,10 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help")
-        || !options.count("seed")
-        || !options.count("input-format")
-        || !options.count("output-format"))
+    if (options.contains("help")
+        || !options.contains("seed")
+        || !options.contains("input-format")
+        || !options.contains("output-format"))
     {
         std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
@@ -155,7 +129,7 @@ try
         return 0;
     }
 
-    if (options.count("save") && options.count("load"))
+    if (options.contains("save") && options.contains("load"))
     {
         std::cerr << "The options --save and --load cannot be used together.\n";
         return 1;
@@ -165,7 +139,7 @@ try
 
     std::string structure;
 
-    if (options.count("structure"))
+    if (options.contains("structure"))
         structure = options["structure"].as<std::string>();
 
     std::string input_format = options["input-format"].as<std::string>();
@@ -174,13 +148,13 @@ try
     std::string load_from_file;
     std::string save_into_file;
 
-    if (options.count("load"))
+    if (options.contains("load"))
         load_from_file = options["load"].as<std::string>();
-    else if (options.count("save"))
+    else if (options.contains("save"))
         save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
-    if (options.count("limit"))
+    if (options.contains("limit"))
         limit = options["limit"].as<UInt64>();
 
     bool silent = options["silent"].as<bool>();
@@ -206,19 +180,16 @@ try
 
     if (structure.empty())
     {
-        ReadBufferIterator read_buffer_iterator = [&](ColumnsDescription &)
-        {
-            auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
+        auto file = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);
 
-            /// stdin must be seekable
-            auto res = lseek(file->getFD(), 0, SEEK_SET);
-            if (-1 == res)
-                throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+        /// stdin must be seekable
+        auto res = lseek(file->getFD(), 0, SEEK_SET);
+        if (-1 == res)
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
 
-            return file;
-        };
+        SingleReadBufferIterator read_buffer_iterator(std::move(file));
 
-        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, false, context_const);
+        schema_columns = readSchemaFromFormat(input_format, {}, read_buffer_iterator, context_const);
     }
     else
     {
@@ -244,7 +215,7 @@ try
         /// stdin must be seekable
         auto res = lseek(file_in.getFD(), 0, SEEK_SET);
         if (-1 == res)
-            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
+            throw ErrnoException(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Input must be seekable file (it will be read twice)");
     }
 
     Obfuscator obfuscator(header, seed, markov_model_params);
@@ -288,7 +259,7 @@ try
         UInt8 version = 0;
         readBinary(version, model_in);
         if (version != 0)
-            throw Exception("Unknown version of the model file", ErrorCodes::UNKNOWN_FORMAT_VERSION);
+            throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown version of the model file");
 
         readBinary(source_rows, model_in);
 
@@ -296,14 +267,14 @@ try
         size_t header_size = 0;
         readBinary(header_size, model_in);
         if (header_size != data_types.size())
-            throw Exception("The saved model was created for different number of columns", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+            throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "The saved model was created for different number of columns");
 
         for (size_t i = 0; i < header_size; ++i)
         {
             String type;
             readBinary(type, model_in);
             if (type != data_types[i])
-                throw Exception("The saved model was created for different types of columns", ErrorCodes::TYPE_MISMATCH);
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "The saved model was created for different types of columns");
         }
 
         obfuscator.deserialize(model_in);
@@ -337,7 +308,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!options.count("limit"))
+    if (!options.contains("limit"))
         limit = source_rows;
 
     /// Generation step
@@ -354,7 +325,7 @@ try
 
         if (processed_rows + source_rows > limit)
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
             });
@@ -390,5 +361,5 @@ catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     auto code = DB::getCurrentExceptionCode();
-    return code ? code : 1;
+    return static_cast<UInt8>(code) ? code : 1;
 }

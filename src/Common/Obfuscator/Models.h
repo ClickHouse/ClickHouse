@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -16,41 +17,19 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Interpreters/Context.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/LimitTransform.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Formats/registerFormats.h>
-#include <Formats/ReadSchemaUtils.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/Block.h>
-#include <base/StringRef.h>
 #include <Common/DateLUT.h>
-#include <base/bit_cast.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
-#include <unistd.h>
-#include <boost/program_options/options_description.hpp>
-#include <boost/program_options.hpp>
-#include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
-#include <Common/TerminalSize.h>
 #include <bit>
+
 
 namespace DB
 {
@@ -91,7 +70,7 @@ using ModelPtr = std::unique_ptr<IModel>;
 
 
 template <typename... Ts>
-UInt64 hash(Ts... xs)
+static UInt64 hash(Ts... xs)
 {
     SipHash hash;
     (hash.update(xs), ...);
@@ -186,8 +165,8 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
-    else
-        return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+
+    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
 }
 
 
@@ -226,14 +205,14 @@ public:
 
 /// Pseudorandom permutation of mantissa.
 template <typename Float>
-Float transformFloatMantissa(Float x, UInt64 seed)
+static Float transformFloatMantissa(Float x, UInt64 seed)
 {
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
 
-    UInt x_uint = bit_cast<UInt>(x);
+    UInt x_uint = std::bit_cast<UInt>(x);
     x_uint = static_cast<UInt>(feistelNetwork(x_uint, mantissa_num_bits, seed));
-    return bit_cast<Float>(x_uint);
+    return std::bit_cast<Float>(x_uint);
 }
 
 
@@ -320,17 +299,14 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
         hash.update(seed);
         hash.update(i);
 
+        const auto checksum = getSipHash128AsArray(hash);
         if (size >= 16)
         {
-            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(hash_dst);
+            auto * hash_dst = std::min(pos, end - 16);
+            memcpy(hash_dst, checksum.data(), checksum.size());
         }
         else
-        {
-            char value[16];
-            hash.get128(value);
-            memcpy(dst, value, end - dst);
-        }
+            memcpy(dst, checksum.data(), end - dst);
 
         pos += 16;
         ++i;
@@ -348,7 +324,10 @@ static void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UI
 
 static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
 {
-    const UInt128 & src = src_uuid.toUnderType();
+    auto src_copy = src_uuid;
+    transformEndianness<std::endian::little, std::endian::native>(src_copy);
+
+    const UInt128 & src = src_copy.toUnderType();
     UInt128 & dst = dst_uuid.toUnderType();
 
     SipHash hash;
@@ -356,10 +335,11 @@ static void transformUUID(const UUID & src_uuid, UUID & dst_uuid, UInt64 seed)
     hash.update(reinterpret_cast<const char *>(&src), sizeof(UUID));
 
     /// Saving version and variant from an old UUID
-    hash.get128(reinterpret_cast<char *>(&dst));
+    dst = hash.get128();
 
-    dst.items[1] = (dst.items[1] & 0x1fffffffffffffffull) | (src.items[1] & 0xe000000000000000ull);
-    dst.items[0] = (dst.items[0] & 0xffffffffffff0fffull) | (src.items[0] & 0x000000000000f000ull);
+    const UInt64 trace[2] = {0x000000000000f000ull, 0xe000000000000000ull};
+    UUIDHelpers::getLowBytes(dst_uuid) = (UUIDHelpers::getLowBytes(dst_uuid) & (0xffffffffffffffffull - trace[1])) | (UUIDHelpers::getLowBytes(src_uuid) & trace[1]);
+    UUIDHelpers::getHighBytes(dst_uuid) = (UUIDHelpers::getHighBytes(dst_uuid) & (0xffffffffffffffffull - trace[0])) | (UUIDHelpers::getHighBytes(src_uuid) & trace[0]);
 }
 
 class FixedStringModel : public IModel
@@ -446,7 +426,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::serverTimezoneInstance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -552,7 +532,7 @@ private:
 
         CodePoint sample(UInt64 random, double end_multiplier) const
         {
-            UInt64 range = total + static_cast<UInt64>(count_end * end_multiplier);
+            UInt64 range = total + static_cast<UInt64>(static_cast<double>(count_end) * end_multiplier);
             if (range == 0)
                 return END;
 
@@ -618,7 +598,7 @@ private:
 
     static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
-        return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
+        return static_cast<NGramHash>(CRC32Hash()(std::string_view(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint))));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
@@ -628,8 +608,7 @@ private:
 
         if (pos + length > end)
             length = end - pos;
-        if (length > sizeof(CodePoint))
-            length = sizeof(CodePoint);
+        length = std::min(length, sizeof(CodePoint));
 
         CodePoint res = 0;
         memcpy(&res, pos, length);
@@ -794,12 +773,12 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = static_cast<double>(histogram.total) / histogram.buckets.size();
+                double average = static_cast<double>(histogram.total) / static_cast<double>(histogram.buckets.size());
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
                 {
-                    bucket.second = static_cast<UInt64>(bucket.second * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
+                    bucket.second = static_cast<UInt64>(static_cast<double>(bucket.second) * (1.0 - params.frequency_desaturate) + average * params.frequency_desaturate);
                     new_total += bucket.second;
                 }
 
@@ -834,12 +813,10 @@ public:
             }
 
             if (!it)
-                throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in markov model");
 
             size_t offset_from_begin_of_string = pos - data;
-            size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
-            if (determinator_sliding_window_size > determinator_size)
-                determinator_sliding_window_size = determinator_size;
+            size_t determinator_sliding_window_size = std::min(params.determinator_sliding_window_size, determinator_size);
 
             size_t determinator_sliding_window_overflow = offset_from_begin_of_string + determinator_sliding_window_size > determinator_size
                 ? offset_from_begin_of_string + determinator_sliding_window_size - determinator_size : 0;
@@ -868,7 +845,7 @@ public:
             {
                 /// Heuristic: break at ASCII non-alnum code point.
                 /// This allows to be close to desired_size but not break natural looking words.
-                if (code < 128 && !isAlphaNumericASCII(code))
+                if (code < 128 && !isAlphaNumericASCII(static_cast<char>(code)))
                     break;
             }
 
@@ -905,8 +882,8 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef string = column_string.getDataAt(i);
-            markov_model.consume(string.data, string.size);
+            auto string = column_string.getDataAt(i);
+            markov_model.consume(string.data(), string.size());
         }
     }
 
@@ -926,13 +903,13 @@ public:
         std::string new_string;
         for (size_t i = 0; i < size; ++i)
         {
-            StringRef src_string = column_string.getDataAt(i);
-            size_t desired_string_size = transform(src_string.size, seed);
+            auto src_string = column_string.getDataAt(i);
+            size_t desired_string_size = transform(src_string.size(), seed);
             new_string.resize(desired_string_size * 2);
 
             size_t actual_size = 0;
             if (desired_string_size != 0)
-                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data, src_string.size);
+                actual_size = markov_model.generate(new_string.data(), desired_string_size, new_string.size(), seed, src_string.data(), src_string.size());
 
             res_column->insertData(new_string.data(), actual_size);
         }
@@ -1060,10 +1037,10 @@ public:
     {
         if (isInteger(data_type))
         {
-            if (isUnsignedInteger(data_type))
+            if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
-            else
-                return std::make_unique<SignedIntegerModel>(seed);
+
+            return std::make_unique<SignedIntegerModel>(seed);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
@@ -1093,7 +1070,7 @@ public:
         if (const auto * type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported data type");
     }
 };
 

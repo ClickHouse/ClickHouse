@@ -45,7 +45,7 @@ StorageObfuscate::StorageObfuscate(
     storage_metadata.setComment(comment);
 
     if (!query.select)
-        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
     description.inner_query = query.select->ptr();
@@ -68,7 +68,7 @@ void StorageObfuscate::read(
     if (query_info.view_query)
     {
         if (!query_info.view_query->as<ASTSelectWithUnionQuery>())
-            throw Exception("Unexpected optimized VIEW query", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected optimized VIEW query");
         current_inner_query = query_info.view_query->clone();
     }
 
@@ -79,14 +79,14 @@ void StorageObfuscate::read(
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-    auto materializing_actions = std::make_shared<ActionsDAG>(query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName());
-    materializing_actions->addMaterializingOutputActions();
+    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
 
-    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(materializing_actions));
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
     materializing->setStepDescription("Materialize constants after VIEW subquery");
     query_plan.addStep(std::move(materializing));
 
-    auto obfuscation = std::make_unique<ObfuscateStep>(query_plan.getCurrentDataStream(), context->getTempDataOnDisk());
+    auto obfuscation = std::make_unique<ObfuscateStep>(query_plan.getCurrentHeader(), context->getTempDataOnDisk());
     query_plan.addStep(std::move(obfuscation));
 }
 
@@ -95,7 +95,7 @@ void registerStorageObfuscate(StorageFactory & factory)
     factory.registerStorage("Obfuscate", [](const StorageFactory::Arguments & args)
     {
         if (args.query.storage)
-            throw Exception("Specifying ENGINE is not allowed for an Obfuscate", ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for an Obfuscate");
 
         return std::make_shared<StorageObfuscate>(args.table_id, args.query, args.columns, args.comment);
     });

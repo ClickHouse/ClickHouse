@@ -2,7 +2,6 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Core/SortDescription.h>
 
 namespace DB
 {
@@ -11,7 +10,7 @@ class ObfuscateStep : public ITransformingStep
 {
 public:
     ObfuscateStep(
-        const DataStream & input_stream_,
+        const SharedHeader & input_header_,
         TemporaryDataOnDiskScopePtr tmp_data_scope_);
 
     String getName() const override { return "Obfuscate"; }
@@ -21,9 +20,12 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
-private:
-    void updateOutputStream() override;
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
 
+private:
     TemporaryDataOnDiskScopePtr tmp_data_scope;
 };
 

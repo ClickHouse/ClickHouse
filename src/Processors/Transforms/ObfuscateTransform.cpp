@@ -1,20 +1,20 @@
 #include <Processors/Transforms/ObfuscateTransform.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
 
 ObfuscateTransform::ObfuscateTransform(
     const Block & header_,
-    TemporaryDataOnDiskPtr data_,
+    TemporaryDataOnDiskScopePtr tmp_data_scope_,
     const MarkovModelParameters & params_,
     UInt64 seed_,
     bool keep_original_data_)
-    : IAccumulatingTransform(header_, header_)
+    : IAccumulatingTransform(std::make_shared<const Block>(header_), std::make_shared<const Block>(header_))
     , obfuscator(header_, seed_, params_)
-    , data(std::move(data_))
+    , stream_holder(std::make_shared<const Block>(header_.cloneEmpty()), std::move(tmp_data_scope_))
     , keep_original_data(keep_original_data_)
 {
-    filestream = &data->createStream(header_, 0, true);
 }
 
 void ObfuscateTransform::consume(Chunk chunk)
@@ -22,7 +22,7 @@ void ObfuscateTransform::consume(Chunk chunk)
     convertToFullIfSparse(chunk);
 
     obfuscator.train(chunk.getColumns());
-    filestream->write(getInputPort().getHeader().cloneWithColumns(chunk.getColumns()));
+    stream_holder->write(getInputPort().getHeader().cloneWithColumns(chunk.getColumns()));
 
     if (keep_original_data)
         setReadyChunk(std::move(chunk));
@@ -32,18 +32,20 @@ Chunk ObfuscateTransform::generate()
 {
     if (first_generate)
     {
-        filestream->finishWriting();
+        stream_holder.finishWriting();
         obfuscator.finalize();
+        reader.emplace(stream_holder.getReadStream());
         first_generate = false;
     }
 
-    Block block = filestream->read();
-    if (!block)
+    Block block = (*reader)->read();
+    if (block.empty())
     {
         obfuscator.updateSeed();
-        block = filestream->read();
+        reader.emplace(stream_holder.getReadStream());
+        block = (*reader)->read();
 
-        if (!block)
+        if (block.empty())
             return {};
     }
 
@@ -51,6 +53,5 @@ Chunk ObfuscateTransform::generate()
     size_t num_rows = block.rows();
     return Chunk(columns, num_rows);
 }
-
 
 }
