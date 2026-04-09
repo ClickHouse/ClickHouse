@@ -14,6 +14,8 @@ SET read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0;
 -- All parts end up in the "intersecting" bucket, read via MergeTreeReadPoolInOrder which never calls
 -- prefetchBeginOfRange — so zero prefetched reads. Fixed by setting the injection probability to 0.
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
+SET query_plan_direct_read_from_text_index = 1; -- CI may inject False; without direct read path, prefetching is not triggered
+SET secondary_indices_enable_bulk_filtering = 1; -- CI may inject 0; bulk path is required for the prefetch read pool selection
 
 
 DROP TABLE IF EXISTS tab;
