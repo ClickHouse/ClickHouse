@@ -77,13 +77,27 @@ namespace ErrorCodes
     DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 6 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
 
-DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
+DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };
+
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<CoordinationSettingsImpl, CoordinationSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    CoordinationSettings##TYPE NAME{offsetof(CoordinationSettingsTraits::Data, TYPE##_) \
+        + CoordinationSettingsTraits::settings_layout_.local_index[static_cast<size_t>(CoordinationSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
+
+namespace CoordinationSetting
+{
+LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
@@ -107,19 +121,9 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
 
     /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
     /// if max_requests_append_size was not changed
-    if (!max_requests_append_size.changed)
-        max_requests_append_size = max_requests_batch_size;
+    if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
+        (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
 }
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    CoordinationSettings##TYPE NAME = &CoordinationSettingsImpl ::NAME;
-
-namespace CoordinationSetting
-{
-LIST_OF_COORDINATION_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
 {

@@ -32,14 +32,19 @@ namespace ErrorCodes
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0, monitor_max_sleep_time_ms) \
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
 
-DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
+DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
 
 struct DistributedSettingsImpl : public BaseSettings<DistributedSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) DistributedSettings##TYPE NAME = &DistributedSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<DistributedSettingsImpl, DistributedSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    DistributedSettings##TYPE NAME{offsetof(DistributedSettingsTraits::Data, TYPE##_) \
+        + DistributedSettingsTraits::settings_layout_.local_index[static_cast<size_t>(DistributedSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace DistributedSetting
 {

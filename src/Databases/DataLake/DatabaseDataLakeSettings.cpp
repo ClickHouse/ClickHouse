@@ -49,15 +49,19 @@ namespace ErrorCodes
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_DATA_LAKE_STORAGE_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
+DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS, LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
 
 struct DatabaseDataLakeSettingsImpl : public BaseSettings<DatabaseDataLakeSettingsTraits>
 {
 };
 
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<DatabaseDataLakeSettingsImpl, DatabaseDataLakeSettingsTraits::Data>();
+
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    DatabaseDataLakeSettings##TYPE NAME = &DatabaseDataLakeSettingsImpl ::NAME;
+    DatabaseDataLakeSettings##TYPE NAME{offsetof(DatabaseDataLakeSettingsTraits::Data, TYPE##_) \
+        + DatabaseDataLakeSettingsTraits::settings_layout_.local_index[static_cast<size_t>(DatabaseDataLakeSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace DatabaseDataLakeSetting
 {

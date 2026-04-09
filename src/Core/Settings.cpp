@@ -7969,6 +7969,7 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
+
 #define LIST_OF_SETTINGS(M, ALIAS)     \
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
@@ -7977,8 +7978,24 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
+DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
+
+/// SettingOffset namespace: constexpr offsets derived from the generic traits layout.
+/// Used by INITIALIZE_SETTING_EXTERN for the Setting::NAME extern variables.
+#define SETTING_DECLARE_OFFSET_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    inline constexpr SettingIndex<SettingField##TYPE> NAME{ \
+        offsetof(SettingsTraits::Data, TYPE##_) \
+        + SettingsTraits::settings_layout_.local_index[static_cast<size_t>(SettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE)};
+
+namespace SettingOffset
+{
+    _Pragma("clang diagnostic push")
+    _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"")
+    LIST_OF_SETTINGS(SETTING_DECLARE_OFFSET_, SETTING_DECLARE_OFFSET_)
+    _Pragma("clang diagnostic pop")
+}
+#undef SETTING_DECLARE_OFFSET_
 
 /** Settings of query execution.
   * These settings go to users.xml.
@@ -8183,8 +8200,10 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     }
 }
 
+static const size_t SETTINGS_DATA_BASE_OFFSET = settingsDataBaseOffset<SettingsImpl, SettingsTraits::Data>();
+
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    Settings ## TYPE NAME = & SettingsImpl :: NAME;
+    Settings ## TYPE NAME{SettingOffset::NAME.offset + SETTINGS_DATA_BASE_OFFSET};
 
 namespace Setting
 {

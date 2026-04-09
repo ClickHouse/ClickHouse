@@ -11,15 +11,19 @@
 namespace DB
 {
 
-DECLARE_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS)
+DECLARE_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS, STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS)
 
 struct StorageObjectStorageSettingsImpl : public BaseSettings<StorageObjectStorageSettingsTraits>
 {
 };
 
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<StorageObjectStorageSettingsImpl, StorageObjectStorageSettingsTraits::Data>();
+
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    StorageObjectStorageSettings##TYPE NAME = &StorageObjectStorageSettingsImpl ::NAME;
+    StorageObjectStorageSettings##TYPE NAME{offsetof(StorageObjectStorageSettingsTraits::Data, TYPE##_) \
+        + StorageObjectStorageSettingsTraits::settings_layout_.local_index[static_cast<size_t>(StorageObjectStorageSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace StorageObjectStorageSetting
 {

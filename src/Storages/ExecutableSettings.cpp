@@ -24,14 +24,19 @@ namespace ErrorCodes
     DECLARE(ExternalCommandStderrReaction, stderr_reaction, ExternalCommandStderrReaction::NONE, "Reaction when external command outputs data to its stderr.", 0) \
     DECLARE(Bool, check_exit_code, false, "Throw exception if the command exited with non-zero status code.", 0) \
 
-DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
+DECLARE_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS, EXECUTABLE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(ExecutableSettingsTraits, LIST_OF_EXECUTABLE_SETTINGS)
 
 struct ExecutableSettingsImpl : public BaseSettings<ExecutableSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) ExecutableSettings##TYPE NAME = &ExecutableSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<ExecutableSettingsImpl, ExecutableSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    ExecutableSettings##TYPE NAME{offsetof(ExecutableSettingsTraits::Data, TYPE##_) \
+        + ExecutableSettingsTraits::settings_layout_.local_index[static_cast<size_t>(ExecutableSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace ExecutableSetting
 {

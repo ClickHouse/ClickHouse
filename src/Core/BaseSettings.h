@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingIndex.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
@@ -151,6 +152,18 @@ public:
     BaseSettings() = default;
     BaseSettings(const BaseSettings &) = default;
     BaseSettings(BaseSettings &&) noexcept = default;
+
+    /// Typed subscript access via SettingIndex offset
+    template <typename FieldType>
+    const FieldType & operator[](SettingIndex<FieldType> index) const
+    {
+        return *reinterpret_cast<const FieldType *>(reinterpret_cast<const char *>(this) + index.offset);
+    }
+    template <typename FieldType>
+    FieldType & operator[](SettingIndex<FieldType> index)
+    {
+        return *reinterpret_cast<FieldType *>(reinterpret_cast<char *>(this) + index.offset);
+    }
     BaseSettings & operator=(const BaseSettings &) = default;
     BaseSettings & operator=(BaseSettings &&) noexcept = default;
     virtual ~BaseSettings() = default;
@@ -995,38 +1008,73 @@ SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
 
 using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
+// ---------------------------------------------------------------------------
+// Helper macros for constexpr typed-array layout generation
+// Used by DECLARE_SETTINGS_TRAITS_COMMON — not intended for direct use.
+// ---------------------------------------------------------------------------
+
+/// Type tag enum entry: M(CLASS_NAME, TYPE) → TYPE,
+#define SETTING_DECLARE_TYPE_TAG_(CLASS_NAME, TYPE) TYPE,
+
+/// Setting ID enum entry: DECLARE(TYPE, NAME, ...) → NAME,
+#define SETTING_DECLARE_ID_(TYPE, NAME, ...) NAME,
+
+/// Layout computation: maps type names to tag values via if-chain in constexpr.
+/// We emit one `if constexpr`-like branch per type to map TYPE → SettingTypeTag_::TYPE.
+/// The ENTRY macro checks the type name via a constexpr lambda over the settings list.
+///
+
+/// Tag array entry: maps TYPE to SettingTypeTag::TYPE.
+/// Works because each .cpp has at most one DECLARE_SETTINGS_TRAITS.
+#define SETTING_TAG_ARRAY_ENTRY_(TYPE, NAME, ...) SettingTypeTag::TYPE,
+
+/// Data struct array declaration: one array per type, sized by layout.
+#define SETTING_DECLARE_DATA_ARRAY_(CLASS_NAME, TYPE) \
+    SettingField##TYPE TYPE##_[settings_layout.type_counts[static_cast<size_t>(SettingTypeTag::TYPE)]];
+
+/// Data constructor: initialize each setting in its typed array.
+/// Traits_ is aliased by IMPLEMENT_SETTINGS_TRAITS_COMMON before expansion.
+#define SETTING_INIT_DEFAULT_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    TYPE##_[Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)]] = SettingField##TYPE(DEFAULT);
+
+/// Switch case for getSettingDefault_: one case per setting
+#define SETTING_DEFAULT_CASE_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    case Traits_::SettingID_::NAME: { SettingField##TYPE d(DEFAULT); return {static_cast<Field>(d), d.toString()}; }
+
 /// Generate traits for a basic settings collection (no custom settings, no paths)
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0)
+#define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0, SUPPORTED_TYPES_MACRO)
 
 /// Generate traits with support for custom (user-defined) settings
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 1)
+#define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SUPPORTED_TYPES_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 1, SUPPORTED_TYPES_MACRO)
 
 /// Generate traits with support for settings that have config file paths
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 0)
+#define DECLARE_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, SUPPORTED_TYPES_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, 0, SUPPORTED_TYPES_MACRO)
 
 /// Generate traits with both custom settings and path support
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_WITH_PATH_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 1)
+#define DECLARE_SETTINGS_TRAITS_WITH_PATH_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, SUPPORTED_TYPES_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_NO_PATH, LIST_WITH_PATH, 1, SUPPORTED_TYPES_MACRO)
 
 
 // ----------------------------------------------------------------------------
 // DECLARE_SETTINGS_TRAITS_COMMON - The actual implementation
 // ----------------------------------------------------------------------------
 
-/** This macro generates a complete Traits struct with two main components:
+/** This macro generates a complete Traits struct with:
   *
-  * 1. Data struct: Contains actual SettingFieldXXX members for each setting
-  *    - Generated from LIST_OF_SETTINGS macros
-  *    - Provides compile-time type-safe member access
+  * 1. Constexpr layout computation: groups settings by type into contiguous arrays
+  *    for minimal padding and efficient bulk copy.
   *
-  * 2. Accessor class: Provides runtime reflection capabilities
+  * 2. Data struct: Contains typed arrays (e.g., Bool_[], UInt64_[]) sized by the
+  *    constexpr layout, with a constructor that initializes default values.
+  *
+  * 3. Accessor class: Provides runtime reflection capabilities
   *    - Maps setting names to indices
   *    - Provides generic get/set via Field interface
   *    - Stores metadata (description, type, default value, flags)
@@ -1037,19 +1085,63 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
   * - LIST_OF_SETTINGS_WITHOUT_PATH_MACRO: Macro that expands to DECLARE() calls
   * - LIST_OF_SETTINGS_WITH_PATH_MACRO: Macro for settings with config paths
   * - ALLOW_CUSTOM_SETTINGS: 0 or 1, enables user-defined settings
+  * - SUPPORTED_TYPES_MACRO: X-macro listing all SettingField types used, e.g. M(Bool) M(UInt64)
   */
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_COMMON( \
-    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
+    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, \
+    ALLOW_CUSTOM_SETTINGS, SUPPORTED_TYPES_MACRO) \
+    /* Constexpr layout at namespace scope (before struct, so array sizes are constant). */ \
+    /* Unprefixed names are safe: each .cpp has at most one DECLARE_SETTINGS_TRAITS. */ \
+    enum class SettingTypeTag : uint8_t \
+    { \
+        SUPPORTED_TYPES_MACRO(SETTINGS_TRAITS_NAME, SETTING_DECLARE_TYPE_TAG_) \
+        NUM_TYPES \
+    }; \
+    enum class SettingID : size_t \
+    { \
+        LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_DECLARE_ID_, SETTING_DECLARE_ID_) \
+        LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_DECLARE_ID_, SETTING_DECLARE_ID_) \
+        NUM_SETTINGS \
+    }; \
+    struct SettingsLayout \
+    { \
+        size_t type_counts[static_cast<size_t>(SettingTypeTag::NUM_TYPES)] = {}; \
+        size_t local_index[static_cast<size_t>(SettingID::NUM_SETTINGS)] = {}; \
+    }; \
+    constexpr SettingTypeTag setting_type_tags[] = { \
+        LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_TAG_ARRAY_ENTRY_, SETTING_TAG_ARRAY_ENTRY_) \
+        LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_TAG_ARRAY_ENTRY_, SETTING_TAG_ARRAY_ENTRY_) \
+    }; \
+    constexpr SettingsLayout computeSettingsLayout() \
+    { \
+        SettingsLayout layout; \
+        for (size_t i = 0; i < static_cast<size_t>(SettingID::NUM_SETTINGS); ++i) \
+            layout.local_index[i] = layout.type_counts[static_cast<size_t>(setting_type_tags[i])]++; \
+        return layout; \
+    } \
+    constexpr SettingsLayout settings_layout = computeSettingsLayout(); \
+    \
     struct SETTINGS_TRAITS_NAME \
     { \
-        /** Data struct: Contains one SettingFieldXXX member per setting */ \
+        using SettingTypeTag_ = SettingTypeTag; \
+        using SettingID_ = SettingID; \
+        static constexpr auto & settings_layout_ = settings_layout; \
+        \
+        /* Data struct: typed arrays sized by the constexpr layout */ \
         struct Data \
         { \
-            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
+            SUPPORTED_TYPES_MACRO(SETTINGS_TRAITS_NAME, SETTING_DECLARE_DATA_ARRAY_) \
+            Data(); \
         }; \
         \
+        DECLARE_SETTINGS_TRAITS_BODY_(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
+    };
+
+/// Shared body for settings traits — everything after the Data definition.
+/// NOLINTNEXTLINE
+#define DECLARE_SETTINGS_TRAITS_BODY_( \
+    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
         /** Accessor: Provides runtime reflection and metadata access */ \
         class Accessor \
         { \
@@ -1071,66 +1163,79 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
-            /* Value conversion utilities */ \
+            /* Value conversion utilities — use type-level ops (no Data instance needed) */ \
             Field castValueUtil(size_t index, const Field & value) const \
             { \
-                auto p = field_infos[index].create_default_function(); \
-                *p = value; \
-                return static_cast<Field>(*p); \
+                return field_infos[index].ops->cast_value(value); \
             } \
             String valueToStringUtil(size_t index, const Field & value) const \
             { \
-                auto p = field_infos[index].create_default_function(); \
-                *p = value; \
-                return p->toString(); \
+                return field_infos[index].ops->value_to_string(value); \
             } \
             Field stringToValueUtil(size_t index, const String & str) const \
             { \
-                auto p = field_infos[index].create_default_function(); \
-                p->parseFromString(str); \
-                return static_cast<Field>(*p); \
+                return field_infos[index].ops->string_to_value(str); \
             } \
             \
             /* Direct data access (by index) */ \
+            static void * settingPtr(Data & data, size_t offset) \
+            { \
+                return reinterpret_cast<char *>(&data) + offset; \
+            } \
+            static const void * settingPtr(const Data & data, size_t offset) \
+            { \
+                return reinterpret_cast<const char *>(&data) + offset; \
+            } \
             void setValue(Data & data, size_t index, const Field & value) const \
             { \
-                *field_infos[index].get_data_function(data) = value; \
+                const auto & fi = field_infos[index]; \
+                fi.ops->assign_from_field(settingPtr(data, fi.data_offset), value); \
             } \
             Field getValue(const Data & data, size_t index) const \
             { \
-                return static_cast<Field>(*field_infos[index].get_data_function(*const_cast<Data *>(&data))); \
+                const auto & fi = field_infos[index]; \
+                return fi.ops->to_field(settingPtr(data, fi.data_offset)); \
             } \
             void setValueString(Data & data, size_t index, const String & str) const \
             { \
-                field_infos[index].get_data_function(data)->parseFromString(str); \
+                const auto & fi = field_infos[index]; \
+                fi.ops->parse_from_string(settingPtr(data, fi.data_offset), str); \
             } \
             String getValueString(const Data & data, size_t index) const \
             { \
-                return field_infos[index].get_data_function(*const_cast<Data *>(&data))->toString(); \
+                const auto & fi = field_infos[index]; \
+                return fi.ops->to_string(settingPtr(data, fi.data_offset)); \
             } \
             bool isValueChanged(const Data & data, size_t index) const \
             { \
-                return field_infos[index].get_data_function(*const_cast<Data *>(&data))->isChanged(); \
+                const auto & fi = field_infos[index]; \
+                return fi.ops->is_changed(settingPtr(data, fi.data_offset)); \
             } \
             void resetValueToDefault(Data & data, size_t index) const \
             { \
-                auto p = field_infos[index].create_default_function(); \
-                *field_infos[index].get_data_function(*const_cast<Data *>(&data)) = static_cast<Field>(*p); \
-                field_infos[index].get_data_function(*const_cast<Data *>(&data))->setChanged(false); \
+                const auto & fi = field_infos[index]; \
+                void * ptr = settingPtr(data, fi.data_offset); \
+                fi.ops->assign_from_field(ptr, fi.get_default().first); \
+                fi.ops->set_changed(ptr, false); \
             } \
             \
             /* Binary serialization (by index) */ \
             void writeBinary(const Data & data, size_t index, WriteBuffer & out) const \
             { \
-                field_infos[index].get_data_function(*const_cast<Data *>(&data))->writeBinary(out); \
+                const auto & fi = field_infos[index]; \
+                fi.ops->write_binary(settingPtr(data, fi.data_offset), out); \
             } \
             void readBinary(Data & data, size_t index, ReadBuffer & in) const \
             { \
-                field_infos[index].get_data_function(data)->readBinary(in); \
+                const auto & fi = field_infos[index]; \
+                fi.ops->read_binary(settingPtr(data, fi.data_offset), in); \
             } \
             \
             /* Default value as string */ \
-            String getDefaultValueString(size_t index) const { return field_infos[index].create_default_function()->toString(); } \
+            String getDefaultValueString(size_t index) const \
+            { \
+                return field_infos[index].get_default().second; \
+            } \
             \
         private: \
             Accessor(); \
@@ -1143,8 +1248,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const std::string_view type; \
                 const std::string_view description; \
                 const UInt64 flags; \
-                SettingFieldBase * (*get_data_function)(Data &);                    /* Get pointer to setting in Data struct */ \
-                std::unique_ptr<SettingFieldBase> (*create_default_function)();     /* Create setting with default value */ \
+                const SettingFieldOps * ops;                                        /* Type-erased ops, shared per type */ \
+                size_t data_offset;                                                 /* offsetof(Data, NAME) */ \
+                std::pair<Field, String> (*get_default_fn)(size_t);                  /* Shared default-value function (one per settings class) */ \
+                size_t get_default_index;                                               /* Index argument for get_default_fn */ \
+                std::pair<Field, String> get_default() const { return get_default_fn(get_default_index); } \
             }; \
             \
             std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
@@ -1179,18 +1287,22 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
                 return it->second; \
             return name; \
-        } \
-    };
+        }
 
 
 /// Skip this setting in the macro expansion (used for selective application)
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
 
-/// Generates a Data member
-/// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    SettingField##TYPE NAME {DEFAULT};
+/// Compute the byte offset of the Data base class within an Impl type.
+/// Used by INITIALIZE_SETTING_EXTERN in each settings .cpp.
+template <typename Impl, typename Data>
+size_t settingsDataBaseOffset()
+{
+    const Impl * fake = reinterpret_cast<const Impl *>(alignof(Impl));
+    const auto * data = static_cast<const Data *>(fake);
+    return reinterpret_cast<const char *>(data) - reinterpret_cast<const char *>(fake);
+}
 
 /// Generates an alias mapping entry
 /// NOLINTNEXTLINE
@@ -1209,26 +1321,52 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 
 /** This macro implements:
-  * 1. Accessor::instance() - Singleton accessor, initialized lazily on first access
-  * 2. Accessor::Accessor() - Private constructor
-  * 3. Accessor::find() - Name lookup function
-  * 4. Explicit template instantiation of BaseSettings<SETTINGS_TRAITS_NAME>
-  *
-  * The instance() method builds the field_infos vector with metadata for each setting.
-  * This is the "expensive" part that creates all the lambda functions at compile time.
+  * 1. Data::Data() constructor — initializes all settings to their defaults
+  * 2. getSettingDefault_() — single switch function replacing per-setting lambdas
+  * 3. Accessor::instance() — Singleton accessor, initialized lazily on first access
+  * 4. Accessor::Accessor() — Private constructor
+  * 5. Accessor::find() — Name lookup function
+  * 6. Explicit template instantiation of BaseSettings<SETTINGS_TRAITS_NAME>
   */
     /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
+    /* Data constructor: initialize all typed arrays with default values. */ \
+    /* The Traits_ alias lets helper macros reference the enclosing traits. */ \
+    SETTINGS_TRAITS_NAME::Data::Data() \
+    { \
+        using Traits_ = SETTINGS_TRAITS_NAME; \
+        LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_INIT_DEFAULT_, SETTING_INIT_DEFAULT_) \
+        LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_INIT_DEFAULT_, SETTING_INIT_DEFAULT_) \
+    } \
+    \
+    /* Single switch function for all setting defaults (replaces 1 lambda per setting) */ \
+    static std::pair<Field, String> getSettingDefault_(size_t index) \
+    { \
+        using Traits_ = SETTINGS_TRAITS_NAME; \
+        switch (static_cast<Traits_::SettingID_>(index)) \
+        { \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_DEFAULT_CASE_, SETTING_DEFAULT_CASE_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_DEFAULT_CASE_, SETTING_DEFAULT_CASE_) \
+            default: UNREACHABLE(); \
+        } \
+    } \
+    \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
+        using Traits_ = SETTINGS_TRAITS_NAME; \
+        using Data = Traits_::Data; \
         /* Singleton pattern: initialize once, return same instance */ \
         static const Accessor the_instance = [] \
         { \
             [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             Accessor res; \
+            /* offsetof on non-standard-layout types is well-defined in Clang */ \
+            _Pragma("clang diagnostic push") \
+            _Pragma("clang diagnostic ignored \"-Winvalid-offsetof\"") \
             /* Populate field_infos with one entry per setting */ \
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
+            _Pragma("clang diagnostic pop") \
             /* Build name -> index map for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
@@ -1252,9 +1390,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 
 /// Generate a FieldInfo entry for a setting without a config path.
-/// Creates two lambdas:
-/// 1. get_data_function: Returns pointer to the setting field in a Data struct
-/// 2. create_default_function: Creates a new setting field with default value
+/// Uses typed-array offsets from the constexpr layout.
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     res.field_infos.emplace_back( \
@@ -1265,8 +1401,10 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             #TYPE, \
             DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
-            [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
-            []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
+            &settingFieldOps<SettingField##TYPE>(), \
+            offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+            &getSettingDefault_, \
+            static_cast<size_t>(Traits_::SettingID_::NAME), \
         });
 
 /// Generate a FieldInfo entry for a setting with a config file path
@@ -1280,7 +1418,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             #TYPE, \
             DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
-            [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
-            []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
+            &settingFieldOps<SettingField##TYPE>(), \
+            offsetof(Data, TYPE##_) + Traits_::settings_layout_.local_index[static_cast<size_t>(Traits_::SettingID_::NAME)] * sizeof(SettingField##TYPE), \
+            &getSettingDefault_, \
+            static_cast<size_t>(Traits_::SettingID_::NAME), \
         });
 }

@@ -10,15 +10,19 @@
 namespace DB
 {
 
-DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS)
+DECLARE_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS, STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DataLakeStorageSettingsTraits, LIST_OF_DATA_LAKE_STORAGE_SETTINGS)
 
 struct DataLakeStorageSettingsImpl : public BaseSettings<DataLakeStorageSettingsTraits>
 {
 };
 
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<DataLakeStorageSettingsImpl, DataLakeStorageSettingsTraits::Data>();
+
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    DataLakeStorageSettings##TYPE NAME = &DataLakeStorageSettingsImpl ::NAME;
+    DataLakeStorageSettings##TYPE NAME{offsetof(DataLakeStorageSettingsTraits::Data, TYPE##_) \
+        + DataLakeStorageSettingsTraits::settings_layout_.local_index[static_cast<size_t>(DataLakeStorageSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace DataLakeStorageSetting
 {

@@ -22,7 +22,7 @@ namespace ErrorCodes
     DECLARE(UInt64, min_bytes_to_keep, 0, "Minimum block size (in bytes) to retain in Memory table buffer.", 0) \
     DECLARE(UInt64, max_bytes_to_keep, 0, "Maximum block size (in bytes) to retain in Memory table buffer.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS)
+DECLARE_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MEMORY_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS)
 
 
@@ -30,7 +30,12 @@ struct MemorySettingsImpl : public BaseSettings<MemorySettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MemorySettings##TYPE NAME = &MemorySettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<MemorySettingsImpl, MemorySettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    MemorySettings##TYPE NAME{offsetof(MemorySettingsTraits::Data, TYPE##_) \
+        + MemorySettingsTraits::settings_layout_.local_index[static_cast<size_t>(MemorySettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace MemorySetting
 {
@@ -90,20 +95,20 @@ ASTPtr MemorySettings::getSettingsChangesQuery()
 
 void MemorySettings::sanityCheck() const
 {
-    if (impl->min_bytes_to_keep > impl->max_bytes_to_keep)
+    if ((*impl)[MemorySetting::min_bytes_to_keep] > (*impl)[MemorySetting::max_bytes_to_keep])
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_bytes_to_keep` cannot be higher than the `max_bytes_to_keep`. `min_bytes_to_keep`: {}, `max_bytes_to_keep`: {}",
-            impl->min_bytes_to_keep.value,
-            impl->max_bytes_to_keep.value);
+            (*impl)[MemorySetting::min_bytes_to_keep].value,
+            (*impl)[MemorySetting::max_bytes_to_keep].value);
 
 
-    if (impl->min_rows_to_keep > impl->max_rows_to_keep)
+    if ((*impl)[MemorySetting::min_rows_to_keep] > (*impl)[MemorySetting::max_rows_to_keep])
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_rows_to_keep` cannot be higher than the `max_rows_to_keep`. `min_rows_to_keep`: {}, `max_rows_to_keep`: {}",
-            impl->min_rows_to_keep.value,
-            impl->max_rows_to_keep.value);
+            (*impl)[MemorySetting::min_rows_to_keep].value,
+            (*impl)[MemorySetting::max_rows_to_keep].value);
 }
 
 void MemorySettings::applyChanges(const DB::SettingsChanges & changes)

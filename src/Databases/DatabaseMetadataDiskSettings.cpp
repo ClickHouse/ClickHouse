@@ -16,7 +16,7 @@ namespace DB
     DECLARE(String, disk, "", R"(Name of disk storing table metadata files in the database.)", 0) \
     DECLARE(Bool, lazy_load_tables, false, R"(If enabled, tables are not loaded during database startup. Instead, a lightweight proxy is created and the real table is loaded on first access.)", 0) \
 
-DECLARE_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS)
+DECLARE_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS, DATABASE_METADATA_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DatabaseMetadataDiskSettingsTraits, LIST_OF_DATABASE_METADATA_DISK_SETTINGS)
 
 struct DatabaseMetadataDiskSettingsImpl : public BaseSettings<DatabaseMetadataDiskSettingsTraits>
@@ -24,8 +24,12 @@ struct DatabaseMetadataDiskSettingsImpl : public BaseSettings<DatabaseMetadataDi
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
 };
 
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<DatabaseMetadataDiskSettingsImpl, DatabaseMetadataDiskSettingsTraits::Data>();
+
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    DatabaseMetadataDiskSettings##TYPE NAME = &DatabaseMetadataDiskSettingsImpl ::NAME;
+    DatabaseMetadataDiskSettings##TYPE NAME{offsetof(DatabaseMetadataDiskSettingsTraits::Data, TYPE##_) \
+        + DatabaseMetadataDiskSettingsTraits::settings_layout_.local_index[static_cast<size_t>(DatabaseMetadataDiskSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace DatabaseMetadataDiskSetting
 {

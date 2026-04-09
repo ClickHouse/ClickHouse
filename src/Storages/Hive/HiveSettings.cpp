@@ -29,14 +29,19 @@ namespace ErrorCodes
     HIVE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS)
+DECLARE_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS, HIVE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(HiveSettingsTraits, LIST_OF_HIVE_SETTINGS)
 
 struct HiveSettingsImpl : public BaseSettings<HiveSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) HiveSettings##TYPE NAME = &HiveSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<HiveSettingsImpl, HiveSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    HiveSettings##TYPE NAME{offsetof(HiveSettingsTraits::Data, TYPE##_) \
+        + HiveSettingsTraits::settings_layout_.local_index[static_cast<size_t>(HiveSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace HiveSetting
 {

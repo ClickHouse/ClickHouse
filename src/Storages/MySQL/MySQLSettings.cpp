@@ -31,14 +31,19 @@ namespace ErrorCodes
     DECLARE(UInt64, read_write_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, "Read/write timeout (in seconds)", 0) \
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', or 'date2String'.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
+DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
 
 struct MySQLSettingsImpl : public BaseSettings<MySQLSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MySQLSettings##TYPE NAME = &MySQLSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<MySQLSettingsImpl, MySQLSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    MySQLSettings##TYPE NAME{offsetof(MySQLSettingsTraits::Data, TYPE##_) \
+        + MySQLSettingsTraits::settings_layout_.local_index[static_cast<size_t>(MySQLSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace MySQLSetting
 {
@@ -99,10 +104,10 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
 
     const Settings & settings = context->getQueryContext()->getSettingsRef();
 
-    if (settings[Setting::mysql_datatypes_support_level].value != impl->mysql_datatypes_support_level.value)
+    if (settings[Setting::mysql_datatypes_support_level].value != (*impl)[MySQLSetting::mysql_datatypes_support_level].value)
     {
         static constexpr auto setting_name = "mysql_datatypes_support_level";
-        impl->mysql_datatypes_support_level = settings[Setting::mysql_datatypes_support_level];
+        (*impl)[MySQLSetting::mysql_datatypes_support_level] = settings[Setting::mysql_datatypes_support_level];
 
         if (!storage_def.settings)
         {

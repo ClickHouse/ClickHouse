@@ -13,14 +13,19 @@ namespace DB
     DECLARE(Bool, prefer_dependency_replica, false, "When enabled and the view has dependencies (DEPENDS ON), the replica that ran the parent refresh gets priority for running the dependent refresh. Other replicas delay their attempt by prefer_dependency_replica_delay_ms. Useful for SharedMergeTree to avoid replication lag causing missing data in dependent refresh chains.", 0) \
     DECLARE(UInt64, prefer_dependency_replica_delay_ms, 2000, "How long non-preferred replicas wait before attempting to run a dependent refresh when prefer_dependency_replica is enabled. The preferred replica (the one that ran the parent) attempts immediately.", 0) \
 
-DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
+DECLARE_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS, REFRESH_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(RefreshSettingsTraits, LIST_OF_REFRESH_SETTINGS)
 
 struct RefreshSettingsImpl : public BaseSettings<RefreshSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) RefreshSettings##TYPE NAME = &RefreshSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<RefreshSettingsImpl, RefreshSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    RefreshSettings##TYPE NAME{offsetof(RefreshSettingsTraits::Data, TYPE##_) \
+        + RefreshSettingsTraits::settings_layout_.local_index[static_cast<size_t>(RefreshSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace RefreshSetting
 {

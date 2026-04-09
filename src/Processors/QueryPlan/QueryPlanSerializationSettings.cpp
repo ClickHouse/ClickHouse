@@ -112,7 +112,7 @@ namespace DB
 
 // clang-format on
 
-DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
+DECLARE_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS, QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(QueryPlanSerializationSettingsTraits, PLAN_SERIALIZATION_SETTINGS)
 
 struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSerializationSettingsTraits>
@@ -120,7 +120,12 @@ struct QueryPlanSerializationSettingsImpl : public BaseSettings<QueryPlanSeriali
 };
 
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) QueryPlanSerializationSettings##TYPE NAME = &QueryPlanSerializationSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<QueryPlanSerializationSettingsImpl, QueryPlanSerializationSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    QueryPlanSerializationSettings##TYPE NAME{offsetof(QueryPlanSerializationSettingsTraits::Data, TYPE##_) \
+        + QueryPlanSerializationSettingsTraits::settings_layout_.local_index[static_cast<size_t>(QueryPlanSerializationSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace QueryPlanSerializationSetting
 {

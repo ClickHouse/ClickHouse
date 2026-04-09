@@ -24,7 +24,7 @@ namespace ErrorCodes
     SET_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS)
+DECLARE_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS, SET_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(SetSettingsTraits, LIST_OF_SET_SETTINGS)
 
 
@@ -32,7 +32,12 @@ struct SetSettingsImpl : public BaseSettings<SetSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) SetSettings##TYPE NAME = &SetSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<SetSettingsImpl, SetSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    SetSettings##TYPE NAME{offsetof(SetSettingsTraits::Data, TYPE##_) \
+        + SetSettingsTraits::settings_layout_.local_index[static_cast<size_t>(SetSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace SetSetting
 {

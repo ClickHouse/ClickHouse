@@ -53,14 +53,19 @@ namespace ErrorCodes
     CLIENT_SETTINGS(M, ALIAS) \
     AUTH_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST)
+DECLARE_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST, S3AUTH_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(S3AuthSettingsTraits, CLIENT_SETTINGS_LIST)
 
 struct S3AuthSettingsImpl : public BaseSettings<S3AuthSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) S3AuthSettings##TYPE NAME = &S3AuthSettingsImpl ::NAME;
+static const size_t SETTINGS_DATA_BASE_OFFSET_ = settingsDataBaseOffset<S3AuthSettingsImpl, S3AuthSettingsTraits::Data>();
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    S3AuthSettings##TYPE NAME{offsetof(S3AuthSettingsTraits::Data, TYPE##_) \
+        + S3AuthSettingsTraits::settings_layout_.local_index[static_cast<size_t>(S3AuthSettingsTraits::SettingID_::NAME)] * sizeof(SettingField##TYPE) \
+        + SETTINGS_DATA_BASE_OFFSET_};
 
 namespace S3AuthSetting
 {
