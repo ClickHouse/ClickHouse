@@ -329,6 +329,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "RaftInstance: failed to accept a rpc connection due to error 125" \
            -e "UNKNOWN_DATABASE" \
            -e "NETWORK_ERROR" \
+           -e "DNS_ERROR" \
            -e "UNKNOWN_TABLE" \
            -e "ZooKeeperClient" \
            -e "KEEPER_EXCEPTION" \
