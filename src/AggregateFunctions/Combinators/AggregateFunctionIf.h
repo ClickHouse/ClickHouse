@@ -42,7 +42,7 @@ public:
         , nested_func(nested), num_arguments(types.size())
     {
         if (num_arguments == 0)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require at least one argument", getName());
+            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires at least one argument", getName());
 
         only_null_condition = types.back()->onlyNull();
 
