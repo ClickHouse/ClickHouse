@@ -104,6 +104,8 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , stage(stage_)
     , extension(extension_)
     , priority_func(priority_func_)
+    , skip_unavailable_shards(context->getSettingsRef()[Setting::skip_unavailable_shards])
+    , skip_unavailable_shards_mode(context->getSettingsRef()[Setting::skip_unavailable_shards_mode])
     , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
     if (stage == QueryProcessingStage::QueryPlan && !query_plan)
@@ -691,9 +693,8 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         {
             got_exception_from_replica = true;
 
-            auto mode = context->getSettingsRef()[Setting::skip_unavailable_shards_mode];
-            if (context->getSettingsRef()[Setting::skip_unavailable_shards]
-                && shouldSkipShardException(mode, *packet.exception, received_data))
+            if (skip_unavailable_shards
+                && shouldSkipShardException(skip_unavailable_shards_mode, *packet.exception, received_data))
             {
                 LOG_ERROR(log,
                     "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
@@ -864,9 +865,8 @@ void RemoteQueryExecutor::finish()
             {
                 got_exception_from_replica = true;
 
-                auto mode = context->getSettingsRef()[Setting::skip_unavailable_shards_mode];
-                if (context->getSettingsRef()[Setting::skip_unavailable_shards]
-                    && shouldSkipShardException(mode, *packet.exception, received_data))
+                if (skip_unavailable_shards
+                    && shouldSkipShardException(skip_unavailable_shards_mode, *packet.exception, received_data))
                 {
                     LOG_ERROR(log,
                         "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",

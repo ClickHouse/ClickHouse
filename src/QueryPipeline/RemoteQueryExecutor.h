@@ -4,6 +4,7 @@
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Common/UniqueLock.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -303,6 +304,10 @@ private:
     /// Whether we have received any data blocks from the remote shard.
     /// Used by `skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing'`.
     bool received_data = false;
+
+    /// Cached values from settings for skip_unavailable_shards handling.
+    bool skip_unavailable_shards = false;
+    SkipUnavailableShardsMode skip_unavailable_shards_mode = SkipUnavailableShardsMode::UNAVAILABLE;
 
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
