@@ -216,7 +216,7 @@ Examples:
 - `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(lower(col), lower(col)))`
 - Not allowed: `INDEX idx(lower(col)) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(col, col))`
 
-Using non-deterministic functions is disallowed.
+Usage of non-deterministic functions is disallowed.
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
@@ -284,31 +284,32 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each individual token after tokenization.
+**Postprocessor argument (optional)**. The postprocessor refers to an expression which is applied to each token produced by tokenization.
 
-Unlike the preprocessor, which transforms the entire input string before it is split into tokens, the postprocessor operates on the tokens themselves, one at a time.
+Unlike the preprocessor, which transforms the entire input string before the tokenizer splits it into tokens, the postprocessor operates on the tokens themselves, one at a time.
 This is the natural place for transformations that are inherently token-level.
 
 Typical use cases for the postprocessor argument include:
-1. **Filtering stop words and noise tokens**. Very common words such as "the", "a", "is", or domain-specific noise tokens carry little search value and inflate the index.
-   A postprocessor can discard them by returning an empty string — tokens mapped to an empty string are not added to the index.
+1. **Filtering stop words (frequent tokens)**. Very common tokens such as "the", "a", and "is" carry little search relevancy and inflate the index.
+   You can use the postprocessor to discard them by converting them to empty tokens — empty tokens are ignored, i.e., not added to the index.
    Example: `if(col IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', col)`
-2. **Stemming or lemmatization**. Reducing each token to its root or base form improves search recall by matching morphological variants (e.g. "running" → "run", "better" → "good").
+2. **Stemming or lemmatization**. Mapping each token to its stem improves search recall by matching morphological variants of the token with the same meaning.
+   For exmaple, a query for "running" would also match "run", searching for "better" finds "good", etc.
    ClickHouse provides a built-in [stem](/sql-reference/functions/string-functions.md/#stem) function for several languages.
    Example: `stem('en', col)`
 3. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
-   Note: when case normalization is the only transformation needed, using it as a `preprocessor` is equally effective and slightly more efficient.
+   We generally recommend using a corresponding preprocessor for lower- and upper-casing.
 
-The postprocessor expression must transform an input token of type [String](/sql-reference/data-types/string.md) to a value of the same type.
+The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of type [String](/sql-reference/data-types/string.md).
 The expression must reference the same column (or expression) on which the text index is defined.
 When the column is of type `Array(String)`, the postprocessor still operates on individual tokens as plain `String` values.
 
-Using non-deterministic functions is disallowed.
+Usage of non-deterministic functions is disallowed.
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) apply the postprocessor to each search token before looking it up in the index.
-Search tokens that the postprocessor maps to an empty string are ignored (they are treated as if absent from the search phrase).
+Search tokens that the postprocessor maps to an empty string are ignored, i.e. treated as absent from the search phrase.
 
-Example — stop word filtering:
+Example for stop word filtering:
 
 ```sql
 CREATE TABLE table
@@ -323,7 +324,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-Example — stemming:
+Example for stemming:
 
 ```sql
 CREATE TABLE table
@@ -340,23 +341,6 @@ ORDER BY tuple();
 -- The query token 'running' is stemmed to 'run' before the lookup,
 -- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
 SELECT count() FROM table WHERE hasToken(str, 'running');
-```
-
-**Combining the preprocessor and postprocessor**. Both arguments can be specified together.
-In that case, the preprocessor is applied to the full column value first, then the tokenizer splits the result into tokens, and finally the postprocessor is applied to each individual token.
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        preprocessor = lower(str),                                               -- 1. lowercase the full value before splitting
-        postprocessor = if(str IN ('the', 'a', 'an', 'of'), '', stem('en', str)) -- 2. filter stop words and stem each token
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
 ```
 
 **Other arguments (optional)**.
