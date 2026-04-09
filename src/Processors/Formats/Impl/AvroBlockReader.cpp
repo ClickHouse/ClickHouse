@@ -1,8 +1,6 @@
-#include "AvroBlockReader.h"
+#include <Processors/Formats/Impl/AvroBlockReader.h>
 
 #if USE_AVRO
-
-#include <sstream>
 
 #include <IO/VarInt.h>
 #include <IO/ReadHelpers.h>
@@ -37,6 +35,10 @@ int64_t AvroBlockReader::readBlockInto(ReadBuffer & in, Memory<> & memory)
     Int64 byte_count;
     DB::readVarInt(object_count, in);
     DB::readVarInt(byte_count, in);
+
+    if (object_count < 0)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Invalid Avro block: negative object count {}", object_count);
 
     if (byte_count < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -159,9 +161,7 @@ AvroHeaderState AvroBlockReader::parseHeader(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Avro file missing schema in metadata");
 
     std::string schema_json(schema_it->second.begin(), schema_it->second.end());
-    std::istringstream schema_stream(schema_json);
-    avro::ValidSchema schema;
-    avro::compileJsonSchema(schema_stream, schema);
+    avro::ValidSchema schema = avro::compileJsonSchemaFromString(schema_json);
 
     /// Extract codec
     avro::Codec codec = avro::NULL_CODEC;

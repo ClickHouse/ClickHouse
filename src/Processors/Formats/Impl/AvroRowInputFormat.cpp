@@ -1180,6 +1180,8 @@ Chunk AvroSegmentInputFormat::read()
             DB::readVarInt(object_count, segment_buf);
             DB::readVarInt(byte_count, segment_buf);
 
+            if (object_count < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Avro block: negative object count {}", object_count);
             if (byte_count < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Avro block: negative byte count {}", byte_count);
 
