@@ -49,7 +49,7 @@ using FunctionBitBoolMaskAnd = BinaryArithmeticOverloadResolver<BitBoolMaskAndIm
 
 REGISTER_FUNCTION(BitBoolMaskAnd)
 {
-    factory.registerFunction<FunctionBitBoolMaskAnd>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
+    factory.registerFunction<FunctionBitBoolMaskAnd>();
 }
 
 }

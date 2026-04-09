@@ -13,8 +13,6 @@
 namespace DB
 {
 
-struct StorageID;
-
 struct YTsaurusStorageConfiguration
 {
     YTsaurusSettings settings;
@@ -26,13 +24,12 @@ struct YTsaurusStorageConfiguration
 
 /**
  *  Read only.
- *  One stream for dynamic table source.
- *  Multiple stream for static table source.
+ *  One stream only.
  */
 class StorageYTsaurus final : public IStorage
 {
 public:
-    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context, const StorageID * table_id = nullptr);
+    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context);
 
     static YTsaurusStorageConfiguration processNamedCollectionResult(const NamedCollection & named_collection, const YTsaurusSettings & setting, bool is_for_dictionary);
 

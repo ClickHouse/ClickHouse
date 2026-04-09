@@ -1,7 +1,5 @@
 #include <Columns/ColumnIndex.h>
-#include <Common/Exception.h>
 #include <DataTypes/NumberTraits.h>
-#include <base/demangle.h>
 #include <Common/WeakHash.h>
 
 namespace DB

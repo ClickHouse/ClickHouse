@@ -7,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/validateColumnType.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -691,7 +690,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
                     ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
                 res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (!columnMatchesType(*res_column.column, *res_column.type))
+                if (res_column.column->getDataType() != res_column.type->getColumnType())
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,

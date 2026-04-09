@@ -75,15 +75,15 @@ public:
 REGISTER_FUNCTION(GenerateULID)
 {
     /// generateULID documentation
-    FunctionDocumentation::Description description = R"(
+    FunctionDocumentation::Description description_generateULID = R"(
 Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](https://github.com/ulid/spec).
     )";
-    FunctionDocumentation::Syntax syntax = "generateULID([x])";
-    FunctionDocumentation::Arguments arguments = {
+    FunctionDocumentation::Syntax syntax_generateULID = "generateULID([x])";
+    FunctionDocumentation::Arguments arguments_generateULID = {
         {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a ULID.", {"FixedString(26)"}};
-    FunctionDocumentation::Examples examples = {
+    FunctionDocumentation::ReturnedValue returned_value_generateULID = {"Returns a ULID.", {"FixedString(26)"}};
+    FunctionDocumentation::Examples examples_generateULID = {
     {
         "Usage example",
         R"(
@@ -107,11 +107,11 @@ SELECT generateULID(1), generateULID(2)
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::ULID;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::IntroducedIn introduced_in_generateULID = {23, 2};
+    FunctionDocumentation::Category category_generateULID = FunctionDocumentation::Category::ULID;
+    FunctionDocumentation documentation_generateULID = {description_generateULID, syntax_generateULID, arguments_generateULID, {}, returned_value_generateULID, examples_generateULID, introduced_in_generateULID, category_generateULID};
 
-    factory.registerFunction<FunctionGenerateULID>(documentation);
+    factory.registerFunction<FunctionGenerateULID>(documentation_generateULID);
 }
 
 }

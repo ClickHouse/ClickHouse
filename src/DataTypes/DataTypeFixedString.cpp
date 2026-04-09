@@ -1,13 +1,11 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <Common/Exception.h>
-#include <Common/SipHash.h>
 
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
-
-#include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -56,9 +54,9 @@ void DataTypeFixedString::updateHashImpl(SipHash & hash) const
     hash.update(n);
 }
 
-SerializationPtr DataTypeFixedString::doGetSerialization(const SerializationInfoSettings &) const
+SerializationPtr DataTypeFixedString::doGetDefaultSerialization() const
 {
-    return SerializationFixedString::create(n);
+    return std::make_shared<SerializationFixedString>(n);
 }
 
 

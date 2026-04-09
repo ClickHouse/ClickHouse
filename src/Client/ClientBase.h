@@ -263,7 +263,6 @@ private:
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
-    virtual bool supportsLocalMetaCommands() const { return false; }
 
 protected:
 
@@ -469,7 +468,7 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
-    ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
+    ClientInfo::QueryKind query_kind;
 
     struct HostAndPort
     {
