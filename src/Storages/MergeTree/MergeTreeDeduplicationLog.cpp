@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -139,9 +140,8 @@ void MergeTreeDeduplicationLog::load()
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
-        /// Can happen in case we have unfinished log
-        if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        /// Open the existing log file for writing (it may be already opened if rotateAndDropIfNeeded called rotate)
+        initCurrentWriter();
     }
 }
 
@@ -169,18 +169,18 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
-    try
+    if (current_writer)
     {
-        if (current_writer)
+        try
         {
             current_writer->finalize();
             current_writer->sync();
         }
-    } catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
-        if (current_writer)
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost records: " + DB::toString(existing_logs[current_log_number].entries_count));
             current_writer->cancel();
+        }
         current_writer = nullptr;
     }
 
@@ -189,7 +189,7 @@ void MergeTreeDeduplicationLog::rotate()
     MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
     existing_logs.emplace(current_log_number, log_description);
 
-    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    initCurrentWriter();
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
@@ -237,6 +237,16 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
     }
 }
 
+void MergeTreeDeduplicationLog::initCurrentWriter()
+{
+    if (current_writer)
+        return;
+    if (existing_logs.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTree deduplication log has no log files");
+    auto write_mode = disk_supports_writing_with_append ? WriteMode::Append : WriteMode::Rewrite;
+    current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, write_mode);
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
@@ -268,7 +278,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    chassert(current_writer != nullptr);
+    /// Ensure the log file is open for writing
+    initCurrentWriter();
 
     for (const auto & block_id : block_ids)
     {
@@ -306,7 +317,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
-    chassert(current_writer != nullptr);
+    /// Ensure the log file is open for writing
+    initCurrentWriter();
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -356,10 +368,6 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
-
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 }
 
 

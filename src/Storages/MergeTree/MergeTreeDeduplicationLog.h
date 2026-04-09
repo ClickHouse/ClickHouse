@@ -201,6 +201,9 @@ private:
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
 
+    /// Open a writer for the most recent log file in append mode, if not already open.
+    void initCurrentWriter();
+
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
 };
