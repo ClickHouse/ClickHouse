@@ -249,12 +249,9 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     SummingSortedAlgorithm::ColumnsDefinition def;
     def.allow_tuple_element_aggregation = allow_tuple_element_aggregation;
 
-    auto [header_flatten, column_names_to_sum] = [&]() -> std::pair<Block, Names>
-    {
-        if (!allow_tuple_element_aggregation)
-            return {header, column_names_to_sum_raw};
-        return Nested::flattenTupleAndNameRecursive(header, column_names_to_sum_raw);
-    }();
+    auto [header_flatten, column_names_to_sum] = allow_tuple_element_aggregation
+        ? Nested::flattenTupleAndNameRecursive(header, column_names_to_sum_raw)
+        : std::pair{header, column_names_to_sum_raw};
     def.column_names = header_flatten.getNames();
     size_t num_columns = header_flatten.columns();
 
