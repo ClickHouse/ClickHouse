@@ -1,6 +1,6 @@
 8
-['test_sql_udf_single']
+['test_sql_udf_single_default']
 888
-['test_sql_udf_multiple_1','test_sql_udf_multiple_2','test_sql_udf_multiple_3']
+['test_sql_udf_multiple_1_default','test_sql_udf_multiple_2_default','test_sql_udf_multiple_3_default']
 888
-['test_sql_udf_duplicate']
+['test_sql_udf_duplicate_default']

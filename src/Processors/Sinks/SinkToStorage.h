@@ -12,9 +12,10 @@ class SinkToStorage : public ExceptionKeepingTransform
 {
 /// PartitionedSink owns nested sinks.
 friend class PartitionedSink;
+friend class DeltaLakePartitionedSink;
 
 public:
-    explicit SinkToStorage(const Block & header);
+    explicit SinkToStorage(SharedHeader header);
 
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }

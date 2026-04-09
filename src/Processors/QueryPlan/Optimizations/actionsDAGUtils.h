@@ -5,6 +5,9 @@
 namespace DB
 {
 
+using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
+using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.
@@ -79,4 +82,21 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
+bool isInjectiveFunction(const ActionsDAG::Node * node);
+
+/// Our objective is to replace injective function nodes in `actions` results with its children
+/// until only the irreducible subset of nodes remains. Against these set of nodes we will match partition key expression
+/// to determine if it maps all rows with the same value of group by key to the same partition.
+NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions);
+void removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG::Node * node, NodeSet & irreducible, NodeSet & visited);
+
+/// Here we check that partition key expression is a deterministic function of the reduced set of group by key nodes.
+/// No need to explicitly check that each function is deterministic, because it is a guaranteed property of partition key expression (checked on table creation).
+/// So it is left only to check that each output node depends only on the allowed set of nodes (`irreducible_nodes`).
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const ActionsDAG & partition_actions, const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches);
+bool allOutputsDependsOnlyOnAllowedNodes(
+    const NodeSet & irreducible_nodes, const MatchedTrees::Matches & matches, const ActionsDAG::Node * node, NodeMap & visited);
+
 }

@@ -12,7 +12,7 @@ public:
     using Operator = ASTSelectIntersectExceptQuery::Operator;
 
     /// max_threads is used to limit the number of threads for result pipeline.
-    IntersectOrExceptStep(Headers input_headers_, Operator operator_, size_t max_threads_ = 0);
+    IntersectOrExceptStep(SharedHeaders input_headers_, Operator operator_, size_t max_threads_ = 0);
 
     String getName() const override { return "IntersectOrExcept"; }
 

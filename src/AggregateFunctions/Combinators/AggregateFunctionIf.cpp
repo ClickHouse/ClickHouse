@@ -1,6 +1,9 @@
-#include "AggregateFunctionCombinatorFactory.h"
-#include "AggregateFunctionIf.h"
-#include "AggregateFunctionNull.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+
+#include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -121,6 +124,20 @@ public:
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if (filter_is_only_null)
+            return;
+
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        if (!column->isNullAt(0) && singleFilter(columns, 0))
+        {
+            this->setFlag(place);
+            this->nested_function->addManyDefaults(this->nestedPlace(place), &nested_column, length, arena);
         }
     }
 
@@ -315,7 +332,7 @@ public:
 
             for (size_t i = row_begin; i < row_end; i++)
             {
-                final_null_flags[i] = filter_null_map[i] || !filter_values[i];
+                final_null_flags[i] = (!!filter_null_map[i]) | !filter_values[i];
             }
         }
         else
@@ -337,9 +354,7 @@ public:
                     const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
                     const UInt8 * col_null_map = nullmap_column.getData().data();
                     for (size_t r = row_begin; r < row_end; r++)
-                    {
-                        final_null_flags[r] |= col_null_map[r];
-                    }
+                        final_null_flags[r] |= !!col_null_map[r];
                 }
                 nested_columns[arg] = &nullable_col.getNestedColumn();
             }
@@ -347,16 +362,7 @@ public:
                 nested_columns[arg] = columns[arg];
         }
 
-        bool at_least_one = false;
-        for (size_t i = row_begin; i < row_end; i++)
-        {
-            if (!final_null_flags[i])
-            {
-                at_least_one = true;
-                break;
-            }
-        }
-
+        bool at_least_one = !memoryIsByte(final_null_flags.get(), row_begin, row_end, 1);
         if (at_least_one)
         {
             this->setFlag(place);
@@ -381,7 +387,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        std::vector<llvm::Value * > is_null_values;
+        VectorWithMemoryTracking<llvm::Value * > is_null_values;
 
         for (size_t i = 0; i < arguments_size; ++i)
         {
@@ -466,6 +472,19 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
     bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
         && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
+
+    /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns
+    /// true, which changed the If-combinator null adapter for Tuple-returning functions:
+    ///   - single-arg (IfNullUnary): from `<false, false>` to `<true, true>` (flag byte added).
+    ///   - multi-arg (IfNullVariadic): from `<false, false>` to `<true, true>` (flag byte added).
+    /// The change below will make sure that the null adapter for Tuple remains `<false, false>` keeping backward compatibility.
+    /// This can lead to some inconsistency because now for Tuple-returning aggregate functions we never
+    /// serialize the flag byte. But the base variadic Null combinator (applied to multi-argument functions
+    /// with at least one Nullable argument) always serializes the flag byte unconditionally.
+    /// For example, `simpleLinearRegressionState` will write the flag byte but `simpleLinearRegressionIfState` will not.
+    /// This inconsistency predates the introduction of `Nullable(Tuple)`.
+    if (return_type_is_nullable && typeid_cast<const DataTypeTuple *>(getResultType().get()))
+        return_type_is_nullable = false;
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 

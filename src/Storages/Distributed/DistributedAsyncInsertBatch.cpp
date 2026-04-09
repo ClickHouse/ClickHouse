@@ -3,9 +3,12 @@
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
@@ -283,6 +286,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                     distributed_header.insert_query,
                     insert_settings,
                     distributed_header.client_info);
+                remote->initialize();
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
@@ -336,6 +340,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 distributed_header.insert_query,
                 insert_settings,
                 distributed_header.client_info);
+            remote.initialize();
 
             writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
             remote.onFinish();

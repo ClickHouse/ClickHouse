@@ -7,7 +7,7 @@
  * multiple allocators simultaneously.
  */
 #define JEMALLOC_PREFIX "je_"
-#define JEMALLOC_CPREFIX "JE_"
+#define JEMALLOC_CPREFIX ""
 
 /*
  * Define overrides for non-standard allocator-related functions if they are
@@ -319,6 +319,9 @@
  * Defined if MADV_[NO]CORE is supported as an argument to madvise.
  */
 /* #undef JEMALLOC_MADVISE_NOCORE */
+
+/* Defined if process_madvise(2) is available. */
+#undef JEMALLOC_HAVE_PROCESS_MADVISE
 
 /* Defined if mprotect(2) is available. */
 #define JEMALLOC_HAVE_MPROTECT

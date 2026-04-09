@@ -5,13 +5,14 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 
 #include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -41,9 +42,6 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 {
     if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
-
-    if (const auto * custom_metric_log_step = typeid_cast<CustomMetricLogViewStep *>(parent->step.get()))
-        return {custom_metric_log_step->getSortDescription(), SortingProperty::SortScope::Global};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
     {
@@ -134,6 +132,11 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
 
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
         return {sorting_step->getSortDescription(), scope};
+    }
+
+    if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
+    {
+        limit_by_step->applyOrder(properties->sort_description);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

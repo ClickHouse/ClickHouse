@@ -15,6 +15,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -45,7 +46,7 @@ namespace
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -57,7 +58,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -81,7 +82,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -377,8 +378,23 @@ bool CSVFormatReader::readField(
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
         /// works for tuples as well.
-        column.insertDefault();
-        return false;
+        ///
+        /// Exception: `Nullable(Tuple())` with zero elements serializes to
+        /// an empty field in CSV, so an empty value is its only valid
+        /// representation. Let it fall through to normal deserialization
+        /// instead of inserting NULL as the default.
+        bool is_nullable_empty_tuple = false;
+        if (type->isNullable())
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get()))
+                is_nullable_empty_tuple = tuple_type->getElements().empty();
+        }
+
+        if (!is_nullable_empty_tuple)
+        {
+            column.insertDefault();
+            return false;
+        }
     }
 
     if (format_settings.csv.use_default_on_bad_values)
@@ -504,7 +520,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<CSVRowInputFormat>(sample, buf, std::move(params), with_names, with_types, settings);
+            return std::make_shared<CSVRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, settings);
         });
     };
 

@@ -8,6 +8,7 @@ sidebar_label: 'fileCluster'
 sidebar_position: 61
 slug: /sql-reference/table-functions/fileCluster
 title: 'fileCluster'
+doc_type: 'reference'
 ---
 
 # fileCluster Table Function

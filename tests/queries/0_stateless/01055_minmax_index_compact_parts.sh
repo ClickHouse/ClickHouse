@@ -2,6 +2,7 @@
 
 # It's test 00837_minmax_index, buts with compact part.
 # Checks, that basic functionality with compact parts and skip indices is not broken.
+# add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +26,7 @@ CREATE TABLE minmax_idx
     INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
 ) ENGINE = MergeTree()
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_rows_for_wide_part = 1000000"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', min_rows_for_wide_part = 1000000, add_minmax_index_for_numeric_columns=0"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO minmax_idx VALUES

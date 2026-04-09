@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_STORAGE_READONLY;
     extern const int ACCESS_STORAGE_DOESNT_ALLOW_BACKUP;
+    extern const int REQUIRED_SECOND_FACTOR;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int LOGICAL_ERROR;
@@ -92,7 +93,7 @@ UUID IAccessStorage::getID(AccessEntityType type, const String & name) const
     auto id = findImpl(type, name);
     if (id)
         return *id;
-    throwNotFound(type, name);
+    throwNotFound(type, name, storage_name);
 }
 
 
@@ -528,6 +529,13 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
+Authentication::CredentialsCheckResult areCredentialsValid(
+    const std::string & user_name,
+    const AuthenticationData & authentication_method,
+    const Credentials & credentials,
+    const ExternalAuthenticators & external_authenticators,
+    const ClientInfo & client_info,
+    SettingsChanges & settings);
 
 std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
@@ -542,12 +550,13 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            AuthResult auth_result { .user_id = *id };
+            AuthResult auth_result { .user_id = *id, .user_name = credentials.getUserName() };
             if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
             bool skipped_not_allowed_authentication_methods = false;
 
+            bool need_second_factor = false;
             for (const auto & auth_method : user->authentication_methods)
             {
                 auto auth_type = auth_method.getType();
@@ -558,42 +567,47 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     continue;
                 }
 
-                if (areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings))
+                auto cred_check_result = areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings);
+                if (cred_check_result == Authentication::CredentialsCheckResult::Success)
                 {
                     auth_result.authentication_data = auth_method;
                     return auth_result;
                 }
+                if (cred_check_result == Authentication::CredentialsCheckResult::NeedSecondFactor)
+                    need_second_factor = true;
             }
 
             if (skipped_not_allowed_authentication_methods)
             {
-                LOG_INFO(log, "Skipped the check for not allowed authentication methods,"
+                LOG_INFO(getLogger(), "Skipped the check for not allowed authentication methods,"
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 
-            throwInvalidCredentials();
+            if (need_second_factor)
+                throw Exception(ErrorCodes::REQUIRED_SECOND_FACTOR, "Authentication requires second factor");
+            throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
         }
     }
 
     if (throw_if_user_not_exists)
-        throwNotFound(AccessEntityType::USER, credentials.getUserName());
+        throwNotFound(AccessEntityType::USER, credentials.getUserName(), storage_name);
     else
         return std::nullopt;
 }
 
-bool IAccessStorage::areCredentialsValid(
+Authentication::CredentialsCheckResult areCredentialsValid(
     const std::string & user_name,
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
     const ClientInfo & client_info,
-    SettingsChanges & settings) const
+    SettingsChanges & settings)
 {
     if (!credentials.isReady())
-        return false;
+        return Authentication::CredentialsCheckResult::Fail;
 
     if (credentials.getUserName() != user_name)
-        return false;
+        return Authentication::CredentialsCheckResult::Fail;
 
     auto valid_until = authentication_method.getValidUntil();
     if (valid_until)
@@ -601,7 +615,7 @@ bool IAccessStorage::areCredentialsValid(
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
         if (now > valid_until)
-            return false;
+            return Authentication::CredentialsCheckResult::Fail;
     }
 
     return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);
@@ -748,17 +762,15 @@ LoggerPtr IAccessStorage::getLogger() const
     return log;
 }
 
-
-void IAccessStorage::throwNotFound(const UUID & id) const
+void IAccessStorage::throwNotFound(const UUID & id, const String & storage_name)
 {
-    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), getStorageName());
+    throw Exception(ErrorCodes::ACCESS_ENTITY_NOT_FOUND, "{} not found in {}", outputID(id), backQuote(storage_name));
 }
 
-
-void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) const
+void IAccessStorage::throwNotFound(AccessEntityType type, const String & name, const String & storage_name)
 {
     int error_code = AccessEntityTypeInfo::get(type).not_found_error_code;
-    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), getStorageName());
+    throw Exception(error_code, "There is no {} in {}", formatEntityTypeWithName(type, name), backQuote(storage_name));
 }
 
 
@@ -768,26 +780,23 @@ void IAccessStorage::throwBadCast(const UUID & id, AccessEntityType type, const 
         formatEntityTypeWithName(type, name), toString(required_type));
 }
 
-
-void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const
+void IAccessStorage::throwIDCollisionCannotInsert(
+    const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name, const String & storage_name)
 {
-    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: "
-        "cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
-        outputID(id), formatEntityTypeWithName(existing_type, existing_name), getStorageName());
+    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because the {} is already used by {} in {}", formatEntityTypeWithName(type, name),
+        outputID(id), formatEntityTypeWithName(existing_type, existing_name), backQuote(storage_name));
 }
 
-
-void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const
+void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name, const String & storage_name)
 {
     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot insert because {} already exists in {}",
-                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), getStorageName());
+                    formatEntityTypeWithName(type, name), formatEntityTypeWithName(type, name), backQuote(storage_name));
 }
 
-
-void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const
+void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name, const String & storage_name)
 {
     throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "{}: cannot rename to {} because {} already exists in {}",
-        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), getStorageName());
+        formatEntityTypeWithName(type, old_name), backQuote(new_name), formatEntityTypeWithName(type, new_name), backQuote(storage_name));
 }
 
 
@@ -815,11 +824,6 @@ void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const Stri
 void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address)
 {
     throw Exception(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "Connections from {} are not allowed", address.toString());
-}
-
-void IAccessStorage::throwInvalidCredentials()
-{
-    throw Exception(ErrorCodes::WRONG_PASSWORD, "Invalid credentials");
 }
 
 void IAccessStorage::throwBackupNotAllowed() const

@@ -1,9 +1,7 @@
-
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
-#include <Common/quoteString.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -22,9 +20,14 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+String ASTLiteral::getID(char delim) const
+{
+    return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
+}
+
 ASTPtr ASTLiteral::clone() const
 {
-    auto res = std::make_shared<ASTLiteral>(*this);
+    auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
 }
@@ -64,7 +67,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    if (use_legacy_column_name_of_tuple)
+    if (getUseLegacyColumnNameOfTuple())
     {
         appendColumnNameImplLegacy(ostr);
         return;
@@ -155,56 +158,10 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
-        ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
     else
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
-}
-
-
-bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, WriteBuffer & ostr, const char * metacharacters)
-{
-    if (const auto * literal = node->as<ASTLiteral>())
-    {
-        if (literal->value.getType() == Field::Types::String)
-        {
-            auto string = applyVisitor(FieldVisitorToString(), literal->value);
-            highlightStringWithMetacharacters(string, ostr, metacharacters);
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void highlightStringWithMetacharacters(const String & string, WriteBuffer & ostr, const char * metacharacters)
-{
-    unsigned escaping = 0;
-    for (auto c : string)
-    {
-        if (c == '\\')
-        {
-            ostr << c;
-            if (escaping == 2)
-                escaping = 0;
-            ++escaping;
-        }
-        else if (nullptr != strchr(metacharacters, c))
-        {
-            if (escaping == 2)      /// Properly escaped metacharacter
-                ostr << c;
-            else                    /// Unescaped metacharacter
-                ostr << "\033[1;35m" << c << "\033[0m";
-            escaping = 0;
-        }
-        else
-        {
-            ostr << c;
-            escaping = 0;
-        }
-    }
 }
 
 }

@@ -35,28 +35,16 @@ NUM_THREADS=10
 TESTS=( "TLPGroupBy" "TLPHaving" "TLPWhere" "TLPDistinct" "TLPAggregate" "NoREC" )
 echo "${TESTS[@]}"
 
-# write Result json file for praktika ci.
-cat <<EOF > $RESULT_FILE
-{
-  "name": "SQLancer",
-  "status": "OVERALL_STATUS",
-  "start_time": null,
-  "duration": null,
-  "results": [
-    TEST_CASE_RESULT
-  ],
-  "files": ATTACHED_FILES,
-  "info": ""
-}
-EOF
-
-TEST_CASE_RESULT_PATTERN="{\"name\": \"NAME\", \"status\": \"FAIL\",  \"files\": [], \"info\": \"INFO\"}"
+# Initialize result arrays
+TEST_RESULTS=()
+ATTACHED_FILES_ARRAY=()
 OVERALL_STATUS=success
 
 for TEST in "${TESTS[@]}"; do
     echo "$TEST"
-    test_case_result="$(echo $TEST_CASE_RESULT_PATTERN | sed s/NAME/$TEST/)"
     error_output_file="$OUTPUT_PATH/$TEST.err"
+    ATTACHED_FILES_ARRAY+=("$error_output_file")
+    
     if [[ $(wget -q 'localhost:8123' -O-) == 'Ok.' ]]
     then
         echo "Server is OK"
@@ -64,28 +52,55 @@ for TEST in "${TESTS[@]}"; do
         assertion_error="$(grep -i assert $error_output_file ||:)"
 
         if [ -z "$assertion_error" ]; then
-          test_case_result="$(echo "$test_case_result" | sed s/FAIL/OK/)"
-          test_case_result="$(echo "$test_case_result" | sed s/INFO//)"
+            TEST_RESULTS+=("${TEST},OK,")
         else
-          test_case_result="$(echo "$test_case_result" | sed s/INFO/$assertion_error/)"
-          OVERALL_STATUS="failure"
+            # Escape for JSON: replace newlines with spaces and escape quotes
+            assertion_error_clean="$(printf '%s' "$assertion_error" | tr '\n' ' ' | sed 's/"/\\"/g')"
+            TEST_RESULTS+=("${TEST},FAIL,${assertion_error_clean}")
+            OVERALL_STATUS="failure"
         fi
-
     else
-        test_case_result="$(echo "$test_case_result" | sed s/FAIL/ERROR/)"
-        test_case_result="$(echo "$test_case_result" | sed s/INFO/Server is not responding/)"
+        TEST_RESULTS+=("${TEST},ERROR,Server is not responding")
         OVERALL_STATUS="failure"
     fi
-    sed -i "s/TEST_CASE_RESULT/$test_case_result\n,TEST_CASE_RESULT/" $RESULT_FILE
-    ATTACHED_FILES="$ATTACHED_FILES \"${error_output_file}\","
 done
 
-ATTACHED_FILES="$ATTACHED_FILES \"$OUTPUT_PATH/clickhouse-server.log\", \"$OUTPUT_PATH/clickhouse-server.log.err\"]"
+# Add server logs to attached files
+ATTACHED_FILES_ARRAY+=("$OUTPUT_PATH/clickhouse-server.log" "$OUTPUT_PATH/clickhouse-server.log.err")
 
-sed -i "s/OVERALL_STATUS/$OVERALL_STATUS/" $RESULT_FILE
-sed -i "s/,TEST_CASE_RESULT//" $RESULT_FILE
-sed -i "s/TEST_CASE_RESULT//" $RESULT_FILE
-sed -i "s|ATTACHED_FILES|$ATTACHED_FILES|" $RESULT_FILE
+# Generate JSON safely using printf
+printf '{\n' > $RESULT_FILE
+printf '  "name": "SQLancer",\n' >> $RESULT_FILE
+printf '  "status": "%s",\n' "$OVERALL_STATUS" >> $RESULT_FILE
+printf '  "start_time": null,\n' >> $RESULT_FILE
+printf '  "duration": null,\n' >> $RESULT_FILE
+printf '  "results": [\n' >> $RESULT_FILE
+
+# Add test results
+for i in "${!TEST_RESULTS[@]}"; do
+    IFS=',' read -r test_name status info <<< "${TEST_RESULTS[i]}"
+    printf '    {"name": "%s", "status": "%s", "files": [], "info": "%s"}' "$test_name" "$status" "$info" >> $RESULT_FILE
+    if [ $i -lt $((${#TEST_RESULTS[@]} - 1)) ]; then
+        printf ',\n' >> $RESULT_FILE
+    else
+        printf '\n' >> $RESULT_FILE
+    fi
+done
+
+printf '  ],\n' >> $RESULT_FILE
+printf '  "files": [' >> $RESULT_FILE
+
+# Add attached files
+for i in "${!ATTACHED_FILES_ARRAY[@]}"; do
+    printf '"%s"' "${ATTACHED_FILES_ARRAY[i]}" >> $RESULT_FILE
+    if [ $i -lt $((${#ATTACHED_FILES_ARRAY[@]} - 1)) ]; then
+        printf ', ' >> $RESULT_FILE
+    fi
+done
+
+printf '],\n' >> $RESULT_FILE
+printf '  "info": ""\n' >> $RESULT_FILE
+printf '}\n' >> $RESULT_FILE
 
 ls "$OUTPUT_PATH"
 pkill clickhouse

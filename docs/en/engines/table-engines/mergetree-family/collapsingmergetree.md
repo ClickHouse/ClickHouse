@@ -5,10 +5,11 @@ keywords: ['updates', 'collapsing']
 sidebar_label: 'CollapsingMergeTree'
 sidebar_position: 70
 slug: /engines/table-engines/mergetree-family/collapsingmergetree
-title: 'CollapsingMergeTree'
+title: 'CollapsingMergeTree table engine'
+doc_type: 'guide'
 ---
 
-# CollapsingMergeTree
+# CollapsingMergeTree table engine
 
 ## Description {#description}
 
@@ -33,7 +34,7 @@ have the same meaning as in [`MergeTree`](/engines/table-engines/mergetree-famil
 
 - `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -182,7 +183,7 @@ For CollapsingMergeTree, only the latest state row for each key is returned.
 
 ## Examples {#examples}
 
-### Example of Use {#example-of-use}
+### Example of use {#example-of-use}
 
 Given the following example data:
 
@@ -278,10 +279,10 @@ SELECT * FROM UAct FINAL
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 :::note
-This way of selecting the data is less inefficient and is not recommended for use with large amounts of scanned data (millions of rows).
+This way of selecting the data is less efficient and is not recommended for use with large amounts of scanned data (millions of rows).
 :::
 
-### Example of Another Approach {#example-of-another-approach}
+### Example of another approach {#example-of-another-approach}
 
 The idea with this approach is that merges take into account only key fields.
 In the "cancel" row, we can therefore specify negative values

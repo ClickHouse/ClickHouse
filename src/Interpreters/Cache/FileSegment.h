@@ -55,6 +55,7 @@ public:
     using State = FileSegmentState;
     using Info = FileSegmentInfo;
     using QueueEntryType = FileCacheQueueEntryType;
+    using KeyType = FileSegmentKeyType;
 
     FileSegment(
         const Key & key_,
@@ -67,7 +68,7 @@ public:
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
         Priority::IteratorPtr queue_iterator_ = nullptr);
 
-    ~FileSegment() = default;
+    ~FileSegment();
 
     State state() const;
 
@@ -193,7 +194,7 @@ public:
      * ========== Methods that must do cv.notify() ==================
      */
 
-    void complete(bool allow_background_download);
+    static void complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size);
 
     void completePartAndResetDownloader();
 
@@ -230,6 +231,13 @@ public:
 
     void setDownloadFailed();
 
+    /// Mark that no more data will be written to this segment (e.g. the remote object turned out
+    /// to be smaller than expected), without treating it as a failure.
+    /// The segment will be shrunk to the actually downloaded size during completion.
+    void setDownloadFinishedWithoutContinuation();
+
+    bool isBackgroundDownloadEnabled() const { return background_download_enabled; }
+
 private:
     String getDownloaderUnlocked(const FileSegmentGuard::Lock &) const;
     bool isDownloaderUnlocked(const FileSegmentGuard::Lock & segment_lock) const;
@@ -244,7 +252,7 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
-    void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &);
+    void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &, bool force_shrink_to_downloaded_size);
 
     void assertNotDetached() const;
     void assertNotDetachedUnlocked(const FileSegmentGuard::Lock &) const;
@@ -254,6 +262,8 @@ private:
     LockedKeyPtr lockKeyMetadata(bool assert_exists = true) const;
 
     String tryGetPath() const;
+
+    void complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size);
 
     const Key file_key;
     Range segment_range;
@@ -281,6 +291,7 @@ private:
     mutable Priority::IteratorPtr queue_iterator; /// Iterator is put here on first reservation attempt, if successful.
     FileCache * cache;
     std::condition_variable cv;
+    std::mutex increase_priority_mutex;
 
     LoggerPtr log;
 
@@ -307,7 +318,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     String toString(bool with_state = false) const;
 
-    void completeAndPopFront(bool allow_background_download) { completeAndPopFrontImpl(allow_background_download); }
+    void completeAndPopFront(bool allow_background_download, bool force_shrink_to_downloaded_size) { completeAndPopFrontImpl(allow_background_download, force_shrink_to_downloaded_size); }
 
     FileSegment & front() { return *file_segments.front(); }
     const FileSegment & front() const { return *file_segments.front(); }
@@ -329,7 +340,7 @@ struct FileSegmentsHolder final : private boost::noncopyable
 private:
     FileSegments file_segments{};
 
-    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download);
+    FileSegments::iterator completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size);
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;

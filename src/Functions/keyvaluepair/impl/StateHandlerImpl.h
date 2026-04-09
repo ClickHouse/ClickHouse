@@ -13,48 +13,53 @@
 #include <string_view>
 #include <string>
 #include <vector>
-#include <absl/container/flat_hash_map.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace extractKV
 {
 
 
 /*
- * Handles (almost) all states present in `StateHandler::State`. The description of each state responsibility can be found in
+ * Handles all states present in `StateHandler::State`, except for `END`. The description of each state responsibility can be found in
  * `StateHandler::State`. Advanced & optimized string search algorithms are used to search for control characters and form key value pairs.
  * Each method returns a `StateHandler::NextState` object which contains the next state itself and the number of characters consumed by the previous state.
  *
- * The class is templated with a boolean that controls escaping support. As of now, there are two specializations:
- * `NoEscapingStateHandler` and `InlineEscapingStateHandler`.
+ * The class is templated with a boolean that controls escaping support. As of now, there are three specializations:
+ *
+ * `NoEscapingStateHandler` does not handle escape sequences and writes directly to the output columns.
+ * `InlineEscapingStateHandler` handles escape sequences, but pays the price of temporary buffers.
+ * `ReferencesMapStateHandler` does not handle escape sequences and only store references to the input data. Its output is a map and not a column.
  * */
 template <bool WITH_ESCAPING>
 class StateHandlerImpl : public StateHandler
 {
 public:
+    /* SearchNeedles do not change throughout the algorithm. Therefore, they are created only once in the constructor
+    *  to avoid unnecessary copies.
+    * */
     explicit StateHandlerImpl(Configuration configuration_)
         : configuration(std::move(configuration_))
-    {
-        /* SearchNeedles do not change throughout the algorithm. Therefore, they are created only once in the constructor
-         * to avoid unnecessary copies.
-         * */
-        NeedleFactory<WITH_ESCAPING> needle_factory;
-
-        wait_needles = needle_factory.getWaitNeedles(configuration);
-        read_key_needles = needle_factory.getReadKeyNeedles(configuration);
-        read_value_needles = needle_factory.getReadValueNeedles(configuration);
-        read_quoted_needles = needle_factory.getReadQuotedNeedles(configuration);
-    }
+        , wait_key_needles(NeedleFactory<WITH_ESCAPING>::getWaitKeyNeedles(configuration))
+        , read_key_needles(NeedleFactory<WITH_ESCAPING>::getReadKeyNeedles(configuration))
+        , read_value_needles(NeedleFactory<WITH_ESCAPING>::getReadValueNeedles(configuration))
+        , read_quoted_needles(NeedleFactory<WITH_ESCAPING>::getReadQuotedNeedles(configuration))
+        , wait_pair_delimiter_needles(NeedleFactory<WITH_ESCAPING>::getWaitPairDelimiterNeedles(configuration))
+    {}
 
     /*
      * Find first character that is considered a valid key character and proceeds to READING_KEY like states.
      * */
     [[nodiscard]] NextState waitKey(std::string_view file) const
     {
-        if (const auto * p = find_first_not_symbols_or_null(file, wait_needles))
+        if (const auto * p = find_first_not_symbols_or_null(file, wait_key_needles))
         {
             const size_t character_position = p - file.data();
             if (isQuotingCharacter(*p))
@@ -109,7 +114,17 @@ public:
             }
             else if (isQuotingCharacter(*p))
             {
-                return {next_pos, State::READING_QUOTED_KEY};
+                switch (configuration.unexpected_quoting_character_strategy)
+                {
+                    case Configuration::UnexpectedQuotingCharacterStrategy::INVALID:
+                        return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE:
+                        return {next_pos, State::READING_QUOTED_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT:
+                        // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                        // See `NeedleFactory`
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
+                }
             }
 
             pos = next_pos;
@@ -245,6 +260,20 @@ public:
 
                 return {next_pos, State::FLUSH_PAIR};
             }
+            else if (isQuotingCharacter(*p))
+            {
+                switch (configuration.unexpected_quoting_character_strategy)
+                {
+                    case Configuration::UnexpectedQuotingCharacterStrategy::INVALID:
+                        return {next_pos, State::WAITING_KEY};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::PROMOTE:
+                        return {next_pos, State::READING_QUOTED_VALUE};
+                    case Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT:
+                        // The quoting character should not be added to the search symbols list in case strategy = Configuration::UnexpectedQuotingCharacterStrategy::ACCEPT
+                        // See `NeedleFactory`
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to handle unexpected quoting character. This is a bug");
+                }
+            }
 
             pos = next_pos;
         }
@@ -285,7 +314,7 @@ public:
             {
                 pair_writer.appendValue(file.data() + pos, file.data() + character_position);
 
-                return {next_pos, State::FLUSH_PAIR};
+                return {next_pos, State::FLUSH_PAIR_AFTER_QUOTED_VALUE};
             }
 
             pos = next_pos;
@@ -294,13 +323,43 @@ public:
         return {file.size(), State::END};
     }
 
+    [[nodiscard]] NextState flushPair(std::string_view file, auto & pair_writer) const
+    {
+        pair_writer.commitKey();
+        pair_writer.commitValue();
+
+        return {0, file.empty() ? State::END : State::WAITING_KEY};
+    }
+
+    [[nodiscard]] NextState flushPairAfterQuotedValue(std::string_view file, auto & pair_writer) const
+    {
+        pair_writer.commitKey();
+        pair_writer.commitValue();
+
+        return {0, file.empty() ? State::END : State::WAITING_PAIR_DELIMITER};
+    }
+
+    [[nodiscard]] NextState waitPairDelimiter(std::string_view file) const
+    {
+        if (const auto * p = find_first_symbols_or_null(file, wait_pair_delimiter_needles))
+        {
+            const size_t character_position = p - file.data();
+            size_t next_pos = character_position + 1u;
+
+            return {next_pos, State::WAITING_KEY};
+        }
+
+        return {file.size(), State::END};
+    }
+
     const Configuration configuration;
 
 private:
-    SearchSymbols wait_needles;
-    SearchSymbols read_key_needles;
-    SearchSymbols read_value_needles;
-    SearchSymbols read_quoted_needles;
+    const SearchSymbols wait_key_needles;
+    const SearchSymbols read_key_needles;
+    const SearchSymbols read_value_needles;
+    const SearchSymbols read_quoted_needles;
+    const SearchSymbols wait_pair_delimiter_needles;
 
     /*
      * Helper method to copy bytes until `character_pos` and process possible escape sequence. Returns a pair containing a boolean
@@ -310,7 +369,7 @@ private:
     std::pair<bool, std::size_t> consumeWithEscapeSequence(std::string_view file, size_t start_pos, size_t character_pos, auto & output) const
     {
         std::string escaped_sequence;
-        DB::ReadBufferFromMemory buf(file.data() + character_pos, file.size() - character_pos);
+        DB::ReadBufferFromMemory buf(file.substr(character_pos));
 
         if constexpr (isKey)
         {
@@ -577,13 +636,13 @@ struct ReferencesMapStateHandler : public StateHandlerImpl<false>
      * */
     class PairWriter
     {
-        absl::flat_hash_map<std::string_view, std::string_view> & map;
+        std::map<std::string_view, std::string_view> & map;
 
         std::string_view key;
         std::string_view value;
 
     public:
-        explicit PairWriter(absl::flat_hash_map<std::string_view, std::string_view> & map_)
+        explicit PairWriter(std::map<std::string_view, std::string_view> & map_)
             : map(map_)
         {}
 

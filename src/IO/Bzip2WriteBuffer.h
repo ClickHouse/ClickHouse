@@ -47,7 +47,7 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finalFlushBefore() override;
 
     bz_stream stream;
     bool compress_empty = true;

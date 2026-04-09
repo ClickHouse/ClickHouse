@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,7 +9,14 @@ check_sql_udf_functions() {
         return
     fi
 
-    for func in "${@}"; do
+    # In order for the test to run in parallel,
+    # we add the name of the database to the function name, because it has a random value.
+    funcs=""
+    for func in ${@}; do
+        funcs+="${func}_${CLICKHOUSE_DATABASE} "
+    done
+
+    for func in ${funcs}; do
         $CLICKHOUSE_CLIENT -q "
             DROP FUNCTION IF EXISTS ${func};
             CREATE FUNCTION ${func} AS (input) -> input"
@@ -18,10 +24,10 @@ check_sql_udf_functions() {
 
     execute_sql_udf=""
     if [ "${#}" == "1" ]; then
-        execute_sql_udf="${1}(8)"
+        execute_sql_udf="${funcs}(8)"
     else
         joined_string=""
-        for func in "${@}"; do
+        for func in ${funcs}; do
             if [ -n "${joined_string}" ]; then
                 joined_string+=", "
             fi
@@ -36,9 +42,9 @@ check_sql_udf_functions() {
     $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT arraySort(used_sql_user_defined_functions) FROM system.query_log
-        WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'"
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'"
 
-    for func in "${@}"; do
+    for func in ${funcs}; do
         $CLICKHOUSE_CLIENT -q "DROP FUNCTION IF EXISTS ${func}"
     done
 }

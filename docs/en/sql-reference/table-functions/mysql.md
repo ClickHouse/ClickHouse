@@ -5,6 +5,7 @@ sidebar_label: 'mysql'
 sidebar_position: 137
 slug: /sql-reference/table-functions/mysql
 title: 'mysql'
+doc_type: 'reference'
 ---
 
 # mysql Table Function
@@ -139,13 +140,13 @@ Or if copying only an incremental batch from MySQL based on the max current id:
 ```sql
 INSERT INTO mysql_copy
 SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
-WHERE id > (SELECT max(id) from mysql_copy);
+WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
 ## Related {#related}
 
 - [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
 - [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
 - [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)

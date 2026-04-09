@@ -102,7 +102,7 @@ def test_zookeeper_partition_locks(kafka_cluster):
         for i in range(num_partitions):
             messages.append(json.dumps({"key": i, "value": i}))
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
-        
+
         base = f"{keeper_path}/topic_partition_locks"
         expected_locks = {f"zk_locks_topic_{pid}.lock" for pid in range(num_partitions)}
         with KeeperClient.from_cluster(kafka_cluster, keeper_node="zoo1") as zk:
@@ -180,7 +180,7 @@ def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
                 time.sleep(interval)
             else:
                 pytest.fail(f"Timed out waiting for locks in ZK: got {children!r}, expected {expected_locks!r}")
-            
+
             counts = {replica: 0 for replica in replica_names}
             for lock in expected_locks:
                 owner = zk.get(f"{base}/{lock}")
@@ -191,5 +191,5 @@ def test_three_replicas_ten_partitions_rebalance(kafka_cluster):
             base_count = num_partitions // len(replica_names)
             values = sorted(counts.values())
             assert sum(values) == num_partitions
-            assert all(v in (base_count-1, base_count, base_count+1) for v in values)
+            assert all(v in (base_count-1, base_count, base_count+1) for v in values), f"Values: {values}"
             assert values[-1] - values[0] <= 2

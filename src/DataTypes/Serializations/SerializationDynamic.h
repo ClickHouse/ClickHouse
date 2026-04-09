@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnDynamic.h>
 
@@ -11,12 +12,20 @@ class SerializationDynamicElement;
 
 class SerializationDynamic : public ISerialization
 {
-public:
-    explicit SerializationDynamic(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES) : max_dynamic_types(max_dynamic_types_)
+private:
+    explicit SerializationDynamic(
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        const SerializationInfoSettings & serialization_info_settings_ = {})
+        : max_dynamic_types(max_dynamic_types_)
+        , serialization_info_settings(serialization_info_settings_)
     {
     }
 
-    struct DynamicSerializationVersion
+public:
+    static UInt128 getHash(size_t max_dynamic_types_, const SerializationInfoSettings & serialization_info_settings_ = {});
+    static SerializationPtr create(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES, const SerializationInfoSettings & serialization_info_settings_ = {});
+
+    struct SerializationVersion
     {
         enum Value
         {
@@ -31,6 +40,8 @@ public:
             V1 = 1,
             /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
             V2 = 2,
+            /// V3 serialization: the same as V2 but variant type names are serialized in binary format and statistics can be empty.
+            V3 = 4,
             /// FLATTENED serialization:
             /// - DynamicStructure stream:
             ///     <list of all types stored in Dynamic column>
@@ -46,7 +57,9 @@ public:
 
         static void checkVersion(UInt64 version);
 
-        explicit DynamicSerializationVersion(UInt64 version);
+        explicit SerializationVersion(UInt64 version);
+        explicit SerializationVersion(MergeTreeDynamicSerializationVersion version);
+        explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
     void enumerateStreams(
@@ -99,7 +112,12 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeBinary(const ColumnDynamic & dynamic_column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const;
+
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    static void serializeVariantForHashCalculation(const IColumn & column, const SerializationPtr & serialization, const DataTypePtr & type, size_t row_num, WriteBuffer & ostr);
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -128,12 +146,14 @@ public:
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
+    SerializationPtr createSerializationForType(const DataTypePtr & type) const;
+
 private:
     friend SerializationDynamicElement;
 
     struct DeserializeBinaryBulkStateDynamicStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        DynamicSerializationVersion structure_version;
+        SerializationVersion structure_version;
         DataTypePtr variant_type;
         size_t num_dynamic_types;
         ColumnDynamic::StatisticsPtr statistics;
@@ -154,6 +174,7 @@ private:
     };
 
     size_t max_dynamic_types;
+    const SerializationInfoSettings serialization_info_settings;
 };
 
 }

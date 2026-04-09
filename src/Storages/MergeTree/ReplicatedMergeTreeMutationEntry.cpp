@@ -55,7 +55,7 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
     }
 
     in >> "commands: ";
-    commands.readText(in);
+    commands.readText(in, false);
     if (checkString("\nalter version: ", in))
         in >> alter_version;
 }

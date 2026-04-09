@@ -21,6 +21,7 @@ def cluster():
             "node",
             main_configs=[
                 "config.d/storage_conf.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -44,6 +45,7 @@ def cluster():
             main_configs=[
                 "config.d/storage_conf.xml",
                 "config.d/force_read_through_cache_for_merges.xml",
+                "config.d/filesystem_caches_path.xml",
             ],
             user_configs=[
                 "users.d/cache_on_write_operations.xml",
@@ -132,8 +134,8 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
 
     node.query(
         """
-        SYSTEM DROP FILESYSTEM CACHE;
-        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
         SELECT * FROM test FORMAT Null;
         """
     )
@@ -185,7 +187,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
     node = cluster.instances[node_name]
     cache_path = "cache1"
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query("SYSTEM CLEAR FILESYSTEM CACHE;")
     for table in ["test", "test2"]:
         node.query(
             f"""
@@ -256,7 +258,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
 def test_caches_with_the_same_configuration_2(cluster, node_name):
     node = cluster.instances[node_name]
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query("SYSTEM CLEAR FILESYSTEM CACHE;")
     for table in ["cache1", "cache2"]:
         node.query(
             f"""
@@ -389,7 +391,7 @@ def test_custom_cached_disk(non_shared_cluster):
         ).strip()
     )
 
-    assert "Filesystem cache path must lie inside" in node.query_and_get_error(
+    assert "Filesystem cache absolute path must lie inside" in node.query_and_get_error(
         f"""
     CREATE TABLE test4 (a Int32)
     ENGINE = MergeTree() ORDER BY tuple()
@@ -458,9 +460,8 @@ def test_force_filesystem_cache_on_merges(cluster):
 
         node.query(
             """
-            SYSTEM DROP FILESYSTEM CACHE;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
-            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
+            SYSTEM CLEAR FILESYSTEM CACHE;
+            INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
             """
         )
         assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
@@ -484,7 +485,7 @@ def test_force_filesystem_cache_on_merges(cluster):
             "select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'"
         ) == node.query("select sum(downloaded_size) from system.filesystem_cache")
 
-        node.query("SYSTEM DROP FILESYSTEM CACHE")
+        node.query("SYSTEM CLEAR FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
 
         r_cache_count_3 = to_int(
@@ -509,7 +510,7 @@ def test_system_sync_filesystem_cache(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
@@ -695,7 +696,7 @@ def test_dynamic_resize(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
@@ -829,6 +830,9 @@ SETTINGS disk = disk(type = cache,
     """
     )
 
+    wait_for_cache_initialized(node, "test_filesystem_cache_log")
+
+
     node.query(
         """
 INSERT INTO test SELECT 1, 'test';
@@ -869,7 +873,7 @@ def test_dynamic_resize_disabled(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
@@ -931,15 +935,10 @@ def test_max_size_ratio(cluster):
         CREATE TABLE test (key UInt32, value String)
         Engine=MergeTree()
         ORDER BY value
-        SETTINGS disk = disk(
-            type = cache,
-            name = 'test_max_size_ratio',
-            path = 'test_max_size_ratio/',
-            max_size_ratio_to_total_space=0.7,
-            disk = 'hdd_blob');
+        SETTINGS disk = 'cache_with_max_size_ratio'
         """
     )
-    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space")
+    assert node.contains_in_log("Using max_size as ratio 0.7 to total disk space on path /var/log/clickhouse/fs-cache/max_size_ratio")
 
 
 def test_finished_download_time(cluster):
@@ -968,3 +967,69 @@ def test_finished_download_time(cluster):
     assert len(elapsed_time) > 0
     assert int(elapsed_time) > 1
     assert int(elapsed_time) < 5
+
+
+@pytest.mark.parametrize("cache_policy", ["lru", "slru"])
+def test_concurrent_eviction(cluster, cache_policy):
+    """Stress-test concurrent eviction in filesystem cache with multiple readers."""
+    import threading
+
+    node = cluster.instances["node"]
+    cache_name = f"bench_small_{cache_policy}_{uuid.uuid4().hex[:8]}"
+    table_name = f"bench_eviction_{uuid.uuid4().hex[:8]}"
+    try:
+        node.query(
+            f"""
+            DROP TABLE IF EXISTS {table_name} SYNC;
+            CREATE TABLE {table_name} (key UInt32, value String)
+            ENGINE = MergeTree() ORDER BY key
+            SETTINGS disk = disk(
+                type = cache,
+                name = '{cache_name}',
+                path = '{cache_name}/',
+                max_size = '1Mi',
+                max_file_segment_size = 32768,
+                boundary_alignment = 32768,
+                cache_policy = '{cache_policy}',
+                disk = 'hdd_blob'
+            );
+            INSERT INTO {table_name} SELECT number, randomString(100) FROM numbers(100000);
+            """
+        )
+
+        test_start = node.query("SELECT now()").strip()
+
+        stop_event = threading.Event()
+
+        def drop_cache_loop():
+            while not stop_event.is_set():
+                node.query(f"SYSTEM CLEAR FILESYSTEM CACHE '{cache_name}'")
+
+        drop_thread = threading.Thread(target=drop_cache_loop, daemon=True)
+        drop_thread.start()
+
+        try:
+            node.exec_in_container(
+                [
+                    "/usr/bin/clickhouse",
+                    "benchmark",
+                    "--iterations",
+                    "200",
+                    "--concurrency",
+                    "100",
+                    "--query",
+                    f"SELECT count() FROM {table_name} WHERE key < (randConstant() % 100000) OR key > (randConstant() % 100000) FORMAT Null",
+                ]
+            )
+        finally:
+            stop_event.set()
+            drop_thread.join()
+
+        errors = int(
+            node.query(
+                f"SELECT count() FROM system.errors WHERE name = 'LOGICAL_ERROR' AND last_error_time >= '{test_start}'"
+            ).strip()
+        )
+        assert errors == 0, f"LOGICAL_ERROR occurred on {node.name}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")

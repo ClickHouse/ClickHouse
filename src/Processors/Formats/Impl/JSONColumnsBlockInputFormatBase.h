@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BlockNameMap.h>
+#include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -47,7 +48,7 @@ protected:
 class JSONColumnsBlockInputFormatBase : public IInputFormat
 {
 public:
-    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
+    JSONColumnsBlockInputFormatBase(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_, std::unique_ptr<JSONColumnsReaderBase> reader_);
 
     String getName() const override { return "JSONColumnsBlockInputFormatBase"; }
 

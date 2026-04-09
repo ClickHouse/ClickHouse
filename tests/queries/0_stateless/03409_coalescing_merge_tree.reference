@@ -1,6 +1,10 @@
 Test without parameters
 111	John	52	34	4
 8888	Alice	50	50	1
+111	John	52	34	4
+8888	Alice	50	50	1
 Test with parameters
+111	John	23	12	4
+8888	Alice	50	50	1
 111	John	23	12	4
 8888	Alice	50	50	1

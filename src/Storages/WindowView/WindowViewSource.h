@@ -18,8 +18,8 @@ public:
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
         : ISource(
-            is_events_ ? Block(
-                {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
+            is_events_ ? std::make_shared<const Block>(Block(
+                {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")}))
                        : storage_->getOutputHeader())
         , storage(storage_)
         , is_events(is_events_)
@@ -32,7 +32,7 @@ public:
             header.insert(
                 ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark"));
         else
-            header = storage->getOutputHeader();
+            header = *storage->getOutputHeader();
     }
 
     String getName() const override { return "WindowViewSource"; }
@@ -51,7 +51,7 @@ protected:
         Block block;
         UInt32 watermark;
         std::tie(block, watermark) = generateImpl();
-        if (!block)
+        if (block.empty())
             return Chunk();
         if (is_events)
         {
