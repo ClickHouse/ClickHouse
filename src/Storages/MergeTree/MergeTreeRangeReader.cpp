@@ -913,11 +913,19 @@ MergeTreeRangeReader::MergeTreeRangeReader(
     if (prewhere_info)
     {
         const auto & step = *prewhere_info;
-        if (step.actions)
-            step.actions->execute(result_sample_block, true);
+        /// Must match the runtime behavior: `executePrewhereActionsAndFilterColumns`
+        /// returns early for `None`-type steps (e.g. text index read steps) without
+        /// executing actions or removing filter columns.  If we execute them here on
+        /// the sample block, the column order diverges from the actual data, causing
+        /// column type mismatches in downstream filter steps.
+        if (step.type != PrewhereExprStep::None)
+        {
+            if (step.actions)
+                step.actions->execute(result_sample_block, true);
 
-        if (step.remove_filter_column)
-            result_sample_block.erase(step.filter_column_name);
+            if (step.remove_filter_column)
+                result_sample_block.erase(step.filter_column_name);
+        }
     }
 }
 

@@ -295,6 +295,11 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
                 all_inputs_present = false;
                 break;
             }
+            if (!input->result_type->equals(*header.getByName(input->result_name).type))
+            {
+                all_inputs_present = false;
+                break;
+            }
         }
 
         if (all_inputs_present)

@@ -324,7 +324,8 @@ class GH:
                     rex = re.compile(
                         f"{re.escape(start_tag)}.*{re.escape(end_tag)}", re.DOTALL
                     )
-                    body, _ = rex.subn(f"{start_tag}\n{tag_body}\n{end_tag}", body)
+                    replacement = f"{start_tag}\n{tag_body}\n{end_tag}"
+                    body, _ = rex.subn(lambda _: replacement, body)
                     if verbose:
                         print(
                             f"Updated existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"

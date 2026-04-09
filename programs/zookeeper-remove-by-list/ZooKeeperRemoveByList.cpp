@@ -49,7 +49,7 @@ try
     {
         try
         {
-            future.get();
+            (void)future.get();
         }
         catch (...)
         {
