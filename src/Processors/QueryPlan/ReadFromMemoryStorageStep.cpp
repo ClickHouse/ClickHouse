@@ -1,8 +1,10 @@
-#include<Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 
 #include <atomic>
 #include <functional>
 #include <memory>
+
+#include <Analyzer/TableNode.h>
 
 #include <Common/typeid_cast.h>
 
@@ -12,6 +14,7 @@
 #include <Interpreters/MaterializedCTE.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -31,26 +34,35 @@ extern const int LOGICAL_ERROR;
 class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
-public:
 
+    static Block getHeader(const NamesAndTypesList & physical, const NamesAndTypesList & virtuals)
+    {
+        Block res;
+        for (const auto & name_type : physical)
+            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
+        for (const auto & name_type : virtuals)
+            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
+        return res;
+    }
+
+public:
     MemorySource(
-        Names column_names_,
-        const StorageSnapshotPtr & storage_snapshot,
+        NamesAndTypesList physical_columns_,
+        NamesAndTypesList virtual_columns_,
+        StorageID storage_id_,
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
         InitializerFunc initializer_func_ = {},
         MaterializedCTEPtr materialized_cte_ = {})
-        : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
-        , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
-              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
+        : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
+        , physical_columns(std::move(physical_columns_))
+        , virtual_columns(std::move(virtual_columns_))
+        , storage_id(std::move(storage_id_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
         , materialized_cte(std::move(materialized_cte_))
     {
-        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
-        for (const auto & [name, type] : all_column_names_and_types)
-            all_names_to_types[name] = type;
     }
 
     String getName() const override { return "Memory"; }
@@ -70,33 +82,15 @@ protected:
             initializer_func = {};
         }
 
-        size_t current_index = getAndIncrementExecutionIndex();
-
-        if (!data || current_index >= data->size())
-        {
-            return {};
-        }
-
-        const Block & src = (*data)[current_index];
-
         Columns columns;
-        size_t num_columns = requested_column_names_and_types.size();
-        columns.reserve(num_columns);
+        columns.reserve(physical_columns.size() + virtual_columns.size());
+        fillPhysicalColumns(columns);
 
-        auto name_and_type = requested_column_names_and_types.begin();
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            if (name_and_type->isSubcolumn())
-                columns.emplace_back(tryGetSubcolumnFromBlock(src, all_names_to_types[name_and_type->getNameInStorage()], *name_and_type));
-            else
-                columns.emplace_back(tryGetColumnFromBlock(src, *name_and_type));
-            ++name_and_type;
-        }
+        UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
+        if (!columns.empty())
+            fillVirtualColumns(columns, num_rows);
 
-        fillMissingColumns(columns, src.rows(), requested_column_names_and_types, requested_column_names_and_types, {}, nullptr);
-        assert(std::all_of(columns.begin(), columns.end(), [](const auto & column) { return column != nullptr; }));
-
-        return Chunk(std::move(columns), src.rows());
+        return Chunk(std::move(columns), num_rows);
     }
 
 private:
@@ -110,9 +104,41 @@ private:
         return execution_index++;
     }
 
-    const NamesAndTypesList requested_column_names_and_types;
-    /// Map (name -> type) for all columns from the storage header.
-    std::unordered_map<String, DataTypePtr> all_names_to_types;
+    void fillPhysicalColumns(Columns & result_columns)
+    {
+        size_t current_index = getAndIncrementExecutionIndex();
+
+        if (!data || current_index >= data->size())
+            return;
+
+        const Block & src = (*data)[current_index];
+
+        for (const auto & name_and_type : physical_columns)
+        {
+            if (name_and_type.isSubcolumn())
+                result_columns.emplace_back(tryGetSubcolumnFromBlock(src, name_and_type.getTypeInStorage(), name_and_type));
+            else
+                result_columns.emplace_back(tryGetColumnFromBlock(src, name_and_type));
+        }
+
+        fillMissingColumns(result_columns, src.rows(), physical_columns, physical_columns, {}, nullptr);
+        assert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
+    }
+
+    void fillVirtualColumns(Columns & result_columns, UInt64 num_rows) const
+    {
+        for (const auto & col : virtual_columns)
+        {
+            if (col.name == "_table")
+                result_columns.emplace_back(col.type->createColumnConst(num_rows, storage_id.getTableName())->convertToFullColumnIfConst());
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual column: '{}'", col.name);
+        }
+    }
+
+    const NamesAndTypesList physical_columns;
+    const NamesAndTypesList virtual_columns;
+    const StorageID storage_id;
     size_t execution_index = 0;
     std::shared_ptr<const Blocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
@@ -162,6 +188,17 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 {
     storage_snapshot->check(columns_to_read);
 
+    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(columns_to_read, storage_snapshot);
+    auto physical_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names);
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(), virtual_column_names);
+    auto storage_id = storage->getStorageID();
+
+    /// Use temporary table name if storage is temporary.
+    if (query_info.table_expression)
+        if (auto * table_node = query_info.table_expression->as<TableNode>())
+            if (table_node->isTemporaryTable())
+                storage_id.table_name = table_node->getTemporaryTableName();
+
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
     auto current_data = snapshot_data.blocks;
 
@@ -176,8 +213,9 @@ Pipe ReadFromMemoryStorageStep::makePipe()
         /// Since no other manipulation with data is done, multiple sources shouldn't give any profit.
 
         return Pipe(std::make_shared<MemorySource>(
-            columns_to_read,
-            storage_snapshot,
+            physical_columns,
+            virtual_columns,
+            storage_id,
             nullptr /* data */,
             nullptr /* parallel execution index */,
             [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
@@ -195,7 +233,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        auto source = std::make_shared<MemorySource>(columns_to_read, storage_snapshot, current_data, parallel_execution_index);
+        auto source = std::make_shared<MemorySource>(physical_columns, virtual_columns, storage_id, current_data, parallel_execution_index);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows_approx);
         pipes.emplace_back(std::move(source));

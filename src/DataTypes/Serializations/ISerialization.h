@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <boost/noncopyable.hpp>
+#include <map>
 #include <unordered_map>
 #include <functional>
 #include <memory>
@@ -494,11 +495,6 @@ public:
         /// If true, call release_stream on all streams used in the prefixes deserialization
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
-
-        /// Returns true if all marks for the given substream have at most
-        /// `max_transitions` distinct consecutive positions.
-        /// Used by SerializationLowCardinality to detect single-dictionary parts.
-        std::function<bool(const SubstreamPath &, size_t max_transitions)> has_uniform_marks_callback;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
