@@ -28,6 +28,11 @@ class CheckStatuses:
 
 FORCE_MERGE = True
 
+PUBLIC_REPO = "ClickHouse/ClickHouse"
+SYNC_REPO = "ClickHouse/clickhouse-private"
+S3_PROXY_BASE_URL = "http://ci-reports:8080"
+S3_PRIVATE_REPORT_BUCKET = "clickhouse-test-reports-private"
+
 
 pr_number = None
 head_sha = None
@@ -73,7 +78,9 @@ class CreateIssue:
         return res
 
     @classmethod
-    def create_and_link_gh_issue(cls, title: str, body: str, labels: List[str]) -> str:
+    def create_and_link_gh_issue(
+        cls, title: str, body: str, labels: List[str], repo_name: str = PUBLIC_REPO
+    ) -> str:
         """
         Helper method to create a GitHub issue and link it to this failure.
 
@@ -81,11 +88,12 @@ class CreateIssue:
             title: Issue title
             body: Issue body (markdown)
             labels: List of labels to apply
+            repo_name: GitHub repository to create the issue in
 
         Returns:
             bool: True if issue was created successfully, False otherwise
         """
-        print(f"\nIssue to create:")
+        print(f"\nIssue to create (repo: {repo_name}):")
         print("-" * 100)
         print(f"- Title:\n  {title}")
         print(f"- Labels:\n  {', '.join(labels)}")
@@ -99,13 +107,18 @@ class CreateIssue:
         if not UserPrompt.confirm("Proceed with issue creation?"):
             return ""
 
-        return Issue.create_from(title=title, body=body, labels=labels).create_on_gh(
-            repo_name="ClickHouse/ClickHouse"
-        )
+        return Issue.create_from(
+            title=title, body=body, labels=labels
+        ).create_on_gh(repo_name=repo_name)
 
     @classmethod
-    def create_gh_issue_on_flaky_or_broken_test(cls, result, job_name):
+    def create_gh_issue_on_flaky_or_broken_test(
+        cls, result, job_name, *, pr_num=None, sha=None, repo=PUBLIC_REPO
+    ):
         print(CreateIssue.repr_result(result))
+
+        _pr = pr_num if pr_num is not None else pr_number
+        _sha = sha if sha is not None else head_sha
 
         test_name = result.name
         if "[" in result.name:
@@ -132,12 +145,16 @@ class CreateIssue:
                 validator=lambda x: result.name.startswith(x),
                 default=result.name,
             )
+        ci_report_line = (
+            f"CI report: [{job_name}]({cls.get_job_report_url(_pr, _sha, job_name)})\n"
+            if repo == PUBLIC_REPO
+            else ""
+        )
         title = f"Flaky test: {test_name}"
         body = f"""\
 Test name: {test_name}
 Failure reason: {failure_reason}
-CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
-
+{ci_report_line}
 Failing test history: [cidb]({CIDB(url=CI_DB_READ_URL, user=CI_DB_READ_USER, passwd="").get_link_to_test_case_statistics(result.name, job_name, [failure_reason], test_output=result.info, pr_base_branches=['master'])})
 
 Test output:
@@ -147,7 +164,7 @@ Test output:
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.FLAKY_TEST]
 
-        return cls.create_and_link_gh_issue(title, body, labels)
+        return cls.create_and_link_gh_issue(title, body, labels, repo_name=repo)
 
     @classmethod
     def extract_unit_test_title(cls, result):
@@ -172,12 +189,21 @@ Test output:
         return result.name
 
     @classmethod
-    def create_gh_issue_on_fuzzer_or_stress_finding(cls, result, job_name):
+    def create_gh_issue_on_fuzzer_or_stress_finding(
+        cls, result, job_name, *, pr_num=None, sha=None, repo=PUBLIC_REPO
+    ):
+        _pr = pr_num if pr_num is not None else pr_number
+        _sha = sha if sha is not None else head_sha
+
+        ci_report_line = (
+            f"CI report: [{job_name}]({cls.get_job_report_url(_pr, _sha, job_name)})\n"
+            if repo == PUBLIC_REPO
+            else ""
+        )
         title = result.name
         body = f"""\
 Test name: {result.name}
-CI report: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
-Failing test history: [cidb]({result.get_hlabel_link("cidb")})
+{ci_report_line}Failing test history: [cidb]({result.get_hlabel_link("cidb")})
 
 Test output:
 ```
@@ -188,7 +214,7 @@ Test output:
         if "sanitizer" in result.name.lower():
             labels.append(IssueLabels.SANITIZER)
 
-        return cls.create_and_link_gh_issue(title, body, labels)
+        return cls.create_and_link_gh_issue(title, body, labels, repo_name=repo)
 
     @classmethod
     def can_process(cls, job_result, test_result):
@@ -199,8 +225,8 @@ Test output:
                 f"Cannot handle dropped or error status in job [{job_result.name}] - skip"
             )
             return False
-        if len(job_result.results) > 4:
-            print("Cannot handle more than 4 test failures in one job - skip")
+        if len(job_result.results) > 10:
+            print("Cannot handle more than 10 test failures in one job - skip")
             return False
         if any(key in job_result.name for key in ("Stateless", "Integration")):
             return True
@@ -242,41 +268,47 @@ Test output:
         return res
 
     @classmethod
-    def create_issue(cls, result, job_name):
+    def create_issue(cls, result, job_name, *, pr_num=None, sha=None, repo=PUBLIC_REPO):
         """
         Interactively create GitHub issues for failures that don't have existing issues.
 
         Returns:
             bool: True if issue was created successfully, False otherwise
         """
+        kw = dict(pr_num=pr_num, sha=sha, repo=repo)
         if any(key in job_name for key in ("Stateless", "Integration")):
             if re.match(r"^(\d{5}|test)_", result.name):
                 issue_url = cls.create_gh_issue_on_flaky_or_broken_test(
-                    result, job_name
+                    result, job_name, **kw
                 )
             else:
                 # Logical errors, Sanitizer, Seg faults - create fuzzer issue for these
                 issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
-                    result, job_name
+                    result, job_name, **kw
                 )
         elif any(key in job_name for key in ("Buzz", "AST", "Stress", "Unit tests")):
             if "Unit tests" in job_name and result.name == job_name:
                 result.name = cls.extract_unit_test_title(result)
             issue_url = cls.create_gh_issue_on_fuzzer_or_stress_finding(
-                result, job_name
+                result, job_name, **kw
             )
         else:
             raise Exception(f"Unsupported job type: {job_name}")
         return issue_url
 
     @classmethod
-    def create_infrastructure_issue(cls, result, job_name):
+    def create_infrastructure_issue(
+        cls, result, job_name, *, pr_num=None, sha=None, repo=PUBLIC_REPO
+    ):
         """
         Interactively create GitHub issues for infrastructure failures that don't have existing issues.
 
         Returns:
             bool: True if issue was created successfully, False otherwise
         """
+        _pr = pr_num if pr_num is not None else pr_number
+        _sha = sha if sha is not None else head_sha
+
         print(CreateIssue.repr_result(result))
 
         failure_reason = UserPrompt.get_string(
@@ -346,7 +378,7 @@ Required CI action: {required_ci_action[1]}
 Job pattern: {job_pattern}
 Test pattern: {test_pattern}
 
-CI report example: [{job_name}]({cls.get_job_report_url(pr_number, head_sha, job_name)})
+CI report example: [{job_name}]({cls.get_job_report_url(_pr, _sha, job_name) if repo == PUBLIC_REPO else 'N/A'})
 Test output example:
 ```
 {result.get_info_truncated(truncate_from_top=result.status == Result.Status.ERROR, max_info_lines_cnt=50, max_line_length=0)}
@@ -354,7 +386,7 @@ Test output example:
 """
         labels = [IssueLabels.CI_ISSUE, IssueLabels.INFRASTRUCTURE]
 
-        return cls.create_and_link_gh_issue(title, body, labels)
+        return cls.create_and_link_gh_issue(title, body, labels, repo_name=repo)
 
 
 class CommitStatusCheck:
@@ -369,7 +401,21 @@ class CommitStatusCheck:
         return Result.from_file("/tmp/result_pr.json")
 
     @staticmethod
-    def process_sync_status(commit_status_data: GH.CommitStatus, sha: str):
+    def process_sync_status(commit_status_data: Optional[GH.CommitStatus], sha: str):
+        if not commit_status_data:
+            if not UserPrompt.confirm(
+                "CH Inc sync status is missing. Override to success?"
+            ):
+                sys.exit(0)
+            GH.post_commit_status(
+                CheckStatuses.CH_INC_SYNC,
+                Result.Status.SUCCESS,
+                "Manually overridden",
+                "",
+                sha=sha,
+                repo="ClickHouse/ClickHouse",
+            )
+            return
         if commit_status_data.state in (Result.Status.SUCCESS,):
             pass
         elif commit_status_data.state in (Result.Status.FAILED,):
@@ -423,12 +469,7 @@ class CommitStatusCheck:
         if commit_status_data and commit_status_data.state in (Result.Status.SUCCESS,):
             pass
         elif not commit_status_data:
-            if not UserPrompt.confirm(
-                "Mergeable check not found - CI must be still running. Do you want to proceed?"
-            ):
-                sys.exit(0)
-            else:
-                override = True
+            override = True
         elif commit_status_data.state in (Result.Status.FAILED,):
             if UserPrompt.confirm("Do you want to override mergeable check?"):
                 override = True
@@ -495,10 +536,234 @@ class CommitStatusCheck:
 
         return status_map
 
+    @staticmethod
+    def get_sync_pr_info(public_pr_number):
+        """Find the sync PR number and head SHA for a public PR."""
+        raw = Shell.get_output(
+            f"gh pr list --state all --head sync-upstream/pr/{public_pr_number} "
+            f"--repo {SYNC_REPO} --json number,headRefOid --jq '.[0]'"
+        )
+        if not raw or raw.strip() in ("", "null"):
+            print(f"WARNING: No sync PR found for PR #{public_pr_number}")
+            return None
+        data = json.loads(raw)
+        return data["number"], data["headRefOid"]
+
+    @staticmethod
+    def get_sync_pr_result(sync_pr_number, sync_sha):
+        """Fetch the CI result for a sync PR via the S3 proxy."""
+        report_url = (
+            f"{S3_PROXY_BASE_URL}/{S3_PRIVATE_REPORT_BUCKET}"
+            f"/PRs/{sync_pr_number}/{sync_sha}/result_pr.json"
+        )
+        if not Shell.check(
+            f"curl -f {report_url} -o /tmp/result_sync_pr.json > /dev/null 2>&1"
+        ):
+            print(f"WARNING: Failed to fetch sync PR result from {report_url}")
+            return None
+        return Result.from_file("/tmp/result_sync_pr.json")
+
 
 issues_created = 0
 ci_start_time = None
 create_infrastructure_issue = False
+
+
+def process_workflow_failures(workflow_result, repo, pr_num, sha, allow_infra_issues=False):
+    """
+    Process CI workflow failures: match against known issues, create new ones interactively.
+
+    Args:
+        workflow_result: The workflow Result with failures (already filtered to failed)
+        repo: GitHub repository name (e.g., "ClickHouse/ClickHouse")
+        pr_num: PR number in the target repo
+        sha: Commit SHA
+        allow_infra_issues: Whether to allow creating infrastructure issues
+
+    Returns:
+        tuple: (known_failures, unknown_failures, not_finished_jobs, issues_created_count)
+    """
+    not_finished_jobs = []
+    known_failures = []
+    failures_to_process = []
+    unknown_failures = []
+    issues_created_count = 0
+
+    # Check if workflow has unknown failures before matching against open issues
+    workflow_has_unknown_failures = False
+    for job_result in workflow_result.results:
+        if not job_result.is_completed():
+            not_finished_jobs.append((job_result.name, job_result))
+        if not job_result.results:
+            if job_result.has_label("issue"):
+                known_failures.append((job_result.name, job_result))
+                job_result.set_comment("ISSUE EXISTS")
+                continue
+            else:
+                workflow_has_unknown_failures = True
+        for task_result in job_result.results:
+            if task_result.has_label("issue"):
+                known_failures.append((job_result.name, task_result))
+                task_result.set_comment("ISSUE EXISTS")
+                continue
+            else:
+                workflow_has_unknown_failures = True
+
+    # Check unknown failures against open issues
+    issue_catalog = None
+    if workflow_has_unknown_failures:
+        catalog_name = (
+            TestCaseIssueCatalog.name
+            if repo == PUBLIC_REPO
+            else "issue_catalog_private"
+        )
+        try:
+            issue_catalog = TestCaseIssueCatalog.from_fs(catalog_name)
+        except Exception as e:
+            print(f"Failed to load issue catalog: {e}")
+            issue_catalog = None
+        if (
+            not issue_catalog
+            or issue_catalog.updated_at < datetime.now().timestamp() - 10 * 60
+        ):
+            issue_catalog = TestCaseIssueCatalog.from_gh(verbose=False, repo=repo)
+            issue_catalog.name = catalog_name
+            issue_catalog.dump()
+        print(f"Loaded {len(issue_catalog.active_test_issues)} active issues from {repo}\n")
+
+        # For non-public repos, also load public repo issues since the same flaky
+        # tests may already have issues filed in the public repo
+        if repo != PUBLIC_REPO:
+            try:
+                public_catalog = TestCaseIssueCatalog.from_fs(
+                    TestCaseIssueCatalog.name
+                )
+            except Exception:
+                public_catalog = None
+            if (
+                not public_catalog
+                or public_catalog.updated_at
+                < datetime.now().timestamp() - 10 * 60
+            ):
+                public_catalog = TestCaseIssueCatalog.from_gh(
+                    verbose=False, repo=PUBLIC_REPO
+                )
+                public_catalog.dump()
+            print(
+                f"Loaded {len(public_catalog.active_test_issues)} active issues from {PUBLIC_REPO}\n"
+            )
+            # Merge public issues into the catalog for matching
+            existing_numbers = {i.number for i in issue_catalog.active_test_issues}
+            for issue in public_catalog.active_test_issues:
+                if issue.number not in existing_numbers:
+                    issue_catalog.active_test_issues.append(issue)
+
+        print("Checking failures against open issues...\n")
+        for issue in issue_catalog.active_test_issues:
+            issue.check_result(workflow_result)
+
+        failures_to_process = []
+        not_finished_jobs = []
+        # Reset and fill again after checking against existing issues
+        known_failures = []
+        unknown_failures = []
+
+        for result in workflow_result.results:
+            if result.has_label("issue"):
+                known_failures.append((result.name, result))
+                result.set_comment("ISSUE EXISTS")
+                continue
+            if not result.is_completed():
+                not_finished_jobs.append((result.name, result))
+                continue
+            if not result.results:
+                if not CreateIssue.can_process(result, result):
+                    unknown_failures.append((result.name, result))
+                    continue
+                failures_to_process.append((result.name, result))
+            else:
+                for sub_result in result.results:
+                    if sub_result.has_label("issue"):
+                        known_failures.append((result.name, sub_result))
+                        sub_result.set_comment("ISSUE EXISTS")
+                        continue
+                    if not CreateIssue.can_process(result, sub_result):
+                        unknown_failures.append((result.name, sub_result))
+                        continue
+                    failures_to_process.append((result.name, sub_result))
+
+    if not_finished_jobs:
+        if not UserPrompt.confirm(
+            f"Proceed without waiting for {len(not_finished_jobs)} not finished job(s)?"
+        ):
+            sys.exit(0)
+
+    if failures_to_process:
+        kw = dict(pr_num=pr_num, sha=sha, repo=repo)
+        failure_cnt = 0
+        print("\nStart processing unknown failures one by one:")
+        for job_name, failure_result in failures_to_process:
+            print("")
+            failure_cnt += 1
+            print(f"{failure_cnt}. [ {failure_result.status} ] {failure_result.name}")
+            if job_name != failure_result.name:
+                print(f"  in {job_name}")
+                print(f"cidb: {failure_result.get_hlabel_link('cidb')}")
+
+            # Create new issue if user confirms
+            if UserPrompt.confirm("Create GitHub issue for this failure?"):
+                if allow_infra_issues and UserPrompt.confirm(
+                    "Create infrastructure issue?"
+                ):
+                    print(
+                        "Creating infrastructure issue [--create-infrastructure-issue]"
+                    )
+                    ci_issue = CreateIssue.create_infrastructure_issue(
+                        failure_result, job_name, **kw
+                    )
+                else:
+                    ci_issue = CreateIssue.create_issue(
+                        failure_result, job_name, **kw
+                    )
+                if ci_issue:
+                    print(f"Issue created: {ci_issue.url}")
+                    if issue_catalog:
+                        issue_catalog.active_test_issues.append(ci_issue)
+                        issue_catalog.dump()
+                    failure_result.set_comment("ISSUE CREATED")
+                    failure_result.set_clickable_label("issue", ci_issue.url)
+                    known_failures.append((job_name, failure_result))
+                    issues_created_count += 1
+                else:
+                    print("WARNING: Issue has not been created - skipping this failure")
+                    unknown_failures.append((job_name, failure_result))
+                # Let user read resolution before moving to the next failure
+                time.sleep(3)
+            else:
+                unknown_failures.append((job_name, failure_result))
+
+    return known_failures, unknown_failures, not_finished_jobs, issues_created_count
+
+
+def print_failure_summary(known_failures, unknown_failures, not_finished_jobs, label=""):
+    """Print a summary of CI failures."""
+    if not (known_failures or unknown_failures or not_finished_jobs):
+        return
+    prefix = f"{label} " if label else ""
+    print(f"\n{prefix}CI failures:")
+    if known_failures:
+        print("\n--- Known problems ---")
+        for job_name, failure in known_failures:
+            print(f"[{failure.status}] {failure.name} in {job_name}")
+    if unknown_failures:
+        print("\n--- Unknown problems ---")
+        for job_name, failure in unknown_failures:
+            print(f"[{failure.status}] {failure.name} in {job_name}")
+            failure.set_comment("IGNORED")
+    if not_finished_jobs:
+        print("\n--- Not finished jobs ---")
+        for _, failure in not_finished_jobs:
+            print(f"[{failure.status}] {failure.name}")
 
 
 def main():
@@ -627,150 +892,93 @@ def main():
     global ci_start_time
     ci_start_time = workflow_result.start_time
 
-    not_finished_jobs = []
-    known_failures = []
-    failures_to_process = []
-    unknown_failures = []
+    known_failures, unknown_failures, not_finished_jobs, new_issues_count = (
+        process_workflow_failures(
+            workflow_result,
+            PUBLIC_REPO,
+            pr_number,
+            head_sha,
+            allow_infra_issues=create_infrastructure_issue,
+        )
+    )
+    pre_existing_issues_count = len(known_failures) - new_issues_count
+    global issues_created
+    issues_created += new_issues_count
 
-    # check if workflow failures and if any of them are unknown before matching against open issues
-    workflow_has_unknown_failures = False
-    for job_result in workflow_result.results:
-        if not job_result.is_completed():
-            not_finished_jobs.append((job_result.name, job_result))
-        if not job_result.results:
-            if job_result.has_label("issue"):
-                known_failures.append((job_result.name, job_result))
-                job_result.set_comment("ISSUE EXISTS")
-                continue
-            else:
-                workflow_has_unknown_failures = True
-        for task_result in job_result.results:
-            if task_result.has_label("issue"):
-                known_failures.append((job_result.name, task_result))
-                task_result.set_comment("ISSUE EXISTS")
-                continue
-            else:
-                workflow_has_unknown_failures = True
-
-    # check unknown failures against open issues
-    if workflow_has_unknown_failures:
-        try:
-            issue_catalog = TestCaseIssueCatalog.from_fs(TestCaseIssueCatalog.name)
-        except Exception as e:
-            print(f"Failed to load issue catalog: {e}")
-            issue_catalog = None
-        if (
-            not issue_catalog
-            or issue_catalog.updated_at < datetime.now().timestamp() - 10 * 60
-        ):
-            issue_catalog = TestCaseIssueCatalog.from_gh(
-                verbose=False, repo="ClickHouse/ClickHouse"
-            )
-            issue_catalog.dump()
-        print(f"Loaded {len(issue_catalog.active_test_issues)} active issues from gh\n")
-        print("Checking failures against open issues...\n")
-        for issue in issue_catalog.active_test_issues:
-            issue.check_result(workflow_result)
-
-        failures_to_process = []
-        not_finished_jobs = []
-        # reset and fill again after checking against existing issues
-        known_failures = []
-        unknown_failures = []
-
-        for result in workflow_result.results:
-            if result.has_label("issue"):
-                known_failures.append((result.name, result))
-                result.set_comment("ISSUE EXISTS")
-                continue
-            if not result.is_completed():
-                not_finished_jobs.append((result.name, result))
-                continue
-            if not result.results:
-                if not CreateIssue.can_process(result, result):
-                    unknown_failures.append((result.name, result))
-                    continue
-                failures_to_process.append((result.name, result))
-            else:
-                for sub_result in result.results:
-                    if sub_result.has_label("issue"):
-                        known_failures.append((result.name, sub_result))
-                        sub_result.set_comment("ISSUE EXISTS")
-                        continue
-                    if not CreateIssue.can_process(result, sub_result):
-                        unknown_failures.append((result.name, sub_result))
-                        continue
-                    failures_to_process.append((result.name, sub_result))
-
-    pre_existing_issues_count = len(known_failures)
-
-    if not_finished_jobs:
-        if not UserPrompt.confirm(
-            f"Proceed without waiting for {len(not_finished_jobs)} not finished job(s)?"
-        ):
-            sys.exit(0)
-
-    if failures_to_process:
-        failure_cnt = 0
-        print("\nStart processing unknown failures one by one:")
-        for job_name, failure_result in failures_to_process:
-            print("")
-            failure_cnt += 1
-            print(f"{failure_cnt}. [ {failure_result.status} ] {failure_result.name}")
-            if job_name != failure_result.name:
-                print(f"  in {job_name}")
-                print(f"cidb: {failure_result.get_hlabel_link('cidb')}")
-
-            # Create new issue if user confirms
-            if UserPrompt.confirm("Create GitHub issue for this failure?"):
-                if create_infrastructure_issue and UserPrompt.confirm(
-                    "Create infrastructure issue?"
-                ):
-                    print(
-                        "Creating infrastructure issue [--create-infrastructure-issue]"
-                    )
-                    ci_issue = CreateIssue.create_infrastructure_issue(
-                        failure_result, job_name
-                    )
-                else:
-                    ci_issue = CreateIssue.create_issue(failure_result, job_name)
-                if ci_issue:
-                    print(f"Issue created: {ci_issue.url}")
-                    issue_catalog.active_test_issues.append(ci_issue)
-                    issue_catalog.dump()
-                    failure_result.set_comment("ISSUE CREATED")
-                    failure_result.set_clickable_label("issue", ci_issue.url)
-                    known_failures.append((job_name, failure_result))
-                    global issues_created
-                    issues_created += 1
-                else:
-                    print("WARNING: Issue has not been created - skipping this failure")
-                    unknown_failures.append((job_name, failure_result))
-                # let user read resolution before moving to the next failure
-                time.sleep(3)
-            else:
-                unknown_failures.append((job_name, failure_result))
-
-    if known_failures or unknown_failures or not_finished_jobs:
-        print("\nCI failures:")
-        if known_failures:
-            print("\n--- Known problems ---")
-            for job_name, failure in known_failures:
-                print(f"[{failure.status}] {failure.name} in {job_name}")
-
-        if unknown_failures:
-            print("\n--- Unknown problems ---")
-            for job_name, failure in unknown_failures:
-                print(f"[{failure.status}] {failure.name} in {job_name}")
-                failure.set_comment("IGNORED")
-
-        if not_finished_jobs:
-            print("\n--- Not finished jobs ---")
-            for _, failure in not_finished_jobs:
-                print(f"[{failure.status}] {failure.name}")
+    print_failure_summary(known_failures, unknown_failures, not_finished_jobs)
 
     if is_master_commit:
         sys.exit(0)
+
+    # Process sync PR failures if sync CI failed with test failures
+    sync_known_failures = []
+    sync_unknown_failures = []
+    if (
+        sync_status
+        and sync_status.state == Result.Status.FAILED
+        and sync_status.description == "tests failed"
+    ):
+        print("\n=== Processing Sync PR (CH Inc sync) failures ===")
+
+        # Check proxy connectivity before proceeding
+        process_sync = False
+        while True:
+            if Shell.check(
+                f"curl -sf --connect-timeout 5 {S3_PROXY_BASE_URL} -o /dev/null 2>&1"
+            ):
+                process_sync = True
+                break
+            print(
+                f"WARNING: S3 proxy at {S3_PROXY_BASE_URL} is not reachable. "
+                "Connect to VPN/Tailscale to access sync PR results."
+            )
+            answer = UserPrompt.select_from_menu(
+                [
+                    ("Skip sync PR processing", "skip"),
+                    ("Retry (after connecting to VPN)", "retry"),
+                ],
+                question="S3 proxy is not available",
+            )
+            if answer[1] == "skip":
+                print("Skipping sync PR processing")
+                break
+
+        if process_sync:
+            sync_pr_info = CommitStatusCheck.get_sync_pr_info(pr_number)
+            if sync_pr_info:
+                sync_pr_num, sync_sha = sync_pr_info
+                print(
+                    f"Sync PR: {SYNC_REPO}#{sync_pr_num} (sha: {sync_sha[:12]})"
+                )
+                sync_workflow_result = CommitStatusCheck.get_sync_pr_result(
+                    sync_pr_num, sync_sha
+                )
+                if sync_workflow_result:
+                    sync_workflow_result = (
+                        sync_workflow_result.to_failed_results_with_flat_leaves()
+                    )
+                    (
+                        sync_known_failures,
+                        sync_unknown_failures,
+                        sync_not_finished,
+                        _,
+                    ) = process_workflow_failures(
+                        sync_workflow_result,
+                        SYNC_REPO,
+                        sync_pr_num,
+                        sync_sha,
+                        allow_infra_issues=create_infrastructure_issue,
+                    )
+                    print_failure_summary(
+                        sync_known_failures,
+                        sync_unknown_failures,
+                        sync_not_finished,
+                        label="Sync",
+                    )
+                else:
+                    print("WARNING: Could not fetch sync PR result - skipping")
+            else:
+                print("WARNING: Could not find sync PR - skipping")
 
     question = "CI status:\n"
     if unknown_failures or issues_created > 0 or pre_existing_issues_count > 0:
@@ -782,6 +990,8 @@ def main():
             question += f" - {len(known_failures)} known failure{'s' if len(known_failures) != 1 else ''}\n"
         question += " - all other checks passed\n"
         question += f" - Sync status: {sync_status.state}, description: {sync_status.description}\n"
+        if sync_known_failures or sync_unknown_failures:
+            question += f" - Sync failures: {len(sync_known_failures)} known, {len(sync_unknown_failures)} unknown\n"
     else:
         question = "All checks passed! Congratulations!\n"
 

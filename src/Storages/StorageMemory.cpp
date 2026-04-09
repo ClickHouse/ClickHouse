@@ -8,10 +8,13 @@
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -170,6 +173,14 @@ StorageMemory::StorageMemory(
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
+}
+
+VirtualColumnsDescription StorageMemory::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "");
+    return desc;
 }
 
 StorageMemory::~StorageMemory() = default;
