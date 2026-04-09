@@ -2178,6 +2178,7 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
 
     auto ast_drop = make_intrusive<ASTDropQuery>();
     String target_table = create.getTable();
+    const bool if_not_exists = create.if_not_exists;
 
     {
         auto database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
@@ -2250,12 +2251,23 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
         auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->rename_if_cannot_exchange = false;
         ast_rename->exchange = false;
+        try
+        {
+            InterpreterRenameQuery(ast_rename, current_context).execute();
+        }
 
-        InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
-        interpreter_rename.execute();
+        catch (const Exception & e)
+        {
+            if (if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
+            {
+                create.setTable(target_table);
+                return {};
+            }
+            throw;
+        }
+
         renamed = true;
         create.setTable(target_table);
-
         return {};
     }
     catch (...)
@@ -2276,6 +2288,7 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
         throw;
     }
 }
+
 
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                                                        const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
