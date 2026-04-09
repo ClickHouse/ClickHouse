@@ -8,21 +8,21 @@ doc_type: 'reference'
 
 Formats rows in each group using an output format and returns the formatted data as a string. This is similar to `formatRow`, but works on the whole group and can use block-based formats.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 groupFormat(format)(x, y, ...)
 ```
 
-**Parameters**
+## Parameters {#parameters}
 
 - `format` — Output format name, for example `JSONEachRow`, `CSV`, `TabSeparated`.
 
-**Arguments**
+## Arguments {#arguments}
 
 - `x, y, ...` — Expressions to format as rows. At least one argument is required.
 
-**Returned value**
+## Returned value {#returned-value}
 
 - A [String](../../../sql-reference/data-types/string.md) containing the formatted output for the group.
 
@@ -34,9 +34,9 @@ The function is order-dependent. If you need a deterministic order, sort the inp
 Query-level format settings (for example `format_csv_delimiter`, `output_format_json_quote_64bit_integers`) are applied.
 :::
 
-**Examples**
+## Examples {#examples}
 
-1) Basic usage with `JSONEachRow`:
+### Basic usage with JSONEachRow {#example-json}
 
 ```sql
 SELECT groupFormat('JSONEachRow')(number, toString(number))
@@ -51,7 +51,7 @@ Result:
 {"c1":2,"c2":"2"}
 ```
 
-2) Deterministic order with a subquery:
+### Deterministic order with a subquery {#example-order}
 
 ```sql
 SELECT groupFormat('JSONEachRow')(number)
