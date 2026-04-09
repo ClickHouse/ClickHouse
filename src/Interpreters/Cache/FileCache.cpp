@@ -1919,6 +1919,8 @@ void FileCache::loadMetadataImpl()
     if (first_exception)
         std::rethrow_exception(first_exception);
 
+    main_priority->check(cache_state_guard.lock());
+
     assertCacheCorrectness();
 }
 
@@ -1984,8 +1986,6 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
         return;
     }
 
-    UInt64 offset = 0;
-    UInt64 size = 0;
     for (; key_it != fs::directory_iterator(); key_it++)
     {
         const fs::path key_directory = key_it->path();
@@ -2013,24 +2013,39 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
             origin_info,
             /* is_initial_load */true);
 
+        /// Phase 1: scan and parse all segment files for this key (no lock held).
+        struct SegmentToLoad
+        {
+            UInt64 offset;
+            UInt64 size;
+            FileSegmentKind kind;
+            fs::path path;
+            IFileCachePriority::IteratorPtr cache_it; /// filled in phase 2
+        };
+        std::vector<SegmentToLoad> segments;
+
         for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
         {
             auto offset_with_suffix = offset_it->path().filename().string();
-            auto delim_pos = offset_with_suffix.find('_');
             bool parsed;
+            UInt64 offset = 0;
 
+            auto delim_pos = offset_with_suffix.find('_');
             if (delim_pos == std::string::npos)
+            {
                 parsed = tryParse<UInt64>(offset, offset_with_suffix);
+            }
             else
             {
                 parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                if (offset_with_suffix.substr(delim_pos+1) == "persistent")
+
+                if (offset_with_suffix.substr(delim_pos + 1) == "persistent")
                 {
                     /// For compatibility. Persistent files are no longer supported.
                     fs::remove(offset_it->path());
                     continue;
                 }
-                if (offset_with_suffix.substr(delim_pos+1) == "temporary")
+                if (offset_with_suffix.substr(delim_pos + 1) == "temporary")
                 {
                     fs::remove(offset_it->path());
                     continue;
@@ -2040,27 +2055,111 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
             if (!parsed)
             {
                 LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
-                continue; /// Or just remove? Some unexpected file.
+                continue;
             }
 
-            size = offset_it->file_size();
+            auto size = offset_it->file_size();
             if (!size)
             {
                 fs::remove(offset_it->path());
                 continue;
             }
 
-            if (!loadFileSegment(key, offset, size, key_metadata, origin_info))
+            segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr});
+        }
+
+        /// Phase 2: add all segments for the key under a single write lock acquisition.
+        /// TODO: we can get rid of this lockCache() if we first load everything in parallel
+        /// without any mutual lock between loading threads, and only after do removeOverflow().
+        /// This will be better because overflow here may
+        /// happen only if cache configuration changed and max_size became less than it was.
+        size_t size_limit = 0;
+        {
+            auto lock = cache_guard.writeLock();
+            auto state_lock = cache_state_guard.lock();
+            size_limit = main_priority->getSizeLimit(state_lock);
+
+            for (auto & segment : segments)
             {
-                LOG_WARNING(log, "Cannot load file segment {}:{} (size: {}), removing {}", key, offset, size, offset_it->path().string());
-                fs::remove(offset_it->path());
+                if (main_priority->canFit(
+                        segment.size,
+                        /* elements */1,
+                        state_lock,
+                        /* reservee */nullptr,
+                        origin_info,
+                        /* is_initial_load */true))
+                {
+                    segment.cache_it = main_priority->add(
+                        key_metadata,
+                        segment.offset,
+                        segment.size,
+                        lock,
+                        &state_lock,
+                        /* is_initial_load */true);
+                }
             }
+        }
+
+        /// Phase 3: construct FileSegment objects and emplace
+        /// (no lock held, because a single key is loaded by a single thread).
+        size_t failed_to_fit = 0;
+        for (auto & segment : segments)
+        {
+            if (segment.cache_it)
+            {
+                bool inserted = false;
+                try
+                {
+                    auto file_segment = std::make_shared<FileSegment>(
+                        key,
+                        segment.offset,
+                        segment.size,
+                        FileSegment::State::DOWNLOADED,
+                        CreateFileSegmentSettings(segment.kind),
+                        /* background_download_enabled */false,
+                        this,
+                        key_metadata,
+                        segment.cache_it);
+
+                    inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
+                }
+
+                if (inserted)
+                {
+                    LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, segment.offset, segment.size, segment.path.string());
 #if USE_ROCKSDB
-            else if (rocksdb_index)
-            {
-                rocksdb_index->put(key, offset, static_cast<Int64>(size), origin_info.segment_type);
-            }
+                    if (rocksdb_index)
+                    {
+                        rocksdb_index->put(key, segment.offset, static_cast<Int64>(segment.size), origin_info.segment_type);
+                    }
 #endif
+                }
+                else
+                {
+                    segment.cache_it->remove(cache_guard.writeLock());
+                    fs::remove(segment.path);
+                    chassert(false);
+                }
+            }
+            else
+            {
+                ++failed_to_fit;
+                fs::remove(segment.path);
+            }
+        }
+
+        if (failed_to_fit)
+        {
+            LOG_WARNING(
+                log,
+                "Cache capacity changed (max size: {}), "
+                "{} file(s) for key {} do not fit in cache anymore",
+                size_limit, failed_to_fit, key);
         }
 
         if (key_metadata->sizeUnlocked() == 0)
