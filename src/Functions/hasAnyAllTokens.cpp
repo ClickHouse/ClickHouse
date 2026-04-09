@@ -47,8 +47,8 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
     /// ColumnConst is recreated with size 0. A size-0 ColumnConst is still a valid constant
     /// that holds its value - do not treat it as absent. However, we must still guard against
     /// a ColumnConst whose underlying data column is itself empty.
-    const auto * column_const = typeid_cast<const ColumnConst *>(column_needles.get());
-    if (column_const ? column_const->getDataColumn().empty() : column_needles->empty())
+    const auto * column_needles_const = typeid_cast<const ColumnConst *>(column_needles.get());
+    if (column_needles_const ? column_needles_const->getDataColumn().empty() : column_needles->empty())
         return {};
 
     Field needles_field = (*column_needles)[0];
