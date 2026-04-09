@@ -18,7 +18,7 @@ Columns:
   - `[]` — All users share the same quota.
   - `['user_name']` — Connections with the same user name share the same quota.
   - `['ip_address']` — Connections from the same IP share the same quota.
-  - `['client_key']` — Connections with the same key share the same quota. A key must be explicitly provided by a client. When using [clickhouse-client](../../interfaces/cli.md), pass a key value in the `--quota_key` parameter, or use the `quota_key` parameter in the client configuration file. When using HTTP interface, use the `X-ClickHouse-Quota` header.
+  - `['client_key']` — Connections with the same key share the same quota. A key must be explicitly provided by a client. When using [clickhouse-client](../../interfaces/client.md), pass a key value in the `--quota_key` parameter, or use the `quota_key` parameter in the client configuration file. When using HTTP interface, use the `X-ClickHouse-Quota` header.
   - `['user_name', 'client_key']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`.
   - `['client_key', 'ip_address']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the quota is tracked for `ip_address`.
   - `['normalized_query_hash']` — Each distinct normalized query gets its own quota bucket. Queries that differ only in literal values (e.g. `SELECT 1` and `SELECT 2`) share the same bucket.
