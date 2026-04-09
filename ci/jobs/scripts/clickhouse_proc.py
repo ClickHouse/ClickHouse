@@ -1102,7 +1102,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "trace_log",
             "transactions_info_log",
             "metric_log",
-            "blob_storage_log",
+            # "blob_storage_log", # NOTE (strtgbb): contains Azure container name, currently considered secret by s3 upload secret scanner.
             "error_log",
             "query_metric_log",
             "part_log",
