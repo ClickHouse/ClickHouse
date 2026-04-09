@@ -1,0 +1,26 @@
+Output: id, _table
+
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+│  Header: id Int64
+│          _table LowCardinality(String)
+└──ReadFromMerge
+   │  Header: id Int64
+   │          _table LowCardinality(String)
+   ├──Expression
+   │  │  Header: id Int64
+   │  │          _table LowCardinality(String)
+   │  └──ReadFromMemoryStorage
+   │        Header: id Int64
+   │                _table LowCardinality(String)
+   ├──Expression
+   │  │  Header: id Int64
+   │  │          _table LowCardinality(String)
+   │  └──ReadFromMemoryStorage
+   │        Header: id Int64
+   │                _table LowCardinality(String)
+   └──Expression
+      │  Header: id Int64
+      │          _table LowCardinality(String)
+      └──ReadFromMemoryStorage
+            Header: id Int64
+                    _table LowCardinality(String)

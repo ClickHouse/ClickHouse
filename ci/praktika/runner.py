@@ -32,14 +32,19 @@ _GH_authenticated = False
 def _GH_Auth():
     global _GH_authenticated
     if _GH_authenticated:
-        return
+        return True
     if not Settings.USE_CUSTOM_GH_AUTH:
-        return
+        return True
     from .gh_auth import GHAuth
 
-    if not Shell.check(f"gh auth status", verbose=True):
-        GHAuth.auth_from_settings()
-    _GH_authenticated = True
+    try:
+        if not Shell.check(f"gh auth status", verbose=True):
+            GHAuth.auth_from_settings()
+        _GH_authenticated = True
+        return True
+    except Exception as e:
+        print(f"WARNING: GH auth failed: {e}")
+        return False
 
 
 class Runner:
@@ -292,7 +297,8 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            _GH_Auth()
+            if not _GH_Auth():
+                Utils.raise_with_error("GH auth failed - required by job")
 
         print("INFO: disk status before running a job:")
         Shell.run("df -h")
@@ -727,13 +733,13 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                _GH_Auth()
-                GH.post_commit_status(
-                    name=workflow.name,
-                    status=GH.convert_to_gh_status(status_updated),
-                    description="",
-                    url=Info().get_report_url(latest=False),
-                )
+                if _GH_Auth():
+                    GH.post_commit_status(
+                        name=workflow.name,
+                        status=GH.convert_to_gh_status(status_updated),
+                        description="",
+                        url=Info().get_report_url(latest=False),
+                    )
 
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
@@ -760,8 +766,7 @@ class Runner:
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ):
-            _GH_Auth()
+        ) and _GH_Auth():
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -779,15 +784,15 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            _GH_Auth()
-            if not GH.post_commit_status(
-                name=job.name,
-                status=result.status,
-                description=result.info.splitlines()[0] if result.info else "",
-                url=report_url,
-            ):
-                env.add_info("Failed to post GH commit status for the job")
-                print(f"ERROR: Failed to post commit status for the job")
+            if _GH_Auth():
+                if not GH.post_commit_status(
+                    name=job.name,
+                    status=result.status,
+                    description=result.info.splitlines()[0] if result.info else "",
+                    url=report_url,
+                ):
+                    env.add_info("Failed to post GH commit status for the job")
+                    print(f"ERROR: Failed to post commit status for the job")
 
         if workflow.enable_report:
             # to make it visible in GH Actions annotations
