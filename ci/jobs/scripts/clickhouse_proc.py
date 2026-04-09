@@ -1328,6 +1328,7 @@ if __name__ == "__main__":
     res = False
     try:
         if command == "logs_export_config":
+            exit(0) # Note (strtgbb): We don't use log exports
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
