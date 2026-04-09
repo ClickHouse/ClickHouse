@@ -138,7 +138,6 @@ ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
     return getContext()->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
 }
 
-
 static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, bool secure)
 {
     /// Determine the advertised host using the fallback chain:
