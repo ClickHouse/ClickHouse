@@ -323,7 +323,7 @@ Session::~Session()
         if (auto audit_log = getAuditLoggerIfEnabled())
         {
             LOG_AUDIT(audit_log, "User, {}, {}, Logout",
-                    user->getName(), getClientInfo().current_address->host().toString());
+                    user ? user->getName() : "", getClientInfo().current_address->host().toString());
         }
 
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
@@ -766,7 +766,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
     if (auto audit_log = getAuditLoggerIfEnabled())
     {
         LOG_AUDIT(audit_log, "User, {}, {}, LoginSuccess",
-                user->getName(), getClientInfo().current_address->host().toString());
+                user ? user->getName() : "", getClientInfo().current_address->host().toString());
     }
 
     notified_session_log_about_login = true;
