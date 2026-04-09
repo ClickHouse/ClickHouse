@@ -47,7 +47,7 @@ Columns:
   - `gRPC`
   - `MySQL`
   - `PostgreSQL`
-- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
+- `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/client.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the `clickhouse-client` or another TCP client.
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The major version of the `clickhouse-client` or another TCP client.
