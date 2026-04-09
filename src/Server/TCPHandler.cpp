@@ -965,6 +965,27 @@ void TCPHandler::runImpl()
                 return;
             }
 
+            /// If the exception happened during initial query parsing (before
+            /// `query_context` was created at the end of `processQuery`), the
+            /// input buffer is in an unknown state: the failing read may have
+            /// consumed only part of the packet, leaving trailing bytes that
+            /// will be misinterpreted as the next packet on this connection.
+            /// The only safe option is to close the connection.
+            if (!query_state->query_context)
+            {
+                try
+                {
+                    std::lock_guard lock(*callback_mutex);
+                    sendException(*exception, send_exception_with_stack_trace);
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                    /// Ok: failed to send the exception, but we're closing anyway.
+                }
+                query_state->cancelOut(out);
+                return;
+            }
+
             if (thread_trace_context)
                 thread_trace_context->root_span.addAttribute(*exception);
 
