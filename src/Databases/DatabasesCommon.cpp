@@ -117,7 +117,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.projections)
     {
         for (const auto & child : columns.projections->children)
-            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, nullptr, context);
     }
     if (!new_query.storage)
         return;
