@@ -9,16 +9,14 @@
 namespace DB
 {
 
-/// Returns {2, 4, 8, ..., max_node_count} (powers of 2, capped at max).
-/// Always includes max_node_count even if not a power of 2.
+/// Returns {max_node_count} — the full cluster.
+/// Intermediate counts ({2, 4, 8, ...}) were explored previously but never
+/// chosen on TPC-H. Still this might be revisited in the future.
 inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
 {
-    std::vector<size_t> result;
-    for (size_t candidate = 2; candidate <= max_node_count; candidate *= 2)
-        result.push_back(candidate);
-    if (!result.empty() && result.back() != max_node_count)
-        result.push_back(max_node_count);
-    return result;
+    if (max_node_count <= 1)
+        return {};
+    return {max_node_count};
 }
 
 /// A set of columns, but each column can also have multiple equivalent names derived from equality predicates
