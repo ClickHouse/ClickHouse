@@ -3,6 +3,7 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -169,6 +170,12 @@ public:
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
     void setQueryPlan(std::unique_ptr<QueryPlan> source_);
 
+    using RebuildSourceCallback = std::function<std::unique_ptr<QueryPlan>()>;
+
+    /// Set a callback that can rebuild the source plan if `buildOrderedSetInplace`
+    /// consumes it but fails to create the set (e.g. due to timeout).
+    void setRebuildSourceCallback(RebuildSourceCallback callback) { rebuild_source_callback = std::move(callback); }
+
     void buildExternalTableFromInplaceSet(StoragePtr external_table_);
     void setExternalTable(StoragePtr external_table_);
 
@@ -183,6 +190,7 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+    RebuildSourceCallback rebuild_source_callback;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;

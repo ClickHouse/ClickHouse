@@ -357,7 +357,23 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!set_and_key->set->isCreated())
+    {
+        /// `build()` above consumed the `source` plan. If the in-place build failed,
+        /// the set remains not-created, and `source` is null. This means the later call
+        /// to `build()` from `DelayedCreatingSetsStep::makePlansForSets` would return nullptr,
+        /// leaving the set permanently unbuilt. `FunctionIn` would then throw
+        /// "Not-ready Set is passed as the second argument".
+        ///
+        /// To fix this, use the rebuild callback (if available) to recreate the source plan
+        /// so that `makePlansForSets` can build the set during pipeline execution.
+        if (rebuild_source_callback)
+        {
+            auto new_plan = rebuild_source_callback();
+            if (new_plan)
+                setQueryPlan(std::move(new_plan));
+        }
         return nullptr;
+    }
 
     logProcessorProfile(context, pipeline.getProcessors());
 

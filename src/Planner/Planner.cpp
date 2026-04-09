@@ -1541,6 +1541,23 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         for (const auto & context : subquery_plan.getInterpretersContexts())
             query_plan.addInterpreterContext(context);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+
+        /// Save a callback that can rebuild the source plan. This is needed because
+        /// `buildOrderedSetInplace` (called during primary key analysis in optimization)
+        /// destructively consumes the source plan via `build()`. If the in-place build fails
+        /// (e.g. due to timeout with overflow_mode='break'), the source is lost and the set
+        /// can never be built, causing "Not-ready Set" exceptions in `FunctionIn`.
+        /// The callback allows `buildOrderedSetInplace` to restore the source on failure.
+        subquery->setRebuildSourceCallback(
+            [query_tree_copy = query_tree->clone(), subquery_options]() mutable -> std::unique_ptr<QueryPlan>
+            {
+                Planner rebuilder(
+                    query_tree_copy,
+                    subquery_options,
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, collectFiltersForAnalysis(query_tree_copy, subquery_options, nullptr)));
+                rebuilder.buildQueryPlanIfNeeded();
+                return std::make_unique<QueryPlan>(std::move(rebuilder).extractQueryPlan());
+            });
     }
 
     if (!subqueries.empty())
