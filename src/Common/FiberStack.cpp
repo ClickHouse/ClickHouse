@@ -79,6 +79,8 @@ boost::context::stack_context FiberStack::allocate() const
     /// in the caller. On the main thread stack this is harmless (OS zero-inits pages),
     /// but on heap-allocated fiber stacks the dirty shadow can propagate via stack slot
     /// reuse and eventually trigger false positives in unrelated code.
+    /// This unpoison provides a clean initial state; on AArch64, dirty shadow also
+    /// accumulates across context switches and is re-cleaned in fiber_ucontext.hpp.
     __msan_unpoison(data, num_bytes);
 
     boost::context::stack_context sctx;
