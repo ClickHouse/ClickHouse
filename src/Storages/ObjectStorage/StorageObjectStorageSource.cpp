@@ -637,7 +637,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0)
             continue;
 
-        if (query_condition_cache)
+        if (query_condition_cache && !object_info->file_bucket_info)
         {
             auto matching_marks = query_condition_cache->read(
                 storage_id.uuid, object_info->getFileName(), *format_filter_info->condition_hash);
@@ -652,24 +652,14 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (matching_row_groups.empty())
                     continue;
 
-                if (object_info->file_bucket_info)
+                auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(
+                    object_info->getFileFormat().value_or(configuration->format));
+                if (file_bucket_info)
                 {
-                    auto filtered = object_info->file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);
-                }
-                else
-                {
-                    auto prototype = FormatFactory::instance().getFileBucketInfo(
-                        object_info->getFileFormat().value_or(configuration->format));
-                    if (prototype)
-                    {
-                        auto filtered = prototype->filterByMatchingRowGroups(matching_row_groups);
-                        if (!filtered)
-                            continue;
-                        object_info->file_bucket_info = std::move(filtered);
-                    }
                 }
             }
         }
