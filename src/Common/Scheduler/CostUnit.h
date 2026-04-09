@@ -10,7 +10,7 @@ namespace DB
 enum class CostUnit
 {
     IOByte,
-    CPUSlot,
+    CPUNanosecond,
     QuerySlot,
 };
 
@@ -19,7 +19,7 @@ inline std::string_view costUnitToString(CostUnit unit)
     switch (unit)
     {
         case CostUnit::IOByte: return "IOByte";
-        case CostUnit::CPUSlot: return "CPUSlot";
+        case CostUnit::CPUNanosecond: return "CPUNanosecond";
         case CostUnit::QuerySlot: return "QuerySlot";
     }
 }

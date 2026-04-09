@@ -1,0 +1,9 @@
+set enable_analyzer = 1;
+set use_variant_as_common_type = 1;
+SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT 'Hello', 2 AS ord) ORDER BY ord;
+SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT 'Hello', 2 AS ord UNION ALL SELECT 3.14 AS x, 3 AS ord) ORDER BY ord;
+SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT toDate('2024-01-01') AS x, 2 AS ord) ORDER BY ord;
+SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT [1,2,3] AS x, 2 AS ord) ORDER BY ord;
+SELECT x FROM (SELECT 'Hello' AS x, 1 AS ord UNION ALL SELECT map('a',1) AS x, 2 AS ord) ORDER BY ord;
+SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT tuple(1,'a') AS x, 2 AS ord) ORDER BY ord;
+SELECT x FROM (SELECT 1 AS x, 1 AS ord UNION ALL SELECT toUUID('00000000-0000-0000-0000-000000000000') AS x, 2 AS ord) ORDER BY ord;

@@ -811,7 +811,39 @@ REGISTER_FUNCTION(PointInPolygon)
     using PointInPolygonWithGridF64 = PointInPolygonWithGrid<Float64>;
     using PointInMultiPolygonRTreeWithGrid = PointInMultiPolygonRTree<PointInPolygonWithGridF64>;
 
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>();
+    FunctionDocumentation::Description description = R"(
+Checks whether the point belongs to the polygon on the plane.
+
+:::note
+- You can set `validate_polygons = 0` to bypass geometry validation.
+- `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "pointInPolygon((x, y), [(a, b), (c, d) ...], ...)";
+    FunctionDocumentation::Arguments arguments = {
+        {"(x, y)", "Coordinates of a point on the plane.", {"Tuple(Float64, Float64)"}},
+        {"[(a, b), (c, d) ...]", "Polygon vertices as an array of coordinate pairs. Vertices should be in clockwise or counterclockwise order. Minimum 3 vertices required.", {"Array(Tuple(Float64, Float64))"}},
+        {"...", "Optional. Additional arguments for polygons with holes (as separate arrays) or multipolygons (as separate polygons).", {"Array(Tuple(Float64, Float64))", "Polygon", "MultiPolygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns `1` if the point is inside the polygon, `0` if it is not. If the point is on the polygon boundary, the function may return either `0` or `1`.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage with a simple polygon",
+            "SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res",
+            R"(
+┌─res─┐
+│   1 │
+└─────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGridF64, PointInMultiPolygonRTreeWithGrid>>(documentation);
 }
 
 }

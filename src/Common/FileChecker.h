@@ -14,6 +14,7 @@ namespace DB
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
+class WriteBuffer;
 
 /// Stores the sizes of all columns, and can check whether the columns are corrupted.
 class FileChecker
@@ -26,8 +27,10 @@ public:
     String getPath() const;
 
     void update(const String & full_file_path);
+    void update(const String & filename, size_t size);
     void setEmpty(const String & full_file_path);
     void save() const;
+    void save(WriteBuffer & buffer) const;
     bool empty() const { return map.empty(); }
 
     /// Check the files whose parameters are specified in sizes.json

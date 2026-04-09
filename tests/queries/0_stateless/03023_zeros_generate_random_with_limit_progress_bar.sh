@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function run_with_progress_and_match_total_rows()
 {
     CURL_RESPONSE=$(echo "$1" | \
-            ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&wait_end_of_query=1&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&output_format_parallel_formatting=0" --data-binary @- 2>&1)
+            ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&http_wait_end_of_query=1&max_block_size=1&send_progress_in_http_headers=1&http_headers_progress_interval_ms=0&output_format_parallel_formatting=0" --data-binary @- 2>&1)
 
     echo "$CURL_RESPONSE" | grep -q '"total_rows_to_read":"100"' && echo "Matched" || echo "Expected total_rows_to_read not found: ${CURL_RESPONSE}"
 }

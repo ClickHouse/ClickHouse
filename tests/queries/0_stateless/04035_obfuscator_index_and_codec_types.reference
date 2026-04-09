@@ -1,0 +1,3 @@
+CREATE TABLE placebo (slump Int, defender Int, INDEX towel_slump slump TYPE minmax, INDEX towel_defender defender TYPE set(3)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE placebo (slump String, INDEX veto slump TYPE ngrambf_v1(3, 268, 3, 0), INDEX card slump TYPE tokenbf_v1(268, 3, 0), INDEX leaver slump TYPE bloom_filter(0.01)) ENGINE = MergeTree ORDER BY slump
+CREATE TABLE placebo (slump Int CODEC(LZ4, Delta), defender String CODEC(ZSTD(3)), gravity Float64 CODEC(DoubleDelta, LZ4HC)) ENGINE = MergeTree ORDER BY slump

@@ -5,6 +5,7 @@ sidebar_label: 'generateRandom'
 sidebar_position: 75
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
+doc_type: 'reference'
 ---
 
 # generateRandom Table Function
@@ -48,7 +49,7 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 ```
 
 ```sql
-CREATE TABLE random (a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)) engine=Memory;
+CREATE TABLE random (a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)) ENGINE=Memory;
 INSERT INTO random SELECT * FROM generateRandom() LIMIT 2;
 SELECT * FROM random;
 ```
@@ -60,7 +61,7 @@ SELECT * FROM random;
 └──────────────────────────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-In combination with [generateRandomStructure](../../sql-reference/functions/other-functions.md#generaterandomstructure):
+In combination with [generateRandomStructure](../../sql-reference/functions/other-functions.md#generateRandomStructure):
 
 ```sql
 SELECT * FROM generateRandom(generateRandomStructure(4, 101), 101) LIMIT 3;

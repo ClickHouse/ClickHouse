@@ -118,6 +118,14 @@ public:
             nested_func->add(place, columns, row_num, arena);
     }
 
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if (only_null_condition)
+            return;
+        if (assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[0])
+            nested_func->addManyDefaults(place, columns, length, arena);
+    }
+
     void addBatch(
         size_t row_begin,
         size_t row_end,
@@ -226,7 +234,7 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
-    std::unordered_set<size_t> getArgumentsThatCanBeOnlyNull() const override
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
     {
         return {num_arguments - 1};
     }

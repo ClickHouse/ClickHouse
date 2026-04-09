@@ -1,4 +1,4 @@
-#include "gtest_global_context.h"
+#include <Common/tests/gtest_global_context.h>
 
 #include <Core/Settings.h>
 
@@ -24,5 +24,11 @@ const ContextHolder & getContext()
 ContextHolder & getMutableContext()
 {
     static ContextHolder holder;
+    return holder;
+}
+
+TestCommandLineOptions & getTestCommandLineOptions()
+{
+    static TestCommandLineOptions holder;
     return holder;
 }

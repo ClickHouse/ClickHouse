@@ -1,3 +1,5 @@
+SET query_plan_join_swap_table = 0;
+
 SELECT * FROM (
     SELECT number, n, j1, j2
     FROM (SELECT number, number / 2 AS n FROM system.numbers) js1

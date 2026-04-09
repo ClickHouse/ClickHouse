@@ -1,9 +1,9 @@
 #pragma once
 
-#include <base/StringRef.h>
 #include <Common/Logger.h>
 
 #include <functional>
+
 
 namespace Coordination
 {
@@ -20,6 +20,9 @@ namespace DB
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+
+bool isLocalDisk(const IDisk & disk);
+
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
@@ -62,10 +65,6 @@ struct KeeperRequestForSession
     bool use_xid_64{false};
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
-
-StringRef parentNodePath(StringRef path);
-
-StringRef getBaseNodeName(StringRef path);
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 

@@ -70,7 +70,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * data_ptr = data.data() + prev_offset;
-            const size_t size = offsets[i] - prev_offset - 1;
+            const size_t size = offsets[i] - prev_offset;
 
             vec_res[i] = Impl::process(data_ptr, size);
             prev_offset = offsets[i];

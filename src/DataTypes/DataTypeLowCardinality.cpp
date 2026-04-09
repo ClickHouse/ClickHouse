@@ -83,6 +83,8 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
+    if (which.isTime())
+        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
     if (which.isIPv4())
@@ -94,7 +96,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
+        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector<Creator>(column, *type, creator));
 
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected numeric type: {}", type->getName());
@@ -131,7 +133,7 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
 {
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
-    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
 }
 
 Field DataTypeLowCardinality::getDefault() const
@@ -148,9 +150,14 @@ bool DataTypeLowCardinality::equals(const IDataType & rhs) const
     return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
 }
 
-SerializationPtr DataTypeLowCardinality::doGetDefaultSerialization() const
+void DataTypeLowCardinality::updateHashImpl(SipHash & hash) const
 {
-    return std::make_shared<SerializationLowCardinality>(dictionary_type);
+    dictionary_type->updateHash(hash);
+}
+
+SerializationPtr DataTypeLowCardinality::doGetSerialization(const SerializationInfoSettings &) const
+{
+    return SerializationLowCardinality::create(dictionary_type);
 }
 
 void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const

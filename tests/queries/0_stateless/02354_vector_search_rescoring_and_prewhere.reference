@@ -1,0 +1,69 @@
+Reference results without filters
+16	116	1600	[0.252,0.252]
+1	101	100	[0.236,0.236]
+5	105	500	[0.276,0.276]
+19	119	1900	[0.217,0.217]
+7	107	700	[0.197,0.197]
+0	100	0	[0.311,0.311]
+8	108	800	[0.134,0.134]
+3	103	300	[0.369,0.369]
+12	112	1200	[0.105,0.105]
+11	111	1100	[0.406,0.406]
+9	109	900	[0.484,0.484]
+6	106	600	[0.58,0.58]
+4	104	400	[0.593,0.593]
+18	118	1800	[0.612,0.612]
+13	113	1300	[0.635,0.635]
+15	115	1500	[0.655,0.655]
+17	117	1700	[0.737,0.737]
+14	114	1400	[0.94,0.94]
+10	110	1000	[0.945,0.945]
+2	102	200	[0.97,0.97]
+Ensure rescoring optimization works with enabled and disabled PREWHERE
+16
+19
+16
+19
+Test with enabled rescoring
+16
+19
+18
+17
+With enabled rescoring and post-filter multiplier = 3, search quality will be slightly different (better)
+16
+19
+12
+11
+Check that explicit PREWHERE disables the optimization
+Query with explicit PREWHERE works
+16
+19
+18
+17
+Select all 20 neighbours with the rescoring optimization, distances got from vector index
+16	116	1600
+1	101	100
+5	105	500
+19	119	1900
+7	107	700
+0	100	0
+8	108	800
+3	103	300
+12	112	1200
+11	111	1100
+9	109	900
+6	106	600
+4	104	400
+18	118	1800
+13	113	1300
+15	115	1500
+17	117	1700
+14	114	1400
+10	110	1000
+2	102	200
+Ensure that optimization was effective for above query, _distance should be seen
+_distance Float32
+Just a test with 2 predicates
+id 16 & 19 will be again output
+16
+19

@@ -21,7 +21,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnRemoveEntryFunction;
 
     /** Initialize LRUCachePolicy with max_size_in_bytes and max_count.
      *  max_size_in_bytes == 0 means the cache accepts no entries.
@@ -32,13 +32,13 @@ public:
         CurrentMetrics::Metric count_metric_,
         size_t max_size_in_bytes_,
         size_t max_count_,
-        OnWeightLossFunction on_weight_loss_function_)
+        OnRemoveEntryFunction on_remove_entry_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
         , max_count(max_count_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
-        , on_weight_loss_function(on_weight_loss_function_)
+        , on_remove_entry_function(on_remove_entry_function_)
     {
     }
 
@@ -60,6 +60,11 @@ public:
     size_t maxSizeInBytes() const override
     {
         return max_size_in_bytes;
+    }
+
+    size_t maxCount() const override
+    {
+        return max_count;
     }
 
     void setMaxCount(size_t max_count_) override
@@ -221,7 +226,7 @@ private:
     CurrentMetrics::Metric count_metric;
 
     WeightFunction weight_function;
-    OnWeightLossFunction on_weight_loss_function;
+    OnRemoveEntryFunction on_remove_entry_function;
 
     void removeOverflow()
     {
@@ -243,13 +248,14 @@ private:
 
             current_size_in_bytes -= cell.size;
             current_weight_lost += cell.size;
+            /// Update cache-specific metrics.
+            if (on_remove_entry_function)
+                on_remove_entry_function(cell.size, cell.value);
 
             cells.erase(it);
             queue.pop_front();
             --queue_size;
         }
-
-        on_weight_loss_function(current_weight_lost);
 
         if (current_size_in_bytes > (1ull << 63))
             std::terminate(); // Queue became inconsistent

@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
@@ -16,7 +17,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -36,14 +36,13 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"index", &isUInt64, nullptr, "UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -78,7 +77,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            UInt8 res = getBaseCellNumber(hindex);
+            auto res = static_cast<UInt8>(getBaseCellNumber(hindex));
 
             dst_data[row] = res;
         }
@@ -91,7 +90,32 @@ public:
 
 REGISTER_FUNCTION(H3GetBaseCell)
 {
-    factory.registerFunction<FunctionH3GetBaseCell>();
+    FunctionDocumentation::Description description = R"(
+Returns the base cell number of the [H3](#h3-index) index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetBaseCell(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the hexagon base cell number.",
+        {"UInt8"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get base cell number",
+            "SELECT h3GetBaseCell(612916788725809151) AS basecell",
+            R"(
+┌─basecell─┐
+│       12 │
+└──────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetBaseCell>(documentation);
 }
 
 }

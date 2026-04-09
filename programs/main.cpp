@@ -1,14 +1,13 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
+#include <base/defines.h>
+
 #include <Common/EnvironmentChecks.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
 
-#if defined(SANITIZE_COVERAGE)
-#    include <Common/Coverage.h>
-#endif
 
 #include "config.h"
 #include "config_tools.h"
@@ -23,6 +22,60 @@
 #include <utility> /// pair
 #include <vector>
 
+#ifdef SANITIZER
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+extern "C" {
+#ifdef ADDRESS_SANITIZER
+const char * __asan_default_options()
+{
+    return "halt_on_error=1 abort_on_error=1";
+}
+const char * __lsan_default_options()
+{
+    return "max_allocation_size_mb=32768";
+}
+const char * __lsan_default_suppressions()
+{
+    /// OpenSSL intentionally does not free all global state at exit.
+    /// These are known false positives from OpenSSL provider and EVP initialization.
+    return "leak:ossl_provider_new\n"
+           "leak:OSSL_PROVIDER_try_load_ex\n"
+           "leak:ossl_rand_ctx_new\n"
+           "leak:OSSL_LIB_CTX_new\n"
+           "leak:ossl_legacy_provider_init\n"
+           /// OpenSSL EVP method objects are cached globally and never freed at exit.
+           /// Triggered when S3 client initializes HMAC (AWS SDK -> OpenSSL HMAC_Init_ex).
+           "leak:evp_md_new\n"
+           "leak:construct_evp_method\n"
+           "leak:CRYPTO_THREAD_lock_new\n";
+}
+#endif
+
+#ifdef MEMORY_SANITIZER
+const char * __msan_default_options()
+{
+    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
+}
+#endif
+
+#ifdef THREAD_SANITIZER
+const char * __tsan_default_options()
+{
+    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
+}
+#endif
+
+#ifdef UNDEFINED_BEHAVIOR_SANITIZER
+const char * __ubsan_default_options()
+{
+    return "print_stacktrace=1 max_allocation_size_mb=32768";
+}
+#endif
+}
+#pragma clang diagnostic pop
+#endif
+
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHouseCheckMarks(int argc, char ** argv);
@@ -32,10 +85,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
+int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
+int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
@@ -63,6 +118,15 @@ int mainEntryClickHouseKeeperBench(int argc, char ** argv);
 #endif
 #if USE_NURAFT
 int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv);
+int mainEntryClickHouseKeeperUtils(int argc, char ** argv);
+#endif
+
+#if USE_CHDIG
+extern "C" int chdig_main(int argc, char ** argv);
+int mainEntryClickHouseChdig(int argc, char ** argv)
+{
+    return chdig_main(argc, argv);
+}
 #endif
 
 // install
@@ -85,6 +149,10 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 {
     {"local", mainEntryClickHouseLocal},
     {"client", mainEntryClickHouseClient},
+#if USE_CHDIG
+    {"chdig", mainEntryClickHouseChdig},
+    {"dig", mainEntryClickHouseChdig},
+#endif
     {"benchmark", mainEntryClickHouseBenchmark},
     {"server", mainEntryClickHouseServer},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
@@ -94,6 +162,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
+    {"docker-init", mainEntryClickHouseDockerInit},
     {"hash-binary", mainEntryClickHouseHashBinary},
     {"disks", mainEntryClickHouseDisks},
     {"check-marks", mainEntryClickHouseCheckMarks},
@@ -116,6 +185,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
 #endif
 #if USE_NURAFT
     {"keeper-data-dumper", mainEntryClickHouseKeeperDataDumper},
+    {"keeper-utils", mainEntryClickHouseKeeperUtils},
 #endif
     // install
     {"install", mainEntryClickHouseInstall},
@@ -138,6 +208,9 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 {
     {"chl", "local"},
     {"chc", "client"},
+#if USE_CHDIG
+    {"chdig", "chdig"},
+#endif
 };
 
 }
@@ -203,15 +276,15 @@ extern "C"
 /// Some of these messages are non-actionable for the users, such as:
 /// <jemalloc>: Number of CPUs detected is not deterministic. Per-CPU arena disabled.
 #if USE_JEMALLOC && defined(NDEBUG) && !defined(SANITIZER)
-extern "C" void (*malloc_message)(void *, const char *s);
-__attribute__((constructor(0))) void init_je_malloc_message() { malloc_message = [](void *, const char *){}; }
+extern "C" void (*je_malloc_message)(void *, const char *s);
+__attribute__((constructor(0))) void init_je_malloc_message() { je_malloc_message = [](void *, const char *){}; }
 #elif USE_JEMALLOC
 #include <unordered_set>
 /// Ignore messages which can be safely ignored, e.g. EAGAIN on pthread_create
-extern "C" void (*malloc_message)(void *, const char * s);
+extern "C" void (*je_malloc_message)(void *, const char * s);
 __attribute__((constructor(0))) void init_je_malloc_message()
 {
-    malloc_message = [](void *, const char * str)
+    je_malloc_message = [](void *, const char * str)
     {
         using namespace std::literals;
         static const std::unordered_set<std::string_view> ignore_messages{
@@ -235,7 +308,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
 __attribute__((constructor(202))) void init_ssl()
 {
-    DB::OpenSSLInitializer::initialize();
+    DB::OpenSSLInitializer::instance();
 }
 
 /// This allows to implement assert to forbid initialization of a class in static constructors.
@@ -318,13 +391,27 @@ int main(int argc_, char ** argv_)
         main_func = mainEntryClickHouseLocal;
     }
 
+    /// If the argument looks like a file path but doesn't exist, provide a helpful error
+    /// instead of the generic "Use one of the following commands" message.
+    /// The check above routes existing files to clickhouse-local, but when the file
+    /// doesn't exist, we fall through to `printHelp` which is confusing:
+    ///     $ clickhouse tests/queries/0_stateless/my_test.sql
+    ///     Use one of the following commands: ...
+    /// We detect file-like arguments by the presence of `/` (path separator)
+    /// or `.` (file extension), which distinguishes them from mistyped subcommand
+    /// names like "clickhouse sever" where the generic help is appropriate.
+    if (main_func == printHelp && argv.size() >= 2)
+    {
+        std::string_view arg(argv[1]);
+        if (arg.contains('/') || arg.contains('.'))
+        {
+            std::cerr << "Error: no such file: " << arg << std::endl;
+            std::cerr << "If you intended to run a script, please check the path." << std::endl;
+            return 1;
+        }
+    }
+
     int exit_code = main_func(static_cast<int>(argv.size()), argv.data());
-
-#if defined(SANITIZE_COVERAGE)
-    dumpCoverage();
-#endif
-
-    DB::OpenSSLInitializer::cleanup();
 
     return exit_code;
 }

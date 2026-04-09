@@ -12,7 +12,8 @@ FROM
         runningDifference(cityHash64(t.1)) AS i
     FROM
     (
-        SELECT arrayJoin([(\'a\', 1), (\'a\', 2), (\'a\', 3), (\'b\', 11), (\'b\', 13), (\'b\', 15)]) AS t
+        SELECT arrayJoin([_CAST((\'a\', 1), \'Tuple(String, UInt8)\'), _CAST((\'a\', 2), \'Tuple(String, UInt8)\'), _CAST((\'a\', 3), \'Tuple(String, UInt8)\'), _CAST((\'b\', 11), \'Tuple(String, UInt8)\'), _CAST((\'b\', 13), \'Tuple(String, UInt8)\'), _CAST((\'b\', 15), \'Tuple(String, UInt8)\')]) AS t
+        FROM system.one
     )
 )
 WHERE i = 0
@@ -39,13 +40,13 @@ FROM
             dummy + 1 AS co,
             dummy + 2 AS co2,
             dummy + 3 AS co3
+        FROM system.one
     )
     GROUP BY
         co,
         co2,
         co3
         WITH CUBE
-    HAVING (co2 != 2) AND (co != 0)
 )
 WHERE (co != 0) AND (co2 != 2)
 1	0	3	1
@@ -55,7 +56,6 @@ FROM
 (
     SELECT name
     FROM system.settings
-    WHERE name = \'enable_optimize_predicate_expression\'
 )
 ANY INNER JOIN
 (
@@ -68,19 +68,24 @@ enable_optimize_predicate_expression
 SELECT ccc
 FROM
 (
-    SELECT 1 AS ccc
-    WHERE 0
-    UNION ALL
-    SELECT ccc
-    FROM
     (
-        SELECT 2 AS ccc
+        SELECT 1 AS ccc
+        FROM system.one
     )
-    ANY INNER JOIN
+    UNION ALL
     (
-        SELECT 2 AS ccc
-    ) USING (ccc)
-    WHERE ccc > 1
+        SELECT *
+        FROM
+        (
+            SELECT 2 AS ccc
+            FROM system.one
+        )
+        ANY INNER JOIN
+        (
+            SELECT 2 AS ccc
+            FROM system.one
+        ) USING (ccc)
+    )
 )
 WHERE ccc > 1
 2
@@ -98,10 +103,9 @@ FROM
         id,
         id_b
     FROM A
-    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
 ) AS a
-ALL LEFT JOIN B AS b ON b.id = id_b
-WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
+ALL LEFT JOIN B AS b ON b.id = a.id_b
+WHERE a.ts <= toDateTime(\'1970-01-01 03:00:00\')
 SELECT
     ts AS `--a.ts`,
     id AS `--a.id`,
@@ -116,7 +120,6 @@ FROM
         id,
         id_b
     FROM A
-    WHERE ts <= toDateTime(\'1970-01-01 03:00:00\')
 ) AS a
 ALL LEFT JOIN B AS b ON `--b.id` = `--a.id_b`
 WHERE `--a.ts` <= toDateTime(\'1970-01-01 03:00:00\')
@@ -128,33 +131,31 @@ WHERE `--a.ts` <= toDateTime(\'1970-01-01 03:00:00\')
 4	0
 2	3
 4	5
-SELECT dummy
+SELECT *
 FROM
 (
-    SELECT dummy
+    SELECT *
     FROM system.one
-    WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
 )
-WHERE arrayMap(x -> (x + 1), [dummy]) = [1]
+WHERE arrayMap(x -> (x + 1), [dummy]) = _CAST([1], \'Array(UInt8)\')
 0
-SELECT
-    id,
-    value,
-    value_1
+SELECT *
 FROM
 (
     SELECT
         1 AS id,
         2 AS value
+    FROM system.one
 )
 ALL INNER JOIN
 (
     SELECT
         1 AS id,
         3 AS value_1
+    FROM system.one
 ) USING (id)
-WHERE arrayMap(x -> ((x + value) + value_1), [1]) = [6]
+WHERE arrayMap(x -> ((x + value) + value_1), _CAST([1], \'Array(UInt8)\')) = _CAST([6], \'Array(UInt8)\')
 1	2	3
-SELECT dummy
+SELECT *
 FROM system.one
-WHERE (dummy > 0) AND (dummy < 0)
+HAVING (dummy > 0) AND (dummy < 0)

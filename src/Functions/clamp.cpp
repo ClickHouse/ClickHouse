@@ -77,7 +77,7 @@ All arguments must be of comparable types. The result type is the largest compat
         {"min", "The minimum bound."},
         {"max", "The maximum bound."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the value, restricted to the [min, max] range.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value, restricted to the [min, max] range."};
     FunctionDocumentation::Examples examples = {
         {"Basic usage", R"(
 SELECT clamp(5, 1, 10) AS result;
@@ -106,7 +106,7 @@ SELECT clamp(15, 0, 7) AS result;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionClamp>(documentation);
 }
