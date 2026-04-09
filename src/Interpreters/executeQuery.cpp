@@ -1860,13 +1860,14 @@ static BlockIO executeQueryImpl(
                             }
                             else
                             {
-                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                     key,
-                                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                     settings[Setting::query_cache_squash_partial_results],
-                                     settings[Setting::max_block_size],
-                                     settings[Setting::query_cache_max_size_in_bytes],
-                                     settings[Setting::query_cache_max_entries]));
+                                auto query_result_cache_writer_value = query_result_cache->createWriter(
+                                    key,
+                                    std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                    settings[Setting::query_cache_squash_partial_results],
+                                    settings[Setting::max_block_size],
+                                    settings[Setting::query_cache_max_size_in_bytes],
+                                    settings[Setting::query_cache_max_entries]);
+                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(std::move(query_result_cache_writer_value));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }

@@ -362,7 +362,7 @@ namespace
         {
             validateNamedCollection(
                 *named_collection,
-                ValidateKeysMultiset<RedisEqualKeysSet>{"host", "port", "hostname", "password", "db_index", "pool_size"},
+                ValidateKeysMultiset<RedisEqualKeysSet>{"host", "port", "hostname", "password", "db_index", "pool_size", "max_retries", "retry_delay_ms"},
                 {});
 
             configuration.host = named_collection->getAny<String>({"host", "hostname"});
@@ -370,6 +370,8 @@ namespace
             configuration.password = named_collection->getOrDefault<String>("password", DEFAULT_REDIS_PASSWORD);
             configuration.db_index = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("db_index", DEFAULT_REDIS_DB_INDEX));
             configuration.pool_size = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("pool_size", DEFAULT_REDIS_POOL_SIZE));
+            configuration.max_retries = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("max_retries", DEFAULT_REDIS_MAX_RETRIES));
+            configuration.retry_delay_ms = static_cast<uint32_t>(named_collection->getOrDefault<UInt64>("retry_delay_ms", DEFAULT_REDIS_RETRY_DELAY_MS));
         }
         else
         {
