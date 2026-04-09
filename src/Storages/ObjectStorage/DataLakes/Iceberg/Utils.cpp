@@ -142,10 +142,26 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
     String version_str;
     /// v<V>.metadata.json
     if (file_name.starts_with('v'))
-        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    {
+        auto dot_pos = file_name.find_first_of('.');
+        if (dot_pos == String::npos || dot_pos <= 1)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
+        version_str = String(file_name.begin() + 1, file_name.begin() + dot_pos);
+    }
     /// <V>-<random-uuid>.metadata.json
     else
-        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+    {
+        auto dash_pos = file_name.find_first_of('-');
+        if (dash_pos == String::npos || dash_pos == 0)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Bad metadata file name: '{}'. Expected `vN.metadata.json` or `N-<uuid>.metadata.json` where N is a version number",
+                file_name);
+        version_str = String(file_name.begin(), file_name.begin() + dash_pos);
+    }
 
     if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
         throw Exception(
@@ -1140,9 +1156,10 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
     CompressionMethod known_compression_method,
-    bool force_fetch_latest_metadata)
+    bool force_fetch_latest_metadata,
+    bool ignore_explicit_metadata_file_path)
 {
-    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed)
+    if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
         if (explicit_metadata_path.find('\0') != String::npos)

@@ -159,7 +159,7 @@ void listFilesWithRegexpMatchingImpl(
             /// We use fs::canonical to resolve the canonical path and check if the file does exists
             /// but the result path will be fs::absolute.
             /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-            fs::canonical(path_for_ls + for_match);
+            (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
             result.push_back(absolute_path.string());
