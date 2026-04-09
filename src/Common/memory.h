@@ -9,6 +9,16 @@
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 
+#include "config.h"
+
+#if USE_JEMALLOC
+#    include <jemalloc/jemalloc.h>
+#endif
+
+#if !USE_JEMALLOC
+#    include <cstdlib>
+#endif
+
 #if defined(OS_LINUX)
 #    include <malloc.h>
 #elif defined(OS_DARWIN)
@@ -63,9 +73,9 @@ inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size, TAlign... al
         return;
 
     if constexpr (sizeof...(TAlign) == 1)
-        je_sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
+        sdallocx(ptr, size, MALLOCX_ALIGN(alignToSizeT(align...)));
     else
-        je_sdallocx(ptr, size, 0);
+        sdallocx(ptr, size, 0);
 }
 
 #else
@@ -93,13 +103,9 @@ inline ALWAYS_INLINE size_t getActualAllocationSize(size_t size, TAlign... align
         size_for_nallocx = 1;
 
     if constexpr (sizeof...(TAlign) == 1)
-    {
-        actual_size = je_nallocx(size_for_nallocx, MALLOCX_ALIGN(alignToSizeT(align...)));
-    }
+        actual_size = nallocx(size_for_nallocx, MALLOCX_ALIGN(alignToSizeT(align...)));
     else
-    {
-        actual_size = je_nallocx(size_for_nallocx, 0);
-    }
+        actual_size = nallocx(size_for_nallocx, 0);
 #endif
 
     return actual_size;
@@ -139,9 +145,9 @@ inline ALWAYS_INLINE size_t untrackMemory(void * ptr [[maybe_unused]], Allocatio
         if (ptr != nullptr) [[likely]]
         {
             if constexpr (sizeof...(TAlign) == 1)
-                actual_size = je_sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...)));
+                actual_size = sallocx(ptr, MALLOCX_ALIGN(alignToSizeT(align...)));
             else
-                actual_size = je_sallocx(ptr, 0);
+                actual_size = sallocx(ptr, 0);
         }
 #else
         if (size)
