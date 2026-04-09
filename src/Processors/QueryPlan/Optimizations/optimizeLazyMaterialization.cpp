@@ -410,6 +410,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (limit_step->withTies())
         return false;
 
+    auto expected_output_header = root.step->getOutputHeader();
+
     const auto limit = limit_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
@@ -423,7 +425,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     {
         if (sorting_node->children.size() != 1)
             return false;
-        above_sort_dags.push_back(above_expr->getExpression().clone());
+        above_sort_dags.push_front(above_expr->getExpression().clone());
         sorting_node = sorting_node->children.front();
     }
 
