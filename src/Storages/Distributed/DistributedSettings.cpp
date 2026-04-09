@@ -1,6 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
-#include "Core/SettingsEnums.h"
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -23,7 +23,7 @@ namespace ErrorCodes
     /** This is the distributed version of the skip_unavailable_shards setting available in src/Core/Settings.cpp */ \
     DECLARE(Bool, skip_unavailable_shards, false, "If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.", 0) \
     /** This is the distributed version of the skip_unavailable_shards_mode setting available in src/Core/Settings.cpp */ \
-    DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE, "If set to `unavailable`, connection-related exceptions are ignored, whereas `unavailable_or_exception` ignores all exceptions from remote instances.", 0) \
+    DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE, "Controls which exceptions are ignored when `skip_unavailable_shards` is enabled: `unavailable` — only connection failures; `unavailable_or_table_missing` — also missing tables/databases; `unavailable_or_exception_before_processing` — any exception before data processing starts.", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, bytes_to_throw_insert, 0, "If more than this number of compressed bytes will be pending for background INSERT, an exception will be thrown. 0 - do not throw.", 0) \
     DECLARE(UInt64, bytes_to_delay_insert, 0, "If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.", 0) \

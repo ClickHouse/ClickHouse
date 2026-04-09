@@ -1250,17 +1250,11 @@ Specifies the behavior of ClickHouse when `skip_unavailable_shards` is enabled.
 
 Possible values:
 
-- `unavailable` — When `skip_unavailable_shards=1`, ClickHouse will ignore connection-related exceptions and continue processing the query. This mode is compatible with the legacy behavior of `skip_unavailable_shards`.
+- `unavailable` — Only connection-related exceptions are ignored. This maintains backward compatibility with the legacy behavior of `skip_unavailable_shards`.
 
-- `unavailable_or_exception` — When `skip_unavailable_shards=1`, ClickHouse will ignore all exceptions from remote instances, including those not related to connection issues.
+- `unavailable_or_table_missing` — In addition to connection-related exceptions, exceptions caused by missing tables or databases (`UNKNOWN_TABLE`, `UNKNOWN_DATABASE`, `TABLE_IS_DROPPED`) are also ignored. Useful for heterogeneous clusters where not all shards have the same set of tables.
 
-Examples:
-
-- If `skip_unavailable_shards=0`, ClickHouse will throw an exception when a shard is unavailable.
-
-- If `skip_unavailable_shards=1` and `skip_unavailable_shards_mode=unavailable`, ClickHouse will ignore connection-related exceptions and continue processing the query.
-
-- If `skip_unavailable_shards=1` and `skip_unavailable_shards_mode=unavailable_or_exception`, ClickHouse will ignore all exceptions from remote instances, regardless of their nature.
+- `unavailable_or_exception_before_processing` — All exceptions from remote shards that occur before query processing starts (before any data is returned) are ignored. Exceptions during data processing are not ignored.
 )", 0) \
     DECLARE(UInt64, max_skip_unavailable_shards_num, 0, R"(
 When `skip_unavailable_shards` is enabled, limits the maximum number of shards that can be silently skipped.

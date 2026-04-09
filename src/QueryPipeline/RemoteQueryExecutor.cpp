@@ -63,6 +63,26 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+    extern const int UNKNOWN_TABLE;
+    extern const int UNKNOWN_DATABASE;
+    extern const int TABLE_IS_DROPPED;
+}
+
+/// Check whether the exception from a remote shard should be ignored
+/// based on the `skip_unavailable_shards_mode` setting.
+static bool shouldSkipShardException(SkipUnavailableShardsMode mode, const Exception & e, bool received_data)
+{
+    switch (mode)
+    {
+        case SkipUnavailableShardsMode::UNAVAILABLE:
+            return false;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
+            return e.code() == ErrorCodes::UNKNOWN_TABLE
+                || e.code() == ErrorCodes::UNKNOWN_DATABASE
+                || e.code() == ErrorCodes::TABLE_IS_DROPPED;
+        case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
+            return !received_data;
+    }
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -661,13 +681,19 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
             if (!packet.block.empty() && (packet.block.rows() > 0))
+            {
+                received_data = true;
                 return ReadResult(adaptBlockStructure(packet.block, *header));
+            }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
+        {
             got_exception_from_replica = true;
 
-            if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+            auto mode = context->getSettingsRef()[Setting::skip_unavailable_shards_mode];
+            if (context->getSettingsRef()[Setting::skip_unavailable_shards]
+                && shouldSkipShardException(mode, *packet.exception, received_data))
             {
                 LOG_ERROR(log,
                     "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
@@ -679,6 +705,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
             packet.exception->rethrow();
             break;
+        }
 
         case Protocol::Server::EndOfStream:
             if (!connections->hasActiveConnections())
@@ -834,9 +861,12 @@ void RemoteQueryExecutor::finish()
                 break;
 
             case Protocol::Server::Exception:
+            {
                 got_exception_from_replica = true;
 
-                if (context->getSettingsRef()[Setting::skip_unavailable_shards] && context->getSettingsRef()[Setting::skip_unavailable_shards_mode] == SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION)
+                auto mode = context->getSettingsRef()[Setting::skip_unavailable_shards_mode];
+                if (context->getSettingsRef()[Setting::skip_unavailable_shards]
+                    && shouldSkipShardException(mode, *packet.exception, received_data))
                 {
                     LOG_ERROR(log,
                         "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
@@ -848,6 +878,7 @@ void RemoteQueryExecutor::finish()
 
                 packet.exception->rethrow();
                 break;
+            }
 
             case Protocol::Server::Log:
                 /// Pass logs from remote server to client

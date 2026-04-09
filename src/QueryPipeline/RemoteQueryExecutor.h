@@ -300,6 +300,10 @@ private:
       */
     bool got_exception_from_replica = false;
 
+    /// Whether we have received any data blocks from the remote shard.
+    /// Used by `skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing'`.
+    bool received_data = false;
+
     /** Unknown packet was received from replica. No need in receiving more packets or
       * requesting to cancel query execution
       */
