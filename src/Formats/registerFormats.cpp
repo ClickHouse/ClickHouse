@@ -20,6 +20,9 @@ void registerFileSegmentationEngineHiveText(FormatFactory & factory);
 #endif
 void registerFileSegmentationEngineLineAsString(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
+#if USE_AVRO
+void registerFileSegmentationEngineAvro(FormatFactory & factory);
+#endif
 
 /// Formats for both input/output.
 
@@ -172,6 +175,9 @@ void registerFormats()
 #endif
     registerFileSegmentationEngineLineAsString(factory);
     registerFileSegmentationEngineBSONEachRow(factory);
+#if USE_AVRO
+    registerFileSegmentationEngineAvro(factory);
+#endif
 
 
     registerInputFormatNative(factory);
