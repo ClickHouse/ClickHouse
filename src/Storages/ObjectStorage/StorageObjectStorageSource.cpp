@@ -497,7 +497,11 @@ Chunk StorageObjectStorageSource::generate()
             const auto & object_info = reader.getObjectInfo();
             try
             {
-                auto buckets_opt = reader.getInputFormat()->getMatchedBuckets();
+                const auto * input_format = reader.getInputFormat();
+                if (!input_format)
+                    break;
+
+                auto buckets_opt = input_format->getMatchedBuckets();
 
                 if (buckets_opt.has_value())
                 {
