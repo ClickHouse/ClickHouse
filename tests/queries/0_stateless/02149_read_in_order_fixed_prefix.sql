@@ -9,6 +9,9 @@ SET optimize_move_to_prewhere = 1;
 SET optimize_sorting_by_input_stream_properties = 1;
 SET use_skip_indexes_for_top_k = 0;
 SET use_top_k_dynamic_filtering = 0;
+-- Disable pipelined reader so EXPLAIN PIPELINE output stays stable
+-- (this test is about read-in-order optimization, not the MergeTree read pipeline).
+SET use_pipelined_mergetree_reader = 0;
 
 DROP TABLE IF EXISTS t_read_in_order;
 
