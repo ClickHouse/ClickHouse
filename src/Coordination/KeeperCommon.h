@@ -56,7 +56,7 @@ using KeeperResponsesForSessions = std::vector<KeeperResponseForSession>;
 
 struct KeeperRequestForSession
 {
-    int64_t session_id;
+    int64_t session_id{0};
     int64_t time{0};
     Coordination::ZooKeeperRequestPtr request;
     int64_t zxid{0};
