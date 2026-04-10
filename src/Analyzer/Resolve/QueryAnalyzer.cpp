@@ -4040,20 +4040,17 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
                 QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                if (table_function_argument_function_name == "view")
+                if (table_function_argument_function_name == "view"
+                    || (table_function_argument_function_name == "merge"
+                        && (table_function_name == "remote" || table_function_name == "remoteSecure"
+                            || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
                 {
-                    /// Subquery in view() table function can reference tables that don't exist on the initiator.
-                    /// In the following example `users` table may be not available on the initiator:
-                    /// SELECT *
-                    /// FROM remoteSecure(<address>, view(
-                    ///     SELECT
-                    ///         t1.age,
-                    ///         t1.name,
-                    ///         t2.name
-                    ///     FROM users AS t1
-                    ///     INNER JOIN users AS t2 ON t1.uid = t2.uid
-                    /// ), <user>, <password>)
-                    /// SETTINGS prefer_localhost_replica = 0
+                    /// The `view` table function contains a subquery that may reference tables
+                    /// not available on the initiator.
+                    /// The `merge` table function inside remote/cluster should not be resolved
+                    /// on the initiator, because it pattern-matches tables that may only exist
+                    /// on the remote server.
+                    /// For example: SELECT count() FROM remote('host', merge(currentDatabase(), '^test'))
                     skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 }
                 else
@@ -4752,7 +4749,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     {
                         auto left_subquery = std::make_shared<QueryNode>(query_node->getMutableContext());
                         left_subquery->getProjection().getNodes().push_back(projection_node->clone());
-                        left_subquery->getJoinTree() = left_table_expression;
+                        auto subquery_join_tree = left_table_expression;
+                        if (subquery_join_tree->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+                            subquery_join_tree = subquery_join_tree->as<ArrayJoinNode &>().getTableExpression();
+                        left_subquery->getJoinTree() = subquery_join_tree;
 
                         IdentifierResolveScope & left_subquery_scope = createIdentifierResolveScope(left_subquery, nullptr /*parent_scope*/);
                         /// We are using alias column mechanism for USING column from projection.
