@@ -41,6 +41,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.4",
         {
+            {"max_wkb_geometry_elements", 1'000'000, 1'000'000, "New setting to limit element counts in WKB geometry parsing, preventing excessive memory allocation on malformed data."},
+            {"max_rand_distribution_trials", 1'000'000'000, 1'000'000'000, "New setting to limit trial counts in random distribution functions, preventing hangs with extreme inputs."},
+            {"max_rand_distribution_parameter", 1e6, 1e6, "New setting to limit shape parameters in random distribution functions, preventing hangs with extreme inputs."},
             {"optimize_truncate_order_by_after_group_by_keys", false, true, "Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix."},
             {"use_statistics_for_part_pruning", false, true, "New setting to use statistics for part pruning during query execution."},
             {"distributed_index_analysis_only_on_coordinator", false, false, "New setting."},
@@ -48,6 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_materialized_cte", false, false, "New setting"},
             {"use_strict_insert_block_limits", false, false, "New setting to use strict min and max insert bounds on inserts. When min < max, max limits take precedence."},
             {"finalize_projection_parts_synchronously", false, false, "New setting to finalize projection parts synchronously during INSERT to reduce peak memory usage."},
+            {"distributed_plan_prefer_replicas_over_workers", false, false, "New setting to serialize distributed plan for replicas"},
             {"use_text_index_like_evaluation_by_dictionary_scan", true, true, "New setting"},
             {"text_index_like_min_pattern_length", 4, 4, "New setting"},
             {"text_index_like_max_postings_to_read", 50, 50, "New setting"},
@@ -1119,6 +1123,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
+            {"compress_per_column_in_compact_parts", true, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {

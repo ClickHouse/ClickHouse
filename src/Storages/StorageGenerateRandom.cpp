@@ -272,14 +272,16 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
         }
         case 3: // IPv4
         {
-            WriteBufferFromVector<ColumnString::Chars> buf(out);
+            WriteBufferFromVector<ColumnString::Chars> buf(out, AppendModeTag{});
             writeIPv4Text(IPv4(fuzzyRandomInteger<UInt32>(rng)), buf);
+            buf.finalize();
             break;
         }
         case 4: // IPv6
         {
-            WriteBufferFromVector<ColumnString::Chars> buf(out);
+            WriteBufferFromVector<ColumnString::Chars> buf(out, AppendModeTag{});
             writeIPv6Text(IPv6(fuzzyRandomInteger<UInt128>(rng)), buf);
+            buf.finalize();
             break;
         }
         case 5: // type name
