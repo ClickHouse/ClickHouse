@@ -578,7 +578,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
-    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup
+    bool make_columns_nullable = mode < LoadingStrictnessLevel::SECONDARY_CREATE
+        && !context_->getZooKeeperMetadataTransaction()
+        && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
     for (const auto & ast : columns_ast.children)
@@ -696,7 +698,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         res.add(std::move(column));
     }
 
-    if (mode <= LoadingStrictnessLevel::SECONDARY_CREATE && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !context_->getZooKeeperMetadataTransaction()
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
         res.flattenNested();
 
     if (res.getAllPhysical().empty())
