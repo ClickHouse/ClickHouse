@@ -45,19 +45,19 @@ void ZooKeeperOpentelemetrySpans::maybeInitialize(
     UInt64 start_time_us)
 {
     chassert(maybe_span.start_time_us == 0);
-    chassert(maybe_span.span == std::nullopt);
+    chassert(!maybe_span.span);
 
     maybe_span.start_time_us = start_time_us;
 
     if (!parent_context)
         return;
 
-    maybe_span.span.emplace(OpenTelemetry::Span{
+    maybe_span.span = std::make_unique<OpenTelemetry::Span>(OpenTelemetry::Span{
         .trace_id = parent_context->trace_id,
         .span_id = thread_local_rng(),
         .parent_span_id = parent_context->span_id,
         .operation_name = String(maybe_span.operation_name),
-        .start_time_us = start_time_us,
+        .start_time_us = maybe_span.start_time_us,
         .kind = maybe_span.kind,
     });
 }

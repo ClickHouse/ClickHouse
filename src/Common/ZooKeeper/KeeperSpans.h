@@ -9,6 +9,7 @@
 #include <string>
 #include <chrono>
 #include <optional>
+#include <memory>
 
 namespace HistogramMetrics
 {
@@ -36,11 +37,40 @@ struct MaybeSpan
     const std::string_view operation_name;
     const OpenTelemetry::SpanKind kind;
     HistogramMetrics::Metric & histogram;
-    std::optional<OpenTelemetry::Span> span;
+    std::unique_ptr<OpenTelemetry::Span> span;
     UInt64 start_time_us = 0;
 
     MaybeSpan(const std::string_view operation_name_, OpenTelemetry::SpanKind kind_, HistogramMetrics::Metric & histogram_)
         : operation_name(operation_name_), kind(kind_), histogram(histogram_) {}
+
+    MaybeSpan(const MaybeSpan & other)
+        : operation_name(other.operation_name)
+        , kind(other.kind)
+        , histogram(other.histogram)
+        , span(other.span ? std::make_unique<OpenTelemetry::Span>(*other.span) : nullptr)
+        , start_time_us(other.start_time_us)
+    {
+    }
+
+    MaybeSpan & operator=(const MaybeSpan & other)
+    {
+        if (this == &other)
+            return *this;
+
+        chassert(operation_name == other.operation_name);
+        chassert(kind == other.kind);
+        chassert(&histogram == &other.histogram);
+
+        start_time_us = other.start_time_us;
+        if (other.span)
+            span = std::make_unique<OpenTelemetry::Span>(*other.span);
+        else
+            span.reset();
+
+        return *this;
+    }
+
+    MaybeSpan(MaybeSpan &&) noexcept = default;
 };
 
 struct ZooKeeperOpentelemetrySpans
