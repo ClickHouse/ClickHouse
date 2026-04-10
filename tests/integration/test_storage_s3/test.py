@@ -3255,3 +3255,23 @@ def test_gcs_decompressive_transcoding(started_cluster):
         "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
     )
     assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'
+
+
+def test_gcs_decompressive_transcoding_gz(started_cluster):
+    """Same mock, but with .log.gz extension. ClickHouse would auto-detect gzip
+    and try to decompress, but the server already decompressed it
+    The fix detects missing Content-Length and skips auto-decompression
+    See https://github.com/ClickHouse/ClickHouse/issues/47980"""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT count() FROM s3("
+        "'http://resolver:8084/bucket/data.log.gz', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == "3"
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data.log.gz', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'

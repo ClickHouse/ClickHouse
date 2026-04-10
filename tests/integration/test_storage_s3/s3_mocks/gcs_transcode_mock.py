@@ -1,6 +1,10 @@
 import sys
 import http.server
 
+# Simulates GCS decompressive transcoding: objects stored with Content-Encoding: gzip
+# are served decompressed. HEAD omits Content-Length, GET returns plain text.
+# See https://cloud.google.com/storage/docs/transcoding
+
 DATA = b'{"id":1}\n{"id":2}\n{"id":3}\n'
 
 
@@ -9,7 +13,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_HEAD(self):
         self.send_response(200)
-        # No Content-Length: simulates GCS decompressive transcoding
+        # No Content-Length: GCS omits it during decompressive transcoding
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("ETag", '"abc123"')
         self.send_header("Last-Modified", "Fri, 13 Mar 2026 10:54:50 GMT")
@@ -25,9 +29,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b"OK")
             return
 
+        # GCS transcoding: data is served already decompressed
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
-        # No Content-Length on GET either
         self.send_header("ETag", '"abc123"')
         self.send_header("Last-Modified", "Fri, 13 Mar 2026 10:54:50 GMT")
         self.send_header("Connection", "close")
