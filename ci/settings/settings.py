@@ -68,7 +68,7 @@ EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
 CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
 AWS_REGION = "us-east-1"
 
-ENABLE_EBS_DOCKER_CACHE = False
+ENABLE_EBS_DOCKER_CACHE = True
 
 # Substrings used to classify and categorize test failures based on error output.
 # Use the following query to find test failures NOT covered by current patterns:
