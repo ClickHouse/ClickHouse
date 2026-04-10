@@ -468,9 +468,14 @@ void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
 
 ColumnMap::StatisticsPtr ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
 {
+    if (start == end)
+        return std::make_shared<Statistics>(0, 0);
+
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t total_maps_size = offsets[ssize_t(end) - 1] - offsets[ssize_t(start) - 1];
-    return std::make_shared<Statistics>(start == end ? 0 : static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
+    size_t nested_start = start == 0 ? 0 : offsets[start - 1];
+    size_t nested_end = offsets[end - 1];
+    size_t total_maps_size = nested_end - nested_start;
+    return std::make_shared<Statistics>(static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
 }
 
 ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
