@@ -31,10 +31,22 @@ protected:
     ContextPtr getContext() const { return context_weak.lock(); }
 
     virtual String functionName() const = 0;
+
+    /// Temperature controls the randomness or noise of the response. The accepted values depend on the AI provider
+    /// (0.0 - 2.0 for OpenAI, 0.0 - 1.0 for Anthropic). Lower is better for more deterministic tasks, while
+    /// a higher value is useful for creative tasks, such as chatting or text generation.
     virtual float defaultTemperature() const = 0;
+
+    /// A system prompt  applies to each request. AI funcs will probably want to provide a default on a per-function basis.
     virtual String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const = 0;
+
+    /// The user prompt is appended to the system prompt, this is usually what is contained in each row.
     virtual String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const = 0;
+
+    /// How the response should be formatted. Different AI providers treat this differently. OpenAI-like providers have a specific field
+    /// for the response format, while Anthropic does not but it can be approximated with a tool-use pattern, see AnthropicProvider.h/cpp
     virtual String buildResponseFormatJSON(const ColumnsWithTypeAndName & /*arguments*/) const { return ""; }
+
     virtual String postProcessResponse(const String & raw_response) const { return raw_response; }
 
     virtual size_t getTextColumnIndex() const { return 0; }

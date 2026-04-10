@@ -7889,8 +7889,8 @@ Default named collection for AI functions. When set, functions can be called wit
     DECLARE(UInt64, ai_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_max_retries`.
 )", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_max_retries, 3, R"(
-Maximum number of retry attempts for transient errors (HTTP 5xx, 429, network timeouts) per individual API request. Each retry uses exponential backoff starting from `ai_retry_initial_delay_ms`.
+    DECLARE(UInt64, ai_max_retries, 0, R"(
+Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_retry_initial_delay_ms`.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_retry_initial_delay_ms, 1000, R"(
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
