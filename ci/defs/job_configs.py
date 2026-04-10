@@ -191,7 +191,7 @@ class JobConfigs:
         result_name_for_cidb="Tests",
     )
     darwin_fast_test_jobs = Job.Config(
-        name="Fast test",
+        name="Darwin fast test",
         runs_on=None,  # from parametrize()
         command="python3 ./ci/jobs/fast_test.py --set-status-success",
         digest_config=fast_test_digest_config,
@@ -199,9 +199,9 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
-            parameter=BuildTypes.ARM_DARWIN,
-            runs_on=RunnerLabels.MACOS_ARM_SMALL,
-            requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            parameter=BuildTypes.AMD_DARWIN,
+            runs_on=RunnerLabels.MACOS_AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_DARWIN_BIN],
         ),
     )
     smoke_tests_macos = Job.Config(
@@ -501,11 +501,6 @@ class JobConfigs:
     )
     stateless_tests_flaky_pr_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
-            parameter="arm_asan_ubsan, flaky check",
-            runs_on=RunnerLabels.ARM_MEDIUM,
-            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
-        ),
-        Job.ParamSet(
             parameter="amd_asan_ubsan, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
@@ -524,6 +519,18 @@ class JobConfigs:
             parameter="amd_debug, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
+        ),
+    )
+    stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_asan_ubsan, targeted",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
