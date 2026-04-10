@@ -824,7 +824,14 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
     /// update statistics ignoring watch response and heartbeat.
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
     {
-        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]);
+        auto op_it = operations.find(response->xid);
+        if (op_it == operations.end())
+        {
+            LOG_WARNING(log, "updateStats: xid {} op {} not found in operations map for session {}",
+                response->xid, Coordination::opNumToString(response->getOpNum()), session_id);
+            return;
+        }
+        Int64 elapsed = (Poco::Timestamp() - op_it->second);
         ProfileEvents::increment(ProfileEvents::KeeperTotalElapsedMicroseconds, elapsed);
         Int64 elapsed_ms = elapsed / 1000;
 
