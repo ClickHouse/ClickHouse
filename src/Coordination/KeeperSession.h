@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 
@@ -34,12 +35,23 @@ public:
     /// Same type as `ZooKeeperResponseCallback` in KeeperSessionRegistry.h.
     using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
-    KeeperSession(int64_t session_id, ResponseCallback callback);
+    /// Callback to dispatch a local (non-quorum) read request.
+    using LocalReadCallback = std::function<void(const KeeperRequestForSession &)>;
+
+    KeeperSession(int64_t session_id, ResponseCallback callback, bool quorum_reads, LocalReadCallback local_read_callback);
 
     int64_t getSessionID() const { return session_id; }
 
     /// True only when Active.
     bool canAcceptRequests() const;
+
+    /// Classify the request and handle accordingly:
+    /// - Non-quorum reads with no pending writes: dispatch inline via `local_read_callback_`
+    /// - Non-quorum reads with pending writes: defer behind the last enqueued write
+    /// - Everything else (writes, quorum reads, reconfig, close, etc.): return true
+    ///
+    /// Returns true if the request should go to the Raft queue, false if handled locally.
+    bool addRequest(const KeeperRequestForSession & request);
 
     /// Invoke the session's callback to deliver a response.
     /// Returns false if session is Closed or callback is empty.
@@ -54,6 +66,8 @@ public:
     void addDeferredRead(Coordination::XID write_xid, const KeeperRequestForSession & read_request);
 
     /// Release all deferred reads waiting for the given write xid.
+    /// Also decrements the pending-writes counter, and clears
+    /// `last_enqueued_write_xid_` when no more writes are in flight.
     /// Returns the released reads so the caller can dispatch them.
     KeeperRequestsForSessions releaseDeferredReads(Coordination::XID write_xid);
 
@@ -62,9 +76,17 @@ public:
 
 private:
     const int64_t session_id;
+    const bool quorum_reads_;
     mutable std::mutex mutex;
     SessionState state{SessionState::Active};
     ResponseCallback callback;
+    LocalReadCallback local_read_callback_;
+
+    /// Tracks in-flight writes enqueued to the Raft queue but not yet committed.
+    size_t pending_writes_count_{0};
+    /// XID of the most recently enqueued write (used to defer reads behind it).
+    std::optional<Coordination::XID> last_enqueued_write_xid_;
+
     std::unordered_map<Coordination::XID, KeeperRequestsForSessions> deferred_reads_;
     LoggerPtr log = getLogger("KeeperSession");
 };

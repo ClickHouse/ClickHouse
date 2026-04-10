@@ -189,13 +189,9 @@ void KeeperDispatcher::requestThread()
         uint64_t max_batch_bytes_size = coordination_settings[CoordinationSetting::max_requests_batch_bytes_size];
         size_t max_batch_size = coordination_settings[CoordinationSetting::max_requests_batch_size];
 
-        /// The code below do a very simple thing: batch all write (quorum) requests into vector until
-        /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
-        /// the ability to process read requests without quorum (from local state). So when we are collecting
-        /// requests into a batch we must check that the new request is not read request. Otherwise we have to
-        /// process all already accumulated write requests, wait them synchronously and only after that process
-        /// read request. So reads are some kind of "separator" for writes.
-        /// Also there is a special reconfig request also being a separator.
+        /// Batch all quorum requests into a vector until the previous write batch finishes
+        /// or `max_batch_size` is reached.  Non-quorum reads are classified at `putRequest`
+        /// time and never enter this queue, so the only "separator" left is Reconfig.
         try
         {
             if (requests_queue->tryPop(request, max_wait))
@@ -264,14 +260,15 @@ void KeeperDispatcher::requestThread()
                 KeeperRequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
 
-                bool has_read_request = false;
                 bool has_reconfig_request = false;
 
-                /// If new request is not read request or reconfig request we must process it through quorum.
-                /// Otherwise we will process it locally.
+                /// Reconfig is a special separator — it must be processed after
+                /// the current batch commits.
                 if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                {
                     has_reconfig_request = true;
-                else if (coordination_settings[CoordinationSetting::quorum_reads] || !request.request->isReadRequest())
+                }
+                else
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
@@ -289,24 +286,14 @@ void KeeperDispatcher::requestThread()
 
                             handle_opentelemetery_spans(request.request, request.session_id);
 
-                            /// Don't append read request into batch, we have to process them separately
-                            if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
-                            {
-                                const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                if (auto write_session = session_registry_.findSession(last_request.session_id))
-                                    write_session->addDeferredRead(last_request.request->xid, request);
-                            }
-                            else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                            if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                             {
                                 has_reconfig_request = true;
                                 return false;
                             }
-                            else
-                            {
-                                current_batch_bytes_size += request.request->bytesSize();
-                                current_batch.emplace_back(request);
-                            }
+
+                            current_batch_bytes_size += request.request->bytesSize();
+                            current_batch.emplace_back(request);
 
                             return true;
                         }
@@ -331,19 +318,15 @@ void KeeperDispatcher::requestThread()
                         try_get_request();
                     }
                 }
-                else
-                    has_read_request = true;
 
                 if (shutdown_called)
                     break;
-
-                bool execute_requests_after_write = has_read_request || has_reconfig_request;
 
                 nuraft::ptr<nuraft::buffer> result_buf = nullptr;
                 /// Forcefully process all previous pending requests
                 if (prev_result)
                     result_buf
-                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!has_reconfig_request);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -372,43 +355,20 @@ void KeeperDispatcher::requestThread()
                     prev_result = result;
                 }
 
-                /// If we will execute read or reconfig next, we have to process result now
-                if (execute_requests_after_write)
+                /// Reconfig must wait for the preceding batch to commit before executing.
+                if (has_reconfig_request)
                 {
                     Stopwatch watch;
                     SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
                     if (prev_result)
                         result_buf = forceWaitAndProcessResult(
-                            prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                            prev_result, prev_batch, /*clear_requests_on_success=*/false);
 
-                    /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
-                    /// which always returns nullptr
-                    /// in that case we don't have to do manual wait because are already sure that the batch was committed when we get
-                    /// the result back
-                    /// otherwise, we need to manually wait until the batch is committed.
-                    /// TODO: there are a few problems:
-                    ///  * There can be multiple forceWaitAndProcessResult calls for different
-                    ///    batches between waitCommittedUpto calls.
-                    ///    In such case, the addErrorResponses below would apply only to the
-                    ///    latest of those batches, but they may all be failed.
-                    ///  * Of those multiple forceWaitAndProcessResult calls, it's possible that an
-                    ///    earlier one succeeds but a later one fails. Then we won't call
-                    ///    waitCommittedUpto on the log_idx from the earlier batch, so a subsequent
-                    ///    read may happen before that write is committed, violating
-                    ///    read-after-write consistency.
-                    ///  * With async replication, it's possible for requests to fail even after
-                    ///    their forceWaitAndProcessResult call succeeds, if the leader died after
-                    ///    accepting the requests for processing (and returning log_idx) but before
-                    ///    sending them to a majority of followers. In such case we'll never send
-                    ///    a response to the client for those requests. And we may execute
-                    ///    subsequent requests from the same session and send responses for those,
-                    ///    violating ordering of responses.
                     if (result_buf)
                     {
                         nuraft::buffer_serializer bs(result_buf);
                         auto log_idx = bs.get_u64();
 
-                        /// if timeout happened set error responses for the requests
                         if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
                             addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
@@ -417,30 +377,8 @@ void KeeperDispatcher::requestThread()
                     }
 
                     prev_batch.clear();
-                }
 
-                if (has_reconfig_request)
                     server->getKeeperStateMachine()->reconfigure(request);
-
-                /// Read request always goes after write batch (last request)
-                if (has_read_request)
-                {
-                    if (session_registry_.isSessionAlive(request.session_id))
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest({request});
-                        else
-                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS, /*may_have_dependent_reads=*/ false);
-                    }
-                    else
-                    {
-                        /// The session is no longer live (e.g. a Close was committed
-                        /// in the preceding write batch or the session was cleaned up).
-                        /// The dispatcher_requests_queue span was already finalized
-                        /// at handle_opentelemetery_spans above.
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        LOG_TRACE(log, "Dropping stale read request for non-live session {}, xid {}", request.session_id, request.request->xid);
-                    }
                 }
             }
         }
@@ -577,6 +515,8 @@ bool KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
 {
+    auto session = session_registry_.findSession(session_id);
+    if (!session)
     {
         /// If session was already disconnected than we will ignore requests
         if (!session_registry_.hasSessionCallback(session_id))
@@ -592,6 +532,12 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     if (keeper_context->isShutdownCalled())
         return false;
+
+    /// Let the session classify the request.  Non-quorum reads are either
+    /// dispatched inline or deferred behind in-flight writes and never enter
+    /// the global queue.
+    if (session && !session->addRequest(request_info))
+        return true;
 
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
 
@@ -881,7 +827,22 @@ KeeperDispatcher::~KeeperDispatcher()
 
 KeeperSessionPtr KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    return session_registry_.registerSession(session_id, std::move(callback));
+    bool quorum_reads = configuration_and_settings->coordination_settings[CoordinationSetting::quorum_reads];
+
+    auto local_read_callback = [this](const KeeperRequestForSession & read_request)
+    {
+        if (!session_registry_.isSessionAlive(read_request.session_id))
+        {
+            ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+            return;
+        }
+        if (server->isLeaderAlive())
+            server->putLocalReadRequest(read_request);
+        else
+            addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
+    };
+
+    return session_registry_.registerSession(session_id, std::move(callback), quorum_reads, std::move(local_read_callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()

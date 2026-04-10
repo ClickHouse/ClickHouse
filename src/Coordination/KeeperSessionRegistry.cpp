@@ -17,7 +17,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-KeeperSessionPtr KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+KeeperSessionPtr KeeperSessionRegistry::registerSession(
+    int64_t session_id,
+    ZooKeeperResponseCallback callback,
+    bool quorum_reads,
+    KeeperSession::LocalReadCallback local_read_callback)
 {
     bool inserted = false;
     {
@@ -25,7 +29,7 @@ KeeperSessionPtr KeeperSessionRegistry::registerSession(int64_t session_id, ZooK
         inserted = live_sessions.insert(session_id).second;
     }
 
-    auto session = std::make_shared<KeeperSession>(session_id, callback);
+    auto session = std::make_shared<KeeperSession>(session_id, callback, quorum_reads, std::move(local_read_callback));
 
     try
     {

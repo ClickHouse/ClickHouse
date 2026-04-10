@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperSession.h>
 
 #include <atomic>
 #include <mutex>
@@ -26,7 +27,11 @@ public:
     /// Register a session: creates a `KeeperSession` object, adds to both
     /// `session_to_response_callback` and `live_sessions`, increments `KeeperAliveConnections`.
     /// Throws on duplicate session_id. Returns the new session object.
-    KeeperSessionPtr registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    KeeperSessionPtr registerSession(
+        int64_t session_id,
+        ZooKeeperResponseCallback callback,
+        bool quorum_reads,
+        KeeperSession::LocalReadCallback local_read_callback);
 
     /// Unregister a session's response callback and close its `KeeperSession`.
     /// Returns the callback so the caller can deliver a final ZSESSIONEXPIRED
