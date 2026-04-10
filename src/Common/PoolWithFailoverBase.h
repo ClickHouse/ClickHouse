@@ -8,6 +8,7 @@
 #include <base/types.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
+#include <base/MemorySanitizer.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>
@@ -308,6 +309,11 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             std::string fail_message;
             result = try_get_entry(shuffled_pool.pool, fail_message);
+
+            /// MSan LLVM IR tracks shadow per-field, not per-byte, so struct
+            /// padding in return values inherits whatever shadow was in the
+            /// destination stack slot previously, which can be dirty.
+            __msan_unpoison(&result, sizeof(result));
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
