@@ -20,6 +20,8 @@ struct ObjectInfo
     size_t size = 0;
     /// Checks if Content-Length was present in the HEAD response and we can rely on its result
     bool is_size_known = true;
+    /// Server indicated it decoded the content before serving (GCS decompressive transcoding)
+    bool is_server_side_decompressed = false;
     time_t last_modification_time = 0;
     String etag;
     ObjectAttributes tags; // Set only if getObjectInfo() is called with `with_tags = true`

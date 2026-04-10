@@ -104,6 +104,7 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    bool is_server_side_decompressed = false;
     Poco::Timestamp last_modified;
     std::string etag;
     ObjectAttributes tags;

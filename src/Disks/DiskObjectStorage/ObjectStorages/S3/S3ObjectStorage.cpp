@@ -483,6 +483,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.is_size_known = object_info.is_size_known;
+    result.is_server_side_decompressed = object_info.is_server_side_decompressed;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
     result.tags = object_info.tags;
@@ -522,6 +523,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.is_size_known = object_info.is_size_known;
+    result.is_server_side_decompressed = object_info.is_server_side_decompressed;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
     result.tags = std::move(object_info.tags);

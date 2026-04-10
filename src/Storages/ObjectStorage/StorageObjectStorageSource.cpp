@@ -654,11 +654,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         {
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
 
-            /// Server omitted Content-Length, likely due to server-side decoding
-            /// (GCS decompressive transcoding). The data is already decompressed,
-            /// so don't try to decompress again based on file extension
+            /// Server already decompressed the data (GCS decompressive transcoding)
+            /// Don't try to decompress again based on file extension
             if (auto metadata = object_info->getObjectMetadata();
-                metadata && !metadata->is_size_known && configuration->compression_method == "auto")
+                metadata && metadata->is_server_side_decompressed && configuration->compression_method == "auto")
             {
                 compression_method = CompressionMethod::None;
             }
