@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace
+{
+    thread_local size_t query_plan_step_clone_depth = 0;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -100,7 +105,12 @@ namespace QueryPlanFormat
 
 IQueryPlanStep::IQueryPlanStep()
 {
-    step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
+    step_index = CurrentThread::isInitialized() && getCloneDepth() == 0 ? CurrentThread::get().getNextPlanStepIndex() : 0;
+}
+
+size_t & IQueryPlanStep::getCloneDepth()
+{
+    return query_plan_step_clone_depth;
 }
 
 void IQueryPlanStep::updateInputHeaders(SharedHeaders input_headers_)

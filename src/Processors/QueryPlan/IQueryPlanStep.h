@@ -178,7 +178,11 @@ protected:
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
 private:
+    static size_t & getCloneDepth();
+
     size_t step_index = 0;
+
+    friend class QueryPlan;
 };
 
 }

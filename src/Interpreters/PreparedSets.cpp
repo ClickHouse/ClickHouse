@@ -252,15 +252,12 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::createQueryPlanForRetry(const 
         catch (...)
         {
             if (!query_plan_builder)
-                throw;
+                return nullptr;
         }
     }
 
     if (!query_plan_builder)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Cannot restore source query plan for set {} after failed in-place build",
-            set_and_key->key);
+        return nullptr;
 
     auto restored_source = query_plan_builder(context);
     if (!restored_source)
@@ -406,7 +403,21 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     if (!inplace_set_and_key->set->isCreated())
     {
-        restoreQueryPlanForRetry(std::move(source_for_retry));
+        if (source_for_retry)
+        {
+            restoreQueryPlanForRetry(std::move(source_for_retry));
+        }
+        else
+        {
+            auto * root = plan->getRootNode();
+            if (!root || root->step->getName() != "CreatingSet" || root->children.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot restore source query plan for set {} after failed in-place build without retry snapshot",
+                    set_and_key->key);
+
+            setQueryPlan(std::make_unique<QueryPlan>(plan->extractSubplan(root->children.front())));
+        }
         return;
     }
 
@@ -471,7 +482,21 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the pipeline without setting `set_and_key->set->is_created` to true.
     if (!inplace_set_and_key->set->isCreated())
     {
-        restoreQueryPlanForRetry(std::move(source_for_retry));
+        if (source_for_retry)
+        {
+            restoreQueryPlanForRetry(std::move(source_for_retry));
+        }
+        else
+        {
+            auto * root = plan->getRootNode();
+            if (!root || root->step->getName() != "CreatingSet" || root->children.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot restore source query plan for set {} after failed ordered in-place build without retry snapshot",
+                    set_and_key->key);
+
+            setQueryPlan(std::make_unique<QueryPlan>(plan->extractSubplan(root->children.front())));
+        }
         return nullptr;
     }
 
