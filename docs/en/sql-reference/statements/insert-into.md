@@ -183,13 +183,13 @@ Use the syntax above to insert data from a file, or files, stored on the **clien
 
 Compressed files are supported. The compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
-This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
+This functionality is available in the [command-line client](../../interfaces/client.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
 
 **Examples**
 
 ### Single file with FROM INFILE {#single-file-with-from-infile}
 
-Execute the following queries using [command-line client](../../interfaces/cli.md):
+Execute the following queries using [command-line client](../../interfaces/client.md):
 
 ```bash
 echo 1,A > input.csv ; echo 2,B >> input.csv

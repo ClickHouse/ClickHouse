@@ -30,8 +30,8 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 TEST(QBitSerialization, FieldBinarySerializationFloat32)
 {
     auto float32_type = DataTypeFactory::instance().get("Float32");
-    auto qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 5));
-    auto serialization_float32 = qbit_type_float32->getDefaultSerialization();
+    DataTypeQBit qbit_type_float32(float32_type, 5);
+    auto serialization_float32 = qbit_type_float32.getDefaultSerialization();
 
     const size_t bytes_per_fixedstring = 1;
 
@@ -73,7 +73,7 @@ TEST(QBitSerialization, FieldBinarySerializationFloat32)
 TEST(QBitSerialization, RejectInvalidElementType)
 {
     auto int32_type = DataTypeFactory::instance().get("Int32");
-    EXPECT_THROW_ERROR_CODE(std::make_shared<DataTypeQBit>(int32_type, 5), Exception, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    EXPECT_THROW_ERROR_CODE(DataTypeQBit(int32_type, 5), Exception, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 }
