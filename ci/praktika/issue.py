@@ -324,6 +324,7 @@ class Issue:
         labels,
         closed_at="",
         number=0,
+        repo="ClickHouse/ClickHouse",
     ):
         body_fields = cls.parse_issue_body_fields(body)
         test_name = body_fields["test_name"]
@@ -334,7 +335,7 @@ class Issue:
             else:
                 test_name = title
         issue_url = (
-            f"https://github.com/ClickHouse/ClickHouse/issues/{number}"
+            f"https://github.com/{repo}/issues/{number}"
             if number
             else ""
         )
@@ -362,12 +363,13 @@ class Issue:
         return self
 
     @classmethod
-    def from_dict(cls, issue: dict) -> "Issue":
+    def from_dict(cls, issue: dict, repo="ClickHouse/ClickHouse") -> "Issue":
         """
         Process raw GitHub issue into TestCaseIssue objects.
 
         Args:
             issue: raw issue dictionary from GitHub
+            repo: GitHub repository in format owner/repo
 
         Returns:
             TestCaseIssue object
@@ -381,7 +383,7 @@ class Issue:
         assert title, f"Issue {number} has no title"
         # Extract label names from the labels array
         labels = [label.get("name", "") for label in issue.get("labels", [])]
-        return cls.create_from(title, body, labels, closed_at, number)
+        return cls.create_from(title, body, labels, closed_at, number, repo=repo)
 
 
 @dataclass
@@ -410,10 +412,10 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         )
 
     @classmethod
-    def process_issue(cls, issues_raw, verbose=True):
+    def process_issue(cls, issues_raw, verbose=True, repo="ClickHouse/ClickHouse"):
         res = []
         for issue_ in issues_raw:
-            issue = Issue.from_dict(issue_)
+            issue = Issue.from_dict(issue_, repo=repo)
             if issue.validate(verbose=verbose):
                 res.append(issue)
         return res
@@ -439,7 +441,7 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         testing_issues = fetch_github_issues(
             label=IssueLabels.CI_ISSUE, state="open", repo=repo
         )
-        catalog.active_test_issues = cls.process_issue(testing_issues, verbose=verbose)
+        catalog.active_test_issues = cls.process_issue(testing_issues, verbose=verbose, repo=repo)
         if verbose:
             print(f"Processed {len(catalog.active_test_issues)} testing issues")
 
@@ -450,7 +452,7 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
             label=IssueLabels.CI_ISSUE, state="closed", hours_back=8, repo=repo
         )
         closed_testing_processed = cls.process_issue(
-            closed_testing_issues, verbose=verbose
+            closed_testing_issues, verbose=verbose, repo=repo
         )
         added_closed_testing = 0
         existing_issue_numbers = {issue.number for issue in catalog.active_test_issues}
