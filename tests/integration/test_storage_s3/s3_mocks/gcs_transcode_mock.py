@@ -6,7 +6,7 @@ import http.server
 # See https://cloud.google.com/storage/docs/transcoding
 
 DATA = b'{"id":1}\n{"id":2}\n{"id":3}\n'
-
+-
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -15,6 +15,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         # No Content-Length: GCS omits it during decompressive transcoding
         self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("x-goog-stored-content-encoding", "gzip")
         self.send_header("ETag", '"abc123"')
         self.send_header("Last-Modified", "Fri, 13 Mar 2026 10:54:50 GMT")
         self.send_header("Connection", "close")
@@ -32,6 +33,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # GCS transcoding: data is served already decompressed
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("x-goog-stored-content-encoding", "gzip")
         self.send_header("ETag", '"abc123"')
         self.send_header("Last-Modified", "Fri, 13 Mar 2026 10:54:50 GMT")
         self.send_header("Connection", "close")
