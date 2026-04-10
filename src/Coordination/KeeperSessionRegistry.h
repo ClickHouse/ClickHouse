@@ -2,6 +2,7 @@
 
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperSession.h>
+#include <Coordination/KeeperContext.h>
 
 #include <atomic>
 #include <mutex>
@@ -24,18 +25,27 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 class KeeperSessionRegistry
 {
 public:
+    KeeperSessionRegistry() = default;
+
+    /// Initialize with settings from `KeeperContext`. Must be called before `registerSession`.
+    void initialize(KeeperContextPtr keeper_context, KeeperSession::LocalReadCallback local_read_dispatch,
+                    KeeperSession::QuorumPushCallback quorum_push);
+
+    /// Whether reads go through Raft (`quorum_reads` setting).
+    bool quorumReads() const { return quorum_reads_; }
+
+    /// Per-session limit on `active_requests` (0 = unlimited).
+    size_t maxSessionActiveRequests() const { return max_session_active_requests_; }
+
     /// Register a session: creates a `KeeperSession` object, adds to both
     /// `session_to_response_callback` and `live_sessions`, increments `KeeperAliveConnections`.
-    /// Throws on duplicate session_id. Returns the new session object.
+    /// Throws on duplicate `session_id`. Returns the new session object.
     KeeperSessionPtr registerSession(
         int64_t session_id,
-        ZooKeeperResponseCallback callback,
-        bool quorum_reads,
-        size_t max_session_active_requests,
-        KeeperSession::LocalReadCallback local_read_callback);
+        KeeperSession::ResponseCallback callback);
 
     /// Unregister a session's response callback and close its `KeeperSession`.
-    /// Returns the callback so the caller can deliver a final ZSESSIONEXPIRED
+    /// Returns the callback so the caller can deliver a final `ZSESSIONEXPIRED`
     /// response outside the lock. Decrements `KeeperAliveConnections`.
     /// Returns empty callback if not found.
     ZooKeeperResponseCallback unregisterSession(int64_t session_id);
@@ -66,11 +76,11 @@ public:
     /// Register a temporary callback for new session ID allocation.
     void registerNewSessionCallback(int64_t internal_id, ZooKeeperResponseCallback callback);
 
-    /// Extract (and remove) the new-session callback for the given internal_id.
+    /// Extract (and remove) the new-session callback for the given `internal_id`.
     /// Returns empty callback if not found.
     ZooKeeperResponseCallback extractNewSessionCallback(int64_t internal_id);
 
-    /// Check if a new-session callback exists for the given internal_id.
+    /// Check if a new-session callback exists for the given `internal_id`.
     bool hasNewSessionCallback(int64_t internal_id) const;
 
     /// Returns the next internal session ID (atomic increment).
@@ -90,14 +100,24 @@ private:
     std::unordered_set<int64_t> live_sessions;
 
     mutable std::mutex session_to_response_callback_mutex;
-    /// Normal session response callbacks (keyed by session_id).
+    /// Normal session response callbacks (keyed by `session_id`).
     std::unordered_map<int64_t, ZooKeeperResponseCallback> session_to_response_callback;
     /// Per-session objects (dual-tracked alongside callback map, temporary).
     std::unordered_map<int64_t, KeeperSessionPtr> sessions_;
-    /// Temporary callbacks for new session ID requests (keyed by internal_id).
+    /// Temporary callbacks for new session ID requests (keyed by `internal_id`).
     std::unordered_map<int64_t, ZooKeeperResponseCallback> new_session_id_response_callback;
 
     std::atomic<int64_t> internal_session_id_counter{0};
+
+    /// Settings read from `KeeperContext`.
+    bool quorum_reads_ = false;
+    size_t max_session_active_requests_ = 0;
+
+    /// Local read dispatch callback, passed to every session at construction.
+    KeeperSession::LocalReadCallback local_read_dispatch_;
+
+    /// Quorum push callback, passed to every session at construction.
+    KeeperSession::QuorumPushCallback quorum_push_;
 };
 
 }

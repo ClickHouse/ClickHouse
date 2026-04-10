@@ -1,5 +1,6 @@
 #include <Coordination/KeeperSessionRegistry.h>
 #include <Coordination/KeeperSession.h>
+#include <Coordination/CoordinationSettings.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -12,17 +13,30 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsBool quorum_reads;
+    extern const CoordinationSettingsUInt64 max_session_active_requests;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
+void KeeperSessionRegistry::initialize(KeeperContextPtr keeper_context, KeeperSession::LocalReadCallback local_read_dispatch,
+                                       KeeperSession::QuorumPushCallback quorum_push)
+{
+    const auto & settings = keeper_context->getCoordinationSettings();
+    quorum_reads_ = settings[CoordinationSetting::quorum_reads];
+    max_session_active_requests_ = settings[CoordinationSetting::max_session_active_requests];
+    local_read_dispatch_ = std::move(local_read_dispatch);
+    quorum_push_ = std::move(quorum_push);
+}
+
 KeeperSessionPtr KeeperSessionRegistry::registerSession(
     int64_t session_id,
-    ZooKeeperResponseCallback callback,
-    bool quorum_reads,
-    size_t max_session_active_requests,
-    KeeperSession::LocalReadCallback local_read_callback)
+    KeeperSession::ResponseCallback callback)
 {
     bool inserted = false;
     {
@@ -30,14 +44,13 @@ KeeperSessionPtr KeeperSessionRegistry::registerSession(
         inserted = live_sessions.insert(session_id).second;
     }
 
-    auto session = std::make_shared<KeeperSession>(session_id, callback, quorum_reads, max_session_active_requests, std::move(local_read_callback));
+    auto session = std::make_shared<KeeperSession>(session_id, std::move(callback), *this, local_read_dispatch_, quorum_push_);
 
     try
     {
         std::lock_guard lock(session_to_response_callback_mutex);
-        if (!session_to_response_callback.try_emplace(session_id, callback).second)
+        if (!sessions_.try_emplace(session_id, session).second)
             throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
-        sessions_[session_id] = session;
         CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);
     }
     catch (...)
@@ -71,6 +84,9 @@ ZooKeeperResponseCallback KeeperSessionRegistry::unregisterSession(int64_t sessi
         {
             session = std::move(sit->second);
             sessions_.erase(sit);
+            /// If we didn't have a legacy callback but had a session, still decrement.
+            if (!callback)
+                CurrentMetrics::sub(CurrentMetrics::KeeperAliveConnections);
         }
     }
     /// Close the session object outside the lock.

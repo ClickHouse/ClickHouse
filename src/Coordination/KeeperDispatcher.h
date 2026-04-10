@@ -9,6 +9,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <functional>
+#include <span>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperSessionRegistry.h>
@@ -82,6 +83,14 @@ private:
 
     void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
 
+    /// Dispatch a batch of local reads against the state machine.
+    /// Called by sessions' `local_read_dispatch` callback.
+    void dispatchLocalReads(std::span<SessionRequestPtr> batch);
+
+    /// Called by the commit callback after a Raft entry commits.
+    /// Finds the session and calls `onRaftCommitted`.
+    void onRaftCommit(uint64_t log_idx, const KeeperRequestForSession & request_for_session);
+
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
     nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
@@ -150,8 +159,8 @@ public:
 
     /// Register session and subscribe for responses with callback.
     /// Returns the `KeeperSessionPtr` wrapping the session state.
-    /// The callback must be safe for concurrent invocation — see ZooKeeperResponseCallback.
-    KeeperSessionPtr registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    /// The callback receives batches of `SessionRequestPtr`.
+    KeeperSessionPtr registerSession(int64_t session_id, KeeperSession::ResponseCallback callback);
 
     /// Terminate a session: unregister callback, close the `KeeperSession` object,
     /// deliver ZSESSIONEXPIRED, and clean up read request queue.

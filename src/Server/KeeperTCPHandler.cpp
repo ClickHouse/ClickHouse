@@ -486,25 +486,22 @@ void KeeperTCPHandler::runImpl()
 
     /// TODO: bound the queue and use tryPush + finish() to disconnect slow clients
     /// instead of blocking Keeper threads. For now, unbounded to match old behavior.
-    response_queue = std::make_shared<ConcurrentBoundedQueue<RequestWithResponse>>(std::numeric_limits<size_t>::max());
-    /// Lifetime contract: the callback captures response_queue and poll_wrapper by
-    /// shared_ptr. The callback is stored in the session (via shared_ptr<const>).
-    /// terminateSession clears the callback, ensuring the captures
-    /// are released before KeeperTCPHandler::runImpl exits and destroys its locals.
-    auto response_callback = [captured_response_queue = response_queue, my_poll_wrapper = this->poll_wrapper](
-                                 const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+    response_queue = std::make_shared<ConcurrentBoundedQueue<SessionRequestPtr>>(std::numeric_limits<size_t>::max());
+    /// Lifetime contract: the callback captures `response_queue` and `poll_wrapper` by
+    /// `shared_ptr`. The callback is stored in the session (via `shared_ptr<const>`).
+    /// `finalize(SessionExpired/Shutdown)` clears the callback, ensuring the captures
+    /// are released before `KeeperTCPHandler::runImpl` exits and destroys its locals.
+    auto response_callback = [captured_response_queue = response_queue, my_poll_wrapper = this->poll_wrapper](std::vector<SessionRequestPtr> batch)
     {
-        if (request)
-            ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->tracing_context);
-
-        if (!captured_response_queue->push(RequestWithResponse{response, std::move(request)}))
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
-
-        /// Write the exact count as UInt32 — one syscall per response.
+        UInt32 count = static_cast<UInt32>(batch.size());
+        for (auto & req : batch)
+        {
+            if (!captured_response_queue->push(std::move(req)))
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response into the queue");
+        }
+        /// Write the exact count as UInt32 -- one syscall per batch.
         /// The drain side reads and sums these to know exactly how many to pop.
-        /// POSIX guarantees atomic writes up to PIPE_BUF (>=512 bytes).
-        /// A 4-byte UInt32 write is always atomic.
-        UInt32 count = 1;
+        /// POSIX guarantees atomic writes up to PIPE_BUF (>=512 bytes). A 4-byte UInt32 write is always atomic.
         ssize_t res = write(my_poll_wrapper->getResponseFD(), &count, sizeof(count));
         if (unlikely(res != sizeof(count)))
             LOG_WARNING(getLogger("KeeperTCPHandler"), "Pipe write failed: res={}, errno={}", res, errno);
@@ -576,16 +573,24 @@ void KeeperTCPHandler::runImpl()
                 session_stopwatch.restart();
             }
 
-            /// Pop exactly `responses_count` items — the pipe carries exact counts.
+            /// Pop exactly `responses_count` items -- the pipe carries exact counts.
             while (result.responses_count != 0)
             {
-                RequestWithResponse request_with_response;
-
-                if (!response_queue->tryPop(request_with_response))
+                SessionRequestPtr completed_request;
+                if (!response_queue->tryPop(completed_request))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
 
-                auto & response = request_with_response.response;
-                auto & request = request_with_response.request;
+                /// nullptr sentinel from `finalizeWithErrors` -- server-side disconnect.
+                /// The session is already finalized and detached by the caller;
+                /// just exit.
+                if (!completed_request)
+                {
+                    LOG_DEBUG(log, "Session #{} received disconnect sentinel, closing connection", session_id);
+                    return;
+                }
+
+                auto & response = completed_request->response;
+                auto & request = completed_request->request;
 
                 log_long_operation("Waiting for response to be ready");
 
@@ -595,40 +600,27 @@ void KeeperTCPHandler::runImpl()
                     return;
                 }
 
-                updateStats(response, request_with_response.request);
+                if (request)
+                    updateStats(response, request);
                 packageSent();
 
-                const auto maybe_finalize_opentelemetery_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
-                {
-                    if (!request)
-                        return;
-
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        request->spans.send_response,
-                        [&]
-                        {
-                            return std::vector<OpenTelemetry::SpanAttribute>{
-                                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                                {"keeper.session_id", session_id},
-                                {"keeper.xid", request->xid},
-                            };
-                        },
-                        status,
-                        error_message);
-                };
-
+                /// Watch notifications and direct delivery wrappers have no
+                /// `request` -- skip lifecycle transitions.
+                if (request)
+                    completed_request->setState(RequestState::SendingResponse);
                 try
                 {
                     response->write(getWriteBuffer(), use_xid_64);
                     flushWriteBuffer();
+                    if (request)
+                        completed_request->setState(RequestState::Sent);
                 }
                 catch (...)
                 {
-                    maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+                    if (request)
+                        completed_request->setState(RequestState::Sent);
                     throw;
                 }
-
-                maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
                 log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)

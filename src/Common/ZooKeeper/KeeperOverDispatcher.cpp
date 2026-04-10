@@ -26,31 +26,43 @@ KeeperOverDispatcher::KeeperOverDispatcher(
     LOG_DEBUG(&Poco::Logger::get("KeeperOverDispatcher"), "Created KeeperOverDispatcher session {} with timeout {} ms", session_id, session_timeout_.totalMilliseconds());
 
     /// Register session with a callback that dispatches responses based on XID.
-    /// Capture callback_state by shared_ptr so the lambda remains valid even after
-    /// this KeeperOverDispatcher is destroyed (prevents use-after-free when
-    /// routeResponse invokes the callback outside its mutex).
+    /// Capture `callback_state` by `shared_ptr` so the lambda remains valid even after
+    /// this `KeeperOverDispatcher` is destroyed (prevents use-after-free when
+    /// `routeResponse` invokes the callback outside its mutex).
     auto state = callback_state;
-    auto response_callback = [state](const ZooKeeperResponsePtr & response, ZooKeeperRequestPtr)
+    auto response_callback = [state](std::vector<DB::SessionRequestPtr> batch)
     {
-        if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
+        for (auto & req : batch)
         {
-            state->expired = true;
-            return;
-        }
-
-        ResponseCallback callback;
-        {
-            std::lock_guard lock(state->callbacks_mutex);
-            auto it = state->callbacks.find(response->xid);
-            if (it != state->callbacks.end())
+            /// nullptr sentinel from `finalizeWithErrors` -- session terminated.
+            /// Mark expired so `KeeperHTTPClient` recreates the in-process client.
+            if (!req)
             {
-                callback = std::move(it->second);
-                state->callbacks.erase(it);
+                state->expired = true;
+                continue;
             }
-        }
 
-        if (callback)
-            callback(response);
+            auto response = req->response;
+            if (dynamic_cast<const ZooKeeperCloseResponse *>(response.get()))
+            {
+                state->expired = true;
+                continue;
+            }
+
+            ResponseCallback callback;
+            {
+                std::lock_guard lock(state->callbacks_mutex);
+                auto it = state->callbacks.find(response->xid);
+                if (it != state->callbacks.end())
+                {
+                    callback = std::move(it->second);
+                    state->callbacks.erase(it);
+                }
+            }
+
+            if (callback)
+                callback(response);
+        }
     };
 
     keeper_dispatcher->registerSession(session_id, response_callback);

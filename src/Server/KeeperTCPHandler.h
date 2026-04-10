@@ -27,18 +27,12 @@ namespace DB
 struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::shared_ptr<SocketInterruptablePollWrapper>;
 
-struct RequestWithResponse
-{
-    Coordination::ZooKeeperResponsePtr response;
-    Coordination::ZooKeeperRequestPtr request; /// it can be nullptr for some responses
-};
-
-using ThreadSafeResponseQueue = ConcurrentBoundedQueue<RequestWithResponse>;
+using ThreadSafeResponseQueue = ConcurrentBoundedQueue<SessionRequestPtr>;
 using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
 
-/// Response queue captured by the session callback. Created in runImpl,
+/// Response queue captured by the session callback. Created in `runImpl`,
 /// shared between the callback lambda and the poll loop.
-using SharedResponseQueue = std::shared_ptr<ConcurrentBoundedQueue<RequestWithResponse>>;
+using SharedResponseQueue = std::shared_ptr<ConcurrentBoundedQueue<SessionRequestPtr>>;
 
 struct LastOp;
 using LastOpMultiVersion = MultiVersion<LastOp>;
