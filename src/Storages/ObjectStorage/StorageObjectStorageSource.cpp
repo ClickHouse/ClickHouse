@@ -656,7 +656,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
             /// Server already decompressed the data (e.g. GCS decompressive transcoding)
             if (auto metadata = object_info->getObjectMetadata();
-                metadata && metadata->is_server_side_decompressed && configuration->compression_method == "auto")
+                metadata && metadata->is_server_side_decompressed && !metadata->is_size_known)
             {
                 compression_method = CompressionMethod::None;
             }

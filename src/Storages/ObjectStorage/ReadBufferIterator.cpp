@@ -146,7 +146,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
 
     if (auto metadata = current_object_info->getObjectMetadata();
-        metadata && metadata->is_server_side_decompressed && configuration->compression_method == "auto")
+        metadata && metadata->is_server_side_decompressed && !metadata->is_size_known)
     {
         compression_method = CompressionMethod::None;
     }
@@ -276,7 +276,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
 
             if (auto metadata = current_object_info->getObjectMetadata();
-                metadata && metadata->is_server_side_decompressed && configuration->compression_method == "auto")
+                metadata && metadata->is_server_side_decompressed && !metadata->is_size_known)
             {
                 compression_method = CompressionMethod::None;
             }
