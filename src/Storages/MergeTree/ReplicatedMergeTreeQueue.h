@@ -173,6 +173,10 @@ private:
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
+    /// Total number of mutations in mutations_by_znode that contain supported metadata mutations.
+    /// Atomic so getMutationsSnapshot can check it without acquiring state_mutex.
+    std::atomic<Int64> num_metadata_mutations_in_map{0};
+
     /// Partition -> (block_number -> MutationStatus)
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
     /// Znode ID of the latest mutation that is done.
