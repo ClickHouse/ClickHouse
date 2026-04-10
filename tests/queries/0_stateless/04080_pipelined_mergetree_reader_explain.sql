@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-random-settings
 
 DROP TABLE IF EXISTS t_pipe_explain;
 

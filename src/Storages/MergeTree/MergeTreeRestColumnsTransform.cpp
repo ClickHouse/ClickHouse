@@ -95,19 +95,28 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
         rest_reader->evaluateMissingDefaults(additional_columns, rest_columns);
     }
 
-    /// Replace the placeholder default columns in the chunk with real rest data.
+    /// Assemble the full output block from prewhere columns (input chunk) and rest columns.
+    const auto & input_header = getInputPort().getHeader();
     const auto & output_header = getOutputPort().getHeader();
     const auto & rest_sample_block = rest_range_reader->getReadSampleBlock();
-    auto all_columns = chunk.detachColumns();
+    auto prewhere_columns = chunk.detachColumns();
 
+    Columns all_columns(output_header.columns());
+
+    /// Place prewhere columns at their output positions.
+    for (size_t i = 0; i < input_header.columns(); ++i)
+    {
+        const auto & col_name = input_header.getByPosition(i).name;
+        if (output_header.has(col_name))
+            all_columns[output_header.getPositionByName(col_name)] = std::move(prewhere_columns[i]);
+    }
+
+    /// Place rest columns at their output positions.
     for (size_t i = 0; i < rest_sample_block.columns(); ++i)
     {
         const auto & col_name = rest_sample_block.getByPosition(i).name;
         if (output_header.has(col_name))
-        {
-            size_t output_idx = output_header.getPositionByName(col_name);
-            all_columns[output_idx] = std::move(rest_columns[i]);
-        }
+            all_columns[output_header.getPositionByName(col_name)] = std::move(rest_columns[i]);
     }
 
     chunk.setColumns(std::move(all_columns), read_result.num_rows);
