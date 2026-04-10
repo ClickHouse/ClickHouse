@@ -822,7 +822,7 @@ SETTINGS disk = disk(
 #### Behavior and limitations {#borrow-from-cache-limitations}
 
 - **No persistence.** Both data (in the cache) and metadata (in memory) are lost when the server restarts.
-- **Cache eviction.** Stored segments are ephemeral and participate in cache eviction. Under heavy cache pressure, data from borrowed-disk tables may be evicted.
+- **Cache eviction.** Stored segments are pinned in the cache while the table exists. They are released when the table is dropped or the server shuts down, and the cache reclaims the space.
 - **No append writes.** Only full rewrites of objects are supported.
 - **Local storage only.** The disk is not remote — reads go directly to the local filesystem cache.
 
