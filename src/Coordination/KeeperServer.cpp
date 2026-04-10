@@ -344,11 +344,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         return std::unique_lock(lock_);
     }
 
-    std::unique_lock<std::mutex> lockCommit()
-    {
-        return std::unique_lock(commit_lock_);
-    }
-
     bool isCommitInProgress() const
     {
         return sm_commit_exec_in_progress_;
@@ -685,7 +680,11 @@ void KeeperServer::shutdownRaftServer()
     keeper_context->setServerState(KeeperContext::Phase::SHUTDOWN);
 
     if (create_snapshot_on_exit)
-        raft_instance->create_snapshot();
+    {
+        nuraft::raft_server::create_snapshot_options options;
+        options.serialize_commit_ = true;
+        raft_instance->create_snapshot(options);
+    }
 
     raft_instance.reset();
 
@@ -1349,8 +1348,12 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
 uint64_t KeeperServer::createSnapshot()
 {
-    auto commit_lock = raft_instance->lockCommit();
-    uint64_t log_idx = raft_instance->create_snapshot();
+    /// serialize_commit_ makes nuraft lock commit_lock_. This guarantees that we call
+    /// enableSnapshotMode() on storage in the state that corresponds to `log_idx`, rather than a
+    /// more recent state.
+    nuraft::raft_server::create_snapshot_options options;
+    options.serialize_commit_ = true;
+    uint64_t log_idx = raft_instance->create_snapshot(options);
     if (log_idx != 0)
         LOG_INFO(log, "Snapshot creation scheduled with last committed log index {}.", log_idx);
     else
