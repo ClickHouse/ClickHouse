@@ -92,7 +92,7 @@ AggregateFunctionTuple::AggregateFunctionTuple(
         state_offsets[i] = offset;
         offset += nested_functions[i]->sizeOfData();
     }
-    total_state_size = offset;
+    total_state_size = ::Memory::alignUp(offset, max_state_align);
 }
 
 bool AggregateFunctionTuple::isVersioned() const
