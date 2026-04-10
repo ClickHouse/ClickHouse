@@ -59,6 +59,10 @@ public:
 
     /// Patch mark ranges for rest patch readers (one per patch part).
     std::vector<MarkRanges> patches_mark_ranges;
+
+    /// Sample block from the prewhere chain. Needed by RestColumnsTransform
+    /// so that readPatches receives a header matching read_result->columns.
+    Block prewhere_sample_block;
 };
 
 }

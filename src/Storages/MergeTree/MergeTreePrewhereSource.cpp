@@ -184,6 +184,7 @@ std::optional<Chunk> MergeTreePrewhereSource::tryGenerate()
         auto chunk_info = std::make_shared<MergeTreeReadChunkInfo>();
         chunk_info->read_result = std::make_shared<MergeTreeRangeReader::ReadResult>(std::move(read_result));
         chunk_info->task_info = current_task_info;
+        chunk_info->prewhere_sample_block = sample_block;
 
         /// Pass the main reader on the first chunk of each task.
         /// RestColumnsTransform takes ownership and uses it for all subsequent chunks.

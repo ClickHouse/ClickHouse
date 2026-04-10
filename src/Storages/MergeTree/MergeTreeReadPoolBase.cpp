@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -269,6 +270,13 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             if (row_level_filter)
                 for (const auto & name : row_level_filter->actions.getRequiredColumnsNames())
                     prewhere_column_names.insert(name);
+
+            /// On-fly mutation steps are prepended to the prewhere chain, so their
+            /// required columns must be patched in the prewhere phase as well.
+            for (const auto & step : read_task_info.mutation_steps)
+                if (step->actions)
+                    for (const auto & name : step->actions->getActionsDAG().getRequiredColumnsNames())
+                        prewhere_column_names.insert(name);
 
             splitPatchColumnsForPrewhere(
                 read_task_info.task_columns,

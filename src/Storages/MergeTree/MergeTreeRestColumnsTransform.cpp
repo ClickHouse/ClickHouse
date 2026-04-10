@@ -118,6 +118,10 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
             const auto & rest_sample_block = rest_range_reader->getReadSampleBlock();
 
             /// Read patch data for current mark ranges.
+            /// readPatches needs a header that matches read_result.columns (prewhere chain output),
+            /// not the rest reader's sample block, because PatchReaderJoin::readPatches does
+            /// result_header.cloneWithColumns(main_result.columns) for position matching.
+            const auto & patches_header = read_chunk_info->prewhere_sample_block;
             for (size_t i = 0; i < rest_patch_readers.size(); ++i)
             {
                 auto & patch_results = rest_patches_results[i];
@@ -128,7 +132,7 @@ void MergeTreeRestColumnsTransform::transform(Chunk & chunk)
 
                 const auto * last = patch_results.empty() ? nullptr : patch_results.back().get();
                 auto new_patches = rest_patch_readers[i]->readPatches(
-                    rest_patches_mark_ranges[i], read_result, rest_sample_block, last);
+                    rest_patches_mark_ranges[i], read_result, patches_header, last);
                 patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
             }
 
