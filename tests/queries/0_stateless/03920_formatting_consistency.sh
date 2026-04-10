@@ -1,7 +1,18 @@
--- Test that AST formatting is consistent for a wide variety of SQL constructs.
--- In debug builds, the server verifies that format(parse(query)) == format(parse(format(parse(query)))),
--- and aborts on inconsistency. This test simply runs many SQL constructs to trigger that check.
+#!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+USER1="u1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+USER2="u2_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+ROLE1="r1_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+# Test that AST formatting is consistent for a wide variety of SQL constructs.
+# In debug builds, the server verifies that format(parse(query)) == format(parse(format(parse(query)))),
+# and aborts on inconsistency. This test simply runs many SQL constructs to trigger that check.
+
+${CLICKHOUSE_CLIENT} -n -q "
 -- Basic SELECT
 SELECT 1;
 SELECT 1 AS x;
@@ -258,17 +269,17 @@ DROP TABLE test_fmt_codec;
 DROP TABLE test_fmt_mem2;
 DROP TABLE test_fmt_replacing;
 
--- Access control
-CREATE USER IF NOT EXISTS test_fmt_user1;
-CREATE USER IF NOT EXISTS test_fmt_user2 IDENTIFIED WITH plaintext_password BY 'abc';
-CREATE ROLE IF NOT EXISTS test_fmt_role1;
-DROP ROLE IF EXISTS test_fmt_role1;
-DROP USER IF EXISTS test_fmt_user1;
-DROP USER IF EXISTS test_fmt_user2;
+-- Access control - use unique names
+CREATE USER IF NOT EXISTS ${USER1};
+CREATE USER IF NOT EXISTS ${USER2} IDENTIFIED WITH plaintext_password BY 'abc';
+CREATE ROLE IF NOT EXISTS ${ROLE1};
+DROP ROLE IF EXISTS ${ROLE1};
+DROP USER IF EXISTS ${USER1};
+DROP USER IF EXISTS ${USER2};
 
 -- Database
-CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE}_1;
+DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_1;
 
 -- FORMAT
 SELECT 1 FORMAT Null;
@@ -276,3 +287,4 @@ SELECT 1 FORMAT Null;
 -- SET
 SET max_threads = 1;
 SELECT 1;
+"
