@@ -15,6 +15,13 @@
 
 #include <unordered_map>
 
+namespace CurrentMetrics
+{
+    extern const Metric AIThreads;
+    extern const Metric AIThreadsActive;
+    extern const Metric AIThreadsScheduled;
+}
+
 namespace ProfileEvents
 {
     extern const Event AIInputTokens;
@@ -220,7 +227,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     if (!to_dispatch.empty())
     {
-        auto pool = std::make_unique<ThreadPool>(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), max_concurrent, max_concurrent, max_concurrent);
+        auto pool = std::make_unique<ThreadPool>(CurrentMetrics::AIThreads, CurrentMetrics::AIThreadsActive, CurrentMetrics::AIThreadsScheduled, max_concurrent, max_concurrent, max_concurrent);
 
         for (auto & [dispatch_key, representative_row] : to_dispatch)
         {

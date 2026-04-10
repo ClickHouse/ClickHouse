@@ -64,9 +64,9 @@ All AI-related settings are listed in [Settings](/operations/settings/settings) 
 
 ## Observability {#observability}
 
-AI function activity is tracked through ClickHouse [ProfileEvents](/operations/system-tables/query_log):
+AI function activity is tracked through ClickHouse [ProfileEvents](/operations/system-tables/query_log) and [CurrentMetrics](/operations/system-tables/metrics):
 
-| Event | Description |
+| ProfileEvent | Description |
 |-------|-------------|
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
 | `AIInputTokens` | Total input tokens consumed. |
@@ -75,6 +75,14 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/operations/s
 | `AICacheMisses` | Number of results that required an API call. |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (empty input, quota exceeded, error). |
+
+| CurrentMetric | Description |
+|-------|-------------|
+| `AIThreads` | Number of threads in the AI function thread pool. |
+| `AIThreadsActive` | Number of threads in the AI function thread pool running a task. |
+| `AIThreadsScheduled` | Number of queued or active jobs in the AI function thread pool. |
+| `AICacheSizeInBytes` | Total size of the AI result cache in bytes. |
+| `AICacheEntries` | Total number of entries in the AI result cache. |
 
 Query these events:
 
