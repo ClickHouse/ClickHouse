@@ -1119,6 +1119,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_commit_order_projection", false, false, "New setting"},
             {"replicated_fetches_min_part_level", 0, 0, "New setting"},
             {"replicated_fetches_min_part_level_timeout_seconds", 300, 300, "New setting"},
+            {"materialize_projections_on_insert", true, true, "New setting"},
+            {"materialize_projections_on_merge", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.3",
         {
