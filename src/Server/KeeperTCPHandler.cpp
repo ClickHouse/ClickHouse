@@ -3,6 +3,7 @@
 
 #if USE_NURAFT
 
+#    include <limits>
 #    include <mutex>
 #    include <Coordination/CoordinationSettings.h>
 #    include <Coordination/FourLetterCommand.h>
@@ -217,12 +218,18 @@ struct SocketInterruptablePollWrapper
         result.has_requests = socket_ready;
         if (fd_ready)
         {
-            UInt8 dummy;
-            readIntBinary(dummy, response_in);
-            result.responses_count = 1;
-            auto available = response_in.available();
-            response_in.ignore(available);
-            result.responses_count += available;
+            /// Each batch write puts a UInt32 count into the pipe.
+            /// Read all available UInt32s and sum them.
+            result.responses_count = 0;
+            while (true)
+            {
+                UInt32 batch_count = 0;
+                if (response_in.read(reinterpret_cast<char *>(&batch_count), sizeof(batch_count)) != sizeof(batch_count))
+                    break;
+                result.responses_count += batch_count;
+                if (response_in.available() < sizeof(UInt32))
+                    break;
+            }
         }
 
         if (rc < 0)
@@ -255,7 +262,6 @@ KeeperTCPHandler::KeeperTCPHandler(
     , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
-    , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
     KeeperTCPHandler::registerConnection(this);
@@ -477,19 +483,35 @@ void KeeperTCPHandler::runImpl()
 
     max_request_size = static_cast<UInt64>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size]);
 
-    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
+    /// TODO: bound the queue and use tryPush + finish() to disconnect slow clients
+    /// instead of blocking Keeper threads. For now, unbounded to match old behavior.
+    response_queue = std::make_shared<ConcurrentBoundedQueue<RequestWithResponse>>(std::numeric_limits<size_t>::max());
+    /// Lifetime contract: the callback captures response_queue and poll_wrapper by
+    /// shared_ptr. The callback is stored in the session (via shared_ptr<const>).
+    /// terminateSession clears the callback, ensuring the captures
+    /// are released before KeeperTCPHandler::runImpl exits and destroys its locals.
+    auto response_callback = [captured_response_queue = response_queue, my_poll_wrapper = this->poll_wrapper](
                                  const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
         if (request)
             ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.send_response, request->tracing_context);
 
-        if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
+        if (!captured_response_queue->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
-        UInt8 single_byte = 1;
-        [[maybe_unused]] ssize_t result = write(my_poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
+        /// Write the exact count as UInt32 — one syscall per response.
+        /// The drain side reads and sums these to know exactly how many to pop.
+        /// POSIX guarantees atomic writes up to PIPE_BUF (>=512 bytes).
+        /// A 4-byte UInt32 write is always atomic.
+        UInt32 count = 1;
+        ssize_t res = write(my_poll_wrapper->getResponseFD(), &count, sizeof(count));
+        if (unlikely(res != sizeof(count)))
+            LOG_WARNING(getLogger("KeeperTCPHandler"), "Pipe write failed: res={}, errno={}", res, errno);
     };
-    keeper_dispatcher->registerSession(session_id, response_callback);
+    /// Cache the session pointer for the lifetime of this connection.
+    /// Avoids a `findSession` lookup (shared_lock + map find + atomic refcount)
+    /// on every `putRequest` call.
+    cached_session = keeper_dispatcher->registerSession(session_id, std::move(response_callback));
 
     Stopwatch logging_stopwatch;
     auto operation_max_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
@@ -553,14 +575,12 @@ void KeeperTCPHandler::runImpl()
                 session_stopwatch.restart();
             }
 
-            /// Process exact amount of responses from pipe
-            /// otherwise state of responses queue and signaling pipe
-            /// became inconsistent and race condition is possible.
+            /// Pop exactly `responses_count` items — the pipe carries exact counts.
             while (result.responses_count != 0)
             {
                 RequestWithResponse request_with_response;
 
-                if (!responses->tryPop(request_with_response))
+                if (!response_queue->tryPop(request_with_response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
 
                 auto & response = request_with_response.response;
@@ -635,7 +655,7 @@ void KeeperTCPHandler::runImpl()
     catch (const Exception & ex)
     {
         log_long_operation("Unknown operation");
-        LOG_TRACE(log, "Has {} responses in the queue", responses->size());
+        LOG_TRACE(log, "Session #{}, pending responses: {}", session_id, response_queue ? response_queue->size() : 0);
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
         cancelWriteBuffer();
         keeper_dispatcher->terminateSession(session_id);

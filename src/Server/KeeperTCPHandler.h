@@ -9,6 +9,7 @@
 #include <Server/IServer.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Coordination/KeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Coordination/KeeperDispatcher.h>
@@ -34,6 +35,10 @@ struct RequestWithResponse
 
 using ThreadSafeResponseQueue = ConcurrentBoundedQueue<RequestWithResponse>;
 using ThreadSafeResponseQueuePtr = std::shared_ptr<ThreadSafeResponseQueue>;
+
+/// Response queue captured by the session callback. Created in runImpl,
+/// shared between the callback lambda and the poll loop.
+using SharedResponseQueue = std::shared_ptr<ConcurrentBoundedQueue<RequestWithResponse>>;
 
 struct LastOp;
 using LastOpMultiVersion = MultiVersion<LastOp>;
@@ -81,7 +86,13 @@ private:
     Poco::Timespan send_timeout;
     Poco::Timespan receive_timeout;
 
-    ThreadSafeResponseQueuePtr responses;
+    /// Local response queue. The session's callback pushes completed requests here;
+    /// the poll loop reads them out after the pipe wakes it up.
+    SharedResponseQueue response_queue;
+
+    /// Cached session pointer. Set once at registration, avoids `findSession`
+    /// lookup (shared_lock + map find + atomic refcount) on every `putRequest`.
+    KeeperSessionPtr cached_session;
 
     Coordination::XID close_xid = Coordination::CLOSE_XID;
     bool use_xid_64 = false;
