@@ -14,6 +14,15 @@
 namespace DB
 {
 
+/// Returns the number of worker hosts available for distributed plan execution.
+/// Reads from `stateless_worker_client.cluster` config.
+size_t getDistributedWorkerCount(ContextPtr context);
+
+/// Returns the value of `_internal_cascades_cluster_node_count` query parameter,
+/// or 0 if not set. Used by the optimizer to determine cluster size and by the
+/// executor to cap the host list.
+size_t getCascadesClusterNodeCountParam(ContextPtr context);
+
 class TaskToHostMap : public boost::noncopyable
 {
 public:

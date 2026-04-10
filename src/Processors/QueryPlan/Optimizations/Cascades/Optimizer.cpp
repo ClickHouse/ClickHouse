@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -52,12 +53,11 @@ void CascadesOptimizer::optimize()
     else
         statistics = createEmptyStatistics();
 
-    /// Extract cluster node count from query parameters (for testing) or fall back to a default.
-    /// TODO: derive from actual cluster topology (e.g. Context::getCluster).
-    size_t cluster_node_count = 4;
-    constexpr auto cluster_node_count_param_name = "_internal_cascades_cluster_node_count";
-    if (query_context->getQueryParameters().contains(cluster_node_count_param_name))
-        cluster_node_count = std::stoull(query_context->getQueryParameters().at(cluster_node_count_param_name));
+    /// Parameter takes priority (for testing or to limit parallelism).
+    /// Otherwise use the actual cluster size from config.
+    size_t cluster_node_count = getCascadesClusterNodeCountParam(query_context);
+    if (cluster_node_count == 0)
+        cluster_node_count = std::max<size_t>(1, getDistributedWorkerCount(query_context));
 
     CostConfig cost_config;
     constexpr auto cost_config_param_name = "_internal_cascades_cost_config";
@@ -76,7 +76,7 @@ void CascadesOptimizer::optimize()
 
     OptimizerContext optimizer_context(*statistics, cluster_node_count, cost_config);
 
-    LOG_TRACE(optimizer_context.log, "Cost config: {}", cost_config.dump());
+    LOG_TRACE(optimizer_context.log, "Cost config: {}, cluster node count: {}", cost_config.dump(), cluster_node_count);
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
 
     auto [root_group_id, root_required_properties] = optimizer_context.addGroup(*query_plan.getRootNode());

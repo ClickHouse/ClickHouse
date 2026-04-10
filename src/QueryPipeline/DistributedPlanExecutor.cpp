@@ -862,7 +862,65 @@ private:
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
     fillHostnames(context_);
+
+    /// Cap the host list to match the node count the optimizer planned for.
+    size_t max_nodes = getCascadesClusterNodeCountParam(context_);
+    if (max_nodes > 0 && max_nodes < hostnames.size())
+        hostnames.resize(max_nodes);
+
     assignHostsForTasks(distributed_query_plan_);
+}
+
+/// Reads hostnames from `stateless_worker_client.cluster` config.
+/// Throws if cluster name is set but the cluster is not found or has no shards.
+/// Returns empty vector if cluster name is not configured.
+static std::vector<String> getDistributedWorkerHostnames(ContextPtr context)
+{
+    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+        return {};
+
+    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
+    if (cluster_name.empty())
+    {
+        String host = context->getConfigRef().getString("stateless_worker_client.host", "");
+        if (host.empty())
+            return {};
+        return {host};
+    }
+
+    auto cluster = context->tryGetCluster(cluster_name);
+    if (!cluster)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
+
+    auto shard_addresses = cluster->getShardsAddresses();
+    if (shard_addresses.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
+    /// Only a single-shard worker cluster is supported for now.
+    if (shard_addresses.size() > 1)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
+
+    std::vector<String> result;
+    for (const auto & replica : shard_addresses[0])
+        result.push_back(replica.host_name);
+    return result;
+}
+
+size_t getCascadesClusterNodeCountParam(ContextPtr context)
+{
+    constexpr auto param_name = "_internal_cascades_cluster_node_count";
+    if (context->getQueryParameters().contains(param_name))
+    {
+        size_t value = std::stoull(context->getQueryParameters().at(param_name));
+        if (value > 0)
+            return value;
+    }
+    return 0;
+}
+
+size_t getDistributedWorkerCount(ContextPtr context)
+{
+    return getDistributedWorkerHostnames(context).size();
 }
 
 void TaskToHostMap::fillHostnames(ContextPtr context)
@@ -870,33 +928,7 @@ void TaskToHostMap::fillHostnames(ContextPtr context)
     if (context->getSettingsRef()[Setting::distributed_plan_execute_locally])
         return;
 
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
-
-    String host;
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (!cluster_name.empty())
-    {
-        auto cluster = context->tryGetCluster(cluster_name);
-        if (!cluster)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-        auto shard_addresses = cluster->getShardsAddresses();
-        if (shard_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-        /// Only a single-shard worker cluster is supported for now.
-        if (shard_addresses.size() > 1)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-        for (const auto & replica : shard_addresses[0])
-            hostnames.push_back(replica.host_name);
-    }
-    else
-    {
-        host = context->getConfigRef().getString("stateless_worker_client.host");
-        if (!host.empty())
-            hostnames.push_back(host);
-    }
+    hostnames = getDistributedWorkerHostnames(context);
 
     if (hostnames.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
