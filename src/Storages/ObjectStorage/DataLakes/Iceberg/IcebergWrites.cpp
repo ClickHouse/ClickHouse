@@ -234,7 +234,16 @@ void extendSchemaForPartitions(
         Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
         field->set(Iceberg::f_field_id, 1000 + i);
         field->set(Iceberg::f_name, partition_columns[i]);
-        field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+        auto logical_type = getAvroLogicalType(partition_types[i]);
+        if (!logical_type.isEmpty())
+        {
+            Poco::JSON::Object::Ptr type_field = new Poco::JSON::Object;
+            type_field->set(Iceberg::f_type, getAvroType(partition_types[i]));
+            type_field->set(Iceberg::f_logicalType, logical_type);
+            field->set(Iceberg::f_type, type_field);
+        }
+        else
+            field->set(Iceberg::f_type, getAvroType(partition_types[i]));
         partition_fields->add(field);
     }
 
@@ -416,10 +425,34 @@ void generateManifestFile(
                     break;
 
                 case Field::Types::Decimal64:
-                    partition_record.field(partition_columns[i]) =
-                        avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                {
+                    auto type_id = partition_types[i]->getTypeId();
+                    if (type_id == TypeIndex::Time64 || type_id == TypeIndex::Time)
+                    { /// Need to write logical type into Avro
+                        auto scale = getDecimalScale(*partition_types[i]);
+                        if (scale == 0)
+                            partition_record.field(partition_columns[i]) =
+                                avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
+                        else if (scale == 3 || scale == 6)
+                        {
+                            avro::NodePtr node = std::make_shared<avro::NodePrimitive>(avro::AVRO_LONG);
+                            node->setLogicalType(avro::LogicalType(scale == 3 ? avro::LogicalType::TIME_MILLIS : avro::LogicalType::TIME_MICROS));
+                            int64_t value = partition_values[i].safeGet<Decimal64>().getValue();
+                            auto datum = avro::GenericDatum(node, value);
+                            partition_record.field(partition_columns[i]) = datum;
+                        }
+                        else
+                        {
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Avro file supports only seconds, milliseconds and microsecods for time, partition precision: {}", scale);
+                        }
+                    }
+                    else
+                        partition_record.field(partition_columns[i]) =
+                            avro::GenericDatum(partition_values[i].safeGet<Decimal64>().getValue());
                     break;
-
+                }
                 case Field::Types::Null:
                     break;
 

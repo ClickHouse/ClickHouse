@@ -9,6 +9,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -623,6 +624,27 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
+}
+
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
+{
+    auto type_id = type->getTypeId();
+    if (type_id == TypeIndex::Time || type_id == TypeIndex::Time64)
+    {
+        auto scale = getDecimalScale(*type);
+        switch (scale)
+        { /// Apache avro has millis and micros time precisions, https://avro.apache.org/docs/1.11.0/spec.html
+            case 0:
+                return Poco::Dynamic::Var();
+            case 3:
+                return "time-millis";
+            case 6:
+                return "time-micros";
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
+        }
+    }
+    return Poco::Dynamic::Var();
 }
 
 Poco::JSON::Object::Ptr getPartitionField(
