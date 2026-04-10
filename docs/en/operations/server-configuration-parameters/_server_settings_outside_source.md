@@ -1708,17 +1708,9 @@ For example:
 
 ## replica_host {#replica_host}
 
-The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper.
+The hostname that [DatabaseReplicated](../../engines/database-engines/replicated.md) uses to identify this server when registering with ZooKeeper. Useful when the server is behind a load balancer or NAT and the hostname visible to other replicas differs from `interserver_io_host`.
 
-When set, this value overrides the hostname that ClickHouse would otherwise derive from [`interserver_io_host`](../../operations/server-configuration-parameters/settings.md#interserver_io_host). It is stored as part of the replica's `host_id` entry in ZooKeeper (in the format `host:port:uuid`) and is used by other replicas to reach this server.
-
-**Fallback chain**
-
-If `replica_host` is not configured, ClickHouse falls back to `interserver_io_host`.
-
-**Use case**
-
-Set `replica_host` when the hostname that other replicas should use to connect differs from the value of `interserver_io_host`. For example, when ClickHouse is behind a load balancer or NAT and must advertise a public DNS name rather than its internal hostname.
+If not set, ClickHouse falls back to `interserver_io_host`.
 
 **Example**
 
@@ -1726,11 +1718,7 @@ Set `replica_host` when the hostname that other replicas should use to connect d
 <replica_host>public.node1.example.com</replica_host>
 ```
 
-Type: String
-
-Default: empty (falls back to `interserver_io_host`)
-
-**See Also**
+**See also**
 
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
