@@ -72,12 +72,8 @@ const SettingFieldOps & settingFieldOps()
   * Empty base class — concrete types provide their own methods with matching signatures.
   * Type-erased dispatch is done through SettingFieldOps function pointers, not virtual methods.
   */
-struct SettingFieldBase
-{
-};
-
 template <typename T>
-struct SettingFieldNumber : SettingFieldBase
+struct SettingFieldNumber
 {
     using Type = T;
     using ValueType = T;
@@ -122,7 +118,7 @@ using SettingFieldBool = SettingFieldNumber<bool>;
   * but when serializing 'auto' old version will see binary representation of the default value.
   */
 template <typename Base>
-struct SettingAutoWrapper final : SettingFieldBase
+struct SettingAutoWrapper final
 {
     constexpr static auto keyword = "auto";
     static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<String>() == keyword; }
@@ -200,7 +196,7 @@ using SettingFieldDoubleAuto = SettingAutoWrapper<SettingFieldDouble>;
  * When setting to 'auto' it becomes equal to  the number of processor cores without taking into account SMT.
  * A value of 0 is also treated as 'auto', so 'auto' is parsed and serialized in the same way as 0.
  */
-struct SettingFieldMaxThreads final : SettingFieldBase
+struct SettingFieldMaxThreads final
 {
     bool is_auto;
     UInt64 value;
@@ -241,7 +237,7 @@ enum class SettingFieldTimespanUnit : uint8_t
 };
 
 template <SettingFieldTimespanUnit unit_>
-struct SettingFieldTimespan final : SettingFieldBase
+struct SettingFieldTimespan final
 {
     using Unit = SettingFieldTimespanUnit;
     static constexpr Unit unit = unit_;
@@ -285,7 +281,7 @@ using SettingFieldSeconds = SettingFieldTimespan<SettingFieldTimespanUnit::Secon
 using SettingFieldMilliseconds = SettingFieldTimespan<SettingFieldTimespanUnit::Millisecond>;
 
 
-struct SettingFieldString final : SettingFieldBase
+struct SettingFieldString final
 {
     String value;
     bool changed = false;
@@ -318,7 +314,7 @@ struct SettingFieldString final : SettingFieldBase
     void readBinary(ReadBuffer & in);
 };
 
-struct SettingFieldMap final : SettingFieldBase
+struct SettingFieldMap final
 {
 public:
     Map value;
@@ -346,7 +342,7 @@ public:
     void readBinary(ReadBuffer & in);
 };
 
-struct SettingFieldChar final : SettingFieldBase
+struct SettingFieldChar final
 {
 public:
     char value;
@@ -374,7 +370,7 @@ public:
 };
 
 
-struct SettingFieldURI final : SettingFieldBase
+struct SettingFieldURI final
 {
     Poco::URI value;
     bool changed = false;
@@ -418,7 +414,7 @@ struct SettingFieldURI final : SettingFieldBase
   *                        {{"Male", Gender::Male}, {"Female", Gender::Female}})
   */
 template <typename EnumT, typename Traits>
-struct SettingFieldEnum final : SettingFieldBase
+struct SettingFieldEnum final
 {
     using EnumType = EnumT;
     using ValueType = EnumT;
@@ -467,7 +463,7 @@ void SettingFieldEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
 
 // Mostly like SettingFieldEnum, but can have multiple enum values (or none) set at once.
 template <typename Enum, typename Traits>
-struct SettingFieldMultiEnum final : SettingFieldBase
+struct SettingFieldMultiEnum final
 {
     using EnumType = Enum;
     using ValueType = std::vector<Enum>;
@@ -561,7 +557,7 @@ void SettingFieldMultiEnum<EnumT, Traits>::readBinary(ReadBuffer & in)
 }
 
 /// Setting field for specifying user-defined timezone. It is basically a string, but it needs validation.
-struct SettingFieldTimezone final : SettingFieldBase
+struct SettingFieldTimezone final
 {
     String value;
     bool changed = false;
@@ -597,7 +593,7 @@ private:
 };
 
 /// Can keep a value of any type. Used for user-defined settings.
-struct SettingFieldCustom final : SettingFieldBase
+struct SettingFieldCustom final
 {
     Field value;
     bool changed = false;

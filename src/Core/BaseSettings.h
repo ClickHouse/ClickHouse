@@ -1079,7 +1079,12 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 #define DECLARE_SETTINGS_TRAITS_COMMON( \
     SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, \
     ALLOW_CUSTOM_SETTINGS, SUPPORTED_TYPES_MACRO) \
-    /* Constexpr layout at namespace scope (before struct, so array sizes are constant). */ \
+    /* Constexpr typed-array layout: groups settings by SettingField type into contiguous */ \
+    /* arrays (e.g. Bool_[], UInt64_[]) so that all fields of the same type are adjacent. */ \
+    /* This avoids padding between differently-sized types and enables bulk memcpy for */ \
+    /* trivially-copyable types in the copy constructor. The layout (array sizes and */ \
+    /* per-setting indices) is computed at compile time from the settings list, replacing */ \
+    /* what would otherwise require an external code-generation step. */ \
     /* Unprefixed names are safe: each .cpp has at most one DECLARE_SETTINGS_TRAITS. */ \
     enum class SettingTypeTag : uint8_t \
     { \
@@ -1236,11 +1241,11 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const std::string_view type; \
                 const std::string_view description; \
                 const UInt64 flags; \
-                const SettingFieldOps * ops;                                        /* Type-erased ops, shared per type */ \
-                size_t data_offset;                                                 /* offsetof(Data, NAME) */ \
-                std::pair<Field, String> (*get_default_fn)(size_t);                  /* Shared default-value function (one per settings class) */ \
-                size_t get_default_index;                                               /* Index argument for get_default_fn */ \
-                std::pair<Field, String> get_default() const { return get_default_fn(get_default_index); } \
+                const SettingFieldOps * ops;                    /* Type-erased ops, shared per type */ \
+                size_t data_offset;                             /* Byte offset within Data struct */ \
+                std::pair<Field, String> (*default_fn_)(size_t); \
+                size_t default_index_; \
+                std::pair<Field, String> get_default() const { return default_fn_(default_index_); } \
             }; \
             \
             std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
