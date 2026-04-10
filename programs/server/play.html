@@ -638,6 +638,7 @@
             line-height: 0.75;
             position: sticky;
             left: 0;
+            z-index: -1; /* Below the expanded selected cell */
         }
 
         #url_status
@@ -912,6 +913,11 @@ class QueryResultElement extends HTMLElement
         this.attachShadow({ mode: 'open' });
         this.shadowRoot.innerHTML = `
             <style>
+                *
+                {
+                    box-sizing: border-box;
+                }
+
                 :host
                 {
                     display: block;
@@ -976,13 +982,19 @@ class QueryResultElement extends HTMLElement
                 td
                 {
                     background-color: var(--element-background-color);
-                    max-width: 50vw;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    padding: 0.25rem 0.5rem;
+                    max-width: 40vw;
+                    padding: 0; /* Padding is on .cell-content instead */
                     border: 1px solid var(--border-color);
                     white-space: pre;
                     vertical-align: top;
+                }
+
+                /* Inner div limits cell height to 3 lines; expands on selection */
+                .cell-content
+                {
+                    padding: 0.25rem 0.5rem;
+                    max-height: 3lh;
+                    overflow: hidden;
                 }
 
                 td u
@@ -1019,13 +1031,17 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                     left: 0;
                     top: -1px;
-                    transform: translateY(-100%);
                     font-size: 75%;
                     font-weight: normal;
                     color: var(--misc-text-color);
                     background: var(--element-background-color);
                     max-height: 5em;
                     white-space: pre;
+                }
+
+                thead .type-hint
+                {
+                    transform: translateY(-100%);
                 }
 
                 th:hover .type-hint
@@ -1050,12 +1066,20 @@ class QueryResultElement extends HTMLElement
                     background-color: var(--border-color-selected);
                 }
 
-                tr:hover
+                /* Apply hover/selection filter per-cell, excluding the active cell,
+                   because filter on tr would create a stacking context trapping it. */
+                tr:hover td:not(.td-selected)
                 {
                     filter: var(--table-hover-filter);
                 }
 
                 .tr-selected
+                {
+                    position: relative;
+                    z-index: 1; /* Above hovered rows */
+                }
+
+                .tr-selected td:not(.td-selected)
                 {
                     filter: var(--table-hover-filter);
                 }
@@ -1068,12 +1092,68 @@ class QueryResultElement extends HTMLElement
                     display: none;
                 }
 
+                .cell-copy
+                {
+                    display: none;
+                    position: absolute;
+                    bottom: 100%;
+                    right: -1px;
+                    padding: 0.25rem;
+                    width: fit-content;
+                    cursor: pointer;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
+                    z-index: 1;
+                }
+
+                /* First row after a sticky header: place to the side to avoid overlap */
+                thead + tbody tr:first-child .cell-copy
+                {
+                    bottom: auto;
+                    left: 100%;
+                    top: -1px;
+                }
+
+                thead + tbody tr:first-child td:last-child .cell-copy
+                {
+                    left: auto;
+                    right: 100%;
+                }
+
+                .cell-copy svg
+                {
+                    width: 1em;
+                    height: 1em;
+                    vertical-align: middle;
+                }
+
+                .td-selected .cell-copy
+                {
+                    display: block;
+                }
+
+                /* Selected cell stacks above all other cells */
                 .td-selected
                 {
+                    position: relative;
+                    z-index: 10;
+                }
+
+                /* Expand the inner div on top of the table without reflowing it */
+                .td-selected .cell-content
+                {
+                    position: absolute;
+                    top: -1px;
+                    left: -1px;
+                    width: calc(100% + 2px); /* Compensate for collapsed border (1px each side) */
+                    min-height: calc(100% + 2px);
+                    max-height: 50vh;
                     white-space: pre-wrap;
-                    max-width: none;
-                    outline: 2px solid var(--border-color-selected);
-                    outline-offset: -2px;
+                    word-break: break-all;
+                    overflow-y: auto;
+                    scrollbar-width: thin;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
                 }
 
                 td.empty-result
@@ -1086,6 +1166,7 @@ class QueryResultElement extends HTMLElement
                 {
                     width: 1%;
                     text-align: right;
+                    padding: 0.25rem 0.5rem;
                     background-color: var(--table-header-color);
                     color: var(--misc-text-color);
                 }
@@ -1203,6 +1284,11 @@ class QueryResultElement extends HTMLElement
         this.style.outline = 'none';
         this.addEventListener('keydown', (e) => this._handleKeyDown(e));
 
+        /* Clicking on non-data areas (e.g. table header) deactivates the selected cell */
+        this.shadowRoot.addEventListener('click', (e) => {
+            if (!e.target.closest('td') || e.target.closest('.row-number')) this.clearSelection();
+        });
+
         new ResizeObserver(() => this._resizeChart()).observe(this._chart);
     }
 
@@ -1248,8 +1334,11 @@ class QueryResultElement extends HTMLElement
 
     clearSelection()
     {
-        this._current_selected_cell?.classList.remove('td-selected');
-        this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
         this._current_selected_cell = null;
     }
 
@@ -1261,6 +1350,9 @@ class QueryResultElement extends HTMLElement
     _renderCell(name, value)
     {
         let td = document.createElement('td');
+        let div = document.createElement('div');
+        div.className = 'cell-content'; /* Height-limited container; expands absolutely when selected */
+
         let is_null = (value === null);
         let is_link = false;
 
@@ -1299,15 +1391,37 @@ class QueryResultElement extends HTMLElement
             if (text.length >= 5 && text.match(/^[\d]{5,}$/))
             {
                 let i = 0;
-                td.innerHTML = text.split('').reverse().map(c => {
+                div.innerHTML = text.split('').reverse().map(c => {
                     if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
                 }).reverse().join('');
+                td.appendChild(div);
+                this._appendCopyButton(td, text, value);
                 return td;
             }
         }
 
-        td.appendChild(node);
+        div.appendChild(node);
+        td.appendChild(div);
+        this._appendCopyButton(td, text, value);
         return td;
+    }
+
+    _appendCopyButton(td, text, value)
+    {
+        if (value === null || value === '' || value === 0 || value === '0') return;
+
+        let btn = document.createElement('span');
+        btn.className = 'cell-copy';
+        btn.title = 'Copy to clipboard';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            if (navigator.clipboard && navigator.clipboard.writeText)
+            {
+                navigator.clipboard.writeText(text);
+            }
+        };
+        td.appendChild(btn);
     }
 
     appendHeader(meta)
@@ -1378,12 +1492,15 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                this._current_selected_cell?.classList.remove('td-selected');
-                this._current_selected_cell?.parentElement.classList.remove('tr-selected');
+                if (this._current_selected_cell)
+                {
+                    this._current_selected_cell.classList.remove('td-selected');
+                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
+                }
                 this._current_selected_cell = td;
-                this._current_selected_cell.classList.add('td-selected');
-                this._current_selected_cell.parentElement.classList.add('tr-selected');
-                this._current_selected_cell.scrollIntoView({ block: 'nearest' });
+                td.classList.add('td-selected');
+                td.parentElement.classList.add('tr-selected');
+                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
                 this.focus();
             };
 
@@ -1424,6 +1541,7 @@ class QueryResultElement extends HTMLElement
                 for (let row of table.rows)
                 {
                     let cell = row.cells[col_idx];
+                    let div = cell.querySelector('.cell-content') || cell; /* Apply bars to the inner div */
                     let value = +cell.innerText;
 
                     if (!double_sided)
@@ -1432,7 +1550,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.max[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1447,7 +1565,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.max[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1460,7 +1578,7 @@ class QueryResultElement extends HTMLElement
                         {
                             const ratio = value / this._extremes.min[name];
 
-                            cell.style.cssText = `
+                            div.style.cssText = `
                                 background-size: 100% 50%;
                                 background-position: center;
                                 background-repeat: no-repeat;
@@ -1554,12 +1672,27 @@ class QueryResultElement extends HTMLElement
             columnWidths.push(header.offsetWidth);
         });
 
+        /* Freeze row heights so that absolutely-positioned cell content
+           does not cause reflow. Read all heights first, then write,
+           to avoid layout thrashing. */
+        let rowHeights = [];
+        for (let row of table.rows)
+        {
+            rowHeights.push(row.offsetHeight);
+        }
+
         table.classList.add('fixed');
         this._dataDiv.classList.add('fixed');
 
         headers.forEach((header, index) => {
             header.style.width = `${columnWidths[index]}px`;
         });
+
+        let i = 0;
+        for (let row of table.rows)
+        {
+            row.style.height = `${rowHeights[i++]}px`;
+        }
     }
 
     _appendHeaderResizer(header)
@@ -1709,7 +1842,7 @@ class QueryResultElement extends HTMLElement
         cell.parentElement.classList.remove('tr-selected');
         new_cell.classList.add('td-selected');
         new_cell.parentElement.classList.add('tr-selected');
-        new_cell.scrollIntoView({ block: 'nearest' });
+        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
         this._current_selected_cell = new_cell;
     }
 
@@ -2475,6 +2608,7 @@ async function postImpl(posted_request_num, query)
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
         if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
+        if (is_table) resultEl._changeTableLayout();
     }
 
     progressEl.finish();
@@ -2598,6 +2732,7 @@ async function restoreFromHistory(state) {
         if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
         if (is_table) resultEl.renderTotals();
         if (is_table) resultEl.transposeIfNeeded();
+        if (is_table) resultEl._changeTableLayout();
     }
 
     progressEl.finish();
@@ -2794,9 +2929,12 @@ function formatReadableRows(rows) {
     return formatReadable(rows, 2, units);
 }
 
-document.getElementById('query').addEventListener('focus', e => {
+/* Clicking outside data cells deactivates the selected cell */
+document.addEventListener('click', e => {
+    if (e.target.closest('query-result')) return;
     resultEl.clearSelection();
 });
+
 
 function appendTextareaResizer() {
     const queryDiv = document.getElementById('query_div');
