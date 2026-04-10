@@ -1,5 +1,7 @@
 #include <Common/ZooKeeper/KeeperSpans.h>
+#include <Common/thread_local_rng.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 #include <optional>
 

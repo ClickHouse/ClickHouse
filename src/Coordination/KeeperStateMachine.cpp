@@ -26,6 +26,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
